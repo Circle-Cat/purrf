@@ -1,4 +1,4 @@
-"""Admin permission routes (read-only, PR1), mounted under /api/admin.
+"""Admin permission routes (read-only), mounted under /api/admin.
 
 All routes are gated by Permission.PERMISSION_MANAGE. The caller is resolved by
 AuthMiddleware; handlers read the request context and do not re-authenticate.
@@ -97,13 +97,14 @@ class PermissionAdminController:
 
     async def list_permissions(self, current_user: UserContextDto):
         """
-        Return the grantable permission catalog (the code enum).
+        Return the grantable permission catalog, each with its description.
 
         Args:
             current_user (UserContextDto): The authenticated caller (injected).
 
         Returns:
-            A standardized API response wrapping ``{"permissions": [...]}``.
+            A standardized API response wrapping
+            ``{"permissions": [{"name": ..., "description": ...}, ...]}``.
         """
         return api_response(
             message="Permission catalog",

@@ -8,7 +8,10 @@ import * as api from "@/api/adminPermissionsApi";
 vi.mock("@/context/auth", () => ({ useAuth: vi.fn() }));
 vi.mock("@/api/adminPermissionsApi");
 
-const catalog = ["mentorship.round.read", "permission.manage"];
+const catalog = [
+  { name: "mentorship.admin.read", description: "d1" },
+  { name: "permission.manage", description: "d2" },
+];
 
 describe("UsersTab", () => {
   beforeEach(() => {
@@ -36,7 +39,7 @@ describe("UsersTab", () => {
       },
     });
     api.getUserPermissions.mockResolvedValue({
-      data: { userId: 1, active: ["mentorship.round.read"], history: [] },
+      data: { userId: 1, active: ["mentorship.admin.read"], history: [] },
     });
   });
 
@@ -71,7 +74,7 @@ describe("UsersTab", () => {
 
     // Checklist appears after permissions load
     expect(
-      await screen.findByRole("checkbox", { name: "mentorship.round.read" }),
+      await screen.findByRole("checkbox", { name: "mentorship.admin.read" }),
     ).toBeChecked();
 
     // caller is super-admin, target is not -> Make super-admin offered

@@ -1,10 +1,18 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import PersonalDashboard from "@/pages/PersonalDashboard";
+import MentorshipInfoBanner from "@/pages/PersonalDashboard/components/MentorshipInfoBanner";
 import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorshipData";
 import { useAuth } from "@/context/auth";
 import { useWorkActivityData } from "@/pages/PersonalDashboard/hooks/useWorkActivityData";
+import { useMyApplications } from "@/pages/PersonalDashboard/hooks/useMyApplications";
 import { PERMISSIONS } from "@/constants/Permissions";
+import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
+import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import * as profileApi from "@/api/profileApi";
+
+vi.mock("@/api/profileApi");
 
 vi.mock("@/pages/PersonalDashboard/components/MentorshipInfoBanner", () => ({
   default: vi.fn(({ registration, isRegistrationOpen }) => (
@@ -26,6 +34,16 @@ vi.mock("@/pages/PersonalDashboard/hooks/useWorkActivityData", () => ({
   useWorkActivityData: vi.fn(),
 }));
 
+vi.mock("@/pages/PersonalDashboard/hooks/useMyApplications", () => ({
+  useMyApplications: vi.fn(),
+}));
+
+vi.mock("@/pages/PersonalDashboard/components/MyApplicationsCard", () => ({
+  default: () => (
+    <div data-testid="mock-my-applications-card">Applications</div>
+  ),
+}));
+
 vi.mock("@/pages/PersonalDashboard/components/WorkActivityDataCard", () => ({
   WorkActivityDataCard: (props) => (
     <div data-testid="work-activity-card">
@@ -33,6 +51,29 @@ vi.mock("@/pages/PersonalDashboard/components/WorkActivityDataCard", () => ({
     </div>
   ),
 }));
+
+vi.mock(
+  "@/pages/PersonalDashboard/components/MentorshipParticipantsCard",
+  () => ({
+    default: () => (
+      <div data-testid="mock-participants-card">Participants Card</div>
+    ),
+  }),
+);
+
+vi.mock("@/pages/PersonalDashboard/components/GoogleMeetingControl", () => ({
+  GoogleMeetingControl: vi.fn(({ meetingRoundId }) => (
+    <div data-testid="mock-manage-meetings-btn">
+      Mock Button - Round: {meetingRoundId ?? "null"}
+    </div>
+  )),
+}));
+
+vi.mock("@/hooks/useFeatureFlags", () => {
+  return {
+    useFeatureFlags: vi.fn(),
+  };
+});
 
 describe("PersonalDashboard", () => {
   const mockHookData = {
@@ -44,6 +85,10 @@ describe("PersonalDashboard", () => {
     isPartnersLoading: false,
     loadPastPartners: vi.fn(),
     isLoading: false,
+    selectedRoundId: null,
+    roundSelectionData: {
+      sortedRounds: [{ id: 1, status: MentorshipRoundStatus.COMPLETED }],
+    },
   };
 
   const defaultWorkActivityMock = {
@@ -54,9 +99,22 @@ describe("PersonalDashboard", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    profileApi.getMyProfile.mockResolvedValue({
+      data: { profile: { training: [] } },
+    });
     useMentorshipData.mockReturnValue(mockHookData);
     useWorkActivityData.mockReturnValue(defaultWorkActivityMock);
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: false,
+      load: vi.fn(),
+      hiredMentorshipRole: "mentee",
+    });
     useAuth.mockReturnValue({ permissions: [] });
+    vi.mocked(useFeatureFlags).mockReturnValue({
+      [FEATURE_FLAGS.CREATE_GOOGLE_MEETING]: true,
+    });
   });
 
   it("renders the welcome header", () => {
@@ -170,8 +228,193 @@ describe("PersonalDashboard", () => {
 
     render(<PersonalDashboard />);
 
-    const button = screen.getByRole("button");
+    const cardContainer = screen.getByTestId("work-activity-card");
+    const button = cardContainer.querySelector("button");
 
     expect(button).toBeDisabled();
+  });
+
+  describe("Manage Meetings Button", () => {
+    it("calculates active meetingRoundId using enum and passes it to the button", () => {
+      useMentorshipData.mockReturnValue({
+        ...mockHookData,
+        selectedRoundId: 20,
+        roundSelectionData: {
+          sortedRounds: [
+            { id: 10, status: MentorshipRoundStatus.COMPLETED },
+            { id: 20, status: MentorshipRoundStatus.ACTIVE },
+          ],
+        },
+      });
+
+      render(<PersonalDashboard />);
+
+      const btn = screen.getByTestId("mock-manage-meetings-btn");
+      expect(btn).toBeInTheDocument();
+      expect(btn.innerHTML).toContain("Round: 20");
+    });
+
+    it("successfully activates and casts ID when selectedRoundId is a string from select dropdown", () => {
+      useMentorshipData.mockReturnValue({
+        ...mockHookData,
+        selectedRoundId: "20",
+        roundSelectionData: {
+          sortedRounds: [
+            { id: 10, status: MentorshipRoundStatus.COMPLETED },
+            { id: 20, status: MentorshipRoundStatus.ACTIVE },
+          ],
+        },
+      });
+
+      render(<PersonalDashboard />);
+
+      const btn = screen.getByTestId("mock-manage-meetings-btn");
+      expect(btn).toBeInTheDocument();
+      expect(btn.innerHTML).toContain("Round: 20");
+    });
+
+    it("passes null to the button when the user selects a completed / inactive round", () => {
+      useMentorshipData.mockReturnValue({
+        ...mockHookData,
+        selectedRoundId: 10,
+        roundSelectionData: {
+          sortedRounds: [
+            { id: 10, status: MentorshipRoundStatus.COMPLETED },
+            { id: 20, status: MentorshipRoundStatus.ACTIVE },
+          ],
+        },
+      });
+
+      render(<PersonalDashboard />);
+
+      const btn = screen.getByTestId("mock-manage-meetings-btn");
+      expect(btn.innerHTML).toContain("Round: null");
+    });
+
+    it("passes null to the button when there is no active round", () => {
+      useMentorshipData.mockReturnValue({
+        ...mockHookData,
+        selectedRoundId: 10,
+        roundSelectionData: {
+          sortedRounds: [{ id: 10, status: MentorshipRoundStatus.COMPLETED }],
+        },
+      });
+
+      render(<PersonalDashboard />);
+
+      const btn = screen.getByTestId("mock-manage-meetings-btn");
+      expect(btn.innerHTML).toContain("Round: null");
+    });
+  });
+
+  it("always renders the My Applications card", () => {
+    render(<PersonalDashboard />);
+    expect(screen.getByTestId("mock-my-applications-card")).toBeInTheDocument();
+  });
+
+  it("shows the mentorship banner and participants card once a hired mentorship role resolves", () => {
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: false,
+      load: vi.fn(),
+      hiredMentorshipRole: "mentor",
+    });
+
+    render(<PersonalDashboard />);
+
+    expect(screen.getByTestId("mock-banner")).toBeInTheDocument();
+    expect(screen.getByTestId("mock-participants-card")).toBeInTheDocument();
+  });
+
+  it("hides the mentorship banner and participants card while applications are still loading", () => {
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: true,
+      loadError: false,
+      load: vi.fn(),
+      hiredMentorshipRole: null,
+    });
+
+    render(<PersonalDashboard />);
+
+    expect(screen.queryByTestId("mock-banner")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("mock-participants-card"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the mentorship banner and participants card when the applications fetch errored", () => {
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: true,
+      load: vi.fn(),
+      hiredMentorshipRole: null,
+    });
+
+    render(<PersonalDashboard />);
+
+    expect(screen.queryByTestId("mock-banner")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("mock-participants-card"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the mentorship banner and participants card when there is no hired mentorship role", () => {
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: false,
+      load: vi.fn(),
+      hiredMentorshipRole: null,
+    });
+
+    render(<PersonalDashboard />);
+
+    expect(screen.queryByTestId("mock-banner")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("mock-participants-card"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("passes showMentorshipSection as the enabled option to useMentorshipData", () => {
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: false,
+      load: vi.fn(),
+      hiredMentorshipRole: null,
+    });
+
+    render(<PersonalDashboard />);
+
+    expect(useMentorshipData).toHaveBeenCalledWith({ enabled: false });
+  });
+
+  it("passes hiredMentorshipRole through to MentorshipInfoBanner", () => {
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: false,
+      load: vi.fn(),
+      hiredMentorshipRole: "mentor",
+    });
+
+    render(<PersonalDashboard />);
+
+    // React 19 calls function components as (props, undefined); toHaveBeenCalledWith's
+    // expect.anything() rejects that literal undefined second arg, so assert on the
+    // first call's props directly instead.
+    expect(MentorshipInfoBanner.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ hiredMentorshipRole: "mentor" }),
+    );
+  });
+
+  it("spaces the dashboard cards vertically", () => {
+    const { container } = render(<PersonalDashboard />);
+    expect(container.querySelector(".personal-dashboard").className).toContain(
+      "space-y-5",
+    );
   });
 });

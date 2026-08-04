@@ -6,14 +6,20 @@ from backend.dto.preference_dto import (
 )
 from backend.dto.registration_dto import GlobalPreferencesDto, RoundPreferencesDto
 from backend.dto.meeting_dto import MeetingDto, MeetingInfoDto, MeetingTimeDto
+from backend.dto.admin_meeting_log_dto import AdminMeetingDto
 
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
+from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.entity.preference_entity import PreferenceEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
-from backend.common.mentorship_enums import ParticipantRole
+from backend.common.mentorship_enums import (
+    MeetingNoteTag,
+    MeetingSource,
+    ParticipantRole,
+)
 
 
 class MentorshipMapper:
@@ -132,8 +138,29 @@ class MentorshipMapper:
         round_id: int,
         user_timezone: str,
         grouped_pairs: list[tuple[MentorshipPairsEntity, int]],
+        meetings_by_pair: dict[int, list[MentorshipMeetingEntity]],
     ) -> MeetingDto:
-        """Map (MentorshipPairsEntity, partner_id) tuples to MeetingDto."""
+        """Map (MentorshipPairsEntity, partner_id) tuples to MeetingDto.
+
+        Args:
+            round_id (int): The mentorship round ID.
+            user_timezone (str): The current user's timezone.
+            grouped_pairs (list[tuple[MentorshipPairsEntity, int]]): Each pair
+                paired with the partner's user id.
+            meetings_by_pair (dict[int, list[MentorshipMeetingEntity]]):
+                Meeting rows keyed by ``pair_id``, e.g. from
+                ``MentorshipMeetingRepository.get_meetings_by_pair`` /
+                ``get_meetings_by_pairs``. Required rather than defaulted to
+                ``None`` -- there are only two call sites, and a caller that
+                forgot this argument would otherwise get a silently empty
+                meeting list rather than an error. A pair absent from this
+                dict is treated as having no meetings. LEGACY rows are
+                filtered out here regardless of whether the caller already
+                excluded them -- they carry no times and have nothing to show
+                in this list. Order is passed through unchanged -- this
+                method does not sort; it trusts whatever order the caller's
+                meetings came back in.
+        """
         return MeetingDto(
             round_id=round_id,
             user_timezone=user_timezone,
@@ -144,8 +171,15 @@ class MentorshipMapper:
                     if partner_id == pair.mentor_id
                     else ParticipantRole.MENTOR,
                     meeting_time_list=[
-                        MeetingTimeDto(**m)
-                        for m in (pair.meeting_log or {}).get("meeting_time_list") or []
+                        MeetingTimeDto(
+                            meeting_id=m.meeting_id,
+                            start_datetime=m.start_datetime,
+                            end_datetime=m.end_datetime,
+                            is_completed=m.is_completed,
+                            created_datetime=m.created_datetime,
+                        )
+                        for m in meetings_by_pair.get(pair.pair_id, [])
+                        if m.source != MeetingSource.LEGACY
                     ],
                     completed_meetings_count=pair.completed_count or 0,
                 )
@@ -158,15 +192,31 @@ class MentorshipMapper:
         round_id: int,
         user_timezone: str,
         grouped_pairs: list[tuple[MentorshipPairsEntity, int]],
+        meetings_by_pair: dict[int, list[MentorshipMeetingEntity]],
         include_details: bool = False,
     ) -> MeetingDto:
-        """
-        Map (MentorshipPairsEntity, partner_id) tuples to MeetingDto.
-        Map pair tuples to MeetingDto by merging both manual and Google meetings.
-        Compared with map_to_meeting_dto, this method:
-            - merges meetings from both `meeting_time_list` (manual) and `google_meetings`
-            - supports Google Meet-specific fields (e.g., absence/late information)
-            - conditionally includes additional fields when ` include_details=True`
+        """Map (MentorshipPairsEntity, partner_id) tuples to MeetingDto, merging
+        both meeting generations.
+
+        Compared with `map_to_meeting_dto`, this method:
+            - reads from `meetings_by_pair` rows of BOTH `MeetingSource.MANUAL`
+              and `MeetingSource.GOOGLE` -- unlike the v1 mapper, this one must
+              NOT filter MANUAL-only; merging both generations is the whole
+              point of v2.
+            - supports Google Meet-specific fields (e.g., absence/late
+              information), gated by `include_details`.
+
+        Args:
+            round_id (int): The mentorship round ID.
+            user_timezone (str): The current user's timezone.
+            grouped_pairs (list[tuple[MentorshipPairsEntity, int]]): Each pair
+                paired with the partner's user id.
+            meetings_by_pair (dict[int, list[MentorshipMeetingEntity]]):
+                Meeting rows keyed by `pair_id`, e.g. from
+                `MentorshipMeetingRepository.get_meetings_by_pairs`. A pair
+                absent from this dict is treated as having no meetings.
+            include_details (bool): Whether to populate Google-only
+                attendance fields.
         """
         return MeetingDto(
             round_id=round_id,
@@ -178,7 +228,7 @@ class MentorshipMapper:
                     if partner_id == pair.mentor_id
                     else ParticipantRole.MENTOR,
                     meeting_time_list=self._build_meeting_time_list(
-                        pair, include_details
+                        meetings_by_pair.get(pair.pair_id, []), include_details
                     ),
                     completed_meetings_count=pair.completed_count or 0,
                 )
@@ -188,33 +238,61 @@ class MentorshipMapper:
 
     def _build_meeting_time_list(
         self,
-        pair: MentorshipPairsEntity,
+        meetings: list[MentorshipMeetingEntity],
         include_details: bool,
     ) -> list[MeetingTimeDto]:
-        meeting_log = pair.meeting_log or {}
+        """Build the merged MANUAL+GOOGLE meeting-time list for v2.
 
-        manual_meetings = meeting_log.get("meeting_time_list") or []
-        google_meetings = meeting_log.get("google_meetings") or []
+        Args:
+            meetings (list[MentorshipMeetingEntity]): Rows for one pair. Order
+                is passed through unchanged -- the repository already returns
+                rows interleaved by `start_datetime` across both sources, and
+                this method must trust that rather than concatenating one
+                generation after the other. LEGACY rows are filtered out here
+                regardless of whether the caller already excluded them (same
+                defensive stance as `map_to_meeting_dto`): they carry null
+                times, which `MeetingTimeDto` cannot represent.
+            include_details (bool): Whether to populate the Google-only
+                attendance fields (`has_unknown_absent`, `absent_user_id`,
+                `has_unknown_late`, `late_user_ids`, `has_insufficient_duration`).
+                These are always null on a MANUAL row regardless of this flag.
 
-        manual_dtos = [MeetingTimeDto(**meeting) for meeting in manual_meetings]
-
-        google_dtos = []
-        for meeting in google_meetings:
-            dto = MeetingTimeDto(
-                meeting_id=meeting["meeting_id"],
-                start_datetime=meeting["start_datetime"],
-                end_datetime=meeting["end_datetime"],
-                is_completed=meeting["is_completed"],
-                created_datetime=meeting["created_datetime"],
+        Returns:
+            list[MeetingTimeDto]: One DTO per non-LEGACY input row, in the
+                same order given.
+        """
+        return [
+            MeetingTimeDto(
+                meeting_id=m.meeting_id,
+                start_datetime=m.start_datetime,
+                end_datetime=m.end_datetime,
+                is_completed=m.is_completed,
+                created_datetime=m.created_datetime,
+                has_unknown_absent=m.has_unknown_absent if include_details else None,
+                absent_user_id=m.absent_user_id if include_details else None,
+                has_unknown_late=m.has_unknown_late if include_details else None,
+                late_user_ids=m.late_user_ids if include_details else None,
+                has_insufficient_duration=m.has_insufficient_duration
+                if include_details
+                else None,
             )
+            for m in meetings
+            if m.source != MeetingSource.LEGACY
+        ]
 
-            if include_details:
-                dto.has_unknown_absent = meeting.get("has_unknown_absent")
-                dto.absent_user_id = meeting.get("absent_user_id")
-                dto.has_unknown_late = meeting.get("has_unknown_late")
-                dto.late_user_ids = meeting.get("late_user_ids")
-                dto.has_insufficient_duration = meeting.get("has_insufficient_duration")
-
-            google_dtos.append(dto)
-
-        return manual_dtos + google_dtos
+    def map_to_admin_meeting_dto(
+        self,
+        meeting: dict,
+        *,
+        is_completed: bool,
+        note_tags: list[MeetingNoteTag],
+    ) -> AdminMeetingDto:
+        """Maps a meeting record and resolved fields to an AdminMeetingDto."""
+        return AdminMeetingDto(
+            meeting_id=meeting["meeting_id"],
+            start_datetime=meeting["start_datetime"],
+            end_datetime=meeting["end_datetime"],
+            is_completed=is_completed,
+            note=note_tags,
+            create_datetime=meeting["created_datetime"],
+        )

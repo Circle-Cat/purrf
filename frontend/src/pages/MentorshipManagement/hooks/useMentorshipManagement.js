@@ -25,16 +25,12 @@ export const useMentorshipManagement = (canReadRounds = true) => {
   });
 
   const refreshRounds = useCallback(async () => {
-    // The detailed round view requires MENTORSHIP_ROUND_READ; skip the request
-    // when the user lacks it (the backend would return 403) and show nothing.
-    if (!canReadRounds) {
-      setRounds([]);
-      setIsLoading(false);
-      return;
-    }
+    // The basic round list is open to any authenticated user; per-round detail
+    // stats (need_details=true) require MENTORSHIP_ADMIN_READ on the backend,
+    // so we mirror canReadRounds into the request instead of skipping it.
     setIsLoading(true);
     try {
-      const { data: rounds } = await getAllMentorshipRounds(true);
+      const { data: rounds } = await getAllMentorshipRounds(canReadRounds);
       setRounds(rounds ?? []);
     } catch (err) {
       console.error("Failed to fetch mentorship rounds", err);

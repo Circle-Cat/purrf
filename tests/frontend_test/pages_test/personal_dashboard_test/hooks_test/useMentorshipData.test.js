@@ -287,6 +287,24 @@ describe("useMentorshipData Hook", () => {
 
     consoleSpy.mockRestore();
   });
+
+  it("does not fetch mentorship rounds when enabled is false", () => {
+    const { result } = renderHook(() => useMentorshipData({ enabled: false }));
+    expect(getAllMentorshipRounds).not.toHaveBeenCalled();
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it("still fetches mentorship rounds when enabled is true", () => {
+    getAllMentorshipRounds.mockResolvedValue({ data: [] });
+    renderHook(() => useMentorshipData({ enabled: true }));
+    expect(getAllMentorshipRounds).toHaveBeenCalledTimes(1);
+  });
+
+  it("defaults to fetching when enabled is omitted (backward compatible)", () => {
+    getAllMentorshipRounds.mockResolvedValue({ data: [] });
+    renderHook(() => useMentorshipData());
+    expect(getAllMentorshipRounds).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("saveRegistration", () => {

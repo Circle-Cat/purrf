@@ -14,7 +14,7 @@ import { usePermissionHolders } from "@/pages/AdminPermissions/hooks/usePermissi
  * Reverse-lookup tab: pick a permission, list who holds it.
  *
  * @param {Object} props
- * @param {string[]} props.catalog - Grantable permission names.
+ * @param {{name: string, description: string}[]} props.catalog - Grantable permissions with descriptions.
  */
 const PermissionHoldersTab = ({ catalog }) => {
   const {
@@ -63,7 +63,7 @@ const PermissionHoldersTab = ({ catalog }) => {
             <SelectValue placeholder="Select a permission…" />
           </SelectTrigger>
           <SelectContent>
-            {catalog.map((name) => (
+            {catalog.map(({ name }) => (
               <SelectItem key={name} value={name}>
                 {name}
               </SelectItem>

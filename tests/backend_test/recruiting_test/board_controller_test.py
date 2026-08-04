@@ -1,0 +1,522 @@
+import unittest
+from http import HTTPStatus
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from fastapi import HTTPException, Response
+
+from backend.dto.board_dto import (
+    BlacklistDto,
+    ReassignDto,
+    RoundChangeDto,
+    StageChangeDto,
+    SubStatusChangeDto,
+)
+from backend.dto.email_dto import EmailSendRequestDto
+from backend.dto.interview_dto import InterviewScheduleRequestDto
+from backend.dto.user_context_dto import UserContextDto
+from backend.common.api_endpoints import (
+    RECRUITING_APPLICATION_EMAIL_TEMPLATES_ENDPOINT,
+)
+from backend.common.permissions import Permission
+from backend.common.recruiting_enums import ApplicationStage
+from backend.recruiting.board_controller import BoardController
+
+
+class TestBoardController(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.session = AsyncMock()
+        self.database = MagicMock()
+        self.database.session.return_value.__aenter__.return_value = self.session
+        self.database.session.return_value.__aexit__.return_value = None
+
+        self.board_service = MagicMock()
+        self.board_service.list_my_jobs = AsyncMock(return_value=[])
+        self.board_service.get_board = AsyncMock(return_value={})
+        self.board_service.get_application_detail = AsyncMock(return_value={"id": 10})
+        self.board_service.change_stage = AsyncMock(return_value={"id": 10})
+        self.board_service.set_sub_status = AsyncMock(return_value={"id": 10})
+        self.board_service.set_round = AsyncMock(return_value={"id": 10})
+        self.board_service.blacklist = AsyncMock(return_value={"id": 10})
+        self.board_service.get_resume = AsyncMock(return_value=b"%PDF-1.4 data")
+        self.board_service.get_application_activity = AsyncMock(return_value=[])
+        self.board_service.list_mentionable_users = AsyncMock(return_value=[])
+
+        self.interview_scheduling_service = MagicMock()
+        self.interview_scheduling_service.schedule = AsyncMock(
+            return_value={"interviewId": 1}
+        )
+        self.interview_scheduling_service.update = AsyncMock(
+            return_value={"interviewId": 1}
+        )
+        self.interview_scheduling_service.cancel = AsyncMock(return_value=None)
+
+        self.controller = BoardController(
+            self.board_service, self.database, self.interview_scheduling_service
+        )
+
+        self.patcher = patch("backend.recruiting.board_controller.api_response")
+        self.mock_api_response = self.patcher.start()
+        self.mock_api_response.side_effect = (
+            lambda message, data=None, status_code=HTTPStatus.OK, success=True: {
+                "message": message,
+                "data": data,
+            }
+        )
+        self.addCleanup(self.patcher.stop)
+
+        self.ctx = UserContextDto(sub="s", primary_email="a@b.com", user_id=2)
+
+    async def test_list_my_jobs_delegates(self):
+        jobs = [{"id": 1}]
+        self.board_service.list_my_jobs = AsyncMock(return_value=jobs)
+        resp = await self.controller.list_my_jobs(self.ctx)
+        self.board_service.list_my_jobs.assert_awaited_once_with(self.session, self.ctx)
+        self.assertEqual(resp["data"], jobs)
+
+    async def test_get_board_delegates(self):
+        board = {"applied": []}
+        self.board_service.get_board = AsyncMock(return_value=board)
+        resp = await self.controller.get_board(self.ctx, job_id=7)
+        self.board_service.get_board.assert_awaited_once_with(self.session, self.ctx, 7)
+        self.assertEqual(resp["data"], board)
+
+    async def test_get_application_detail_delegates(self):
+        detail = {"id": 10}
+        self.board_service.get_application_detail = AsyncMock(return_value=detail)
+        resp = await self.controller.get_application_detail(self.ctx, application_id=10)
+        self.board_service.get_application_detail.assert_awaited_once_with(
+            self.session, self.ctx, 10
+        )
+        self.assertEqual(resp["data"], detail)
+
+    async def test_get_application_activity_delegates(self):
+        activity = [{"id": 1, "eventType": "stage_changed"}]
+        self.board_service.get_application_activity = AsyncMock(return_value=activity)
+        resp = await self.controller.get_application_activity(
+            self.ctx, application_id=10
+        )
+        self.board_service.get_application_activity.assert_awaited_once_with(
+            self.session, self.ctx, 10
+        )
+        self.assertEqual(resp["data"], activity)
+
+    async def test_get_other_applications_delegates(self):
+        others = [{"application": {"id": 201}}]
+        self.board_service.get_other_applications = AsyncMock(return_value=others)
+
+        resp = await self.controller.get_other_applications(self.ctx, application_id=10)
+
+        self.board_service.get_other_applications.assert_awaited_once_with(
+            self.session, self.ctx, 10
+        )
+        self.assertEqual(resp["data"], others)
+
+    async def test_get_application_emails_delegates(self):
+        conversation = {"threads": [], "defaultTo": "c@x.com"}
+        self.board_service.get_application_conversation = AsyncMock(
+            return_value=conversation
+        )
+        resp = await self.controller.get_application_emails(
+            self.ctx, application_id=10, refresh=True
+        )
+        self.board_service.get_application_conversation.assert_awaited_once_with(
+            self.session, self.ctx, 10, refresh=True
+        )
+        self.assertEqual(resp["data"], conversation)
+
+    async def test_send_application_email_delegates(self):
+        conversation = {"threads": [], "defaultTo": "c@x.com"}
+        self.board_service.send_application_email = AsyncMock(return_value=conversation)
+        dto = EmailSendRequestDto(to=["c@x.com"], subject="Hi", body="<p>x</p>")
+        resp = await self.controller.send_application_email(
+            self.ctx, application_id=10, email_data=dto
+        )
+        self.board_service.send_application_email.assert_awaited_once_with(
+            self.session, self.ctx, 10, dto
+        )
+        self.assertEqual(resp["data"], conversation)
+
+    async def test_get_application_email_templates_delegates_to_the_service(self):
+        self.board_service.list_application_email_templates = AsyncMock(
+            return_value=["t1", "t2"]
+        )
+        resp = await self.controller.get_application_email_templates(
+            self.ctx, application_id=10
+        )
+        self.board_service.list_application_email_templates.assert_awaited_once_with(
+            self.session, self.ctx, 10
+        )
+        self.assertEqual(resp["data"], ["t1", "t2"])
+
+    async def test_list_mentionable_users_delegates(self):
+        users = [{"userId": 7, "name": "Eve Evaluator"}]
+        self.board_service.list_mentionable_users = AsyncMock(return_value=users)
+        resp = await self.controller.list_mentionable_users(self.ctx, 10)
+        self.board_service.list_mentionable_users.assert_awaited_once_with(
+            self.session, self.ctx, 10
+        )
+        self.assertEqual(resp["data"], users)
+
+    async def test_change_stage_delegates(self):
+        updated = {"id": 10, "stage": "tech"}
+        self.board_service.change_stage = AsyncMock(return_value=updated)
+        dto = StageChangeDto(to_stage=ApplicationStage.TECH)
+
+        resp = await self.controller.change_stage(
+            self.ctx, application_id=10, stage_data=dto
+        )
+
+        self.board_service.change_stage.assert_awaited_once_with(
+            self.session, self.ctx, 10, dto
+        )
+        self.assertEqual(resp["data"], updated)
+
+    async def test_set_sub_status_delegates(self):
+        updated = {"id": 10, "sub_status": "in_progress"}
+        self.board_service.set_sub_status = AsyncMock(return_value=updated)
+        dto = SubStatusChangeDto(sub_status="in_progress")
+
+        resp = await self.controller.set_sub_status(
+            self.ctx, application_id=10, sub_status_data=dto
+        )
+
+        self.board_service.set_sub_status.assert_awaited_once_with(
+            self.session, self.ctx, 10, dto
+        )
+        self.assertEqual(resp["data"], updated)
+
+    async def test_reassign_delegates(self):
+        updated = {"id": 10, "sub_status": "pending"}
+        self.board_service.reassign = AsyncMock(return_value=updated)
+        dto = ReassignDto(assignee_id=42)
+
+        resp = await self.controller.reassign(
+            self.ctx, application_id=10, reassign_data=dto
+        )
+
+        self.board_service.reassign.assert_awaited_once_with(
+            self.session, self.ctx, 10, dto
+        )
+        self.assertEqual(resp["data"], updated)
+
+    async def test_set_round_delegates(self):
+        updated = {"id": 10, "current_round": 2}
+        self.board_service.set_round = AsyncMock(return_value=updated)
+        dto = RoundChangeDto(round=2)
+
+        resp = await self.controller.set_round(
+            self.ctx, application_id=10, round_data=dto
+        )
+
+        self.board_service.set_round.assert_awaited_once_with(
+            self.session, self.ctx, 10, dto
+        )
+        self.assertEqual(resp["data"], updated)
+
+    async def test_blacklist_delegates(self):
+        updated = {"id": 10, "stage": "rejected"}
+        self.board_service.blacklist = AsyncMock(return_value=updated)
+        dto = BlacklistDto(
+            user_id=3, application_id=10, reason="Fabricated credentials"
+        )
+
+        resp = await self.controller.blacklist(self.ctx, blacklist_data=dto)
+
+        self.board_service.blacklist.assert_awaited_once_with(
+            self.session, self.ctx, dto
+        )
+        self.assertEqual(resp["data"], updated)
+
+    async def test_get_resume_returns_raw_pdf_response(self):
+        self.board_service.get_resume = AsyncMock(return_value=b"%PDF-1.4 data")
+
+        resp = await self.controller.get_resume(self.ctx, application_id=10)
+
+        self.board_service.get_resume.assert_awaited_once_with(
+            self.session, self.ctx, 10
+        )
+        self.assertIsInstance(resp, Response)
+        self.assertEqual(resp.body, b"%PDF-1.4 data")
+        self.assertEqual(resp.media_type, "application/pdf")
+
+    def test_resume_route_is_get_and_plain_authenticated(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+
+        resume_route = routes_by_path[
+            "/recruiting/applications/{application_id}/resume"
+        ]
+
+        self.assertIn("GET", resume_route.methods)
+
+    def test_other_applications_route_is_get_and_plain_authenticated(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+
+        route = routes_by_path[
+            "/recruiting/applications/{application_id}/other-applications"
+        ]
+
+        self.assertIn("GET", route.methods)
+
+    # -- route registration: PATCH methods + permission gate --
+    #
+    # This test suite calls controller methods directly rather than through
+    # a FastAPI TestClient (see the other tests above), so `authenticate()`
+    # never actually runs here. We can still assert what the route table
+    # (path/method) and the `authenticate(permissions=[...])` closure were
+    # registered with, which is what enforces the gate at request time.
+
+    def _endpoint_permissions(self, endpoint):
+        """Pull the `permissions` list out of an authenticate()-wrapped endpoint."""
+        idx = endpoint.__code__.co_freevars.index("permissions")
+        return endpoint.__closure__[idx].cell_contents
+
+    def test_decision_routes_are_patch_and_permission_gated(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+
+        stage_route = routes_by_path["/recruiting/applications/{application_id}/stage"]
+        sub_status_route = routes_by_path[
+            "/recruiting/applications/{application_id}/sub-status"
+        ]
+
+        reassign_route = routes_by_path[
+            "/recruiting/applications/{application_id}/assignment"
+        ]
+
+        self.assertIn("PATCH", stage_route.methods)
+        self.assertIn("PATCH", sub_status_route.methods)
+        self.assertIn("PATCH", reassign_route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(stage_route.endpoint),
+            [Permission.RECRUITING_APPLICATION_ADVANCE],
+        )
+        self.assertEqual(
+            self._endpoint_permissions(sub_status_route.endpoint),
+            [Permission.RECRUITING_APPLICATION_ADVANCE],
+        )
+        self.assertEqual(
+            self._endpoint_permissions(reassign_route.endpoint),
+            [Permission.RECRUITING_APPLICATION_ADVANCE],
+        )
+
+    def test_blacklist_route_is_post_and_permission_gated(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+
+        blacklist_route = routes_by_path["/recruiting/blacklist"]
+
+        self.assertIn("POST", blacklist_route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(blacklist_route.endpoint),
+            [Permission.RECRUITING_BLACKLIST_WRITE],
+        )
+
+    def test_email_templates_route_requires_the_advance_permission(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+
+        route = routes_by_path[RECRUITING_APPLICATION_EMAIL_TEMPLATES_ENDPOINT]
+
+        self.assertIn("GET", route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(route.endpoint),
+            [Permission.RECRUITING_APPLICATION_ADVANCE],
+        )
+
+    async def test_board_stage_page_returns_service_payload(self):
+        self.board_service.get_board_stage_page = AsyncMock(
+            return_value={"items": [], "total": 25, "has_more": True}
+        )
+
+        resp = await self.controller.get_board_stage_page(
+            self.ctx, job_id=1, stage="rejected", limit=20, offset=0
+        )
+
+        self.assertEqual(resp["data"]["total"], 25)
+        # The controller must parse the raw `stage` string into the enum and
+        # forward the page args to the service unchanged.
+        self.board_service.get_board_stage_page.assert_awaited_once_with(
+            self.session, self.ctx, 1, ApplicationStage.REJECTED, 20, 0
+        )
+
+    async def test_board_stage_page_rejects_bad_stage(self):
+        self.board_service.get_board_stage_page = AsyncMock(
+            return_value={"items": [], "total": 0, "has_more": False}
+        )
+
+        with self.assertRaises(HTTPException) as caught:
+            await self.controller.get_board_stage_page(
+                self.ctx, job_id=1, stage="not_a_stage", limit=20, offset=0
+            )
+
+        self.assertEqual(caught.exception.status_code, 400)
+        # Rejection must happen before delegating to the service.
+        self.board_service.get_board_stage_page.assert_not_awaited()
+
+    async def test_board_stage_page_rejects_negative_offset(self):
+        self.board_service.get_board_stage_page = AsyncMock(
+            return_value={"items": [], "total": 0, "has_more": False}
+        )
+
+        with self.assertRaises(HTTPException) as caught:
+            await self.controller.get_board_stage_page(
+                self.ctx, job_id=1, stage="rejected", limit=20, offset=-1
+            )
+
+        self.assertEqual(caught.exception.status_code, 400)
+        self.board_service.get_board_stage_page.assert_not_awaited()
+
+    async def test_board_stage_page_clamps_limit_to_ceiling(self):
+        self.board_service.get_board_stage_page = AsyncMock(
+            return_value={"items": [], "total": 0, "has_more": False}
+        )
+
+        await self.controller.get_board_stage_page(
+            self.ctx, job_id=1, stage="rejected", limit=9999, offset=0
+        )
+
+        # Delegated positionally: (session, ctx, job_id, stage, limit, offset).
+        _, _, _, _, forwarded_limit, _ = (
+            self.board_service.get_board_stage_page.await_args.args
+        )
+        self.assertEqual(forwarded_limit, 100)
+
+    async def test_board_stage_page_clamps_limit_to_floor(self):
+        self.board_service.get_board_stage_page = AsyncMock(
+            return_value={"items": [], "total": 0, "has_more": False}
+        )
+
+        await self.controller.get_board_stage_page(
+            self.ctx, job_id=1, stage="rejected", limit=0, offset=0
+        )
+
+        _, _, _, _, forwarded_limit, _ = (
+            self.board_service.get_board_stage_page.await_args.args
+        )
+        self.assertEqual(forwarded_limit, 1)
+
+    async def test_search_applicants_passes_scope_and_current_job_through(self):
+        self.board_service.search_applicants = AsyncMock(
+            return_value={"hits": [], "truncated": False}
+        )
+
+        # job_id and current_job_id are deliberately DIFFERENT values here:
+        # if they were equal, a handler bug that swapped the two kwargs would
+        # go undetected (both assertions would still pass).
+        await self.controller.search_applicants(
+            self.ctx, q="zhang", job_id=1, current_job_id=2
+        )
+
+        self.board_service.search_applicants.assert_awaited_once()
+        kwargs = self.board_service.search_applicants.await_args.kwargs
+        self.assertEqual(kwargs["job_id"], 1)
+        self.assertEqual(kwargs["current_job_id"], 2)
+
+    async def test_search_applicants_omits_job_id_for_all_postings_mode(self):
+        self.board_service.search_applicants = AsyncMock(
+            return_value={"hits": [], "truncated": False}
+        )
+
+        await self.controller.search_applicants(
+            self.ctx, q="zhang", job_id=None, current_job_id=3
+        )
+
+        kwargs = self.board_service.search_applicants.await_args.kwargs
+        self.assertIsNone(kwargs["job_id"])
+        self.assertEqual(kwargs["current_job_id"], 3)
+
+    # -- interview scheduling: delegation --
+
+    async def test_schedule_interview_delegates(self):
+        interview_data = InterviewScheduleRequestDto(
+            assignee_id=42,
+            date="2026-08-05",
+            start_time="14:00",
+            duration_minutes=45,
+            timezone="America/Los_Angeles",
+        )
+        resp = await self.controller.schedule_interview(self.ctx, 10, interview_data)
+        self.interview_scheduling_service.schedule.assert_awaited_once_with(
+            self.session, self.ctx, 10, interview_data
+        )
+        self.assertEqual(resp["data"], {"interviewId": 1})
+
+    async def test_update_interview_delegates(self):
+        interview_data = InterviewScheduleRequestDto(
+            assignee_id=42,
+            date="2026-08-06",
+            start_time="15:00",
+            duration_minutes=30,
+            timezone="America/Los_Angeles",
+        )
+        resp = await self.controller.update_interview(self.ctx, 10, interview_data)
+        self.interview_scheduling_service.update.assert_awaited_once_with(
+            self.session, self.ctx, 10, interview_data
+        )
+        self.assertEqual(resp["data"], {"interviewId": 1})
+
+    async def test_list_blacklist_upcoming_interviews_delegates(self):
+        rows = [{"applicationId": 10}]
+        self.board_service.list_upcoming_interviews_for_user = AsyncMock(
+            return_value=rows
+        )
+
+        resp = await self.controller.list_blacklist_upcoming_interviews(self.ctx, 5)
+
+        self.board_service.list_upcoming_interviews_for_user.assert_awaited_once_with(
+            self.session, 5
+        )
+        self.assertEqual(resp["data"], rows)
+
+    async def test_cancel_interview_delegates(self):
+        resp = await self.controller.cancel_interview(self.ctx, 10)
+        self.interview_scheduling_service.cancel.assert_awaited_once_with(
+            self.session, self.ctx, 10
+        )
+        self.assertIsNone(resp["data"])
+
+    # -- interview scheduling: route registration --
+
+    def test_interview_routes_are_registered_with_the_advance_permission(self):
+        interview_routes_by_method = {
+            method: route
+            for route in self.controller.router.routes
+            if route.path == "/recruiting/applications/{application_id}/interview"
+            for method in route.methods
+            if method in ("POST", "PATCH", "DELETE")
+        }
+
+        self.assertEqual(
+            set(interview_routes_by_method.keys()), {"POST", "PATCH", "DELETE"}
+        )
+        for method, route in interview_routes_by_method.items():
+            self.assertEqual(
+                self._endpoint_permissions(route.endpoint),
+                [Permission.RECRUITING_APPLICATION_ADVANCE],
+                f"{method} interview route should require the advance permission",
+            )
+
+    def test_blacklist_upcoming_interviews_route_is_get_and_blacklist_gated(self):
+        # Same permission as the block action it precedes: whoever may
+        # blacklist may see what blacklisting is about to cancel.
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+
+        route = routes_by_path["/recruiting/blacklist/{user_id}/upcoming-interviews"]
+
+        self.assertIn("GET", route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(route.endpoint),
+            [Permission.RECRUITING_BLACKLIST_WRITE],
+        )
+
+    def test_board_stage_page_route_is_get_and_plain_authenticated(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+
+        route = routes_by_path["/recruiting/jobs/{job_id}/board/applications"]
+
+        self.assertIn("GET", route.methods)
+        # "Plain authenticated": login required, but NO permission gate (unlike
+        # the PATCH decision routes). authenticate() with no permissions arg
+        # leaves the wrapper closure's `permissions` cell as None.
+        self.assertIsNone(self._endpoint_permissions(route.endpoint))
+
+
+if __name__ == "__main__":
+    unittest.main()

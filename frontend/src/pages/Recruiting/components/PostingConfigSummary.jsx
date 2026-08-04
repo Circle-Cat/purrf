@@ -1,0 +1,99 @@
+import { humanize } from "@/pages/Recruiting/board/stageFormat";
+import PipelineSummary from "@/pages/Recruiting/components/PipelineSummary";
+
+const ACTION_LABEL = {
+  reject: "Reject",
+  qualify: "Qualify",
+  auto_hire: "Auto-hire",
+};
+
+/** Profile requirement fields, mirroring ProfileConfigEditor's FIELDS keys/labels. */
+const PROFILE_FIELDS = [
+  { key: "education", label: "Education" },
+  { key: "workExperience", label: "Work experience" },
+  { key: "resume", label: "Resume" },
+];
+
+/** "google.com" for a single value, "one of google.com, circlecat.org" for a list. */
+const domainsPhrase = (value) =>
+  Array.isArray(value) ? `one of ${value.join(", ")}` : value;
+
+/** Human-readable description of one screen rule's condition. */
+const describeCondition = (condition, questions) => {
+  if (condition?.source === "email_domain") {
+    return condition.operator === "not_in"
+      ? `email domain is not ${domainsPhrase(condition.value)}`
+      : `email domain is ${domainsPhrase(condition.value)}`;
+  }
+  if (condition?.source === "answer") {
+    const question = questions.find((q) => q.id === condition.questionId);
+    const label = question?.label || condition.questionId;
+    return `answer to "${label}" is "${condition.value}"`;
+  }
+  return "an unrecognized condition";
+};
+
+/**
+ * Read-only summary of a posting's pipeline/screening/profile configuration.
+ * Shown to every viewer of the Configuration tab regardless of write access —
+ * only the "Edit" button next to it is permission-gated.
+ *
+ * @param {{job: {pipelineConfig?: object, screenRules?: object,
+ *          profileConfig?: object, formSchema?: {questions?: object[]}},
+ *          interviewPool?: object[], jobOwners?: object[]}} props
+ */
+const PostingConfigSummary = ({ job, interviewPool = [], jobOwners = [] }) => {
+  const rules = job.screenRules?.rules ?? [];
+  const questions = job.formSchema?.questions ?? [];
+  const profile = job.profileConfig ?? {};
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-1">
+        <p className="text-sm text-slate-700">Kind: {humanize(job.kind)}</p>
+        {job.kind === "activity" && (
+          <p className="text-sm text-slate-700">
+            Mentorship role: {humanize(job.mentorshipRole) || "None"}
+          </p>
+        )}
+        <p className="text-sm text-slate-700">
+          Cooldown days: {job.cooldownDays ?? "—"}
+        </p>
+      </div>
+      <PipelineSummary
+        pipelineConfig={job.pipelineConfig}
+        interviewPool={interviewPool}
+        jobOwners={jobOwners}
+      />
+      <div className="space-y-1">
+        <h3 className="text-sm font-medium text-slate-700">Screening rules</h3>
+        {rules.length === 0 ? (
+          <p className="text-sm text-slate-400">No screening rules.</p>
+        ) : (
+          <ul className="space-y-1">
+            {rules.map((r) => (
+              <li key={r.id} className="text-sm text-slate-700">
+                {ACTION_LABEL[r.action] ?? r.action} if{" "}
+                {describeCondition(r.condition, questions)}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="space-y-1">
+        <h3 className="text-sm font-medium text-slate-700">
+          Profile requirements
+        </h3>
+        <ul className="space-y-1">
+          {PROFILE_FIELDS.map(({ key, label }) => (
+            <li key={key} className="text-sm text-slate-700">
+              {label}: {humanize(profile[key] ?? "off")}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+};
+
+export default PostingConfigSummary;

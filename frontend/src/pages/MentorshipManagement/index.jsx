@@ -1,15 +1,18 @@
 import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
 import RoundsManagementCard from "@/pages/MentorshipManagement/components/RoundsManagementCard";
+import ParticipantSearchCard from "@/pages/MentorshipManagement/components/ParticipantSearchCard";
 import { useMentorshipManagement } from "@/pages/MentorshipManagement/hooks/useMentorshipManagement";
 
 /**
  * MentorshipManagement
  *
- * Admin page for managing mentorship rounds. Entry is gated on
- * MENTORSHIP_MANAGEMENT_READ (route + sidebar); what is shown inside depends on
- * the finer mentorship permissions: MENTORSHIP_ROUND_READ to view rounds and
- * MENTORSHIP_ROUND_WRITE to create or edit them.
+ * Admin page for managing mentorship rounds and participant search. Entry is
+ * gated on MENTORSHIP_ADMIN_READ or MENTORSHIP_ADMIN_WRITE (route + sidebar).
+ * RoundsManagementCard renders for either permission (basic round list needs
+ * no backend permission at all; write-only users get create/edit affordances
+ * but no per-round detail stats). ParticipantSearchCard requires
+ * MENTORSHIP_ADMIN_READ.
  *
  * Route: /mentorship-management
  *
@@ -17,10 +20,8 @@ import { useMentorshipManagement } from "@/pages/MentorshipManagement/hooks/useM
  */
 const MentorshipManagement = () => {
   const { permissions } = useAuth();
-  const canReadRounds = permissions.includes(PERMISSIONS.MENTORSHIP_ROUND_READ);
-  const canWriteRounds = permissions.includes(
-    PERMISSIONS.MENTORSHIP_ROUND_WRITE,
-  );
+  const canRead = permissions.includes(PERMISSIONS.MENTORSHIP_ADMIN_READ);
+  const canWrite = permissions.includes(PERMISSIONS.MENTORSHIP_ADMIN_WRITE);
 
   const {
     sortedRounds,
@@ -31,11 +32,11 @@ const MentorshipManagement = () => {
     openEdit,
     closeModal,
     saveRound,
-  } = useMentorshipManagement(canReadRounds);
+  } = useMentorshipManagement(canRead);
 
   return (
     <div className="mentorship-management">
-      {canReadRounds && (
+      {(canRead || canWrite) && (
         <RoundsManagementCard
           rounds={sortedRounds}
           totals={totals}
@@ -45,9 +46,10 @@ const MentorshipManagement = () => {
           openEdit={openEdit}
           closeModal={closeModal}
           saveRound={saveRound}
-          canWriteRounds={canWriteRounds}
+          canWriteRounds={canWrite}
         />
       )}
+      {canRead && <ParticipantSearchCard />}
     </div>
   );
 };

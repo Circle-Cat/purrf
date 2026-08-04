@@ -3,9 +3,9 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import PermissionChecklist from "@/pages/AdminPermissions/components/PermissionChecklist";
 
 const catalog = [
-  "mentorship.round.read",
-  "mentorship.round.write",
-  "permission.manage",
+  { name: "mentorship.admin.read", description: "d1" },
+  { name: "mentorship.admin.write", description: "d2" },
+  { name: "permission.manage", description: "d3" },
 ];
 
 describe("PermissionChecklist", () => {
@@ -15,13 +15,13 @@ describe("PermissionChecklist", () => {
     render(
       <PermissionChecklist
         catalog={catalog}
-        active={["mentorship.round.read"]}
+        active={["mentorship.admin.read"]}
         onSave={vi.fn()}
         saving={false}
       />,
     );
     expect(
-      screen.getByRole("checkbox", { name: "mentorship.round.read" }),
+      screen.getByRole("checkbox", { name: "mentorship.admin.read" }),
     ).toBeChecked();
     expect(
       screen.getByRole("checkbox", { name: "permission.manage" }),
@@ -32,7 +32,7 @@ describe("PermissionChecklist", () => {
     render(
       <PermissionChecklist
         catalog={catalog}
-        active={["mentorship.round.read"]}
+        active={["mentorship.admin.read"]}
         onSave={vi.fn()}
         saving={false}
       />,
@@ -50,7 +50,7 @@ describe("PermissionChecklist", () => {
     render(
       <PermissionChecklist
         catalog={catalog}
-        active={["mentorship.round.read"]}
+        active={["mentorship.admin.read"]}
         onSave={onSave}
         saving={false}
       />,
@@ -60,7 +60,7 @@ describe("PermissionChecklist", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
     expect(onSave).toHaveBeenCalledWith(
-      expect.arrayContaining(["mentorship.round.read", "permission.manage"]),
+      expect.arrayContaining(["mentorship.admin.read", "permission.manage"]),
     );
   });
 
@@ -68,7 +68,7 @@ describe("PermissionChecklist", () => {
     render(
       <PermissionChecklist
         catalog={catalog}
-        active={["mentorship.round.read"]}
+        active={["mentorship.admin.read"]}
         onSave={vi.fn()}
         saving={true}
       />,

@@ -102,6 +102,22 @@ export function getDaysSince(dateString) {
  * @param {string} tz - IANA timezone string.
  * @returns {string}
  */
+/**
+ * The IANA zone to render times in for the person currently looking.
+ *
+ * Their profile zone when they have set one, otherwise whatever their browser
+ * reports. Callers pass the profile zone the API shipped with the payload
+ * (e.g. `viewerTimezone` on the recruiting application detail), so a viewer who
+ * never filled in a profile still sees times in their own local terms rather
+ * than someone else's.
+ *
+ * @param {string|null|undefined} profileTimezone - IANA zone from the profile.
+ * @returns {string} An IANA zone name, never empty.
+ */
+export function resolveViewerTimezone(profileTimezone) {
+  return profileTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
 export function formatTimezoneLabel(tz) {
   const city = tz.split("/")[1].replace(/_/g, " ");
 

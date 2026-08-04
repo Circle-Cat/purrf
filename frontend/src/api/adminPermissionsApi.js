@@ -1,7 +1,7 @@
 import request from "@/utils/request";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
-/** Grantable-permission catalog (the backend code enum). */
+/** Grantable-permission catalog, each entry a {name, description} pair. */
 export const getPermissionCatalog = () =>
   request.get(API_ENDPOINTS.ADMIN_PERMISSIONS);
 

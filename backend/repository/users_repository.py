@@ -1,8 +1,7 @@
 from backend.entity.users_entity import UsersEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
-from backend.entity.user_identities_entity import UserIdentitiesEntity
 from backend.common.identity_type import IdentityType
-from sqlalchemy import exists, func, or_, select, update
+from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -10,6 +9,21 @@ class UsersRepository:
     """
     Repository for handling database operations related to UsersEntity.
     """
+
+    @staticmethod
+    def _any_email_matches(pattern: str):
+        """
+        EXISTS filter: any of the user's user_emails rows (primary or not)
+        matches the lowercased LIKE ``pattern``. The email leg of the admin
+        substring searches; user_emails stores addresses already lowercased,
+        so no lower() is needed on the column.
+        """
+        return exists(
+            select(UserEmailsEntity.email_id).where(
+                UserEmailsEntity.user_id == UsersEntity.user_id,
+                UserEmailsEntity.email.like(pattern),
+            )
+        )
 
     async def get_user_by_user_id(
         self, session: AsyncSession, user_id: int
@@ -54,14 +68,14 @@ class UsersRepository:
         return list(result.scalars().all())
 
     async def get_users_and_emails_by_ids(
-        self, session: AsyncSession, user_ids: set[int]
+        self, session: AsyncSession, user_ids: list[int]
     ) -> tuple[dict[int, UsersEntity], dict[int, list[UserEmailsEntity]]]:
         """
-        Retrieve users and their confirmed email addresses by a set of user IDs.
+        Retrieve users and their confirmed email addresses by a list of user IDs.
 
         Args:
             session (AsyncSession): The active async database session.
-            user_ids (set[int]): A set of user IDs to retrieve.
+            user_ids (list[int]): A list of user IDs to retrieve.
 
         Returns:
             tuple[dict[int, UsersEntity], dict[int, list[UserEmailsEntity]]]:
@@ -88,52 +102,6 @@ class UsersRepository:
             if email is not None:
                 emails_map[user.user_id].append(email)
         return users_map, emails_map
-
-    async def get_user_by_primary_email(
-        self, session: AsyncSession, primary_email: str
-    ) -> UsersEntity | None:
-        """
-        Retrieve a users entity by its primary email.
-
-        This method expects an externally managed AsyncSession, typically provided
-        by the service layer within a transactional context.
-
-        Args:
-            session (AsyncSession): The active async database session.
-            primary_email (string): The primary email of the user to retrieve.
-
-        Returns:
-            UsersEntity | None: The matching user entity if found; otherwise None.
-        """
-        result = await session.execute(
-            select(UsersEntity).where(UsersEntity.primary_email == primary_email)
-        )
-
-        return result.scalars().one_or_none()
-
-    async def update_primary_email(
-        self, session: AsyncSession, user_id: int, email: str
-    ) -> None:
-        """
-        Overwrite the legacy ``users.primary_email`` column for one user.
-
-        Write-through used by EmailManagementService to keep the legacy column in
-        sync with the current primary user_emails row (see the TODO on
-        ``UsersEntity.primary_email``). Flushes but does not commit; the caller
-        owns the transaction boundary. The caller is responsible for not passing
-        an email already owned by another user (``uq_users_primary_email``).
-
-        Args:
-            session (AsyncSession): The active async database session.
-            user_id (int): The user whose primary_email to update.
-            email (str): The new primary email value.
-        """
-        await session.execute(
-            update(UsersEntity)
-            .where(UsersEntity.user_id == user_id)
-            .values(primary_email=email)
-        )
-        await session.flush()
 
     async def upsert_users(
         self, session: AsyncSession, entity: UsersEntity
@@ -177,7 +145,7 @@ class UsersRepository:
         Args:
             session (AsyncSession): The active async database session.
             search (str | None): Case-insensitive substring over first_name /
-                last_name / primary_email; None lists everyone.
+                last_name / any user_emails address; None lists everyone.
             user_id (int | None): When not None, restricts results to the user
                 with this exact ``user_id``. Applied in addition to ``search``.
             limit (int): Max rows to return.
@@ -185,40 +153,41 @@ class UsersRepository:
             sort_by (str | None): Column to sort by. Allowed values:
                 ``"user_id"``, ``"first_name"``, ``"last_name"``,
                 ``"preferred_name"``, ``"is_active"``, ``"is_super_admin"``,
-                ``"user_type"`` (by the derived internal/external flag).
-                Unknown or None values fall back to deterministic ``user_id``
-                order.
+                ``"user_type"`` (by the persisted internal/external flag).
+                The three name columns are compared case-insensitively and put
+                rows with no value last in both directions. Unknown or None
+                values fall back to deterministic ``user_id`` order.
             order (str): ``"asc"`` (default) or ``"desc"``. Only applied when
                 ``sort_by`` resolves to a whitelisted column.
             is_super_admin (bool | None): When not None, restricts results to
                 users whose ``is_super_admin`` flag matches this value.
-            user_type (str | None): When ``"internal"`` keeps only users that
-                have an INTERNAL identity row; when ``"external"`` keeps only
-                users without one; otherwise no filter.
+            user_type (str | None): When ``"internal"`` keeps only users whose
+                ``is_internal`` flag is set; when ``"external"`` keeps only
+                users whose flag is unset; otherwise no filter.
 
         Returns:
             tuple[list[tuple[UsersEntity, bool]], int]: (page rows where each
             element is (entity, is_internal), total number of rows matching all
             active filters across all pages).
         """
-        internal_identity_exists = exists(
-            select(UserIdentitiesEntity.identity_id).where(
-                UserIdentitiesEntity.user_id == UsersEntity.user_id,
-                UserIdentitiesEntity.identity_type == IdentityType.INTERNAL,
-            )
-        )
-
-        # "user_type" sorts by the derived internal/external flag; ascending
-        # puts external (no internal identity) before internal.
+        # Name columns sort on lower(): the databases use C.UTF-8 (byte-order)
+        # collation, under which every uppercase letter precedes every lowercase
+        # one, so a bare ORDER BY ranks "w" above "Zhu" descending.
+        # "user_type" sorts by the persisted internal/external flag; ascending
+        # puts external (flag unset) before internal.
         _SORT_WHITELIST: dict[str, object] = {
             "user_id": UsersEntity.user_id,
-            "first_name": UsersEntity.first_name,
-            "last_name": UsersEntity.last_name,
-            "preferred_name": UsersEntity.preferred_name,
+            "first_name": func.lower(UsersEntity.first_name),
+            "last_name": func.lower(UsersEntity.last_name),
+            "preferred_name": func.lower(UsersEntity.preferred_name),
             "is_active": UsersEntity.is_active,
             "is_super_admin": UsersEntity.is_super_admin,
-            "user_type": internal_identity_exists,
+            "user_type": UsersEntity.is_internal,
         }
+        # Sortable name columns, which sink rows with no value to the bottom of
+        # the page in both directions rather than letting them head the
+        # descending page (only preferred_name is actually nullable today).
+        _NULLS_LAST_SORTS = frozenset({"first_name", "last_name", "preferred_name"})
 
         filters = []
         if search:
@@ -227,7 +196,7 @@ class UsersRepository:
                 or_(
                     func.lower(UsersEntity.first_name).like(pattern),
                     func.lower(UsersEntity.last_name).like(pattern),
-                    func.lower(UsersEntity.primary_email).like(pattern),
+                    self._any_email_matches(pattern),
                 )
             )
         if user_id is not None:
@@ -235,16 +204,18 @@ class UsersRepository:
         if is_super_admin is not None:
             filters.append(UsersEntity.is_super_admin == is_super_admin)
         if user_type == IdentityType.INTERNAL:
-            filters.append(internal_identity_exists)
+            filters.append(UsersEntity.is_internal.is_(True))
         elif user_type == IdentityType.EXTERNAL:
-            filters.append(~internal_identity_exists)
+            filters.append(UsersEntity.is_internal.is_(False))
 
-        is_internal_col = internal_identity_exists.label("is_internal")
+        is_internal_col = UsersEntity.is_internal.label("is_internal")
 
         # Build ORDER BY: whitelisted column (asc/desc) + user_id tiebreaker.
         sort_col = _SORT_WHITELIST.get(sort_by) if sort_by else None
         if sort_col is not None:
             primary_order = sort_col.desc() if order == "desc" else sort_col.asc()
+            if sort_by in _NULLS_LAST_SORTS:
+                primary_order = primary_order.nulls_last()
             order_clauses = [primary_order, UsersEntity.user_id]
         else:
             order_clauses = [UsersEntity.user_id]
@@ -282,27 +253,48 @@ class UsersRepository:
 
     async def is_internal(self, session: AsyncSession, user_id: int) -> bool:
         """
-        Returns True if the user has at least one identity_type='internal' row
-        in user_identities.
+        Whether the user is an internal employee, read from the persisted
+        ``users.is_internal`` state column (the row-less classification source).
 
         Args:
             session (AsyncSession): The active async database session.
             user_id (int): The user to check.
 
         Returns:
-            bool: True if an INTERNAL identity row exists for this user.
+            bool: The user's ``is_internal`` flag (False if user missing).
         """
         result = await session.scalar(
-            select(
-                exists(
-                    select(UserIdentitiesEntity.identity_id).where(
-                        UserIdentitiesEntity.user_id == user_id,
-                        UserIdentitiesEntity.identity_type == IdentityType.INTERNAL,
+            select(UsersEntity.is_internal).where(UsersEntity.user_id == user_id)
+        )
+        return bool(result)
+
+    async def exists_active_internal(self, session: AsyncSession, user_id: int) -> bool:
+        """
+        Whether ``user_id`` is an active internal employee — the
+        "still-employed staffer" guard — resolved on the users row alone
+        (``is_active AND is_internal``). Replaces the former JOIN over
+        user_identities now that internal state lives on the users row.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user to evaluate.
+
+        Returns:
+            bool: True when active and internal; else False.
+        """
+        return bool(
+            await session.scalar(
+                select(
+                    exists().where(
+                        and_(
+                            UsersEntity.user_id == user_id,
+                            UsersEntity.is_active.is_(True),
+                            UsersEntity.is_internal.is_(True),
+                        )
                     )
                 )
             )
         )
-        return bool(result)
 
     async def set_super_admin(
         self, session: AsyncSession, user_id: int, is_super_admin: bool
@@ -325,3 +317,85 @@ class UsersRepository:
         )
         await session.flush()
         return result.rowcount
+
+    async def set_internal(self, session: AsyncSession, user_id: int) -> int:
+        """
+        Mark a user as an internal employee — idempotent, no-op when already set.
+
+        Writes only when ``is_internal`` is currently False, so the per-request
+        corp-passwordless re-resolution (row-less logins route through
+        ``absorb_internal_identity`` on every request) never issues a redundant
+        UPDATE. Never clears the flag; deactivation is handled by ``is_active``.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user to mark internal.
+
+        Returns:
+            int: Rows updated — 1 on the False->True flip, 0 when already
+            internal or ``user_id`` is unknown.
+        """
+        result = await session.execute(
+            update(UsersEntity)
+            .where(
+                UsersEntity.user_id == user_id,
+                UsersEntity.is_internal.is_(False),
+            )
+            .values(is_internal=True)
+        )
+        await session.flush()
+        return result.rowcount
+
+    async def list_blocked_users(
+        self, session: AsyncSession, *, search: str | None = None
+    ) -> list[UsersEntity]:
+        """
+        All currently-blocked users, optionally filtered by a case-insensitive
+        substring over first_name / last_name / any user_emails address /
+        blocked_reason.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            search (str | None): Case-insensitive substring match over name,
+                email, or blocked reason; None returns every blocked user.
+
+        Returns:
+            list[UsersEntity]: Blocked users ordered by blocked_at descending
+                (most recently blocked first).
+        """
+        filters = [UsersEntity.is_blocked.is_(True)]
+        if search:
+            pattern = f"%{search.lower()}%"
+            filters.append(
+                or_(
+                    func.lower(UsersEntity.first_name).like(pattern),
+                    func.lower(UsersEntity.last_name).like(pattern),
+                    self._any_email_matches(pattern),
+                    func.lower(UsersEntity.blocked_reason).like(pattern),
+                )
+            )
+        result = await session.execute(
+            select(UsersEntity).where(*filters).order_by(UsersEntity.blocked_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def clear_block(self, session: AsyncSession, user_id: int) -> None:
+        """
+        Reset a user's block state. Idempotent: a no-op (still succeeds) if
+        the user is missing or already unblocked.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user to unblock.
+        """
+        await session.execute(
+            update(UsersEntity)
+            .where(UsersEntity.user_id == user_id)
+            .values(
+                is_blocked=False,
+                blocked_by=None,
+                blocked_at=None,
+                blocked_reason=None,
+            )
+        )
+        await session.flush()

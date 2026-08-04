@@ -34,7 +34,6 @@ def make_user_context(
         last_login_at=last_login_at,
         user_id=None,
         permissions=frozenset(),
-        needs_link=False,
     )
 
 
@@ -84,11 +83,10 @@ class TestAuthMiddleware(unittest.TestCase):
         self.mock_user_identity_service = MagicMock()
         self.mock_user_identity_service.find_user_by_sub = AsyncMock(return_value=None)
         self.mock_user_identity_service.create_or_swap_user = AsyncMock(
-            return_value=None
+            return_value=SimpleNamespace(
+                user_id=1, is_super_admin=False, is_active=True, last_login_at=None
+            )
         )
-        # Default: the colliding email has no owner, so a non-race
-        # IntegrityError re-raises (the pre-needs-link behavior).
-        self.mock_user_identity_service.email_has_owner = AsyncMock(return_value=False)
         self.mock_user_permissions_repository = MagicMock()
         self.mock_user_permissions_repository.get_active_permission_names = AsyncMock(
             return_value=[]
@@ -132,7 +130,7 @@ class TestAuthMiddleware(unittest.TestCase):
         user_context = make_user_context(last_login_at=1700000000)
         self.mock_auth_service.authenticate_request.return_value = user_context
         self.mock_user_identity_service.find_user_by_sub.return_value = SimpleNamespace(
-            user_id=42, is_super_admin=False, is_active=True
+            user_id=42, is_super_admin=False, is_active=True, last_login_at=None
         )
 
         client = self._add_middleware()
@@ -157,7 +155,9 @@ class TestAuthMiddleware(unittest.TestCase):
         self.mock_auth_service.authenticate_request.return_value = user_context
         self.mock_user_identity_service.find_user_by_sub.return_value = None
         self.mock_user_identity_service.create_or_swap_user.return_value = (
-            SimpleNamespace(user_id=99, is_super_admin=False, is_active=True)
+            SimpleNamespace(
+                user_id=99, is_super_admin=False, is_active=True, last_login_at=None
+            )
         )
 
         client = self._add_middleware()
@@ -180,7 +180,7 @@ class TestAuthMiddleware(unittest.TestCase):
         user_context = make_user_context()
         self.mock_auth_service.authenticate_request.return_value = user_context
         self.mock_user_identity_service.find_user_by_sub.return_value = SimpleNamespace(
-            user_id=42, is_active=False
+            user_id=42, is_active=False, last_login_at=None
         )
 
         client = self._add_middleware()
@@ -203,7 +203,9 @@ class TestAuthMiddleware(unittest.TestCase):
         # First find misses, second find (after the savepoint unwinds) hits.
         self.mock_user_identity_service.find_user_by_sub.side_effect = [
             None,
-            SimpleNamespace(user_id=7, is_super_admin=False, is_active=True),
+            SimpleNamespace(
+                user_id=7, is_super_admin=False, is_active=True, last_login_at=None
+            ),
         ]
         self.mock_user_identity_service.create_or_swap_user.side_effect = (
             IntegrityError("stmt", "params", Exception("unique"))
@@ -247,57 +249,28 @@ class TestAuthMiddleware(unittest.TestCase):
         with self.assertRaises(IntegrityError):
             asyncio.run(middleware._bootstrap_user(user_context))
 
-    def test_integrity_error_owned_email_marks_needs_link(self):
+    def test_create_or_swap_refusal_returns_bad_request(self):
         """
-        A non-race IntegrityError whose email IS owned by an existing account
-        (a second sign-in method colliding, PUR-480): no user is created, the
-        request proceeds with user_id=None, needs_link=True and an empty
-        permission set instead of surfacing a 500.
-        """
-        user_context = make_user_context(last_login_at=1700000000)
-        self.mock_auth_service.authenticate_request.return_value = user_context
-        # Both finds miss; the insert's violation is the owned-email collision.
-        self.mock_user_identity_service.find_user_by_sub.side_effect = [None, None]
-        self.mock_user_identity_service.create_or_swap_user.side_effect = (
-            IntegrityError("stmt", "params", Exception("uq_users_primary_email"))
-        )
-        self.mock_user_identity_service.email_has_owner.return_value = True
-
-        client = self._add_middleware()
-        response = client.get(
-            "/protected", headers={"Authorization": "Bearer valid_token"}
-        )
-
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertIsNone(response.json()["user_id"])
-        self.assertTrue(user_context.needs_link)
-        self.assertEqual(user_context.permissions, frozenset())
-        self.mock_user_identity_service.email_has_owner.assert_awaited_once_with(
-            self.mock_session, "test@example.com"
-        )
-
-    def test_create_returns_none_marks_needs_link(self):
-        """
-        create_or_swap_user detects the owned email proactively and returns
-        None (no unique violation fires when the address lives only in
-        user_emails, e.g. added to another account via Add sign-in method):
-        same needs-link hold as the IntegrityError path — no user created,
-        user_id=None, needs_link=True, empty permissions, request proceeds.
+        create_or_swap_user refuses an untrusted or stale login by raising
+        ValueError (Task 3); the needs-link hold this used to fall through to
+        is gone, so the error surfaces through the middleware's general
+        ValueError handling as a 400 — no request.state.user is ever set, no
+        route handler runs.
         """
         user_context = make_user_context(last_login_at=1700000000)
         self.mock_auth_service.authenticate_request.return_value = user_context
         self.mock_user_identity_service.find_user_by_sub.return_value = None
-        self.mock_user_identity_service.create_or_swap_user.return_value = None
+        self.mock_user_identity_service.create_or_swap_user.side_effect = ValueError(
+            "Sign in with a supported method"
+        )
 
         client = self._add_middleware()
         response = client.get(
             "/protected", headers={"Authorization": "Bearer valid_token"}
         )
 
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertIsNone(response.json()["user_id"])
-        self.assertTrue(user_context.needs_link)
-        self.assertEqual(user_context.permissions, frozenset())
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Sign in with a supported method", response.json()["message"])
 
     def test_cron_runner_skips_bootstrap(self):
         """
@@ -381,7 +354,7 @@ class TestAuthMiddleware(unittest.TestCase):
         user_context = make_user_context()
         self.mock_auth_service.authenticate_request.return_value = user_context
         self.mock_user_identity_service.find_user_by_sub.return_value = SimpleNamespace(
-            user_id=1, is_super_admin=False, is_active=True
+            user_id=1, is_super_admin=False, is_active=True, last_login_at=None
         )
 
         client = self._add_middleware()
@@ -401,6 +374,85 @@ class TestAuthMiddleware(unittest.TestCase):
             if c.args and c.args[0] is self.mock_auth_service.authenticate_request
         ]
         self.assertEqual(len(matching), 1)
+
+    def test_bootstrap_no_longer_stamps_account_last_login(self):
+        """The account-level users.last_login_at column is retired: bootstrap
+        must not write it, even though user_context.last_login_at is still
+        threaded down to find_user_by_sub for identity/email stamping."""
+        # Note: no last_login_at attribute on user at all -- the middleware
+        # must not need or set one.
+        user = SimpleNamespace(user_id=5, is_super_admin=False, is_active=True)
+        self.mock_user_identity_service.find_user_by_sub.return_value = user
+        user_context = make_user_context(last_login_at=1_700_000_000)
+
+        middleware = AuthMiddleware(
+            app=MagicMock(),
+            auth_service=self.mock_auth_service,
+            database=self.mock_database,
+            user_identity_service=self.mock_user_identity_service,
+            user_permissions_repository=self.mock_user_permissions_repository,
+            logger=self.mock_logger,
+        )
+
+        asyncio.run(middleware._bootstrap_user(user_context))
+
+        self.assertFalse(hasattr(user, "last_login_at"))
+        # last_login_at is still threaded down for identity/email stamping.
+        self.mock_user_identity_service.find_user_by_sub.assert_awaited_once_with(
+            self.mock_session, user_context.sub, user_context.last_login_at
+        )
+
+    def test_rowless_login_skips_find_by_sub(self):
+        """External passwordless (row-less): find_user_by_sub is skipped
+        entirely; resolution goes straight to create_or_swap_user."""
+        user_context = make_user_context(sub="email|abc", identity_type="external")
+        self.mock_user_identity_service.create_or_swap_user.return_value = (
+            SimpleNamespace(
+                user_id=5, is_super_admin=False, is_active=True, last_login_at=None
+            )
+        )
+
+        middleware = AuthMiddleware(
+            app=MagicMock(),
+            auth_service=self.mock_auth_service,
+            database=self.mock_database,
+            user_identity_service=self.mock_user_identity_service,
+            user_permissions_repository=self.mock_user_permissions_repository,
+            logger=self.mock_logger,
+        )
+
+        asyncio.run(middleware._bootstrap_user(user_context))
+
+        self.mock_user_identity_service.find_user_by_sub.assert_not_called()
+        self.mock_user_identity_service.create_or_swap_user.assert_awaited_once()
+
+    def test_rowless_integrity_error_refinds_via_create_or_swap(self):
+        """Row-less concurrent first login: the winner wrote NO identity row, so
+        recovery re-resolves by confirmed address (create_or_swap again), never
+        by sub."""
+        user_context = make_user_context(sub="email|abc", identity_type="external")
+        self.mock_user_identity_service.create_or_swap_user.side_effect = [
+            IntegrityError("stmt", "params", Exception("unique")),
+            SimpleNamespace(
+                user_id=5, is_super_admin=False, is_active=True, last_login_at=None
+            ),
+        ]
+
+        middleware = AuthMiddleware(
+            app=MagicMock(),
+            auth_service=self.mock_auth_service,
+            database=self.mock_database,
+            user_identity_service=self.mock_user_identity_service,
+            user_permissions_repository=self.mock_user_permissions_repository,
+            logger=self.mock_logger,
+        )
+
+        asyncio.run(middleware._bootstrap_user(user_context))
+
+        self.assertEqual(
+            self.mock_user_identity_service.create_or_swap_user.await_count, 2
+        )
+        self.mock_user_identity_service.find_user_by_sub.assert_not_called()
 
 
 if __name__ == "__main__":

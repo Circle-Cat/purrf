@@ -15,6 +15,7 @@ import { showReminderToast } from "@/components/common/showReminderToast";
 import { Info } from "lucide-react";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
 import SurveyRadioQuestion from "@/pages/PersonalDashboard/components/SurveyRadioQuestion";
+import { partnerDisplayName } from "@/utils/partnerName";
 import {
   INDUSTRY_CONFIG,
   SKILLSET_CONFIG,
@@ -32,6 +33,11 @@ import {
 const REGISTRATION_SUCCESS_TOAST_ID = "registration-success-toast";
 const POST_REGISTRATION_TOAST_ID = "post-registration-training-toast";
 const POST_REGISTRATION_TOAST_TITLE = "Complete onboarding training";
+const PROFILE_CHECK_TOAST_ID = "post-registration-profile-check-toast";
+const PROFILE_CHECK_SESSION_KEY = "post-registration-profile-check-shown";
+const PROFILE_CHECK_TOAST_TITLE = "Double-check your profile";
+const PROFILE_CHECK_TOAST_MESSAGE =
+  "We use your profile info to match you with the right partner — please make sure it's up to date in your Profile page.";
 // Mentors can still meet with their mentee while they finish training,
 // so the message is a soft nudge framed around quality of mentorship.
 const POST_REGISTRATION_MENTOR_MESSAGE =
@@ -50,6 +56,7 @@ const POST_REGISTRATION_MENTEE_MESSAGE =
  */
 export default function MentorshipRegistrationDialog({
   currentRegistration,
+  hiredMentorshipRole,
   allPastPartners = [],
   isPartnersLoading,
   loadPastPartners,
@@ -59,10 +66,11 @@ export default function MentorshipRegistrationDialog({
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
-  // Determine participant role from current registration
-  const participantRole =
-    currentRegistration?.roundPreferences?.participantRole;
-  const isMentor = participantRole === MentorshipParticipantRoles.MENTOR;
+  // The user's mentor/mentee role comes from their HIRED activity
+  // application, not from `currentRegistration` — a first-time
+  // registrant has no round-preferences yet, so deriving the role from
+  // `currentRegistration` would default them into the wrong form.
+  const isMentor = hiredMentorshipRole === MentorshipParticipantRoles.MENTOR;
   const isUpdating = currentRegistration?.isRegistered;
 
   // Form state
@@ -229,6 +237,19 @@ export default function MentorshipRegistrationDialog({
             : POST_REGISTRATION_MENTEE_MESSAGE,
       });
     }
+
+    // One-time-per-session nudge to review Profile — deliberately not
+    // gated on actual profile completeness (that would require this pure
+    // form dialog to own a profile-data fetch it otherwise has no need
+    // for), so it fires once regardless of whether anything is missing.
+    if (!sessionStorage.getItem(PROFILE_CHECK_SESSION_KEY)) {
+      showReminderToast({
+        id: PROFILE_CHECK_TOAST_ID,
+        title: PROFILE_CHECK_TOAST_TITLE,
+        message: PROFILE_CHECK_TOAST_MESSAGE,
+      });
+      sessionStorage.setItem(PROFILE_CHECK_SESSION_KEY, "1");
+    }
   };
 
   // Cross-filtered partner options
@@ -241,7 +262,7 @@ export default function MentorshipRegistrationDialog({
     return allPastPartners
       .map((p) => ({
         id: p.id,
-        name: p.preferredName || `${p.firstName} ${p.lastName}`,
+        name: partnerDisplayName(p),
       }))
       .filter((opt) => !excludedIds.includes(opt.id));
   }, [allPastPartners, excludedPartners]);
@@ -255,7 +276,7 @@ export default function MentorshipRegistrationDialog({
     return allPastPartners
       .map((p) => ({
         id: p.id,
-        name: p.preferredName || `${p.firstName} ${p.lastName}`,
+        name: partnerDisplayName(p),
       }))
       .filter((opt) => !selectedIds.includes(opt.id));
   }, [allPastPartners, selectedPartners]);

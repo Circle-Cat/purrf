@@ -1,4 +1,3 @@
-import os
 from datetime import datetime, timezone, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +6,6 @@ from backend.dto.registration_create_dto import RegistrationCreateDto
 from backend.dto.preference_dto import SpecificIndustryDto, SkillsetsDto
 from backend.dto.registration_dto import GlobalPreferencesDto, RegistrationDto
 from backend.entity.preference_entity import PreferenceEntity
-from backend.entity.training_entity import TrainingEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
@@ -17,10 +15,6 @@ from backend.common.mentorship_enums import (
     TrainingCategory,
     TrainingStatus,
 )
-from backend.common.environment_constants import (
-    MENTORSHIP_MENTOR_ONBOARDING_LINK,
-    MENTORSHIP_MENTEE_ONBOARDING_LINK,
-)
 
 
 class RegistrationService:
@@ -28,8 +22,11 @@ class RegistrationService:
     Service to handle user preferences related to skills and industry.
 
     This service is responsible for fetching, updating, and creating user preferences
-    for skills, specific industries, and related information. It also automatically
-    assigns onboarding training records when a user registers for a round.
+    for skills, specific industries, and related information. It also stamps the
+    onboarding training deadline on first round registration; the training record
+    itself is normally already assigned at admission, and this service only
+    creates one as a legacy fallback for users admitted before that assignment
+    existed.
     """
 
     def __init__(
@@ -40,7 +37,8 @@ class RegistrationService:
         mentorship_round_participants_repository,
         participation_service,
         mentorship_mapper,
-        training_repository,
+        onboarding_training_service,
+        application_repository,
     ):
         """
         Initialize the RegistrationService with its dependencies.
@@ -54,7 +52,14 @@ class RegistrationService:
             participation_service: Service responsible for retrieving participation data.
             mentorship_mapper (MentorshipMapper):
                 The mapper for converting mentorship rounds and entities to DTOs.
-            training_repository: The repository responsible for handling training data.
+            onboarding_training_service (OnboardingTrainingService): Owns the
+                create-or-stamp rule for onboarding training. Registration is
+                the moment a deadline first becomes known, so it passes one;
+                admission passes none.
+            application_repository: The repository responsible for looking up recruiting
+                                    activity applications. Round registration derives the
+                                    participant role from the user's approved (HIRED)
+                                    activity application, which also gates registration.
         """
         self.logger = logger
         self.preferences_repo = preferences_repository
@@ -62,7 +67,8 @@ class RegistrationService:
         self.participants_repo = mentorship_round_participants_repository
         self.participation_service = participation_service
         self.mentorship_mapper = mentorship_mapper
-        self.training_repo = training_repository
+        self.onboarding_training_service = onboarding_training_service
+        self.application_repo = application_repository
 
     async def update_registration_info(
         self,
@@ -76,9 +82,13 @@ class RegistrationService:
 
         This method:
         1. Validates the existence of the mentorship round.
-        2. Checks if the application deadline has passed. If the round is still open, updates both
+        2. Resolves the user's participant role from their most recent approved (HIRED)
+            activity application, blocking registration when none exists.
+        3. Checks if the application deadline has passed. If the round is still open, updates both
             global and round-specific preferences for user.
-        3. Commits the changes to the database.
+        4. Stamps the onboarding training deadline on first registration, via
+            `OnboardingTrainingService.ensure_onboarding_training`.
+        5. Commits the changes to the database.
 
         Args:
             session (AsyncSession): Active SQLAlchemy async session.
@@ -99,12 +109,8 @@ class RegistrationService:
             )
             raise ValueError(f"Mentorship round {round_id} not found.")
 
-        participant_role = (
-            await self.participation_service.resolve_participant_role_with_fallback(
-                session=session,
-                user_context=user_context,
-                user_id=user_context.user_id,
-            )
+        participant_role = await self._resolve_hired_participant_role(
+            session=session, user_id=user_context.user_id
         )
         preferences_data.round_preferences.participant_role = participant_role
 
@@ -153,28 +159,20 @@ class RegistrationService:
             if participant_role == ParticipantRole.MENTOR
             else TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING
         )
+        # The row normally already exists, assigned when the user was admitted
+        # to their mentor/mentee posting, and carries no deadline until now.
+        # Passing one here stamps it on first registration; a row that already
+        # has a deadline keeps it, so later rounds never recompute it. Users
+        # admitted before training was assigned at admission have no row at
+        # all and get one created here, deadline included.
         onboarding_training = (
-            await self.training_repo.get_training_by_user_id_and_category(
-                session=session, user_id=user_context.user_id, category=category
+            await self.onboarding_training_service.ensure_onboarding_training(
+                session=session,
+                user_id=user_context.user_id,
+                category=category,
+                deadline=application_deadline + timedelta(days=2),
             )
         )
-        if not onboarding_training:
-            link = (
-                os.getenv(MENTORSHIP_MENTOR_ONBOARDING_LINK)
-                if category == TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING
-                else os.getenv(MENTORSHIP_MENTEE_ONBOARDING_LINK)
-            )
-            onboarding_training = await self.training_repo.upsert_training(
-                session=session,
-                entity=TrainingEntity(
-                    user_id=user_context.user_id,
-                    category=category,
-                    status=TrainingStatus.TO_DO,
-                    completed_timestamp=None,
-                    deadline=application_deadline + timedelta(days=2),
-                    link=link,
-                ),
-            )
 
         await session.commit()
 
@@ -190,6 +188,41 @@ class RegistrationService:
             is_onboarding_training_completed=onboarding_training.status
             == TrainingStatus.DONE,
         )
+
+    async def _resolve_hired_participant_role(
+        self, session: AsyncSession, user_id: int
+    ) -> ParticipantRole:
+        """
+        Resolve the user's participant role from their most recent approved
+        (HIRED) activity application — the single source of truth for a
+        user's mentor/mentee role, shared by both the registration GET and
+        POST paths.
+
+        Raises ValueError when the user has no such application: they are not
+        eligible to register for (or view a registration form scoped to) a
+        mentorship round until they have been hired into a mentor/mentee
+        activity posting.
+
+        Args:
+            session (AsyncSession): Active SQLAlchemy async session.
+            user_id (int): The ID of the current user.
+
+        Returns:
+            ParticipantRole: The role from the user's most recent HIRED
+                activity application.
+        """
+        participant_role = await self.application_repo.get_recent_hired_activity_role(
+            session=session, user_id=user_id
+        )
+        if participant_role is None:
+            self.logger.error(
+                "[RegistrationService] user %s has no approved activity application; cannot resolve participant role.",
+                user_id,
+            )
+            raise ValueError(
+                "Please complete your mentor or mentee application before registering for a round."
+            )
+        return participant_role
 
     async def _update_skill_and_industry_preferences(
         self, session: AsyncSession, user_id: int, data: RegistrationCreateDto
@@ -352,6 +385,10 @@ class RegistrationService:
 
         current_user_id = user_context.user_id
 
+        participant_role = await self._resolve_hired_participant_role(
+            session=session, user_id=current_user_id
+        )
+
         global_preferences = await self._get_skill_and_industry_preferences(
             session=session, user_id=current_user_id
         )
@@ -360,9 +397,9 @@ class RegistrationService:
             is_registered,
         ) = await self.participation_service.get_user_round_preferences(
             session=session,
-            user_context=user_context,
             user_id=current_user_id,
             round_id=round_id,
+            participant_role=participant_role,
         )
 
         return RegistrationDto(

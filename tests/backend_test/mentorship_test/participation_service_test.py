@@ -33,6 +33,9 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.mock_round_participants_repo.get_recent_participant_by_user_id = (
             AsyncMock()
         )
+        self.mock_round_participants_repo.get_recent_participant_by_user_id_and_role = (
+            AsyncMock()
+        )
         self.mock_round_participants_repo.get_by_user_id_and_round_id = AsyncMock()
         self.mock_round_participants_repo.upsert_participant = AsyncMock()
         self.mock_round_participants_repo.get_average_program_rating_by_round_and_role = AsyncMock(
@@ -47,6 +50,12 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.mock_mapper = MagicMock()
         self.logger = MagicMock()
 
+        self.mock_user_emails_repo = MagicMock()
+        # Partner emails come from user_emails, not the legacy column.
+        self.mock_user_emails_repo.get_contact_emails_by_user_ids = AsyncMock(
+            return_value={456: "partner@example.com"}
+        )
+
         self.participation_service = ParticipationService(
             logger=self.logger,
             users_repository=self.mock_users_repo,
@@ -54,6 +63,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             mentorship_round_participants_repo=self.mock_round_participants_repo,
             mentorship_round_repository=self.mock_round_repo,
             mentorship_mapper=self.mock_mapper,
+            user_emails_repository=self.mock_user_emails_repo,
         )
 
         self.mock_users_entities = [
@@ -81,7 +91,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             first_name="Alice",
             last_name="Smith",
             preferred_name="Alice Smith",
-            primary_email="partner@example.com",
         )
 
         self.user_context = MagicMock(
@@ -112,9 +121,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             round_id=mock_round_id,
         )
 
-        self.assertEqual(
-            result[0].primary_email, self.mock_specific_partner_user.primary_email
-        )
+        self.assertEqual(result[0].primary_email, "partner@example.com")
         self.mock_pairs_repo.get_pairs_with_partner_info.assert_awaited_once_with(
             session=self.mock_session,
             user_id=self.user_context.user_id,
@@ -208,37 +215,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.mock_session.commit.assert_not_awaited()
         self.mock_users_repo.get_all_by_ids.assert_not_awaited()
 
-    async def test_resolve_role_from_most_recent_participation(self):
-        """Uses the role from the most recent participant when the user has prior participation."""
-        mock_recent = MagicMock(
-            spec=MentorshipRoundParticipantsEntity,
-            participant_role=ParticipantRole.MENTOR,
-        )
-        self.mock_round_participants_repo.get_recent_participant_by_user_id.return_value = mock_recent
-
-        role = await self.participation_service.resolve_participant_role_with_fallback(
-            session=self.mock_session,
-            user_context=self.user_context,
-            user_id=self.user_context.user_id,
-        )
-
-        self.assertEqual(role, ParticipantRole.MENTOR)
-        self.mock_round_participants_repo.get_recent_participant_by_user_id.assert_awaited_once_with(
-            session=self.mock_session, user_id=self.user_context.user_id
-        )
-
-    async def test_defaults_to_mentee_without_participation_history(self):
-        """Defaults to mentee role when the user has no participation history."""
-        self.mock_round_participants_repo.get_recent_participant_by_user_id.return_value = None
-
-        role = await self.participation_service.resolve_participant_role_with_fallback(
-            session=self.mock_session,
-            user_context=self.user_context,
-            user_id=self.user_context.user_id,
-        )
-
-        self.assertEqual(role, ParticipantRole.MENTEE)
-
     async def test_get_user_round_preferences_found_current(self):
         """Returns preferences from the current round if record exists."""
         mock_round_id = 1
@@ -262,9 +238,9 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             is_registered,
         ) = await self.participation_service.get_user_round_preferences(
             session=self.mock_session,
-            user_context=self.user_context,
             user_id=self.user_context.user_id,
             round_id=mock_round_id,
+            participant_role=ParticipantRole.MENTOR,
         )
 
         self.assertEqual(result, expected_dto)
@@ -276,21 +252,24 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             user_id=self.user_context.user_id,
             round_id=mock_round_id,
         )
+        # An already-registered round short-circuits: no same-role carry-over lookup.
+        self.mock_round_participants_repo.get_recent_participant_by_user_id_and_role.assert_not_awaited()
         self.mock_mapper.map_to_round_preference_dto.assert_called_once_with(
             participants_entity=mock_participant
         )
 
-    async def test_get_user_round_preferences_fallback_to_recent(self):
-        """Falls back to most recent round if current round record is missing."""
+    async def test_get_user_round_preferences_carries_over_same_role_round(self):
+        """When not registered, pre-fills from the most recent prior round in
+        the SAME role supplied by the caller."""
         mock_round_id = 1
         self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
             None
         )
         mock_recent = MagicMock(spec=MentorshipRoundParticipantsEntity)
-        self.mock_round_participants_repo.get_recent_participant_by_user_id.return_value = mock_recent
+        self.mock_round_participants_repo.get_recent_participant_by_user_id_and_role.return_value = mock_recent
 
         historical_dto = RoundPreferencesDto(
-            participant_role=ParticipantRole.MENTEE,
+            participant_role=ParticipantRole.MENTOR,
             expected_partner_ids=[],
             unexpected_partner_ids=[],
             max_partners=1,
@@ -303,35 +282,40 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             is_registered,
         ) = await self.participation_service.get_user_round_preferences(
             session=self.mock_session,
-            user_context=self.user_context,
             user_id=self.user_context.user_id,
             round_id=mock_round_id,
+            participant_role=ParticipantRole.MENTOR,
         )
 
         self.assertEqual(result, historical_dto)
         self.assertEqual(is_registered, False)
         self.mock_round_participants_repo.get_by_user_id_and_round_id.assert_awaited_once()
-        self.mock_round_participants_repo.get_recent_participant_by_user_id.assert_awaited_once()
+        self.mock_round_participants_repo.get_recent_participant_by_user_id_and_role.assert_awaited_once_with(
+            session=self.mock_session,
+            user_id=self.user_context.user_id,
+            participant_role=ParticipantRole.MENTOR,
+        )
         self.mock_mapper.map_to_round_preference_dto.assert_called_once_with(
             participants_entity=mock_recent
         )
 
     async def test_get_user_round_preferences_for_new_user(self):
-        """Returns default round preferences for a new user."""
+        """Returns empty defaults carrying the supplied role for a user with
+        no registration and no prior same-role round."""
         mock_round_id = 1
         self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
             None
         )
-        self.mock_round_participants_repo.get_recent_participant_by_user_id.return_value = None
+        self.mock_round_participants_repo.get_recent_participant_by_user_id_and_role.return_value = None
 
         (
             result,
             is_registered,
         ) = await self.participation_service.get_user_round_preferences(
             session=self.mock_session,
-            user_context=self.user_context,
             user_id=self.user_context.user_id,
             round_id=mock_round_id,
+            participant_role=ParticipantRole.MENTEE,
         )
 
         self.assertIsInstance(result, RoundPreferencesDto)
@@ -403,7 +387,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             first_name="Bob",
             last_name="S",
             preferred_name="Bob",
-            primary_email="bob@ex.com",
         )
 
         # Case B: Current user (123) is Mentee, Partner (789) is Mentor
@@ -416,7 +399,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             first_name="Alice",
             last_name="W",
             preferred_name="Alice",
-            primary_email="alice@ex.com",
         )
 
         self.mock_pairs_repo.get_pairs_with_partner_info.return_value = [

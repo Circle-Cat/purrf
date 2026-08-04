@@ -1,9 +1,22 @@
 import unittest
+from datetime import datetime, timezone
+from http import HTTPStatus
 from unittest import TestCase, main
 from unittest.mock import AsyncMock, MagicMock
 
+from googleapiclient.errors import HttpError
+
+from backend.common.exceptions import MeetingGoneError
 from backend.service.google_service import GoogleService
 from backend.utils.retry_utils import RetryUtils
+
+
+def make_http_error(status: int, reason: str = "error") -> HttpError:
+    """Build an HttpError carrying a given HTTP status, as googleapiclient raises."""
+    return HttpError(
+        resp=MagicMock(status=status),
+        content=f'{{"error": {{"message": "{reason}"}}}}'.encode(),
+    )
 
 
 class TestGoogleService(TestCase):
@@ -535,7 +548,9 @@ class TestGoogleService(TestCase):
             mock_batch
         )
 
-        result = self.service.batch_delete_google_meetings(["event-1", "event-2"])
+        result = self.service.batch_delete_google_meetings(
+            ["event-1", "event-2"], calendar_id="cal-mentorship"
+        )
 
         self.mock_retry_utils.get_retry_on_transient.assert_called_once_with(
             mock_batch.execute
@@ -550,7 +565,9 @@ class TestGoogleService(TestCase):
         )
         self.mock_retry_utils.get_retry_on_transient.side_effect = Exception("fail")
 
-        result = self.service.batch_delete_google_meetings(["event-1"])
+        result = self.service.batch_delete_google_meetings(
+            ["event-1"], calendar_id="cal-mentorship"
+        )
 
         self.assertEqual(result, ([], ["event-1"]))
 
@@ -570,12 +587,311 @@ class TestGoogleService(TestCase):
         )
         mock_batch.add.side_effect = add
 
-        result = self.service.batch_delete_google_meetings(["event-1", "event-2"])
+        result = self.service.batch_delete_google_meetings(
+            ["event-1", "event-2"], calendar_id="cal-mentorship"
+        )
 
         self.mock_retry_utils.get_retry_on_transient.assert_called_once_with(
             mock_batch.execute
         )
         self.assertEqual(result, (["event-1"], ["event-2"]))
+
+    def _batch_with_callback(self, responses):
+        """Wire a mocked batch whose ``add`` replays ``{event_id: exception}``.
+
+        ``responses`` maps an event id to the exception googleapiclient would
+        hand the callback for it (``None`` for a successful delete). Ids absent
+        from the mapping get no callback at all.
+        """
+        mock_batch = MagicMock()
+        self.mock_google_calendar_client.new_batch_http_request.return_value = (
+            mock_batch
+        )
+
+        def add(request, request_id):
+            if request_id not in responses:
+                return
+            callback = self.mock_google_calendar_client.new_batch_http_request.call_args.kwargs[
+                "callback"
+            ]
+            callback(request_id, None, responses[request_id])
+
+        mock_batch.add.side_effect = add
+        return mock_batch
+
+    def test_batch_delete_google_meetings_counts_already_gone_as_succeeded(self):
+        """An event deleted outside Purrf is already in the desired end state.
+
+        Calendar answers 404/410 for it. Reporting that as a failure would keep
+        the row in ``meeting_log`` forever, since the caller only clears the
+        ids it is told succeeded — leaving a meeting the UI can never remove.
+        """
+        for status in (HTTPStatus.NOT_FOUND, HTTPStatus.GONE):
+            with self.subTest(status=status):
+                self._batch_with_callback({"event-2": make_http_error(status)})
+
+                result = self.service.batch_delete_google_meetings(
+                    ["event-1", "event-2"], calendar_id="cal-mentorship"
+                )
+
+                self.assertEqual(result, (["event-1", "event-2"], []))
+
+    def test_batch_delete_google_meetings_keeps_forbidden_as_failed(self):
+        """Only 'already gone' is forgiven — a 403 is still a real failure."""
+        self._batch_with_callback({
+            "event-2": make_http_error(HTTPStatus.FORBIDDEN, "forbidden")
+        })
+
+        result = self.service.batch_delete_google_meetings(
+            ["event-1", "event-2"], calendar_id="cal-mentorship"
+        )
+
+        self.assertEqual(result, (["event-1"], ["event-2"]))
+
+    def test_batch_delete_google_meetings_execute_error_keeps_reported_results(self):
+        """A batch-level error must not retract per-event verdicts already given.
+
+        googleapiclient invokes the callback as each sub-response is parsed, so
+        an error part-way through leaves some events already deleted. Marking
+        the whole chunk failed would strand those deletions: gone from Calendar,
+        still shown by Purrf.
+        """
+        self._batch_with_callback({"event-1": None})
+        self.mock_retry_utils.get_retry_on_transient.side_effect = Exception("network")
+
+        result = self.service.batch_delete_google_meetings(
+            ["event-1", "event-2"], calendar_id="cal-mentorship"
+        )
+
+        self.assertEqual(result, (["event-1"], ["event-2"]))
+
+    def test_batch_delete_google_meetings_uses_the_given_calendar(self):
+        """Deletes must target the caller's calendar, never "primary".
+
+        The ids come from this environment's own database; aiming them at the
+        shared primary calendar is what let a non-prod delete remove a prod
+        event. A wrong calendar answers 404, which this method (correctly)
+        counts as deleted — so the mistake leaves no trace in the logs.
+        """
+        mock_batch = MagicMock()
+        self.mock_google_calendar_client.new_batch_http_request.return_value = (
+            mock_batch
+        )
+
+        self.service.batch_delete_google_meetings(
+            ["event-1"], calendar_id="cal-mentorship"
+        )
+
+        kwargs = self._calendar_events().delete.call_args.kwargs
+        self.assertEqual(kwargs["calendarId"], "cal-mentorship")
+        self.assertEqual(kwargs["eventId"], "event-1")
+
+    def test_batch_delete_google_meetings_requires_a_calendar_id(self):
+        """Same no-default rule as insert, on the path automation drives."""
+        with self.assertRaises(TypeError):
+            self.service.batch_delete_google_meetings(["event-1"])
+
+    def _calendar_events(self):
+        """The mocked Calendar ``events()`` resource."""
+        return self.mock_google_calendar_client.events.return_value
+
+    def _insert_meeting(self, event_id="evt-1", calendar_id="cal-mentorship"):
+        """Call insert_google_meeting with fixed, uninteresting meeting details."""
+        return self.service.insert_google_meeting(
+            summary="Mentorship: A / B",
+            start_time=datetime(2026, 8, 1, 1, 0, tzinfo=timezone.utc),
+            end_time=datetime(2026, 8, 1, 1, 45, tzinfo=timezone.utc),
+            attendees_emails=["a@example.com", "b@example.com"],
+            request_id="req-1",
+            calendar_id=calendar_id,
+            event_id=event_id,
+        )
+
+    def test_insert_google_meeting_requires_a_calendar_id(self):
+        """calendar_id has no default: omitting it must fail loudly.
+
+        A default of "primary" would silently write to the impersonated
+        account's own calendar, which is the cross-environment leak this
+        parameter exists to close. A TypeError at the call site is the desired
+        outcome.
+        """
+        with self.assertRaises(TypeError):
+            self.service.insert_google_meeting(
+                summary="Mentorship: A / B",
+                start_time=datetime(2026, 8, 1, 1, 0, tzinfo=timezone.utc),
+                end_time=datetime(2026, 8, 1, 1, 45, tzinfo=timezone.utc),
+                attendees_emails=["a@example.com"],
+                request_id="req-1",
+            )
+
+    def test_insert_google_meeting_success(self):
+        """Test a created event is returned as-is and requests a Meet conference."""
+        expected = {"id": "evt-1", "hangoutLink": "https://meet.google.com/a-b-c"}
+        self._calendar_events().insert.return_value.execute.return_value = expected
+
+        result = self._insert_meeting()
+
+        self.assertEqual(result, expected)
+        kwargs = self._calendar_events().insert.call_args.kwargs
+        self.assertEqual(kwargs["calendarId"], "cal-mentorship")
+        self.assertEqual(kwargs["conferenceDataVersion"], 1)
+        self.assertEqual(kwargs["sendUpdates"], "all")
+        self.assertEqual(kwargs["body"]["id"], "evt-1")
+        self._calendar_events().get.assert_not_called()
+
+    def test_insert_google_meeting_recovers_event_when_our_id_already_exists(self):
+        """A 409 on an id we minted means an earlier attempt already created it.
+
+        The insert is retried on transient errors, so a lost response leaves the
+        event created (invitations already sent) while the client sees a failure.
+        The re-send then collides with itself. Fetching the event back turns that
+        into the success it actually was, instead of an orphan on the calendar
+        that Purrf has no record of.
+        """
+        existing = {"id": "evt-1", "status": "confirmed", "hangoutLink": "link"}
+        self._calendar_events().insert.return_value.execute.side_effect = (
+            make_http_error(HTTPStatus.CONFLICT, "duplicate")
+        )
+        self._calendar_events().get.return_value.execute.return_value = existing
+
+        result = self._insert_meeting()
+
+        self.assertEqual(result, existing)
+        self._calendar_events().get.assert_called_once_with(
+            calendarId="cal-mentorship", eventId="evt-1"
+        )
+
+    def test_insert_google_meeting_raises_when_recovered_event_is_cancelled(self):
+        """A 409 whose event is cancelled is not a meeting we can hand back."""
+        self._calendar_events().insert.return_value.execute.side_effect = (
+            make_http_error(HTTPStatus.CONFLICT, "duplicate")
+        )
+        self._calendar_events().get.return_value.execute.return_value = {
+            "id": "evt-1",
+            "status": "cancelled",
+        }
+
+        with self.assertRaises(RuntimeError):
+            self._insert_meeting()
+
+    def test_insert_google_meeting_raises_on_conflict_without_event_id(self):
+        """Without an id of our own there is nothing to recover — stay a failure."""
+        self._calendar_events().insert.return_value.execute.side_effect = (
+            make_http_error(HTTPStatus.CONFLICT, "duplicate")
+        )
+
+        with self.assertRaises(RuntimeError):
+            self._insert_meeting(event_id=None)
+
+        self._calendar_events().get.assert_not_called()
+
+    def test_insert_google_meeting_raises_on_non_conflict_http_error(self):
+        """A 400 stays a failure and must not trigger a recovery fetch."""
+        self._calendar_events().insert.return_value.execute.side_effect = (
+            make_http_error(HTTPStatus.BAD_REQUEST, "invalid")
+        )
+
+        with self.assertRaises(RuntimeError):
+            self._insert_meeting()
+
+        self._calendar_events().get.assert_not_called()
+
+
+class UpdateGoogleMeetingTest(TestCase):
+    def setUp(self):
+        self.mock_logger = MagicMock()
+        self.mock_google_calendar_client = MagicMock()
+        self.mock_retry_utils = MagicMock()
+        self.mock_retry_utils.get_retry_on_transient.side_effect = lambda fn: fn()
+
+        self.service = GoogleService(
+            logger=self.mock_logger,
+            google_chat_client=MagicMock(),
+            google_people_client=MagicMock(),
+            google_workspaceevents_client=MagicMock(),
+            google_calendar_client=self.mock_google_calendar_client,
+            retry_utils=self.mock_retry_utils,
+            meet_spaces_client=MagicMock(),
+            meet_conference_records_client=MagicMock(),
+        )
+
+    def test_patches_only_start_end_and_attendees(self):
+        patch_call = self.mock_google_calendar_client.events.return_value.patch
+        patch_call.return_value.execute.return_value = {
+            "id": "evt-1",
+            "hangoutLink": "https://meet.google.com/abc-defg-hij",
+            "created": "2026-08-01T00:00:00Z",
+            "conferenceData": {"conferenceId": "abc-defg-hij", "entryPoints": []},
+        }
+        start = datetime(2026, 8, 7, 21, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 8, 7, 21, 45, tzinfo=timezone.utc)
+
+        self.service.update_google_meeting(
+            "evt-1", start, end, ["ana@example.com"], calendar_id="cal-interview"
+        )
+
+        _, kwargs = patch_call.call_args
+        self.assertEqual(kwargs["calendarId"], "cal-interview")
+        self.assertEqual(kwargs["eventId"], "evt-1")
+        self.assertEqual(kwargs["sendUpdates"], "all")
+        # conferenceData must be absent — touching it would replace the Meet
+        # link, invalidating the one already mailed to the candidate.
+        self.assertNotIn("conferenceData", kwargs["body"])
+        self.assertEqual(set(kwargs["body"]), {"start", "end", "attendees"})
+        self.assertEqual(kwargs["body"]["attendees"], [{"email": "ana@example.com"}])
+
+    def test_requires_a_calendar_id(self):
+        """No default here either, and this path is the dangerous one.
+
+        Unlike a delete, a patch aimed at the wrong calendar does not quietly
+        404: if the id exists there it moves that event and mails everyone the
+        change. Silent corruption, not a silent no-op.
+        """
+        with self.assertRaises(TypeError):
+            self.service.update_google_meeting(
+                "evt-1",
+                datetime(2026, 8, 7, tzinfo=timezone.utc),
+                datetime(2026, 8, 7, tzinfo=timezone.utc),
+                [],
+            )
+
+    def test_a_missing_event_raises_meeting_gone(self):
+        patch_call = self.mock_google_calendar_client.events.return_value.patch
+        patch_call.return_value.execute.side_effect = make_http_error(
+            HTTPStatus.NOT_FOUND
+        )
+        with self.assertRaises(MeetingGoneError):
+            self.service.update_google_meeting(
+                "evt-1",
+                datetime(2026, 8, 7, tzinfo=timezone.utc),
+                datetime(2026, 8, 7, tzinfo=timezone.utc),
+                [],
+                calendar_id="cal-interview",
+            )
+
+    def test_a_deleted_event_raises_meeting_gone(self):
+        patch_call = self.mock_google_calendar_client.events.return_value.patch
+        patch_call.return_value.execute.side_effect = make_http_error(HTTPStatus.GONE)
+        with self.assertRaises(MeetingGoneError):
+            self.service.update_google_meeting(
+                "evt-1",
+                datetime(2026, 8, 7, tzinfo=timezone.utc),
+                datetime(2026, 8, 7, tzinfo=timezone.utc),
+                [],
+                calendar_id="cal-interview",
+            )
+
+    def test_any_other_failure_raises_runtime_error(self):
+        patch_call = self.mock_google_calendar_client.events.return_value.patch
+        patch_call.return_value.execute.side_effect = RuntimeError("boom")
+        with self.assertRaises(RuntimeError):
+            self.service.update_google_meeting(
+                "evt-1",
+                datetime(2026, 8, 7, tzinfo=timezone.utc),
+                datetime(2026, 8, 7, tzinfo=timezone.utc),
+                [],
+                calendar_id="cal-interview",
+            )
 
 
 class TestGoogleServiceMeet(unittest.IsolatedAsyncioTestCase):
@@ -665,86 +981,133 @@ class TestGoogleServiceMeetConferenceRecords(unittest.IsolatedAsyncioTestCase):
             meet_conference_records_client=self.mock_meet_conference_records_client,
         )
 
-    async def test_list_ended_conferences_returns_conference_list(self):
-        """Returns a list of dicts for each conference record yielded by the pager."""
+    async def test_list_conferences_by_meeting_code_filters_on_code_and_window(self):
+        """The code and both window bounds all reach the Meet filter string."""
         mock_record = MagicMock()
-        mock_record.name = "conferenceRecords/abc123"
-        mock_record.space = "spaces/xyz"
-        mock_record.start_time.isoformat.return_value = "2024-01-01T10:00:00+00:00"
-        mock_record.end_time.isoformat.return_value = "2024-01-01T11:00:00+00:00"
+        mock_record.name = "conferenceRecords/rec1"
+        mock_record.space = "spaces/abc-defg-hij"
+        mock_record.start_time.isoformat.return_value = "2026-04-07T10:05:00+00:00"
+        mock_record.end_time.isoformat.return_value = "2026-04-07T11:00:00+00:00"
 
         async def _pager():
             yield mock_record
 
         self.mock_meet_conference_records_client.list_conference_records.return_value = _pager()
 
-        result = await self.service.list_ended_conferences(
-            end_time_after="2024-01-01T09:00:00Z",
-            end_time_before="2024-01-01T12:00:00Z",
+        result = await self.service.list_conferences_by_meeting_code(
+            "abc-defg-hij",
+            "2026-04-07T07:00:00+00:00",
+            "2026-04-07T14:00:00+00:00",
         )
 
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["name"], "conferenceRecords/abc123")
-        self.assertEqual(result[0]["space"], "spaces/xyz")
-        self.assertEqual(result[0]["start_time"], "2024-01-01T10:00:00+00:00")
-        self.assertEqual(result[0]["end_time"], "2024-01-01T11:00:00+00:00")
+        request = (
+            self.mock_meet_conference_records_client.list_conference_records.call_args
+        ).kwargs["request"]
+        self.assertIn('space.meeting_code="abc-defg-hij"', request.filter)
+        self.assertIn('start_time>="2026-04-07T07:00:00+00:00"', request.filter)
+        self.assertIn('start_time<="2026-04-07T14:00:00+00:00"', request.filter)
+        conferences, in_progress_count = result
+        self.assertEqual(len(conferences), 1)
+        self.assertEqual(conferences[0]["name"], "conferenceRecords/rec1")
+        self.assertEqual(conferences[0]["space"], "spaces/abc-defg-hij")
+        self.assertEqual(in_progress_count, 0)
 
-    async def test_list_ended_conferences_empty_pager_returns_empty_list(self):
-        """Returns an empty list when there are no conference records in the window."""
-
+    async def test_list_conferences_by_meeting_code_empty_pager_returns_empty_list(
+        self,
+    ):
         async def _pager():
             return
             yield
 
         self.mock_meet_conference_records_client.list_conference_records.return_value = _pager()
 
-        result = await self.service.list_ended_conferences(
-            end_time_after="2024-01-01T09:00:00Z",
-            end_time_before="2024-01-01T12:00:00Z",
+        result = await self.service.list_conferences_by_meeting_code(
+            "abc-defg-hij", "2026-04-07T07:00:00+00:00", "2026-04-07T14:00:00+00:00"
         )
 
-        self.assertEqual(result, [])
+        self.assertEqual(result, ([], 0))
 
-    async def test_list_ended_conferences_null_times_fall_back_to_empty_string(self):
-        """start_time and end_time fall back to empty string when the field is falsy."""
+    async def test_list_conferences_by_meeting_code_api_error_propagates(self):
+        """This method has no try/except of its own -- an error from the
+        Meet client must reach the caller unwrapped, not be swallowed."""
+        self.mock_meet_conference_records_client.list_conference_records.side_effect = (
+            Exception("API error")
+        )
+
+        with self.assertRaises(Exception) as cm:
+            await self.service.list_conferences_by_meeting_code(
+                "abc-defg-hij",
+                "2026-04-07T07:00:00+00:00",
+                "2026-04-07T14:00:00+00:00",
+            )
+
+        self.assertEqual(str(cm.exception), "API error")
+
+    async def test_list_conferences_by_meeting_code_drops_still_running_records(self):
+        """A conference in progress has no endTime. This method filters on
+        start_time, so it CAN be handed one -- and the attendance sweep,
+        which selects meetings up to three hours ahead of now, meets them
+        routinely. Emitting it as end_time="" would
+        blow up the first isoparse downstream, so it is dropped here. The ended
+        record sitting alongside it must still come through, and the dropped
+        record must be counted (not merely logged) so the caller can tell
+        "in progress" apart from "nobody ever joined"."""
+        ended = MagicMock()
+        ended.name = "conferenceRecords/ended"
+        ended.space = "spaces/abc-defg-hij"
+        ended.start_time.isoformat.return_value = "2026-04-07T10:05:00+00:00"
+        ended.end_time.isoformat.return_value = "2026-04-07T11:00:00+00:00"
+
+        running = MagicMock()
+        running.name = "conferenceRecords/running"
+        running.space = "spaces/abc-defg-hij"
+        running.start_time.isoformat.return_value = "2026-04-07T13:00:00+00:00"
+        running.end_time = None
+
+        async def _pager():
+            yield ended
+            yield running
+
+        self.mock_meet_conference_records_client.list_conference_records.return_value = _pager()
+
+        result = await self.service.list_conferences_by_meeting_code(
+            "abc-defg-hij", "2026-04-07T07:00:00+00:00", "2026-04-07T14:00:00+00:00"
+        )
+
+        conferences, in_progress_count = result
+        self.assertEqual(len(conferences), 1)
+        self.assertEqual(conferences[0]["name"], "conferenceRecords/ended")
+        self.assertEqual(conferences[0]["end_time"], "2026-04-07T11:00:00+00:00")
+        # Never emitted with a blank end_time -- excluded outright.
+        self.assertNotIn("", [c["end_time"] for c in conferences])
+        # The dropped still-running record must show up here instead.
+        self.assertEqual(in_progress_count, 1)
+
+    async def test_list_conferences_by_meeting_code_null_start_time_falls_back_to_empty_string(
+        self,
+    ):
+        """end_time is what gates inclusion; a missing start_time still falls
+        back to "" so the returned shape keeps all four keys."""
         mock_record = MagicMock()
-        mock_record.name = "conferenceRecords/no-times"
-        mock_record.space = "spaces/xyz"
+        mock_record.name = "conferenceRecords/no-start"
+        mock_record.space = "spaces/abc-defg-hij"
         mock_record.start_time = None
-        mock_record.end_time = None
+        mock_record.end_time.isoformat.return_value = "2026-04-07T11:00:00+00:00"
 
         async def _pager():
             yield mock_record
 
         self.mock_meet_conference_records_client.list_conference_records.return_value = _pager()
 
-        result = await self.service.list_ended_conferences(
-            end_time_after="2024-01-01T09:00:00Z",
-            end_time_before="2024-01-01T12:00:00Z",
+        result = await self.service.list_conferences_by_meeting_code(
+            "abc-defg-hij", "2026-04-07T07:00:00+00:00", "2026-04-07T14:00:00+00:00"
         )
 
-        self.assertEqual(result[0]["start_time"], "")
-        self.assertEqual(result[0]["end_time"], "")
-
-    async def test_get_meeting_code_for_space_returns_code(self):
-        """Returns the meeting code for the given space resource name."""
-        mock_space = MagicMock()
-        mock_space.meeting_code = "abc-defg-hij"
-        self.mock_meet_spaces_client.get_space.return_value = mock_space
-
-        result = await self.service.get_meeting_code_for_space("spaces/INTERNALID")
-
-        self.assertEqual(result, "abc-defg-hij")
-        self.mock_meet_spaces_client.get_space.assert_called_once()
-
-    async def test_get_meeting_code_for_space_api_error_propagates(self):
-        """Exceptions raised by the Meet Spaces API are propagated to the caller."""
-        self.mock_meet_spaces_client.get_space.side_effect = Exception(
-            "503 Service Unavailable"
-        )
-
-        with self.assertRaises(Exception):
-            await self.service.get_meeting_code_for_space("spaces/INTERNALID")
+        conferences, in_progress_count = result
+        self.assertEqual(len(conferences), 1)
+        self.assertEqual(conferences[0]["start_time"], "")
+        self.assertEqual(conferences[0]["end_time"], "2026-04-07T11:00:00+00:00")
+        self.assertEqual(in_progress_count, 0)
 
     async def test_fetch_participants_signed_in_user(self):
         """Returns signedin_user_id and display_name from a signed-in participant."""

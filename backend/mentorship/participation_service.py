@@ -24,6 +24,7 @@ class ParticipationService:
         mentorship_round_participants_repo,
         mentorship_round_repository,
         mentorship_mapper,
+        user_emails_repository,
     ):
         """
         Initializes the ParticipationService with required dependencies.
@@ -40,6 +41,8 @@ class ParticipationService:
                 The repository for accessing mentorship round entity data.
             mentorship_mapper (MentorshipMapper):
                 The mapper for converting mentorship rounds and entities to DTOs.
+            user_emails_repository (UserEmailsRepository):
+                Contact-email resolution for matched partners.
         """
         self.logger = logger
         self.users_repository = users_repository
@@ -47,38 +50,7 @@ class ParticipationService:
         self.mentorship_round_participants_repo = mentorship_round_participants_repo
         self.mentorship_round_repository = mentorship_round_repository
         self.mentorship_mapper = mentorship_mapper
-
-    async def resolve_participant_role_with_fallback(
-        self, session: AsyncSession, user_context: UserContextDto, user_id: int
-    ) -> ParticipantRole:
-        """
-        Resolve the participant role using a temporary fallback strategy.
-
-        This method infers participant role when:
-        - the current round participant record does not exist.
-        - role auto-assignment and user self-selection are not implemented yet.
-
-        Resolution order:
-        1. Use the most recent round participant role.
-        2. Otherwise default to MENTEE (role auto-assignment / self-selection
-           not implemented yet).
-
-        Args:
-            session (AsyncSession): Active database async session.
-            user_context (UserContextDto): Authenticated user context.
-            user_id (int): The ID of the current user.
-
-        Returns:
-            ParticipantRole: The resolved role (the most recent round's role, else MENTEE).
-        """
-        recent_participant = await self.mentorship_round_participants_repo.get_recent_participant_by_user_id(
-            session=session, user_id=user_id
-        )
-
-        if recent_participant:
-            return recent_participant.participant_role
-
-        return ParticipantRole.MENTEE
+        self.user_emails_repository = user_emails_repository
 
     async def get_partners_for_user(
         self,
@@ -130,7 +102,7 @@ class ParticipationService:
                     id=u.user_id,
                     first_name=u.first_name,
                     last_name=u.last_name,
-                    preferred_name=u.preferred_name or u.first_name,
+                    preferred_name=u.preferred_name,
                     primary_email=None,
                 )
                 for u in users
@@ -151,15 +123,22 @@ class ParticipationService:
                 session=session, user_id=current_user_id, round_id=round_id
             )
         )
+        contact_by_user_id = (
+            await self.user_emails_repository.get_contact_emails_by_user_ids(
+                session, [p_user.user_id for _, p_user in pairs_data]
+            )
+            if participant and participant.approval_status == ApprovalStatus.MATCHED
+            else {}
+        )
 
         return [
             PartnerDto(
                 id=p_user.user_id,
                 first_name=p_user.first_name,
                 last_name=p_user.last_name,
-                preferred_name=p_user.preferred_name or p_user.first_name,
+                preferred_name=p_user.preferred_name,
                 primary_email=(
-                    p_user.primary_email
+                    contact_by_user_id.get(p_user.user_id)
                     if participant
                     and participant.approval_status == ApprovalStatus.MATCHED
                     and pair.status == PairStatus.ACTIVE
@@ -172,50 +151,53 @@ class ParticipationService:
     async def get_user_round_preferences(
         self,
         session: AsyncSession,
-        user_context: UserContextDto,
         user_id: int,
         round_id: int,
+        participant_role: ParticipantRole,
     ) -> tuple[RoundPreferencesDto, bool]:
         """
-        Retrieves preferences for a specific mentorship round with historical fallback.
+        Retrieves preferences for a specific mentorship round.
 
-        This method:
-        1. Attempts to fetch participation records for the specified round.
-        2. If no record is found, it falls back to the most recent historical participation.
-        3. For new participants with no history, it provides a default configuration with an inferred role.
+        The participant role is authoritative and supplied by the caller
+        (resolved from the user's HIRED activity application); this method
+        never infers it. Resolution:
+        1. If the user has already registered for this round, return that
+           round's saved preferences as-is.
+        2. Otherwise pre-fill from the user's most recent prior round in the
+           SAME role, so a mentee's form is never seeded from a round they
+           attended as a mentor (or vice versa).
+        3. If there is no prior same-role round, return an empty default
+           configuration carrying the supplied role.
 
         Args:
             session (AsyncSession): Active SQLAlchemy async session.
-            user_context (UserContextDto): Authenticated user context.
             user_id (int): The ID of the current user.
             round_id (int): The ID of the mentorship round.
+            participant_role (ParticipantRole): The role resolved from the
+                user's approved activity application.
 
         Returns:
             tuple[RoundPreferencesDto, bool]
                 - RoundPreferencesDto: The resolved round-specific preferences.
                 - bool: Whether the user has registered for this round.
         """
-        is_registered = False
         participant = (
             await self.mentorship_round_participants_repo.get_by_user_id_and_round_id(
                 session=session, user_id=user_id, round_id=round_id
             )
         )
         if participant:
-            is_registered = True
-        else:
-            participant = await self.mentorship_round_participants_repo.get_recent_participant_by_user_id(
-                session=session, user_id=user_id
-            )
-
-        if participant:
             return self.mentorship_mapper.map_to_round_preference_dto(
                 participants_entity=participant,
-            ), is_registered
+            ), True
 
-        participant_role = await self.resolve_participant_role_with_fallback(
-            session=session, user_context=user_context, user_id=user_id
+        recent_same_role = await self.mentorship_round_participants_repo.get_recent_participant_by_user_id_and_role(
+            session=session, user_id=user_id, participant_role=participant_role
         )
+        if recent_same_role:
+            return self.mentorship_mapper.map_to_round_preference_dto(
+                participants_entity=recent_same_role,
+            ), False
 
         return RoundPreferencesDto(
             participant_role=participant_role,
@@ -223,7 +205,7 @@ class ParticipationService:
             unexpected_partner_ids=[],
             max_partners=1,
             goal="",
-        ), is_registered
+        ), False
 
     async def get_my_match_result_by_round_id(
         self, session: AsyncSession, user_context: UserContextDto, round_id: int
@@ -282,6 +264,11 @@ class ParticipationService:
         pairs_data = await self.mentorship_pairs_repository.get_pairs_with_partner_info(
             session=session, user_id=uid, round_id=round_id
         )
+        contact_by_user_id = (
+            await self.user_emails_repository.get_contact_emails_by_user_ids(
+                session, [p_user.user_id for _, p_user in pairs_data]
+            )
+        )
 
         for pair, p_user in pairs_data:
             partners.append(
@@ -290,7 +277,7 @@ class ParticipationService:
                     preferred_name=p_user.preferred_name,
                     first_name=p_user.first_name,
                     last_name=p_user.last_name,
-                    primary_email=p_user.primary_email,
+                    primary_email=contact_by_user_id.get(p_user.user_id),
                     participant_role=ParticipantRole.MENTEE
                     if pair.mentor_id == uid
                     else ParticipantRole.MENTOR,

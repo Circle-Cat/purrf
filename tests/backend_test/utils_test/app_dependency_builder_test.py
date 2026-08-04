@@ -1,9 +1,17 @@
 from unittest import TestCase, main
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, ANY
 from backend.utils.app_dependency_builder import AppDependencyBuilder
 from backend.common.environment_constants import (
     JIRA_SERVER,
     JIRA_USER,
+    GMAIL_CLIENT_ID,
+    GMAIL_CLIENT_SECRET,
+    GMAIL_REFRESH_TOKEN,
+    GMAIL_SENDER_RECRUITING,
+    GMAIL_SENDER_NOTIFICATION,
+    MENTORSHIP_CALENDAR_ID,
+    INTERVIEW_CALENDAR_ID,
+    USER_EMAIL,
 )
 
 
@@ -19,11 +27,13 @@ from backend.common.environment_constants import (
 @patch("backend.utils.app_dependency_builder.UserIdentityService")
 @patch("backend.utils.app_dependency_builder.MentorshipController")
 @patch("backend.utils.app_dependency_builder.MeetAttendanceService")
+@patch("backend.utils.app_dependency_builder.MeetingSchedulingService")
 @patch("backend.utils.app_dependency_builder.MeetingService")
 @patch("backend.utils.app_dependency_builder.RegistrationService")
 @patch("backend.utils.app_dependency_builder.ParticipationService")
 @patch("backend.utils.app_dependency_builder.RoundsService")
 @patch("backend.utils.app_dependency_builder.PreferencesRepository")
+@patch("backend.utils.app_dependency_builder.MentorshipMeetingRepository")
 @patch("backend.utils.app_dependency_builder.MentorshipPairsRepository")
 @patch("backend.utils.app_dependency_builder.MentorshipRoundRepository")
 @patch("backend.utils.app_dependency_builder.MentorshipRoundParticipantsRepository")
@@ -149,11 +159,13 @@ class TestAppDependencyBuilder(TestCase):
         mock_mentorship_round_participants_repo_cls,
         mock_mentorship_round_repository_cls,
         mock_mentorship_pairs_repo_cls,
+        mock_mentorship_meeting_repo_cls,
         mock_preferences_repo_cls,
         mock_rounds_service_cls,
         mock_participation_service_cls,
         mock_registration_service_cls,
         mock_meeting_service_cls,
+        mock_meeting_scheduling_service_cls,
         mock_meet_attendance_service_cls,
         mock_mentorship_controller_cls,
         mock_user_identity_service_cls,
@@ -238,6 +250,21 @@ class TestAppDependencyBuilder(TestCase):
         mock_os_getenv.side_effect = lambda key: {
             JIRA_SERVER: JIRA_SERVER_VAL,
             JIRA_USER: JIRA_USER_VAL,
+            GMAIL_CLIENT_ID: "gmail-client-id",
+            GMAIL_CLIENT_SECRET: "gmail-client-secret",
+            GMAIL_REFRESH_TOKEN: "gmail-refresh-token",
+            GMAIL_SENDER_RECRUITING: "recruiting@circlecat.org",
+            GMAIL_SENDER_NOTIFICATION: "notification@circlecat.org",
+            # Both scenario calendars must be configured for the app to build:
+            # the builder raises on a missing one rather than letting a service
+            # fall back to the impersonated account's primary calendar.
+            #
+            # There is no InterviewSchedulingService assertion further down on
+            # purpose -- that class is not patched in this test, so the builder
+            # forgetting to pass the id is a TypeError right here.
+            MENTORSHIP_CALENDAR_ID: "cal-mentorship",
+            INTERVIEW_CALENDAR_ID: "cal-interview",
+            USER_EMAIL: "purrf@circlecat.org",
         }.get(key)
 
         mock_gerrit_client = mock_gerrit_client_cls.return_value
@@ -355,6 +382,7 @@ class TestAppDependencyBuilder(TestCase):
             google_reports_client=mock_google_reports_client,
             retry_utils=mock_retry_utils_instance,
             google_service=mock_google_service.return_value,
+            bot_account_email="purrf@circlecat.org",
         )
         mock_gerrit_sync_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -453,6 +481,7 @@ class TestAppDependencyBuilder(TestCase):
             experience_repository=mock_experience_repo_cls.return_value,
             training_repository=mock_training_repo_cls.return_value,
             profile_mapper=mock_profile_mapper_cls.return_value,
+            user_emails_repository=mock_user_emails_repo_cls.return_value,
         )
         mock_profile_command_service_cls.assert_called_once_with(
             users_repository=mock_users_repo_cls.return_value,
@@ -483,6 +512,7 @@ class TestAppDependencyBuilder(TestCase):
             users_repository=mock_users_repo_cls.return_value,
             user_identities_repository=mock_user_identities_repo_cls.return_value,
             user_emails_repository=mock_user_emails_repo_cls.return_value,
+            mentorship_meeting_repository=mock_mentorship_meeting_repo_cls.return_value,
         )
         mock_mentorship_controller_cls.assert_called_once_with(
             rounds_service=mock_rounds_service_cls.return_value,
@@ -498,6 +528,12 @@ class TestAppDependencyBuilder(TestCase):
             participants_repository=mock_mentorship_round_participants_repo_cls.return_value,
             rounds_repository=mock_mentorship_round_repository_cls.return_value,
             training_repository=mock_training_repo_cls.return_value,
+            pairs_repository=mock_mentorship_pairs_repo_cls.return_value,
+            mentorship_mapper=mock_mentorship_mapper_cls.return_value,
+            date_time_util=mock_date_time_util_cls.return_value,
+            database=mock_database_cls.return_value,
+            logger=mock_logger,
+            mentorship_meeting_repository=mock_mentorship_meeting_repo_cls.return_value,
         )
         mock_mentorship_admin_controller_cls.assert_called_once_with(
             mentorship_admin_service=mock_mentorship_admin_service_cls.return_value,
@@ -515,6 +551,7 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_round_participants_repo=mock_mentorship_round_participants_repo_cls.return_value,
             mentorship_round_repository=mock_mentorship_round_repository_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
+            user_emails_repository=mock_user_emails_repo_cls.return_value,
         )
         mock_registration_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -523,14 +560,22 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_round_participants_repository=mock_mentorship_round_participants_repo_cls.return_value,
             participation_service=mock_participation_service_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
-            training_repository=mock_training_repo_cls.return_value,
+            onboarding_training_service=builder.onboarding_training_service,
+            application_repository=builder.application_repository,
+        )
+        mock_meeting_scheduling_service_cls.assert_called_once_with(
+            logger=mock_logger,
+            google_service=mock_google_service.return_value,
+            user_emails_repository=mock_user_emails_repo_cls.return_value,
         )
         mock_meeting_service_cls.assert_called_once_with(
             logger=mock_logger,
             mentorship_pairs_repository=mock_mentorship_pairs_repo_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
             users_repository=mock_users_repo_cls.return_value,
-            google_service=mock_google_service.return_value,
+            meeting_scheduling_service=mock_meeting_scheduling_service_cls.return_value,
+            mentorship_calendar_id="cal-mentorship",
+            mentorship_meeting_repository=mock_mentorship_meeting_repo_cls.return_value,
         )
 
         mock_fast_app_factory_cls.assert_called_once_with(
@@ -547,6 +592,13 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_admin_controller=mock_mentorship_admin_controller_cls.return_value,
             email_management_controller=mock_email_management_controller_cls.return_value,
             permission_admin_controller=mock_permission_admin_controller_cls.return_value,
+            recruiting_controller=ANY,
+            application_controller=ANY,
+            board_controller=ANY,
+            blacklist_controller=ANY,
+            evaluation_controller=ANY,
+            audit_controller=ANY,
+            recruiting_notification_controller=ANY,
             launchdarkly_client=mock_launchdarkly_client_cls.return_value,
             database=mock_database_cls.return_value,
             logger=mock_logger,
@@ -611,6 +663,7 @@ class TestAppDependencyBuilder(TestCase):
             experience_repository=mock_experience_repo_cls.return_value,
             training_repository=mock_training_repo_cls.return_value,
             profile_mapper=mock_profile_mapper_cls.return_value,
+            user_emails_repository=mock_user_emails_repo_cls.return_value,
         )
         # Assert that the builder's internal attributes are the created mock instances
         self.assertEqual(builder.users_repository, mock_users_repo_cls.return_value)
@@ -766,6 +819,50 @@ class TestAppDependencyBuilder(TestCase):
         )
         self.assertEqual(
             builder.mentorship_controller, mock_mentorship_controller_cls.return_value
+        )
+        # Neither GmailClient nor EmailConversationService is patched here, so
+        # forgetting to pass the recruiting sender is a TypeError at build time.
+        # These two assert it is the *right* variable: the client must own the
+        # address it is asked to send as, and the conversation service must send
+        # as that same address.
+        self.assertTrue(builder.gmail_client.owns_address("recruiting@circlecat.org"))
+        self.assertEqual(
+            builder.email_conversation_service.sender_address,
+            "recruiting@circlecat.org",
+        )
+        # One mailbox, two Send-As identities: the client must own both, or a
+        # send from the notification address is silently rewritten by Gmail to
+        # the mailbox owner and reported as success.
+        self.assertTrue(builder.gmail_client.owns_address("notification@circlecat.org"))
+        self.assertEqual(
+            builder.notification_sender_address, "notification@circlecat.org"
+        )
+        # The notification email service must be constructed with the
+        # notification address, not the recruiting one -- GmailClient.owns_address
+        # cannot catch a mixup since the recruiting address is owned too.
+        self.assertEqual(
+            builder.notification_email_service.sender_address,
+            "notification@circlecat.org",
+        )
+        self.assertNotEqual(
+            builder.notification_email_service.sender_address,
+            "recruiting@circlecat.org",
+        )
+        # The three services must receive the dispatcher, not the repository:
+        # their own tests inject a dispatcher double, so a builder that passes
+        # the repository instead fails nowhere until the first real
+        # notification write.
+        self.assertIs(
+            builder.job_service.notification_dispatcher,
+            builder.notification_dispatcher,
+        )
+        self.assertIs(
+            builder.application_service.notification_dispatcher,
+            builder.notification_dispatcher,
+        )
+        self.assertIs(
+            builder.board_service.notification_dispatcher,
+            builder.notification_dispatcher,
         )
 
 

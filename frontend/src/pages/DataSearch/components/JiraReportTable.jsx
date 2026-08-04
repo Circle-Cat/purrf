@@ -1,8 +1,15 @@
-import "@/pages/DataSearch/components/JiraReportTable.css";
-
 import { useState, useEffect } from "react";
 import { getJiraIssueDetails, getJiraIssueBrief } from "@/api/dataSearchApi";
 import { JiraIssueStatus } from "@/constants/Groups";
+
+/** Status indicator dot color, keyed by display status name. */
+const STATUS_DOT_CLASS = {
+  "To Do": "bg-[#f39c12]",
+  "In Progress": "bg-primary",
+  Done: "bg-[#27ae60]",
+};
+
+const LOADING_OR_EMPTY = "p-5 text-center text-[0.9rem] text-gray-400";
 
 /**
  * @typedef {Object} StatusData
@@ -100,7 +107,7 @@ const TaskDetailRow = ({ task }) => {
     : "-";
 
   return (
-    <tr className="task-detail-row">
+    <tr className="even:bg-muted hover:bg-muted [&>td]:px-[15px] [&>td]:py-2 [&>td]:text-[0.8rem]">
       <td>{task.issue_key}</td>
       <td>{task.issue_title}</td>
       <td>{task.story_point}</td>
@@ -144,24 +151,38 @@ const StatusRow = ({ statusItem }) => {
 
   return (
     <>
-      <tr onClick={handleRowClick} className="status-row">
-        <td>{status}</td>
+      <tr
+        onClick={handleRowClick}
+        className="cursor-pointer transition-colors hover:bg-muted [&>td]:px-[15px] [&>td]:py-3 [&>td]:align-middle [&>td]:text-[0.9rem]"
+      >
+        <td>
+          <span className="flex items-center gap-2 font-medium">
+            <span
+              className={`inline-block size-2.5 shrink-0 rounded-full ${
+                STATUS_DOT_CLASS[status] ?? "bg-gray-400"
+              }`}
+            />
+            {status}
+          </span>
+        </td>
         <td>{count}</td>
         <td>{storyPoints || ""}</td>
-        <td className="toggle-icon">{isCollapsed ? ">" : "v"}</td>
+        <td className="w-5 text-right font-bold text-gray-400">
+          {isCollapsed ? ">" : "v"}
+        </td>
       </tr>
       {!isCollapsed && (
-        <tr className="detail-table-row">
-          <td colSpan="4">
-            {isLoading && <div className="loading-indicator">Loading...</div>}
+        <tr>
+          <td colSpan="4" className="p-0">
+            {isLoading && <div className={LOADING_OR_EMPTY}>Loading...</div>}
             {!isLoading && tasks && (
-              <table className="detail-table">
+              <table className="w-full table-fixed border-collapse [&_thead_th]:bg-muted [&_thead_th]:px-[15px] [&_thead_th]:py-2 [&_thead_th]:text-left [&_thead_th]:text-[0.8rem] [&_thead_th]:font-semibold [&_thead_th]:text-muted-foreground">
                 <thead>
                   <tr>
-                    <th>Key</th>
-                    <th>Title</th>
-                    <th>Story Points</th>
-                    <th>Finished Date</th>
+                    <th className="w-[15%]">Key</th>
+                    <th className="w-[45%]">Title</th>
+                    <th className="w-[20%]">Story Points</th>
+                    <th className="w-[20%]">Finished Date</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -172,7 +193,7 @@ const StatusRow = ({ statusItem }) => {
               </table>
             )}
             {!isLoading && (!tasks || tasks.length === 0) && (
-              <div className="no-data-msg">N/A</div>
+              <div className={LOADING_OR_EMPTY}>N/A</div>
             )}
           </td>
         </tr>
@@ -189,11 +210,16 @@ const StatusRow = ({ statusItem }) => {
  * @returns {JSX.Element}
  */
 const UserTable = ({ user }) => (
-  <div className="user-table">
-    <div className="user-header">
-      <h4>{user.name}</h4>
+  <div
+    className="mb-5 overflow-hidden rounded-lg border"
+    data-testid="user-table"
+  >
+    <div className="bg-muted p-[15px]">
+      <h4 className="m-0 text-[1.2rem] font-semibold text-foreground">
+        {user.name}
+      </h4>
     </div>
-    <table className="user-status-table">
+    <table className="w-full border-collapse [&_thead_th]:bg-muted [&_thead_th]:px-[15px] [&_thead_th]:py-3 [&_thead_th]:text-left [&_thead_th]:text-[0.9rem] [&_thead_th]:font-semibold [&_thead_th]:text-muted-foreground">
       <thead>
         <tr>
           <th>Status</th>
@@ -274,11 +300,11 @@ const JiraReportTable = ({ jiraReportProps }) => {
   }, [jiraReportProps.searchParams]);
 
   if (isLoading) {
-    return <div className="loading-indicator">Loading...</div>;
+    return <div className={LOADING_OR_EMPTY}>Loading...</div>;
   }
 
   if (!jiraSummaryData) {
-    return <div className="no-data-msg">N/A</div>;
+    return <div className={LOADING_OR_EMPTY}>N/A</div>;
   }
 
   const formattedData = formatJiraBriefsData(
@@ -288,7 +314,10 @@ const JiraReportTable = ({ jiraReportProps }) => {
   );
 
   return (
-    <div className="jira-table-container">
+    <div
+      className="overflow-hidden rounded-lg text-foreground"
+      data-testid="jira-table-container"
+    >
       {formattedData.map((user, index) => (
         <UserTable key={index} user={user} />
       ))}

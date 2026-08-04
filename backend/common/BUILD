@@ -23,6 +23,14 @@ py_library(
 )
 
 py_library(
+    name = "permission_descriptions",
+    srcs = ["permission_descriptions.py"],
+    deps = [
+        ":permissions",
+    ],
+)
+
+py_library(
     name = "auth0_client",
     srcs = ["auth0_client.py"],
     deps = [
@@ -57,6 +65,17 @@ py_library(
         "@pypi//google_cloud_pubsub",
         "@pypi//grpcio",
         "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "gmail_client",
+    srcs = ["gmail_client.py"],
+    deps = [
+        ":environment_constants",
+        ":exceptions",
+        "@pypi//google_api_python_client",
+        "@pypi//google_auth",
     ],
 )
 
@@ -185,6 +204,16 @@ py_library(
 )
 
 py_library(
+    name = "recruiting_enums",
+    srcs = ["recruiting_enums.py"],
+)
+
+py_library(
+    name = "communication_enums",
+    srcs = ["communication_enums.py"],
+)
+
+py_library(
     name = "identity_type",
     srcs = [
         "identity_type.py",
@@ -197,6 +226,11 @@ py_library(
 )
 
 py_library(
+    name = "name_utils",
+    srcs = ["name_utils.py"],
+)
+
+py_library(
     name = "launchdarkly_client",
     srcs = ["launchdarkly_client.py"],
     deps = [
@@ -204,4 +238,9 @@ py_library(
         "//backend/dto",
         "@pypi//launchdarkly_server_sdk",
     ],
+)
+
+py_library(
+    name = "trusted_connections",
+    srcs = ["trusted_connections.py"],
 )

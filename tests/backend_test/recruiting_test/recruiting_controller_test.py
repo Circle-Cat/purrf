@@ -1,0 +1,276 @@
+import unittest
+from http import HTTPStatus
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from backend.common.permissions import Permission
+from backend.common.recruiting_enums import JobKind
+from backend.dto.job_dto import JobCreateDto
+from backend.dto.job_review_dto import JobReviewDecisionDto, JobSubmitDto
+from backend.dto.user_context_dto import UserContextDto
+from backend.recruiting.recruiting_controller import RecruitingController
+
+
+class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.service = MagicMock()
+        self.service.list_all_jobs = AsyncMock(return_value=[])
+        self.service.submit_for_review = AsyncMock(return_value="submitted")
+        self.service.approve = AsyncMock(return_value="approved")
+        self.service.reject = AsyncMock(return_value="rejected")
+        self.service.list_active_approvers = AsyncMock(return_value=[])
+        self.service.list_reviews_for_reviewer = AsyncMock(return_value=[])
+        self.service.request_close = AsyncMock(return_value="close-requested")
+        self.service.request_reopen = AsyncMock(return_value="reopen-requested")
+        self.service.delete_job = AsyncMock(return_value=None)
+        self.service.create_job = AsyncMock(return_value="created")
+        self.service.get_job_activity = AsyncMock(return_value=[])
+
+        self.session = AsyncMock()
+        self.database = MagicMock()
+        self.database.session.return_value.__aenter__.return_value = self.session
+        self.database.session.return_value.__aexit__.return_value = None
+
+        self.email_sync_service = MagicMock()
+        self.email_sync_service.sync_due_applications = AsyncMock(
+            return_value={"scanned": 0, "synced": 0, "failed": 0, "newMessages": 0}
+        )
+
+        self.controller = RecruitingController(
+            job_service=self.service,
+            email_sync_service=self.email_sync_service,
+            database=self.database,
+        )
+
+        self.patcher = patch("backend.recruiting.recruiting_controller.api_response")
+        self.mock_api_response = self.patcher.start()
+        self.mock_api_response.side_effect = (
+            lambda message, data=None, status_code=HTTPStatus.OK, success=True: {
+                "message": message,
+                "data": data,
+            }
+        )
+        self.addCleanup(self.patcher.stop)
+
+        self.user = UserContextDto(sub="s", primary_email="me@x.com", user_id=42)
+
+    async def test_list_jobs_uses_list_all(self):
+        await self.controller.list_jobs(current_user=self.user)
+        self.service.list_all_jobs.assert_awaited_once_with(self.session)
+
+    async def test_create_job_passes_current_user_as_creator(self):
+        body = JobCreateDto(title="T", kind=JobKind.ACTIVITY)
+        await self.controller.create_job(current_user=self.user, job_data=body)
+        self.service.create_job.assert_awaited_once_with(self.session, body, 42)
+
+    async def test_submit_passes_current_user_as_submitter(self):
+        body = JobSubmitDto(reviewer_id=7, message="please")
+        await self.controller.submit_job(
+            current_user=self.user, job_id=3, submit_data=body
+        )
+        self.service.submit_for_review.assert_awaited_once_with(
+            self.session, 3, 7, 42, "please"
+        )
+
+    async def test_list_approvers(self):
+        await self.controller.list_approvers(current_user=self.user)
+        self.service.list_active_approvers.assert_awaited_once_with(self.session)
+
+    async def test_review_decision_approve_dispatches(self):
+        body = JobReviewDecisionDto(decision="approve")
+        await self.controller.review_decision(
+            current_user=self.user, review_id=5, decision_data=body
+        )
+        self.service.approve.assert_awaited_once_with(self.session, 5, 42)
+        self.service.reject.assert_not_awaited()
+
+    async def test_review_decision_reject_dispatches_with_comment(self):
+        body = JobReviewDecisionDto(decision="reject", comment="fix it")
+        await self.controller.review_decision(
+            current_user=self.user, review_id=5, decision_data=body
+        )
+        self.service.reject.assert_awaited_once_with(self.session, 5, "fix it", 42)
+        self.service.approve.assert_not_awaited()
+
+    async def test_my_reviews_uses_current_user(self):
+        await self.controller.list_my_reviews(current_user=self.user)
+        self.service.list_reviews_for_reviewer.assert_awaited_once_with(
+            self.session, 42
+        )
+
+    async def test_request_close_passes_current_user_as_submitter(self):
+        body = JobSubmitDto(reviewer_id=7, message="please close")
+        await self.controller.request_close(
+            current_user=self.user, job_id=3, submit_data=body
+        )
+        self.service.request_close.assert_awaited_once_with(
+            self.session, 3, 7, 42, "please close"
+        )
+
+    async def test_request_reopen_passes_current_user_as_submitter(self):
+        body = JobSubmitDto(reviewer_id=7, message="please reopen")
+        await self.controller.request_reopen(
+            current_user=self.user, job_id=4, submit_data=body
+        )
+        self.service.request_reopen.assert_awaited_once_with(
+            self.session, 4, 7, 42, "please reopen"
+        )
+
+    async def test_delete_job(self):
+        await self.controller.delete_job(current_user=self.user, job_id=9)
+        self.service.delete_job.assert_awaited_once_with(self.session, 9)
+
+    async def test_discard_pending_edit_passes_current_user(self):
+        self.service.discard_pending_edit = AsyncMock(return_value="discarded")
+        await self.controller.discard_pending_edit(current_user=self.user, job_id=3)
+        self.service.discard_pending_edit.assert_awaited_once_with(self.session, 3, 42)
+
+    async def test_list_interview_pool_route(self):
+        self.service.list_interview_pool = AsyncMock(return_value=["x"])
+        result = await self.controller.list_interview_pool(self.user)
+        self.assertEqual(result["data"], ["x"])
+
+    async def test_list_job_owners_route(self):
+        self.service.list_job_owners = AsyncMock(return_value=["y"])
+        result = await self.controller.list_job_owners(self.user)
+        self.assertEqual(result["data"], ["y"])
+
+    async def test_get_job_activity(self):
+        await self.controller.get_job_activity(current_user=self.user, job_id=9)
+        self.service.get_job_activity.assert_awaited_once_with(self.session, 9)
+
+    def _endpoint_permissions(self, endpoint):
+        """Pull the `permissions` list out of an authenticate()-wrapped endpoint."""
+        idx = endpoint.__code__.co_freevars.index("permissions")
+        return endpoint.__closure__[idx].cell_contents
+
+    def test_get_job_route_accepts_read_all(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+        get_job_route = routes_by_path["/recruiting/jobs/{job_id}"]
+
+        self.assertIn("GET", get_job_route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(get_job_route.endpoint),
+            [
+                Permission.RECRUITING_JOB_READ,
+                Permission.RECRUITING_JOB_WRITE,
+                Permission.RECRUITING_JOB_APPROVE,
+                Permission.RECRUITING_APPLICATION_READ_ALL,
+            ],
+        )
+
+    def test_list_jobs_route_accepts_write_approve_and_read_all(self):
+        """Anyone who can create/approve a job, or has the org-wide read-all
+        override, also needs to browse the postings list (e.g. the Job
+        Postings management page) — not just RECRUITING_JOB_READ holders."""
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+        list_jobs_route = routes_by_path["/recruiting/jobs"]
+
+        self.assertIn("GET", list_jobs_route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(list_jobs_route.endpoint),
+            [
+                Permission.RECRUITING_JOB_READ,
+                Permission.RECRUITING_JOB_WRITE,
+                Permission.RECRUITING_JOB_APPROVE,
+                Permission.RECRUITING_APPLICATION_READ_ALL,
+            ],
+        )
+
+    def test_job_authoring_helper_routes_accept_read_write_and_approve(self):
+        """approvers/interview-pool/job-owners are read-only lookups, so any
+        holder of RECRUITING_JOB_READ/WRITE/APPROVE should be able to load
+        them — not just RECRUITING_JOB_WRITE (job authors)."""
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+        expected = [
+            Permission.RECRUITING_JOB_READ,
+            Permission.RECRUITING_JOB_WRITE,
+            Permission.RECRUITING_JOB_APPROVE,
+        ]
+        for path in (
+            "/recruiting/approvers",
+            "/recruiting/interview-pool",
+            "/recruiting/job-owners",
+        ):
+            with self.subTest(path=path):
+                route = routes_by_path[path]
+                self.assertIn("GET", route.methods)
+                self.assertEqual(self._endpoint_permissions(route.endpoint), expected)
+
+    async def test_sync_recruiting_emails_returns_the_summary(self):
+        summary = {"scanned": 3, "synced": 2, "failed": 1, "newMessages": 4}
+        self.email_sync_service.sync_due_applications = AsyncMock(return_value=summary)
+
+        result = await self.controller.sync_recruiting_emails(current_user=self.user)
+
+        self.email_sync_service.sync_due_applications.assert_awaited_once_with(
+            self.session
+        )
+        # Partial failure is data, not a crash: the counts come back on a normal
+        # response, so k8s never re-runs the whole sweep over one bad thread.
+        self.assertEqual(result["data"], summary)
+
+    def test_sync_recruiting_emails_route_is_system_sync_gated(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+        sync_route = routes_by_path["/recruiting/emails/sync"]
+
+        self.assertIn("POST", sync_route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(sync_route.endpoint),
+            [Permission.SYSTEM_SYNC],
+        )
+
+    async def test_sync_recent_recruiting_emails_returns_the_summary(self):
+        summary = {"scanned": 2, "synced": 1, "failed": 1, "newMessages": 3}
+        self.email_sync_service.sync_recent_applications = AsyncMock(
+            return_value=summary
+        )
+
+        result = await self.controller.sync_recent_recruiting_emails(
+            current_user=self.user
+        )
+
+        self.email_sync_service.sync_recent_applications.assert_awaited_once_with(
+            self.session
+        )
+        # Partial failure is data, not a crash — a 5xx would make k8s re-run
+        # the whole sweep.
+        self.assertEqual(result["data"], summary)
+
+    def test_sync_recent_route_is_system_sync_gated(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+        route = routes_by_path["/recruiting/emails/sync/recent"]
+
+        self.assertIn("POST", route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(route.endpoint), [Permission.SYSTEM_SYNC]
+        )
+
+    def test_the_two_sync_routes_are_distinct(self):
+        # One is the nightly delta, the other the weekly reconcile; a copy-paste
+        # that pointed both at the same handler would silently disable one job.
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+        self.assertIn("/recruiting/emails/sync", routes_by_path)
+        self.assertIn("/recruiting/emails/sync/recent", routes_by_path)
+        # Compare the wrapped handlers, not the wrappers: authenticate() has no
+        # memoisation, so it mints a fresh wrapper object on every call — the
+        # wrappers would differ even if both routes pointed at the same handler,
+        # which is precisely the copy-paste this test exists to catch.
+        #
+        # __wrapped__ itself isn't enough either: it's a *bound method* looked
+        # up fresh off `self` at decoration time, and two separate attribute
+        # accesses of the same bound method (`self.foo is self.foo`) are always
+        # different objects in CPython even though they wrap the same
+        # underlying function — so assertIsNot on __wrapped__ directly would
+        # pass even under the copy-paste bug. Compare __func__, the underlying
+        # function object, which is a single object shared by every bound
+        # method of that name.
+        self.assertIsNot(
+            routes_by_path["/recruiting/emails/sync"].endpoint.__wrapped__.__func__,
+            routes_by_path[
+                "/recruiting/emails/sync/recent"
+            ].endpoint.__wrapped__.__func__,
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

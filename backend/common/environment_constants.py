@@ -48,6 +48,20 @@ TAILSCALE_PROXY = "TAILSCALE_PROXY"
 MENTORSHIP_MENTOR_ONBOARDING_LINK = "MENTORSHIP_MENTOR_ONBOARDING_LINK"
 MENTORSHIP_MENTEE_ONBOARDING_LINK = "MENTORSHIP_MENTEE_ONBOARDING_LINK"
 
+RESUME_BUCKET = "RESUME_BUCKET"
+
+# Google Calendar containers that app-created meetings live on, one per
+# scenario. Each environment points at its own secondary calendar under
+# USER_EMAIL, so a delete or a reschedule driven by one environment's data
+# cannot reach another environment's events -- Calendar event ids are scoped
+# per calendar, not globally.
+#
+# There is deliberately NO default and NO fallback to "primary": a missing
+# value must fail at startup, because silently writing to the account's primary
+# calendar is exactly the behaviour these variables exist to eliminate.
+MENTORSHIP_CALENDAR_ID = "MENTORSHIP_CALENDAR_ID"
+INTERVIEW_CALENDAR_ID = "INTERVIEW_CALENDAR_ID"
+
 # Auth0 multi-IdP email OTP / account-link flow.
 # Passwordless app drives the OTP send + verify; the M2M app holds Management
 # API credentials for identity linking and app_metadata writes.
@@ -61,3 +75,32 @@ AUTH0_M2M_AUDIENCE = "AUTH0_M2M_AUDIENCE"
 # HMAC secret signing the short-lived state JWT that ties an OTP verify back to
 # the session that initiated it (CSRF guard).
 EMAIL_OTP_STATE_JWT_SECRET = "EMAIL_OTP_STATE_JWT_SECRET"
+
+# Company-wide Gmail account used to send and read candidate email, authorized
+# once via OAuth2 refresh token (no in-app OAuth flow). The refresh token must
+# carry the gmail.send and gmail.readonly scopes.
+#
+# The From address is per sending service, not per mailbox: one mailbox can send
+# as several verified Send-As addresses, so each service gets its own variable
+# (GMAIL_SENDER_RECRUITING today; a notification one when that feature sends
+# mail). Each must be a real, receivable address (e.g. recruiting@circlecat.org)
+# — never noreply@ — and must be registered and verified as a Send-As on the
+# mailbox the refresh token belongs to, or Gmail silently rewrites the From to
+# the mailbox owner. Every environment sets its own value so a test mail is
+# recognisable as one; the code never knows which environment it is in.
+#
+# GmailClient is built eagerly at startup, so these must be set for the app to
+# boot — but for LOCAL development you can use any placeholder values (e.g.
+# "x"): they are only validated for presence and no network call is made until
+# an email is actually sent or read. Real secrets live in the deployed secret
+# store; you only need them locally if you are exercising the email feature.
+GMAIL_CLIENT_ID = "GMAIL_CLIENT_ID"
+GMAIL_CLIENT_SECRET = "GMAIL_CLIENT_SECRET"
+GMAIL_REFRESH_TOKEN = "GMAIL_REFRESH_TOKEN"
+GMAIL_SENDER_RECRUITING = "GMAIL_SENDER_RECRUITING"
+
+# Per-service, per-environment From addresses. One mailbox, several Send-As
+# aliases: recruiting correspondence and system notifications must be
+# distinguishable in a recipient's inbox, and each environment sends from its
+# own alias so a non-prod message can never look like a prod one.
+GMAIL_SENDER_NOTIFICATION = "GMAIL_SENDER_NOTIFICATION"

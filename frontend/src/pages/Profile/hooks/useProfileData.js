@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 import { getMyProfile, updateMyProfile } from "@/api/profileApi";
 import {
@@ -6,12 +6,14 @@ import {
   sortExperienceOrEducationList,
   DegreeEnum,
 } from "@/pages/Profile/utils";
-import { getDaysSince, formatLocalYmd } from "@/utils/dateTime";
 import { ProfileFields } from "@/constants/ApiEndpoints";
 import { useRequestGuard } from "@/hooks/useRequestGuard";
 
 export const useProfileData = () => {
   const [isLoading, setIsLoading] = useState(true);
+  // True when the profile fetch failed, so the page can show a retry state
+  // instead of rendering as an empty (but successfully loaded) profile.
+  const [loadError, setLoadError] = useState(false);
 
   /**
    * Personal information state.
@@ -140,6 +142,7 @@ export const useProfileData = () => {
    */
   const fetchProfileData = useCallback(async () => {
     const seq = begin();
+    setLoadError(false);
     setIsLoading(true);
     try {
       const {
@@ -162,6 +165,7 @@ export const useProfileData = () => {
       }
     } catch (error) {
       console.error("Failed to fetch profile:", error);
+      if (isCurrent(seq)) setLoadError(true);
     } finally {
       if (isCurrent(seq)) setIsLoading(false);
     }
@@ -185,29 +189,6 @@ export const useProfileData = () => {
   };
 
   /**
-   * Computed flag indicating whether user's timezone can be edited.
-   * Editing is restricted to once every 30 days.
-   */
-  const canEditTimezone = useMemo(() => {
-    if (!personalInfo.timezoneUpdatedAt) return true;
-
-    const days = getDaysSince(personalInfo.timezoneUpdatedAt);
-    return days >= 30;
-  }, [personalInfo.timezoneUpdatedAt]);
-
-  /**
-   * Computed string representing the next available edit date.
-   */
-  const nextEditableDate = useMemo(() => {
-    if (!personalInfo.timezoneUpdatedAt) return "";
-
-    const date = new Date(personalInfo.timezoneUpdatedAt);
-    date.setDate(date.getDate() + 30);
-
-    return formatLocalYmd(date);
-  }, [personalInfo.timezoneUpdatedAt]);
-
-  /**
    * Initial data load.
    */
   useEffect(() => {
@@ -219,11 +200,10 @@ export const useProfileData = () => {
    */
   return {
     isLoading,
+    loadError,
     personalInfo,
     experienceList,
     educationList,
-    canEditTimezone,
-    nextEditableDate,
     handleUpdateProfile,
     refresh: fetchProfileData,
   };

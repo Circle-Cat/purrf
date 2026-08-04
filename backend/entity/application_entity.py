@@ -1,0 +1,90 @@
+from datetime import datetime
+from sqlalchemy import (
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    func,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column
+from backend.common.base import Base
+from backend.common.recruiting_enums import ApplicationStage
+
+
+class ApplicationEntity(Base):
+    """One candidate's application attempt to a posting.
+
+    At most one NON-REJECTED row may exist per (job, user) — enforced by the
+    partial unique index below. REJECTED attempts accumulate as immutable
+    history; a re-apply creates a fresh row (see ApplicationService.submit).
+    """
+
+    __tablename__ = "application"
+    __table_args__ = (
+        Index(
+            "uq_application_job_user_active",
+            "job_id",
+            "user_id",
+            unique=True,
+            postgresql_where=text("stage != 'rejected'"),
+        ),
+        # Terminal-lane ordering ("most recently rejected/hired first").
+        # Kept in sync with migration 82498a573699 so create_all-based DB
+        # bootstraps (tools/init_db, used by CI) materialize it too.
+        Index(
+            "ix_application_job_stage_entered",
+            "job_id",
+            "stage",
+            text("stage_entered_at DESC"),
+            text("application_id DESC"),
+        ),
+    )
+
+    application_id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True
+    )
+    job_id: Mapped[int] = mapped_column(
+        ForeignKey("job.job_id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.user_id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    stage: Mapped[ApplicationStage] = mapped_column(
+        Enum(
+            ApplicationStage,
+            name="application_stage_enum",
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        default=ApplicationStage.APPLIED,
+        server_default=ApplicationStage.APPLIED.value,
+        nullable=False,
+    )
+    # Card sub-status within a stage.
+    sub_status: Mapped[str | None] = mapped_column(String)
+    # Which round of the current stage the applicant is on (1-indexed).
+    # Resets to 1 on every stage change; advanced only via an explicit owner
+    # action (BoardService.set_round). Meaningless (always 1) for a stage
+    # configured with a single round.
+    current_round: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    # Timestamp the application entered its CURRENT stage. Single source of
+    # truth for terminal-lane (rejected/hired) ordering, which needs "most
+    # recently rejected/hired first" and cannot rely on updated_timestamp
+    # (later non-stage writes, e.g. a blacklist tag backfill, would move it).
+    # server_default covers INSERT paths; stage-change UPDATEs set it explicitly.
+    stage_entered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    # Advisory flags (e.g. {"cold_freeze": {"thaw_date": "2026-04-01"}}).
+    tags: Mapped[dict | None] = mapped_column(JSONB)
+    created_datetime: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=func.now(), onupdate=func.now()
+    )

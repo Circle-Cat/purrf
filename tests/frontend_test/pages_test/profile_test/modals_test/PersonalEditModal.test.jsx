@@ -3,6 +3,9 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import PersonalEditModal from "@/pages/Profile/modals/PersonalEditModal";
+import { toast } from "sonner";
+
+vi.spyOn(toast, "error").mockImplementation(() => {});
 
 vi.mock("@/pages/Profile/utils", () => ({
   CommunicationMethodEnum: {
@@ -14,13 +17,19 @@ vi.mock("@/pages/Profile/utils", () => ({
 
 vi.mock("@/components/common/TimezoneSelector", () => ({
   default: ({ value, onChange, isDisabled }) => (
-    <select
-      value={value}
-      onChange={(e) => onChange({ value: e.target.value })}
-      disabled={isDisabled}
-    >
-      <option value="America/New_York">Eastern Time (US & Canada)</option>
-    </select>
+    <>
+      <select
+        value={value}
+        onChange={(e) => onChange({ value: e.target.value })}
+        disabled={isDisabled}
+      >
+        <option value="America/New_York">Eastern Time (US & Canada)</option>
+      </select>
+      {/* react-select fires onChange(null) when the value is cleared. */}
+      <button type="button" onClick={() => onChange(null)}>
+        clear-timezone
+      </button>
+    </>
   ),
 }));
 
@@ -66,7 +75,6 @@ describe("PersonalEditModal Component", () => {
         onClose={mockOnClose}
         initialData={initialData}
         onSave={mockOnSave}
-        canEditTimezone={true}
       />,
     );
 
@@ -89,7 +97,6 @@ describe("PersonalEditModal Component", () => {
         onClose={mockOnClose}
         initialData={initialData}
         onSave={mockOnSave}
-        canEditTimezone={true}
       />,
     );
 
@@ -115,7 +122,6 @@ describe("PersonalEditModal Component", () => {
         onClose={mockOnClose}
         initialData={initialData}
         onSave={mockOnSave}
-        canEditTimezone={true}
       />,
     );
 
@@ -142,6 +148,24 @@ describe("PersonalEditModal Component", () => {
     expect(mockOnClose).toHaveBeenCalled();
   });
 
+  it("shows an error toast and stays open when the save fails", async () => {
+    const user = userEvent.setup();
+    mockOnSave.mockRejectedValueOnce(new Error("boom"));
+    render(
+      <PersonalEditModal
+        isOpen={true}
+        onClose={mockOnClose}
+        initialData={initialData}
+        onSave={mockOnSave}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Save/i }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(mockOnClose).not.toHaveBeenCalled();
+  });
+
   it("should validate and show errors when required fields are cleared", async () => {
     const user = userEvent.setup();
     render(
@@ -150,7 +174,6 @@ describe("PersonalEditModal Component", () => {
         onClose={mockOnClose}
         initialData={initialData}
         onSave={mockOnSave}
-        canEditTimezone={true}
       />,
     );
 
@@ -164,25 +187,40 @@ describe("PersonalEditModal Component", () => {
     expect(mockOnSave).not.toHaveBeenCalled();
   });
 
-  it("should disable timezone selector when canEditTimezone is false", () => {
+  it("handles the timezone being cleared (onChange null) without crashing", async () => {
+    const user = userEvent.setup();
     render(
       <PersonalEditModal
         isOpen={true}
         onClose={mockOnClose}
         initialData={initialData}
         onSave={mockOnSave}
-        canEditTimezone={false}
-        nextEditableDate="2025-01-01"
+      />,
+    );
+
+    // Clearing the selector fires onChange(null); the modal must not crash and
+    // should treat the timezone as empty, surfacing the required-field error.
+    await user.click(screen.getByRole("button", { name: "clear-timezone" }));
+    await user.click(screen.getByRole("button", { name: /Save/i }));
+
+    expect(screen.getByText("Timezone is required")).toBeInTheDocument();
+    expect(mockOnSave).not.toHaveBeenCalled();
+  });
+
+  it("always renders the timezone selector enabled (no cooldown restriction)", () => {
+    render(
+      <PersonalEditModal
+        isOpen={true}
+        onClose={mockOnClose}
+        initialData={initialData}
+        onSave={mockOnSave}
       />,
     );
 
     const timezoneSelect = screen.getByDisplayValue(
       "Eastern Time (US & Canada)",
     );
-    expect(timezoneSelect).toBeDisabled();
-    expect(
-      screen.getByText(/Next editable date: 2025-01-01/),
-    ).toBeInTheDocument();
+    expect(timezoneSelect).not.toBeDisabled();
   });
 
   it("does not render the communication method selector", () => {

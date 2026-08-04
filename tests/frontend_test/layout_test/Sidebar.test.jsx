@@ -39,6 +39,34 @@ describe("Sidebar Component", () => {
     expect(screen.queryByText("DataSearch")).not.toBeInTheDocument();
   });
 
+  test("renders Open Positions for a user with no permissions and links to the jobs browse page", () => {
+    renderSidebar([]);
+
+    const link = screen.getByText("Open Positions");
+    expect(link).toBeInTheDocument();
+    expect(link.closest("a")).toHaveAttribute(
+      "href",
+      ROUTE_PATHS.RECRUITING_JOBS_BROWSE,
+    );
+  });
+
+  test("hides Applications Board for a user with no permissions", () => {
+    renderSidebar([]);
+
+    expect(screen.queryByText("Applications Board")).not.toBeInTheDocument();
+  });
+
+  test("renders Applications Board for a user with recruiting.application.advance and links to the board page", () => {
+    renderSidebar([PERMISSIONS.RECRUITING_APPLICATION_ADVANCE]);
+
+    const link = screen.getByText("Applications Board");
+    expect(link).toBeInTheDocument();
+    expect(link.closest("a")).toHaveAttribute(
+      "href",
+      ROUTE_PATHS.RECRUITING_BOARD,
+    );
+  });
+
   test("renders all links for a user with both internal permissions", () => {
     renderSidebar([
       PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ,
@@ -58,8 +86,8 @@ describe("Sidebar Component", () => {
     expect(screen.getByText("Personal Dashboard")).toBeInTheDocument();
   });
 
-  test("renders Mentorship Management for a user with management-read permission", () => {
-    renderSidebar([PERMISSIONS.MENTORSHIP_MANAGEMENT_READ]);
+  test("renders Mentorship Management for a user with admin-read permission", () => {
+    renderSidebar([PERMISSIONS.MENTORSHIP_ADMIN_READ]);
 
     expect(screen.getByText("Mentorship Management")).toBeInTheDocument();
     expect(screen.getByText("Personal Dashboard")).toBeInTheDocument();
@@ -67,7 +95,12 @@ describe("Sidebar Component", () => {
     expect(screen.queryByText("DataSearch")).not.toBeInTheDocument();
   });
 
-  test("does not render Mentorship Management without management-read permission", () => {
+  test("shows Mentorship Management for a write-only admin", () => {
+    renderSidebar([PERMISSIONS.MENTORSHIP_ADMIN_WRITE]);
+    expect(screen.getByText("Mentorship Management")).toBeInTheDocument();
+  });
+
+  test("does not render Mentorship Management without admin-read permission", () => {
     renderSidebar([
       PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ,
       PERMISSIONS.INTERNAL_ACTIVITY_READ,
@@ -85,7 +118,7 @@ describe("Sidebar Component", () => {
     const dashBoardLink = screen.getByText("Dashboard");
     const dataSearchLink = screen.queryByText("DataSearch");
 
-    expect(dashBoardLink).toHaveClass("active-link");
+    expect(dashBoardLink).toHaveAttribute("aria-current", "page");
     expect(dataSearchLink).toBeNull();
   });
 
@@ -97,5 +130,35 @@ describe("Sidebar Component", () => {
   test("does not render User Permissions without permission.manage", () => {
     renderSidebar([PERMISSIONS.DASHBOARD_ACTIVITY_SUMMARY_READ]);
     expect(screen.queryByText("User Permissions")).not.toBeInTheDocument();
+  });
+
+  test("renders Blacklist for a user with recruiting.blacklist.write permission", () => {
+    renderSidebar([PERMISSIONS.RECRUITING_BLACKLIST_WRITE]);
+    const link = screen.getByText("Blacklist");
+    expect(link).toBeInTheDocument();
+    expect(link.closest("a")).toHaveAttribute(
+      "href",
+      ROUTE_PATHS.RECRUITING_BLACKLIST,
+    );
+  });
+
+  test("does not render Blacklist without recruiting.blacklist.write permission", () => {
+    renderSidebar([PERMISSIONS.RECRUITING_JOB_APPROVE]);
+    expect(screen.queryByText("Blacklist")).not.toBeInTheDocument();
+  });
+
+  test("renders Recruiting Audit for a user with recruiting.audit.read permission", () => {
+    renderSidebar([PERMISSIONS.RECRUITING_AUDIT_READ]);
+    const link = screen.getByText("Recruiting Audit");
+    expect(link).toBeInTheDocument();
+    expect(link.closest("a")).toHaveAttribute(
+      "href",
+      ROUTE_PATHS.RECRUITING_AUDIT,
+    );
+  });
+
+  test("does not render Recruiting Audit without recruiting.audit.read permission", () => {
+    renderSidebar([PERMISSIONS.RECRUITING_JOB_APPROVE]);
+    expect(screen.queryByText("Recruiting Audit")).not.toBeInTheDocument();
   });
 });

@@ -40,28 +40,74 @@ const Sidebar = () => {
     {
       label: "Mentorship Management",
       to: ROUTE_PATHS.MENTORSHIP_MANAGEMENT,
-      permissions: [PERMISSIONS.MENTORSHIP_MANAGEMENT_READ],
+      permissions: [
+        PERMISSIONS.MENTORSHIP_ADMIN_READ,
+        PERMISSIONS.MENTORSHIP_ADMIN_WRITE,
+      ],
     },
     {
       label: "User Permissions",
       to: ROUTE_PATHS.ADMIN_USERS,
       permissions: [PERMISSIONS.PERMISSION_MANAGE],
     },
+    {
+      label: "Open Positions",
+      to: ROUTE_PATHS.RECRUITING_JOBS_BROWSE,
+      permissions: [],
+    },
+    {
+      label: "Applications Board",
+      to: ROUTE_PATHS.RECRUITING_BOARD,
+      permissions: [PERMISSIONS.RECRUITING_APPLICATION_ADVANCE],
+    },
+    {
+      label: "My Interview Evaluations",
+      to: ROUTE_PATHS.RECRUITING_MY_EVALUATIONS,
+      permissions: [PERMISSIONS.RECRUITING_INTERVIEW_EVALUATE],
+    },
+    {
+      label: "Job Postings",
+      to: ROUTE_PATHS.RECRUITING_POSTINGS,
+      permissions: [
+        PERMISSIONS.RECRUITING_JOB_WRITE,
+        PERMISSIONS.RECRUITING_JOB_READ,
+        PERMISSIONS.RECRUITING_JOB_APPROVE,
+      ],
+    },
+    {
+      label: "My Posting Reviews",
+      to: ROUTE_PATHS.RECRUITING_REVIEWS,
+      permissions: [PERMISSIONS.RECRUITING_JOB_APPROVE],
+    },
+    {
+      label: "Blacklist",
+      to: ROUTE_PATHS.RECRUITING_BLACKLIST,
+      permissions: [PERMISSIONS.RECRUITING_BLACKLIST_WRITE],
+    },
+    {
+      label: "Recruiting Audit",
+      to: ROUTE_PATHS.RECRUITING_AUDIT,
+      permissions: [PERMISSIONS.RECRUITING_AUDIT_READ],
+    },
   ];
 
   return (
-    <div className="sidebar">
-      <nav className="sidebar-nav">
-        <ul>
+    <div className="fixed left-0 top-16 z-[90] flex h-[calc(100vh-64px)] w-64 shrink-0 flex-col overflow-y-auto bg-background shadow-sm transition-[width] duration-200 group-data-[env-banner=true]:top-[104px] group-data-[env-banner=true]:h-[calc(100vh-104px)] group-data-[collapsed=true]:w-0 group-data-[collapsed=true]:overflow-hidden group-data-[collapsed=true]:shadow-none">
+      <nav className="p-4">
+        <ul className="m-0 list-none p-0">
           {navItems.map(
             (item) =>
               hasAccess(item.permissions) && (
-                <li key={item.to}>
+                <li key={item.to} className="mb-[5px]">
                   <NavLink
                     to={item.to}
                     end
                     className={({ isActive }) =>
-                      isActive ? "active-link" : ""
+                      `flex items-center rounded-xl px-4 py-3 text-sm font-medium no-underline transition-all ${
+                        isActive
+                          ? "bg-primary text-primary-foreground"
+                          : "text-foreground hover:bg-muted"
+                      }`
                     }
                   >
                     {item.label}

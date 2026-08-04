@@ -76,3 +76,98 @@ export const getMyMentorshipFeedback = (roundId) =>
  */
 export const postMyMentorshipFeedback = (roundId, data) =>
   request.post(API_ENDPOINTS.MENTORSHIP_FEEDBACK(roundId), data);
+
+/**
+ * Admin participant search across a round's participants and non-participants.
+ *
+ * Filter params are sent camelCase, not snake_case like this file's other GET
+ * params — the backend binds this endpoint's filters via a Pydantic model
+ * (`Depends()`) that only recognizes its camelCase aliases.
+ *
+ * @param {{userId?: number, name?: string, email?: string, matchedUser?: string,
+ *          roundId?: number, participantRole?: string, approvalStatus?: string,
+ *          onboardingStatus?: string, participationStatus?: "participant"|"non_participant",
+ *          limit?: number, offset?: number, sortBy?: string, order?: "asc"|"desc"}} filters
+ *
+ * sortBy/order are sent as sort_by/order because, unlike the other filters,
+ * they are plain query parameters on the endpoint rather than fields on its
+ * camelCase-aliased filter model.
+ */
+export const searchParticipants = ({
+  userId,
+  name,
+  email,
+  matchedUser,
+  roundId,
+  participantRole,
+  approvalStatus,
+  onboardingStatus,
+  participationStatus,
+  limit,
+  offset,
+  sortBy,
+  order,
+} = {}) =>
+  request.get(API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANTS, {
+    params: {
+      userId,
+      name,
+      email,
+      matchedUser,
+      roundId,
+      participantRole,
+      approvalStatus,
+      onboardingStatus,
+      participationStatus,
+      limit,
+      offset,
+      sort_by: sortBy,
+      order,
+    },
+  });
+
+/**
+ * Build the downloadable URL for the participant/non-participant CSV export.
+ * Returns a URL to navigate to (triggering a browser download), not a request.
+ *
+ * @param {{userId?: number, name?: string, email?: string, matchedUser?: string,
+ *          roundId?: number, participantRole?: string, approvalStatus?: string,
+ *          onboardingStatus?: string, participationStatus: "participant"|"non_participant",
+ *          expandMeetings?: boolean}} filters
+ */
+export const getParticipantExportUrl = ({
+  userId,
+  name,
+  email,
+  matchedUser,
+  roundId,
+  participantRole,
+  approvalStatus,
+  onboardingStatus,
+  participationStatus,
+  expandMeetings,
+} = {}) => {
+  const params = {
+    userId,
+    name,
+    email,
+    matchedUser,
+    roundId,
+    participantRole,
+    approvalStatus,
+    onboardingStatus,
+    participationStatus,
+    expand_meetings: expandMeetings,
+  };
+  const query = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v !== undefined && v !== ""),
+  ).toString();
+  return `${request.defaults.baseURL}${API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANTS_EXPORT}?${query}`;
+};
+
+/**
+ * Fetch the mentorship admin view of a pair's meeting log for the round.
+ * @param {number} pairId - The mentorship pair's id.
+ */
+export const getMeetingLog = (pairId) =>
+  request.get(API_ENDPOINTS.MENTORSHIP_ADMIN_PAIR_MEETINGS(pairId));

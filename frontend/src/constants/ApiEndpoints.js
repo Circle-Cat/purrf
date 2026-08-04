@@ -1,7 +1,6 @@
 export const API_ENDPOINTS = {
   MY_PROFILE: "/profiles/me",
   MY_PERMISSIONS: "/permissions/me",
-  EMAIL_ADD: "/auth/emails/add",
   EMAIL_REMOVE: (emailId) => `/auth/emails/${emailId}`,
   EMAIL_OTP_INITIATE: "/auth/emails/initiate",
   EMAIL_OTP_VERIFY: "/auth/emails/verify",
@@ -20,6 +19,10 @@ export const API_ENDPOINTS = {
   MENTORSHIP_FEEDBACK: (roundId) => `/mentorship/rounds/${roundId}/feedback`,
   MENTORSHIP_PARTNERS: "/mentorship/partners/me",
   MENTORSHIP_ROUNDS: "/mentorship/rounds",
+  MENTORSHIP_ADMIN_PARTICIPANTS: "/mentorship/admin/participants",
+  MENTORSHIP_ADMIN_PARTICIPANTS_EXPORT: "/mentorship/admin/participants/export",
+  MENTORSHIP_ADMIN_PAIR_MEETINGS: (pairId) =>
+    `/mentorship/admin/pairs/${pairId}/meetings`,
   MENTORSHIP_MEETINGS_ENDPOINT: "/mentorship/v1/meetings",
   MY_INTERNAL_ACTIVITY_SUMMARY: "/summary/me",
   MENTORSHIP_MEETINGS_V2: "/mentorship/v2/meetings",
@@ -34,6 +37,69 @@ export const API_ENDPOINTS = {
   ADMIN_USER_GRANT: (userId) => `/admin/users/${userId}/permissions/grant`,
   ADMIN_USER_REVOKE: (userId) => `/admin/users/${userId}/permissions/revoke`,
   ADMIN_USER_SUPER_ADMIN: (userId) => `/admin/users/${userId}/super-admin`,
+  RECRUITING_JOBS: "/recruiting/jobs",
+  RECRUITING_JOB: (jobId) => `/recruiting/jobs/${jobId}`,
+  RECRUITING_JOB_SUBMIT: (jobId) => `/recruiting/jobs/${jobId}/submit`,
+  RECRUITING_JOB_CLOSE: (jobId) => `/recruiting/jobs/${jobId}/close`,
+  RECRUITING_JOB_ACTIVITY: (jobId) => `/recruiting/jobs/${jobId}/activity`,
+  RECRUITING_JOB_REQUEST_CLOSE: (jobId) =>
+    `/recruiting/jobs/${jobId}/request-close`,
+  RECRUITING_JOB_REQUEST_REOPEN: (jobId) =>
+    `/recruiting/jobs/${jobId}/request-reopen`,
+  RECRUITING_JOB_DISCARD_PENDING_EDIT: (jobId) =>
+    `/recruiting/jobs/${jobId}/discard-pending-edit`,
+  RECRUITING_APPROVERS: "/recruiting/approvers",
+  RECRUITING_REVIEWS: "/recruiting/reviews",
+  RECRUITING_REVIEW: (reviewId) => `/recruiting/reviews/${reviewId}`,
+  RECRUITING_INTERVIEW_POOL: "/recruiting/interview-pool",
+  RECRUITING_JOB_OWNERS: "/recruiting/job-owners",
+  RECRUITING_PUBLIC_JOB: (jobId) => `/recruiting/public/jobs/${jobId}`,
+  RECRUITING_PUBLIC_JOBS: "/recruiting/public/jobs",
+  RECRUITING_RESUMES: "/recruiting/resumes",
+  RECRUITING_APPLICATIONS: "/recruiting/applications",
+  RECRUITING_APPLICATION: (applicationId) =>
+    `/recruiting/applications/${applicationId}`,
+  RECRUITING_APPLICATIONS_MINE: "/recruiting/applications/mine",
+  RECRUITING_MY_APPLICATIONS: "/recruiting/my-applications",
+  RECRUITING_BOARD_JOBS: "/recruiting/board/jobs",
+  RECRUITING_BOARD_APPLICANTS: "/recruiting/board/applicants",
+  RECRUITING_JOB_BOARD: (jobId) => `/recruiting/jobs/${jobId}/board`,
+  RECRUITING_JOB_BOARD_STAGE: (jobId) =>
+    `/recruiting/jobs/${jobId}/board/applications`,
+  RECRUITING_APPLICATION_STAGE: (id) => `/recruiting/applications/${id}/stage`,
+  RECRUITING_APPLICATION_SUB_STATUS: (id) =>
+    `/recruiting/applications/${id}/sub-status`,
+  RECRUITING_APPLICATION_ROUND: (id) => `/recruiting/applications/${id}/round`,
+  RECRUITING_APPLICATION_RESUME: (id) =>
+    `/recruiting/applications/${id}/resume`,
+  RECRUITING_APPLICATION_ASSIGNMENT: (id) =>
+    `/recruiting/applications/${id}/assignment`,
+  RECRUITING_APPLICATION_INTERVIEW: (id) =>
+    `/recruiting/applications/${id}/interview`,
+  RECRUITING_BLACKLIST: "/recruiting/blacklist",
+  RECRUITING_BLACKLIST_UNBLOCK: (userId) => `/recruiting/blacklist/${userId}`,
+  RECRUITING_BLACKLIST_UPCOMING_INTERVIEWS: (userId) =>
+    `/recruiting/blacklist/${userId}/upcoming-interviews`,
+  RECRUITING_APPLICATION_EVALUATION: (id) =>
+    `/recruiting/applications/${id}/evaluation`,
+  RECRUITING_EVALUATIONS_MINE: "/recruiting/evaluations/mine",
+  RECRUITING_APPLICATION_EVALUATIONS: (id) =>
+    `/recruiting/applications/${id}/evaluations`,
+  RECRUITING_APPLICATION_ACTIVITY: (id) =>
+    `/recruiting/applications/${id}/activity`,
+  RECRUITING_APPLICATION_COMMENTS: (id) =>
+    `/recruiting/applications/${id}/comments`,
+  RECRUITING_APPLICATION_EMAILS: (id) =>
+    `/recruiting/applications/${id}/emails`,
+  RECRUITING_APPLICATION_EMAIL_TEMPLATES: (id) =>
+    `/recruiting/applications/${id}/email-templates`,
+  RECRUITING_APPLICATION_MENTIONABLE_USERS: (id) =>
+    `/recruiting/applications/${id}/mentionable-users`,
+  RECRUITING_APPLICATION_OTHER_APPLICATIONS: (id) =>
+    `/recruiting/applications/${id}/other-applications`,
+  RECRUITING_AUDIT_OVERVIEW: "/recruiting/audit/overview",
+  RECRUITING_NOTIFICATIONS: "/recruiting/notifications",
+  RECRUITING_NOTIFICATION: (id) => `/recruiting/notifications/${id}`,
 };
 
 /**

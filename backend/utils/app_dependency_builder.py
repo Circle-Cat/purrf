@@ -69,8 +69,13 @@ from backend.internal_activity_service.google_chat_analytics_service import (
 )
 from backend.internal_activity_service.summary_service import SummaryService
 from backend.common.environment_constants import (
+    GMAIL_SENDER_RECRUITING,
+    GMAIL_SENDER_NOTIFICATION,
     JIRA_SERVER,
     JIRA_USER,
+    MENTORSHIP_CALENDAR_ID,
+    INTERVIEW_CALENDAR_ID,
+    USER_EMAIL,
 )
 from backend.historical_data.google_chat_history_sync_service import (
     GoogleChatHistorySyncService,
@@ -85,15 +90,69 @@ from backend.authentication.email_management_controller import (
 )
 from backend.admin.permission_admin_service import PermissionAdminService
 from backend.admin.permission_admin_controller import PermissionAdminController
+from backend.repository.job_repository import JobRepository
+from backend.repository.job_activity_repository import JobActivityRepository
+from backend.repository.job_review_repository import JobReviewRepository
+from backend.repository.notification_repository import NotificationRepository
+from backend.repository.application_repository import ApplicationRepository
+from backend.repository.application_assignment_repository import (
+    ApplicationAssignmentRepository,
+)
+from backend.repository.application_interview_repository import (
+    ApplicationInterviewRepository,
+)
+from backend.repository.application_activity_repository import (
+    ApplicationActivityRepository,
+)
+from backend.repository.application_comment_repository import (
+    ApplicationCommentRepository,
+)
+from backend.repository.application_comment_mention_repository import (
+    ApplicationCommentMentionRepository,
+)
+from backend.repository.application_submission_repository import (
+    ApplicationSubmissionRepository,
+)
+from backend.repository.evaluation_repository import EvaluationRepository
+from backend.recruiting.recruiting_mapper import RecruitingMapper
+from backend.recruiting.job_service import JobService
+from backend.recruiting.recruiting_controller import RecruitingController
+from backend.recruiting.resume_storage import ResumeStorage
+from backend.recruiting.application_service import ApplicationService
+from backend.recruiting.application_controller import ApplicationController
+from backend.recruiting.application_access import ApplicationAccess
+from backend.recruiting.board_service import BoardService
+from backend.recruiting.email_sync_service import EmailSyncService
+from backend.recruiting.board_controller import BoardController
+from backend.recruiting.interview_scheduling_service import InterviewSchedulingService
+from backend.recruiting.blacklist_service import BlacklistService
+from backend.recruiting.blacklist_controller import BlacklistController
+from backend.recruiting.evaluation_service import EvaluationService
+from backend.recruiting.evaluation_controller import EvaluationController
+from backend.recruiting.audit_service import AuditService
+from backend.recruiting.audit_controller import AuditController
+from backend.recruiting.notification_service import RecruitingNotificationService
+from backend.recruiting.notification_controller import RecruitingNotificationController
+from backend.recruiting.notification_dispatcher import NotificationDispatcher
+from backend.communication.notification_email_service import NotificationEmailService
+from backend.common.environment_constants import RESUME_BUCKET
 from backend.common.auth0_client import Auth0Client
 from backend.repository.users_repository import UsersRepository
 from backend.repository.user_identities_repository import UserIdentitiesRepository
 from backend.repository.user_emails_repository import UserEmailsRepository
+from backend.repository.email_thread_repository import EmailThreadRepository
+from backend.repository.email_message_repository import EmailMessageRepository
+from backend.common.gmail_client import GmailClient
+from backend.communication.email_conversation_service import EmailConversationService
+from backend.communication.meeting_scheduling_service import MeetingSchedulingService
 from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.repository.experience_repository import ExperienceRepository
 from backend.repository.training_repository import TrainingRepository
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from backend.repository.mentorship_pairs_repository import MentorshipPairsRepository
+from backend.repository.mentorship_meeting_repository import (
+    MentorshipMeetingRepository,
+)
 from backend.repository.mentorship_round_participants_repository import (
     MentorshipRoundParticipantsRepository,
 )
@@ -107,6 +166,7 @@ from backend.mentorship.participation_service import ParticipationService
 from backend.mentorship.registration_service import RegistrationService
 from backend.mentorship.meeting_service import MeetingService
 from backend.mentorship.meet_attendance_service import MeetAttendanceService
+from backend.mentorship.onboarding_training_service import OnboardingTrainingService
 from backend.profile.profile_query_service import ProfileQueryService
 from backend.profile.profile_command_service import ProfileCommandService
 from backend.profile.profile_mapper import ProfileMapper
@@ -138,6 +198,21 @@ class AppDependencyBuilder:
     def __init__(self):
         jira_server = os.getenv(JIRA_SERVER)
         jira_user = os.getenv(JIRA_USER)
+
+        # Each scenario writes to its own per-environment Calendar container.
+        # Missing values fail here, at startup: a service falling back to the
+        # impersonated account's primary calendar is exactly what lets one
+        # environment's delete or reschedule reach another environment's event.
+        mentorship_calendar_id = os.getenv(MENTORSHIP_CALENDAR_ID)
+        if not mentorship_calendar_id:
+            raise ValueError(f"Missing environment variable: {MENTORSHIP_CALENDAR_ID}")
+        interview_calendar_id = os.getenv(INTERVIEW_CALENDAR_ID)
+        if not interview_calendar_id:
+            raise ValueError(f"Missing environment variable: {INTERVIEW_CALENDAR_ID}")
+
+        # No presence check here: GoogleClient already validates USER_EMAIL and
+        # raises before this point, so repeating it would just be noise.
+        user_email = os.getenv(USER_EMAIL)
 
         self.logger = get_logger()
         self.retry_utils = RetryUtils()
@@ -306,6 +381,7 @@ class AppDependencyBuilder:
             google_reports_client=self.google_reports_client,
             retry_utils=self.retry_utils,
             google_service=self.google_service,
+            bot_account_email=user_email,
         )
         self.google_chat_history_sync_service = GoogleChatHistorySyncService(
             logger=self.logger,
@@ -391,6 +467,12 @@ class AppDependencyBuilder:
         self.user_emails_repository = UserEmailsRepository()
         self.user_permissions_repository = UserPermissionsRepository()
         self.training_repository = TrainingRepository()
+        # Built here, next to its repository, because both ApplicationService
+        # and BoardService take it and are constructed further down.
+        self.onboarding_training_service = OnboardingTrainingService(
+            logger=self.logger,
+            training_repository=self.training_repository,
+        )
         self.database = Database(echo=False)
         self.user_identity_service = UserIdentityService(
             logger=self.logger,
@@ -409,16 +491,19 @@ class AppDependencyBuilder:
             auth0_client=self.auth0_client,
             user_emails_repository=self.user_emails_repository,
             user_identities_repository=self.user_identities_repository,
-            users_repository=self.users_repository,
             user_permissions_repository=self.user_permissions_repository,
+            users_repository=self.users_repository,
             logger=self.logger,
         )
         self.mentorship_round_repository = MentorshipRoundRepository()
         self.mentorship_pairs_repository = MentorshipPairsRepository()
+        self.mentorship_meeting_repository = MentorshipMeetingRepository()
         self.mentorship_round_participants_repo = (
             MentorshipRoundParticipantsRepository()
         )
         self.preferences_repository = PreferencesRepository()
+        self.job_repository = JobRepository()
+        self.application_repository = ApplicationRepository()
         self.mentorship_mapper = MentorshipMapper()
         self.rounds_service = RoundsService(
             mentorship_round_repository=self.mentorship_round_repository,
@@ -432,6 +517,7 @@ class AppDependencyBuilder:
             mentorship_round_participants_repo=self.mentorship_round_participants_repo,
             mentorship_round_repository=self.mentorship_round_repository,
             mentorship_mapper=self.mentorship_mapper,
+            user_emails_repository=self.user_emails_repository,
         )
         self.registration_service = RegistrationService(
             logger=self.logger,
@@ -440,14 +526,22 @@ class AppDependencyBuilder:
             mentorship_round_participants_repository=self.mentorship_round_participants_repo,
             participation_service=self.participation_service,
             mentorship_mapper=self.mentorship_mapper,
-            training_repository=self.training_repository,
+            onboarding_training_service=self.onboarding_training_service,
+            application_repository=self.application_repository,
+        )
+        self.meeting_scheduling_service = MeetingSchedulingService(
+            logger=self.logger,
+            google_service=self.google_service,
+            user_emails_repository=self.user_emails_repository,
         )
         self.meeting_service = MeetingService(
             logger=self.logger,
             mentorship_pairs_repository=self.mentorship_pairs_repository,
             mentorship_mapper=self.mentorship_mapper,
             users_repository=self.users_repository,
-            google_service=self.google_service,
+            meeting_scheduling_service=self.meeting_scheduling_service,
+            mentorship_calendar_id=mentorship_calendar_id,
+            mentorship_meeting_repository=self.mentorship_meeting_repository,
         )
         self.meet_attendance_service = MeetAttendanceService(
             logger=self.logger,
@@ -457,6 +551,7 @@ class AppDependencyBuilder:
             users_repository=self.users_repository,
             user_identities_repository=self.user_identities_repository,
             user_emails_repository=self.user_emails_repository,
+            mentorship_meeting_repository=self.mentorship_meeting_repository,
         )
         self.mentorship_controller = MentorshipController(
             rounds_service=self.rounds_service,
@@ -472,6 +567,12 @@ class AppDependencyBuilder:
             participants_repository=self.mentorship_round_participants_repo,
             rounds_repository=self.mentorship_round_repository,
             training_repository=self.training_repository,
+            pairs_repository=self.mentorship_pairs_repository,
+            mentorship_mapper=self.mentorship_mapper,
+            date_time_util=self.date_time_util,
+            database=self.database,
+            logger=self.logger,
+            mentorship_meeting_repository=self.mentorship_meeting_repository,
         )
         self.mentorship_admin_controller = MentorshipAdminController(
             mentorship_admin_service=self.mentorship_admin_service,
@@ -484,6 +585,7 @@ class AppDependencyBuilder:
             experience_repository=self.experience_repository,
             training_repository=self.training_repository,
             profile_mapper=self.profile_mapper,
+            user_emails_repository=self.user_emails_repository,
         )
         self.profile_command_service = ProfileCommandService(
             users_repository=self.users_repository,
@@ -506,10 +608,203 @@ class AppDependencyBuilder:
         self.permission_admin_service = PermissionAdminService(
             self.users_repository,
             self.user_permissions_repository,
+            self.user_emails_repository,
         )
         self.permission_admin_controller = PermissionAdminController(
             self.permission_admin_service,
             database=self.database,
+        )
+        self.notification_repository = NotificationRepository()
+        self.job_review_repository = JobReviewRepository()
+        self.job_activity_repository = JobActivityRepository()
+        self.recruiting_mapper = RecruitingMapper()
+        # Person-anchored email transport, needed by the notification email
+        # channel below. GmailClient reads the GMAIL_* credentials from the
+        # env itself (use placeholder values locally -- real secrets are only
+        # needed to actually send/read mail).
+        #
+        # The From addresses are read here instead: one per sending service,
+        # so the transport stays unaware of which services exist. Recruiting
+        # and notifications each get their own. Missing is fatal at startup
+        # rather than defaulted -- an unowned From is silently rewritten by
+        # Gmail, so a wrong or absent value would surface as mail from the
+        # wrong identity, not as an error.
+        recruiting_sender = os.getenv(GMAIL_SENDER_RECRUITING)
+        if not recruiting_sender:
+            raise ValueError(f"Missing environment variable: {GMAIL_SENDER_RECRUITING}")
+        self.notification_sender_address = os.getenv(GMAIL_SENDER_NOTIFICATION)
+        if not self.notification_sender_address:
+            raise ValueError(
+                f"Missing environment variable: {GMAIL_SENDER_NOTIFICATION}"
+            )
+        self.gmail_client = GmailClient(
+            logger=self.logger,
+            retry_utils=self.retry_utils,
+            sender_addresses=[recruiting_sender, self.notification_sender_address],
+        )
+        self.recruiting_notification_service = RecruitingNotificationService(
+            self.notification_repository,
+            self.application_repository,
+            self.job_repository,
+            self.users_repository,
+        )
+        self.notification_email_service = NotificationEmailService(
+            gmail_client=self.gmail_client,
+            logger=self.logger,
+            sender_address=self.notification_sender_address,
+        )
+        self.notification_dispatcher = NotificationDispatcher(
+            notification_repository=self.notification_repository,
+            notification_service=self.recruiting_notification_service,
+            user_emails_repository=self.user_emails_repository,
+            email_service=self.notification_email_service,
+            logger=self.logger,
+        )
+        self.job_service = JobService(
+            self.job_repository,
+            self.recruiting_mapper,
+            self.user_permissions_repository,
+            self.job_review_repository,
+            self.notification_dispatcher,
+            self.users_repository,
+            self.job_activity_repository,
+            self.user_emails_repository,
+        )
+        self.application_assignment_repository = ApplicationAssignmentRepository()
+        self.application_interview_repository = ApplicationInterviewRepository()
+        self.application_activity_repository = ApplicationActivityRepository()
+        self.application_comment_repository = ApplicationCommentRepository()
+        self.application_comment_mention_repository = (
+            ApplicationCommentMentionRepository()
+        )
+        self.application_submission_repository = ApplicationSubmissionRepository()
+        self.resume_storage = ResumeStorage(os.getenv(RESUME_BUCKET))
+        self.evaluation_repository = EvaluationRepository()
+        self.application_service = ApplicationService(
+            self.application_repository,
+            self.application_submission_repository,
+            self.job_repository,
+            self.users_repository,
+            self.recruiting_mapper,
+            self.application_assignment_repository,
+            self.application_activity_repository,
+            self.notification_dispatcher,
+            self.user_emails_repository,
+            self.onboarding_training_service,
+        )
+        self.application_controller = ApplicationController(
+            self.application_service,
+            self.job_service,
+            self.resume_storage,
+            self.database,
+        )
+        # Person-anchored email (recruiting Emails tab). self.gmail_client and
+        # recruiting_sender were constructed earlier, alongside the
+        # notification email channel, since JobService/ApplicationService
+        # need self.notification_dispatcher before they are built above.
+        self.email_thread_repository = EmailThreadRepository()
+        self.email_message_repository = EmailMessageRepository()
+        self.email_conversation_service = EmailConversationService(
+            gmail_client=self.gmail_client,
+            thread_repository=self.email_thread_repository,
+            message_repository=self.email_message_repository,
+            sender_address=recruiting_sender,
+        )
+        self.email_sync_service = EmailSyncService(
+            gmail_client=self.gmail_client,
+            email_conversation_service=self.email_conversation_service,
+            application_activity_repository=self.application_activity_repository,
+            application_repository=self.application_repository,
+            logger=self.logger,
+        )
+        self.recruiting_controller = RecruitingController(
+            job_service=self.job_service,
+            email_sync_service=self.email_sync_service,
+            database=self.database,
+        )
+
+        # Shared owner/assignee gating + interview-evaluator validation, used
+        # by both BoardService (via its thin delegating methods) and
+        # InterviewSchedulingService.
+        self.application_access = ApplicationAccess(
+            self.application_repository,
+            self.job_repository,
+            self.application_assignment_repository,
+            self.user_permissions_repository,
+        )
+        # Built before BoardService, which delegates its ghost-meeting cleanup
+        # (change_stage/set_round's `cancelInterview`) here. The dependency is
+        # one-way: this service never calls back into BoardService.
+        self.interview_scheduling_service = InterviewSchedulingService(
+            self.logger,
+            self.application_access,
+            self.application_repository,
+            self.application_assignment_repository,
+            self.application_interview_repository,
+            self.application_activity_repository,
+            self.users_repository,
+            self.user_emails_repository,
+            self.meeting_scheduling_service,
+            self.recruiting_mapper,
+            interview_calendar_id,
+        )
+        self.board_service = BoardService(
+            self.job_repository,
+            self.application_repository,
+            self.application_submission_repository,
+            self.users_repository,
+            self.recruiting_mapper,
+            self.resume_storage,
+            self.application_assignment_repository,
+            self.user_permissions_repository,
+            self.application_activity_repository,
+            self.application_comment_repository,
+            self.application_comment_mention_repository,
+            self.evaluation_repository,
+            self.notification_dispatcher,
+            self.user_emails_repository,
+            self.email_conversation_service,
+            self.email_sync_service,
+            self.application_interview_repository,
+            self.application_access,
+            self.interview_scheduling_service,
+            self.onboarding_training_service,
+        )
+        self.board_controller = BoardController(
+            self.board_service,
+            self.database,
+            self.interview_scheduling_service,
+        )
+        self.blacklist_service = BlacklistService(
+            self.users_repository, self.user_emails_repository
+        )
+        self.blacklist_controller = BlacklistController(
+            self.blacklist_service,
+            self.database,
+        )
+        self.evaluation_service = EvaluationService(
+            self.application_repository,
+            self.application_assignment_repository,
+            self.evaluation_repository,
+            self.job_repository,
+            self.users_repository,
+            self.application_activity_repository,
+        )
+        self.evaluation_controller = EvaluationController(
+            self.evaluation_service,
+            self.database,
+        )
+        self.audit_service = AuditService(
+            self.job_repository,
+            self.application_repository,
+        )
+        self.audit_controller = AuditController(
+            self.audit_service,
+            self.database,
+        )
+        self.recruiting_notification_controller = RecruitingNotificationController(
+            self.recruiting_notification_service,
+            self.database,
         )
         self.fast_app_factory = FastAppFactory(
             authentication_controller=self.authentication_controller,
@@ -525,6 +820,13 @@ class AppDependencyBuilder:
             mentorship_admin_controller=self.mentorship_admin_controller,
             email_management_controller=self.email_management_controller,
             permission_admin_controller=self.permission_admin_controller,
+            recruiting_controller=self.recruiting_controller,
+            application_controller=self.application_controller,
+            board_controller=self.board_controller,
+            blacklist_controller=self.blacklist_controller,
+            evaluation_controller=self.evaluation_controller,
+            audit_controller=self.audit_controller,
+            recruiting_notification_controller=self.recruiting_notification_controller,
             launchdarkly_client=self.launchdarkly_client,
             database=self.database,
             logger=self.logger,

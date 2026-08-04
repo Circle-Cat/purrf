@@ -8,6 +8,9 @@ import {
   postMyMentorshipRegistration,
   getMyMentorshipMeetingLog,
   postMyMentorshipMeetingLog,
+  searchParticipants,
+  getMeetingLog,
+  getParticipantExportUrl,
 } from "@/api/mentorshipApi";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
@@ -16,6 +19,7 @@ vi.mock("@/utils/request", () => {
     default: {
       get: vi.fn(),
       post: vi.fn(),
+      defaults: { baseURL: "/api" },
     },
   };
 });
@@ -137,5 +141,151 @@ describe("Mentorship Service API", () => {
       payload,
     );
     expect(result).toEqual(mockResponse);
+  });
+
+  it("searchParticipants sends filters as camelCase params", async () => {
+    const mockData = { participant_rows: [], total: 0 };
+    request.get.mockResolvedValue(mockData);
+
+    const result = await searchParticipants({
+      userId: 5,
+      name: "Alice",
+      email: "alice@x.com",
+      matchedUser: "Bob Smith",
+      roundId: 3,
+      participantRole: "mentor",
+      approvalStatus: "matched",
+      onboardingStatus: "completed",
+      participationStatus: "participant",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(request.get).toHaveBeenCalledWith(
+      API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANTS,
+      {
+        params: {
+          userId: 5,
+          name: "Alice",
+          email: "alice@x.com",
+          matchedUser: "Bob Smith",
+          roundId: 3,
+          participantRole: "mentor",
+          approvalStatus: "matched",
+          onboardingStatus: "completed",
+          participationStatus: "participant",
+          limit: 20,
+          offset: 0,
+        },
+      },
+    );
+    expect(result).toEqual(mockData);
+  });
+
+  it("searchParticipants sends sortBy as the sort_by query param", async () => {
+    request.get.mockResolvedValue({ participant_rows: [], total: 0 });
+
+    await searchParticipants({
+      participationStatus: "participant",
+      limit: 20,
+      offset: 0,
+      sortBy: "user_id",
+      order: "desc",
+    });
+
+    expect(request.get).toHaveBeenCalledWith(
+      API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANTS,
+      expect.objectContaining({
+        params: expect.objectContaining({
+          sort_by: "user_id",
+          order: "desc",
+        }),
+      }),
+    );
+  });
+
+  it("searchParticipants omits filters that are not provided", async () => {
+    request.get.mockResolvedValue({ participant_rows: [], total: 0 });
+
+    await searchParticipants({
+      participationStatus: "non_participant",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(request.get).toHaveBeenCalledWith(
+      API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANTS,
+      {
+        params: {
+          userId: undefined,
+          name: undefined,
+          email: undefined,
+          matchedUser: undefined,
+          roundId: undefined,
+          participantRole: undefined,
+          approvalStatus: undefined,
+          onboardingStatus: undefined,
+          participationStatus: "non_participant",
+          limit: 20,
+          offset: 0,
+          sort_by: undefined,
+          order: undefined,
+        },
+      },
+    );
+  });
+
+  it("getParticipantExportUrl sends export filters with correct param names", () => {
+    const url = getParticipantExportUrl({
+      userId: 5,
+      name: "Alice",
+      participationStatus: "participant",
+      expandMeetings: true,
+    });
+
+    const [base, query] = url.split("?");
+    expect(base).toBe(
+      `${request.defaults.baseURL}${API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANTS_EXPORT}`,
+    );
+    const params = new URLSearchParams(query);
+    expect(params.get("userId")).toBe("5");
+    expect(params.get("name")).toBe("Alice");
+    expect(params.get("participationStatus")).toBe("participant");
+    expect(params.get("expand_meetings")).toBe("true");
+  });
+
+  it("getParticipantExportUrl includes expand_meetings=false when expandMeetings is false", () => {
+    const url = getParticipantExportUrl({
+      participationStatus: "participant",
+      expandMeetings: false,
+    });
+
+    const params = new URLSearchParams(url.split("?")[1]);
+    expect(params.get("expand_meetings")).toBe("false");
+  });
+
+  it("getParticipantExportUrl omits filters that are not provided", () => {
+    const url = getParticipantExportUrl({
+      participationStatus: "non_participant",
+    });
+
+    const params = new URLSearchParams(url.split("?")[1]);
+    expect(params.has("userId")).toBe(false);
+    expect(params.has("name")).toBe(false);
+    expect(params.has("expand_meetings")).toBe(false);
+    expect(params.get("participationStatus")).toBe("non_participant");
+  });
+
+  it("getMeetingLog should call the correct GET endpoint for the given pair", async () => {
+    const pairId = 80;
+    const mockData = { roundVersion: "v2", meetings: [] };
+    request.get.mockResolvedValue(mockData);
+
+    const result = await getMeetingLog(pairId);
+
+    expect(request.get).toHaveBeenCalledWith(
+      API_ENDPOINTS.MENTORSHIP_ADMIN_PAIR_MEETINGS(pairId),
+    );
+    expect(result).toEqual(mockData);
   });
 });

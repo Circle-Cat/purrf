@@ -1,5 +1,7 @@
+from datetime import datetime
+
 from backend.entity.user_emails_entity import UserEmailsEntity
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -49,25 +51,25 @@ class UserEmailsRepository:
         )
         return list(result.scalars().all())
 
-    async def get_non_primary_emails_by_user_ids(
+    async def get_emails_by_user_ids(
         self, session: AsyncSession, user_ids: list[int]
     ) -> dict[int, list[str]]:
         """
-        Map each user_id to its non-primary email addresses (its "alternative"
-        emails), regardless of otp_confirmed.
+        Map each user_id to all of its email addresses, primary or not,
+        regardless of otp_confirmed.
 
         Backs Meet attendance matching, which matches a meeting participant
         against any of a mentor/mentee's known addresses. A user with no
-        non-primary email is omitted from the map. An empty input
-        short-circuits without a query.
+        email rows is omitted from the map. An empty input short-circuits
+        without a query.
 
         Args:
             session (AsyncSession): The active async database session.
-            user_ids (list[int]): user_ids whose alternative emails to fetch.
+            user_ids (list[int]): user_ids whose emails to fetch.
 
         Returns:
-            dict[int, list[str]]: {user_id: [non-primary email, ...]} for users
-            that have at least one; users with only a primary email are omitted.
+            dict[int, list[str]]: {user_id: [email, ...]} for users that have
+            at least one row; users without any are omitted.
         """
         if not user_ids:
             return {}
@@ -75,65 +77,127 @@ class UserEmailsRepository:
             select(
                 UserEmailsEntity.user_id,
                 UserEmailsEntity.email,
-            ).where(
-                UserEmailsEntity.user_id.in_(user_ids),
-                UserEmailsEntity.is_primary.is_(False),
-            )
+            ).where(UserEmailsEntity.user_id.in_(user_ids))
         )
         emails_by_user_id: dict[int, list[str]] = {}
         for user_id, email in result.all():
             emails_by_user_id.setdefault(user_id, []).append(email)
         return emails_by_user_id
 
-    async def exists_confirmed_on_other_user(
+    async def get_contact_emails_by_user_ids(
+        self, session: AsyncSession, user_ids: list[int]
+    ) -> dict[int, str]:
+        """
+        Map each user_id to its best contact address: the primary row when one
+        exists, otherwise the user's oldest claim (lowest email_id) — the
+        address seeded from their login, i.e. what the legacy
+        users.primary_email column held. This is the read that replaces that
+        column.
+
+        A user with no email rows is omitted from the map. An empty input
+        short-circuits without a query.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_ids (list[int]): user_ids whose contact address to fetch.
+
+        Returns:
+            dict[int, str]: {user_id: email} for users that have at least one
+            row; users without any are omitted.
+        """
+        if not user_ids:
+            return {}
+        result = await session.execute(
+            select(UserEmailsEntity.user_id, UserEmailsEntity.email)
+            .distinct(UserEmailsEntity.user_id)
+            .where(UserEmailsEntity.user_id.in_(user_ids))
+            .order_by(
+                UserEmailsEntity.user_id,
+                UserEmailsEntity.is_primary.desc(),
+                UserEmailsEntity.email_id.asc(),
+            )
+        )
+        return {user_id: email for user_id, email in result.all()}
+
+    async def get_contact_email(
+        self, session: AsyncSession, user_id: int
+    ) -> str | None:
+        """
+        Single-user convenience over :meth:`get_contact_emails_by_user_ids`.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user whose contact address to fetch.
+
+        Returns:
+            str | None: The user's contact address, or None when they have no
+            email rows.
+        """
+        contact_by_user_id = await self.get_contact_emails_by_user_ids(
+            session, [user_id]
+        )
+        return contact_by_user_id.get(user_id)
+
+    async def exists_on_other_user(
         self, session: AsyncSession, email: str, user_id: int
     ) -> bool:
         """
-        Whether `email` is already a confirmed contact on a *different* account —
-        the guard that stops one user from claiming another's verified address.
+        Whether `email` is claimed by a *different* account, confirmed or not —
+        the guard that stops one user from claiming an address another account
+        already holds. Addresses are globally exclusive (unique index
+        ``uq_user_emails_email``), so even an unverified claim makes the
+        address unavailable to everyone else.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            email (str): Normalized (lowercased) address to check.
+            user_id (int): The caller's user_id, excluded from the match.
+
+        Returns:
+            bool: True when another account has any row for the address.
         """
         result = await session.execute(
             select(UserEmailsEntity.email_id)
             .where(
                 UserEmailsEntity.email == email,
-                UserEmailsEntity.otp_confirmed.is_(True),
                 UserEmailsEntity.user_id != user_id,
             )
             .limit(1)
         )
         return result.first() is not None
 
-    async def exists_claim_by_email(self, session: AsyncSession, email: str) -> bool:
+    async def get_by_email(
+        self, session: AsyncSession, email: str
+    ) -> UserEmailsEntity | None:
         """
-        Whether any account has claimed `email` as a contact — confirmed or
-        not. The bootstrap uses it to classify a colliding sign-in: even an
-        unverified backup address holds the login at the verify wall (which
-        then points the user at verifying it from inside the owning account)
-        instead of forking a fresh account (PUR-480).
+        Fetch the row claiming `email`, confirmed or not, regardless of which
+        user owns it. Addresses are globally exclusive (unique index
+        ``uq_user_emails_email``), so a plain scalar lookup suffices.
 
         Args:
             session (AsyncSession): Active database async session.
-            email (str): Normalized (lowercased) address to check.
+            email (str): Normalized (lowercased) address to look up.
 
         Returns:
-            bool: True when any user_emails row claims the address.
+            UserEmailsEntity | None: The claiming row, or None when no account
+            has the address.
         """
         result = await session.execute(
-            select(UserEmailsEntity.email_id)
-            .where(UserEmailsEntity.email == email)
-            .limit(1)
+            select(UserEmailsEntity).where(UserEmailsEntity.email == email).limit(1)
         )
-        return result.first() is not None
+        return result.scalar_one_or_none()
 
     async def get_confirmed_by_email(
         self, session: AsyncSession, email: str
     ) -> UserEmailsEntity | None:
         """
         Fetch the OTP-confirmed row owning `email`, regardless of which user
-        owns it — the needs-link flow uses it to find the account a colliding
-        sign-in should be linked into. At most one confirmed row can exist per
-        address (cross-account claims are blocked at confirm time), so a plain
-        scalar lookup suffices.
+        owns it — trusted-assertion routing (step 2.5 in
+        UserIdentityService.create_or_swap_user) uses it to resolve a login
+        for an already-confirmed address straight into its owning account.
+        At most one confirmed row can exist per address (cross-account
+        claims are blocked at confirm time), so a plain scalar lookup
+        suffices.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -294,5 +358,31 @@ class UserEmailsRepository:
         """
         await session.execute(
             delete(UserEmailsEntity).where(UserEmailsEntity.email_id == email_id)
+        )
+        await session.flush()
+
+    async def update_last_login(
+        self, session: AsyncSession, email_id: int, login_dt: datetime
+    ) -> None:
+        """
+        Stamp this email's last_login_at to ``login_dt`` only when it is newer
+        than the stored value (or unset). Mirrors the identity repo's
+        if-newer update so out-of-order/replayed tokens never regress the time.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            email_id (int): The user_emails row to stamp.
+            login_dt (datetime): The login instant (JWT iat as tz-aware datetime).
+        """
+        await session.execute(
+            update(UserEmailsEntity)
+            .where(
+                UserEmailsEntity.email_id == email_id,
+                or_(
+                    UserEmailsEntity.last_login_at.is_(None),
+                    UserEmailsEntity.last_login_at < login_dt,
+                ),
+            )
+            .values(last_login_at=login_dt)
         )
         await session.flush()

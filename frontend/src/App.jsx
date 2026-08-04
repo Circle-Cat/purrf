@@ -5,7 +5,6 @@ import {
   Route,
   Navigate,
 } from "react-router-dom";
-import "@/App.css";
 import Header from "@/components/layout/Header";
 import EnvironmentBanner from "@/components/layout/EnvironmentBanner";
 import { isBannerEnv } from "@/utils/deployEnv";
@@ -21,6 +20,18 @@ import MentorshipManagement from "@/pages/MentorshipManagement";
 import VerifyRequired from "@/pages/VerifyRequired";
 import SignInSecurity from "@/pages/SignInSecurity";
 import AdminPermissions from "@/pages/AdminPermissions";
+import Postings from "@/pages/Recruiting/Postings";
+import PostingEditor from "@/pages/Recruiting/postings/PostingEditor";
+import PostingDetailPage from "@/pages/Recruiting/PostingDetailPage";
+import MyReviews from "@/pages/Recruiting/MyReviews";
+import Blacklist from "@/pages/Recruiting/Blacklist";
+import JobDetailPage from "@/pages/Recruiting/JobDetailPage";
+import MyApplication from "@/pages/Recruiting/MyApplication";
+import JobsBrowse from "@/pages/Recruiting/JobsBrowse";
+import BoardPage from "@/pages/Recruiting/board/BoardPage";
+import ApplicationDetailPage from "@/pages/Recruiting/applications/ApplicationDetailPage";
+import MyEvaluations from "@/pages/Recruiting/MyEvaluations";
+import Audit from "@/pages/Recruiting/audit/Audit";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
 import { PERMISSIONS } from "@/constants/Permissions";
@@ -33,23 +44,24 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const showEnvBanner = isBannerEnv(deployEnv);
-  const containerClassName = `app-container legacy-styles${
-    showEnvBanner ? " has-env-banner" : ""
-  }${sidebarCollapsed ? " sidebar-collapsed" : ""}`;
   return (
     <FlagsProvider>
       <AuthProvider>
         <LDIdentifier />
         <Router>
-          <div className={containerClassName}>
+          <div
+            className="group flex flex-col"
+            data-env-banner={showEnvBanner ? "true" : "false"}
+            data-collapsed={sidebarCollapsed ? "true" : "false"}
+          >
             <Header
               onToggleSidebar={() => setSidebarCollapsed((prev) => !prev)}
               sidebarCollapsed={sidebarCollapsed}
             />
             {showEnvBanner && <EnvironmentBanner env={deployEnv} />}
-            <div className="app-body">
+            <div className="flex flex-1">
               <Sidebar />
-              <main className="main-content">
+              <main className="ml-64 mt-16 flex min-h-[calc(100vh-64px)] flex-1 flex-col overflow-y-auto p-[30px] transition-[margin] duration-200 group-data-[collapsed=true]:ml-0 group-data-[env-banner=true]:mt-[104px] group-data-[env-banner=true]:min-h-[calc(100vh-104px)]">
                 <HardWallGate>
                   <Routes>
                     <Route
@@ -94,7 +106,8 @@ function App() {
                       element={
                         <ProtectedRoute
                           requiredPermissions={[
-                            PERMISSIONS.MENTORSHIP_MANAGEMENT_READ,
+                            PERMISSIONS.MENTORSHIP_ADMIN_READ,
+                            PERMISSIONS.MENTORSHIP_ADMIN_WRITE,
                           ]}
                         >
                           <MentorshipManagement />
@@ -112,12 +125,138 @@ function App() {
                       }
                     />
                     <Route
+                      path={ROUTE_PATHS.RECRUITING_POSTINGS}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_JOB_WRITE,
+                            PERMISSIONS.RECRUITING_JOB_READ,
+                            PERMISSIONS.RECRUITING_JOB_APPROVE,
+                          ]}
+                        >
+                          <Postings />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_POSTING_DETAIL(":id")}
+                      element={<PostingDetailPage />}
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_POSTING_NEW}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_JOB_WRITE,
+                          ]}
+                        >
+                          <PostingEditor />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/recruiting/postings/:id/edit"
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_JOB_WRITE,
+                          ]}
+                        >
+                          <PostingEditor />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_REVIEWS}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_JOB_APPROVE,
+                          ]}
+                        >
+                          <MyReviews />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_BLACKLIST}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_BLACKLIST_WRITE,
+                          ]}
+                        >
+                          <Blacklist />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_AUDIT}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_AUDIT_READ,
+                          ]}
+                        >
+                          <Audit />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_JOBS_BROWSE}
+                      element={<JobsBrowse />}
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_BOARD}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_APPLICATION_ADVANCE,
+                          ]}
+                        >
+                          <BoardPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_APPLICATION_DETAIL(
+                        ":applicationId",
+                      )}
+                      element={<ApplicationDetailPage />}
+                    />
+                    <Route
+                      path={ROUTE_PATHS.RECRUITING_MY_EVALUATIONS}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.RECRUITING_INTERVIEW_EVALUATE,
+                          ]}
+                        >
+                          <MyEvaluations />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/recruiting/jobs/:jobId"
+                      element={<JobDetailPage />}
+                    />
+                    <Route
+                      path="/recruiting/jobs/:jobId/apply"
+                      element={<JobDetailPage />}
+                    />
+                    <Route
+                      path="/recruiting/jobs/:jobId/application"
+                      element={<MyApplication />}
+                    />
+                    <Route
                       path={ROUTE_PATHS.ACCESS_DENIED}
                       element={<AccessDenied />}
                     />
                     <Route
                       path={ROUTE_PATHS.ROOT}
-                      element={<Navigate to={ROUTE_PATHS.PROFILE} replace />}
+                      element={
+                        <Navigate to={ROUTE_PATHS.PERSONAL_DASHBOARD} replace />
+                      }
                     />
                   </Routes>
                 </HardWallGate>

@@ -57,7 +57,10 @@ class TestPermissionAdminController(unittest.TestCase):
     def setUp(self):
         self.service = MagicMock()
         self.service.list_permission_catalog = MagicMock(
-            return_value=["a.read", "b.read"]
+            return_value=[
+                {"name": "a.read", "description": "d1"},
+                {"name": "b.read", "description": "d2"},
+            ]
         )
         self.service.list_users = AsyncMock(return_value=UserListDto(users=[], total=0))
         self.service.get_user_permissions = AsyncMock(
@@ -102,7 +105,13 @@ class TestPermissionAdminController(unittest.TestCase):
         client = _client(self.service, permissions={Permission.PERMISSION_MANAGE})
         resp = client.get(ADMIN_PERMISSIONS_ENDPOINT)
         self.assertEqual(resp.status_code, HTTPStatus.OK)
-        self.assertEqual(resp.json()["data"]["permissions"], ["a.read", "b.read"])
+        self.assertEqual(
+            resp.json()["data"]["permissions"],
+            [
+                {"name": "a.read", "description": "d1"},
+                {"name": "b.read", "description": "d2"},
+            ],
+        )
 
     def test_users_passes_search_and_pagination(self):
         client = _client(self.service, permissions={Permission.PERMISSION_MANAGE})

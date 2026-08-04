@@ -9,6 +9,7 @@ py_library(
         "//backend/common:identity_type",
         "//backend/common:mentorship_enums",
         "//backend/common:permissions",
+        "//backend/common:recruiting_enums",
         "//backend/entity:entities",
         "@pypi//pydantic",
     ],

@@ -25,7 +25,7 @@ from backend.common.api_endpoints import (
     MENTORSHIP_ROUNDS_FEEDBACK_ENDPOINT,
 )
 from backend.common.permissions import Permission
-from backend.dto.google_meeting_create_dto import GoogleMeetingCreateDto
+from backend.dto.meeting_batch_create_dto import MeetingBatchCreateDto
 from backend.dto.google_meeting_delete_dto import GoogleMeetingDeleteDto
 
 
@@ -93,7 +93,7 @@ class MentorshipController:
 
         self.router.add_api_route(
             MENTORSHIP_ROUNDS_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ROUND_WRITE])(
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])(
                 self.upsert_rounds
             ),
             methods=["POST"],
@@ -167,28 +167,52 @@ class MentorshipController:
             response_model=None,
         )
 
-    async def sync_meet_attendance(
-        self, current_user: UserContextDto, lookback_hours: int = 2
-    ):
+    async def sync_meet_attendance(self, lookback_hours: int = 2):
         """
         CronJob endpoint to sync Google Meet attendance for completed meetings.
 
+        Deliberately not gated on the Google-meeting feature flag. That flag is
+        per user, and this is a system-wide sweep invoked by a service account,
+        so no single user context can answer whether it should run. The data
+        gates it instead -- a round with no unsynced Google meetings is a no-op
+        -- and the operational switch is the CronJob's own `suspend` field.
+
         Args:
-            lookback_hours: Number of hours to look back when querying the
-                Meet API for ended conferences. Defaults to 2.
+            lookback_hours: How far back from now this run reaches when
+                selecting pending meetings from the database (not a Meet API
+                query parameter). A meeting is selected when its own 3-hour
+                attendance affinity window (``ATTENDANCE_WINDOW_DELTA``)
+                overlaps the lookback interval, so the effective selection
+                window is 3 hours wider than the raw lookback on each side.
+                Defaults to 2. This default is not the operational value --
+                the deployed CronJob (``helm/purrf/values.yaml``,
+                ``sync-meet-attendance``) always passes 4, giving a latest
+                possible reconciliation of ``lookback + 3h`` = 7h after a
+                meeting's scheduled end, versus 5h at this default of 2.
+
+                Two further bounds sit on top of that band, and neither is
+                controlled by this parameter alone:
+
+                * Meetings are clamped to their round's own meeting window --
+                  only those STARTING between the round's match notification
+                  and its meetings-completion deadline are ever swept. A pair
+                  may keep meeting after the deadline; Purrf does not track it.
+                * A round stays selectable for ``lookback + 3h + the longest
+                  bookable meeting`` past its deadline (8.5h at the deployed
+                  ``lookback_hours=4``), so a meeting held just before the
+                  deadline can still be reconciled after it. That allowance
+                  widens only which ROUNDS a run considers, never the window
+                  meetings are clamped to. Every round selectable in a run is
+                  swept, each against its own window.
         """
-        if self.launchdarkly_service.is_create_google_meeting_enabled(current_user):
-            async with self.database.session() as session:
-                result = await self.meet_attendance_sync_service.sync_attendance(
-                    session=session, lookback_hours=lookback_hours
-                )
-            return api_response(
-                success=True,
-                message="Attendance sync completed",
-                data=result,
+        async with self.database.session() as session:
+            result = await self.meet_attendance_sync_service.sync_attendance(
+                session=session, lookback_hours=lookback_hours
             )
-        raise PermissionError(
-            "Creating Google meetings is not yet supported. No need to sync attendance."
+        return api_response(
+            success=True,
+            message="Attendance sync completed",
+            data=result,
         )
 
     async def get_my_match_result(self, current_user: UserContextDto, round_id: int):
@@ -223,7 +247,7 @@ class MentorshipController:
             current_user (UserContextDto): The authenticated user context.
             need_details (bool): If True, returns participant and completed
                 meeting counts per round for the mentorship admin dashboard.
-                This detailed view requires the MENTORSHIP_ROUND_READ
+                This detailed view requires the MENTORSHIP_ADMIN_READ
                 permission; the basic list (need_details=False) is open to any
                 authenticated user.
 
@@ -231,7 +255,7 @@ class MentorshipController:
             API response containing a list of rounds DTOs.
         """
         if need_details and not current_user.has_permission(
-            Permission.MENTORSHIP_ROUND_READ
+            Permission.MENTORSHIP_ADMIN_READ
         ):
             return api_response(
                 success=False,
@@ -379,30 +403,27 @@ class MentorshipController:
         raise PermissionError("Manual submit meeting feature is not yet available.")
 
     async def create_google_meeting(
-        self, current_user: UserContextDto, payload: GoogleMeetingCreateDto
+        self, current_user: UserContextDto, payload: MeetingBatchCreateDto
     ):
         """
-        Create a Google Calendar meeting for a mentorship pair.
+        Create a mentorship meeting from a wall-clock spec.
 
-        Args:
-            current_user (UserContextDto): The context of the currently authenticated user.
-            payload (GoogleMeetingCreateDto): The meeting creation request containing
-                partner_id, round_id, and UTC start/end times.
-
-        Returns:
-            ApiResponse: A standardized API response containing the created meeting details.
+        The server converts the wall-clock inputs to UTC and creates the
+        meeting(s), returning a best-effort {created, failed} result.
         """
         if self.launchdarkly_service.is_create_google_meeting_enabled(current_user):
-            async with self.database.session() as session:
-                result = await self.meeting_service.create_google_meeting(
-                    session=session,
-                    user_context=current_user,
-                    partner_id=payload.partner_id,
-                    round_id=payload.round_id,
-                    start_datetime=payload.start_datetime,
-                    end_datetime=payload.end_datetime,
-                )
-
+            result = await self.meeting_service.create_google_meetings_batch(
+                session_factory=self.database.session,
+                user_context=current_user,
+                partner_id=payload.partner_id,
+                round_id=payload.round_id,
+                timezone=payload.timezone,
+                start_date=payload.start_date,
+                start_time=payload.start_time,
+                duration_minutes=payload.duration_minutes,
+                interval_weeks=payload.interval_weeks,
+                count=payload.count,
+            )
             return api_response(
                 message="Successfully created mentorship meeting.",
                 data=result,

@@ -3,6 +3,7 @@ import { usePermissionCatalog } from "@/pages/AdminPermissions/hooks/usePermissi
 import UsersTab from "@/pages/AdminPermissions/components/UsersTab";
 import PermissionHoldersTab from "@/pages/AdminPermissions/components/PermissionHoldersTab";
 import AuditTab from "@/pages/AdminPermissions/components/AuditTab";
+import UnderstandPermissionsPanel from "@/pages/AdminPermissions/components/UnderstandPermissionsPanel";
 
 /**
  * Permission administration page. Gated on permission.manage (route + sidebar).
@@ -15,23 +16,24 @@ const AdminPermissions = () => {
 
   return (
     <div className="p-5 box-border">
+      <UnderstandPermissionsPanel catalog={catalog} />
       <Tabs defaultValue="users">
         <TabsList className="mb-5 gap-1">
           <TabsTrigger
             value="users"
-            className="px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:font-medium"
+            className="px-4 data-[state=active]:shadow-sm"
           >
             Users
           </TabsTrigger>
           <TabsTrigger
             value="holders"
-            className="px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:font-medium"
+            className="px-4 data-[state=active]:shadow-sm"
           >
             Permission Holders
           </TabsTrigger>
           <TabsTrigger
             value="audit"
-            className="px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:font-medium"
+            className="px-4 data-[state=active]:shadow-sm"
           >
             Audit Log
           </TabsTrigger>

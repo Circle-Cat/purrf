@@ -6,6 +6,7 @@ py_library(
     name = "repositories",
     srcs = glob(["*.py"]),
     deps = [
+        "//backend/common:communication_enums",
         "//backend/dto",
         "//backend/entity:entities",
         "@pypi//asyncpg",

@@ -7,10 +7,8 @@ vi.spyOn(toast, "info").mockImplementation(() => {});
 vi.spyOn(toast, "dismiss").mockImplementation(() => {});
 
 const PROFILE_SESSION_KEY = "profile-completeness-toast-shown";
-const TRAINING_SESSION_KEY = "training-completeness-toast-shown";
 
 const PROFILE_TOAST_ID = "profile-completeness-toast";
-const TRAINING_TOAST_ID = "training-completeness-toast";
 
 /**
  * Find the toast.info call whose options carry the given id, render
@@ -49,6 +47,21 @@ describe("useProfileCompletenessReminder", () => {
   it("does nothing while the profile is still loading", () => {
     renderHook(() =>
       useProfileCompletenessReminder({ ...completeProfile, isLoading: true }),
+    );
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+
+  it("does not nag when the profile failed to load", () => {
+    // Empty data that WOULD normally fire the profile reminder, but the
+    // emptiness is a load failure — not a genuinely incomplete profile.
+    renderHook(() =>
+      useProfileCompletenessReminder({
+        isLoading: false,
+        loadError: true,
+        personalInfo: { completedTraining: [] },
+        experienceList: [],
+        educationList: [],
+      }),
     );
     expect(toast.info).not.toHaveBeenCalled();
   });
@@ -210,143 +223,26 @@ describe("useProfileCompletenessReminder", () => {
     });
   });
 
-  describe("training reminder", () => {
-    const profileWithIncompleteOnboarding = {
-      ...completeProfile,
-      personalInfo: {
-        ...completeProfile.personalInfo,
-        completedTraining: [
-          { category: "mentorship_mentor_onboarding", status: "to_do" },
-        ],
-      },
-    };
+  it("never fires a training reminder, even with an incomplete onboarding", () => {
+    // The training reminder now lives on the Personal Dashboard, where a
+    // newly admitted participant will actually see it.
+    renderHook(() =>
+      useProfileCompletenessReminder({
+        isLoading: false,
+        loadError: false,
+        personalInfo: {
+          firstName: "Ada",
+          lastName: "Lovelace",
+          completedTraining: [
+            { category: "mentorship_mentee_onboarding", status: "to_do" },
+          ],
+        },
+        experienceList: [{ id: 1 }],
+        educationList: [{ id: 1 }],
+      }),
+    );
 
-    it("fires when personal info is filled and a mentor onboarding is to_do", () => {
-      renderHook(() =>
-        useProfileCompletenessReminder(profileWithIncompleteOnboarding),
-      );
-      const training = findRenderedToast(TRAINING_TOAST_ID);
-      expect(training).toBeTruthy();
-      expect(training.title).toBe("Complete onboarding training");
-      expect(training.node.textContent).toContain(
-        "To help you get started smoothly",
-      );
-      expect(training.opts.duration).toBe(Infinity);
-      expect(training.opts.closeButton).toBe(false);
-    });
-
-    it("fires when a mentee onboarding is in_progress", () => {
-      renderHook(() =>
-        useProfileCompletenessReminder({
-          ...completeProfile,
-          personalInfo: {
-            ...completeProfile.personalInfo,
-            completedTraining: [
-              {
-                category: "mentorship_mentee_onboarding",
-                status: "in_progress",
-              },
-            ],
-          },
-        }),
-      );
-      expect(findRenderedToast(TRAINING_TOAST_ID).node.textContent).toContain(
-        "To help you get started smoothly",
-      );
-    });
-
-    it("does not fire while Personal Information is still incomplete", () => {
-      renderHook(() =>
-        useProfileCompletenessReminder({
-          ...profileWithIncompleteOnboarding,
-          personalInfo: {
-            ...profileWithIncompleteOnboarding.personalInfo,
-            firstName: "",
-          },
-        }),
-      );
-      expect(findRenderedToast(TRAINING_TOAST_ID)).toBeNull();
-    });
-
-    it("does not fire for unrelated incomplete categories", () => {
-      renderHook(() =>
-        useProfileCompletenessReminder({
-          ...completeProfile,
-          personalInfo: {
-            ...completeProfile.personalInfo,
-            completedTraining: [
-              { category: "residency_program_onboarding", status: "to_do" },
-            ],
-          },
-        }),
-      );
-      expect(toast.info).not.toHaveBeenCalled();
-    });
-
-    it("skips when sessionStorage already records the training toast was shown", () => {
-      sessionStorage.setItem(TRAINING_SESSION_KEY, "1");
-      renderHook(() =>
-        useProfileCompletenessReminder(profileWithIncompleteOnboarding),
-      );
-      expect(findRenderedToast(TRAINING_TOAST_ID)).toBeNull();
-    });
-
-    it("writes the sessionStorage marker after firing", () => {
-      expect(sessionStorage.getItem(TRAINING_SESSION_KEY)).toBeNull();
-      renderHook(() =>
-        useProfileCompletenessReminder(profileWithIncompleteOnboarding),
-      );
-      expect(sessionStorage.getItem(TRAINING_SESSION_KEY)).toBe("1");
-    });
-  });
-
-  describe("both reminders together", () => {
-    it("fires the profile and training reminders independently when both apply", () => {
-      // Personal info filled (so training fires), but Experience missing
-      // (so profile fires too) and onboarding incomplete.
-      renderHook(() =>
-        useProfileCompletenessReminder({
-          ...completeProfile,
-          experienceList: [],
-          personalInfo: {
-            ...completeProfile.personalInfo,
-            completedTraining: [
-              { category: "mentorship_mentor_onboarding", status: "to_do" },
-            ],
-          },
-        }),
-      );
-      expect(toast.info).toHaveBeenCalledTimes(2);
-      const profile = findRenderedToast(PROFILE_TOAST_ID);
-      const training = findRenderedToast(TRAINING_TOAST_ID);
-      expect(profile).toBeTruthy();
-      expect(training).toBeTruthy();
-      expect(profile.node.textContent).toContain("Experience");
-      expect(training.node.textContent).toContain("onboarding training");
-      expect(sessionStorage.getItem(PROFILE_SESSION_KEY)).toBe("1");
-      expect(sessionStorage.getItem(TRAINING_SESSION_KEY)).toBe("1");
-    });
-
-    it("dismissing one toast does not suppress the other on the next visit", () => {
-      // Simulate a prior session where only the training toast was
-      // dismissed (its session key is set). Profile data still has
-      // missing pieces — the profile toast should still fire.
-      sessionStorage.setItem(TRAINING_SESSION_KEY, "1");
-      renderHook(() =>
-        useProfileCompletenessReminder({
-          ...completeProfile,
-          experienceList: [],
-          personalInfo: {
-            ...completeProfile.personalInfo,
-            completedTraining: [
-              { category: "mentorship_mentor_onboarding", status: "to_do" },
-            ],
-          },
-        }),
-      );
-      expect(findRenderedToast(PROFILE_TOAST_ID)).toBeTruthy();
-      expect(findRenderedToast(TRAINING_TOAST_ID)).toBeNull();
-    });
+    expect(toast.info).not.toHaveBeenCalled();
   });
 
   describe("toast layout", () => {

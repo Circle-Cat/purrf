@@ -18,17 +18,36 @@ js_library(
     ]),
 )
 
-vitest_bin.vitest_test(
+_SHARD_COUNT = 10
+
+[
+    vitest_bin.vitest_test(
+        name = "frontend_unit_tests_%d" % i,
+        size = "large",
+        args = [
+            "run",
+            "--reporter=verbose",
+            "--shard=%d/%d" % (i, _SHARD_COUNT),
+        ],
+        chdir = package_name(),
+        data = [
+            ":frontend_unit_test_files",
+            ":vitest_config",
+            "//:npm_deps",
+            "//frontend:all_srcs",
+        ],
+        flaky = True,
+    )
+    for i in range(
+        1,
+        _SHARD_COUNT + 1,
+    )
+]
+
+test_suite(
     name = "frontend_unit_tests",
-    args = [
-        "run",
-        "--reporter=verbose",
-    ],
-    chdir = package_name(),
-    data = [
-        ":frontend_unit_test_files",
-        ":vitest_config",
-        "//:npm_deps",
-        "//frontend:all_srcs",
-    ],
+    tests = [":frontend_unit_tests_%d" % i for i in range(
+        1,
+        _SHARD_COUNT + 1,
+    )],
 )

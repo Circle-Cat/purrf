@@ -3,8 +3,9 @@ Email management routes, mounted under /api/auth/emails:
 
 - ``POST /initiate`` — start an Auth0 passwordless OTP and return a signed state
   JWT binding the code to the caller's session.
-- ``POST /verify``   — confirm the OTP, link the new identity, and record the
-  address as a confirmed contact.
+- ``POST /verify``   — confirm the OTP and record the address as a confirmed
+  contact; verification unlocks the address as a sign-in method but does not
+  itself link a new identity.
 
 The caller's user_id is resolved by AuthMiddleware (bootstrap) and read from the
 request context, so these handlers do not look the user up again.
@@ -13,7 +14,6 @@ request context, so these handlers do not look the user up again.
 from fastapi import APIRouter
 
 from backend.common.api_endpoints import (
-    EMAIL_MANAGEMENT_ADD_ENDPOINT,
     EMAIL_MANAGEMENT_INITIATE_ENDPOINT,
     EMAIL_MANAGEMENT_REMOVE_ENDPOINT,
     EMAIL_MANAGEMENT_LIST_ENDPOINT,
@@ -25,7 +25,6 @@ from backend.common.api_endpoints import (
 )
 from backend.common.fast_api_response_wrapper import api_response
 from backend.dto.email_management_dto import (
-    AddEmailRequest,
     InitiateRequest,
     OtpConfirmRequest,
     VerifyRequest,
@@ -48,12 +47,6 @@ class EmailManagementController:
         self._service = email_management_service
         self._database = database
         self.router = APIRouter(tags=["email-management"])
-        self.router.add_api_route(
-            EMAIL_MANAGEMENT_ADD_ENDPOINT,
-            endpoint=authenticate()(self.add_email),
-            methods=["POST"],
-            response_model=None,
-        )
         self.router.add_api_route(
             EMAIL_MANAGEMENT_REMOVE_ENDPOINT,
             endpoint=authenticate()(self.remove_email),
@@ -103,37 +96,15 @@ class EmailManagementController:
             response_model=None,
         )
 
-    async def add_email(self, current_user: UserContextDto, body: AddEmailRequest):
-        """
-        Add a backup contact email to the caller's account — no OTP round-trip.
-
-        The address is recorded unconfirmed and non-primary: it is contact-only
-        until the user verifies it via the initiate/verify OTP flow, which is
-        what makes it usable as a sign-in method.
-
-        Args:
-            current_user (UserContextDto): The authenticated user context.
-            body (AddEmailRequest): The address to add.
-
-        Returns:
-            A standardized API response confirming the add.
-        """
-        async with self._database.session() as session:
-            data = await self._service.add_email(
-                session=session,
-                current_user_id=current_user.user_id,
-                email=body.email,
-            )
-        return api_response(message="Email added", data=data)
-
     async def remove_email(self, current_user: UserContextDto, email_id: int):
         """
-        Remove an unverified backup contact email from the caller's account.
+        Remove a non-primary email from the caller's account.
 
-        Only a never-confirmed, non-primary address is removable here — adding
-        it required no OTP, so removal requires none either. The service
-        refuses the primary contact and verified addresses (those leave via
-        the step-up unlink flow).
+        Any non-primary row is removable, including a confirmed one — removing
+        it also removes its use as a passwordless login identifier. The
+        service refuses the primary contact, and — when the caller's own
+        session is a passwordless login — the address that session signed in
+        with.
 
         Args:
             current_user (UserContextDto): The authenticated user context.
@@ -146,6 +117,8 @@ class EmailManagementController:
             data = await self._service.remove_email(
                 session=session,
                 current_user_id=current_user.user_id,
+                current_sub=current_user.sub,
+                current_claim_email=current_user.primary_email,
                 email_id=email_id,
             )
         return api_response(message="Email removed", data=data)
@@ -181,15 +154,15 @@ class EmailManagementController:
         body: OtpConfirmRequest,
     ):
         """
-        Confirm the step-up OTP, unlink the sign-in identity, drop its synced
-        contact email when nothing else uses it, and delete its Auth0 user.
+        Confirm the step-up OTP, unlink the sign-in identity, and delete its
+        Auth0 user.
 
         The service validates the signed state against the path's ``identity_id``,
         rechecks the primary has not changed since initiate, verifies the OTP,
-        deletes the identity row, deletes the matching contact email when no
-        surviving identity claims it, and deletes the identity's Auth0 user —
-        each sign-in method is its own Auth0 user, so it must not outlive the
-        unlink.
+        deletes the identity row, and deletes the identity's Auth0 user — each
+        sign-in method is its own Auth0 user, so it must not outlive the
+        unlink. The caller's contact email rows are never touched; they leave
+        the account only via :meth:`remove_email`.
 
         Args:
             current_user (UserContextDto): The authenticated user context.
@@ -306,14 +279,12 @@ class EmailManagementController:
                 current_user_id=current_user.user_id,
                 current_sub=current_user.sub,
                 email=body.email,
-                needs_link=current_user.needs_link,
-                claim_email=current_user.primary_email,
             )
         return api_response(message="OTP sent", data=data)
 
     async def verify(self, current_user: UserContextDto, body: VerifyRequest):
         """
-        Confirm the OTP, link the new identity, and record the confirmed address.
+        Confirm the OTP and record the confirmed address.
 
         The address verified is bound to the signed state, not the request body.
 
@@ -322,7 +293,7 @@ class EmailManagementController:
             body (VerifyRequest): Carries the signed state JWT and the OTP code.
 
         Returns:
-            The api_response envelope wrapping the linked-identity result.
+            The api_response envelope wrapping the confirmed-address result.
         """
         async with self._database.session() as session:
             data = await self._service.verify(
@@ -331,7 +302,5 @@ class EmailManagementController:
                 current_sub=current_user.sub,
                 state=body.state,
                 otp=body.otp,
-                needs_link=current_user.needs_link,
-                caller_identity_type=current_user.identity_type,
             )
-        return api_response(message="Email verified and linked", data=data)
+        return api_response(message="Email verified", data=data)

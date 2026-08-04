@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.users_entity import UsersEntity
 from backend.entity.experience_entity import ExperienceEntity
 from backend.entity.preference_entity import PreferenceEntity
@@ -138,6 +139,27 @@ class MentorshipImportService:
         self.pref_repo = pref_repo
         self.round_repo = round_repo
 
+    async def _get_user_by_email(
+        self, session: AsyncSession, email: str
+    ) -> UsersEntity | None:
+        """
+        Resolve a user through their user_emails claim; addresses are globally
+        unique there (the legacy users.primary_email column is gone).
+
+        Args:
+            session (AsyncSession): Active database session.
+            email (str): Normalized (lowercased) address to look up.
+
+        Returns:
+            UsersEntity | None: The owning user, or None.
+        """
+        result = await session.execute(
+            select(UsersEntity)
+            .join(UserEmailsEntity, UserEmailsEntity.user_id == UsersEntity.user_id)
+            .where(UserEmailsEntity.email == email)
+        )
+        return result.scalars().first()
+
     async def _upsert_user_base(
         self, session: AsyncSession, email: str, data: dict
     ) -> UsersEntity:
@@ -157,10 +179,11 @@ class MentorshipImportService:
             UsersEntity: The upserted user entity.
         """
         email = email.strip().lower()
-        user = await self.user_repo.get_user_by_primary_email(session, email)
+        user = await self._get_user_by_email(session, email)
 
-        if not user:
-            user = UsersEntity(primary_email=email)
+        is_new = user is None
+        if is_new:
+            user = UsersEntity()
 
         user.first_name = data.get("first_name")
         user.last_name = data.get("last_name")
@@ -173,7 +196,20 @@ class MentorshipImportService:
         user.timezone_updated_at = datetime(1970, 1, 1, tzinfo=timezone.utc)
         user.has_mentorship_mentor_experience = True
 
-        return await self.user_repo.upsert_users(session, user)
+        user = await self.user_repo.upsert_users(session, user)
+        if is_new:
+            # The user's address lives in user_emails now: seed an unverified
+            # claim, matching what a first login would have created.
+            session.add(
+                UserEmailsEntity(
+                    user_id=user.user_id,
+                    email=email,
+                    otp_confirmed=False,
+                    is_primary=False,
+                )
+            )
+            await session.flush()
+        return user
 
     def _parse_timezone(self, tz_string: str) -> UserTimezone:
         """
@@ -474,7 +510,7 @@ class MentorshipImportService:
                 "2025 3rd Round - Retention Feedback"
             )
 
-            user = await self.user_repo.get_user_by_primary_email(session, email)
+            user = await self._get_user_by_email(session, email)
 
             if not user:
                 logger.warning(
@@ -486,7 +522,7 @@ class MentorshipImportService:
             unexpected_partner_user_id = None
 
             if pd.notna(partner_email):
-                partner_user = await self.user_repo.get_user_by_primary_email(
+                partner_user = await self._get_user_by_email(
                     session, partner_email.strip().lower()
                 )
 

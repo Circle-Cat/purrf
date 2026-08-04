@@ -281,7 +281,7 @@ export default function DataSourceReportTabs({ committedSearchParams }) {
             value={t.sourceName}
             disabled={!isDataSourceSelected(t.sourceName)}
             data-testid={`tab-button-${t.sourceName}`}
-            className="gap-1.5 px-4 data-[state=active]:bg-background data-[state=active]:font-medium data-[state=active]:shadow-sm"
+            className="gap-1.5 px-4 data-[state=active]:shadow-sm"
           >
             <span className="inline-flex leading-none" aria-hidden="true">
               {t.icon}

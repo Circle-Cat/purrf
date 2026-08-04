@@ -59,6 +59,10 @@ output "chat_google_events_topic_id" {
   value = module.purrf_instance.chat_google_events_topic_id
 }
 
+output "resume_bucket_name" {
+  value = module.purrf_instance.resume_bucket_name
+}
+
 output "microsoft_chat_notification_url" {
   value = module.purrf_instance.microsoft_chat_notification_url
 }
@@ -75,11 +79,11 @@ output "auth0_management_domain" {
   value = module.purrf_instance.auth0_management_domain
 }
 
-output "auth0_link_action_m2m_client_id" {
-  value = module.purrf_instance.auth0_link_action_m2m_client_id
+output "auth0_backend_management_m2m_client_id" {
+  value = module.purrf_instance.auth0_backend_management_m2m_client_id
 }
 
-output "auth0_link_action_m2m_client_secret" {
-  value     = module.purrf_instance.auth0_link_action_m2m_client_secret
+output "auth0_backend_management_m2m_client_secret" {
+  value     = module.purrf_instance.auth0_backend_management_m2m_client_secret
   sensitive = true
 }

@@ -125,3 +125,43 @@ cronjobs:
   - name: pubsub-sync-hourly
     schedule: "0 * * * *"   # every hour at minute 00
     url: "/api/pubsub/sync"
+  - name: sync-recruiting-emails-recent
+    schedule: "5 11 * * *"   # 11:05 UTC = 04:05 GMT-7, before HR's workday
+    url: "/api/recruiting/emails/sync/recent"
+  - name: sync-recruiting-emails-reconcile
+    schedule: "35 11 * * 0"  # Sundays 11:35 UTC — backstop for the nightly delta
+    url: "/api/recruiting/emails/sync"
+  - name: sync-meet-attendance
+    schedule: "15 */2 * * *"   # every 2 hours at :15, off the hour to avoid pubsub-sync-hourly
+    url: "/api/mentorship/v2/meetings/attendance/sync?lookback_hours=4"
+    # A meeting is offered while [now - lookback - 3h, now + 3h] overlaps its
+    # own slot (3h = ATTENDANCE_WINDOW_DELTA), so at lookback_hours=4 that is
+    # a 10h band against this 2h schedule -- roughly 5 consecutive runs get a
+    # chance at each meeting, not just two. What actually constrains
+    # lookback + 3h is how late a conference may end relative to its
+    # scheduled slot; raise lookback only if that horizon proves too short.
+    #
+    # That band only decides WHEN a meeting is looked at. Whether it is looked
+    # at at all is decided first by its round: only meetings STARTING inside
+    # the round's own meeting window (match notification through the
+    # meetings-completion deadline) are ever swept. Meetings a pair arranges
+    # after the deadline are private and stay untracked, whatever the band says.
+    #
+    # Conversely, a round does not stop being swept the instant its deadline
+    # passes. It remains selectable for lookback + 3h + the longest bookable
+    # meeting (= 8.5h at lookback_hours=4), so a meeting held just before the
+    # deadline still gets reconciled afterwards; the round's window itself is
+    # NOT widened by that allowance. Raising lookback_hours lengthens this tail
+    # too. Every round selectable in a given run is swept, each against its own
+    # window -- during the tail an ending round and a starting one legitimately
+    # overlap, and dropping either would lose meetings at the seam.
+    concurrencyPolicy: Forbid
+    # A busy run makes one serial Meet list call per selected meeting, plus
+    # one participants call per matched conference, and can exceed the
+    # interval. concurrencyPolicy: Forbid stays for that reason alone now --
+    # completed_count is recalculated from meeting rows, not incremented, so
+    # the old double-increment race no longer applies.
+    activeDeadlineSeconds: 5400   # 90 min: comfortably longer than any plausible
+    # real run, comfortably shorter than the 2-hour schedule interval, so a
+    # wedged run under concurrencyPolicy: Forbid is killed before the next
+    # trigger instead of skipping every future run forever.

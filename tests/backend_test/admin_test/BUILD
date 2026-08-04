@@ -5,6 +5,7 @@ py_test(
     srcs = ["permission_admin_service_test.py"],
     deps = [
         "//backend/admin:permission_admin_service",
+        "//backend/common:permission_descriptions",
         "//backend/common:permissions",
         "//backend/entity:entities",
     ],

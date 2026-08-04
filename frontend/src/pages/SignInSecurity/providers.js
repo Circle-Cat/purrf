@@ -11,9 +11,9 @@ export const EMAIL_PROVIDER = "email";
 
 /** Human-readable label per Auth0 provider prefix. */
 export const PROVIDER_LABELS = {
-  "google-oauth2": "Google",
-  google: "Google",
-  [EMAIL_PROVIDER]: "Email",
+  "google-oauth2": "Google account",
+  google: "Google account",
+  [EMAIL_PROVIDER]: "Email OTP",
   auth0: "Email & password",
 };
 

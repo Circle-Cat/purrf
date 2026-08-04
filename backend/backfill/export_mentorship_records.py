@@ -4,6 +4,7 @@ import json
 import os
 from datetime import timedelta
 from sqlalchemy import false, select, update, or_
+from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.users_entity import UsersEntity
 from backend.entity.experience_entity import ExperienceEntity
 from backend.entity.preference_entity import PreferenceEntity
@@ -152,6 +153,33 @@ MENTEE_COLUMNS = [
 ]
 
 
+def completed_on_time(training) -> bool:
+    """Whether a mentee finished onboarding training by its deadline.
+
+    One grace day is allowed on top of `training.deadline`, which is itself
+    set to the round's application deadline + 2 days, giving the "+3 days"
+    rule the export is specified in terms of.
+
+    A row created at admission has no deadline until the mentee first
+    registers for a round, so a completed row with `deadline is None` has no
+    date to miss and counts as on time.
+
+    Args:
+        training (TrainingEntity | None): The mentee's onboarding row, or
+            None when they have none.
+
+    Returns:
+        bool: True when the training is DONE and was completed in time.
+    """
+    if training is None or training.status != TrainingStatus.DONE:
+        return False
+    if training.completed_timestamp is None:
+        return False
+    if training.deadline is None:
+        return True
+    return training.completed_timestamp <= training.deadline + timedelta(days=1)
+
+
 async def compute_ineligible_mentee_ids(
     session,
     round_id: int,
@@ -207,13 +235,7 @@ async def compute_ineligible_mentee_ids(
     ineligible: list[int] = []
     for user_id, training, prev_pair in (await session.execute(stmt)).all():
         # Rule 1: training must be completed by application deadline + 3 days.
-        # (training.deadline is set to application_deadline + 2, so allow +1 grace day.)
-        is_trained = (
-            training is not None
-            and training.status == TrainingStatus.DONE
-            and training.completed_timestamp is not None
-            and training.completed_timestamp <= training.deadline + timedelta(days=1)
-        )
+        is_trained = completed_on_time(training)
         if not is_trained:
             logger.info(
                 "Ineligible mentee user_id=%s: incomplete or late training", user_id
@@ -369,6 +391,24 @@ async def fetch_participants_data(
 
     rows = (await session.execute(stmt)).all()
 
+    # Contact addresses live in user_emails (the legacy users.primary_email
+    # column is gone): primary row first, else the oldest claim.
+    email_rows = (
+        await session.execute(
+            select(UserEmailsEntity.user_id, UserEmailsEntity.email)
+            .distinct(UserEmailsEntity.user_id)
+            .where(
+                UserEmailsEntity.user_id.in_([user.user_id for user, _, _, _ in rows])
+            )
+            .order_by(
+                UserEmailsEntity.user_id,
+                UserEmailsEntity.is_primary.desc(),
+                UserEmailsEntity.email_id.asc(),
+            )
+        )
+    ).all()
+    contact_by_user_id = {user_id: email for user_id, email in email_rows}
+
     export_mentors = []
     export_mentees = []
 
@@ -390,7 +430,7 @@ async def fetch_participants_data(
             "communication_channel": (
                 user.communication_channel.value if user.communication_channel else ""
             ),
-            "primary_email": user.primary_email,
+            "primary_email": contact_by_user_id.get(user.user_id, ""),
             "linkedin_link": user.linkedin_link or "",
             **skill_cells,
             "specific_industry": _industry_object(

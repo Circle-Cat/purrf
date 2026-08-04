@@ -1,6 +1,5 @@
 MY_PERMISSIONS = "/permissions/me"
 EMAIL_MANAGEMENT_LIST_ENDPOINT = "/auth/emails"
-EMAIL_MANAGEMENT_ADD_ENDPOINT = "/auth/emails/add"
 EMAIL_MANAGEMENT_REMOVE_ENDPOINT = "/auth/emails/{email_id}"
 EMAIL_MANAGEMENT_INITIATE_ENDPOINT = "/auth/emails/initiate"
 EMAIL_MANAGEMENT_VERIFY_ENDPOINT = "/auth/emails/verify"
@@ -68,6 +67,8 @@ MENTORSHIP_MEETING_V2_BATCH_DELETE_ENDPOINT = "/mentorship/v2/meetings/batch-del
 MEET_ATTENDANCE_SYNC_ENDPOINT = "/mentorship/v2/meetings/attendance/sync"
 MENTORSHIP_ROUNDS_FEEDBACK_ENDPOINT = "/mentorship/rounds/{round_id}/feedback"
 MENTORSHIP_ADMIN_PARTICIPANTS = "/mentorship/admin/participants"
+MENTORSHIP_ADMIN_PARTICIPANTS_EXPORT = "/mentorship/admin/participants/export"
+MENTORSHIP_ADMIN_PAIRS_MEETINGS = "/mentorship/admin/pairs/{pair_id}/meetings"
 
 ADMIN_PERMISSIONS_ENDPOINT = "/admin/permissions"
 ADMIN_USERS_ENDPOINT = "/admin/users"
@@ -77,3 +78,83 @@ ADMIN_AUDIT_PERMISSION_CHANGES_ENDPOINT = "/admin/audit/permission-changes"
 ADMIN_USER_GRANT_PERMISSIONS_ENDPOINT = "/admin/users/{user_id}/permissions/grant"
 ADMIN_USER_REVOKE_PERMISSIONS_ENDPOINT = "/admin/users/{user_id}/permissions/revoke"
 ADMIN_USER_SUPER_ADMIN_ENDPOINT = "/admin/users/{user_id}/super-admin"
+RECRUITING_JOBS_ENDPOINT = "/recruiting/jobs"
+RECRUITING_JOB_ENDPOINT = "/recruiting/jobs/{job_id}"
+RECRUITING_JOB_SUBMIT_ENDPOINT = "/recruiting/jobs/{job_id}/submit"
+RECRUITING_JOB_REQUEST_CLOSE_ENDPOINT = "/recruiting/jobs/{job_id}/request-close"
+RECRUITING_JOB_REQUEST_REOPEN_ENDPOINT = "/recruiting/jobs/{job_id}/request-reopen"
+RECRUITING_JOB_DISCARD_PENDING_EDIT_ENDPOINT = (
+    "/recruiting/jobs/{job_id}/discard-pending-edit"
+)
+RECRUITING_APPROVERS_ENDPOINT = "/recruiting/approvers"
+RECRUITING_REVIEWS_ENDPOINT = "/recruiting/reviews"
+RECRUITING_REVIEW_ENDPOINT = "/recruiting/reviews/{review_id}"
+RECRUITING_INTERVIEW_POOL_ENDPOINT = "/recruiting/interview-pool"
+RECRUITING_JOB_OWNERS_ENDPOINT = "/recruiting/job-owners"
+RECRUITING_JOB_ACTIVITY_ENDPOINT = "/recruiting/jobs/{job_id}/activity"
+RECRUITING_PUBLIC_JOB_ENDPOINT = "/recruiting/public/jobs/{job_id}"
+RECRUITING_PUBLIC_JOBS_ENDPOINT = "/recruiting/public/jobs"
+RECRUITING_RESUMES_ENDPOINT = "/recruiting/resumes"
+RECRUITING_APPLICATIONS_ENDPOINT = "/recruiting/applications"
+RECRUITING_APPLICATION_ENDPOINT = "/recruiting/applications/{application_id}"
+RECRUITING_APPLICATIONS_MINE_ENDPOINT = "/recruiting/applications/mine"
+RECRUITING_MY_APPLICATIONS_ENDPOINT = "/recruiting/my-applications"
+RECRUITING_BOARD_JOBS_ENDPOINT = "/recruiting/board/jobs"
+RECRUITING_BOARD_APPLICANTS_ENDPOINT = "/recruiting/board/applicants"
+RECRUITING_JOB_BOARD_ENDPOINT = "/recruiting/jobs/{job_id}/board"
+RECRUITING_JOB_BOARD_STAGE_ENDPOINT = "/recruiting/jobs/{job_id}/board/applications"
+RECRUITING_APPLICATION_STAGE_ENDPOINT = (
+    "/recruiting/applications/{application_id}/stage"
+)
+RECRUITING_APPLICATION_SUB_STATUS_ENDPOINT = (
+    "/recruiting/applications/{application_id}/sub-status"
+)
+RECRUITING_APPLICATION_ASSIGNMENT_ENDPOINT = (
+    "/recruiting/applications/{application_id}/assignment"
+)
+RECRUITING_APPLICATION_ROUND_ENDPOINT = (
+    "/recruiting/applications/{application_id}/round"
+)
+RECRUITING_APPLICATION_INTERVIEW_ENDPOINT = (
+    "/recruiting/applications/{application_id}/interview"
+)
+RECRUITING_BLACKLIST_ENDPOINT = "/recruiting/blacklist"
+RECRUITING_BLACKLIST_UNBLOCK_ENDPOINT = "/recruiting/blacklist/{user_id}"
+# Pre-flight read for the blacklist confirm dialog: the interviews the block
+# is about to cancel. Same permission as the block itself.
+RECRUITING_BLACKLIST_UPCOMING_INTERVIEWS_ENDPOINT = (
+    "/recruiting/blacklist/{user_id}/upcoming-interviews"
+)
+RECRUITING_APPLICATION_RESUME_ENDPOINT = (
+    "/recruiting/applications/{application_id}/resume"
+)
+RECRUITING_APPLICATION_EVALUATION_ENDPOINT = (
+    "/recruiting/applications/{application_id}/evaluation"
+)
+RECRUITING_EVALUATIONS_MINE_ENDPOINT = "/recruiting/evaluations/mine"
+RECRUITING_APPLICATION_EVALUATIONS_ENDPOINT = (
+    "/recruiting/applications/{application_id}/evaluations"
+)
+RECRUITING_APPLICATION_ACTIVITY_ENDPOINT = (
+    "/recruiting/applications/{application_id}/activity"
+)
+RECRUITING_APPLICATION_EMAILS_ENDPOINT = (
+    "/recruiting/applications/{application_id}/emails"
+)
+RECRUITING_APPLICATION_EMAIL_TEMPLATES_ENDPOINT = (
+    "/recruiting/applications/{application_id}/email-templates"
+)
+RECRUITING_APPLICATION_OTHER_APPLICATIONS_ENDPOINT = (
+    "/recruiting/applications/{application_id}/other-applications"
+)
+RECRUITING_APPLICATION_COMMENTS_ENDPOINT = (
+    "/recruiting/applications/{application_id}/comments"
+)
+RECRUITING_AUDIT_OVERVIEW_ENDPOINT = "/recruiting/audit/overview"
+RECRUITING_APPLICATION_MENTIONABLE_USERS_ENDPOINT = (
+    "/recruiting/applications/{application_id}/mentionable-users"
+)
+RECRUITING_NOTIFICATIONS_ENDPOINT = "/recruiting/notifications"
+RECRUITING_NOTIFICATION_ENDPOINT = "/recruiting/notifications/{notification_id}"
+RECRUITING_EMAIL_SYNC_ENDPOINT = "/recruiting/emails/sync"
+RECRUITING_EMAIL_SYNC_RECENT_ENDPOINT = "/recruiting/emails/sync/recent"

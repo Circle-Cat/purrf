@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -8,17 +7,15 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-
-import { addContactEmail } from "@/api/emailApi";
+import OtpVerifyForm from "@/components/common/OtpVerifyForm";
 
 /**
- * Dialog for adding a backup contact email — no OTP round-trip. The address
- * is recorded unverified and stays contact-only; the user must verify it
- * afterwards to use it as a sign-in method. On success it closes and asks the
- * parent to refresh the settings view.
+ * Dialog for adding a new email to the caller's account. Adding and
+ * verifying are a single flow: the backend only ever records an address once
+ * its OTP has been confirmed, so a successfully verified email is already
+ * usable for contact and sign-in — there is no separate unverified state to
+ * clean up afterwards. On success it closes and asks the parent to refresh
+ * the settings view.
  *
  * @component
  * @param {Object} props
@@ -27,29 +24,10 @@ import { addContactEmail } from "@/api/emailApi";
  * @param {() => (void|Promise<void>)} props.onAdded - called after a successful add.
  */
 const AddEmailDialog = ({ open, onOpenChange, onAdded }) => {
-  const [email, setEmail] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  const submit = async () => {
-    const target = email.trim();
-    if (!target) {
-      toast.error("Enter an email address first.");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await addContactEmail(target);
-      toast.success("Email added. Verify it to use it for signing in.");
-      setEmail("");
-      onOpenChange(false);
-      await onAdded?.();
-    } catch (error) {
-      toast.error(
-        error?.response?.data?.message || "Could not add this email.",
-      );
-    } finally {
-      setSubmitting(false);
-    }
+  const handleVerified = async () => {
+    onOpenChange(false);
+    toast.success("Email added and verified.");
+    await onAdded?.();
   };
 
   return (
@@ -58,24 +36,13 @@ const AddEmailDialog = ({ open, onOpenChange, onAdded }) => {
         <DialogHeader>
           <DialogTitle>Add an email</DialogTitle>
           <DialogDescription>
-            The address is added as a contact email right away; verify it before
-            you can use it to sign in.
+            We'll send a verification code to the address; entering it adds the
+            email to your account, ready for contact and sign-in.
           </DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="add-email-address">Email address</Label>
-          <Input
-            id="add-email-address"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            disabled={submitting}
-          />
-        </div>
-        <Button onClick={submit} disabled={submitting}>
-          {submitting ? "Adding…" : "Add email"}
-        </Button>
+        {open && (
+          <OtpVerifyForm idPrefix="add-email" onVerified={handleVerified} />
+        )}
       </DialogContent>
     </Dialog>
   );

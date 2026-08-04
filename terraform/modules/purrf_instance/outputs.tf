@@ -74,6 +74,10 @@ output "chat_google_events_topic_id" {
   value = google_pubsub_topic.topics["chat-google-events"].name
 }
 
+output "resume_bucket_name" {
+  value = google_storage_bucket.resumes.name
+}
+
 output "microsoft_chat_notification_url" {
   value = "https://${local.domains.cf}/${local.name_prefix}-microsoft-chat"
 }
@@ -93,11 +97,11 @@ output "auth0_management_domain" {
   value = data.auth0_tenant.current.domain
 }
 
-output "auth0_link_action_m2m_client_id" {
-  value = auth0_client.link_action_m2m.client_id
+output "auth0_backend_management_m2m_client_id" {
+  value = auth0_client.backend_management_m2m.client_id
 }
 
-output "auth0_link_action_m2m_client_secret" {
-  value     = auth0_client_credentials.link_action_m2m.client_secret
+output "auth0_backend_management_m2m_client_secret" {
+  value     = auth0_client_credentials.backend_management_m2m.client_secret
   sensitive = true
 }

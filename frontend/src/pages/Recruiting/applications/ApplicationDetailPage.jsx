@@ -1,0 +1,2363 @@
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useParams, useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
+import { Check, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
+import DOMPurify from "dompurify";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import LoadGate from "@/pages/Recruiting/components/LoadGate";
+import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
+import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
+import ComposeEmailDialog from "@/pages/Recruiting/applications/ComposeEmailDialog";
+import EvaluationRubricForm from "@/pages/Recruiting/applications/EvaluationRubricForm";
+import { rubricFor } from "@/pages/Recruiting/applications/evaluationRubric";
+import {
+  getActiveMentionQuery,
+  insertMention,
+  renderCommentBody,
+} from "@/pages/Recruiting/applications/commentMentions";
+import {
+  getApplicationDetail,
+  getApplicationActivity,
+  getApplicationComments,
+  getEvaluationsForApplication,
+  getJob,
+  getMentionableUsers,
+  getOtherApplications,
+  listInterviewPool,
+  setApplicationSubStatus,
+  setApplicationRound,
+  changeApplicationStage,
+  blacklistUser,
+  listBlacklistUpcomingInterviews,
+  reassignApplication,
+  submitEvaluation,
+  postComment,
+  getApplicationEmails,
+  sendApplicationEmail,
+  resumeUrl,
+  scheduleInterview,
+  updateInterview,
+  cancelInterview,
+} from "@/api/recruitingApi";
+import {
+  humanize,
+  stageLabel,
+  INTERVIEW_STAGES,
+} from "@/pages/Recruiting/board/stageFormat";
+import { useAuth } from "@/context/auth/AuthContext";
+import { PERMISSIONS } from "@/constants/Permissions";
+import { formatInTz, resolveViewerTimezone } from "@/utils/dateTime";
+import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
+import {
+  APPLICATION_OWNER_GUIDE,
+  APPLICATION_EVALUATOR_GUIDE,
+} from "@/pages/Recruiting/components/guideContent";
+import InterviewMeetingCard from "@/pages/Recruiting/applications/InterviewMeetingCard";
+import InterviewMeetingDialog from "@/pages/Recruiting/applications/InterviewMeetingDialog";
+import BackToBoardLink from "@/pages/Recruiting/applications/BackToBoardLink";
+
+/**
+ * Advance targets whose assignee picker may be pre-filled from the job's
+ * configured `default_assignee_id`, mirroring the backend's
+ * `_ASSIGNABLE_DEFAULT_STAGES` (backend/dto/job_config_dto.py): only
+ * recruiter_screening/behavioral carry a default; tech/board_review are
+ * always picked manually.
+ */
+const PREFILL_TARGET_STAGES = new Set(["recruiter_screening", "behavioral"]);
+
+/**
+ * Stages whose interviewer is decided exclusively through the interview
+ * meeting card's own dialog (booking a meeting upserts the assignment --
+ * see InterviewSchedulingService.schedule/update on the backend), mirroring
+ * the backend's own `SCHEDULABLE_STAGES`
+ * (backend/recruiting/interview_scheduling_service.py). Recruiter
+ * screening and board review are interview stages too (INTERVIEW_STAGES)
+ * but evaluate on materials alone -- no meeting is ever booked for them --
+ * so their assignee is still picked via Advance/Round-advance/Reassign as
+ * before.
+ */
+const ASSIGNEE_VIA_CARD_STAGES = new Set(["behavioral", "tech"]);
+
+/** Stages an application never advances out of once reached. */
+const TERMINAL_STAGES = new Set(["rejected", "hired"]);
+
+/**
+ * Rejection reasons offered to the reviewer, mirroring the backend's fixed
+ * list (backend/dto/board_dto.py) so the option text sent matches exactly
+ * what the server expects.
+ */
+const REJECT_REASONS = [
+  "Insufficient experience",
+  "Did not meet the technical bar",
+  "Communication concerns",
+  "Not aligned with our mission",
+  "Accepted another offer",
+  "Incomplete application",
+  "Candidate declined the offer",
+  "Other",
+];
+
+/**
+ * Allowed sub_status values per pipeline stage, mirroring the backend's
+ * SUB_STATUS_SETS (backend/recruiting/stage_machine.py). Stages absent here
+ * (terminal stages, or any stage outside the configurable pipeline) have no
+ * sub-status, so no selector renders for them.
+ */
+const SUB_STATUS_SETS = {
+  recruiter_screening: ["pending", "in_progress", "evaluated"],
+  board_review: ["pending", "in_progress", "evaluated"],
+  behavioral: ["pending", "scheduling", "scheduled", "evaluated"],
+  tech: ["pending", "scheduling", "scheduled", "evaluated"],
+};
+
+/**
+ * Compute the stage an application advances to, mirroring the backend's
+ * `stage_machine.advance_target`: the next configured pipeline stage; once
+ * the current stage is the last one configured, "offer" for an employment
+ * job (Offer is a fixed step, never itself configurable) or "hired"
+ * directly for an activity job (which has no offer step); "hired" when the
+ * current stage is "offer" on an employment job; or null when the current
+ * stage isn't part of the job's configured pipeline and isn't an
+ * employment job's "offer" either (i.e. it's already a terminal stage).
+ *
+ * @param {string[]} jobStages The job's configured pipeline stages in order.
+ * @param {string} stage The application's current stage.
+ * @param {string|null|undefined} kind The job's kind ("employment"|"activity").
+ * @returns {string|null} The next stage, "offer", "hired", or null.
+ */
+const advanceTarget = (jobStages, stage, kind) => {
+  if (stage === "offer") return kind === "activity" ? null : "hired";
+  const index = jobStages.indexOf(stage);
+  if (index === -1) return null;
+  if (index < jobStages.length - 1) return jobStages[index + 1];
+  return kind === "activity" ? "hired" : "offer";
+};
+
+/**
+ * Sub-status selector: one button per value allowed for the application's
+ * current stage, the active one visually and semantically marked via
+ * `aria-pressed`. Renders nothing for stages with no configured sub-status
+ * set (terminal stages).
+ *
+ * "evaluated" is additionally locked behind `evaluatedDisabled`: it means
+ * "an evaluator confirmed a scorecard" (the backend rejects a manual switch
+ * without one), so it only becomes clickable once the current round has a
+ * confirmed evaluation.
+ *
+ * @param {{stage: string, subStatus: string|null, disabled: boolean,
+ *          evaluatedDisabled: boolean,
+ *          onSelect: (value: string) => void}} props
+ */
+const SubStatusSelector = ({
+  stage,
+  subStatus,
+  disabled,
+  evaluatedDisabled,
+  onSelect,
+}) => {
+  const options = SUB_STATUS_SETS[stage];
+  if (!options) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-sm font-medium text-slate-700">Status:</span>
+      {options.map((value) => {
+        const isActive = value === subStatus;
+        return (
+          <Button
+            key={value}
+            type="button"
+            size="sm"
+            variant={isActive ? "default" : "outline"}
+            aria-pressed={isActive}
+            disabled={disabled || (value === "evaluated" && evaluatedDisabled)}
+            title={
+              value === "evaluated" && evaluatedDisabled
+                ? "Requires a confirmed evaluation for the current round"
+                : undefined
+            }
+            onClick={() => onSelect(value)}
+          >
+            {humanize(value)}
+          </Button>
+        );
+      })}
+    </div>
+  );
+};
+
+/**
+ * Snapshot of the applicant's submitted personal info: name, LinkedIn, and
+ * timezone.
+ *
+ * @param {{personal: object}} props
+ */
+const PersonalSection = ({ personal }) => (
+  <div className="space-y-1">
+    <h2 className="text-sm font-medium text-slate-700">Personal</h2>
+    <p className="text-sm text-slate-700">
+      {[personal.firstName, personal.lastName].filter(Boolean).join(" ") ||
+        "Not provided."}
+    </p>
+    <p className="text-sm text-slate-700">
+      LinkedIn: {personal.linkedin || "Not provided."}
+    </p>
+    <p className="text-sm text-slate-700">
+      Timezone: {personal.timezone || "Not provided."}
+    </p>
+  </div>
+);
+
+/**
+ * The submitted answers to the job's form questions, labeled via the detail
+ * payload's `formSchema.questions`. Falls back to the raw question id when a
+ * question was since removed from the live form schema.
+ *
+ * @param {{answers: object, questions: {id: string, label: string}[]}} props
+ */
+const AnswersSection = ({ answers, questions }) => {
+  const entries = Object.entries(answers ?? {});
+  if (entries.length === 0) return null;
+  const labelById = new Map(questions.map((q) => [q.id, q.label]));
+  return (
+    <div className="space-y-2">
+      <h2 className="text-sm font-medium text-slate-700">Answers</h2>
+      <ul className="space-y-1">
+        {entries.map(([id, value]) => (
+          <li key={id} className="text-sm text-slate-700">
+            {labelById.get(id) ?? id}: {String(value ?? "—")}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
+/**
+ * One field's recorded response inside the read-only evaluation summary:
+ * the field label, then its value rendered by type — a pass/fail icon, a
+ * 1-5 score badge — followed by any free-text notes. Renders nothing when
+ * the evaluator left the field entirely blank.
+ *
+ * @param {{field: {id: string, label: string, valueType: string},
+ *          entry: {value?: boolean|number, notes?: string}|undefined}} props
+ */
+const EvaluationSummaryRow = ({ field, entry }) => {
+  const value = entry?.value;
+  const notes = entry?.notes;
+  if (value == null && !notes) return null;
+  return (
+    <div className="space-y-1">
+      <p className="text-sm font-medium text-slate-700">{field.label}</p>
+      {field.valueType === "pass_fail" && value != null && (
+        <span className="inline-flex items-center gap-1 text-sm text-slate-700">
+          {value ? (
+            <Check aria-label="Pass" className="size-4 text-green-600" />
+          ) : (
+            <X aria-label="Fail" className="size-4 text-red-600" />
+          )}
+        </span>
+      )}
+      {field.valueType === "score" && value != null && (
+        <Badge variant="secondary">{value}</Badge>
+      )}
+      {notes && <p className="text-sm text-slate-600">{notes}</p>}
+    </div>
+  );
+};
+
+/**
+ * Resolve an evaluator's display name from the interview pool, falling back
+ * to "User {id}" for an evaluator no longer in the active pool (their
+ * historical evaluation still needs a label) -- mirrors this page's own
+ * `assigneeName` fallback.
+ *
+ * @param {number} evaluatorId
+ * @param {{userId: number, name: string}[]} interviewPool
+ * @returns {string}
+ */
+const evaluatorName = (evaluatorId, interviewPool) =>
+  interviewPool.find((u) => u.userId === evaluatorId)?.name ??
+  `User ${evaluatorId}`;
+
+/**
+ * Read-only summary of every submitted evaluation for an application,
+ * newest first (by `id`, a reliable proxy for creation order since it's an
+ * auto-incrementing primary key), grouped by stage and, within each stage,
+ * by the rubric's own section/field grouping (via `rubricFor`). Each entry
+ * is labeled with who submitted it, so a reassignment mid-stage doesn't
+ * leave two evaluators' scorecards indistinguishable. Shown to owners so
+ * they can see evaluators' scorecards before deciding.
+ *
+ * @param {{evaluations: {id: number, stage: string, round: number, evaluatorId: number, responses: object}[],
+ *          interviewPool: {userId: number, name: string}[]}} props
+ */
+const EvaluationSummary = ({ evaluations, interviewPool }) => (
+  <div className="space-y-4">
+    {evaluations.length === 0 ? (
+      <p className="text-sm text-slate-400">No evaluations submitted yet.</p>
+    ) : (
+      [...evaluations]
+        .sort((a, b) => b.id - a.id)
+        .map((evaluation) => (
+          <div key={evaluation.id} className="space-y-3 rounded border p-3">
+            <h3 className="text-sm font-medium text-slate-700">
+              {humanize(evaluation.stage)} — Round {evaluation.round}
+            </h3>
+            <p className="text-xs text-slate-500">
+              Evaluated by:{" "}
+              {evaluatorName(evaluation.evaluatorId, interviewPool)}
+            </p>
+            {(rubricFor(evaluation.stage) ?? []).map((section) => (
+              <div key={section.title} className="space-y-2">
+                <h4 className="text-xs font-semibold uppercase text-slate-500">
+                  {section.title}
+                </h4>
+                {section.fields.map((field) => (
+                  <EvaluationSummaryRow
+                    key={field.id}
+                    field={field}
+                    entry={evaluation.responses?.[field.id]}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+        ))
+    )}
+  </div>
+);
+
+/**
+ * Format an interview activity detail's UTC instant in the zone the meeting
+ * was booked in, printing the IANA name verbatim (no derived `PDT`/`PST`
+ * abbreviation) -- same rule as `InterviewMeetingCard`. Returns null when
+ * either input is missing, so callers can degrade gracefully rather than
+ * rendering "undefined undefined".
+ *
+ * @param {string|null|undefined} startAt UTC ISO datetime string.
+ * @param {string|null|undefined} tz IANA timezone string.
+ * @returns {string|null}
+ */
+const formatInterviewWhen = (startAt, tz) =>
+  startAt && tz
+    ? `${formatInTz(startAt, tz, "yyyy-MM-dd")} ${formatInTz(startAt, tz, "HH:mm")} ${tz}`
+    : null;
+
+/**
+ * The "cancel the meeting this decision would strand" opt-in.
+ *
+ * Rendered inside the advance / round-advance / reject dialogs whenever the
+ * round being left still has an upcoming meeting. It matters because the page
+ * only ever shows the CURRENT stage+round's meeting: once the application
+ * moves on, a meeting left booked behind it stays live on every attendee's
+ * calendar while becoming unreachable here. Ticked by default — deciding to
+ * move on is normally deciding the meeting isn't needed — but unticking it
+ * keeps the meeting, which is the right call when e.g. the interview has been
+ * handed to someone else out of band.
+ *
+ * The sentence is both the visible text and the checkbox's `aria-label`: a
+ * Radix checkbox renders as a button, which a wrapping <label> would not name.
+ *
+ * The time is stated in the reader's own zone, like every other interview time
+ * on the page, and always names that zone -- a recruiter is about to delete
+ * someone's calendar invite off the back of this sentence, so it must not be
+ * ambiguous about which meeting it means.
+ *
+ * @param {{interview: object, timezone: string, checked: boolean,
+ *          onChange: (v: boolean) => void}} props
+ */
+const CancelUpcomingMeetingField = ({
+  interview,
+  timezone,
+  checked,
+  onChange,
+}) => {
+  const label = `Cancel the ${humanize(interview.stage)} interview meeting scheduled for ${formatInterviewWhen(
+    interview.startAt,
+    timezone,
+  )}. All attendees will be notified.`;
+  return (
+    <div className="flex items-start gap-2 text-sm text-slate-700">
+      <Checkbox
+        className="mt-0.5"
+        checked={checked}
+        onCheckedChange={(on) => onChange(!!on)}
+        aria-label={label}
+      />
+      <span>{label}</span>
+    </div>
+  );
+};
+
+/**
+ * Human-readable one-line description of a single activity entry, built
+ * from its `details` payload. `details.assigneeName`/`fromAssigneeName`/
+ * `toAssigneeName` are present only when the corresponding raw id existed
+ * on the underlying event (resolved server-side, read-time only — see
+ * `BoardService.get_application_activity`). Similarly,
+ * `details.ruleLabel` (on `auto_rejected`) and
+ * `details.screenQualifyRuleLabel`/`details.screenAutoHireRuleLabel` (on
+ * `application_submitted`) are read-time labels resolved from the
+ * corresponding rule id and are optional — older activity rows or rules
+ * that have since been removed from the screening config may lack them,
+ * in which case the description degrades to the generic unlabeled text.
+ * Falls back to the raw `eventType` for anything not explicitly handled,
+ * so a future event type still renders something rather than going blank.
+ * The actor is rendered separately by `ActivityTimeline`, as a shared
+ * trailing suffix — not part of this function's return value.
+ *
+ * @param {{eventType: string, details: object}} activity
+ * @param {string|null|undefined} jobKind The job's kind, so stage names in
+ *   the narration match the rest of the page (activity: hired -> Admitted).
+ * @returns {string}
+ */
+const describeActivity = ({ eventType, details }, jobKind, timezone) => {
+  switch (eventType) {
+    case "application_submitted": {
+      if (details.screenAutoHireRuleId) {
+        return `Submitted — auto-approved by screening rule${
+          details.screenAutoHireRuleLabel
+            ? ` "${details.screenAutoHireRuleLabel}"`
+            : ""
+        } (landed on ${stageLabel("hired", jobKind)})`;
+      }
+      const base = `Submitted — landed on ${humanize(details.stage)}`;
+      return details.screenQualifyRuleId
+        ? `${base} (auto-qualified by screening rule${
+            details.screenQualifyRuleLabel
+              ? ` "${details.screenQualifyRuleLabel}"`
+              : ""
+          })`
+        : base;
+    }
+    case "auto_rejected":
+      return details.reason === "screen_rule"
+        ? `Automatically rejected by screening rule${
+            details.ruleLabel ? ` "${details.ruleLabel}"` : ""
+          }`
+        : "Automatically rejected (blocked applicant)";
+    case "stage_changed":
+      if (details.reason) {
+        return `Rejected from ${humanize(details.fromStage)}${
+          details.note
+            ? `: ${details.reason} — ${details.note}`
+            : `: ${details.reason}`
+        }`;
+      }
+      return `Advanced from ${humanize(details.fromStage)} to ${stageLabel(details.toStage, jobKind)}${
+        details.assigneeName ? `, assigned to ${details.assigneeName}` : ""
+      }${details.advancedWithoutEvaluation ? " (no evaluation recorded)" : ""}`;
+    case "reassigned":
+      return `Reassigned on ${humanize(details.stage)}${
+        details.fromAssigneeName ? ` from ${details.fromAssigneeName}` : ""
+      } to ${details.toAssigneeName}`;
+    case "round_advanced":
+      return `Advanced to round ${details.toRound} of ${humanize(details.stage)}${
+        details.assigneeName ? `, assigned to ${details.assigneeName}` : ""
+      }${details.advancedWithoutEvaluation ? " (no evaluation recorded)" : ""}`;
+    case "sub_status_changed":
+      return `Status changed from ${humanize(details.fromSubStatus)} to ${humanize(details.toSubStatus)} on ${humanize(details.stage)}`;
+    case "evaluation_confirmed":
+      return `Confirmed evaluation for round ${details.round} of ${humanize(details.stage)}`;
+    case "blacklisted":
+      return `Blacklisted and rejected from ${humanize(details.fromStage)}: ${details.reason}`;
+    case "auto_assigned":
+      return `Automatically assigned to ${details.assigneeName} on ${humanize(details.stage)}`;
+    case "interview_scheduled": {
+      const when = formatInterviewWhen(details.startAt, timezone);
+      return `Scheduled the ${humanize(details.stage)} interview meeting${
+        when ? ` for ${when}` : ""
+      }${details.assigneeName ? ` with ${details.assigneeName}` : ""}`;
+    }
+    case "interview_updated": {
+      const stageText = humanize(details.stage);
+      const newWhen = formatInterviewWhen(details.startAt, timezone);
+      const oldWhen = formatInterviewWhen(details.fromStartAt, timezone);
+      const timeChanged =
+        details.fromStartAt !== details.startAt ||
+        details.fromEndAt !== details.endAt;
+      const assigneeChanged = details.fromAssigneeId !== details.assigneeId;
+      const timeRange =
+        oldWhen && newWhen ? ` from ${oldWhen} to ${newWhen}` : "";
+      const fromAssignee = details.fromAssigneeName ?? "unassigned";
+      const toAssignee = details.assigneeName ?? "unassigned";
+
+      if (timeChanged && assigneeChanged) {
+        return `Rescheduled the ${stageText} interview meeting${timeRange}, and reassigned it from ${fromAssignee} to ${toAssignee}`;
+      }
+      if (timeChanged) {
+        return `Rescheduled the ${stageText} interview meeting${timeRange}`;
+      }
+      if (assigneeChanged) {
+        return `Reassigned the ${stageText} interview meeting from ${fromAssignee} to ${toAssignee}`;
+      }
+      return `Updated the ${stageText} interview meeting${newWhen ? ` for ${newWhen}` : ""}`;
+    }
+    case "interview_cancelled": {
+      const when = formatInterviewWhen(details.startAt, timezone);
+      return `Cancelled the ${humanize(details.stage)} interview meeting${
+        when ? ` that was set for ${when}` : ""
+      }`;
+    }
+    case "email_sent":
+      return `Sent email "${details.subject}" to ${(details.to ?? []).join(", ")}${
+        details.cc?.length ? `, cc ${details.cc.join(", ")}` : ""
+      }`;
+    case "email_received":
+      return `Received reply "${details.subject}" from ${details.from}`;
+    default:
+      return humanize(eventType);
+  }
+};
+
+/**
+ * Read-only owner-facing audit timeline for one application: every
+ * submission/stage-change/reassign/round-advance/sub-status-change/
+ * evaluation-confirm/blacklist event, newest first, each attributed to its
+ * actor's resolved display name.
+ *
+ * @param {{activity: {id: number, eventType: string, details: object,
+ *          actorName: string, createdAt: string}[],
+ *          jobKind?: string|null}} props
+ */
+const ActivityTimeline = ({ activity, jobKind, timezone }) => (
+  <div className="space-y-2">
+    {activity.length === 0 ? (
+      <p className="text-sm text-slate-400">No activity yet.</p>
+    ) : (
+      <ul className="space-y-1">
+        {activity.map((entry) => (
+          <li key={entry.id} className="text-sm text-slate-700">
+            <span className="text-slate-500">
+              {new Date(entry.createdAt).toLocaleString()}
+            </span>{" "}
+            — {describeActivity(entry, jobKind, timezone)}, by {entry.actorName}
+          </li>
+        ))}
+      </ul>
+    )}
+  </div>
+);
+
+/**
+ * A comment thread on an application: read-only history plus a composer
+ * that supports @-mentioning the job owner(s) or current-stage assignee.
+ * Independent of ApplicationActivityDto -- posting or reading a comment
+ * does not create a timeline entry, and comments are never evaluation
+ * scores. Comments are immutable once posted (no edit/delete).
+ *
+ * Omitting `onPost` renders the thread read-only (no composer) — used by
+ * the expanded history rows, where discussion belongs on that
+ * application's own page.
+ *
+ * @param {{comments: {id: number, authorName: string, body: string,
+ *          createdAt: string, mentions: {userId: number, name: string}[]}[],
+ *          onPost?: (body: string) => void, posting?: boolean,
+ *          mentionableUsers?: {userId: number, name: string}[]}} props
+ */
+const CommentsPanel = ({ comments, onPost, posting, mentionableUsers }) => {
+  const [draft, setDraft] = useState("");
+  const [mentionQuery, setMentionQuery] = useState(null);
+  const textareaRef = useRef(null);
+  const pendingCursorRef = useRef(null);
+
+  useLayoutEffect(() => {
+    if (pendingCursorRef.current == null || !textareaRef.current) return;
+    const pos = pendingCursorRef.current;
+    textareaRef.current.setSelectionRange(pos, pos);
+    pendingCursorRef.current = null;
+  }, [draft]);
+
+  const handlePost = () => {
+    if (!draft.trim() || posting) return;
+    onPost(draft.trim()).then(
+      () => setDraft(""),
+      () => {},
+    );
+  };
+
+  const handleDraftChange = (e) => {
+    const value = e.target.value;
+    setDraft(value);
+    setMentionQuery(getActiveMentionQuery(value, e.target.selectionStart));
+  };
+
+  const filteredCandidates = mentionQuery
+    ? mentionableUsers.filter((u) =>
+        u.name.toLowerCase().includes(mentionQuery.query.toLowerCase()),
+      )
+    : [];
+
+  const handleSelectMention = (candidate) => {
+    const cursorPos = textareaRef.current.selectionStart;
+    const { text, cursorPos: nextCursor } = insertMention(
+      draft,
+      mentionQuery.start,
+      cursorPos,
+      candidate.userId,
+    );
+    setDraft(text);
+    setMentionQuery(null);
+    pendingCursorRef.current = nextCursor;
+    textareaRef.current.focus();
+  };
+
+  return (
+    <div className="space-y-4">
+      {comments.length === 0 ? (
+        <p className="text-sm text-slate-400">No comments yet.</p>
+      ) : (
+        <ul className="space-y-2">
+          {comments.map((comment) => (
+            <li key={comment.id} className="text-sm text-slate-700">
+              <span className="text-slate-500">
+                {new Date(comment.createdAt).toLocaleString()}
+              </span>{" "}
+              — {comment.authorName}:{" "}
+              {renderCommentBody(comment.body, comment.mentions)}
+            </li>
+          ))}
+        </ul>
+      )}
+      {onPost != null && (
+        <div className="flex flex-col gap-2">
+          <Popover
+            open={Boolean(mentionQuery)}
+            onOpenChange={(open) => {
+              if (!open) setMentionQuery(null);
+            }}
+          >
+            <PopoverAnchor asChild>
+              <Textarea
+                ref={textareaRef}
+                placeholder="Add a comment…"
+                value={draft}
+                onChange={handleDraftChange}
+                disabled={posting}
+              />
+            </PopoverAnchor>
+            <PopoverContent
+              align="start"
+              className="w-64 p-0"
+              onOpenAutoFocus={(e) => e.preventDefault()}
+            >
+              <Command>
+                <CommandList>
+                  <CommandEmpty>No one to mention.</CommandEmpty>
+                  <CommandGroup>
+                    {filteredCandidates.map((candidate) => (
+                      <CommandItem
+                        key={candidate.userId}
+                        onSelect={() => handleSelectMention(candidate)}
+                      >
+                        {candidate.name}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+          <Button
+            type="button"
+            size="sm"
+            className="self-end"
+            disabled={posting}
+            onClick={handlePost}
+          >
+            Post
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const EMAIL_DIRECTION_LABELS = { outbound: "Sent", inbound: "Received" };
+
+const EmailMessageBubble = ({ message }) => {
+  const html =
+    message.bodyHtml != null && message.bodyHtml !== ""
+      ? DOMPurify.sanitize(message.bodyHtml)
+      : null;
+  const when = message.gmailInternalDate ?? message.createdAt;
+  return (
+    <li className="rounded border p-2 text-sm">
+      <div className="mb-1 text-slate-500">
+        <span className="font-medium text-slate-700">
+          {EMAIL_DIRECTION_LABELS[message.direction] ?? message.direction}
+        </span>{" "}
+        · {message.fromAddress}
+        {when ? ` · ${new Date(when).toLocaleString()}` : ""}
+      </div>
+      {html != null ? (
+        // Mail bodies are foreign HTML, and Tailwind's preflight zeroes <p>
+        // margins, drops list markers and strips link underlines — without
+        // these hooks a message reads as one dense block whose links are
+        // indistinguishable from plain text.
+        <div
+          className="max-w-none text-slate-700 [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_ul]:list-disc [&_ul]:pl-5"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      ) : (
+        <p className="whitespace-pre-wrap text-slate-700">
+          {message.bodyText ?? ""}
+        </p>
+      )}
+    </li>
+  );
+};
+
+const EmailsPanel = ({
+  conversation,
+  canSend,
+  onCompose,
+  onReply,
+  onRefresh,
+  refreshing,
+}) => {
+  const threads = conversation?.threads ?? [];
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        {canSend && (
+          <Button type="button" size="sm" onClick={onCompose}>
+            Send email
+          </Button>
+        )}
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={onRefresh}
+          disabled={refreshing}
+        >
+          Refresh
+        </Button>
+      </div>
+      {threads.length === 0 ? (
+        <p className="text-sm text-slate-400">No emails yet.</p>
+      ) : (
+        <ul className="space-y-4">
+          {threads.map((thread) => (
+            <li key={thread.threadId} className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-slate-700">
+                  {thread.subject || "(no subject)"}
+                </span>
+                {canSend && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onReply(thread)}
+                  >
+                    Reply
+                  </Button>
+                )}
+              </div>
+              <ul className="space-y-2">
+                {thread.messages.map((message) => (
+                  <EmailMessageBubble
+                    key={message.messageId}
+                    message={message}
+                  />
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+/**
+ * A candidate's other applications, for the cross-posting aggregation view.
+ * Renders nothing when there are none. Each row expands in place — no
+ * navigation — into read-only reuse of this page's own snapshot rendering,
+ * fed from the row's own payload rather than a fresh detail fetch (the
+ * viewer may have no standing on that specific other application's own
+ * detail route, only on the one they're currently viewing).
+ *
+ * Generalized to render either the cross-job "Other applications" list or
+ * the same-posting "Previous applications for this posting" history via the
+ * `title`/`labelFor` props, so the two sections share one implementation
+ * while keeping independent expand state (see the two call sites below).
+ *
+ * Below the snapshot, each expanded row mirrors the main info panel's tab
+ * strip — Evaluations | Timeline | Comments — all read-only and all fed
+ * from the aggregate payload. The timeline is where a rejected attempt's
+ * reason/note surfaces; comments render without a composer (discussion
+ * belongs on that application's own page). `activity`/`comments` arrive
+ * empty for an assignee-only caller (see
+ * BoardService.get_other_applications), but this section only renders in
+ * the owner/read.all layout anyway. `jobKind` is the row's OWN job's kind,
+ * so activity-posting rows narrate hired as "Admitted" even when viewed
+ * from an employment posting's page.
+ *
+ * `showHistoryTabs` (default `true`) controls whether each expanded row's
+ * tab strip includes Timeline/Comments alongside Evaluations: the owner/
+ * read.all layout shows all three, while the assigned-evaluator layout (see
+ * the `showRubric` render branch below) passes `false` to show only the
+ * evaluations, since the backend already empties `activity`/`comments` for
+ * a pure assignee and those tabs would just render "No … yet." noise.
+ *
+ * @param {{title: string, otherApplications: {application: object,
+ *          jobTitle: string, jobKind: string, resumeAvailable: boolean,
+ *          evaluations: object[], activity: object[],
+ *          comments: object[]}[],
+ *          interviewPool: {userId: number, name: string}[],
+ *          expandedId: number|null, onToggle: (id: number) => void,
+ *          labelFor: (other: object) => string,
+ *          showHistoryTabs?: boolean}} props
+ */
+const OtherApplicationsSection = ({
+  title,
+  otherApplications,
+  interviewPool,
+  expandedId,
+  onToggle,
+  labelFor,
+  showHistoryTabs = true,
+  timezone,
+}) => {
+  if (otherApplications.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      <h2 className="text-sm font-medium text-slate-700">{title}</h2>
+      <ul className="space-y-2">
+        {otherApplications.map((other) => {
+          const isExpanded = other.application.id === expandedId;
+          const otherSubmission = other.application.current?.submission ?? {};
+          // Shared between the full (tabbed) and reduced (evaluator) views.
+          const evaluationSummary = (
+            <EvaluationSummary
+              evaluations={other.evaluations}
+              interviewPool={interviewPool}
+            />
+          );
+          return (
+            <li key={other.application.id} className="rounded border p-2">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between text-left text-sm"
+                onClick={() => onToggle(other.application.id)}
+              >
+                <span>{labelFor(other)}</span>
+                <span className="text-slate-500">
+                  {isExpanded ? "Hide" : "View"}
+                </span>
+              </button>
+              {isExpanded && (
+                <div className="mt-3 space-y-4 border-t pt-3">
+                  <PersonalSection personal={otherSubmission.personal ?? {}} />
+                  <RowList
+                    title="Education"
+                    rows={otherSubmission.education ?? []}
+                  />
+                  <RowList
+                    title="Experience"
+                    rows={otherSubmission.experience ?? []}
+                  />
+                  <AnswersSection
+                    answers={otherSubmission.answers ?? {}}
+                    questions={[]}
+                  />
+                  {other.resumeAvailable && (
+                    <iframe
+                      src={resumeUrl(other.application.id)}
+                      className="h-[400px] w-full rounded border"
+                      title="Résumé"
+                    />
+                  )}
+                  {showHistoryTabs ? (
+                    <Tabs defaultValue="evaluations">
+                      <TabsList>
+                        <TabsTrigger value="evaluations">
+                          Evaluations
+                        </TabsTrigger>
+                        <TabsTrigger value="timeline">Timeline</TabsTrigger>
+                        <TabsTrigger value="comments">Comments</TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="evaluations">
+                        {evaluationSummary}
+                      </TabsContent>
+                      <TabsContent value="timeline">
+                        <ActivityTimeline
+                          activity={other.activity ?? []}
+                          jobKind={other.jobKind}
+                          timezone={timezone}
+                        />
+                      </TabsContent>
+                      <TabsContent value="comments">
+                        <CommentsPanel comments={other.comments ?? []} />
+                      </TabsContent>
+                    </Tabs>
+                  ) : (
+                    <div className="space-y-2">
+                      <h3 className="text-xs font-semibold uppercase text-slate-500">
+                        Evaluations
+                      </h3>
+                      {evaluationSummary}
+                    </div>
+                  )}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+};
+
+/**
+ * Shared, role-adaptive application detail page at
+ * `/recruiting/applications/:applicationId`. Fetches the application detail
+ * and its evaluations on mount, then renders a left column (applicant
+ * snapshot, personal info, answers, and the résumé when available) shared by
+ * everyone, plus a right column that adapts to the viewer:
+ *
+ * - Anyone who can view (`detail.canView` — owner OR `read.all`) gets the
+ *   whole info panel: the sub-status selector, the current assignee, the
+ *   evaluations tab, and the timeline tab. Every *actionable* control inside
+ *   that panel is instead gated on real ownership (`detail.isOwner`)
+ *   specifically, so a `read.all` viewer sees the same information an owner
+ *   does but can't act on it: the sub-status buttons render disabled, the
+ *   Reassign trigger and the whole "Operate" decision row (Blacklist/Reject/
+ *   Advance) don't render at all. Blacklist is additionally gated on the
+ *   `recruiting.blacklist.write` permission (an org-level sanction, not a
+ *   per-posting decision — same gate as the backend route): an owner
+ *   without it sees the button disabled with a tooltip. For an actual
+ *   owner, the workflow only
+ *   ever moves forward one step at a time, so Advance is a single button
+ *   covering both cases: round-advance (via the job's
+ *   `pipelineConfig.stages[].rounds`) while rounds remain in the current
+ *   stage, then stage-advance once they're exhausted. Advancing into an
+ *   interview stage opens a dialog with an optional ("Decide later")
+ *   assignee radio-picker, pre-filled from the job's configured
+ *   `default_assignee_id` for screening/behavioral stage-advance targets;
+ *   leaving it on "Decide later" just advances unassigned, to be picked up
+ *   later via Reassign (which, unlike Advance, always requires a pick) — and
+ *   a read-only summary of all evaluations. This owner view never shows the
+ *   evaluation-filling form, even when the owner is also the current-stage
+ *   assignee — grading only happens via the evaluator view below.
+ * - The current-stage assignee (`detail.assigneeId === currentUser.userId`)
+ *   reaching this page via the `?mode=evaluate` link from My Evaluations
+ *   gets ONLY the `EvaluationRubricForm` for the application's stage,
+ *   pre-filled from their own draft and locked once confirmed — no owner
+ *   actions, even if they're also the owner. Landing in this mode without
+ *   being the current assignee (e.g. a stale link, after a reassign) shows a
+ *   short explanatory message instead.
+ *
+ * The rubric form is only mounted after the evaluations fetch resolves (the
+ * whole page is gated behind `loaded`), so it never captures a stale/empty
+ * `initialResponses` on a pre-fetch render; it is additionally keyed on the
+ * caller's confirmed state so a post-submit refresh remounts it cleanly.
+ */
+const ApplicationDetailPage = () => {
+  const { applicationId } = useParams();
+  const [searchParams] = useSearchParams();
+  const evaluatorMode = searchParams.get("mode") === "evaluate";
+  const { user, permissions = [] } = useAuth();
+  const currentUserId = user?.userId;
+  // Blacklisting is an org-level sanction, permission-gated (not owner-gated)
+  // on the backend route — mirror that here so an owner without the grant
+  // sees a disabled button instead of a post-click error.
+  const canBlacklist = permissions.includes(
+    PERMISSIONS.RECRUITING_BLACKLIST_WRITE,
+  );
+
+  const [detail, setDetail] = useState(null);
+  const [evaluations, setEvaluations] = useState([]);
+  const [job, setJob] = useState(null);
+  const [interviewPool, setInterviewPool] = useState([]);
+  const [activity, setActivity] = useState([]);
+  const [otherApplications, setOtherApplications] = useState([]);
+  const [expandedOtherApplicationId, setExpandedOtherApplicationId] =
+    useState(null);
+  const [previousApplications, setPreviousApplications] = useState([]);
+  const [expandedPreviousId, setExpandedPreviousId] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+
+  const [advancing, setAdvancing] = useState(false);
+  const [advanceAssigneeId, setAdvanceAssigneeId] = useState("");
+  const [advanceOpen, setAdvanceOpen] = useState(false);
+  const [switchingSubStatus, setSwitchingSubStatus] = useState(false);
+  const [scheduleAssigneeWarningOpen, setScheduleAssigneeWarningOpen] =
+    useState(false);
+  const [advancingRound, setAdvancingRound] = useState(false);
+  const [roundAdvanceOpen, setRoundAdvanceOpen] = useState(false);
+  const [roundAdvanceAssigneeId, setRoundAdvanceAssigneeId] = useState("");
+  // Which advance the no-evaluation reminder is intercepting: null (closed),
+  // "stage", or "round". Confirming resumes the intercepted flow.
+  const [evalReminderFor, setEvalReminderFor] = useState(null);
+  // The advance/round-advance/reject dialogs' shared "also cancel the meeting
+  // being left behind" tick. Reset to true every time one of those flows
+  // opens (see `openWithCancelDefault`): it's a per-decision choice, not a
+  // sticky preference.
+  const [cancelUpcomingMeeting, setCancelUpcomingMeeting] = useState(true);
+
+  const [rejectFormOpen, setRejectFormOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectNote, setRejectNote] = useState("");
+  const [rejecting, setRejecting] = useState(false);
+
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [reassignAssigneeId, setReassignAssigneeId] = useState("");
+  const [reassigning, setReassigning] = useState(false);
+
+  const [blacklistConfirmOpen, setBlacklistConfirmOpen] = useState(false);
+  const [blacklistReason, setBlacklistReason] = useState("");
+  const [blacklisting, setBlacklisting] = useState(false);
+  // The interviews a block would cancel, read when the dialog opens (never on
+  // page load -- every owner would pay for a query only this button needs).
+  // `null` means "not loaded / couldn't be loaded"; the block itself goes
+  // ahead either way, since the backend cancels them regardless.
+  const [blacklistUpcoming, setBlacklistUpcoming] = useState([]);
+  const [blacklistUpcomingFailed, setBlacklistUpcomingFailed] = useState(false);
+
+  const [interviewDialogOpen, setInterviewDialogOpen] = useState(false);
+  const [interviewDialogMode, setInterviewDialogMode] = useState("schedule");
+  const [interviewBusy, setInterviewBusy] = useState(false);
+  const [cancelInterviewConfirmOpen, setCancelInterviewConfirmOpen] =
+    useState(false);
+
+  const [savingEvaluation, setSavingEvaluation] = useState(false);
+
+  const [comments, setComments] = useState([]);
+  const [postingComment, setPostingComment] = useState(false);
+  const [mentionableUsers, setMentionableUsers] = useState([]);
+
+  const [emails, setEmails] = useState({
+    threads: [],
+    defaultTo: null,
+    defaultCc: [],
+  });
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [refreshingEmails, setRefreshingEmails] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [replyThread, setReplyThread] = useState(null);
+
+  const load = useCallback(() => {
+    if (applicationId == null) return;
+    setLoadError(false);
+    setLoaded(false);
+    Promise.all([
+      getApplicationDetail(applicationId),
+      getEvaluationsForApplication(applicationId),
+    ])
+      .then(async ([{ data: detailData }, { data: evals }]) => {
+        setDetail(detailData);
+        setEvaluations(evals ?? []);
+        // Job config (per-stage default assignee), the interview pool, and
+        // the activity timeline are all read via canView (owner or
+        // read.all), not raw isOwner — a read.all viewer sees the same
+        // info panel an owner does, just without any action button.
+        if (detailData.canView) {
+          const [
+            { data: jobData },
+            { data: pool },
+            { data: activityRows },
+            otherApplicationsRes,
+            { data: emailData },
+          ] = await Promise.all([
+            getJob(detailData.application.jobId),
+            listInterviewPool(),
+            getApplicationActivity(applicationId),
+            getOtherApplications(applicationId),
+            getApplicationEmails(applicationId),
+          ]);
+          setJob(jobData);
+          setInterviewPool(pool ?? []);
+          setActivity(activityRows ?? []);
+          setEmails(
+            emailData ?? { threads: [], defaultTo: null, defaultCc: [] },
+          );
+          const aggregate = otherApplicationsRes?.data ?? {};
+          setOtherApplications(aggregate.otherJobs ?? []);
+          setPreviousApplications(aggregate.previousSameJob ?? []);
+        }
+        // The assigned evaluator (evaluate mode) gets the candidate's other/previous
+        // applications for context. `canView` is false for a pure assignee, so this
+        // is a separate branch. The backend already reduces the payload for an
+        // assignee (audit timeline + comments of those apps come back empty), so we
+        // surface only the snapshot + evaluations. Do NOT fetch getApplicationActivity
+        // here — it's owner/read.all only and would fail the whole load. The interview
+        // pool (evaluator-name lookup) is best-effort: an evaluator without job.read
+        // can't read it, which must degrade to "User {id}", not break the page.
+        else if (evaluatorMode && detailData.assigneeId === currentUserId) {
+          const otherApplicationsRes =
+            await getOtherApplications(applicationId);
+          const aggregate = otherApplicationsRes?.data ?? {};
+          setOtherApplications(aggregate.otherJobs ?? []);
+          setPreviousApplications(aggregate.previousSameJob ?? []);
+          try {
+            const { data: pool } = await listInterviewPool();
+            setInterviewPool(pool ?? []);
+          } catch {
+            // Evaluator lacks job.read; names fall back to "User {id}".
+          }
+        }
+        // Comments (and who can be @-mentioned in them) are readable by
+        // the owner AND the current-stage assignee (unlike job/pool/
+        // activity above, which stay owner-only) -- the one fetch here
+        // that must also run for an assignee-only viewer.
+        if (detailData.isOwner || detailData.assigneeId === currentUserId) {
+          const [{ data: commentRows }, { data: mentionable }] =
+            await Promise.all([
+              getApplicationComments(applicationId),
+              getMentionableUsers(applicationId),
+            ]);
+          setComments(commentRows ?? []);
+          setMentionableUsers(mentionable ?? []);
+        }
+        setLoaded(true);
+      })
+      .catch((e) => {
+        setLoadError(true);
+        toast.error(e.message);
+      });
+  }, [applicationId, currentUserId, evaluatorMode]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const jobStages = useMemo(
+    () => (job?.pipelineConfig?.stages ?? []).map((s) => s.stage),
+    [job],
+  );
+
+  const next =
+    loaded && detail?.isOwner
+      ? advanceTarget(jobStages, detail.application.stage, job?.kind)
+      : null;
+  const isPipelineStage = next !== null;
+  // Behavioral/tech are excluded here even though they're INTERVIEW_STAGES:
+  // their interviewer is now picked exclusively via the interview meeting
+  // card's own dialog when booking a meeting, not at advance time -- see
+  // ASSIGNEE_VIA_CARD_STAGES. Advancing into one of them with no dialog at
+  // all mirrors how advancing into a non-interview stage already worked.
+  const needsAssignee =
+    isPipelineStage &&
+    INTERVIEW_STAGES.has(next) &&
+    !ASSIGNEE_VIA_CARD_STAGES.has(next);
+  // Reassignment applies only to interview stages, which carry an assignee.
+  // The Offer stage has no rubric and is not assignable (the backend rejects
+  // a reassign there), so the control must not appear even though Offer has a
+  // next stage to advance to (e.g. "hired" for employment jobs). Behavioral/
+  // tech are additionally excluded: their interviewer is now set exclusively
+  // via the interview meeting card's own dialog (see
+  // ASSIGNEE_VIA_CARD_STAGES), so a generic Reassign control would let
+  // someone silently diverge the assignment from the calendar meeting.
+  const canReassign =
+    loaded &&
+    detail?.isOwner &&
+    INTERVIEW_STAGES.has(detail.application.stage) &&
+    !ASSIGNEE_VIA_CARD_STAGES.has(detail.application.stage);
+  // Mirrors canReassign's exclusion, but for the CURRENT stage rather than
+  // the advance target -- the round-advance dialog stays on the same stage,
+  // so a behavioral/tech round-advance must hide its own PeoplePicker too.
+  const roundAdvanceNeedsAssignee =
+    loaded &&
+    detail != null &&
+    !ASSIGNEE_VIA_CARD_STAGES.has(detail.application.stage);
+
+  // Rounds configured for the application's *current* stage (a sibling
+  // field to `defaultAssigneeId` on the same per-stage job config entries
+  // used for the advance-time prefill above). Stages not configured for
+  // multiple rounds, or a job that hasn't loaded yet, default to 1.
+  const currentStageRounds =
+    loaded && detail
+      ? ((job?.pipelineConfig?.stages ?? []).find(
+          (s) => s.stage === detail.application.stage,
+        )?.rounds ?? 1)
+      : 1;
+  const canAdvanceRound =
+    loaded &&
+    detail &&
+    currentStageRounds > 1 &&
+    (detail.application.currentRound ?? 1) < currentStageRounds;
+
+  // Whether any evaluator has a CONFIRMED evaluation for the application's
+  // current stage+round. Gates the manual "Evaluated" status button (the
+  // backend hard-rejects that switch without one) and decides whether an
+  // advance needs the soft "no evaluation yet" reminder first.
+  const hasCurrentRoundEvaluation =
+    loaded && detail != null
+      ? evaluations.some(
+          (evaluation) =>
+            evaluation.stage === detail.application.stage &&
+            evaluation.round === (detail.application.currentRound ?? 1) &&
+            evaluation.isConfirmed,
+        )
+      : false;
+  const needsEvalReminder =
+    loaded &&
+    detail != null &&
+    INTERVIEW_STAGES.has(detail.application.stage) &&
+    !hasCurrentRoundEvaluation;
+
+  // The interview meeting card mounts for a behavioral/tech application, or
+  // -- defensively -- whenever a meeting row is still attached even if the
+  // application has since moved off those stages (e.g. rejected right after
+  // booking, without cancelling first): the recruiter still needs to see
+  // and cancel it from here.
+  const showInterviewCard =
+    loaded &&
+    detail != null &&
+    (ASSIGNEE_VIA_CARD_STAGES.has(detail.application.stage) ||
+      detail.interview != null);
+  const isTerminalStage =
+    loaded && detail != null && TERMINAL_STAGES.has(detail.application.stage);
+  // Every interview time on this page is rendered in the reader's own zone --
+  // their profile zone when set, else their browser's. No meeting stores the
+  // zone it was booked in (see ApplicationInterviewEntity), so there is no
+  // booker zone to prefer, and showing one would only mislead whoever is not
+  // in it.
+  const viewerTimezone = resolveViewerTimezone(detail?.viewerTimezone);
+  // The current stage+round's meeting, but only while it is still ahead of us.
+  // A meeting that has already started is history rather than a ghost:
+  // cancelling it would mail every attendee a cancellation for something that
+  // already happened, so no decision below offers to.
+  const upcomingInterview =
+    loaded &&
+    detail?.interview != null &&
+    new Date(detail.interview.startAt) > new Date()
+      ? detail.interview
+      : null;
+  // What a stage/round decision sends about that meeting. Both are omitted
+  // (undefined / no key at all) unless the recruiter was actually offered the
+  // choice, so a decision with nothing booked behind it says nothing about
+  // meetings and the backend's own `False` default applies.
+  const cancelUpcomingMeetingFlag = upcomingInterview
+    ? cancelUpcomingMeeting
+    : undefined;
+  const cancelUpcomingMeetingBody = upcomingInterview
+    ? { cancelInterview: cancelUpcomingMeeting }
+    : {};
+  // The interview dialog's starting interviewer pick in "schedule" mode: the
+  // round's current assignee if one is already set (e.g. carried over from a
+  // previous round in the same stage), else the stage's configured default
+  // (the same per-stage `defaultAssigneeId` the advance-time prefill above
+  // reads, just for the CURRENT stage instead of the advance target).
+  const interviewDefaultAssigneeId =
+    loaded && detail != null
+      ? (detail.assigneeId ??
+        (job?.pipelineConfig?.stages ?? []).find(
+          (s) => s.stage === detail.application.stage,
+        )?.defaultAssigneeId ??
+        null)
+      : null;
+
+  // Pre-fill the advance-time assignee picker with the target stage's
+  // configured default for screening/behavioral targets (tech/board_review
+  // carry none, by design). Runs once the owner's job config has loaded.
+  //
+  // This page is never remounted between in-page advances on the same
+  // application (`handleAdvance` just calls `load()` again), so a value set
+  // here for one target stage would otherwise survive into a later target
+  // stage that isn't supposed to have one. The non-prefill branches below
+  // explicitly clear it whenever the computed target changes to a stage
+  // that shouldn't carry a default, so a stale pick can never leak forward.
+  useEffect(() => {
+    if (!needsAssignee || !PREFILL_TARGET_STAGES.has(next)) {
+      setAdvanceAssigneeId("");
+      return;
+    }
+    const entry = (job?.pipelineConfig?.stages ?? []).find(
+      (s) => s.stage === next,
+    );
+    setAdvanceAssigneeId(
+      entry?.defaultAssigneeId != null ? String(entry.defaultAssigneeId) : "",
+    );
+  }, [needsAssignee, next, job]);
+
+  const handleSelectSubStatus = (value) => {
+    if (switchingSubStatus) return;
+    if (
+      value === "scheduled" &&
+      ["behavioral", "tech"].includes(detail.application.stage) &&
+      detail.assigneeId == null
+    ) {
+      setScheduleAssigneeWarningOpen(true);
+      return;
+    }
+    setSwitchingSubStatus(true);
+    setApplicationSubStatus(applicationId, value)
+      .then(() => {
+        setDetail((prev) =>
+          prev
+            ? {
+                ...prev,
+                application: { ...prev.application, subStatus: value },
+              }
+            : prev,
+        );
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setSwitchingSubStatus(false));
+  };
+
+  /**
+   * Advance the application to the next round within its current stage
+   * (e.g. Tech round 1 -> round 2), for stages configured with more than
+   * one round via the job's pipeline config. Patches `currentRound` on the
+   * local `detail` state in place, mirroring `handleSelectSubStatus`'s
+   * pattern for mutations that don't change the application's stage (so no
+   * full reload of the job config/evaluations is needed). No assignee is
+   * sent — only used for stages outside `INTERVIEW_STAGES`; currently every
+   * configurable stage is an interview stage, so this path is unused today
+   * but kept for a future non-interview configurable stage.
+   */
+  const handleAdvanceRoundDirect = () => {
+    if (advancingRound) return;
+    const nextRound = (detail.application.currentRound ?? 1) + 1;
+    setAdvancingRound(true);
+    setApplicationRound(applicationId, nextRound)
+      .then(() => {
+        setDetail((prev) =>
+          prev
+            ? {
+                ...prev,
+                application: { ...prev.application, currentRound: nextRound },
+              }
+            : prev,
+        );
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setAdvancingRound(false));
+  };
+
+  /**
+   * Open the round-advance flow. Interview stages (`INTERVIEW_STAGES`) open
+   * a dialog with an optional assignee picker, mirroring the advance-to-
+   * stage flow's `advanceOpen` dialog — leaving it on "Decide later" just
+   * advances the round unassigned, to be picked up later via Reassign;
+   * any other stage would advance immediately via `handleAdvanceRoundDirect`
+   * instead (currently unreachable, since every configurable stage today
+   * is an interview stage) — unless the round being left has an upcoming
+   * meeting, which always needs asking about first.
+   */
+  const handleOpenRoundAdvance = () => {
+    // An upcoming meeting forces the dialog open even on a stage that would
+    // otherwise advance straight through: it's the only place to ask about
+    // the meeting the round advance is about to strand.
+    if (INTERVIEW_STAGES.has(detail.application.stage) || upcomingInterview) {
+      setCancelUpcomingMeeting(true);
+      setRoundAdvanceOpen(true);
+      return;
+    }
+    handleAdvanceRoundDirect();
+  };
+
+  const handleCancelRoundAdvance = () => {
+    setRoundAdvanceOpen(false);
+    setRoundAdvanceAssigneeId("");
+  };
+
+  const handleConfirmAdvanceRound = () => {
+    if (advancingRound) return;
+    const nextRound = (detail.application.currentRound ?? 1) + 1;
+    setAdvancingRound(true);
+    setApplicationRound(
+      applicationId,
+      nextRound,
+      roundAdvanceAssigneeId ? Number(roundAdvanceAssigneeId) : undefined,
+      cancelUpcomingMeetingFlag,
+    )
+      .then(() => {
+        setDetail((prev) =>
+          prev
+            ? {
+                ...prev,
+                application: { ...prev.application, currentRound: nextRound },
+              }
+            : prev,
+        );
+        setRoundAdvanceOpen(false);
+        setRoundAdvanceAssigneeId("");
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setAdvancingRound(false));
+  };
+
+  const handleAdvance = (target, assigneeId) => {
+    if (advancing) return;
+    setAdvancing(true);
+    changeApplicationStage(applicationId, {
+      toStage: target,
+      assigneeId: assigneeId ? Number(assigneeId) : undefined,
+      ...cancelUpcomingMeetingBody,
+    })
+      .then(() => {
+        toast.success(`Advanced to ${humanize(target)}.`);
+        setAdvanceOpen(false);
+        load();
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setAdvancing(false));
+  };
+
+  /**
+   * The stage-advance flow proper: open the assignee picker for interview
+   * targets, or advance directly for the rest. Split out of the button
+   * handler so the no-evaluation reminder can resume it after "Advance
+   * anyway".
+   */
+  const proceedStageAdvance = () => {
+    if (needsAssignee || upcomingInterview) {
+      setCancelUpcomingMeeting(true);
+      setAdvanceOpen(true);
+    } else handleAdvance(next);
+  };
+
+  /**
+   * Stage-advance button entry point: intercept with the soft
+   * no-evaluation reminder when the current interview round has no
+   * confirmed evaluation, otherwise go straight into the advance flow.
+   * The backend allows the advance either way (it only marks the activity
+   * log) — this dialog is the "are you sure" half of that soft check.
+   */
+  const handleStageAdvanceClick = () => {
+    if (needsEvalReminder) setEvalReminderFor("stage");
+    else proceedStageAdvance();
+  };
+
+  /** Round-advance button entry point; mirrors handleStageAdvanceClick. */
+  const handleRoundAdvanceClick = () => {
+    if (needsEvalReminder) setEvalReminderFor("round");
+    else handleOpenRoundAdvance();
+  };
+
+  /** "Advance anyway": close the reminder and resume the intercepted flow. */
+  const handleConfirmEvalReminder = () => {
+    const pending = evalReminderFor;
+    setEvalReminderFor(null);
+    if (pending === "stage") proceedStageAdvance();
+    else if (pending === "round") handleOpenRoundAdvance();
+  };
+
+  const handleCancelReassign = () => {
+    setReassignOpen(false);
+    setReassignAssigneeId("");
+  };
+
+  const handleConfirmReassign = () => {
+    if (!reassignAssigneeId || reassigning) return;
+    setReassigning(true);
+    reassignApplication(applicationId, Number(reassignAssigneeId))
+      .then(() => {
+        toast.success("Reassigned.");
+        setReassignOpen(false);
+        setReassignAssigneeId("");
+        load();
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setReassigning(false));
+  };
+
+  const handleCancelReject = () => {
+    setRejectFormOpen(false);
+    setRejectReason("");
+    setRejectNote("");
+  };
+
+  const handleConfirmReject = () => {
+    if (!rejectReason || rejecting) return;
+    setRejecting(true);
+    changeApplicationStage(applicationId, {
+      toStage: "rejected",
+      reason: rejectReason,
+      note: rejectNote.trim() || undefined,
+      ...cancelUpcomingMeetingBody,
+    })
+      .then(() => {
+        toast.success("Application rejected.");
+        handleCancelReject();
+        load();
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setRejecting(false));
+  };
+
+  /**
+   * Open the blacklist confirm dialog and read what the block would cancel.
+   *
+   * Best-effort: a failed read shows a caveat instead of the list and still
+   * lets the block proceed — the backend cancels those meetings either way,
+   * so blocking an org-level sanction on a preview query would be backwards.
+   */
+  const handleOpenBlacklist = () => {
+    setBlacklistUpcoming([]);
+    setBlacklistUpcomingFailed(false);
+    setBlacklistConfirmOpen(true);
+    listBlacklistUpcomingInterviews(detail.application.userId)
+      .then(({ data }) => setBlacklistUpcoming(data ?? []))
+      .catch(() => setBlacklistUpcomingFailed(true));
+  };
+
+  const handleCancelBlacklist = () => {
+    setBlacklistConfirmOpen(false);
+    setBlacklistReason("");
+  };
+
+  const handleConfirmBlacklist = () => {
+    if (!blacklistReason.trim() || blacklisting) return;
+    setBlacklisting(true);
+    blacklistUser({
+      userId: detail.application.userId,
+      applicationId,
+      reason: blacklistReason.trim(),
+    })
+      .then(() => {
+        toast.success("Applicant blacklisted.");
+        handleCancelBlacklist();
+        load();
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setBlacklisting(false));
+  };
+
+  const openScheduleInterview = () => {
+    setInterviewDialogMode("schedule");
+    setInterviewDialogOpen(true);
+  };
+
+  const openEditInterview = () => {
+    setInterviewDialogMode("edit");
+    setInterviewDialogOpen(true);
+  };
+
+  const handleInterviewSubmit = (body) => {
+    if (interviewBusy) return;
+    setInterviewBusy(true);
+    const call =
+      interviewDialogMode === "edit" ? updateInterview : scheduleInterview;
+    call(applicationId, body)
+      .then(() => {
+        toast.success(
+          interviewDialogMode === "edit"
+            ? "Interview updated."
+            : "Interview scheduled.",
+        );
+        setInterviewDialogOpen(false);
+        load();
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setInterviewBusy(false));
+  };
+
+  const handleConfirmCancelInterview = () => {
+    if (interviewBusy) return;
+    setInterviewBusy(true);
+    cancelInterview(applicationId)
+      .then(() => {
+        toast.success("Interview cancelled.");
+        setCancelInterviewConfirmOpen(false);
+        load();
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setInterviewBusy(false));
+  };
+
+  const handleSaveDraft = (responses) => {
+    if (savingEvaluation) return;
+    setSavingEvaluation(true);
+    submitEvaluation(applicationId, { responses, confirm: false })
+      .then(() => {
+        toast.success("Draft saved.");
+        load();
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setSavingEvaluation(false));
+  };
+
+  const handleConfirmEvaluation = (responses) => {
+    if (savingEvaluation) return;
+    setSavingEvaluation(true);
+    submitEvaluation(applicationId, { responses, confirm: true })
+      .then(() => {
+        toast.success("Evaluation submitted.");
+        load();
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setSavingEvaluation(false));
+  };
+
+  const handlePostComment = (body) => {
+    if (postingComment) return Promise.resolve();
+    setPostingComment(true);
+    return postComment(applicationId, { body })
+      .then(({ data }) => {
+        setComments((prev) => [data, ...prev]);
+      })
+      .catch((e) => {
+        toast.error(e.message);
+        throw e;
+      })
+      .finally(() => setPostingComment(false));
+  };
+
+  const handleSendEmail = (payload) => {
+    if (sendingEmail) return Promise.resolve();
+    setSendingEmail(true);
+    return sendApplicationEmail(applicationId, payload)
+      .then(({ data }) => {
+        setEmails(data);
+        toast.success("Email sent.");
+      })
+      .catch((e) => {
+        toast.error(e.message);
+        throw e;
+      })
+      .finally(() => setSendingEmail(false));
+  };
+
+  const handleRefreshEmails = () => {
+    if (refreshingEmails) return;
+    setRefreshingEmails(true);
+    getApplicationEmails(applicationId, { refresh: true })
+      .then(({ data }) => {
+        setEmails(data);
+        toast.success("Refreshed.");
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setRefreshingEmails(false));
+  };
+
+  const openCompose = () => {
+    setReplyThread(null);
+    setComposeOpen(true);
+  };
+
+  const openReply = (thread) => {
+    setReplyThread(thread);
+    setComposeOpen(true);
+  };
+
+  if (!loaded || !detail) {
+    return (
+      <LoadGate
+        error={loadError}
+        errorMessage="Couldn't load this application."
+        onRetry={load}
+      />
+    );
+  }
+
+  const submission = detail.application.current?.submission ?? {};
+  const isAssignee =
+    currentUserId != null && detail.assigneeId === currentUserId;
+  const showRubric = evaluatorMode && isAssignee;
+  const myEntry = evaluations.find(
+    (e) =>
+      e.evaluatorId === currentUserId &&
+      e.stage === detail.application.stage &&
+      e.round === (detail.application.currentRound ?? 1),
+  );
+  const assigneeName =
+    interviewPool.find((u) => u.userId === detail.assigneeId)?.name ??
+    (detail.assigneeId != null ? `User ${detail.assigneeId}` : null);
+
+  const guide = evaluatorMode
+    ? showRubric
+      ? APPLICATION_EVALUATOR_GUIDE
+      : null
+    : detail.canView
+      ? APPLICATION_OWNER_GUIDE
+      : null;
+
+  return (
+    <div className="flex flex-col gap-6 p-6">
+      <div className="space-y-2">
+        <BackToBoardLink
+          jobId={detail.application.jobId}
+          applicationId={applicationId}
+          evaluatorMode={evaluatorMode}
+          canView={detail.canView}
+        />
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-semibold text-slate-900">
+              {detail.applicantName}
+            </h1>
+            <Badge variant="secondary">
+              {stageLabel(detail.application.stage, job?.kind)}
+            </Badge>
+            {guide && <HowItWorksDialog {...guide} />}
+          </div>
+          <p className="text-sm text-slate-600">{detail.applicantEmail}</p>
+        </div>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Left column: shared applicant snapshot. */}
+        <div className="space-y-4">
+          <PersonalSection personal={submission.personal ?? {}} />
+          <RowList title="Education" rows={submission.education ?? []} />
+          <RowList title="Experience" rows={submission.experience ?? []} />
+          <AnswersSection
+            answers={submission.answers ?? {}}
+            questions={detail.formSchema?.questions ?? []}
+          />
+          {detail.resumeAvailable && (
+            <iframe
+              src={resumeUrl(applicationId)}
+              className="h-[600px] w-full rounded border"
+              title="Résumé"
+            />
+          )}
+        </div>
+
+        {/* Right column: role-adaptive. */}
+        <div className="space-y-6">
+          {detail.canView && !evaluatorMode && (
+            <div className="space-y-4">
+              <SubStatusSelector
+                stage={detail.application.stage}
+                subStatus={detail.application.subStatus}
+                disabled={switchingSubStatus || !detail.isOwner}
+                evaluatedDisabled={!hasCurrentRoundEvaluation}
+                onSelect={handleSelectSubStatus}
+              />
+              {(assigneeName || canReassign) && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {assigneeName && (
+                    <p className="text-sm text-slate-700">
+                      Assigned to: {assigneeName}
+                    </p>
+                  )}
+                  {canReassign && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setReassignOpen(true)}
+                    >
+                      Reassign
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {/* Mounted for any canView viewer (owner or read.all), same
+                  as the assignee row above -- the card itself withholds
+                  Schedule/Edit/Cancel from a non-owner via `isOwner`,
+                  mirroring canReassign's owner gate on the Reassign button
+                  right above it. Booking/editing/cancelling a meeting
+                  requires the same advance permission + ownership the
+                  backend enforces either way. */}
+              {showInterviewCard && (
+                <InterviewMeetingCard
+                  interview={detail.interview}
+                  round={detail.application.currentRound ?? 1}
+                  timezone={viewerTimezone}
+                  isTerminal={isTerminalStage}
+                  isOwner={detail.isOwner}
+                  busy={interviewBusy}
+                  onSchedule={openScheduleInterview}
+                  onEdit={openEditInterview}
+                  onCancel={() => setCancelInterviewConfirmOpen(true)}
+                />
+              )}
+
+              {detail.isOwner && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-slate-700">
+                    Operate:
+                  </span>
+                  <Button
+                    variant="outline"
+                    className="mr-auto"
+                    disabled={blacklisting || !canBlacklist}
+                    title={
+                      canBlacklist
+                        ? undefined
+                        : "Requires the blacklist permission"
+                    }
+                    onClick={handleOpenBlacklist}
+                  >
+                    Blacklist
+                  </Button>
+                  {isPipelineStage && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setCancelUpcomingMeeting(true);
+                        setRejectFormOpen(true);
+                      }}
+                    >
+                      Reject
+                    </Button>
+                  )}
+                  {canAdvanceRound ? (
+                    <Button
+                      disabled={advancingRound}
+                      onClick={handleRoundAdvanceClick}
+                    >
+                      Advance to Round{" "}
+                      {(detail.application.currentRound ?? 1) + 1}
+                    </Button>
+                  ) : (
+                    isPipelineStage && (
+                      <Button
+                        disabled={advancing}
+                        onClick={handleStageAdvanceClick}
+                      >
+                        Advance to {stageLabel(next, job?.kind)}
+                      </Button>
+                    )
+                  )}
+                </div>
+              )}
+
+              <Tabs defaultValue="evaluations">
+                <TabsList>
+                  <TabsTrigger value="evaluations">Evaluations</TabsTrigger>
+                  <TabsTrigger value="timeline">Timeline</TabsTrigger>
+                  <TabsTrigger value="comments">Comments</TabsTrigger>
+                  <TabsTrigger value="emails">Emails</TabsTrigger>
+                </TabsList>
+                <TabsContent value="evaluations">
+                  <EvaluationSummary
+                    evaluations={evaluations}
+                    interviewPool={interviewPool}
+                  />
+                </TabsContent>
+                <TabsContent value="timeline">
+                  <ActivityTimeline
+                    activity={activity}
+                    jobKind={job?.kind}
+                    timezone={viewerTimezone}
+                  />
+                </TabsContent>
+                <TabsContent value="comments">
+                  <CommentsPanel
+                    comments={comments}
+                    onPost={handlePostComment}
+                    posting={postingComment}
+                    mentionableUsers={mentionableUsers}
+                  />
+                </TabsContent>
+                <TabsContent value="emails">
+                  <EmailsPanel
+                    conversation={emails}
+                    canSend={detail.isOwner}
+                    onCompose={openCompose}
+                    onReply={openReply}
+                    onRefresh={handleRefreshEmails}
+                    refreshing={refreshingEmails}
+                  />
+                  <ComposeEmailDialog
+                    open={composeOpen}
+                    onOpenChange={setComposeOpen}
+                    applicationId={applicationId}
+                    defaultTo={emails.defaultTo}
+                    defaultCc={emails.defaultCc}
+                    replyThread={replyThread}
+                    onSend={handleSendEmail}
+                    sending={sendingEmail}
+                  />
+                </TabsContent>
+              </Tabs>
+
+              <OtherApplicationsSection
+                timezone={viewerTimezone}
+                title="Previous applications for this posting"
+                otherApplications={previousApplications}
+                interviewPool={interviewPool}
+                expandedId={expandedPreviousId}
+                onToggle={(id) =>
+                  setExpandedPreviousId((cur) => (cur === id ? null : id))
+                }
+                labelFor={(other) =>
+                  `Applied ${
+                    other.application.current?.submittedAt
+                      ? new Date(
+                          other.application.current.submittedAt,
+                        ).toLocaleDateString()
+                      : "earlier"
+                  } — ${humanize(other.application.stage)}`
+                }
+              />
+
+              <OtherApplicationsSection
+                timezone={viewerTimezone}
+                title="Other applications"
+                otherApplications={otherApplications}
+                interviewPool={interviewPool}
+                expandedId={expandedOtherApplicationId}
+                onToggle={(id) =>
+                  setExpandedOtherApplicationId((prev) =>
+                    prev === id ? null : id,
+                  )
+                }
+                labelFor={(other) =>
+                  `${other.jobTitle} — ${humanize(other.application.stage)}`
+                }
+              />
+            </div>
+          )}
+
+          {evaluatorMode &&
+            (showRubric ? (
+              <>
+                <Tabs defaultValue="evaluation">
+                  <TabsList>
+                    <TabsTrigger value="evaluation">
+                      Your evaluation
+                    </TabsTrigger>
+                    <TabsTrigger value="comments">Comments</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="evaluation">
+                    <EvaluationRubricForm
+                      key={`eval-${detail.application.stage}-${
+                        myEntry?.isConfirmed ? "confirmed" : "draft"
+                      }`}
+                      stage={detail.application.stage}
+                      initialResponses={myEntry?.responses ?? {}}
+                      readOnly={Boolean(myEntry?.isConfirmed)}
+                      saving={savingEvaluation}
+                      onSaveDraft={handleSaveDraft}
+                      onConfirm={handleConfirmEvaluation}
+                    />
+                  </TabsContent>
+                  <TabsContent value="comments">
+                    <CommentsPanel
+                      comments={comments}
+                      onPost={handlePostComment}
+                      posting={postingComment}
+                      mentionableUsers={mentionableUsers}
+                    />
+                  </TabsContent>
+                </Tabs>
+
+                <OtherApplicationsSection
+                  timezone={viewerTimezone}
+                  title="Previous applications for this posting"
+                  otherApplications={previousApplications}
+                  interviewPool={interviewPool}
+                  expandedId={expandedPreviousId}
+                  onToggle={(id) =>
+                    setExpandedPreviousId((cur) => (cur === id ? null : id))
+                  }
+                  showHistoryTabs={false}
+                  labelFor={(other) =>
+                    `Applied ${
+                      other.application.current?.submittedAt
+                        ? new Date(
+                            other.application.current.submittedAt,
+                          ).toLocaleDateString()
+                        : "earlier"
+                    } — ${humanize(other.application.stage)}`
+                  }
+                />
+
+                <OtherApplicationsSection
+                  timezone={viewerTimezone}
+                  title="Other applications"
+                  otherApplications={otherApplications}
+                  interviewPool={interviewPool}
+                  expandedId={expandedOtherApplicationId}
+                  onToggle={(id) =>
+                    setExpandedOtherApplicationId((prev) =>
+                      prev === id ? null : id,
+                    )
+                  }
+                  showHistoryTabs={false}
+                  labelFor={(other) =>
+                    `${other.jobTitle} — ${humanize(other.application.stage)}`
+                  }
+                />
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">
+                You are not currently assigned to evaluate this application.
+              </p>
+            ))}
+        </div>
+      </div>
+
+      <Dialog
+        open={blacklistConfirmOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) handleCancelBlacklist();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Blacklist this applicant?</DialogTitle>
+          </DialogHeader>
+          {blacklistUpcoming.length > 0 && (
+            <div className="text-sm text-slate-700">
+              <p>
+                This also cancels the scheduled interviews below, on every
+                posting. All attendees will be notified.
+              </p>
+              <ul className="mt-2 list-disc pl-5">
+                {blacklistUpcoming.map((entry) => (
+                  <li
+                    key={`${entry.applicationId}-${entry.stage}-${entry.round}`}
+                  >
+                    {`${entry.jobTitle} — ${humanize(entry.stage)} round ${
+                      entry.round
+                    } — ${formatInterviewWhen(entry.startAt, viewerTimezone)}`}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {blacklistUpcomingFailed && (
+            <p className="text-sm text-slate-500">
+              Couldn&apos;t check for scheduled interviews. Any still to come
+              will be cancelled anyway.
+            </p>
+          )}
+          <Textarea
+            placeholder="Reason (required)"
+            value={blacklistReason}
+            onChange={(e) => setBlacklistReason(e.target.value)}
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleCancelBlacklist}
+              disabled={blacklisting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmBlacklist}
+              disabled={!blacklistReason.trim() || blacklisting}
+            >
+              Confirm blacklist
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={evalReminderFor != null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setEvalReminderFor(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>No evaluation recorded</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-700">
+            This round has no confirmed evaluation yet. Advance anyway?
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEvalReminderFor(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmEvalReminder}>Advance anyway</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={scheduleAssigneeWarningOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setScheduleAssigneeWarningOpen(false);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assignee required</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-700">
+            Schedule this interview's meeting first — booking one (see the
+            Interview Meeting card above) assigns the interviewer automatically.
+          </p>
+          <DialogFooter>
+            <Button onClick={() => setScheduleAssigneeWarningOpen(false)}>
+              OK
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={rejectFormOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) handleCancelReject();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject</DialogTitle>
+          </DialogHeader>
+          <Select value={rejectReason} onValueChange={setRejectReason}>
+            <SelectTrigger aria-label="Rejection reason" className="w-full">
+              <SelectValue placeholder="Select a reason…" />
+            </SelectTrigger>
+            <SelectContent className="z-[110]">
+              {REJECT_REASONS.map((reason) => (
+                <SelectItem key={reason} value={reason}>
+                  {reason}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Textarea
+            placeholder="Note (optional)"
+            value={rejectNote}
+            onChange={(e) => setRejectNote(e.target.value)}
+          />
+          {upcomingInterview && (
+            <CancelUpcomingMeetingField
+              interview={upcomingInterview}
+              timezone={viewerTimezone}
+              checked={cancelUpcomingMeeting}
+              onChange={setCancelUpcomingMeeting}
+            />
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleCancelReject}
+              disabled={rejecting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmReject}
+              disabled={!rejectReason || rejecting}
+            >
+              Confirm reject
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={roundAdvanceOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) handleCancelRoundAdvance();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Advance to Round {(detail.application.currentRound ?? 1) + 1}
+            </DialogTitle>
+          </DialogHeader>
+          {roundAdvanceNeedsAssignee && (
+            <PeoplePicker
+              label="Assignee"
+              variant="list"
+              noneLabel="Decide later"
+              pool={interviewPool}
+              value={roundAdvanceAssigneeId || undefined}
+              onChange={(v) => setRoundAdvanceAssigneeId(v ? String(v) : "")}
+            />
+          )}
+          {upcomingInterview && (
+            <CancelUpcomingMeetingField
+              interview={upcomingInterview}
+              timezone={viewerTimezone}
+              checked={cancelUpcomingMeeting}
+              onChange={setCancelUpcomingMeeting}
+            />
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleCancelRoundAdvance}
+              disabled={advancingRound}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmAdvanceRound}
+              disabled={advancingRound}
+            >
+              Confirm advance round
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={advanceOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setAdvanceOpen(false);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {isPipelineStage
+                ? `Advance to ${stageLabel(next, job?.kind)}`
+                : "Advance"}
+            </DialogTitle>
+          </DialogHeader>
+          {/* Behavioral/tech targets pick their interviewer on the meeting
+              card instead, so this dialog can open for the meeting question
+              alone -- with no picker at all. */}
+          {needsAssignee && (
+            <PeoplePicker
+              label="Assignee"
+              variant="list"
+              noneLabel="Decide later"
+              pool={interviewPool}
+              value={advanceAssigneeId || undefined}
+              onChange={(v) => setAdvanceAssigneeId(v ? String(v) : "")}
+            />
+          )}
+          {upcomingInterview && (
+            <CancelUpcomingMeetingField
+              interview={upcomingInterview}
+              timezone={viewerTimezone}
+              checked={cancelUpcomingMeeting}
+              onChange={setCancelUpcomingMeeting}
+            />
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setAdvanceOpen(false)}
+              disabled={advancing}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => handleAdvance(next, advanceAssigneeId)}
+              disabled={advancing}
+            >
+              Confirm advance
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={reassignOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) handleCancelReassign();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reassign</DialogTitle>
+          </DialogHeader>
+          <PeoplePicker
+            label="Assignee"
+            variant="list"
+            allowNone={false}
+            pool={interviewPool}
+            value={reassignAssigneeId || undefined}
+            onChange={(v) => setReassignAssigneeId(v ? String(v) : "")}
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleCancelReassign}
+              disabled={reassigning}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmReassign}
+              disabled={!reassignAssigneeId || reassigning}
+            >
+              Confirm reassign
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <InterviewMeetingDialog
+        open={interviewDialogOpen}
+        onOpenChange={setInterviewDialogOpen}
+        mode={interviewDialogMode}
+        interview={detail.interview}
+        defaultAssigneeId={interviewDefaultAssigneeId}
+        interviewPool={interviewPool}
+        candidateName={detail.applicantName}
+        viewerTimezone={viewerTimezone}
+        onSubmit={handleInterviewSubmit}
+        submitting={interviewBusy}
+      />
+
+      <Dialog
+        open={cancelInterviewConfirmOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setCancelInterviewConfirmOpen(false);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancel this interview meeting?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-700">
+            The Calendar invite will be cancelled for every attendee.
+          </p>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCancelInterviewConfirmOpen(false)}
+              disabled={interviewBusy}
+            >
+              Keep it
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmCancelInterview}
+              disabled={interviewBusy}
+            >
+              Cancel meeting
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+export default ApplicationDetailPage;

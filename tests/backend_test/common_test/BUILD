@@ -17,6 +17,24 @@ py_test(
 )
 
 py_test(
+    name = "permission_descriptions_test",
+    srcs = ["permission_descriptions_test.py"],
+    deps = [
+        "//backend/common:permission_descriptions",
+        "//backend/common:permissions",
+    ],
+)
+
+py_test(
+    name = "recruiting_enums_test",
+    srcs = ["recruiting_enums_test.py"],
+    deps = [
+        "//backend/common:permissions",
+        "//backend/common:recruiting_enums",
+    ],
+)
+
+py_test(
     name = "auth0_client_test",
     srcs = ["auth0_client_test.py"],
     deps = [
@@ -31,6 +49,17 @@ py_test(
     srcs = ["google_client_test.py"],
     deps = [
         "//backend/common:google_client",
+    ],
+)
+
+py_test(
+    name = "gmail_client_test",
+    srcs = ["gmail_client_test.py"],
+    deps = [
+        "//backend/common:exceptions",
+        "//backend/common:gmail_client",
+        "@pypi//google_api_python_client",
+        "@pypi//google_auth",
     ],
 )
 
@@ -124,5 +153,29 @@ py_test(
     srcs = ["database_test.py"],
     deps = [
         "//backend/common:database",
+    ],
+)
+
+py_test(
+    name = "name_utils_test",
+    srcs = ["name_utils_test.py"],
+    deps = [
+        "//backend/common:name_utils",
+    ],
+)
+
+py_test(
+    name = "trusted_connections_test",
+    srcs = ["trusted_connections_test.py"],
+    deps = [
+        "//backend/common:trusted_connections",
+    ],
+)
+
+py_test(
+    name = "identity_type_test",
+    srcs = ["identity_type_test.py"],
+    deps = [
+        "//backend/common:identity_type",
     ],
 )

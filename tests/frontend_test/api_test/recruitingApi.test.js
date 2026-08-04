@@ -1,0 +1,369 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import request from "@/utils/request";
+import {
+  listJobs,
+  getJob,
+  createJob,
+  updateJob,
+  listJobActivity,
+  requestClose,
+  requestReopen,
+  discardPendingEdit,
+  deleteJob,
+  listApprovers,
+  listInterviewPool,
+  listJobOwners,
+  submitForReview,
+  listMyReviews,
+  decideReview,
+  getPublicJob,
+  uploadResume,
+  submitApplication,
+  updateApplication,
+  getMyApplication,
+  listMyApplications,
+  listPublicJobs,
+  listBoardJobs,
+  searchBoardApplicants,
+  getJobBoard,
+  getApplicationDetail,
+  changeApplicationStage,
+  setApplicationRound,
+  setApplicationSubStatus,
+  blacklistUser,
+  reassignApplication,
+  resumeUrl,
+  listMyEvaluations,
+  submitEvaluation,
+  getEvaluationsForApplication,
+  getApplicationEmails,
+  sendApplicationEmail,
+  getApplicationEmailTemplates,
+} from "@/api/recruitingApi";
+
+vi.mock("@/utils/request", () => ({
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+  },
+}));
+
+describe("recruitingApi", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("listJobs GETs /recruiting/jobs", async () => {
+    request.get.mockResolvedValue({ data: [] });
+    await listJobs();
+    expect(request.get).toHaveBeenCalledWith("/recruiting/jobs");
+  });
+
+  it("getJob GETs the single job", async () => {
+    request.get.mockResolvedValue({ data: {} });
+    await getJob(5);
+    expect(request.get).toHaveBeenCalledWith("/recruiting/jobs/5");
+  });
+
+  it("createJob POSTs the body", async () => {
+    request.post.mockResolvedValue({ data: {} });
+    const body = { title: "X", kind: "activity" };
+    await createJob(body);
+    expect(request.post).toHaveBeenCalledWith("/recruiting/jobs", body);
+  });
+
+  it("updateJob PUTs to the single job", async () => {
+    request.put.mockResolvedValue({ data: {} });
+    const body = { title: "Y" };
+    await updateJob(7, body);
+    expect(request.put).toHaveBeenCalledWith("/recruiting/jobs/7", body);
+  });
+
+  it("listJobActivity GETs /recruiting/jobs/:jobId/activity", async () => {
+    request.get.mockResolvedValue({ data: [] });
+    await listJobActivity(9);
+    expect(request.get).toHaveBeenCalledWith("/recruiting/jobs/9/activity");
+  });
+
+  it("getApplicationEmails GETs the emails endpoint (no refresh by default)", async () => {
+    request.get.mockResolvedValue({ data: { threads: [] } });
+    await getApplicationEmails(10);
+    expect(request.get).toHaveBeenCalledWith(
+      "/recruiting/applications/10/emails",
+      { params: {} },
+    );
+  });
+
+  it("getApplicationEmails passes refresh=true when requested", async () => {
+    request.get.mockResolvedValue({ data: { threads: [] } });
+    await getApplicationEmails(10, { refresh: true });
+    expect(request.get).toHaveBeenCalledWith(
+      "/recruiting/applications/10/emails",
+      { params: { refresh: true } },
+    );
+  });
+
+  it("sendApplicationEmail POSTs the compose payload", async () => {
+    request.post.mockResolvedValue({ data: { threads: [] } });
+    const body = { to: ["c@x.com"], cc: [], subject: "Hi", body: "hello" };
+    await sendApplicationEmail(10, body);
+    expect(request.post).toHaveBeenCalledWith(
+      "/recruiting/applications/10/emails",
+      body,
+    );
+  });
+
+  it("getApplicationEmailTemplates GETs the email-templates endpoint", async () => {
+    request.get.mockResolvedValue({ data: [] });
+    await getApplicationEmailTemplates(10);
+    expect(request.get).toHaveBeenCalledWith(
+      "/recruiting/applications/10/email-templates",
+    );
+  });
+
+  it("requestClose POSTs the request-close endpoint with body", async () => {
+    request.post.mockResolvedValue({ data: {} });
+    await requestClose(7, { reviewerId: 2, message: "please close" });
+    expect(request.post).toHaveBeenCalledWith(
+      "/recruiting/jobs/7/request-close",
+      { reviewerId: 2, message: "please close" },
+    );
+  });
+
+  it("requestReopen POSTs the request-reopen endpoint with body", async () => {
+    request.post.mockResolvedValue({ data: {} });
+    await requestReopen(7, { reviewerId: 3, message: "reopen please" });
+    expect(request.post).toHaveBeenCalledWith(
+      "/recruiting/jobs/7/request-reopen",
+      { reviewerId: 3, message: "reopen please" },
+    );
+  });
+
+  it("discardPendingEdit POSTs the discard-pending-edit endpoint with no body", async () => {
+    request.post.mockResolvedValue({ data: {} });
+    await discardPendingEdit(7);
+    expect(request.post).toHaveBeenCalledWith(
+      "/recruiting/jobs/7/discard-pending-edit",
+    );
+  });
+
+  it("deleteJob DELETEs /recruiting/jobs/{id}", async () => {
+    request.delete.mockResolvedValue({ data: {} });
+    await deleteJob(7);
+    expect(request.delete).toHaveBeenCalledWith("/recruiting/jobs/7");
+  });
+
+  it("listApprovers GETs /recruiting/approvers", async () => {
+    request.get.mockResolvedValue({ data: [] });
+    await listApprovers();
+    expect(request.get).toHaveBeenCalledWith("/recruiting/approvers");
+  });
+
+  it("listInterviewPool GETs the interview-pool endpoint", async () => {
+    request.get.mockResolvedValue({ data: [] });
+    await listInterviewPool();
+    expect(request.get).toHaveBeenCalledWith("/recruiting/interview-pool");
+  });
+
+  it("listJobOwners GETs the job-owners endpoint", async () => {
+    request.get.mockResolvedValue({ data: [] });
+    await listJobOwners();
+    expect(request.get).toHaveBeenCalledWith("/recruiting/job-owners");
+  });
+
+  it("submitForReview POSTs reviewer + message", async () => {
+    request.post.mockResolvedValue({ data: {} });
+    await submitForReview(7, { reviewerId: 2, message: "hi" });
+    expect(request.post).toHaveBeenCalledWith("/recruiting/jobs/7/submit", {
+      reviewerId: 2,
+      message: "hi",
+    });
+  });
+
+  it("listMyReviews GETs /recruiting/reviews", async () => {
+    request.get.mockResolvedValue({ data: [] });
+    await listMyReviews();
+    expect(request.get).toHaveBeenCalledWith("/recruiting/reviews");
+  });
+
+  it("decideReview PATCHes decision + comment", async () => {
+    request.patch.mockResolvedValue({ data: {} });
+    await decideReview(9, { decision: "reject", comment: "no" });
+    expect(request.patch).toHaveBeenCalledWith("/recruiting/reviews/9", {
+      decision: "reject",
+      comment: "no",
+    });
+  });
+
+  it("getPublicJob GETs the public job endpoint", async () => {
+    request.get.mockResolvedValue({});
+    await getPublicJob(5);
+    expect(request.get).toHaveBeenCalledWith("/recruiting/public/jobs/5");
+  });
+
+  it("submitApplication POSTs to /recruiting/applications", async () => {
+    request.post.mockResolvedValue({});
+    await submitApplication({ jobId: 5 });
+    expect(request.post).toHaveBeenCalledWith("/recruiting/applications", {
+      jobId: 5,
+    });
+  });
+
+  it("updateApplication PATCHes the application endpoint", async () => {
+    request.patch.mockResolvedValue({});
+    await updateApplication(7, { answers: {} });
+    expect(request.patch).toHaveBeenCalledWith("/recruiting/applications/7", {
+      answers: {},
+    });
+  });
+
+  it("uploadResume POSTs multipart form data", async () => {
+    request.post.mockResolvedValue({});
+    const file = new File(["x"], "cv.pdf", { type: "application/pdf" });
+    await uploadResume(file);
+    const [url, body, config] = request.post.mock.calls.at(-1);
+    expect(url).toBe("/recruiting/resumes");
+    expect(body).toBeInstanceOf(FormData);
+    expect(config).toMatchObject({
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+  });
+
+  it("getMyApplication GETs with job_id param", async () => {
+    request.get.mockResolvedValue({});
+    await getMyApplication(5);
+    expect(request.get).toHaveBeenCalledWith("/recruiting/applications/mine", {
+      params: { job_id: 5 },
+    });
+  });
+
+  it("listMyApplications GETs /recruiting/my-applications", async () => {
+    request.get.mockResolvedValue({ data: [] });
+    await listMyApplications();
+    expect(request.get).toHaveBeenCalledWith("/recruiting/my-applications");
+  });
+
+  it("listPublicJobs GETs the public jobs endpoint", async () => {
+    request.get.mockResolvedValue({});
+    await listPublicJobs();
+    expect(request.get).toHaveBeenCalledWith("/recruiting/public/jobs");
+  });
+
+  it("listBoardJobs GETs /recruiting/board/jobs", async () => {
+    request.get.mockResolvedValue({ data: [] });
+    await listBoardJobs();
+    expect(request.get).toHaveBeenCalledWith("/recruiting/board/jobs");
+  });
+
+  it("searchBoardApplicants GETs with both job_id and current_job_id", async () => {
+    request.get.mockResolvedValue({ data: { hits: [], truncated: false } });
+    await searchBoardApplicants("zhang", { jobId: 5, currentJobId: 9 });
+    expect(request.get).toHaveBeenCalledWith("/recruiting/board/applicants", {
+      params: { q: "zhang", job_id: 5, current_job_id: 9 },
+    });
+  });
+
+  it("searchBoardApplicants omits job_id when jobId is null (All postings mode)", async () => {
+    request.get.mockResolvedValue({ data: { hits: [], truncated: false } });
+    await searchBoardApplicants("zhang", { jobId: null, currentJobId: 9 });
+    expect(request.get).toHaveBeenCalledWith("/recruiting/board/applicants", {
+      params: { q: "zhang", current_job_id: 9 },
+    });
+  });
+
+  it("searchBoardApplicants omits current_job_id when currentJobId is null", async () => {
+    request.get.mockResolvedValue({ data: { hits: [], truncated: false } });
+    await searchBoardApplicants("zhang", { jobId: 5, currentJobId: null });
+    expect(request.get).toHaveBeenCalledWith("/recruiting/board/applicants", {
+      params: { q: "zhang", job_id: 5 },
+    });
+  });
+
+  it("getJobBoard GETs the job board endpoint", async () => {
+    request.get.mockResolvedValue({ data: {} });
+    await getJobBoard(5);
+    expect(request.get).toHaveBeenCalledWith("/recruiting/jobs/5/board");
+  });
+
+  it("getApplicationDetail GETs the application endpoint", async () => {
+    request.get.mockResolvedValue({ data: {} });
+    await getApplicationDetail(7);
+    expect(request.get).toHaveBeenCalledWith("/recruiting/applications/7");
+  });
+
+  it("changeApplicationStage PATCHes the stage endpoint with body", async () => {
+    request.patch.mockResolvedValue({ data: {} });
+    await changeApplicationStage(7, { toStage: "hired" });
+    expect(request.patch).toHaveBeenCalledWith(
+      "/recruiting/applications/7/stage",
+      { toStage: "hired" },
+    );
+  });
+
+  it("setApplicationSubStatus PATCHes the sub-status endpoint with subStatus", async () => {
+    request.patch.mockResolvedValue({ data: {} });
+    await setApplicationSubStatus(7, "in_progress");
+    expect(request.patch).toHaveBeenCalledWith(
+      "/recruiting/applications/7/sub-status",
+      { subStatus: "in_progress" },
+    );
+  });
+
+  it("setApplicationRound PATCHes the round endpoint with round and assigneeId", async () => {
+    request.patch.mockResolvedValue({ data: {} });
+    await setApplicationRound(7, 2, 42);
+    expect(request.patch).toHaveBeenCalledWith(
+      "/recruiting/applications/7/round",
+      { round: 2, assigneeId: 42 },
+    );
+  });
+
+  it("blacklistUser POSTs to /recruiting/blacklist with body", async () => {
+    request.post.mockResolvedValue({ data: {} });
+    await blacklistUser({ userId: 42, reason: "spam" });
+    expect(request.post).toHaveBeenCalledWith("/recruiting/blacklist", {
+      userId: 42,
+      reason: "spam",
+    });
+  });
+
+  it("reassigns an application's interviewer", async () => {
+    request.patch.mockResolvedValueOnce({ data: {} });
+    await reassignApplication(9, 42);
+    expect(request.patch).toHaveBeenCalledWith(
+      "/recruiting/applications/9/assignment",
+      { assigneeId: 42 },
+    );
+  });
+
+  it("resumeUrl returns correctly formatted URL", () => {
+    const url = resumeUrl(7);
+    // In test (dev-mode), baseURL is "/api", so full URL should be exact
+    expect(url).toBe("/api/recruiting/applications/7/resume");
+  });
+
+  it("listMyEvaluations GETs /recruiting/evaluations/mine", async () => {
+    request.get.mockResolvedValue({ data: [] });
+    await listMyEvaluations();
+    expect(request.get).toHaveBeenCalledWith("/recruiting/evaluations/mine");
+  });
+
+  it("submitEvaluation PUTs the evaluation endpoint with body", async () => {
+    request.put.mockResolvedValue({ data: {} });
+    const body = { responses: { q1: "great" }, confirm: true };
+    await submitEvaluation(7, body);
+    expect(request.put).toHaveBeenCalledWith(
+      "/recruiting/applications/7/evaluation",
+      body,
+    );
+  });
+
+  it("getEvaluationsForApplication GETs the evaluations list endpoint", async () => {
+    request.get.mockResolvedValue({ data: [] });
+    await getEvaluationsForApplication(7);
+    expect(request.get).toHaveBeenCalledWith(
+      "/recruiting/applications/7/evaluations",
+    );
+  });
+});

@@ -21,15 +21,13 @@ import jwt
 from backend.common.constants import is_company_email
 from backend.common.environment_constants import EMAIL_OTP_STATE_JWT_SECRET
 from backend.common.exceptions import ConflictError
-from backend.common.identity_type import IdentityType
-from backend.common.permissions import INTERNAL_EMPLOYEE_PERMISSIONS
 from backend.dto.emails_view_dto import (
     EmailEntryDto,
     EmailsViewDto,
     IdentityDto,
 )
 from backend.entity.user_emails_entity import UserEmailsEntity
-from backend.entity.user_identities_entity import UserIdentitiesEntity
+from backend.user_identity.internal_lifecycle import absorb_internal_identity
 
 _STATE_TTL_SECONDS = 600
 _STATE_FLOW = "add_email"
@@ -46,8 +44,8 @@ class EmailManagementService:
         auth0_client,
         user_emails_repository,
         user_identities_repository,
-        users_repository,
         user_permissions_repository,
+        users_repository,
         logger,
     ):
         """
@@ -57,83 +55,49 @@ class EmailManagementService:
             auth0_client (Auth0Client): Client driving Auth0 passwordless OTP and identity linking.
             user_emails_repository (UserEmailsRepository): Repository handling UserEmailsEntity.
             user_identities_repository (UserIdentitiesRepository): Repository handling UserIdentitiesEntity.
-            users_repository (UsersRepository): Repository handling UsersEntity; used to
-                write-through sync the legacy users.primary_email column.
             user_permissions_repository (UserPermissionsRepository): Repository
                 handling permission grants; used to mirror the internal-employee
                 lifecycle hook when a corp sign-in joins an existing account.
+            users_repository (UsersRepository): Repository handling UsersEntity;
+                used to mirror the internal-employee lifecycle hook when a corp
+                sign-in joins an existing account.
             logger: Application logger.
         """
         self._auth0 = auth0_client
         self._user_emails = user_emails_repository
         self._user_identities = user_identities_repository
-        self._users = users_repository
         self._user_permissions = user_permissions_repository
+        self._users = users_repository
         self._state_secret = os.getenv(EMAIL_OTP_STATE_JWT_SECRET)
         self._logger = logger
 
-    async def add_email(self, session, current_user_id: int, email: str) -> dict:
-        """
-        Record a backup contact address on the caller's account without an OTP
-        round-trip.
+    async def remove_email(
+        self,
+        session,
+        current_user_id: int,
+        current_sub: str,
+        current_claim_email: str | None,
+        email_id: int,
+    ) -> dict:
+        """Remove a non-primary address from the caller's account.
 
-        The row is written unconfirmed and non-primary: an unverified address
-        is contact-only. Making it usable as a sign-in method requires the
-        OTP verify flow (initiate/verify), which proves from inside the
-        account that the caller controls the mailbox — auto-linking a sign-in
-        off an unverified claim would let anyone pre-claim someone else's
-        address and capture their later logins.
-
-        Args:
-            session (AsyncSession): The active async database session.
-            current_user_id (int): user_id of the authenticated caller.
-            email (str): The address to add.
-
-        Returns:
-            dict: ``{"ok": True, "email": <normalized address>}``.
-
-        Raises:
-            ValueError: The address is not a valid email.
-            ConflictError: Another account already OTP-confirmed the address,
-                or it is already on the caller's account.
-        """
-        normalized = email.strip().lower()
-        if not _EMAIL_PATTERN.match(normalized):
-            raise ValueError("Invalid email format")
-        if await self._user_emails.exists_confirmed_on_other_user(
-            session, normalized, current_user_id
-        ):
-            raise ConflictError("Email already verified by another account")
-        if await self._user_emails.get_by_user_and_email(
-            session, current_user_id, normalized
-        ):
-            raise ConflictError("This email is already on your account")
-
-        await self._user_emails.upsert_email(
-            session=session,
-            entity=UserEmailsEntity(
-                user_id=current_user_id,
-                email=normalized,
-                otp_confirmed=False,
-                is_primary=False,
-            ),
-        )
-        await session.commit()
-        return {"ok": True, "email": normalized}
-
-    async def remove_email(self, session, current_user_id: int, email_id: int) -> dict:
-        """
-        Remove an unverified backup contact address from the caller's account.
-
-        Only a never-confirmed, non-primary row may be removed here: adding it
-        required no OTP round-trip, so removing it requires none either. A
-        verified address is (or can become) a sign-in method and leaves the
-        account only through the step-up unlink flow, and the primary contact
-        cannot be removed at all.
+        Any non-primary row is removable — a confirmed address is account
+        contact data the user owns, and removing it also removes its use as
+        a passwordless login identifier (one action, one consequence). Two
+        refusals: the primary contact, and — when the caller's session is
+        itself a passwordless login — the address that session signed in
+        with (deleting it would strand a live token whose next request can
+        no longer resolve; same doctrine as the unlink current-session
+        guard).
 
         Args:
             session (AsyncSession): The active async database session.
             current_user_id (int): user_id of the authenticated caller.
+            current_sub (str): JWT ``sub`` of the caller's session; only an
+                ``email|`` sub triggers the current-session address guard.
+            current_claim_email (str | None): The session token's email
+                claim, checked against the target row when ``current_sub``
+                is a passwordless login.
             email_id (int): Primary key of the email row to remove.
 
         Returns:
@@ -141,20 +105,31 @@ class EmailManagementService:
 
         Raises:
             ValueError: The row is missing or owned by another user.
-            ConflictError: The row is the primary contact or already verified.
+            ConflictError: The row is the primary contact, it is the
+                address the caller's own passwordless session signed in
+                with, or the caller is an active employee removing any
+                corp-domain email.
         """
         row = await self._user_emails.get_by_id(session, email_id)
         if row is None or row.user_id != current_user_id:
             raise ValueError("Email not found")
         if row.is_primary:
             raise ConflictError("The primary contact email cannot be removed")
-        if row.otp_confirmed:
-            # Accurate whether or not an email sign-in method still exists for
-            # the address: a verified row survives only while some sign-in
-            # method claims it, and it is deleted alongside the last one.
+        if (
+            current_sub.startswith("email|")
+            and current_claim_email
+            and row.email == current_claim_email.strip().lower()
+        ):
             raise ConflictError(
-                "This verified email is still used by your sign-in methods "
-                "and cannot be removed separately"
+                "Cannot remove the email used for the current session; "
+                "log in with another method first"
+            )
+        if is_company_email(row.email) and await self._users.exists_active_internal(
+            session, current_user_id
+        ):
+            raise ConflictError(
+                "Active employees cannot remove a corp email; "
+                "it is their required internal contact"
             )
 
         await self._user_emails.delete(session, email_id)
@@ -164,36 +139,22 @@ class EmailManagementService:
     async def initiate(
         self,
         session,
-        current_user_id: int | None,
+        current_user_id: int,
         current_sub: str,
         email: str,
-        needs_link: bool = False,
-        claim_email: str | None = None,
     ) -> dict:
         """
         Send an OTP and return a signed state JWT binding it to this session.
 
-        Two modes share the mechanism:
-
-        - Normal (``needs_link=False``): the caller adds a contact email to
-          their own account; an address confirmed by *another* account is
-          refused.
-        - Needs-link (``needs_link=True``, PUR-480): the caller's sign-in
-          collided with an existing account at bootstrap, so no local user
-          exists (``current_user_id`` is None). The address is locked to the
-          sign-in's own email claim — the whole point is to prove THAT mailbox
-          — and the other-account check is skipped, because the address
-          belonging to another account is exactly the situation being resolved.
+        The caller adds a contact email to their own account; an address
+        claimed by *another* account is refused (confirmed or not —
+        addresses are globally exclusive).
 
         Args:
             session (AsyncSession): The active async database session.
-            current_user_id (int | None): The caller's user_id; None for a
-                needs-link session.
+            current_user_id (int): The caller's user_id.
             current_sub (str): The caller's JWT ``sub``.
             email (str): The address to send the OTP to.
-            needs_link (bool): True for a needs-link session.
-            claim_email (str | None): The sign-in token's email claim; required
-                in needs-link mode to lock the target address.
 
         Returns:
             dict: ``{"state": <signed state JWT>}``.
@@ -201,15 +162,13 @@ class EmailManagementService:
         normalized = email.strip().lower()
         if not _EMAIL_PATTERN.match(normalized):
             raise ValueError("Invalid email format")
-        if needs_link:
-            if claim_email is None or normalized != claim_email.strip().lower():
-                raise ValueError(
-                    "Verify the email address associated with this sign-in"
-                )
-        elif await self._user_emails.exists_confirmed_on_other_user(
+        if await self._user_emails.exists_on_other_user(
             session, normalized, current_user_id
         ):
-            raise ConflictError("Email already verified by another account")
+            raise ConflictError(
+                "Email already in use by another account. If it's yours, "
+                "sign in with a code to that address instead."
+            )
 
         self._auth0.start_passwordless(normalized)
 
@@ -224,39 +183,37 @@ class EmailManagementService:
     async def verify(
         self,
         session,
-        current_user_id: int | None,
+        current_user_id: int,
         current_sub: str,
         state: str,
         otp: str,
-        needs_link: bool = False,
-        caller_identity_type: IdentityType | None = None,
     ) -> dict:
         """
         Confirm the OTP and persist the result.
 
         The address to verify is taken only from the signed state, never from the
         request, so a tampered email parameter cannot redirect the verification.
-        Nothing is written until the OTP and the new identity both check out.
-        Auth0 users are never merged: the ``user_identities`` row is the only
-        link between the passwordless sub and the account. Verifying a company
-        address additionally mirrors the internal-employee lifecycle hook —
-        the baseline permission bundle is granted and the corp address becomes
-        the primary contact.
+        Nothing is written until the OTP checks out.
 
-        In needs-link mode (``needs_link=True``, PUR-480) the direction
-        reverses: instead of pulling the address's identity into the caller's
-        account, the caller's sign-in ``sub`` is linked into the account that
-        already OTP-confirmed the address — see :meth:`_link_into_owner`.
+        Only confirms the address as a Purrf contact; it does not create a
+        ``user_identities`` row for the OTP's passwordless ``email|`` sub.
+        That row would be redundant: any OTP-confirmed address
+        already works as a passwordless login identifier through routing in
+        ``UserIdentityService.create_or_swap_user``, so no separate sign-in
+        identity is needed to make it usable. The OTP's Auth0 ``email|`` user
+        is left inert — the same as any step-up OTP target — and Auth0 users
+        are never merged. The ``existing_identity`` conflict guard is drift
+        protection: an ``email|`` identity row can still exist for the
+        address from before those rows were retired, and if one does, it
+        must already belong to this account. Verifying a company address
+        additionally mirrors the internal-employee lifecycle hook — the
+        baseline permission bundle is granted and the corp address becomes
+        the primary contact.
         """
         claims = self._decode_state(state)
         if claims.get("flow") != _STATE_FLOW:
             raise ValueError(_INVALID_STATE_MESSAGE)
-        if needs_link:
-            # CSRF guard for a userless session: the state is bound to the sub
-            # (user_id was signed as None at initiate).
-            if claims.get("user_id") is not None or claims.get("sub") != current_sub:
-                raise ValueError(_INVALID_STATE_MESSAGE)
-        elif claims.get("user_id") != current_user_id:
+        if claims.get("user_id") != current_user_id:
             # CSRF guard: the state must belong to the caller's session.
             raise ValueError(_INVALID_STATE_MESSAGE)
         target_email = claims["email"]
@@ -270,15 +227,6 @@ class EmailManagementService:
         if id_token_claims.get("email", "").lower() != target_email:
             raise ValueError("Verified email does not match the requested address")
 
-        if needs_link:
-            return await self._link_into_owner(
-                session=session,
-                current_sub=current_sub,
-                target_email=target_email,
-                otp_sub=id_token_claims["sub"],
-                caller_identity_type=caller_identity_type,
-            )
-
         new_sub = id_token_claims["sub"]
         existing_identity = await self._user_identities.get_by_subject_identifier(
             session, new_sub
@@ -290,119 +238,10 @@ class EmailManagementService:
             raise ConflictError("Identity already linked to another account")
 
         await self._confirm_email(session, current_user_id, target_email)
-        if existing_identity is None:
-            await self._user_identities.upsert_identity(
-                session=session,
-                entity=UserIdentitiesEntity(
-                    user_id=current_user_id,
-                    subject_identifier=new_sub,
-                    identity_type=(
-                        IdentityType.INTERNAL
-                        if is_company_email(target_email)
-                        else IdentityType.EXTERNAL
-                    ),
-                    email_claim=target_email,
-                ),
-            )
         if is_company_email(target_email):
             await self._absorb_internal_identity(session, current_user_id, target_email)
         await session.commit()
-        return {"ok": True, "linked_sub": new_sub, "email": target_email}
-
-    async def _link_into_owner(
-        self,
-        session,
-        current_sub: str,
-        target_email: str,
-        otp_sub: str,
-        caller_identity_type: IdentityType | None,
-    ) -> dict:
-        """
-        Needs-link resolution (PUR-480): the caller signed in with a method
-        whose email belongs to an existing account, and has just OTP-proved
-        the mailbox. Link the caller's ``sub`` into that account.
-
-        The link is allowed only against an account that itself OTP-confirmed
-        the address — that confirmation is the account's trust anchor, and it
-        means whoever controls the mailbox already controls the account (its
-        sign-in or step-up target IS this mailbox), so the link grants nothing
-        new. An owner that never confirmed (e.g. a migrated Google user who
-        has not passed the wall yet) is refused with a pointer back to their
-        original sign-in method.
-
-        No users row is created: a user_identities row for the caller's sub is
-        added, so future logins with either method resolve to the owning
-        account at step 1. When the linked sign-in is INTERNAL (an employee
-        joining their corp sign-in to a pre-existing account), the
-        internal-employee lifecycle hook is mirrored: the baseline permission
-        bundle is granted and the corp address becomes the primary contact.
-
-        Args:
-            session (AsyncSession): The active async database session.
-            current_sub (str): The caller's sign-in ``sub`` to link.
-            target_email (str): The OTP-proved address (normalized).
-            otp_sub (str): The passwordless ``sub`` the OTP exchange returned
-                for the address.
-            caller_identity_type (IdentityType | None): The sign-in's identity
-                type from the auth layer; falls back to the email domain.
-
-        Returns:
-            dict: ``{"ok": True, "linked_sub": <caller sub>, "email": ...}``.
-
-        Raises:
-            ConflictError: No account has OTP-confirmed the address, or its
-                passwordless identity belongs to a different account than the
-                confirmed owner.
-        """
-        owner_row = await self._user_emails.get_confirmed_by_email(
-            session, target_email
-        )
-        if owner_row is None:
-            raise ConflictError(
-                "This email belongs to an existing account that hasn't "
-                "verified it yet. Sign in with that account's original "
-                "method, verify this email there, then try this sign-in "
-                "again."
-            )
-        owner_user_id = owner_row.user_id
-
-        # The address's passwordless identity must not belong to a third
-        # account — only the confirmed owner (or nobody yet) may hold it.
-        otp_identity = await self._user_identities.get_by_subject_identifier(
-            session, otp_sub
-        )
-        if otp_identity is not None and otp_identity.user_id != owner_user_id:
-            raise ConflictError("Identity already linked to another account")
-
-        linked_type = (
-            caller_identity_type
-            if caller_identity_type is not None
-            else (
-                IdentityType.INTERNAL
-                if is_company_email(target_email)
-                else IdentityType.EXTERNAL
-            )
-        )
-        await self._user_identities.upsert_identity(
-            session=session,
-            entity=UserIdentitiesEntity(
-                user_id=owner_user_id,
-                subject_identifier=current_sub,
-                identity_type=linked_type,
-                email_claim=target_email,
-            ),
-        )
-        if IdentityType.INTERNAL == linked_type:
-            await self._absorb_internal_identity(session, owner_user_id, target_email)
-        await session.commit()
-
-        self._logger.info(
-            "[EmailManagementService] needs-link: linked sub %s into user_id=%s via %s",
-            current_sub,
-            owner_user_id,
-            target_email,
-        )
-        return {"ok": True, "linked_sub": current_sub, "email": target_email}
+        return {"ok": True, "email": target_email}
 
     async def list_emails_and_identities(
         self, session, current_user_id: int, current_sub: str
@@ -442,9 +281,9 @@ class EmailManagementService:
             if identity.email_claim is not None:
                 key = identity.email_claim.lower()
                 claim_counts[key] = claim_counts.get(key, 0) + 1
-            if IdentityType.INTERNAL == identity.identity_type:
+            if is_company_email(identity.email_claim or ""):
                 internal_identities.append(self._to_identity_dto(identity, current_sub))
-            elif IdentityType.EXTERNAL == identity.identity_type:
+            else:
                 external_identities.append(self._to_identity_dto(identity, current_sub))
 
         email_views = [
@@ -455,6 +294,8 @@ class EmailManagementService:
                 is_primary=row.is_primary,
                 added_at=row.added_at,
                 linked_identity_count=claim_counts.get(row.email.lower(), 0),
+                is_corp=is_company_email(row.email),
+                last_login_at=row.last_login_at,
             )
             for row in emails
         ]
@@ -556,7 +397,6 @@ class EmailManagementService:
         await self._validate_promotable(session, current_user_id, target)
 
         await self._user_emails.set_primary(session, current_user_id, email_id)
-        await self._sync_legacy_primary_email(session, current_user_id, target.email)
         await session.commit()
         return {"ok": True}
 
@@ -565,9 +405,9 @@ class EmailManagementService:
         Shared guard for promoting ``target`` to primary: it must be the
         caller's, OTP-confirmed, and — for an active employee — a corp address.
 
-        An active employee is ``users.is_active`` True AND holding a
-        user_identities row of type INTERNAL; such a user must keep a
-        ``circlecat.org`` address as primary so HR / IT can reach them.
+        An active employee is ``users.is_active`` True AND ``users.is_internal``
+        True; such a user must keep a ``circlecat.org`` address as primary so
+        HR / IT can reach them.
 
         Raises:
             ValueError: missing / owned by another user / not OTP-confirmed.
@@ -582,9 +422,7 @@ class EmailManagementService:
         # active employee must keep a company address as primary.
         if not is_company_email(
             target.email
-        ) and await self._user_identities.exists_active_internal(
-            session, current_user_id
-        ):
+        ) and await self._users.exists_active_internal(session, current_user_id):
             raise PermissionError("Active employees must keep a corp email as primary")
 
     def _sign_state(self, flow: str, **claims) -> str:
@@ -637,54 +475,17 @@ class EmailManagementService:
     async def _absorb_internal_identity(
         self, session, user_id: int, email: str
     ) -> None:
-        """
-        Mirror the first-login lifecycle hook when a corp sign-in joins an
-        EXISTING account (verify or needs-link): grant the internal-employee
-        permission bundle and promote the corp address to the primary contact.
-
-        Without this, an employee who linked their corp sign-in into a
-        pre-existing external account would be INTERNAL without the baseline
-        permissions a first-login hire gets, with a personal address still
-        receiving account mail. Grants are diffed against the user's active
-        permissions first (``grant()`` never dedups), so re-verifying is
-        idempotent; the promotion is skipped when the corp address is already
-        the primary or (defensively) not confirmed. Flushes only — the caller
-        owns the transaction boundary.
-
-        Args:
-            session (AsyncSession): The active async database session.
-            user_id (int): The account the corp sign-in was linked into.
-            email (str): The corp address (normalized) that was just verified.
-        """
-        active = await self._user_permissions.get_active_permission_names(
-            session, user_id
+        """Delegate to the shared internal-employee lifecycle hook — see
+        backend.user_identity.internal_lifecycle.absorb_internal_identity."""
+        await absorb_internal_identity(
+            session,
+            user_id,
+            email,
+            user_permissions_repository=self._user_permissions,
+            user_emails_repository=self._user_emails,
+            users_repository=self._users,
+            logger=self._logger,
         )
-        held = set(active)
-        missing = sorted(
-            (p for p in INTERNAL_EMPLOYEE_PERMISSIONS if str(p) not in held), key=str
-        )
-        if missing:
-            await self._user_permissions.grant(
-                session=session,
-                user_id=user_id,
-                permission_names=missing,
-                granted_source="system_internal",
-            )
-            self._logger.info(
-                "[EmailManagementService] granted internal bundle to user_id=%s "
-                "on corp sign-in link",
-                user_id,
-            )
-
-        row = await self._user_emails.get_by_user_and_email(session, user_id, email)
-        if row is not None and row.otp_confirmed and not row.is_primary:
-            await self._user_emails.set_primary(session, user_id, row.email_id)
-            await self._sync_legacy_primary_email(session, user_id, email)
-            self._logger.info(
-                "[EmailManagementService] promoted corp email to primary for "
-                "user_id=%s",
-                user_id,
-            )
 
     async def _confirm_email(self, session, user_id: int, email: str) -> None:
         """
@@ -705,17 +506,13 @@ class EmailManagementService:
             # A migration-backfilled row starts unconfirmed and non-primary;
             # confirming the user's first usable address must also make it
             # primary so they always have a notification target.
-            became_primary = False
             if not existing.is_primary and not await self._user_emails.has_primary(
                 session, user_id
             ):
                 existing.is_primary = True
                 changed = True
-                became_primary = True
             if changed:
                 await self._user_emails.upsert_email(session=session, entity=existing)
-            if became_primary:
-                await self._sync_legacy_primary_email(session, user_id, email)
             return
 
         # First confirmed address becomes primary so the user has a notification
@@ -730,48 +527,29 @@ class EmailManagementService:
                 is_primary=is_primary,
             ),
         )
-        if is_primary:
-            await self._sync_legacy_primary_email(session, user_id, email)
-
-    async def _sync_legacy_primary_email(
-        self, session, user_id: int, email: str
-    ) -> None:
-        """
-        Write-through the legacy ``users.primary_email`` column whenever the
-        user's primary contact in user_emails changes, so the ~76 reads that
-        still hit the column stay current (see the TODO on
-        ``UsersEntity.primary_email``).
-
-        Best-effort: ``users.primary_email`` is globally unique, so if ``email``
-        is already another user's primary the sync is skipped (that user's legacy
-        column stays stale until the column is retired) rather than aborting the
-        OTP-confirmed primary change. The column is being retired, so this
-        residual staleness is acceptable.
-        """
-        owner = await self._users.get_user_by_primary_email(session, email)
-        if owner is not None and owner.user_id != user_id:
-            self._logger.warning(
-                "[EmailManagementService] Skipping users.primary_email sync for "
-                "user_id=%s: %r is already user_id=%s's primary",
-                user_id,
-                email,
-                owner.user_id,
-            )
-            return
-        await self._users.update_primary_email(session, user_id, email)
 
     async def _validate_unlinkable(
         self, session, current_user_id: int, current_sub: str, identity
-    ) -> list:
+    ) -> None:
         """
         Shared guard for unlinking ``identity`` (ownership assumed already
-        checked by the caller): refuses the caller's only remaining sign-in, the
-        identity backing the current session, and an active employee's INTERNAL
-        corp sign-in.
+        checked by the caller): refuses the identity backing the current
+        session, and an active employee's INTERNAL corp sign-in.
 
-        Re-run at confirm time, not just initiate: between the two steps the user
-        may have dropped their other sign-ins or become an active employee, and
-        neither must be allowed to strip the last or locked identity.
+        A caller's only remaining identity row is not refused: unlinking it
+        can never lock the account out. Completing this very step-up OTP
+        requires a confirmed primary contact email (``get_primary`` in
+        :meth:`initiate_unlink` / :meth:`confirm_unlink`); the primary row is
+        undeletable (:meth:`remove_email` refuses it); and a confirmed
+        primary is itself a passwordless login path, since any OTP-confirmed
+        address already works as a sign-in identifier without a
+        ``user_identities`` row (see :meth:`verify`). So the primary always
+        outlives the unlink and always logs in — there is no "last sign-in"
+        to protect.
+
+        Re-run at confirm time, not just initiate: between the two steps the
+        user may have become an active employee, and that must not be allowed
+        to strip the locked identity.
 
         Args:
             session (AsyncSession): The active async database session.
@@ -780,33 +558,20 @@ class EmailManagementService:
                 identity to protect.
             identity (UserIdentitiesEntity): The identity row to unlink.
 
-        Returns:
-            list[UserIdentitiesEntity]: The caller's identities including
-            ``identity``, so the caller can reuse them without a second query.
-
         Raises:
-            ConflictError: It is the only identity, or the current session's.
+            ConflictError: It is the current session's identity.
             PermissionError: It is an active employee's INTERNAL identity.
         """
-        identities = await self._user_identities.list_by_user(session, current_user_id)
-        if len(identities) <= 1:
-            raise ConflictError("Cannot remove the only remaining sign-in method")
-
         if identity.subject_identifier == current_sub:
             raise ConflictError(
                 "Cannot remove the sign-in used for the current session; "
                 "log in with another method first"
             )
 
-        if (
-            IdentityType.INTERNAL == identity.identity_type
-            and await self._user_identities.exists_active_internal(
-                session, current_user_id
-            )
-        ):
+        if is_company_email(
+            identity.email_claim or ""
+        ) and await self._users.exists_active_internal(session, current_user_id):
             raise PermissionError("Active employees cannot remove corp sign-in")
-
-        return identities
 
     async def initiate_unlink(
         self, session, current_user_id: int, current_sub: str, identity_id: int
@@ -815,12 +580,10 @@ class EmailManagementService:
         Begin a step-up-OTP unlink of one of the caller's sign-in identities.
 
         Validates the identity can be unlinked — owned by the caller, not the
-        only one, not the current session's, and not an active employee's
-        INTERNAL corp sign-in. Because unlinking also drops the identity's
-        synced contact email, it additionally refuses when that email is the
-        primary (switch the primary first; the primary cannot be deleted). The
-        OTP is sent to the current primary, snapshotted into the signed state so
-        :meth:`confirm_unlink` can detect a swap mid-flow.
+        current session's, and not an active employee's INTERNAL corp
+        sign-in. The OTP is sent to the current primary (also the OTP
+        target used to prove control of the account), snapshotted into the
+        signed state so :meth:`confirm_unlink` can detect a swap mid-flow.
 
         Args:
             session (AsyncSession): The active async database session.
@@ -835,9 +598,8 @@ class EmailManagementService:
         Raises:
             ValueError: The identity is missing/owned by another user, or there
                 is no primary email to verify against.
-            ConflictError: It is the only identity, or the current session's.
-            PermissionError: It is an active employee's INTERNAL identity, or
-                its email is the primary contact.
+            ConflictError: It is the current session's identity.
+            PermissionError: It is an active employee's INTERNAL identity.
         """
         identity = await self._user_identities.get_by_id(session, identity_id)
         if identity is None or identity.user_id != current_user_id:
@@ -848,12 +610,6 @@ class EmailManagementService:
         primary = await self._user_emails.get_primary(session, current_user_id)
         if primary is None:
             raise ValueError("No primary email to verify against")
-
-        if (identity.email_claim or "").lower() == primary.email.lower():
-            raise PermissionError(
-                "This sign-in's email is your primary contact. Verify another "
-                "email, set it as your primary contact, then remove this sign-in."
-            )
 
         self._auth0.start_passwordless(primary.email)
         state = self._sign_state(
@@ -874,19 +630,21 @@ class EmailManagementService:
         code: str,
     ) -> dict:
         """
-        Confirm the step-up OTP, unlink the sign-in identity, drop its synced
-        contact email when no other identity still uses that address, and
-        delete its Auth0 user.
+        Confirm the step-up OTP, unlink the sign-in identity, and delete its
+        Auth0 user.
 
-        Validates the signed state (signature, expiry, caller, and that the URL
-        ``identity_id`` matches the bound target), rechecks the primary *before*
-        consuming the OTP — refusing if it changed since initiate — verifies the
-        code against the primary, deletes the ``user_identities`` row, then
-        deletes the matching ``user_emails`` contact row when no surviving
-        identity claims the same address. Each sign-in method is its own Auth0
-        user, so the unlinked identity's Auth0 user is deleted too — before the
-        commit, so a failed Auth0 delete rolls the whole unlink back rather
-        than leaving the two stores disagreeing; on retry the Auth0 delete is
+        Unlink has a single responsibility: remove the ``user_identities`` row
+        for this sign-in method. It never touches ``user_emails`` — email rows
+        belong to the account, not to any one identity, and leave only through
+        :meth:`remove_email` (or by being the primary, which cannot be
+        removed). Validates the signed state (signature, expiry, caller, and
+        that the URL ``identity_id`` matches the bound target), rechecks the
+        primary *before* consuming the OTP — refusing if it changed since
+        initiate — verifies the code against the primary, then deletes the
+        ``user_identities`` row. Each sign-in method is its own Auth0 user, so
+        the unlinked identity's Auth0 user is deleted too — before the commit,
+        so a failed Auth0 delete rolls the whole unlink back rather than
+        leaving the two stores disagreeing; on retry the Auth0 delete is
         idempotent (404 counts as done).
 
         Args:
@@ -903,8 +661,8 @@ class EmailManagementService:
         Raises:
             ValueError: The state is invalid/expired/mismatched, the OTP is
                 wrong, or the identity vanished or is owned by another user.
-            ConflictError: It became the only identity, or the current session's,
-                between initiate and confirm.
+            ConflictError: It became the current session's identity between
+                initiate and confirm.
             PermissionError: The primary changed since initiate, or it is now an
                 active employee's INTERNAL identity.
             RateLimitedError: Auth0 throttled the user deletion.
@@ -928,24 +686,9 @@ class EmailManagementService:
 
         # Re-check the unlink preconditions against current state — the only/
         # current-session/active-employee guards from initiate may no longer hold.
-        identities_before = await self._validate_unlinkable(
-            session, current_user_id, current_sub, identity
-        )
+        await self._validate_unlinkable(session, current_user_id, current_sub, identity)
 
         await self._user_identities.delete(session, identity_id)
-
-        removed_claim = (identity.email_claim or "").lower()
-        still_claimed = any(
-            other.identity_id != identity.identity_id
-            and (other.email_claim or "").lower() == removed_claim
-            for other in identities_before
-        )
-        if removed_claim and not still_claimed:
-            email_row = await self._user_emails.get_by_user_and_email(
-                session, current_user_id, removed_claim
-            )
-            if email_row is not None and not email_row.is_primary:
-                await self._user_emails.delete(session, email_row.email_id)
 
         # The Auth0 user backing this sign-in must not outlive the unlink.
         # Before the commit: if the delete fails the transaction rolls back and

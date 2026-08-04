@@ -26,14 +26,41 @@ export default function TimezoneSelector({
   onChange,
   labelSource = "value",
   styles = defaultTimezoneSelectStyles,
+  menuPlacement = "top",
   ...props
 }) {
+  const enhancedStyles = {
+    ...styles,
+
+    menu: (provided, state) => {
+      const base = styles?.menu ? styles.menu(provided, state) : provided;
+      return {
+        ...base,
+        overflow: "hidden",
+        paddingBottom: "4px",
+        zIndex: 9999,
+      };
+    },
+
+    menuList: (provided, state) => {
+      const base = styles?.menuList
+        ? styles.menuList(provided, state)
+        : provided;
+      return {
+        ...base,
+        maxHeight: "170px",
+        paddingBottom: "16px",
+      };
+    },
+  };
+
   return (
     <TimezoneSelect
       {...props}
       value={value}
       onChange={onChange}
       timezones={timezones}
+      menuPlacement={menuPlacement}
       formatOptionLabel={(option, { context, selectValue } = {}) => {
         if (typeof option === "string") return option;
         const label = labelSource === "key" ? option.value : option.label;
@@ -48,7 +75,7 @@ export default function TimezoneSelector({
           </div>
         );
       }}
-      styles={styles}
+      styles={enhancedStyles}
     />
   );
 }

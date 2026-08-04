@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
 from backend.admin.permission_admin_service import PermissionAdminService
+from backend.common.permission_descriptions import PERMISSION_DESCRIPTIONS
 from backend.common.permissions import Permission
 from backend.entity.user_permissions_entity import UserPermissionsEntity
 from backend.entity.users_entity import UsersEntity
@@ -53,16 +54,25 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.users = AsyncMock()
         self.perms = AsyncMock()
-        self.service = PermissionAdminService(self.users, self.perms)
+        # Contact emails come from user_emails, not the legacy column.
+        self.user_emails = AsyncMock()
+        self.user_emails.get_contact_emails_by_user_ids.return_value = {}
+        self.user_emails.get_contact_email.return_value = None
+        self.service = PermissionAdminService(self.users, self.perms, self.user_emails)
         self.session = AsyncMock()
         # Default: no super admins (most tests are about plain grant rows).
         self.users.get_super_admins.return_value = []
 
     def test_catalog_is_full_enum_sorted(self):
+        catalog = self.service.list_permission_catalog()
         self.assertEqual(
-            self.service.list_permission_catalog(),
+            [entry.name for entry in catalog],
             sorted(str(p) for p in Permission),
         )
+        for entry in catalog:
+            self.assertEqual(
+                entry.description, PERMISSION_DESCRIPTIONS[Permission(entry.name)]
+            )
 
     async def test_get_user_permissions_splits_active_and_history(self):
         self.users.get_user_by_user_id.return_value = UsersEntity(user_id=1)
@@ -220,7 +230,6 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
                 (
                     UsersEntity(
                         user_id=1,
-                        primary_email="a@x.com",
                         first_name="A",
                         last_name="B",
                         is_active=True,
@@ -231,6 +240,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
             ],
             1,
         )
+        self.user_emails.get_contact_emails_by_user_ids.return_value = {1: "a@x.com"}
         out = await self.service.list_users(
             self.session, search=None, limit=20, offset=0
         )
@@ -245,7 +255,6 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
                 (
                     UsersEntity(
                         user_id=2,
-                        primary_email="b@circlecat.org",
                         first_name="B",
                         last_name="C",
                         is_active=True,
@@ -375,7 +384,6 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
     async def test_set_super_admin_updates_flag_and_writes_marker(self):
         self.users.get_user_by_user_id.return_value = UsersEntity(
             user_id=2,
-            primary_email="s@x.com",
             first_name="S",
             last_name="A",
             is_active=True,
@@ -383,6 +391,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
         )
         self.users.set_super_admin.return_value = 1
         self.users.is_internal = AsyncMock(return_value=False)
+        self.user_emails.get_contact_email.return_value = "s@x.com"
         dto = await self.service.set_super_admin(self.session, 2, granted_by=9)
         self.users.set_super_admin.assert_awaited_once_with(self.session, 2, True)
         self.perms.grant.assert_awaited_once()
@@ -391,6 +400,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
         names = args[2] if len(args) > 2 else kwargs["permission_names"]
         self.assertEqual(list(names), ["*"])
         self.assertTrue(dto.is_super_admin)
+        self.assertEqual(dto.primary_email, "s@x.com")
         self.assertEqual(dto.user_type, "external")
         self.session.commit.assert_awaited_once()
 
@@ -410,7 +420,6 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
     async def test_revoke_super_admin_clears_flag_and_marker(self):
         self.users.get_user_by_user_id.return_value = UsersEntity(
             user_id=2,
-            primary_email="s@x.com",
             first_name="S",
             last_name="A",
             is_active=True,

@@ -7,7 +7,8 @@ vi.mock(
   () => ({
     default: vi.fn((props) => (
       <div data-testid="mock-registration-dialog">
-        Dialog Locked: {props.isLocked ? "Yes" : "No"}
+        Dialog Locked: {props.isLocked ? "Yes" : "No"} | Role:{" "}
+        {props.hiredMentorshipRole}
       </div>
     )),
   }),
@@ -38,6 +39,7 @@ describe("MentorshipInfoBanner", () => {
     registration: null,
     isRegistrationOpen: true,
     isFeedbackEnabled: false,
+    hiredMentorshipRole: "mentee",
     onSaveRegistration: vi.fn(),
     pastPartners: [],
     isPartnersLoading: false,
@@ -71,6 +73,16 @@ describe("MentorshipInfoBanner", () => {
     );
 
     expect(screen.getByTestId("mock-matching-dialog")).toBeInTheDocument();
+  });
+
+  it("forwards hiredMentorshipRole to MentorshipRegistrationDialog", () => {
+    render(
+      <MentorshipInfoBanner {...defaultProps} hiredMentorshipRole="mentor" />,
+    );
+
+    expect(screen.getByTestId("mock-registration-dialog")).toHaveTextContent(
+      "Role: mentor",
+    );
   });
 
   it("passes match data props correctly to MatchingResultDialog", () => {
@@ -138,7 +150,7 @@ describe("MentorshipInfoBanner", () => {
     const { rerender } = render(
       <MentorshipInfoBanner {...defaultProps} isRegistrationOpen={true} />,
     );
-    expect(screen.getByText("Dialog Locked: No")).toBeInTheDocument();
+    expect(screen.getByText(/Dialog Locked: No/)).toBeInTheDocument();
 
     rerender(
       <MentorshipInfoBanner
@@ -147,7 +159,7 @@ describe("MentorshipInfoBanner", () => {
         registration={{}}
       />,
     );
-    expect(screen.getByText("Dialog Locked: Yes")).toBeInTheDocument();
+    expect(screen.getByText(/Dialog Locked: Yes/)).toBeInTheDocument();
   });
 
   it("passes isFeedbackEnabled=false to MentorshipFeedbackDialog when feedback is disabled", () => {

@@ -19,11 +19,11 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [hasVerifiedEmail, setHasVerifiedEmail] = useState(false);
-  const [needsLink, setNeedsLink] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
   const [accessDeniedMessage, setAccessDeniedMessage] = useState("");
   const [authError, setAuthError] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [authRefusalMessage, setAuthRefusalMessage] = useState(null);
   const [loading, setLoading] = useState(true);
 
   /**
@@ -42,11 +42,11 @@ export const AuthProvider = ({ children }) => {
       });
       setIsSuperAdmin(Boolean(data.is_super_admin));
       setHasVerifiedEmail(Boolean(data.has_verified_email));
-      setNeedsLink(Boolean(data.needs_link));
       setAccessDenied(false);
       setAccessDeniedMessage("");
       setAuthError(false);
       setSessionExpired(false);
+      setAuthRefusalMessage(null);
     } catch (error) {
       console.error("Auth initialization failed", error);
       setPermissions([]);
@@ -65,6 +65,20 @@ export const AuthProvider = ({ children }) => {
       // for one with an unverified email and trapping them at the verify wall.
       setAuthError(!forbidden);
       setSessionExpired(status === 401);
+      // A 400 is the backend explicitly refusing the login (e.g. an unlisted
+      // connection) with an actionable message in the body. Surface that exact
+      // message so the load-error screen can show it instead of a generic
+      // "check your connection" retry that could never succeed. Any other
+      // status (401, 403, network error, timeout, 5xx) carries no refusal
+      // reason, so this stays null.
+      const refusalMessage = error?.response?.data?.message;
+      setAuthRefusalMessage(
+        status === 400 &&
+          typeof refusalMessage === "string" &&
+          refusalMessage.length > 0
+          ? refusalMessage
+          : null,
+      );
     } finally {
       setLoading(false);
     }
@@ -83,11 +97,11 @@ export const AuthProvider = ({ children }) => {
       user,
       isSuperAdmin,
       hasVerifiedEmail,
-      needsLink,
       accessDenied,
       accessDeniedMessage,
       authError,
       sessionExpired,
+      authRefusalMessage,
       loading,
       refreshAuth: loadAuth,
     }),
@@ -96,11 +110,11 @@ export const AuthProvider = ({ children }) => {
       user,
       isSuperAdmin,
       hasVerifiedEmail,
-      needsLink,
       accessDenied,
       accessDeniedMessage,
       authError,
       sessionExpired,
+      authRefusalMessage,
       loading,
       loadAuth,
     ],

@@ -3,8 +3,13 @@ import { WorkActivityDataCard } from "@/pages/PersonalDashboard/components/WorkA
 import MentorshipParticipantsCard from "@/pages/PersonalDashboard/components/MentorshipParticipantsCard";
 import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorshipData";
 import { useWorkActivityData } from "@/pages/PersonalDashboard/hooks/useWorkActivityData";
+import MyApplicationsCard from "@/pages/PersonalDashboard/components/MyApplicationsCard";
+import { useMyApplications } from "@/pages/PersonalDashboard/hooks/useMyApplications";
+import { useOnboardingTrainingReminder } from "@/pages/PersonalDashboard/hooks/useOnboardingTrainingReminder";
 import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
+import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
+import { GoogleMeetingControl } from "@/pages/PersonalDashboard/components/GoogleMeetingControl";
 
 /**
  * PersonalDashboard
@@ -22,6 +27,27 @@ import { PERMISSIONS } from "@/constants/Permissions";
  * @returns {JSX.Element}
  */
 const PersonalDashboard = () => {
+  const {
+    applications,
+    isLoading: isApplicationsLoading,
+    loadError: applicationsLoadError,
+    load: loadApplications,
+    hiredMentorshipRole,
+  } = useMyApplications();
+
+  // Only show the mentorship section, and only start fetching mentorship
+  // data, once we've actually confirmed a hired mentorship role — not
+  // while the applications fetch is still loading or has errored. This is
+  // a deliberate reversal of the previous fail-open behavior: a slow/failed
+  // fetch now hides the section (the user can retry via My Applications'
+  // own retry button) rather than firing a wasted mentorship-data fetch.
+  const showMentorshipSection =
+    !isApplicationsLoading &&
+    !applicationsLoadError &&
+    hiredMentorshipRole !== null;
+
+  useOnboardingTrainingReminder({ enabled: showMentorshipSection });
+
   const {
     registration, // Registration data for the current or most recent round
     isRegistrationOpen, // Whether the registration period is currently open
@@ -43,7 +69,7 @@ const PersonalDashboard = () => {
     refreshMeetings, // Trigger a refresh of meeting log data for the selected round
     isParticipantCardLoading, // Whether the participant card data is currently loading
     userTimezone, // Current user's IANA timezone string from their profile
-  } = useMentorshipData();
+  } = useMentorshipData({ enabled: showMentorshipSection });
 
   const { permissions } = useAuth();
   const canViewActivitySummary = permissions?.includes(
@@ -53,45 +79,71 @@ const PersonalDashboard = () => {
   const { summary, isPersonalSummaryLoading, fetchPersonalSummary } =
     useWorkActivityData({ enabled: canViewActivitySummary });
 
+  const currentSelectedRound = roundSelectionData?.sortedRounds?.find(
+    (round) => Number(round.id) === Number(selectedRoundId),
+  );
+
+  const isCurrentRoundActive =
+    currentSelectedRound?.status === MentorshipRoundStatus.ACTIVE;
+
   return (
-    <div className="personal-dashboard">
+    <div className="personal-dashboard space-y-5">
       {/* Welcome header */}
-      <div className="flex items-start justify-between mb-5 shrink-0">
+      <div className="flex items-start justify-between shrink-0">
         <div className="flex items-center gap-2">
           <span role="img" aria-label="clapping hands" className="text-xl">
             &#x1F44F;
           </span>
           <h2 className="m-0 text-lg font-medium">Welcome</h2>
         </div>
+
+        <GoogleMeetingControl
+          meetingRoundId={isCurrentRoundActive ? Number(selectedRoundId) : null}
+          onRefresh={refreshMeetings}
+          userTimezone={userTimezone}
+        />
       </div>
 
-      {/* Mentorship information banner */}
-      <MentorshipInfoBanner
-        registration={registration}
-        isRegistrationOpen={isRegistrationOpen}
-        isFeedbackEnabled={isFeedbackEnabled}
-        feedbackRoundId={feedbackRoundId}
-        feedbackRoundName={feedbackRoundName}
-        onSaveRegistration={saveRegistration}
-        pastPartners={pastPartners}
-        isPartnersLoading={isPartnersLoading}
-        onLoadPastPartners={loadPastPartners}
-        refreshRegistration={refreshRegistration}
-        matchResult={matchResult}
-        matchResultRoundName={matchResultRoundName}
-        canViewMatch={canViewMatch}
+      {/* My Applications card */}
+      <MyApplicationsCard
+        applications={applications}
+        isLoading={isApplicationsLoading}
+        loadError={applicationsLoadError}
+        onRetry={loadApplications}
       />
 
-      {/* Mentorship participant card */}
-      <MentorshipParticipantsCard
-        userTimezone={userTimezone}
-        roundSelectionData={roundSelectionData}
-        selectedRoundId={selectedRoundId}
-        onRoundChange={handleRoundChange}
-        isParticipantCardLoading={isParticipantCardLoading}
-        participantDetails={participantDetails}
-        refreshMeetings={refreshMeetings}
-      />
+      {showMentorshipSection && (
+        <>
+          {/* Mentorship information banner */}
+          <MentorshipInfoBanner
+            registration={registration}
+            isRegistrationOpen={isRegistrationOpen}
+            isFeedbackEnabled={isFeedbackEnabled}
+            feedbackRoundId={feedbackRoundId}
+            feedbackRoundName={feedbackRoundName}
+            hiredMentorshipRole={hiredMentorshipRole}
+            onSaveRegistration={saveRegistration}
+            pastPartners={pastPartners}
+            isPartnersLoading={isPartnersLoading}
+            onLoadPastPartners={loadPastPartners}
+            refreshRegistration={refreshRegistration}
+            matchResult={matchResult}
+            matchResultRoundName={matchResultRoundName}
+            canViewMatch={canViewMatch}
+          />
+
+          {/* Mentorship participant card */}
+          <MentorshipParticipantsCard
+            userTimezone={userTimezone}
+            roundSelectionData={roundSelectionData}
+            selectedRoundId={selectedRoundId}
+            onRoundChange={handleRoundChange}
+            isParticipantCardLoading={isParticipantCardLoading}
+            participantDetails={participantDetails}
+            refreshMeetings={refreshMeetings}
+          />
+        </>
+      )}
 
       {/* Work Activity Data Card */}
       {canViewActivitySummary && (

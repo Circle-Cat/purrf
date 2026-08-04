@@ -10,7 +10,6 @@ from fastapi.testclient import TestClient
 from starlette.responses import JSONResponse
 
 from backend.common.api_endpoints import (
-    EMAIL_MANAGEMENT_ADD_ENDPOINT,
     EMAIL_MANAGEMENT_INITIATE_ENDPOINT,
     EMAIL_MANAGEMENT_LIST_ENDPOINT,
     EMAIL_MANAGEMENT_REMOVE_ENDPOINT,
@@ -39,10 +38,7 @@ class TestEmailManagementController(unittest.TestCase):
         self.service = MagicMock()
         self.service.initiate = AsyncMock(return_value={"state": "signed.jwt"})
         self.service.verify = AsyncMock(
-            return_value={"ok": True, "linked_sub": "email|abc"}
-        )
-        self.service.add_email = AsyncMock(
-            return_value={"ok": True, "email": "backup@gmail.com"}
+            return_value={"ok": True, "email": "alice@gmail.com"}
         )
         self.service.remove_email = AsyncMock(return_value={"ok": True})
         self.service.initiate_set_primary = AsyncMock(
@@ -61,6 +57,7 @@ class TestEmailManagementController(unittest.TestCase):
                         is_primary=True,
                         added_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
                         linked_identity_count=1,
+                        is_corp=False,
                     )
                 ],
                 internal_identities=[],
@@ -99,10 +96,13 @@ class TestEmailManagementController(unittest.TestCase):
     def tearDown(self):
         self.patcher.stop()
 
-    def _client_with_user(self, user_id=42, sub="google-oauth2|primary"):
+    def _client_with_user(
+        self, user_id=42, sub="google-oauth2|primary", primary_email="alice@gmail.com"
+    ):
         mock_user = MagicMock()
         mock_user.user_id = user_id
         mock_user.sub = sub
+        mock_user.primary_email = primary_email
 
         @self.app.middleware("http")
         async def _inject_user(request: Request, call_next):
@@ -124,18 +124,6 @@ class TestEmailManagementController(unittest.TestCase):
         self.assertEqual(kwargs["current_sub"], "google-oauth2|primary")
         self.assertEqual(kwargs["email"], "alice@gmail.com")
 
-    def test_add_email_passes_session_user_and_email_to_service(self):
-        client = self._client_with_user()
-        response = client.post(
-            EMAIL_MANAGEMENT_ADD_ENDPOINT, json={"email": "backup@gmail.com"}
-        )
-
-        self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json()["data"]["email"], "backup@gmail.com")
-        _, kwargs = self.service.add_email.call_args
-        self.assertEqual(kwargs["current_user_id"], 42)
-        self.assertEqual(kwargs["email"], "backup@gmail.com")
-
     def test_remove_email_passes_session_user_and_email_id_to_service(self):
         client = self._client_with_user()
         response = client.delete(EMAIL_MANAGEMENT_REMOVE_ENDPOINT.format(email_id=12))
@@ -144,6 +132,8 @@ class TestEmailManagementController(unittest.TestCase):
         self.assertEqual(response.json()["data"], {"ok": True})
         _, kwargs = self.service.remove_email.call_args
         self.assertEqual(kwargs["current_user_id"], 42)
+        self.assertEqual(kwargs["current_sub"], "google-oauth2|primary")
+        self.assertEqual(kwargs["current_claim_email"], "alice@gmail.com")
         self.assertEqual(kwargs["email_id"], 12)
 
     def test_remove_email_requires_authentication(self):
@@ -159,7 +149,7 @@ class TestEmailManagementController(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.json()["data"]["linked_sub"], "email|abc")
+        self.assertEqual(response.json()["data"]["email"], "alice@gmail.com")
         _, kwargs = self.service.verify.call_args
         self.assertEqual(kwargs["current_user_id"], 42)
         self.assertEqual(kwargs["state"], "signed.jwt")

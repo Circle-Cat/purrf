@@ -6,6 +6,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from backend.common.fast_api_response_wrapper import api_response
+from backend.common.identity_type import is_rowless_login
 from backend.common.permissions import (
     Permission,
     SERVICE_ACCOUNT_PERMISSIONS,
@@ -166,19 +167,38 @@ class AuthMiddleware(BaseHTTPMiddleware):
         (user_id, is_super_admin, permissions).
 
         Runs in a short transaction that commits before the request handler
-        opens its own session: one SELECT per authenticated request, plus an
-        INSERT only on first login, plus the permission lookup.
+        opens its own session. For users with a matching user_identities row
+        (sub-routed), this is one SELECT plus the permission lookup. Passwordless
+        users resolved by confirmed-address routing have no identity row and instead
+        re-resolve through create_or_swap_user on each request—multiple SELECTs
+        to check for email ownership, but no writes in the steady state.
+
+        create_or_swap_user always returns a user (untrusted and stale logins
+        are refused upstream, so every login reaching this point is trusted
+        and resolves to a row via swap, routing, or first-login).
 
         Two concurrent first logins for the same sub both miss find_by_sub and
         enter create_or_swap_user; the second collides on the
         subject_identifier UNIQUE constraint, rolls back, and re-finds the row
-        the winner committed.
+        the winner committed. If it's still missing, the violation isn't the
+        race and must surface.
+
+        user_context.last_login_at is threaded down to find_user_by_sub /
+        create_or_swap_user, which stamp it onto user_identities /
+        user_emails as appropriate; there is no account-level last-login
+        column to maintain here.
         """
         async with self.database.session() as session:
             async with session.begin():
-                user = await self.user_identity_service.find_user_by_sub(
-                    session, user_context.sub, user_context.last_login_at
-                )
+                rowless = is_rowless_login(user_context.sub, user_context.identity_type)
+                user = None
+                if not rowless:
+                    # Sub-routed (google / social only — passwordless, both
+                    # internal and external, is row-less): single JOIN
+                    # resolves the steady state.
+                    user = await self.user_identity_service.find_user_by_sub(
+                        session, user_context.sub, user_context.last_login_at
+                    )
                 if user is None:
                     try:
                         # SAVEPOINT around the insert: on a concurrent first
@@ -189,42 +209,27 @@ class AuthMiddleware(BaseHTTPMiddleware):
                                 session, user_context
                             )
                     except IntegrityError:
-                        # A concurrent first login may have won and committed;
-                        # re-find its row in the still-open outer transaction.
-                        user = await self.user_identity_service.find_user_by_sub(
-                            session, user_context.sub, user_context.last_login_at
-                        )
+                        # A concurrent first login committed the winner.
+                        if rowless:
+                            # Row-less winner wrote no identity row — re-resolve
+                            # by confirmed address (routes to the winner).
+                            user = await self.user_identity_service.create_or_swap_user(
+                                session, user_context
+                            )
+                        else:
+                            # Sub-routed winner recorded its sub — re-find it.
+                            user = await self.user_identity_service.find_user_by_sub(
+                                session, user_context.sub, user_context.last_login_at
+                            )
                         if user is None:
-                            # Not the race. If the login's email already belongs
-                            # to an account, this is a second sign-in method for
-                            # it that raced past the proactive check below —
-                            # fall through to the needs-link hold. Any other
-                            # violation is a real bug and must surface.
-                            email = user_context.primary_email.lower()
-                            if not await self.user_identity_service.email_has_owner(
-                                session, email
-                            ):
-                                raise
-                    if user is None:
-                        # The login's email already belongs to an account (a
-                        # second sign-in method, e.g. a Google login for an
-                        # address another account verified): create nothing
-                        # and mark the session needs_link — the verify wall
-                        # links the sub after an OTP proves the mailbox
-                        # (PUR-480).
-                        user_context.needs_link = True
-                        user_context.user_id = None
-                        user_context.permissions = frozenset()
-                        self.logger.info(
-                            "[AuthMiddleware] needs-link login: sub=%s email owned by an existing account",
-                            user_context.sub,
-                        )
-                        return
+                            # Not the race — a real bug. Must surface.
+                            raise
 
                 # A deactivated account still authenticates (valid token, real
                 # user) but must not be allowed to act.
                 if not user.is_active:
                     raise PermissionError("User account is deactivated")
+
                 await self._resolve_permissions(session, user, user_context)
 
     async def _resolve_permissions(self, session, user, user_context):

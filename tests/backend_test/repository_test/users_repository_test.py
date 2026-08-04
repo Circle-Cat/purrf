@@ -28,7 +28,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
                 timezone="Asia/Shanghai",
                 timezone_updated_at=datetime.now(timezone.utc),
                 communication_channel=CommunicationMethod.EMAIL,
-                primary_email="alice@example.com",
                 is_active=True,
                 updated_timestamp=datetime.now(timezone.utc),
             ),
@@ -38,7 +37,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
                 timezone="America/New_York",
                 timezone_updated_at=datetime.now(timezone.utc),
                 communication_channel=CommunicationMethod.EMAIL,
-                primary_email="bob@example.com",
                 is_active=True,
                 updated_timestamp=datetime.now(timezone.utc),
             ),
@@ -48,7 +46,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
                 timezone="Asia/Shanghai",
                 timezone_updated_at=datetime.now(timezone.utc),
                 communication_channel=CommunicationMethod.EMAIL,
-                primary_email="charlie@example.com",
                 is_active=False,
                 updated_timestamp=datetime.now(timezone.utc),
             ),
@@ -120,45 +117,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
 
         self.assertIsNone(user)
 
-    async def test_get_user_by_primary_email(self):
-        """Test retrieving an existing user by primary email"""
-        user = await self.repo.get_user_by_primary_email(
-            self.session, self.user_entity.primary_email
-        )
-
-        self.assertEqual(user, self.user_entity)
-        self.assertEqual(user.primary_email, self.user_entity.primary_email)
-
-    async def test_get_user_by_primary_email_is_None(self):
-        """Test passing None as subject identifier returns None."""
-        user = await self.repo.get_user_by_primary_email(self.session, None)
-        self.assertIsNone(user)
-
-        user = await self.repo.get_user_by_primary_email(self.session, "")
-        self.assertIsNone(user)
-
-    async def test_get_user_by_primary_email_not_found(self):
-        """Test retrieving a non-existent user by email returns None."""
-        user = await self.repo.get_user_by_primary_email(
-            self.session, "non-existent@example.com"
-        )
-
-        self.assertIsNone(user)
-
-    async def test_update_primary_email(self):
-        """update_primary_email overwrites the column for the given user only."""
-        await self.repo.update_primary_email(
-            self.session, self.user_entity.user_id, "alice.new@example.com"
-        )
-
-        updated = await self.repo.get_user_by_user_id(
-            self.session, self.user_entity.user_id
-        )
-        self.assertEqual(updated.primary_email, "alice.new@example.com")
-        # other users untouched
-        other = await self.repo.get_user_by_user_id(self.session, self.users[1].user_id)
-        self.assertEqual(other.primary_email, "bob@example.com")
-
     async def test_upsert_users_insert_user_entity(self):
         """Test insert a new UserEntity"""
         new_user = UsersEntity(
@@ -167,15 +125,9 @@ class TestUsersRepository(BaseRepositoryTestLib):
             timezone="Asia/Shanghai",
             timezone_updated_at=datetime.now(timezone.utc),
             communication_channel="email",
-            primary_email="dave@example.com",
             is_active=True,
             updated_timestamp=datetime.now(timezone.utc),
         )
-
-        user_in_db = await self.repo.get_user_by_primary_email(
-            self.session, new_user.primary_email
-        )
-        self.assertIsNone(user_in_db)
 
         inserted_user = await self.repo.upsert_users(self.session, new_user)
 
@@ -191,24 +143,44 @@ class TestUsersRepository(BaseRepositoryTestLib):
 
         self.assertFalse(user.is_active)
 
-    def _make_user(self, *, first_name="T", last_name="U", email):
+    def _make_user(self, *, first_name="T", last_name=None, email):
+        # last_name defaults to the email's local part so tests that isolate
+        # their rows with a token-bearing email still match search=token via
+        # the name leg: the email leg of the search reads user_emails, which
+        # this helper does not populate.
         return UsersEntity(
             first_name=first_name,
-            last_name=last_name,
+            last_name=last_name if last_name is not None else email.split("@")[0],
             timezone="UTC",
             timezone_updated_at=datetime.now(timezone.utc),
             communication_channel=CommunicationMethod.EMAIL,
-            primary_email=email,
             is_active=True,
             updated_timestamp=datetime.now(timezone.utc),
         )
 
     async def test_list_users_search_matches_and_paginates(self):
-        """A unique token isolates these rows from any pre-existing DB data."""
+        """A unique token isolates these rows from any pre-existing DB data.
+        The token appears only in user_emails rows — the email leg of the
+        search reads user_emails, not the legacy users.primary_email column."""
         token = uuid.uuid4().hex[:10]
+        users = [
+            self._make_user(first_name="Zoe", email=f"{uuid.uuid4()}@example.com"),
+            self._make_user(first_name="Yan", email=f"{uuid.uuid4()}@example.com"),
+        ]
+        await self.insert_entities(users)
         await self.insert_entities([
-            self._make_user(first_name="Zoe", email=f"zoe-{token}@example.com"),
-            self._make_user(first_name="Yan", email=f"yan-{token}@example.com"),
+            UserEmailsEntity(
+                user_id=users[0].user_id,
+                email=f"zoe-{token}@example.com",
+                otp_confirmed=False,
+                is_primary=False,
+            ),
+            UserEmailsEntity(
+                user_id=users[1].user_id,
+                email=f"yan-{token}@example.com",
+                otp_confirmed=False,
+                is_primary=False,
+            ),
         ])
 
         page1, total = await self.repo.list_users(
@@ -261,18 +233,11 @@ class TestUsersRepository(BaseRepositoryTestLib):
         self.assertEqual(total, 0)
         self.assertEqual(rows, [])
 
-    async def test_list_users_internal_flag_true_when_has_internal_identity(self):
+    async def test_list_users_internal_flag_true_when_is_internal_flag_set(self):
         token = uuid.uuid4().hex[:10]
         user = self._make_user(email=f"internal-{token}@example.com")
         await self.insert_entities([user])
-        await self.insert_entities([
-            UserIdentitiesEntity(
-                user_id=user.user_id,
-                subject_identifier=f"google-oauth2|{token}",
-                identity_type="internal",
-                email_claim=f"internal-{token}@circlecat.org",
-            )
-        ])
+        await self.repo.set_internal(self.session, user.user_id)
 
         rows, total = await self.repo.list_users(
             self.session, search=token, limit=10, offset=0
@@ -282,7 +247,9 @@ class TestUsersRepository(BaseRepositoryTestLib):
         self.assertEqual(entity.user_id, user.user_id)
         self.assertTrue(is_internal)
 
-    async def test_list_users_internal_flag_false_when_no_internal_identity(self):
+    async def test_list_users_internal_flag_false_when_is_internal_flag_unset(self):
+        # A non-internal identity row must not, by itself, make is_internal
+        # True — the flag column is the sole source now.
         token = uuid.uuid4().hex[:10]
         user = self._make_user(email=f"external-{token}@example.com")
         await self.insert_entities([user])
@@ -290,7 +257,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
             UserIdentitiesEntity(
                 user_id=user.user_id,
                 subject_identifier=f"email|{token}",
-                identity_type="external",
                 email_claim=f"external-{token}@gmail.com",
             )
         ])
@@ -339,42 +305,33 @@ class TestUsersRepository(BaseRepositoryTestLib):
         entity, _ = rows[0]
         self.assertIsNone(entity.preferred_name)
 
-    async def test_is_internal_true_when_has_internal_identity(self):
-        token = uuid.uuid4().hex[:10]
-        user = self._make_user(email=f"isint-{token}@example.com")
-        await self.insert_entities([user])
-        await self.insert_entities([
-            UserIdentitiesEntity(
-                user_id=user.user_id,
-                subject_identifier=f"google-oauth2|isint-{token}",
-                identity_type="internal",
-                email_claim=f"isint-{token}@circlecat.org",
-            )
-        ])
-        result = await self.repo.is_internal(self.session, user.user_id)
-        self.assertTrue(result)
+    async def test_is_internal_true_when_flag_set(self):
+        user_id = self.users[0].user_id
+        await self.repo.set_internal(self.session, user_id)
+        self.assertTrue(await self.repo.is_internal(self.session, user_id))
 
-    async def test_is_internal_false_when_only_external_identity(self):
-        token = uuid.uuid4().hex[:10]
-        user = self._make_user(email=f"isext-{token}@example.com")
-        await self.insert_entities([user])
-        await self.insert_entities([
-            UserIdentitiesEntity(
-                user_id=user.user_id,
-                subject_identifier=f"email|isext-{token}",
-                identity_type="external",
-                email_claim=f"isext-{token}@gmail.com",
-            )
-        ])
-        result = await self.repo.is_internal(self.session, user.user_id)
-        self.assertFalse(result)
+    async def test_is_internal_false_when_flag_unset(self):
+        self.assertFalse(
+            await self.repo.is_internal(self.session, self.users[1].user_id)
+        )
 
-    async def test_is_internal_false_when_no_identities(self):
-        token = uuid.uuid4().hex[:10]
-        user = self._make_user(email=f"isnone-{token}@example.com")
-        await self.insert_entities([user])
-        result = await self.repo.is_internal(self.session, user.user_id)
-        self.assertFalse(result)
+    async def test_exists_active_internal_true_when_active_and_internal(self):
+        user_id = self.users[0].user_id  # is_active=True from setUp
+        await self.repo.set_internal(self.session, user_id)
+        self.assertTrue(await self.repo.exists_active_internal(self.session, user_id))
+
+    async def test_exists_active_internal_false_when_inactive(self):
+        # self.users[2] ("Charlie Inactive") is created with is_active=False
+        # in setUp, following this file's existing pattern for inactive users.
+        user_id = self.users[2].user_id
+        await self.repo.set_internal(self.session, user_id)
+        self.assertTrue(self.users[2].is_active is False)
+        self.assertFalse(await self.repo.exists_active_internal(self.session, user_id))
+
+    async def test_exists_active_internal_false_when_not_internal(self):
+        self.assertFalse(
+            await self.repo.exists_active_internal(self.session, self.users[0].user_id)
+        )
 
     async def test_set_super_admin_flips_flag(self):
         token = uuid.uuid4().hex[:10]
@@ -391,6 +348,123 @@ class TestUsersRepository(BaseRepositoryTestLib):
     async def test_set_super_admin_missing_user_updates_nothing(self):
         updated = await self.repo.set_super_admin(self.session, 9_999_999, True)
         self.assertEqual(updated, 0)
+
+    async def test_set_internal_flips_flag(self):
+        user_id = self.users[0].user_id
+        updated = await self.repo.set_internal(self.session, user_id)
+        self.assertEqual(updated, 1)
+        refreshed = await self.repo.get_user_by_user_id(self.session, user_id)
+        self.assertTrue(refreshed.is_internal)
+
+    async def test_set_internal_idempotent_second_call_noops(self):
+        user_id = self.users[0].user_id
+        await self.repo.set_internal(self.session, user_id)
+        updated_again = await self.repo.set_internal(self.session, user_id)
+        self.assertEqual(updated_again, 0)  # already True -> writes 0 rows
+
+    async def test_set_internal_missing_user_updates_nothing(self):
+        updated = await self.repo.set_internal(self.session, 9_999_999)
+        self.assertEqual(updated, 0)
+
+    async def test_list_blocked_users_returns_only_blocked(self):
+        token = uuid.uuid4().hex[:10]
+        blocked = self._make_user(
+            first_name=f"Blocked{token}", email=f"blocked-{token}@example.com"
+        )
+        blocked.is_blocked = True
+        blocked.blocked_by = 1
+        blocked.blocked_at = datetime.now(timezone.utc)
+        blocked.blocked_reason = "cheated"
+        not_blocked = self._make_user(
+            first_name=f"Clean{token}", email=f"clean-{token}@example.com"
+        )
+        await self.insert_entities([blocked, not_blocked])
+
+        rows = await self.repo.list_blocked_users(self.session)
+        ids = {u.user_id for u in rows}
+        self.assertIn(blocked.user_id, ids)
+        self.assertNotIn(not_blocked.user_id, ids)
+
+    async def test_list_blocked_users_search_matches_name(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(
+            first_name=f"Name{token}", email=f"n-{token}@example.com"
+        )
+        user.is_blocked = True
+        user.blocked_reason = "spam"
+        await self.insert_entities([user])
+
+        rows = await self.repo.list_blocked_users(self.session, search=token)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].user_id, user.user_id)
+
+    async def test_list_blocked_users_search_matches_email(self):
+        # The token appears only in a user_emails row — the email leg of the
+        # search reads user_emails, not the legacy users.primary_email column.
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"{uuid.uuid4()}@example.com")
+        user.is_blocked = True
+        user.blocked_reason = "spam"
+        await self.insert_entities([user])
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=user.user_id,
+                email=f"findme-{token}@example.com",
+                otp_confirmed=True,
+                is_primary=True,
+            )
+        ])
+
+        rows = await self.repo.list_blocked_users(self.session, search=token)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].user_id, user.user_id)
+
+    async def test_list_blocked_users_search_matches_reason_case_insensitive(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"reason-{token}@example.com")
+        user.is_blocked = True
+        user.blocked_reason = f"Fraud-{token}"
+        await self.insert_entities([user])
+
+        rows = await self.repo.list_blocked_users(self.session, search=token.upper())
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].user_id, user.user_id)
+
+    async def test_list_blocked_users_search_with_no_match_is_empty(self):
+        rows = await self.repo.list_blocked_users(
+            self.session, search="no-such-token-xyz"
+        )
+        self.assertEqual(rows, [])
+
+    async def test_clear_block_resets_all_block_columns(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"clear-{token}@example.com")
+        user.is_blocked = True
+        user.blocked_by = 1
+        user.blocked_at = datetime.now(timezone.utc)
+        user.blocked_reason = "test"
+        await self.insert_entities([user])
+
+        await self.repo.clear_block(self.session, user.user_id)
+
+        refetched = await self.repo.get_user_by_user_id(self.session, user.user_id)
+        self.assertFalse(refetched.is_blocked)
+        self.assertIsNone(refetched.blocked_by)
+        self.assertIsNone(refetched.blocked_at)
+        self.assertIsNone(refetched.blocked_reason)
+
+    async def test_clear_block_on_non_blocked_user_is_a_noop_success(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"already-clean-{token}@example.com")
+        await self.insert_entities([user])
+
+        await self.repo.clear_block(self.session, user.user_id)  # must not raise
+
+        refetched = await self.repo.get_user_by_user_id(self.session, user.user_id)
+        self.assertFalse(refetched.is_blocked)
+
+    async def test_clear_block_missing_user_is_a_noop_success(self):
+        await self.repo.clear_block(self.session, 9_999_999)  # must not raise
 
     async def test_get_users_and_emails_empty_list(self):
         users_map, emails_map = await self.repo.get_users_and_emails_by_ids(
@@ -519,6 +593,78 @@ class TestUsersRepository(BaseRepositoryTestLib):
         last_names = [r[0].last_name for r in rows]
         self.assertEqual(last_names, sorted(last_names))
 
+    async def test_list_users_sort_by_last_name_is_case_insensitive(self):
+        """Name sorting is case-insensitive.
+
+        The Neon databases use C.UTF-8 (byte-order) collation, so a bare
+        ORDER BY ranks every uppercase letter before every lowercase one and
+        descending Last Name puts "w" above "Zhu". Sorting on lower() keeps
+        mixed-case surnames interleaved the way a reader expects.
+        """
+        token = uuid.uuid4().hex[:10]
+        users = [
+            self._make_user(last_name=f"Zhu-{token}", email=f"c1-{token}@example.com"),
+            self._make_user(last_name=f"zhao-{token}", email=f"c2-{token}@example.com"),
+            self._make_user(last_name=f"Wang-{token}", email=f"c3-{token}@example.com"),
+            self._make_user(last_name=f"w-{token}", email=f"c4-{token}@example.com"),
+        ]
+        await self.insert_entities(users)
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, sort_by="last_name", order="desc"
+        )
+        self.assertEqual(total, 4)
+        self.assertEqual(
+            [r[0].last_name for r in rows],
+            [f"Zhu-{token}", f"zhao-{token}", f"Wang-{token}", f"w-{token}"],
+        )
+
+        rows, _ = await self.repo.list_users(
+            self.session, search=token, sort_by="last_name", order="asc"
+        )
+        self.assertEqual(
+            [r[0].last_name for r in rows],
+            [f"w-{token}", f"Wang-{token}", f"zhao-{token}", f"Zhu-{token}"],
+        )
+
+    async def test_list_users_sort_by_preferred_name_puts_nulls_last(self):
+        """preferred_name is the one nullable sortable name column: rows without
+        one sink to the bottom in both directions instead of riding the top of
+        the descending page, and the non-null rows sort case-insensitively."""
+        token = uuid.uuid4().hex[:10]
+        users = [
+            self._make_user(
+                first_name=f"Pn-{token}",
+                last_name=f"n1-{token}",
+                email=f"n1-{token}@example.com",
+            ),
+            self._make_user(
+                first_name=f"Pn-{token}",
+                last_name=f"n2-{token}",
+                email=f"n2-{token}@example.com",
+            ),
+            self._make_user(
+                first_name=f"Pn-{token}",
+                last_name=f"n3-{token}",
+                email=f"n3-{token}@example.com",
+            ),
+        ]
+        users[0].preferred_name = "Bee"
+        users[1].preferred_name = None
+        users[2].preferred_name = "ant"
+        await self.insert_entities(users)
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, sort_by="preferred_name", order="asc"
+        )
+        self.assertEqual(total, 3)
+        self.assertEqual([r[0].preferred_name for r in rows], ["ant", "Bee", None])
+
+        rows, _ = await self.repo.list_users(
+            self.session, search=token, sort_by="preferred_name", order="desc"
+        )
+        self.assertEqual([r[0].preferred_name for r in rows], ["Bee", "ant", None])
+
     async def test_list_users_default_order_is_by_user_id(self):
         """No sort_by → deterministic ascending user_id order."""
         token = uuid.uuid4().hex[:10]
@@ -590,23 +736,17 @@ class TestUsersRepository(BaseRepositoryTestLib):
         self.assertFalse(rows[0][0].is_super_admin)
 
     async def test_list_users_filter_user_type_internal(self):
-        """user_type='internal' returns only users with an internal identity."""
+        """user_type='internal' returns only users with the is_internal flag set."""
         token = uuid.uuid4().hex[:10]
         internal_user = self._make_user(email=f"int-{token}@example.com")
         external_user = self._make_user(email=f"ext-{token}@example.com")
         no_identity_user = self._make_user(email=f"none-{token}@example.com")
         await self.insert_entities([internal_user, external_user, no_identity_user])
+        await self.repo.set_internal(self.session, internal_user.user_id)
         await self.insert_entities([
-            UserIdentitiesEntity(
-                user_id=internal_user.user_id,
-                subject_identifier=f"google-oauth2|int-{token}",
-                identity_type="internal",
-                email_claim=f"int-{token}@circlecat.org",
-            ),
             UserIdentitiesEntity(
                 user_id=external_user.user_id,
                 subject_identifier=f"email|ext-{token}",
-                identity_type="external",
                 email_claim=f"ext-{token}@gmail.com",
             ),
         ])
@@ -620,23 +760,17 @@ class TestUsersRepository(BaseRepositoryTestLib):
         self.assertTrue(rows[0][1])  # is_internal flag
 
     async def test_list_users_filter_user_type_external(self):
-        """user_type='external' returns only users WITHOUT an internal identity."""
+        """user_type='external' returns only users WITHOUT the is_internal flag set."""
         token = uuid.uuid4().hex[:10]
         internal_user = self._make_user(email=f"int2-{token}@example.com")
         external_user = self._make_user(email=f"ext2-{token}@example.com")
         no_identity_user = self._make_user(email=f"none2-{token}@example.com")
         await self.insert_entities([internal_user, external_user, no_identity_user])
+        await self.repo.set_internal(self.session, internal_user.user_id)
         await self.insert_entities([
-            UserIdentitiesEntity(
-                user_id=internal_user.user_id,
-                subject_identifier=f"google-oauth2|int2-{token}",
-                identity_type="internal",
-                email_claim=f"int2-{token}@circlecat.org",
-            ),
             UserIdentitiesEntity(
                 user_id=external_user.user_id,
                 subject_identifier=f"email|ext2-{token}",
-                identity_type="external",
                 email_claim=f"ext2-{token}@gmail.com",
             ),
         ])
@@ -654,20 +788,13 @@ class TestUsersRepository(BaseRepositoryTestLib):
             self.assertFalse(row[1])
 
     async def test_list_users_sort_by_user_type(self):
-        """sort_by='user_type' orders by the derived internal/external flag:
-        ascending lists external (no internal identity) before internal."""
+        """sort_by='user_type' orders by the is_internal flag column:
+        ascending lists external (flag unset) before internal (flag set)."""
         token = uuid.uuid4().hex[:10]
         internal_user = self._make_user(email=f"sint-{token}@example.com")
         external_user = self._make_user(email=f"sext-{token}@example.com")
         await self.insert_entities([internal_user, external_user])
-        await self.insert_entities([
-            UserIdentitiesEntity(
-                user_id=internal_user.user_id,
-                subject_identifier=f"google-oauth2|sint-{token}",
-                identity_type="internal",
-                email_claim=f"sint-{token}@circlecat.org",
-            ),
-        ])
+        await self.repo.set_internal(self.session, internal_user.user_id)
 
         asc_rows, _ = await self.repo.list_users(
             self.session, search=token, sort_by="user_type", order="asc"
@@ -695,7 +822,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
             timezone="UTC",
             timezone_updated_at=datetime.now(timezone.utc),
             communication_channel=CommunicationMethod.EMAIL,
-            primary_email=f"superadmin-{uuid.uuid4().hex}@example.com",
             is_active=True,
             is_super_admin=True,
             updated_timestamp=datetime.now(timezone.utc),

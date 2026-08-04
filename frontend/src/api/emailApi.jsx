@@ -2,21 +2,9 @@ import request from "@/utils/request";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
 /**
- * Add a backup contact email to the caller's account without an OTP
- * round-trip. The address stays contact-only (unverified) until the user
- * verifies it via the OTP flow, which is what makes it usable for signing in.
- *
- * @param {string} email
- * @returns {Promise<{ data: { ok: boolean, email: string } }>}
- */
-export async function addContactEmail(email) {
-  return await request.post(API_ENDPOINTS.EMAIL_ADD, { email });
-}
-
-/**
- * Remove an unverified backup contact email from the caller's account. The
- * backend refuses the primary contact and verified addresses (those are
- * removed via the sign-in method unlink flow).
+ * Remove a non-primary contact email from the caller's account, verified or
+ * not. The backend refuses only the primary address and the address behind
+ * the caller's own current passwordless session.
  *
  * @param {number} emailId
  * @returns {Promise<{ data: { ok: boolean } }>}
@@ -37,11 +25,12 @@ export async function initiateEmailVerification(email) {
 }
 
 /**
- * Confirm the OTP for a previously initiated verification.
+ * Confirm the OTP for a previously initiated verification. Confirming an
+ * address never creates a new sign-in identity.
  *
  * @param {string} state - token returned by initiateEmailVerification
  * @param {string} otp - the 6-digit code the user received
- * @returns {Promise<{ data: { ok: boolean, linked_sub: string, email: string } }>}
+ * @returns {Promise<{ data: { ok: boolean, email: string } }>}
  */
 export async function verifyEmailOtp(state, otp) {
   return await request.post(API_ENDPOINTS.EMAIL_OTP_VERIFY, { state, otp });
@@ -91,7 +80,7 @@ export async function confirmSetPrimary(emailId, state, code) {
 /**
  * Begin a step-up unlink of one of the caller's sign-in identities: the backend
  * sends an OTP to the current primary and returns a signed state. Unlinking
- * also drops the identity's synced contact email when nothing else uses it.
+ * removes only the sign-in method itself; contact-email rows are untouched.
  *
  * @param {number} identityId
  * @returns {Promise<{ data: { state: string } }>}

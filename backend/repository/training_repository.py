@@ -31,30 +31,33 @@ class TrainingRepository:
         )
         return result.scalars().one_or_none()
 
-    async def get_training_by_user_ids(
-        self, session: AsyncSession, user_ids: set[int]
-    ) -> dict[int, list[TrainingEntity]]:
+    async def get_training_by_user_ids_and_categories(
+        self,
+        session: AsyncSession,
+        user_ids: list[int],
+        categories: list[TrainingCategory],
+    ) -> list[TrainingEntity]:
         """
-        Batch-fetch all training records for a set of user IDs.
+        Batch-fetch training records for a list of user IDs and categories.
 
         Args:
             session (AsyncSession): The active async database session.
-            user_ids (set[int]): A set of user IDs to retrieve training records for.
+            user_ids (list[int]): A list of user IDs to retrieve training records for.
+            categories (list[TrainingCategory]): Training categories to filter by.
 
         Returns:
-            dict[int, list[TrainingEntity]]: Training records grouped by user_id.
-                Users with no training records are omitted from the dict.
-                Returns an empty dict if user_ids is empty.
+            list[TrainingEntity]: Matching training records. Returns an empty list if
+            user_ids is empty or no records match.
         """
         if not user_ids:
-            return {}
+            return []
         result = await session.execute(
-            select(TrainingEntity).where(TrainingEntity.user_id.in_(user_ids))
+            select(TrainingEntity).where(
+                TrainingEntity.user_id.in_(user_ids),
+                TrainingEntity.category.in_(categories),
+            )
         )
-        trainings_map: dict[int, list[TrainingEntity]] = {}
-        for training in result.scalars().all():
-            trainings_map.setdefault(training.user_id, []).append(training)
-        return trainings_map
+        return result.scalars().all()
 
     async def upsert_training(
         self, session: AsyncSession, entity: TrainingEntity

@@ -34,7 +34,10 @@ class TrainingEntity(Base):
         )
     )
 
-    deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Null until the user first registers for a round. The row is created at
+    # admission so the task is visible immediately; RegistrationService stamps
+    # the deadline on first registration and never overwrites it.
+    deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     link: Mapped[str | None] = mapped_column(String)
 

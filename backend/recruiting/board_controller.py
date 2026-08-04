@@ -1,0 +1,514 @@
+from fastapi import APIRouter, HTTPException, Response
+
+from backend.common.fast_api_response_wrapper import api_response
+from backend.common.permissions import Permission
+from backend.common.recruiting_enums import ApplicationStage
+from backend.utils.permission_decorators import authenticate
+from backend.dto.board_dto import (
+    BlacklistDto,
+    CommentCreateDto,
+    ReassignDto,
+    RoundChangeDto,
+    StageChangeDto,
+    SubStatusChangeDto,
+)
+from backend.dto.interview_dto import InterviewScheduleRequestDto
+from backend.dto.user_context_dto import UserContextDto
+from backend.dto.email_dto import EmailSendRequestDto
+from backend.common.api_endpoints import (
+    RECRUITING_APPLICATION_EMAILS_ENDPOINT,
+    RECRUITING_APPLICATION_EMAIL_TEMPLATES_ENDPOINT,
+    RECRUITING_APPLICATION_INTERVIEW_ENDPOINT,
+    RECRUITING_BOARD_JOBS_ENDPOINT,
+    RECRUITING_BOARD_APPLICANTS_ENDPOINT,
+    RECRUITING_JOB_BOARD_ENDPOINT,
+    RECRUITING_JOB_BOARD_STAGE_ENDPOINT,
+    RECRUITING_APPLICATION_ENDPOINT,
+    RECRUITING_APPLICATION_STAGE_ENDPOINT,
+    RECRUITING_APPLICATION_SUB_STATUS_ENDPOINT,
+    RECRUITING_APPLICATION_ASSIGNMENT_ENDPOINT,
+    RECRUITING_APPLICATION_ROUND_ENDPOINT,
+    RECRUITING_APPLICATION_RESUME_ENDPOINT,
+    RECRUITING_APPLICATION_ACTIVITY_ENDPOINT,
+    RECRUITING_APPLICATION_OTHER_APPLICATIONS_ENDPOINT,
+    RECRUITING_APPLICATION_COMMENTS_ENDPOINT,
+    RECRUITING_APPLICATION_MENTIONABLE_USERS_ENDPOINT,
+    RECRUITING_BLACKLIST_ENDPOINT,
+    RECRUITING_BLACKLIST_UPCOMING_INTERVIEWS_ENDPOINT,
+)
+
+
+class BoardController:
+    """FastAPI routes for the owner-facing recruiting application board.
+
+    The read routes (including the résumé proxy download) are plain
+    login-gated (``authenticate()``) rather than permission-gated: ownership
+    is a row-level check performed by ``BoardService`` against a job's
+    configured owner ids, not an enum permission. The decision routes
+    (stage/sub-status/reassign/round) are double-gated:
+    ``Permission.RECRUITING_APPLICATION_ADVANCE`` at the route, and the same
+    row-level owner check in ``BoardService``. The blacklist route is
+    permission-gated only (``Permission.RECRUITING_BLACKLIST_WRITE``):
+    ``BoardService.blacklist`` deliberately performs no job-ownership check,
+    since it's an org-level sanction rather than a per-posting decision.
+
+    The comments routes (list/add) are also plain login-gated: like the
+    reads above, access is a row-level owner-or-current-assignee check
+    inside ``BoardService`` -- unlike the other write routes, posting a
+    comment carries no enum permission gate, since anyone who can already
+    view the application may also discuss it.
+    """
+
+    def __init__(self, board_service, database, interview_scheduling_service):
+        """
+        Args:
+            board_service (BoardService): Board read logic (job switcher,
+                pipeline, applicant detail).
+            database: Async session provider.
+            interview_scheduling_service (InterviewSchedulingService):
+                Interview-meeting booking/reschedule/cancel logic.
+        """
+        self.board_service = board_service
+        self.database = database
+        self.interview_scheduling_service = interview_scheduling_service
+        self.router = APIRouter(tags=["recruiting-board"])
+
+        self.router.add_api_route(
+            RECRUITING_BOARD_JOBS_ENDPOINT,
+            endpoint=authenticate()(self.list_my_jobs),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_BOARD_APPLICANTS_ENDPOINT,
+            endpoint=authenticate()(self.search_applicants),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_JOB_BOARD_ENDPOINT,
+            endpoint=authenticate()(self.get_board),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_JOB_BOARD_STAGE_ENDPOINT,
+            endpoint=authenticate()(self.get_board_stage_page),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_ENDPOINT,
+            endpoint=authenticate()(self.get_application_detail),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_RESUME_ENDPOINT,
+            endpoint=authenticate()(self.get_resume),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_ACTIVITY_ENDPOINT,
+            endpoint=authenticate()(self.get_application_activity),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_OTHER_APPLICATIONS_ENDPOINT,
+            endpoint=authenticate()(self.get_other_applications),
+            methods=["GET"],
+            response_model=None,
+        )
+        # Emails tab: reading is login-gated (owner / read.all enforced in the
+        # service, like the other read tabs); sending reuses the advance
+        # permission (owner-only, enforced in the service).
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_EMAILS_ENDPOINT,
+            endpoint=authenticate()(self.get_application_emails),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_EMAILS_ENDPOINT,
+            endpoint=authenticate(
+                permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
+            )(self.send_application_email),
+            methods=["POST"],
+            response_model=None,
+        )
+        # Compose templates: same gate as sending (they embed candidate data).
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_EMAIL_TEMPLATES_ENDPOINT,
+            endpoint=authenticate(
+                permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
+            )(self.get_application_email_templates),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_COMMENTS_ENDPOINT,
+            endpoint=authenticate()(self.list_comments),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_COMMENTS_ENDPOINT,
+            endpoint=authenticate()(self.add_comment),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_MENTIONABLE_USERS_ENDPOINT,
+            endpoint=authenticate()(self.list_mentionable_users),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_STAGE_ENDPOINT,
+            endpoint=authenticate(
+                permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
+            )(self.change_stage),
+            methods=["PATCH"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_SUB_STATUS_ENDPOINT,
+            endpoint=authenticate(
+                permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
+            )(self.set_sub_status),
+            methods=["PATCH"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_ASSIGNMENT_ENDPOINT,
+            endpoint=authenticate(
+                permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
+            )(self.reassign),
+            methods=["PATCH"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_APPLICATION_ROUND_ENDPOINT,
+            endpoint=authenticate(
+                permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
+            )(self.set_round),
+            methods=["PATCH"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_BLACKLIST_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.RECRUITING_BLACKLIST_WRITE])(
+                self.blacklist
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_BLACKLIST_UPCOMING_INTERVIEWS_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.RECRUITING_BLACKLIST_WRITE])(
+                self.list_blacklist_upcoming_interviews
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
+        # Interview scheduling reuses the advance permission: booking a
+        # meeting is a pipeline action, and the service additionally enforces
+        # job ownership.
+        for method, handler in (
+            ("POST", self.schedule_interview),
+            ("PATCH", self.update_interview),
+            ("DELETE", self.cancel_interview),
+        ):
+            self.router.add_api_route(
+                RECRUITING_APPLICATION_INTERVIEW_ENDPOINT,
+                endpoint=authenticate(
+                    permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
+                )(handler),
+                methods=[method],
+                response_model=None,
+            )
+
+    async def list_my_jobs(self, current_user: UserContextDto):
+        """List jobs the caller owns, for the board's job switcher."""
+        async with self.database.session() as session:
+            result = await self.board_service.list_my_jobs(session, current_user)
+        return api_response(message="Jobs fetched.", data=result)
+
+    async def search_applicants(
+        self,
+        current_user: UserContextDto,
+        q: str,
+        job_id: int | None = None,
+        current_job_id: int | None = None,
+    ):
+        """Find applicants by name or email across the caller's boards.
+
+        ``job_id`` omitted means "all postings I can open". ``current_job_id``
+        only floats the open posting's hits to the front.
+        """
+        async with self.database.session() as session:
+            result = await self.board_service.search_applicants(
+                session,
+                current_user,
+                q,
+                job_id=job_id,
+                current_job_id=current_job_id,
+            )
+        return api_response(message="Applicants searched.", data=result)
+
+    async def get_board(self, current_user: UserContextDto, job_id: int):
+        """Return a job's applications grouped by stage, for the board columns."""
+        async with self.database.session() as session:
+            result = await self.board_service.get_board(session, current_user, job_id)
+        return api_response(message="Board fetched.", data=result)
+
+    async def get_board_stage_page(
+        self,
+        current_user: UserContextDto,
+        job_id: int,
+        stage: str,
+        limit: int = 20,
+        offset: int = 0,
+    ):
+        """One page of a terminal lane's applications (offset/limit)."""
+        try:
+            stage_enum = ApplicationStage(stage)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid stage.")
+        if offset < 0:
+            raise HTTPException(status_code=400, detail="offset must be >= 0.")
+        limit = max(1, min(limit, 100))
+        async with self.database.session() as session:
+            result = await self.board_service.get_board_stage_page(
+                session, current_user, job_id, stage_enum, limit, offset
+            )
+        return api_response(message="Board page fetched.", data=result)
+
+    async def get_application_detail(
+        self, current_user: UserContextDto, application_id: int
+    ):
+        """Return the owner-facing full view of one application."""
+        async with self.database.session() as session:
+            result = await self.board_service.get_application_detail(
+                session, current_user, application_id
+            )
+        return api_response(message="Application fetched.", data=result)
+
+    async def get_resume(self, current_user: UserContextDto, application_id: int):
+        """Proxy-download an application's résumé PDF.
+
+        Deliberately returns a raw ``fastapi.Response`` rather than going
+        through ``api_response``: the body is binary PDF bytes, not JSON, so
+        the usual ``{message, data}`` envelope doesn't apply here.
+        """
+        async with self.database.session() as session:
+            data = await self.board_service.get_resume(
+                session, current_user, application_id
+            )
+        return Response(content=data, media_type="application/pdf")
+
+    async def get_application_activity(
+        self, current_user: UserContextDto, application_id: int
+    ):
+        """Return an application's owner-facing audit timeline, newest first."""
+        async with self.database.session() as session:
+            result = await self.board_service.get_application_activity(
+                session, current_user, application_id
+            )
+        return api_response(message="Application activity fetched.", data=result)
+
+    async def get_application_emails(
+        self, current_user: UserContextDto, application_id: int, refresh: bool = False
+    ):
+        """Return an application's email conversation.
+
+        Pure DB read by default; ``?refresh=true`` syncs from Gmail first.
+        """
+        async with self.database.session() as session:
+            result = await self.board_service.get_application_conversation(
+                session, current_user, application_id, refresh=refresh
+            )
+        return api_response(message="Emails fetched.", data=result)
+
+    async def send_application_email(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+        email_data: EmailSendRequestDto,
+    ):
+        """Send (or reply to) a candidate email, returning the updated conversation."""
+        async with self.database.session() as session:
+            result = await self.board_service.send_application_email(
+                session, current_user, application_id, email_data
+            )
+        return api_response(message="Email sent.", data=result)
+
+    async def get_application_email_templates(
+        self, current_user: UserContextDto, application_id: int
+    ):
+        """Return the preset email templates rendered for this application."""
+        async with self.database.session() as session:
+            result = await self.board_service.list_application_email_templates(
+                session, current_user, application_id
+            )
+        return api_response(message="Email templates fetched.", data=result)
+
+    async def get_other_applications(
+        self, current_user: UserContextDto, application_id: int
+    ):
+        """Return a candidate's application aggregation for the shared
+        detail page: ``otherJobs`` (cross-job applications) and
+        ``previousSameJob`` (same-job prior attempts, newest first)."""
+        async with self.database.session() as session:
+            result = await self.board_service.get_other_applications(
+                session, current_user, application_id
+            )
+        return api_response(message="Other applications fetched.", data=result)
+
+    async def list_comments(self, current_user: UserContextDto, application_id: int):
+        """Return every comment on an application, newest first."""
+        async with self.database.session() as session:
+            result = await self.board_service.list_comments(
+                session, current_user, application_id
+            )
+        return api_response(message="Comments fetched.", data=result)
+
+    async def add_comment(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+        comment_data: CommentCreateDto,
+    ):
+        """Post a comment on an application."""
+        async with self.database.session() as session:
+            result = await self.board_service.add_comment(
+                session, current_user, application_id, comment_data
+            )
+        return api_response(message="Comment posted.", data=result)
+
+    async def list_mentionable_users(
+        self, current_user: UserContextDto, application_id: int
+    ):
+        """Return everyone who can currently be @-mentioned on this
+        application (job owner(s) + current-stage assignee)."""
+        async with self.database.session() as session:
+            result = await self.board_service.list_mentionable_users(
+                session, current_user, application_id
+            )
+        return api_response(message="Mentionable users fetched.", data=result)
+
+    async def change_stage(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+        stage_data: StageChangeDto,
+    ):
+        """Advance or reject an application to a new pipeline stage."""
+        async with self.database.session() as session:
+            result = await self.board_service.change_stage(
+                session, current_user, application_id, stage_data
+            )
+        return api_response(message="Application stage updated.", data=result)
+
+    async def set_sub_status(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+        sub_status_data: SubStatusChangeDto,
+    ):
+        """Manually switch an application's sub_status within its stage."""
+        async with self.database.session() as session:
+            result = await self.board_service.set_sub_status(
+                session, current_user, application_id, sub_status_data
+            )
+        return api_response(message="Application sub-status updated.", data=result)
+
+    async def reassign(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+        reassign_data: ReassignDto,
+    ):
+        """Change who is responsible for an application's current stage."""
+        async with self.database.session() as session:
+            result = await self.board_service.reassign(
+                session, current_user, application_id, reassign_data
+            )
+        return api_response(message="Application reassigned.", data=result)
+
+    async def set_round(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+        round_data: RoundChangeDto,
+    ):
+        """Manually advance an application to a round within its current stage."""
+        async with self.database.session() as session:
+            result = await self.board_service.set_round(
+                session, current_user, application_id, round_data
+            )
+        return api_response(message="Application round updated.", data=result)
+
+    async def blacklist(
+        self,
+        current_user: UserContextDto,
+        blacklist_data: BlacklistDto,
+    ):
+        """Block a user org-wide and close out the triggering application."""
+        async with self.database.session() as session:
+            result = await self.board_service.blacklist(
+                session, current_user, blacklist_data
+            )
+        return api_response(message="User blacklisted.", data=result)
+
+    async def list_blacklist_upcoming_interviews(
+        self,
+        current_user: UserContextDto,
+        user_id: int,
+    ):
+        """List the interview meetings a blacklist of this user would cancel."""
+        async with self.database.session() as session:
+            result = await self.board_service.list_upcoming_interviews_for_user(
+                session, user_id
+            )
+        return api_response(message="Upcoming interviews fetched.", data=result)
+
+    async def schedule_interview(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+        interview_data: InterviewScheduleRequestDto,
+    ):
+        """Book a Calendar meeting for an application's current stage+round."""
+        async with self.database.session() as session:
+            result = await self.interview_scheduling_service.schedule(
+                session, current_user, application_id, interview_data
+            )
+        return api_response(message="Interview scheduled.", data=result)
+
+    async def update_interview(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+        interview_data: InterviewScheduleRequestDto,
+    ):
+        """Move an already-booked meeting's time and/or swap its interviewer."""
+        async with self.database.session() as session:
+            result = await self.interview_scheduling_service.update(
+                session, current_user, application_id, interview_data
+            )
+        return api_response(message="Interview updated.", data=result)
+
+    async def cancel_interview(
+        self,
+        current_user: UserContextDto,
+        application_id: int,
+    ):
+        """Cancel an application's current stage+round's booked meeting."""
+        async with self.database.session() as session:
+            await self.interview_scheduling_service.cancel(
+                session, current_user, application_id
+            )
+        return api_response(message="Interview cancelled.", data=None)
