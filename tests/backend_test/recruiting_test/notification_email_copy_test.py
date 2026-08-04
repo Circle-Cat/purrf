@@ -74,7 +74,7 @@ class TestRender(unittest.TestCase):
             body,
         )
         self.assertIn("Stage: Tech.", body)
-        self.assertIn("Recruiting &rarr; My Evaluations", body)
+        self.assertIn("Open My Interview Evaluations in Purrf", body)
 
     def test_assigned_to_evaluate_appends_the_round_only_past_the_first(self):
         _, body = notification_email_copy.render(_dto(round=2), ApplicationStage.TECH)
@@ -105,6 +105,7 @@ class TestRender(unittest.TestCase):
 
         self.assertEqual(subject, "Posting review requested: Backend Engineer")
         self.assertIn("waiting on your decision", body)
+        self.assertIn("Open My Posting Reviews in Purrf", body)
         # A CLOSE or REOPEN review is not about publishing, so the copy must
         # not promise anything about publication.
         self.assertNotIn("publish", body.lower())
@@ -118,7 +119,9 @@ class TestRender(unittest.TestCase):
         )
 
         self.assertIn("Grace Hopper approved your submission", approved)
+        self.assertIn("Open Job Postings in Purrf", approved)
         self.assertEqual(subject, "Posting rejected: Backend Engineer")
+        self.assertIn("Open Job Postings in Purrf", rejected)
         # reject_comment is nullable, so the copy must hedge.
         self.assertIn("any comment", rejected)
 
@@ -131,6 +134,7 @@ class TestRender(unittest.TestCase):
         self.assertEqual(subject, "New application: Ada Lovelace for Backend Engineer")
         self.assertIn("waiting for review at the Recruiter screening stage", body)
         self.assertIn("because you own this posting", body)
+        self.assertIn("Open the Applications Board in Purrf", body)
 
     def test_application_auto_rejected_says_no_human_review(self):
         subject, body = notification_email_copy.render(
@@ -178,6 +182,20 @@ class TestRender(unittest.TestCase):
 
         self.assertIn("Someone", body)
         self.assertIn("A candidate", body)
+
+    def test_no_body_describes_a_nested_menu_path(self):
+        """The sidebar is one flat list, so "A -> B" points at nothing.
+
+        Guards the specific mistake this copy shipped with: bodies read
+        "Open Recruiting -> Postings", but Sidebar.jsx has no Recruiting
+        group to open. Every destination has to be a top-level nav label.
+        """
+        for notification_type in NotificationType:
+            with self.subTest(type=notification_type):
+                _, body = notification_email_copy.render(
+                    _dto(type=notification_type), ApplicationStage.TECH
+                )
+                self.assertNotIn("&rarr;", body)
 
     def test_every_body_carries_the_automated_footer(self):
         for notification_type in NotificationType:

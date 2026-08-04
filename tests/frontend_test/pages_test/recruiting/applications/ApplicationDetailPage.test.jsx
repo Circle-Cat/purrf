@@ -237,7 +237,7 @@ const renderPage = (applicationId = 101, search = "") => {
   return { ...render(<RouterProvider router={router} />), router };
 };
 
-/** Render the page in the evaluator-only view (the My Evaluations link). */
+/** Render the page in the evaluator-only view (the My Interview Evaluations link). */
 const renderEvaluatorPage = (applicationId = 101) =>
   renderPage(applicationId, "?mode=evaluate");
 
@@ -4101,7 +4101,8 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
   });
 
   it("does not render the card in the assignee's evaluate-mode view", async () => {
-    // An explicit scope boundary: evaluate mode (the "My Evaluations" link)
+    // An explicit scope boundary: evaluate mode (the "My Interview
+    // Evaluations" link)
     // is a reduced, rubric-only view for the current-stage assignee -- it
     // never renders the owner/read.all info panel the card lives in, even
     // when the assignee's own stage is behavioral/tech.
@@ -4868,7 +4869,7 @@ describe("ApplicationDetailPage — getting back to where you came from", () => 
     ).toHaveAttribute("href", "/recruiting/board?jobId=1&focus=101");
   });
 
-  it("offers an evaluator a link back to My Evaluations instead", async () => {
+  it("offers an evaluator a link back to My Interview Evaluations instead", async () => {
     authState.userId = ASSIGNEE_ID;
     api.getApplicationDetail.mockResolvedValue({
       data: makeDetail({ isOwner: false, assigneeId: ASSIGNEE_ID }),
@@ -4877,7 +4878,7 @@ describe("ApplicationDetailPage — getting back to where you came from", () => 
     await waitLoaded();
 
     expect(
-      screen.getByRole("link", { name: "My Evaluations" }),
+      screen.getByRole("link", { name: "My Interview Evaluations" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: "Applications Board" }),

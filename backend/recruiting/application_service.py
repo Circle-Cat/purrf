@@ -381,7 +381,7 @@ class ApplicationService:
 
         A stage's ``defaultAssigneeId`` is only a board-display fallback
         (``BoardService.get_board`` shows it on the card) until a real
-        ``application_assignment`` row exists — ``My Evaluations`` and
+        ``application_assignment`` row exists — ``My Interview Evaluations`` and
         evaluation submit/read only see real rows. Without this, an
         application landing directly on a stage with a configured default
         (recruiter_screening on submission, or any stage after a reapply)

@@ -981,7 +981,8 @@ const OtherApplicationsSection = ({
  *   evaluation-filling form, even when the owner is also the current-stage
  *   assignee — grading only happens via the evaluator view below.
  * - The current-stage assignee (`detail.assigneeId === currentUser.userId`)
- *   reaching this page via the `?mode=evaluate` link from My Evaluations
+ *   reaching this page via the `?mode=evaluate` link from My Interview
+ *   Evaluations
  *   gets ONLY the `EvaluationRubricForm` for the application's stage,
  *   pre-filled from their own draft and locked once confirmed — no owner
  *   actions, even if they're also the owner. Landing in this mode without
