@@ -191,6 +191,124 @@ class TestNotificationRepository(BaseRepositoryTestLib):
 
         self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 0)
 
+    async def test_claim_unemailed_returns_only_unstamped_rows(self):
+        app, recipient = await self._seed()
+        repo = NotificationRepository()
+        unsent = await repo.create(
+            self.session,
+            NotificationEntity(
+                user_id=recipient.user_id,
+                type=NotificationType.MENTIONED,
+                application_id=app.application_id,
+            ),
+        )
+        already_sent = await repo.create(
+            self.session,
+            NotificationEntity(
+                user_id=recipient.user_id,
+                type=NotificationType.MENTIONED,
+                application_id=app.application_id,
+                email_sent_at=datetime.now(timezone.utc),
+            ),
+        )
+
+        claimed = await repo.claim_unemailed(self.session, 10)
+
+        ids = [row.notification_id for row in claimed]
+        self.assertIn(unsent.notification_id, ids)
+        self.assertNotIn(already_sent.notification_id, ids)
+
+    async def test_claim_unemailed_returns_oldest_first(self):
+        app, recipient = await self._seed()
+        repo = NotificationRepository()
+        first = await repo.create(
+            self.session,
+            NotificationEntity(
+                user_id=recipient.user_id,
+                type=NotificationType.MENTIONED,
+                application_id=app.application_id,
+                created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            ),
+        )
+        second = await repo.create(
+            self.session,
+            NotificationEntity(
+                user_id=recipient.user_id,
+                type=NotificationType.MENTIONED,
+                application_id=app.application_id,
+                created_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+            ),
+        )
+
+        claimed = await repo.claim_unemailed(self.session, 10)
+
+        self.assertEqual(
+            [row.notification_id for row in claimed],
+            [first.notification_id, second.notification_id],
+        )
+
+    async def test_claim_unemailed_honours_the_limit(self):
+        app, recipient = await self._seed()
+        repo = NotificationRepository()
+        for _ in range(3):
+            await repo.create(
+                self.session,
+                NotificationEntity(
+                    user_id=recipient.user_id,
+                    type=NotificationType.MENTIONED,
+                    application_id=app.application_id,
+                ),
+            )
+
+        claimed = await repo.claim_unemailed(self.session, 2)
+
+        self.assertEqual(len(claimed), 2)
+
+    async def test_mark_emailed_stamps_the_named_rows_only(self):
+        app, recipient = await self._seed()
+        repo = NotificationRepository()
+        stamped = await repo.create(
+            self.session,
+            NotificationEntity(
+                user_id=recipient.user_id,
+                type=NotificationType.MENTIONED,
+                application_id=app.application_id,
+            ),
+        )
+        untouched = await repo.create(
+            self.session,
+            NotificationEntity(
+                user_id=recipient.user_id,
+                type=NotificationType.MENTIONED,
+                application_id=app.application_id,
+            ),
+        )
+        sent_at = datetime.now(timezone.utc)
+
+        await repo.mark_emailed(self.session, [stamped.notification_id], sent_at)
+
+        remaining = [
+            row.notification_id for row in await repo.claim_unemailed(self.session, 10)
+        ]
+        self.assertNotIn(stamped.notification_id, remaining)
+        self.assertIn(untouched.notification_id, remaining)
+
+    async def test_mark_emailed_is_a_no_op_for_an_empty_id_list(self):
+        app, recipient = await self._seed()
+        repo = NotificationRepository()
+        await repo.create(
+            self.session,
+            NotificationEntity(
+                user_id=recipient.user_id,
+                type=NotificationType.MENTIONED,
+                application_id=app.application_id,
+            ),
+        )
+
+        await repo.mark_emailed(self.session, [], datetime.now(timezone.utc))
+
+        self.assertEqual(len(await repo.claim_unemailed(self.session, 10)), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
