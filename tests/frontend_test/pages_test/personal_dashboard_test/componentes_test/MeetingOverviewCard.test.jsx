@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import MeetingOverviewCard from "@/pages/PersonalDashboard/components/MeetingOverviewCard";
 
 const mockOverview = {
@@ -23,6 +23,15 @@ const mockOverview = {
 };
 
 describe("MeetingOverviewCard", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-01T00:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("should display meeting statistics", () => {
     render(<MeetingOverviewCard overview={mockOverview} />);
     expect(screen.getByText("3")).toBeInTheDocument();
@@ -60,5 +69,44 @@ describe("MeetingOverviewCard", () => {
     render(<MeetingOverviewCard overview={mockOverview} />);
     const badges = screen.getAllByText("DONE");
     expect(badges).toHaveLength(mockOverview.meetingTimeList.length);
+  });
+
+  it("should show a SCHEDULED badge for a not-yet-completed meeting whose start time is in the future", () => {
+    render(
+      <MeetingOverviewCard
+        overview={{
+          ...mockOverview,
+          meetingTimeList: [
+            {
+              meetingId: "m-future",
+              startDatetime: "2026-03-02T23:30:00Z",
+              endDatetime: "2026-03-03T00:30:00Z",
+              isCompleted: false,
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText("SCHEDULED")).toBeInTheDocument();
+  });
+
+  it("should show an INCOMPLETE badge for a not-yet-completed meeting whose start time has passed", () => {
+    render(
+      <MeetingOverviewCard
+        overview={{
+          ...mockOverview,
+          meetingTimeList: [
+            {
+              meetingId: "m-past",
+              startDatetime: "2026-02-28T23:30:00Z",
+              endDatetime: "2026-03-01T00:30:00Z",
+              isCompleted: false,
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText("INCOMPLETE")).toBeInTheDocument();
+    expect(screen.queryByText("SCHEDULED")).not.toBeInTheDocument();
   });
 });

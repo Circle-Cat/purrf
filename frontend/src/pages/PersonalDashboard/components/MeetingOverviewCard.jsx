@@ -1,5 +1,7 @@
 import { Calendar } from "lucide-react";
 import { formatInTz } from "@/utils/dateTime";
+import { getMeetingStatus } from "@/utils/meetingStatusCalculator";
+import { MeetingStatus } from "@/constants/MeetingStatus";
 
 /**
  * Format a UTC datetime range into a human-readable date and time range
@@ -78,6 +80,7 @@ export default function MeetingOverviewCard({
                   m.endDatetime,
                   userTimezone,
                 );
+                const status = getMeetingStatus(m.isCompleted, m.startDatetime);
                 return (
                   <div
                     key={m.meetingId}
@@ -93,11 +96,21 @@ export default function MeetingOverviewCard({
                         </div>
                       </div>
                     </div>
-                    <span
-                      className={`text-xs font-bold px-2 py-1 rounded ${m.isCompleted ? "text-green-700" : "text-amber-700"}`}
-                    >
-                      {m.isCompleted ? "DONE" : "SCHEDULED"}
-                    </span>
+                    {status === MeetingStatus.COMPLETED && (
+                      <span className="text-xs font-bold px-2 py-1 rounded text-green-700">
+                        DONE
+                      </span>
+                    )}
+                    {status === MeetingStatus.PAST_INCOMPLETE && (
+                      <span className="text-xs font-bold px-2 py-1 rounded text-gray-700">
+                        INCOMPLETE
+                      </span>
+                    )}
+                    {status === MeetingStatus.SCHEDULED && (
+                      <span className="text-xs font-bold px-2 py-1 rounded text-amber-700">
+                        SCHEDULED
+                      </span>
+                    )}
                   </div>
                 );
               })
