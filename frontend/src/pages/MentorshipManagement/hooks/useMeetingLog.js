@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { getMeetingLog } from "@/api/mentorshipApi";
+import { getMeetingLog, updateMeetingLog } from "@/api/mentorshipApi";
 import { useRequestGuard } from "@/hooks/useRequestGuard";
 
 /**
@@ -18,6 +18,11 @@ export const useMeetingLog = (pairId, open) => {
   const [error, setError] = useState(false);
   const { begin, isCurrent } = useRequestGuard();
 
+  const applyLogResponse = (data) => {
+    setMeetings(data.meetings ?? []);
+    setRoundVersion(data.roundVersion ?? null);
+  };
+
   const fetchLog = useCallback(async () => {
     if (pairId == null) return;
     const seq = begin();
@@ -26,8 +31,7 @@ export const useMeetingLog = (pairId, open) => {
     try {
       const { data } = await getMeetingLog(pairId);
       if (!isCurrent(seq)) return;
-      setMeetings(data.meetings ?? []);
-      setRoundVersion(data.roundVersion ?? null);
+      applyLogResponse(data);
     } catch {
       if (isCurrent(seq)) setError(true);
     } finally {
@@ -40,5 +44,22 @@ export const useMeetingLog = (pairId, open) => {
     fetchLog();
   }, [open, pairId, fetchLog]);
 
-  return { meetings, roundVersion, loading, error };
+  /**
+   * Sends a batch of meeting log updates and deletes to the server,
+   * safely handles out-of-order responses, and updates local state.
+   *
+   * @param {Object} batch - The batch payload containing updates and deletes.
+   * @returns {Promise<void>}
+   */
+  const saveMeetingBatch = useCallback(
+    async (batch) => {
+      const seq = begin();
+      const { data } = await updateMeetingLog(pairId, batch);
+      if (!isCurrent(seq)) return;
+      applyLogResponse(data);
+    },
+    [pairId, begin, isCurrent],
+  );
+
+  return { meetings, roundVersion, loading, error, saveMeetingBatch };
 };
