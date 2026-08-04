@@ -34,6 +34,7 @@ class FastAppFactory:
         evaluation_controller,
         audit_controller,
         recruiting_notification_controller,
+        notification_email_worker,
         launchdarkly_client,
         database,
         logger,
@@ -83,6 +84,7 @@ class FastAppFactory:
         self.evaluation_controller = evaluation_controller
         self.audit_controller = audit_controller
         self.recruiting_notification_controller = recruiting_notification_controller
+        self.notification_email_worker = notification_email_worker
         self.launchdarkly_client = launchdarkly_client
         self.database = database
         self.logger = logger
@@ -120,7 +122,14 @@ class FastAppFactory:
         @asynccontextmanager
         async def lifespan(app):
             self.launchdarkly_client.initialize()
+            # Started here rather than on first use so a pod that inherits an
+            # outbox backlog -- left by a predecessor killed mid-delivery --
+            # drains it on boot instead of waiting for the next notification.
+            self.notification_email_worker.start()
             yield
+            # Stopped before the engine so an in-flight pass can finish its
+            # transaction against a live pool.
+            await self.notification_email_worker.stop()
             await self.database.close()
             self.launchdarkly_client.close()
 

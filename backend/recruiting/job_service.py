@@ -33,7 +33,7 @@ class JobService:
         recruiting_mapper: RecruitingMapper,
         user_permissions_repository: UserPermissionsRepository,
         job_review_repository: JobReviewRepository,
-        notification_dispatcher,
+        notification_repository,
         users_repository: UsersRepository,
         job_activity_repository: JobActivityRepository,
         user_emails_repository,
@@ -48,12 +48,12 @@ class JobService:
                 resolve who may approve postings.
             job_review_repository (JobReviewRepository): Data-access layer for
                 JobReviewEntity (the review gate).
-            notification_dispatcher (NotificationDispatcher): Writes in-app
-                notification rows inside this transaction and emails them
-                once it commits (see its module docstring for why the two
-                phases cannot be merged). Used by ``_open_review`` (reviewer
-                notified) and ``approve``/``reject`` (submitter notified of
-                the decision).
+            notification_repository (NotificationRepository): Writes in-app
+                notification rows inside this transaction. The row is also
+                the email outbox -- NotificationEmailWorker picks it up once
+                it commits -- so nothing here sends mail. Used by
+                ``_open_review`` (reviewer notified) and ``approve``/
+                ``reject`` (submitter notified of the decision).
             users_repository (UsersRepository): Actor-name resolution for the
                 audit timeline.
             job_activity_repository (JobActivityRepository): Data-access layer
@@ -65,7 +65,7 @@ class JobService:
         self.recruiting_mapper = recruiting_mapper
         self.user_permissions_repository = user_permissions_repository
         self.job_review_repository = job_review_repository
-        self.notification_dispatcher = notification_dispatcher
+        self.notification_repository = notification_repository
         self.users_repository = users_repository
         self.job_activity_repository = job_activity_repository
         self.user_emails_repository = user_emails_repository
@@ -574,7 +574,7 @@ class JobService:
             {"kind": kind.value, "reviewerId": reviewer_id, "message": message},
         )
         if reviewer_id != submitted_by:
-            await self.notification_dispatcher.record(
+            await self.notification_repository.create(
                 session,
                 NotificationEntity(
                     user_id=reviewer_id,
@@ -588,7 +588,6 @@ class JobService:
             job.status = pending_status
             job = await self.job_repository.update_job(session, job)
         await session.commit()
-        await self.notification_dispatcher.flush(session)
         return self.recruiting_mapper.to_job_dto(job, reviewer_id=reviewer_id)
 
     async def submit_for_review(
@@ -790,7 +789,7 @@ class JobService:
             job.was_published = True
         job = await self.job_repository.update_job(session, job)
         if review.submitted_by != acting_user_id:
-            await self.notification_dispatcher.record(
+            await self.notification_repository.create(
                 session,
                 NotificationEntity(
                     user_id=review.submitted_by,
@@ -801,7 +800,6 @@ class JobService:
                 ),
             )
         await session.commit()
-        await self.notification_dispatcher.flush(session)
         return self.recruiting_mapper.to_job_dto(job)
 
     async def reject(
@@ -862,7 +860,7 @@ class JobService:
             job.status = JobStatus.DRAFT
         job = await self.job_repository.update_job(session, job)
         if review.submitted_by != acting_user_id:
-            await self.notification_dispatcher.record(
+            await self.notification_repository.create(
                 session,
                 NotificationEntity(
                     user_id=review.submitted_by,
@@ -873,7 +871,6 @@ class JobService:
                 ),
             )
         await session.commit()
-        await self.notification_dispatcher.flush(session)
         return self.recruiting_mapper.to_job_dto(job)
 
     async def _require_pending_review(
