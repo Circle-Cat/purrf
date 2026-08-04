@@ -599,6 +599,7 @@ class TestAppDependencyBuilder(TestCase):
             evaluation_controller=ANY,
             audit_controller=ANY,
             recruiting_notification_controller=ANY,
+            notification_email_worker=ANY,
             launchdarkly_client=mock_launchdarkly_client_cls.return_value,
             database=mock_database_cls.return_value,
             logger=mock_logger,
@@ -853,16 +854,16 @@ class TestAppDependencyBuilder(TestCase):
         # the repository instead fails nowhere until the first real
         # notification write.
         self.assertIs(
-            builder.job_service.notification_dispatcher,
-            builder.notification_dispatcher,
+            builder.job_service.notification_repository,
+            builder.notification_repository,
         )
         self.assertIs(
-            builder.application_service.notification_dispatcher,
-            builder.notification_dispatcher,
+            builder.application_service.notification_repository,
+            builder.notification_repository,
         )
         self.assertIs(
-            builder.board_service.notification_dispatcher,
-            builder.notification_dispatcher,
+            builder.board_service.notification_repository,
+            builder.notification_repository,
         )
 
 

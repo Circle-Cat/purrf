@@ -8,6 +8,9 @@ class TestFastAppFactory(unittest.TestCase):
     def setUp(self):
         self.mock_controller = MagicMock()
         self.mock_controller.router = APIRouter()
+        # start() is sync, stop() is awaited from lifespan shutdown.
+        self.mock_email_worker = MagicMock()
+        self.mock_email_worker.stop = AsyncMock()
         self.mock_profile_controller = MagicMock()
         self.mock_profile_controller.router = APIRouter()
         self.mock_service = MagicMock()
@@ -33,6 +36,7 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            notification_email_worker=self.mock_email_worker,
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -92,6 +96,7 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            notification_email_worker=self.mock_email_worker,
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -132,6 +137,7 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            notification_email_worker=self.mock_email_worker,
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -175,6 +181,7 @@ class TestFastAppFactory(unittest.TestCase):
             evaluation_controller=self.mock_controller,
             audit_controller=audit,
             recruiting_notification_controller=self.mock_controller,
+            notification_email_worker=self.mock_email_worker,
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -217,6 +224,7 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            notification_email_worker=self.mock_email_worker,
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -260,6 +268,7 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=blacklist,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            notification_email_worker=self.mock_email_worker,
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -302,6 +311,7 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=evaluation,
             recruiting_notification_controller=self.mock_controller,
+            notification_email_worker=self.mock_email_worker,
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -351,6 +361,7 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            notification_email_worker=self.mock_email_worker,
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -397,6 +408,9 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.mock_controller = MagicMock()
         self.mock_controller.router = APIRouter()
+        # start() is sync, stop() is awaited from lifespan shutdown.
+        self.mock_email_worker = MagicMock()
+        self.mock_email_worker.stop = AsyncMock()
         self.mock_profile_controller = MagicMock()
         self.mock_profile_controller.router = APIRouter()
         self.mock_service = MagicMock()
@@ -426,6 +440,7 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            notification_email_worker=self.mock_email_worker,
             launchdarkly_client=self.mock_launchdarkly_client,
             database=self.mock_database,
             logger=MagicMock(),
@@ -439,6 +454,27 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
             pass
 
         self.mock_database.close.assert_awaited_once()
+
+    async def test_lifespan_starts_the_email_worker_on_startup(self):
+        """A pod inheriting an outbox backlog must start draining on boot."""
+        app = self.factory.create_app()
+
+        async with app.router.lifespan_context(app):
+            self.mock_email_worker.start.assert_called_once_with()
+
+    async def test_lifespan_stops_the_email_worker_before_the_database(self):
+        """An in-flight pass needs a live pool to finish its transaction."""
+        order = []
+        self.mock_email_worker.stop = AsyncMock(
+            side_effect=lambda: order.append("worker")
+        )
+        self.mock_database.close = AsyncMock(side_effect=lambda: order.append("db"))
+        app = self.factory.create_app()
+
+        async with app.router.lifespan_context(app):
+            pass
+
+        self.assertEqual(order, ["worker", "db"])
 
 
 if __name__ == "__main__":

@@ -23,6 +23,14 @@ class NotificationEntity(Base):
     APPLICATION_SUBMITTED/APPLICATION_AUTO_REJECTED/APPLICATION_AUTO_HIRED;
     job_id/job_review_id serve
     JOB_REVIEW_REQUESTED/JOB_REVIEW_APPROVED/JOB_REVIEW_REJECTED.
+
+    The table doubles as the email outbox. ``email_sent_at`` is NULL from the
+    moment the row is written until NotificationEmailWorker has dealt with it,
+    which is what makes the email survive a pod that dies between the commit
+    and the send: the row is already committed, so the next worker pass picks
+    it up. "Dealt with" is deliberately wider than "delivered" -- a recipient
+    with no address, or a row that fails to render, is stamped too, because a
+    row that can never succeed must not be retried forever.
     """
 
     __tablename__ = "notification"
@@ -62,4 +70,7 @@ class NotificationEntity(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    email_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
