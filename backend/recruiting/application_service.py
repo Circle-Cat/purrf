@@ -369,7 +369,7 @@ class ApplicationService:
             )
 
         await session.commit()
-        await self.notification_dispatcher.flush(session)
+        await self.notification_dispatcher.flush()
         editable = self._is_editable(application, job, current_sub)
         return self.recruiting_mapper.to_application_dto(
             application, current_sub, editable=editable

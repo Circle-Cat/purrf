@@ -1671,7 +1671,7 @@ class BoardService:
                 ),
             )
         await session.commit()
-        await self.notification_dispatcher.flush(session)
+        await self.notification_dispatcher.flush()
         # `editable` encodes the CANDIDATE's edit window (see
         # get_application_detail's note); a fresh stage/sub_status decision
         # is never in that window, so this is always False here.
@@ -1786,7 +1786,7 @@ class BoardService:
                 ),
             )
         await session.commit()
-        await self.notification_dispatcher.flush(session)
+        await self.notification_dispatcher.flush()
         current_sub = await self.application_submission_repository.get_current(
             session, application_id
         )
@@ -2465,7 +2465,7 @@ class BoardService:
                     ),
                 )
         await session.commit()
-        await self.notification_dispatcher.flush(session)
+        await self.notification_dispatcher.flush()
         author = await self.users_repository.get_user_by_user_id(
             session, current_user.user_id
         )

@@ -92,7 +92,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         dispatcher = create_autospec(NotificationDispatcher, instance=True)
         dispatcher.record = AsyncMock(side_effect=lambda session, entity: entity)
         dispatcher.flush = AsyncMock(
-            side_effect=lambda session: self.call_order.append("flush")
+            side_effect=lambda: self.call_order.append("flush")
         )
         self.session.commit = AsyncMock(
             side_effect=lambda: self.call_order.append("commit")
@@ -1615,7 +1615,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         await self.service.submit(self.session, self._ctx(), dto)
 
         self.dispatcher.record.assert_awaited_once()
-        self.dispatcher.flush.assert_awaited_once_with(self.session)
+        self.dispatcher.flush.assert_awaited_once_with()
         # Order, not just occurrence: emailing before the commit would mean a
         # rollback leaves a recipient holding a message about an application
         # that does not exist.

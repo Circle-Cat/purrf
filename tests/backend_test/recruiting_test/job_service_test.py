@@ -75,7 +75,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         dispatcher = create_autospec(NotificationDispatcher, instance=True)
         dispatcher.record = AsyncMock(side_effect=lambda session, entity: entity)
         dispatcher.flush = AsyncMock(
-            side_effect=lambda session: self.call_order.append("flush")
+            side_effect=lambda: self.call_order.append("flush")
         )
         self.session.commit = AsyncMock(
             side_effect=lambda: self.call_order.append("commit")
@@ -651,7 +651,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         await self.service.submit_for_review(self.session, 1, 6, 9, "please review")
 
         self.dispatcher.record.assert_awaited_once()
-        self.dispatcher.flush.assert_awaited_once_with(self.session)
+        self.dispatcher.flush.assert_awaited_once_with()
         self.assertEqual(self.call_order, ["commit", "flush"])
 
     async def test_submit_for_review_logs_review_opened_activity(self):
@@ -1815,7 +1815,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         await self.service.approve(self.session, review_id=100, acting_user_id=6)
 
         self.dispatcher.record.assert_awaited_once()
-        self.dispatcher.flush.assert_awaited_once_with(self.session)
+        self.dispatcher.flush.assert_awaited_once_with()
         self.assertEqual(self.call_order, ["commit", "flush"])
 
     async def test_reject_notifies_the_submitter(self):
@@ -1864,7 +1864,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.dispatcher.record.assert_awaited_once()
-        self.dispatcher.flush.assert_awaited_once_with(self.session)
+        self.dispatcher.flush.assert_awaited_once_with()
         self.assertEqual(self.call_order, ["commit", "flush"])
 
     async def test_get_job_activity_resolves_actor_names(self):

@@ -189,7 +189,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dispatcher = create_autospec(NotificationDispatcher, instance=True)
         dispatcher.record = AsyncMock(side_effect=lambda session, entity: entity)
         dispatcher.flush = AsyncMock(
-            side_effect=lambda session: self.call_order.append("flush")
+            side_effect=lambda: self.call_order.append("flush")
         )
         self.session.commit = AsyncMock(
             side_effect=lambda: self.call_order.append("commit")
@@ -2129,7 +2129,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         await self.service.change_stage(self.session, self._ctx(user_id=9), 10, dto)
 
         self.dispatcher.record.assert_awaited_once()
-        self.dispatcher.flush.assert_awaited_once_with(self.session)
+        self.dispatcher.flush.assert_awaited_once_with()
         self.assertEqual(self.call_order, ["commit", "flush"])
 
     async def test_change_stage_does_not_notify_when_reassigning_same_person(self):
@@ -2645,7 +2645,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         await self.service.reassign(self.session, self._ctx(user_id=9), 10, dto)
 
         self.dispatcher.record.assert_awaited_once()
-        self.dispatcher.flush.assert_awaited_once_with(self.session)
+        self.dispatcher.flush.assert_awaited_once_with()
         self.assertEqual(self.call_order, ["commit", "flush"])
 
     async def test_reassign_to_same_person_does_not_notify(self):
@@ -4877,7 +4877,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         await self.service.add_comment(self.session, self._ctx(user_id=9), 10, dto)
 
         self.dispatcher.record.assert_awaited_once()
-        self.dispatcher.flush.assert_awaited_once_with(self.session)
+        self.dispatcher.flush.assert_awaited_once_with()
         self.assertEqual(self.call_order, ["commit", "flush"])
 
     async def test_add_comment_skips_self_mention(self):

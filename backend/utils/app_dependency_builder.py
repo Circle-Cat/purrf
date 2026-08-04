@@ -134,6 +134,7 @@ from backend.recruiting.audit_controller import AuditController
 from backend.recruiting.notification_service import RecruitingNotificationService
 from backend.recruiting.notification_controller import RecruitingNotificationController
 from backend.recruiting.notification_dispatcher import NotificationDispatcher
+from backend.recruiting.notification_email_worker import NotificationEmailWorker
 from backend.communication.notification_email_service import NotificationEmailService
 from backend.common.environment_constants import RESUME_BUCKET
 from backend.common.auth0_client import Auth0Client
@@ -653,12 +654,17 @@ class AppDependencyBuilder:
             logger=self.logger,
             sender_address=self.notification_sender_address,
         )
-        self.notification_dispatcher = NotificationDispatcher(
+        self.notification_email_worker = NotificationEmailWorker(
+            database=self.database,
             notification_repository=self.notification_repository,
             notification_service=self.recruiting_notification_service,
             user_emails_repository=self.user_emails_repository,
             email_service=self.notification_email_service,
             logger=self.logger,
+        )
+        self.notification_dispatcher = NotificationDispatcher(
+            notification_repository=self.notification_repository,
+            email_worker=self.notification_email_worker,
         )
         self.job_service = JobService(
             self.job_repository,
@@ -827,6 +833,7 @@ class AppDependencyBuilder:
             evaluation_controller=self.evaluation_controller,
             audit_controller=self.audit_controller,
             recruiting_notification_controller=self.recruiting_notification_controller,
+            notification_email_worker=self.notification_email_worker,
             launchdarkly_client=self.launchdarkly_client,
             database=self.database,
             logger=self.logger,

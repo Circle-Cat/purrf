@@ -588,7 +588,7 @@ class JobService:
             job.status = pending_status
             job = await self.job_repository.update_job(session, job)
         await session.commit()
-        await self.notification_dispatcher.flush(session)
+        await self.notification_dispatcher.flush()
         return self.recruiting_mapper.to_job_dto(job, reviewer_id=reviewer_id)
 
     async def submit_for_review(
@@ -801,7 +801,7 @@ class JobService:
                 ),
             )
         await session.commit()
-        await self.notification_dispatcher.flush(session)
+        await self.notification_dispatcher.flush()
         return self.recruiting_mapper.to_job_dto(job)
 
     async def reject(
@@ -873,7 +873,7 @@ class JobService:
                 ),
             )
         await session.commit()
-        await self.notification_dispatcher.flush(session)
+        await self.notification_dispatcher.flush()
         return self.recruiting_mapper.to_job_dto(job)
 
     async def _require_pending_review(

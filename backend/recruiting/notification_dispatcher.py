@@ -1,52 +1,43 @@
-"""Writes a notification row, then emails it once the transaction commits.
+"""Writes a notification row, then nudges the worker that emails it.
 
 Two phases, because the order matters in both directions. The row has to be
 written inside the caller's transaction so it is atomic with the event that
 caused it -- an assignment that rolls back must not leave a notification
-behind. The email has to be sent *after* that transaction commits, or a
+behind. The email has to go out *after* that transaction commits, or a
 rollback would leave a recipient holding a message about an assignment that
 never happened.
 
-Buffering lives on ``session.info``, so it is scoped to the request's
-session rather than to this (single, shared) service instance.
+The row itself is the queue: ``email_sent_at IS NULL`` means "not yet
+emailed", so a committed notification is a durable instruction to send, and
+:class:`NotificationEmailWorker` is the only thing that acts on it. That is
+the whole reason this no longer sends inline. Sending inline made the
+candidate's submit request wait on Gmail -- measured at 6.0s of an 8.3s
+request, none of which fed the response -- and lost the email outright if
+the pod died between the commit and the send.
+
+``flush`` therefore no longer flushes anything; it wakes the worker so a
+just-committed notification goes out in the next moment rather than at the
+worker's next periodic sweep. It is a hint, not a handoff: if the process
+dies before the worker acts, the committed row is still there and the next
+sweep (or the next pod's startup pass) delivers it.
 """
-
-import asyncio
-
-from backend.recruiting import notification_email_copy
-
-_BUFFER_KEY = "pending_notification_emails"
 
 
 class NotificationDispatcher:
-    """Records in-app notifications and emails them after commit."""
+    """Records in-app notifications and wakes the email worker."""
 
-    def __init__(
-        self,
-        notification_repository,
-        notification_service,
-        user_emails_repository,
-        email_service,
-        logger,
-    ):
+    def __init__(self, notification_repository, email_worker):
         """
         Args:
             notification_repository (NotificationRepository): Row insert.
-            notification_service (RecruitingNotificationService): Resolves a
-                row into its display DTO plus the application's stage.
-            user_emails_repository (UserEmailsRepository): Recipient
-                addresses.
-            email_service (NotificationEmailService): Send transport.
-            logger (Logger): Where skipped and failed sends go.
+            email_worker (NotificationEmailWorker): Told when new rows exist,
+                so delivery does not wait for the periodic sweep.
         """
         self._notification_repository = notification_repository
-        self._notification_service = notification_service
-        self._user_emails_repository = user_emails_repository
-        self._email_service = email_service
-        self._logger = logger
+        self._email_worker = email_worker
 
     async def record(self, session, entity):
-        """Insert a notification row and queue it for email on flush.
+        """Insert a notification row inside the caller's transaction.
 
         Args:
             session (AsyncSession): The caller's session, still in its
@@ -56,68 +47,14 @@ class NotificationDispatcher:
         Returns:
             NotificationEntity: The inserted row, id populated.
         """
-        row = await self._notification_repository.create(session, entity)
-        session.info.setdefault(_BUFFER_KEY, []).append(row)
-        return row
+        return await self._notification_repository.create(session, entity)
 
-    async def flush(self, session):
-        """Email every notification recorded since the last flush.
+    async def flush(self):
+        """Wake the email worker; call this *after* ``session.commit()``.
 
-        Call this *after* ``session.commit()``. Best-effort throughout: one
-        recipient without an address, one row that fails to render, or one
-        rejected send must not stop the others, and nothing here may raise
-        into the caller -- the business action has already succeeded.
-
-        Args:
-            session (AsyncSession): The caller's session, post-commit.
+        Cheap and non-blocking by design: it sets an event and returns, so a
+        request path pays no DB round trip and no Gmail call for it. Safe to
+        call when nothing was recorded -- the worker finds an empty outbox
+        and goes back to sleep.
         """
-        rows = session.info.pop(_BUFFER_KEY, [])
-        if not rows:
-            return
-        try:
-            addresses = (
-                await self._user_emails_repository.get_contact_emails_by_user_ids(
-                    session, [row.user_id for row in rows]
-                )
-            )
-        except Exception:
-            # The buffer is already drained and the rows are committed, so the
-            # notifications exist in-app; only the email push is lost. Raising
-            # here would fail a request whose business work already succeeded.
-            self._logger.error(
-                "Could not look up notification email recipients; %d "
-                "notification(s) delivered in-app only",
-                len(rows),
-                exc_info=True,
-            )
-            return
-        sends = []
-        for row in rows:
-            address = addresses.get(row.user_id)
-            if not address:
-                self._logger.warning(
-                    "No email address for user %s; notification %s delivered "
-                    "in-app only",
-                    row.user_id,
-                    row.type,
-                )
-                continue
-            try:
-                dto, stage = await self._notification_service.resolve(session, row)
-                subject, body = notification_email_copy.render(dto, stage)
-            except Exception:
-                self._logger.error(
-                    "Failed to render notification %s for user %s",
-                    row.type,
-                    row.user_id,
-                    exc_info=True,
-                )
-                continue
-            sends.append(self._email_service.send(address, subject, body))
-        # gather so a mention of three people, or a posting with three
-        # owners, costs one round trip's latency rather than three.
-        # NotificationEmailService.send already swallows its own failures;
-        # return_exceptions is belt-and-braces so an unexpected one here
-        # still cannot surface to the caller.
-        if sends:
-            await asyncio.gather(*sends, return_exceptions=True)
+        self._email_worker.wake()
