@@ -24,7 +24,7 @@ describe("BackToBoardLink", () => {
     ).toHaveAttribute("href", "/recruiting/board?jobId=7&focus=101");
   });
 
-  it("sends an evaluator back to My Evaluations, not to a board they may not own", () => {
+  it("sends an evaluator back to My Interview Evaluations, not to a board they may not own", () => {
     renderLink({
       jobId: 7,
       applicationId: "101",
@@ -32,7 +32,7 @@ describe("BackToBoardLink", () => {
       canView: true,
     });
     expect(
-      screen.getByRole("link", { name: "My Evaluations" }),
+      screen.getByRole("link", { name: "My Interview Evaluations" }),
     ).toHaveAttribute("href", "/recruiting/my-evaluations");
     expect(
       screen.queryByRole("link", { name: "Applications Board" }),
