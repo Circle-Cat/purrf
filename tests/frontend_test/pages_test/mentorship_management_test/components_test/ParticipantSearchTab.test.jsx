@@ -5,12 +5,14 @@ import ParticipantSearchTab from "@/pages/MentorshipManagement/components/Partic
 import {
   searchParticipants,
   getMeetingLog,
+  updateMeetingLog,
   getParticipantExportUrl,
 } from "@/api/mentorshipApi";
 
 vi.mock("@/api/mentorshipApi", () => ({
   searchParticipants: vi.fn(),
   getMeetingLog: vi.fn(),
+  updateMeetingLog: vi.fn(),
   getParticipantExportUrl: vi.fn(),
 }));
 
@@ -64,6 +66,22 @@ const nonParticipantRow = (overrides = {}) => ({
   mentorOnboardingStatus: "done",
   menteeOnboardingStatus: "in_progress",
   ...overrides,
+});
+
+const meetingLogResponse = (roundVersion, meetingId) => ({
+  data: {
+    roundVersion,
+    meetings: [
+      {
+        meetingId,
+        startDatetime: "2024-03-01T23:30:00Z",
+        endDatetime: "2024-03-02T00:30:00Z",
+        isCompleted: true,
+        note: [],
+        createDatetime: "2024-03-01T15:30:00Z",
+      },
+    ],
+  },
 });
 
 describe("ParticipantSearchTab", () => {
@@ -433,6 +451,42 @@ describe("ParticipantSearchTab", () => {
     await waitFor(() => expect(getMeetingLog).toHaveBeenCalledWith(80));
   });
 
+  it("re-runs the last search after a successful save, so the Meetings count reflects the backend's updated value instead of being derived client-side", async () => {
+    searchParticipants
+      .mockResolvedValueOnce({
+        data: { participantRows: [participantRow()], total: 1 },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          participantRows: [participantRow({ completedMeetingCount: 1 })],
+          total: 1,
+        },
+      });
+    getMeetingLog.mockResolvedValue(meetingLogResponse("v2", "gm-1"));
+    updateMeetingLog.mockResolvedValue({
+      data: { roundVersion: "v2", meetings: [] },
+    });
+    renderTab("participant");
+    await search();
+    await userEvent.click(await screen.findByRole("button", { name: "2/5" }));
+
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select meeting 1 for deletion" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Delete (1)" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Confirm changes" }),
+    );
+
+    // The dialog stays open after a successful save, so the background table
+    // is aria-hidden by Radix; query through that to see its updated data.
+    expect(
+      await screen.findByRole("button", { name: "1/5", hidden: true }),
+    ).toBeInTheDocument();
+    expect(searchParticipants).toHaveBeenCalledTimes(2);
+  });
+
   it("renders a plain dash instead of a link when the participant has no pair", async () => {
     searchParticipants.mockResolvedValue({
       data: {
@@ -453,6 +507,35 @@ describe("ParticipantSearchTab", () => {
     await screen.findByText("Alice");
     expect(
       screen.queryByRole("button", { name: /^\d+\/\d+$/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("passes roundVersion and pairId through so the Edit button appears for a non-empty v2 pair", async () => {
+    searchParticipants.mockResolvedValue({
+      data: { participantRows: [participantRow()], total: 1 },
+    });
+    getMeetingLog.mockResolvedValue(meetingLogResponse("v2", "gm-1"));
+    renderTab("participant");
+    await search();
+    await userEvent.click(await screen.findByRole("button", { name: "2/5" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Edit" }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show the Edit button for a v1 pair", async () => {
+    searchParticipants.mockResolvedValue({
+      data: { participantRows: [participantRow()], total: 1 },
+    });
+    getMeetingLog.mockResolvedValue(meetingLogResponse("v1", "m-1"));
+    renderTab("participant");
+    await search();
+    await userEvent.click(await screen.findByRole("button", { name: "2/5" }));
+
+    await screen.findByText(/Meeting Log —/);
+    expect(
+      screen.queryByRole("button", { name: "Edit" }),
     ).not.toBeInTheDocument();
   });
 

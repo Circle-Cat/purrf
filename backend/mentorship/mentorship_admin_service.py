@@ -632,7 +632,8 @@ class MentorshipAdminService:
         Raises ValueError if note combines mutually exclusive tags.
 
         At most one absent tag; unknown_late cannot combine with a specific
-        late tag; mentor_late and mentee_late may coexist.
+        late tag; mentor_late and mentee_late may coexist. The same role
+        cannot be marked as both absent and late.
         """
         if note is None:
             return
@@ -642,6 +643,14 @@ class MentorshipAdminService:
         if MeetingNoteTag.UNKNOWN_LATE in tags and tags & self._SPECIFIC_LATE_TAGS:
             raise ValueError(
                 f"note cannot combine unknown_late with a specific late tag: {note}"
+            )
+        if (
+            MeetingNoteTag.MENTOR_ABSENT in tags and MeetingNoteTag.MENTOR_LATE in tags
+        ) or (
+            MeetingNoteTag.MENTEE_ABSENT in tags and MeetingNoteTag.MENTEE_LATE in tags
+        ):
+            raise ValueError(
+                f"note cannot mark the same role both absent and late: {note}"
             )
 
     def _apply_note_tags(

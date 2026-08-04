@@ -39,54 +39,58 @@ export const useParticipantSearch = (participationStatus) => {
   const [order, setOrder] = useState("asc");
   const { begin, isCurrent } = useRequestGuard();
 
-  const fetchRows = useCallback(async () => {
-    if (!query) return;
-    const seq = begin();
-    setLoading(true);
-    try {
-      const { data } = await searchParticipants({
-        userId: query.userId || undefined,
-        name: query.name || undefined,
-        email: query.email || undefined,
-        onboardingStatus: query.onboardingStatus || undefined,
-        participationStatus,
-        limit: LIMIT,
-        offset,
-        sortBy: sortBy ?? undefined,
-        order,
-        ...(isParticipant && {
-          matchedUser: query.matchedUser || undefined,
-          roundId: query.roundId || undefined,
-          participantRole: query.participantRole || undefined,
-          approvalStatus: query.approvalStatus || undefined,
-        }),
-      });
-      if (!isCurrent(seq)) return;
-      setRows(data.participantRows ?? []);
-      setTotal(data.total ?? 0);
-    } catch (err) {
-      if (!isCurrent(seq)) return;
-      toast.error(
-        err?.response?.data?.message ??
-          (isParticipant
-            ? "Failed to load participants"
-            : "Failed to load non-participants"),
-      );
-      setRows([]);
-      setTotal(0);
-    } finally {
-      if (isCurrent(seq)) setLoading(false);
-    }
-  }, [
-    query,
-    offset,
-    sortBy,
-    order,
-    begin,
-    isCurrent,
-    participationStatus,
-    isParticipant,
-  ]);
+  const fetchRows = useCallback(
+    async ({ silent = false } = {}) => {
+      if (!query) return;
+      const seq = begin();
+      if (!silent) setLoading(true);
+      try {
+        const { data } = await searchParticipants({
+          userId: query.userId || undefined,
+          name: query.name || undefined,
+          email: query.email || undefined,
+          onboardingStatus: query.onboardingStatus || undefined,
+          participationStatus,
+          limit: LIMIT,
+          offset,
+          sortBy: sortBy ?? undefined,
+          order,
+          ...(isParticipant && {
+            matchedUser: query.matchedUser || undefined,
+            roundId: query.roundId || undefined,
+            participantRole: query.participantRole || undefined,
+            approvalStatus: query.approvalStatus || undefined,
+          }),
+        });
+        if (!isCurrent(seq)) return;
+        setRows(data.participantRows ?? []);
+        setTotal(data.total ?? 0);
+      } catch (err) {
+        if (!isCurrent(seq)) return;
+        if (silent) return;
+        toast.error(
+          err?.response?.data?.message ??
+            (isParticipant
+              ? "Failed to load participants"
+              : "Failed to load non-participants"),
+        );
+        setRows([]);
+        setTotal(0);
+      } finally {
+        if (!silent && isCurrent(seq)) setLoading(false);
+      }
+    },
+    [
+      query,
+      offset,
+      sortBy,
+      order,
+      begin,
+      isCurrent,
+      participationStatus,
+      isParticipant,
+    ],
+  );
 
   useEffect(() => {
     fetchRows();
@@ -142,6 +146,7 @@ export const useParticipantSearch = (participationStatus) => {
     loading,
     hasSearched: query !== null,
     query,
+    refetch: () => fetchRows({ silent: true }),
     userId,
     setUserId,
     name,

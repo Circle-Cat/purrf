@@ -1249,6 +1249,26 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
                 MeetingNoteTag.MENTOR_LATE,
             ])
 
+    def test_validate_note_tags_rejects_same_role_absent_and_late(self):
+        """The same role cannot be marked as both absent and late."""
+        with self.assertRaises(ValueError):
+            self.service._validate_note_tags([
+                MeetingNoteTag.MENTOR_ABSENT,
+                MeetingNoteTag.MENTOR_LATE,
+            ])
+        with self.assertRaises(ValueError):
+            self.service._validate_note_tags([
+                MeetingNoteTag.MENTEE_ABSENT,
+                MeetingNoteTag.MENTEE_LATE,
+            ])
+
+    def test_validate_note_tags_allows_unknown_absent_with_unknown_late(self):
+        """unknown_absent and unknown_late don't pin down the same person."""
+        self.service._validate_note_tags([
+            MeetingNoteTag.UNKNOWN_ABSENT,
+            MeetingNoteTag.UNKNOWN_LATE,
+        ])
+
     def test_apply_note_tags_maps_every_tag_and_clears(self):
         """Every MeetingNoteTag maps correctly and clears unrelated attributes
         on the meeting row."""
