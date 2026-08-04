@@ -168,12 +168,6 @@ class TestNotificationEmailWorker(unittest.IsolatedAsyncioTestCase):
         _, limit = self.repo.claim_unemailed.await_args.args
         self.assertEqual(limit, 50)
 
-    async def test_wake_is_idempotent_before_the_loop_runs(self):
-        self.worker.wake()
-        self.worker.wake()
-
-        self.assertTrue(self.worker._wakeup.is_set())
-
     async def test_start_sweeps_immediately_without_being_woken(self):
         """A pod inheriting a backlog must drain it on boot."""
         self._claims(self._row(1))
@@ -182,6 +176,17 @@ class TestNotificationEmailWorker(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0.05)
         await self.worker.stop()
 
+        self.email_service.send.assert_awaited()
+
+    async def test_loop_sweeps_again_after_the_interval(self):
+        """Nothing nudges it, so a row written after a pass waits for the next."""
+        self.repo.claim_unemailed = AsyncMock(side_effect=[[], [self._row(1)], []])
+
+        self.worker.start()
+        await asyncio.sleep(0.08)
+        await self.worker.stop()
+
+        self.assertGreaterEqual(self.repo.claim_unemailed.await_count, 2)
         self.email_service.send.assert_awaited()
 
     async def test_loop_keeps_running_after_a_failing_sweep(self):

@@ -133,7 +133,6 @@ from backend.recruiting.audit_service import AuditService
 from backend.recruiting.audit_controller import AuditController
 from backend.recruiting.notification_service import RecruitingNotificationService
 from backend.recruiting.notification_controller import RecruitingNotificationController
-from backend.recruiting.notification_dispatcher import NotificationDispatcher
 from backend.recruiting.notification_email_worker import NotificationEmailWorker
 from backend.communication.notification_email_service import NotificationEmailService
 from backend.common.environment_constants import RESUME_BUCKET
@@ -662,16 +661,12 @@ class AppDependencyBuilder:
             email_service=self.notification_email_service,
             logger=self.logger,
         )
-        self.notification_dispatcher = NotificationDispatcher(
-            notification_repository=self.notification_repository,
-            email_worker=self.notification_email_worker,
-        )
         self.job_service = JobService(
             self.job_repository,
             self.recruiting_mapper,
             self.user_permissions_repository,
             self.job_review_repository,
-            self.notification_dispatcher,
+            self.notification_repository,
             self.users_repository,
             self.job_activity_repository,
             self.user_emails_repository,
@@ -694,7 +689,7 @@ class AppDependencyBuilder:
             self.recruiting_mapper,
             self.application_assignment_repository,
             self.application_activity_repository,
-            self.notification_dispatcher,
+            self.notification_repository,
             self.user_emails_repository,
             self.onboarding_training_service,
         )
@@ -707,7 +702,7 @@ class AppDependencyBuilder:
         # Person-anchored email (recruiting Emails tab). self.gmail_client and
         # recruiting_sender were constructed earlier, alongside the
         # notification email channel, since JobService/ApplicationService
-        # need self.notification_dispatcher before they are built above.
+        # need self.notification_repository before they are built above.
         self.email_thread_repository = EmailThreadRepository()
         self.email_message_repository = EmailMessageRepository()
         self.email_conversation_service = EmailConversationService(
@@ -767,7 +762,7 @@ class AppDependencyBuilder:
             self.application_comment_repository,
             self.application_comment_mention_repository,
             self.evaluation_repository,
-            self.notification_dispatcher,
+            self.notification_repository,
             self.user_emails_repository,
             self.email_conversation_service,
             self.email_sync_service,

@@ -5,15 +5,18 @@ It exists so no request path ever waits on Gmail: the request commits a
 ``notification`` row and returns, and this worker turns that row into an
 email out of band.
 
-Woken two ways, and it needs both:
+Nothing tells it a row was written. It sweeps on startup and then every
+``sweep_seconds``, which is enough because the row *is* the message: a
+committed notification is a durable instruction to send, and a sweep that
+finds nothing costs one indexed lookup against a partial index over the
+unsent set -- near-empty in the steady state.
 
-* ``wake()`` from :class:`NotificationDispatcher` right after a commit, so
-  the normal case is delivered in the next moment rather than after a poll
-  interval.
-* a periodic sweep, so a row whose wake-up was lost -- the pod was killed
-  between the commit and the send, a wake arrived while a pass was already
-  running -- still goes out. This is the part that makes delivery durable
-  rather than best-effort; the wake is only latency.
+An explicit "a row just landed" nudge from the writing services was
+considered and dropped. It bought sub-second delivery instead of up-to-a-
+minute, which these notifications do not need, at the price of a callback
+every service had to remember to make after every commit. Transaction
+isolation, not that callback, is what keeps the worker from seeing
+uncommitted rows.
 
 A pass claims rows with ``FOR UPDATE SKIP LOCKED`` and stamps every row it
 claims, delivered or not. A recipient with no address and a row that fails
@@ -58,9 +61,9 @@ class NotificationEmailWorker:
                 addresses.
             email_service (NotificationEmailService): Send transport.
             logger (Logger): Where skipped and failed sends go.
-            sweep_seconds (int): Idle interval between sweeps. The wake-up
-                path covers the normal case, so this only bounds how long a
-                lost wake-up delays an email.
+            sweep_seconds (int): Interval between sweeps, and therefore the
+                worst-case delay before a committed notification is
+                emailed.
             batch_size (int): Rows claimed per pass, so a large backlog is
                 drained in bounded chunks rather than one long transaction.
         """
@@ -72,17 +75,7 @@ class NotificationEmailWorker:
         self._logger = logger
         self._sweep_seconds = sweep_seconds
         self._batch_size = batch_size
-        self._wakeup = asyncio.Event()
         self._task = None
-
-    def wake(self):
-        """Ask for a pass as soon as the loop can run one.
-
-        Idempotent and non-blocking: several wakes before the loop runs
-        collapse into one pass, which is correct because a pass drains
-        everything outstanding, not one row.
-        """
-        self._wakeup.set()
 
     def start(self):
         """Spawn the loop. Called from the app's lifespan startup."""
@@ -107,7 +100,7 @@ class NotificationEmailWorker:
             self._task = None
 
     async def _run(self):
-        """Sweep on startup, then on every wake-up or sweep interval.
+        """Sweep on startup, then once every sweep interval.
 
         The startup pass is what clears a backlog left by a pod that was
         preempted mid-delivery. The loop never propagates an exception: a
@@ -124,11 +117,7 @@ class NotificationEmailWorker:
                     "[NotificationEmailWorker] sweep failed; retrying next tick",
                     exc_info=True,
                 )
-            self._wakeup.clear()
-            try:
-                await asyncio.wait_for(self._wakeup.wait(), timeout=self._sweep_seconds)
-            except asyncio.TimeoutError:
-                pass
+            await asyncio.sleep(self._sweep_seconds)
 
     async def drain_once(self):
         """Claim one batch, email it, stamp it. Returns rows processed.

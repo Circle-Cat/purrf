@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, create_autospec
 from backend.common.mentorship_enums import ParticipantRole
 from backend.mentorship.onboarding_training_service import OnboardingTrainingService
 from backend.recruiting.application_service import ApplicationService
-from backend.recruiting.notification_dispatcher import NotificationDispatcher
+from backend.repository.notification_repository import NotificationRepository
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.application_dto import ApplicationSubmitDto, ApplicationEditDto
 from backend.dto.user_context_dto import UserContextDto
@@ -57,7 +57,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             ApplicationActivityRepository, instance=True
         )
         self.session = AsyncMock()
-        self.dispatcher = self._dispatcher_double()
+        self.notification_repo = self._notification_repository_double()
         # The applicant's screen-rule emails come from user_emails; submit
         # matches against every confirmed claim, not one contact address.
         self.user_emails_repo = MagicMock()
@@ -75,29 +75,32 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             RecruitingMapper(),
             self.assignment_repo,
             self.activity_repo,
-            self.dispatcher,
+            self.notification_repo,
             self.user_emails_repo,
             self.onboarding_training_svc,
         )
 
-    def _dispatcher_double(self):
-        """A dispatcher whose record/flush are observable, plus an ordering log.
+    def _notification_repository_double(self):
+        """A notification repository whose writes are observable and ordered.
 
-        `self.call_order` records commit and flush so a test can assert the
-        email flush happens *after* the transaction commits -- the whole
-        point of the two-phase design. Asserting only "both were awaited"
-        would pass even if they ran in the wrong order.
+        `self.call_order` records the write and the commit so a test can
+        assert the row lands *inside* the transaction. Asserting only "it was
+        awaited" would pass even if the row were written after the commit,
+        which would let a rollback drop the notification while the event it
+        announces survived.
         """
         self.call_order = []
-        dispatcher = create_autospec(NotificationDispatcher, instance=True)
-        dispatcher.record = AsyncMock(side_effect=lambda session, entity: entity)
-        dispatcher.flush = AsyncMock(
-            side_effect=lambda: self.call_order.append("flush")
-        )
+        repository = create_autospec(NotificationRepository, instance=True)
+
+        async def _create(session, entity):
+            self.call_order.append("record")
+            return entity
+
+        repository.create = AsyncMock(side_effect=_create)
         self.session.commit = AsyncMock(
             side_effect=lambda: self.call_order.append("commit")
         )
-        return dispatcher
+        return repository
 
     def _create_side_effect(self, session, entity):
         """Stand in for app_repo.create's real flush: sets the id and, like
@@ -1287,8 +1290,8 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self.session, application, job, self._ctx(user_id=3)
         )
 
-        self.dispatcher.record.assert_awaited_once()
-        (_session_arg, entity_arg), _ = self.dispatcher.record.call_args
+        self.notification_repo.create.assert_awaited_once()
+        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
         self.assertEqual(entity_arg.user_id, 5)
         self.assertEqual(entity_arg.type, NotificationType.ASSIGNED_TO_EVALUATE)
         self.assertEqual(entity_arg.application_id, 10)
@@ -1298,7 +1301,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         """The (user_id, type) pairs of every notification submit wrote."""
         return [
             (call.args[1].user_id, call.args[1].type)
-            for call in self.dispatcher.record.await_args_list
+            for call in self.notification_repo.create.await_args_list
         ]
 
     async def test_submit_notifies_every_owner_of_a_new_application(self):
@@ -1321,7 +1324,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
                 (6, NotificationType.APPLICATION_SUBMITTED),
             ],
         )
-        entity = self.dispatcher.record.await_args_list[0].args[1]
+        entity = self.notification_repo.create.await_args_list[0].args[1]
         self.assertEqual(entity.application_id, 100)
         self.assertEqual(entity.actor_user_id, 2)
 
@@ -1347,7 +1350,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
         await self.service.submit(self.session, self._ctx(), dto)
 
-        self.dispatcher.record.assert_not_awaited()
+        self.notification_repo.create.assert_not_awaited()
 
     async def test_submit_tells_owners_a_blocked_application_was_auto_rejected(self):
         self.users_repo.get_user_by_user_id = AsyncMock(
@@ -1520,7 +1523,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         events = []
         self.session.commit = AsyncMock(side_effect=lambda: events.append("commit"))
-        self.dispatcher.record = AsyncMock(
+        self.notification_repo.create = AsyncMock(
             side_effect=lambda *args, **kwargs: events.append("notify")
         )
         dto = ApplicationSubmitDto.model_validate({"jobId": 1})
@@ -1597,11 +1600,11 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
                 (6, NotificationType.APPLICATION_SUBMITTED),
             ],
         )
-        entity = self.dispatcher.record.await_args_list[0].args[1]
+        entity = self.notification_repo.create.await_args_list[0].args[1]
         self.assertEqual(entity.application_id, result.id)
         self.assertEqual(entity.actor_user_id, 2)
 
-    async def test_submit_flushes_notification_emails_after_commit(self):
+    async def test_submit_records_the_notification_inside_the_transaction(self):
         self.job_repo.get_by_job_id = AsyncMock(
             return_value=self._job(
                 pipeline_config={
@@ -1614,12 +1617,11 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
         await self.service.submit(self.session, self._ctx(), dto)
 
-        self.dispatcher.record.assert_awaited_once()
-        self.dispatcher.flush.assert_awaited_once_with()
-        # Order, not just occurrence: emailing before the commit would mean a
-        # rollback leaves a recipient holding a message about an application
-        # that does not exist.
-        self.assertEqual(self.call_order, ["commit", "flush"])
+        self.notification_repo.create.assert_awaited_once()
+        # Order, not just occurrence: writing the row after the commit would
+        # let a rollback drop the notification while the application it
+        # announces survived.
+        self.assertEqual(self.call_order, ["record", "commit"])
 
 
 if __name__ == "__main__":

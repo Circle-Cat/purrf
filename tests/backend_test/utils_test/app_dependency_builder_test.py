@@ -854,16 +854,16 @@ class TestAppDependencyBuilder(TestCase):
         # the repository instead fails nowhere until the first real
         # notification write.
         self.assertIs(
-            builder.job_service.notification_dispatcher,
-            builder.notification_dispatcher,
+            builder.job_service.notification_repository,
+            builder.notification_repository,
         )
         self.assertIs(
-            builder.application_service.notification_dispatcher,
-            builder.notification_dispatcher,
+            builder.application_service.notification_repository,
+            builder.notification_repository,
         )
         self.assertIs(
-            builder.board_service.notification_dispatcher,
-            builder.notification_dispatcher,
+            builder.board_service.notification_repository,
+            builder.notification_repository,
         )
 
 
