@@ -111,7 +111,7 @@ class TestNotificationEmailWorker(unittest.IsolatedAsyncioTestCase):
 
         await self.worker.drain_once()
 
-        session, ids, sent_at = self.repo.mark_emailed.await_args.args
+        _, ids, sent_at = self.repo.mark_emailed.await_args.args
         self.assertEqual(sorted(ids), [1, 2])
         self.assertIsNotNone(sent_at)
 
