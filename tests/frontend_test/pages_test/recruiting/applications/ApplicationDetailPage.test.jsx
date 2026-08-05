@@ -88,7 +88,7 @@ const SUBMISSION = {
       isCurrentlyWorking: true,
     },
   ],
-  answers: { q1: "Yes", q2: "Remote" },
+  answers: { q1: "Yes", q2: "Remote", q3: "First line.\nSecond line." },
 };
 
 /** A second job's snapshot, for another-application aggregation fixtures. */
@@ -127,6 +127,9 @@ const makeOtherApplication = ({
   evaluations,
   activity,
   comments,
+  formSchema: {
+    questions: [{ id: "q9", type: "short_text", label: "Availability?" }],
+  },
 });
 
 /** Build an ApplicationDetailDto-shaped payload for a given role/stage. */
@@ -155,7 +158,10 @@ const makeDetail = ({
   applicantEmail: "alice@example.com",
   resumeAvailable,
   formSchema: {
-    questions: [{ id: "q1", label: "Are you authorized to work?" }],
+    questions: [
+      { id: "q1", type: "short_text", label: "Are you authorized to work?" },
+      { id: "q3", type: "long_text", label: "Anything else?" },
+    ],
   },
   isOwner,
   canView,
@@ -342,11 +348,17 @@ describe("ApplicationDetailPage — loading & snapshot", () => {
     expect(screen.getByText(/America\/New_York/)).toBeInTheDocument();
     expect(screen.getByText(/State University/)).toBeInTheDocument();
     expect(screen.getByText(/Acme Corp/)).toBeInTheDocument();
-    // Known question uses its label; removed question falls back to raw id.
+    // A question still on the live form uses its label.
     expect(
       screen.getByText(/Are you authorized to work\?/),
     ).toBeInTheDocument();
-    expect(screen.getByText(/q2/)).toBeInTheDocument();
+    // An answer whose question was removed is kept, not dropped.
+    expect(screen.getByText("Other recorded answers")).toBeInTheDocument();
+    expect(screen.getByText("q2")).toBeInTheDocument();
+    // A long answer keeps its line breaks.
+    expect(screen.getByText(/First line\./).textContent).toBe(
+      "First line.\nSecond line.",
+    );
   });
 
   it("shows the current stage next to the applicant's name", async () => {
@@ -2316,6 +2328,22 @@ describe("ApplicationDetailPage — candidate aggregation", () => {
     // location (not window.location, which it never touches) must still be
     // the currently-viewed application's detail route.
     expect(router.state.location.pathname).toBe("/recruiting/applications/101");
+  });
+
+  it("labels an expanded other application's answers with its own job's form", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true }),
+    });
+    api.getOtherApplications.mockResolvedValue({
+      data: { otherJobs: [makeOtherApplication({})], previousSameJob: [] },
+    });
+    renderPage();
+    await waitLoaded();
+
+    await userEvent.click(screen.getByRole("button", { name: /View/ }));
+
+    expect(screen.getByText("Availability?")).toBeInTheDocument();
   });
 
   it("shows previous applications for the same posting", async () => {
