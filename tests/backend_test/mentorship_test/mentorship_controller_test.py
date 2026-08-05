@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, AsyncMock, patch
 from http import HTTPStatus
-from datetime import date
+from datetime import date, timedelta
 from backend.dto.rounds_dto import RoundsDto
 from backend.dto.rounds_create_dto import TimelineCreateDto
 from backend.dto.rounds_create_dto import RoundsCreateDto
@@ -401,7 +401,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
             round_id=1,
             partner_id=2,
             timezone="America/New_York",
-            start_date="2026-07-30",
+            start_date=(date.today() + timedelta(days=1)).isoformat(),
             start_time="10:00",
             duration_minutes=30,
             interval_weeks=2,
@@ -444,7 +444,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
             round_id=1,
             partner_id=2,
             timezone="America/New_York",
-            start_date="2026-07-30",
+            start_date=(date.today() + timedelta(days=1)).isoformat(),
             start_time="10:00",
             duration_minutes=30,
         )
@@ -466,7 +466,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
             round_id=1,
             partner_id=2,
             timezone="America/New_York",
-            start_date="2026-07-30",
+            start_date=(date.today() + timedelta(days=1)).isoformat(),
             start_time="10:00",
             duration_minutes=30,
         )
