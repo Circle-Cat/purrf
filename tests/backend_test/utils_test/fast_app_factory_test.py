@@ -455,26 +455,20 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
 
         self.mock_database.close.assert_awaited_once()
 
-    async def test_lifespan_starts_the_email_worker_on_startup(self):
-        """A pod inheriting an outbox backlog must start draining on boot."""
+    async def test_lifespan_does_not_run_the_email_worker(self):
+        """The sweep is off: neither startup nor shutdown may touch the worker.
+
+        Asserting the negative is the point -- the worker is still constructed
+        and injected, so only this test distinguishes "deliberately not
+        started" from an accidental regression that revives the polling loop.
+        """
         app = self.factory.create_app()
 
         async with app.router.lifespan_context(app):
-            self.mock_email_worker.start.assert_called_once_with()
+            self.mock_email_worker.start.assert_not_called()
 
-    async def test_lifespan_stops_the_email_worker_before_the_database(self):
-        """An in-flight pass needs a live pool to finish its transaction."""
-        order = []
-        self.mock_email_worker.stop = AsyncMock(
-            side_effect=lambda: order.append("worker")
-        )
-        self.mock_database.close = AsyncMock(side_effect=lambda: order.append("db"))
-        app = self.factory.create_app()
-
-        async with app.router.lifespan_context(app):
-            pass
-
-        self.assertEqual(order, ["worker", "db"])
+        self.mock_email_worker.start.assert_not_called()
+        self.mock_email_worker.stop.assert_not_awaited()
 
 
 if __name__ == "__main__":
