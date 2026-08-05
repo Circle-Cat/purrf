@@ -4401,6 +4401,136 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             result[0].details["ruleLabel"], "rule r9 (no longer configured)"
         )
 
+    async def test_activity_screen_rule_label_uses_question_text(self):
+        """An answer rule names its question by text, not by internal id."""
+        job = self._job(job_id=1, owner_ids=(2,))
+        job.form_schema = {
+            "questions": [
+                {
+                    "id": "q1",
+                    "label": "Are you legally authorized to work in the US?",
+                }
+            ]
+        }
+        job.screen_rules = {
+            "rules": [
+                {
+                    "id": "r1",
+                    "condition": {
+                        "source": "answer",
+                        "questionId": "q1",
+                        "operator": "equals",
+                        "value": "No",
+                    },
+                    "action": "reject",
+                }
+            ]
+        }
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=2,
+            event_type="auto_rejected",
+            details={"reason": "screen_rule", "ruleId": "r1"},
+            created_at=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=2, first="Owen", last="Owner")]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(
+            result[0].details["ruleLabel"],
+            "answer to 'Are you legally authorized to work in the US?' equals No",
+        )
+
+    async def test_activity_screen_rule_label_falls_back_when_question_removed(self):
+        """A question dropped by a later revision degrades to its raw id."""
+        job = self._job(job_id=1, owner_ids=(2,))
+        job.form_schema = {"questions": []}
+        job.screen_rules = {
+            "rules": [
+                {
+                    "id": "r1",
+                    "condition": {
+                        "source": "answer",
+                        "questionId": "q_gone",
+                        "operator": "equals",
+                        "value": "No",
+                    },
+                    "action": "reject",
+                }
+            ]
+        }
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=2,
+            event_type="auto_rejected",
+            details={"reason": "screen_rule", "ruleId": "r1"},
+            created_at=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=2, first="Owen", last="Owner")]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result[0].details["ruleLabel"], "answer to 'q_gone' equals No")
+
+    async def test_activity_screen_rule_label_survives_missing_form_schema(self):
+        """A job with no form_schema at all must not raise."""
+        job = self._job(job_id=1, owner_ids=(2,))
+        job.form_schema = None
+        job.screen_rules = {
+            "rules": [
+                {
+                    "id": "r1",
+                    "condition": {
+                        "source": "answer",
+                        "questionId": "q1",
+                        "operator": "equals",
+                        "value": "No",
+                    },
+                    "action": "reject",
+                }
+            ]
+        }
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            activity_id=1,
+            application_id=10,
+            actor_id=2,
+            event_type="auto_rejected",
+            details={"reason": "screen_rule", "ruleId": "r1"},
+            created_at=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=2, first="Owen", last="Owner")]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result[0].details["ruleLabel"], "answer to 'q1' equals No")
+
     async def test_activity_resolves_qualify_and_auto_hire_labels(self):
         job = self._job(job_id=1, owner_ids=(2,))
         job.screen_rules = {
@@ -4442,7 +4572,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             result[0].details["screenQualifyRuleLabel"],
-            "answer to q_role equals mentor",
+            "answer to 'q_role' equals mentor",
         )
 
     async def test_activity_resolves_auto_hire_label(self):
@@ -4486,7 +4616,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             result[0].details["screenAutoHireRuleLabel"],
-            "answer to q_experience equals senior",
+            "answer to 'q_experience' equals senior",
         )
 
     async def test_get_application_activity_non_owner_gets_collapsed_not_found_message(
