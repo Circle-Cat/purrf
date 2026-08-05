@@ -97,17 +97,22 @@ _SCREEN_RULE_ID_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
 }
 
 
-def _screen_rule_label(rule: dict) -> str:
+def _screen_rule_label(rule: dict, question_labels: dict) -> str:
     """A human-readable one-line label for a configured screening rule.
 
     Rules have no name field (frontend ids are just ``r1, r2, ...``), so the
     label is synthesized from the condition: e.g.
-    ``"email domain not in google.com"`` or ``"answer to q_role equals
-    mentor"``.
+    ``"email domain not in google.com"`` or ``"answer to 'Are you fluent in
+    Mandarin?' equals No"``. The question is named by its text rather than by
+    its internal id so the timeline is readable without opening the job's form
+    configuration.
 
     Args:
         rule (dict): One entry of the job's ``screen_rules["rules"]``
             (camelCase keys, per ``ScreenRuleDto``'s serialization).
+        question_labels (dict): Map of question id to question label, built
+            from the job's current ``form_schema``. A question the schema no
+            longer carries degrades to its raw id.
 
     Returns:
         str: The synthesized label.
@@ -119,7 +124,8 @@ def _screen_rule_label(rule: dict) -> str:
     if condition.get("source") == "email_domain":
         subject = "email domain"
     elif condition.get("source") == "answer":
-        subject = f"answer to {condition.get('questionId')}"
+        question_id = condition.get("questionId")
+        subject = f"answer to '{question_labels.get(question_id) or question_id}'"
     else:
         subject = "condition"
     return f"{subject} {operator} {values}".strip()
@@ -1251,15 +1257,18 @@ class BoardService:
         other application's timeline in its aggregate entry). Actor and
         assignee names are resolved via one combined batched lookup;
         screening-rule ids are resolved against ``job``'s *current*
-        ``screen_rules`` — pass each row set's OWN job, since rule configs
-        differ per job. Nothing is ever persisted back to the stored rows.
+        ``screen_rules``, and the question a rule tests is named from
+        ``job``'s *current* ``form_schema`` — pass each row set's OWN job,
+        since both configs differ per job. A label therefore reflects the
+        posting as it stands today, not as it stood when the rule fired.
+        Nothing is ever persisted back to the stored rows.
 
         Args:
             session (AsyncSession): Active database async session.
             rows: Activity rows for ONE application, as returned by
                 ``ApplicationActivityRepository.list_by_application``.
             job (JobEntity): The job those rows' application belongs to,
-                for screen-rule label resolution.
+                for screen-rule and question-label resolution.
 
         Returns:
             list[ApplicationActivityDto]: Same order as ``rows``, each with
@@ -1271,6 +1280,11 @@ class BoardService:
             rule.get("id"): rule
             for rule in ((job.screen_rules or {}).get("rules") or [])
             if isinstance(rule, dict)
+        }
+        question_labels = {
+            question.get("id"): question.get("label")
+            for question in ((job.form_schema or {}).get("questions") or [])
+            if isinstance(question, dict)
         }
         ids_to_resolve = {row.actor_id for row in rows}
         for row in rows:
@@ -1298,7 +1312,7 @@ class BoardService:
                     continue
                 rule = rules_by_id.get(rule_id)
                 details[label_field] = (
-                    _screen_rule_label(rule)
+                    _screen_rule_label(rule, question_labels)
                     if rule is not None
                     else f"rule {rule_id} (no longer configured)"
                 )
