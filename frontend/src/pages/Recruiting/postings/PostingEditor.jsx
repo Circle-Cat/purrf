@@ -106,8 +106,8 @@ const PostingEditor = () => {
     (fields) => setDraft((d) => ({ ...d, ...fields })),
     [],
   );
-  const setQuestions = useCallback(
-    (questions) => setDraft((d) => ({ ...d, formSchema: { questions } })),
+  const setFormSchema = useCallback(
+    (formSchema) => setDraft((d) => ({ ...d, formSchema })),
     [],
   );
 
@@ -160,10 +160,7 @@ const PostingEditor = () => {
             kindLocked={kindLocked}
             onChange={patch}
           />
-          <FormBuilder
-            questions={draft.formSchema.questions}
-            onChange={setQuestions}
-          />
+          <FormBuilder formSchema={draft.formSchema} onChange={setFormSchema} />
           <PipelineConfigEditor
             value={draft.pipelineConfig ?? { stages: [] }}
             onChange={(pipelineConfig) => patch({ pipelineConfig })}

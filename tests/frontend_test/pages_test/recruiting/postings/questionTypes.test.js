@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   QUESTION_TYPES,
   nextQuestionId,
-  blankQuestion,
+  addQuestion,
 } from "@/pages/Recruiting/postings/questionTypes";
 
 describe("questionTypes", () => {
@@ -22,26 +22,59 @@ describe("questionTypes", () => {
       "Exact text",
     ]);
   });
+});
 
-  it("generates a unique id past the max existing suffix", () => {
-    expect(nextQuestionId([])).toBe("q1");
-    expect(nextQuestionId([{ id: "q1" }, { id: "q3" }])).toBe("q4");
+describe("nextQuestionId", () => {
+  it("starts at q1 for an empty form", () => {
+    expect(nextQuestionId({ questions: [] })).toBe("q1");
   });
 
-  it("blankQuestion seeds choice types with an empty options array", () => {
-    expect(blankQuestion("short_text", [])).toEqual({
-      id: "q1",
-      type: "short_text",
-      label: "",
-      required: false,
-    });
-    expect(blankQuestion("single_choice", [{ id: "q1" }])).toEqual({
-      id: "q2",
-      type: "single_choice",
-      label: "",
-      required: false,
-      options: [],
-    });
-    expect(blankQuestion("multi_choice", []).options).toEqual([]);
+  it("derives from the live ids when there is no counter yet", () => {
+    expect(nextQuestionId({ questions: [{ id: "q1" }, { id: "q4" }] })).toBe(
+      "q5",
+    );
+  });
+
+  it("uses the persisted counter when it is ahead of the live ids", () => {
+    expect(nextQuestionId({ questions: [{ id: "q1" }], nextSeq: 9 })).toBe(
+      "q9",
+    );
+  });
+
+  it("never returns an id already in use, even with a stale counter", () => {
+    expect(
+      nextQuestionId({ questions: [{ id: "q1" }, { id: "q4" }], nextSeq: 2 }),
+    ).toBe("q5");
+  });
+});
+
+describe("addQuestion", () => {
+  it("appends the question and advances the counter", () => {
+    const next = addQuestion({ questions: [], nextSeq: 1 }, "short_text");
+    expect(next.questions).toEqual([
+      { id: "q1", type: "short_text", label: "", required: false },
+    ]);
+    expect(next.nextSeq).toBe(2);
+  });
+
+  it("seeds an empty options array for a choice type", () => {
+    const next = addQuestion({ questions: [] }, "multi_choice");
+    expect(next.questions[0].options).toEqual([]);
+  });
+
+  it("does not recycle an id after a delete", () => {
+    let schema = addQuestion(
+      addQuestion({ questions: [] }, "short_text"),
+      "short_text",
+    );
+    expect(schema.questions.map((q) => q.id)).toEqual(["q1", "q2"]);
+    schema = { ...schema, questions: schema.questions.slice(0, 1) };
+    schema = addQuestion(schema, "short_text");
+    expect(schema.questions.map((q) => q.id)).toEqual(["q1", "q3"]);
+  });
+
+  it("preserves other schema keys", () => {
+    const next = addQuestion({ questions: [], someFutureKey: 1 }, "short_text");
+    expect(next.someFutureKey).toBe(1);
   });
 });
