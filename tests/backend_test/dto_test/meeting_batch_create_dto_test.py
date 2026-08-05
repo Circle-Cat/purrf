@@ -1,5 +1,5 @@
 import unittest
-from datetime import date
+from datetime import date, timedelta
 
 from pydantic import ValidationError
 
@@ -12,7 +12,7 @@ class TestMeetingBatchCreateDto(unittest.TestCase):
             round_id=1,
             partner_id=2,
             timezone="America/New_York",
-            start_date=date(2026, 7, 30),
+            start_date=date.today() + timedelta(days=1),
             start_time="10:00",
             duration_minutes=30,
         )
@@ -73,6 +73,12 @@ class TestMeetingBatchCreateDto(unittest.TestCase):
             kwargs["count"] = bad
             with self.assertRaises(ValidationError):
                 MeetingBatchCreateDto(**kwargs)
+
+    def test_rejects_meeting_start_datetime_in_the_past(self):
+        kwargs = self._valid_kwargs()
+        kwargs["start_date"] = date.today() - timedelta(days=1)
+        with self.assertRaises(ValidationError):
+            MeetingBatchCreateDto(**kwargs)
 
 
 if __name__ == "__main__":
