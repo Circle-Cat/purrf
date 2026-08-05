@@ -1,22 +1,21 @@
 """Drains the notification outbox and emails what it finds.
 
-Runs for the life of the process, started and stopped by the app's lifespan.
+NOT CURRENTLY RUNNING. The app's lifespan no longer starts this worker: a
+fixed-interval sweep was rejected as the delivery trigger and no replacement
+has been chosen yet. Until one is, ``notification`` rows are committed and
+never emailed, and ``email_sent_at`` stays NULL on all of them. The class,
+its wiring, and its tests are kept intact so the eventual trigger -- whatever
+it turns out to be -- can call ``drain_once`` without rebuilding any of this.
+Everything below describes how it behaves *when* something drives it.
+
 It exists so no request path ever waits on Gmail: the request commits a
 ``notification`` row and returns, and this worker turns that row into an
 email out of band.
 
-Nothing tells it a row was written. It sweeps on startup and then every
-``sweep_seconds``, which is enough because the row *is* the message: a
-committed notification is a durable instruction to send, and a sweep that
-finds nothing costs one indexed lookup against a partial index over the
-unsent set -- near-empty in the steady state.
-
-An explicit "a row just landed" nudge from the writing services was
-considered and dropped. It bought sub-second delivery instead of up-to-a-
-minute, which these notifications do not need, at the price of a callback
-every service had to remember to make after every commit. Transaction
-isolation, not that callback, is what keeps the worker from seeing
-uncommitted rows.
+``_run`` sweeps on startup and then every ``sweep_seconds``, with nothing
+telling it a row was written. That interval is the part being reconsidered;
+``drain_once`` -- the claim/send/stamp pass itself -- is independent of what
+schedules it.
 
 A pass claims rows with ``FOR UPDATE SKIP LOCKED`` and stamps every row it
 claims, delivered or not. A recipient with no address and a row that fails
