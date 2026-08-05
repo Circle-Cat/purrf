@@ -72,6 +72,12 @@ const mockCancelMeetings = vi.fn();
 const mockRefresh = vi.fn();
 const mockOnBooked = vi.fn();
 
+// Start Time is a real (unmocked) react-select; open its menu and pick an option.
+async function selectStartTime(timeLabel) {
+  fireEvent.keyDown(screen.getByLabelText("Start Time"), { key: "ArrowDown" });
+  fireEvent.click(await screen.findByText(timeLabel));
+}
+
 describe("MeetingManagementDialog Component", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -358,6 +364,8 @@ describe("MeetingManagementDialog Component", () => {
     const dayButtons = screen.getAllByRole("button", { name: /30/ });
     await user.click(dayButtons[dayButtons.length - 1]);
 
+    await selectStartTime("09:00");
+
     fireEvent.submit(document.querySelector("form"));
 
     await waitFor(() => {
@@ -488,6 +496,8 @@ describe("MeetingManagementDialog Component", () => {
     fireEvent.change(repeatSelect, { target: { value: "2" } });
     fireEvent.change(countSelect, { target: { value: "4" } });
 
+    await selectStartTime("09:00");
+
     fireEvent.submit(document.querySelector("form"));
 
     await waitFor(() => {
@@ -545,6 +555,8 @@ describe("MeetingManagementDialog Component", () => {
     const countSelect = await screen.findByLabelText(/number of sessions/i);
     fireEvent.change(repeatSelect, { target: { value: "1" } });
     fireEvent.change(countSelect, { target: { value: "3" } });
+
+    await selectStartTime("09:00");
 
     fireEvent.submit(document.querySelector("form"));
     await waitFor(() => {

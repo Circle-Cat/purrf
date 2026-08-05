@@ -420,6 +420,7 @@ export default function MeetingManagementDialog({
                     <div className="w-full min-w-0 relative">
                       <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 z-10 pointer-events-none" />
                       <Select
+                        aria-label="Start Time"
                         options={TIME_SLOTS}
                         value={
                           selectedTime && !isPastTime(selectedTime)
