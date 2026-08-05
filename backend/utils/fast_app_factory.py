@@ -122,14 +122,17 @@ class FastAppFactory:
         @asynccontextmanager
         async def lifespan(app):
             self.launchdarkly_client.initialize()
-            # Started here rather than on first use so a pod that inherits an
-            # outbox backlog -- left by a predecessor killed mid-delivery --
-            # drains it on boot instead of waiting for the next notification.
-            self.notification_email_worker.start()
+            # notification_email_worker is deliberately NOT started. Its
+            # fixed-interval sweep is being replaced, so the outbox drains
+            # nowhere for now: services still commit notification rows and the
+            # in-app notification -- the authoritative copy -- is unaffected,
+            # but nothing turns those rows into email. The worker stays wired
+            # so re-enabling it is one line once the trigger is decided.
+            #
+            # Note for whoever re-enables it: every row written while this is
+            # off is still email_sent_at IS NULL, so the first pass after
+            # startup will send the whole accumulated backlog at once.
             yield
-            # Stopped before the engine so an in-flight pass can finish its
-            # transaction against a live pool.
-            await self.notification_email_worker.stop()
             await self.database.close()
             self.launchdarkly_client.close()
 
