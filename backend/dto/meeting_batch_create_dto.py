@@ -1,7 +1,7 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 
 from backend.dto.base_request_dto import BaseRequestDto
 
@@ -60,3 +60,14 @@ class MeetingBatchCreateDto(BaseRequestDto):
                 f"count must be between {MIN_SESSION_COUNT} and {MAX_SESSION_COUNT}"
             )
         return v
+
+    @model_validator(mode="after")
+    def validate_start_not_in_past(self) -> "MeetingBatchCreateDto":
+        start_dt = datetime.combine(
+            self.start_date,
+            datetime.strptime(self.start_time, "%H:%M").time(),
+            tzinfo=ZoneInfo(self.timezone),
+        )
+        if start_dt < datetime.now(timezone.utc):
+            raise ValueError("start time must be in the future")
+        return self
