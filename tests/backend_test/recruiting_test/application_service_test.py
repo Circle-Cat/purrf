@@ -153,6 +153,34 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(created_sub.submission["personal"]["firstName"], "A")
         self.session.commit.assert_awaited()
 
+    async def test_submit_snapshots_the_job_form_schema(self):
+        """A version-1 snapshot carries the questions the candidate saw."""
+        schema = {"questions": [{"id": "q1", "type": "short_text", "label": "Why us?"}]}
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = schema
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "answers": {"q1": "Because"},
+        })
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["formSchema"], schema)
+
+    async def test_submit_snapshots_empty_schema_when_job_has_none(self):
+        """A job with no form still produces a well-formed snapshot key."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = None
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["formSchema"], {"questions": []})
+
     async def test_submit_creates_default_assignment_when_stage_has_default(self):
         """A stage's configured defaultAssigneeId is only a board display
         fallback until a real application_assignment row exists (My
@@ -338,6 +366,36 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.sub_repo.create.assert_not_awaited()
         self.session.commit.assert_awaited()
         self.assertTrue(result.editable)
+
+    async def test_edit_resnapshots_the_current_form_schema(self):
+        """Editing re-snapshots against the schema live at edit time."""
+        schema = {
+            "questions": [{"id": "q1", "type": "short_text", "label": "Revised?"}]
+        }
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = schema
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        app = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+            sub_status="pending",
+            current_round=1,
+        )
+        app.application_id = 100
+        self.app_repo.get_by_id = AsyncMock(return_value=app)
+        current = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission={"personal": {}}
+        )
+        current.submission_id = 5
+        current.is_frozen = False
+        self.sub_repo.get_current = AsyncMock(return_value=current)
+        dto = ApplicationEditDto.model_validate({"answers": {"q1": "Yes"}})
+
+        await self.service.edit(self.session, self._ctx(), 100, dto)
+
+        written_sub = self.sub_repo.update.call_args.args[1]
+        self.assertEqual(written_sub.submission["formSchema"], schema)
 
     async def test_get_mine_does_not_commit(self):
         result = await self.service.get_mine(self.session, self._ctx(), 1)
