@@ -217,6 +217,50 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         created_sub = self.sub_repo.create.call_args.args[1]
         self.assertEqual(created_sub.submission["answers"], {"q1": "No"})
 
+    async def test_submit_does_not_require_a_transitively_hidden_question(self):
+        """The required check has to follow the chain, not just the last rule.
+
+        q3's own rule reads q2's answer and is satisfied by it. Only resolving
+        q2 as well shows that the candidate was never asked either question,
+        so demanding q3 would block a submission over a field the form did not
+        put on screen.
+        """
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = {
+            "questions": [
+                {
+                    "id": "q1",
+                    "type": "single_choice",
+                    "label": "Need sponsorship?",
+                    "options": ["Yes", "No"],
+                },
+                {
+                    "id": "q2",
+                    "type": "single_choice",
+                    "label": "Currently on a visa?",
+                    "options": ["Yes", "No"],
+                    "showWhen": {"questionId": "q1", "equals": "Yes"},
+                },
+                {
+                    "id": "q3",
+                    "type": "short_text",
+                    "label": "Which visa?",
+                    "required": True,
+                    "showWhen": {"questionId": "q2", "equals": "Yes"},
+                },
+            ]
+        }
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "answers": {"q1": "No", "q2": "Yes"},
+        })
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["answers"], {"q1": "No"})
+
     async def test_submit_still_requires_a_visible_question(self):
         self._gated_form_job()
         dto = ApplicationSubmitDto.model_validate({

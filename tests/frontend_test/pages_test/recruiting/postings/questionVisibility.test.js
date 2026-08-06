@@ -4,6 +4,7 @@ import process from "node:process";
 import { describe, it, expect } from "vitest";
 import {
   otherSelected,
+  pruneAnswers,
   visibleQuestions,
 } from "@/pages/Recruiting/postings/questionVisibility";
 
@@ -20,32 +21,22 @@ const VECTORS = JSON.parse(
   ),
 );
 
-/** The visible set expressed the way the shared fixture records it. */
+// `null` rather than `undefined` for a question with no id, because the
+// fixture is JSON and Python reads the same slot as `None`.
 const visibleIds = (questions, answers) =>
-  visibleQuestions(questions, answers).map((q) => q.id);
-
-/**
- * What the server keeps, derived from this module the way `AnswersSection`
- * derives what it will not render. Duplicating that derivation here is the
- * point: it is the JS-side statement of the rule the Python `prune_answers`
- * has to match.
- */
-const pruned = (questions, answers) => {
-  const kept = {};
-  visibleQuestions(questions, answers).forEach((q) => {
-    if (q.id in answers) kept[q.id] = answers[q.id];
-    const otherKey = `${q.id}__other`;
-    if (otherKey in answers && otherSelected(q, answers[q.id])) {
-      kept[otherKey] = answers[otherKey];
-    }
-  });
-  return kept;
-};
+  visibleQuestions(questions, answers).map((q) => q.id ?? null);
 
 describe("shared visibility vectors", () => {
   it("loaded the fixture", () => {
     // A path typo would otherwise turn the whole contract into a no-op.
-    expect(VECTORS.cases.length).toBeGreaterThanOrEqual(20);
+    expect(VECTORS.cases.length).toBeGreaterThanOrEqual(27);
+  });
+
+  it("names every case distinctly", () => {
+    // Two cases carrying the same name once hid the fact that they were the
+    // same case, which reads as coverage the fixture does not have.
+    const names = VECTORS.cases.map((c) => c.name);
+    expect(new Set(names).size).toBe(names.length);
   });
 
   it.each(VECTORS.cases)(
@@ -57,8 +48,21 @@ describe("shared visibility vectors", () => {
 
   it.each(VECTORS.cases)(
     "kept answers: $name",
-    ({ questions, answers, pruned: expected }) => {
-      expect(pruned(questions, answers)).toEqual(expected);
+    ({ questions, answers, pruned }) => {
+      expect(pruneAnswers(questions, answers)).toEqual(pruned);
+    },
+  );
+
+  it.each(VECTORS.cases)(
+    "pruning twice changes nothing: $name",
+    ({ questions, answers, pruned }) => {
+      // The renderer resolves visibility against whatever the last write
+      // stored, so this side has to be as stable under repetition as the
+      // server is. Asserted against the vector rather than against the first
+      // pass, so an implementation that prunes nothing cannot satisfy it.
+      expect(pruneAnswers(questions, pruneAnswers(questions, answers))).toEqual(
+        pruned,
+      );
     },
   );
 });
@@ -87,5 +91,25 @@ describe("visibleQuestions", () => {
       { id: "q1" },
     ];
     expect(visibleIds(questions, { q1: "Yes" })).toEqual(["q2", "q1"]);
+  });
+});
+
+describe("otherSelected", () => {
+  it("is false for a question that offers no Other option", () => {
+    expect(
+      otherSelected({ id: "q1", type: "single_choice", options: ["A"] }, "A"),
+    ).toBe(false);
+  });
+
+  it("matches the value itself for single_choice", () => {
+    const question = { id: "q1", type: "single_choice", otherOption: "Other" };
+    expect(otherSelected(question, "Other")).toBe(true);
+    expect(otherSelected(question, "A")).toBe(false);
+  });
+
+  it("matches membership for multi_choice", () => {
+    const question = { id: "q1", type: "multi_choice", otherOption: "Other" };
+    expect(otherSelected(question, ["A", "Other"])).toBe(true);
+    expect(otherSelected(question, ["A"])).toBe(false);
   });
 });

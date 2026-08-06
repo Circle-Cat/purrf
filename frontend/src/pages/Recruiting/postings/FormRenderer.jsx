@@ -228,7 +228,8 @@ const QuestionControl = ({
 
 /**
  * Shared renderer for a posting's submission form. Renders the five question
- * types and applies single-layer showWhen visibility.
+ * types and applies showWhen visibility, resolved transitively through
+ * `visibleQuestions` so a question gated on a hidden question is hidden too.
  *
  * Controlled by default; pass `readOnly` to render a submitted set of answers
  * for review instead — `onAnswerChange` is then unused and may be omitted.

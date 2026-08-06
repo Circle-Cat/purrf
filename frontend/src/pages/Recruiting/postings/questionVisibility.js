@@ -1,6 +1,27 @@
+/** Sibling-key suffix holding an "Other" option's free text. */
+export const OTHER_SUFFIX = "__other";
+
 /** True when a recorded answer satisfies a showWhen rule's `equals`. */
 const matches = (answer, target) =>
   Array.isArray(answer) ? answer.includes(target) : answer === target;
+
+/**
+ * True when a rule states a condition at all — it has to name both the gate to
+ * read and the value to compare against. Anything else (a missing rule, an
+ * empty object, a half-written one, a non-object left by a hand-edited row)
+ * expresses no condition, so the question it sits on is unconditional.
+ *
+ * A rule that names both but points at a question that is not on the form
+ * *does* state a condition, one nothing can satisfy, and so hides its
+ * question. The distinction matters because `form_visibility.py` deletes the
+ * answers to whatever this module leaves out: an unreadable rule must not be
+ * the reason an answer disappears.
+ */
+const isEvaluable = (rule) =>
+  typeof rule === "object" &&
+  rule !== null &&
+  Object.hasOwn(rule, "questionId") &&
+  Object.hasOwn(rule, "equals");
 
 /**
  * The questions a form displays for the given answers, in schema order.
@@ -25,10 +46,11 @@ const matches = (answer, target) =>
  * @returns {object[]}
  */
 export const visibleQuestions = (questions, answers) => {
-  const byId = new Map(questions.map((q) => [q.id, q]));
+  const list = questions ?? [];
+  const byId = new Map(list.map((q) => [q.id, q]));
   const resolved = new Map();
   const visible = (question) => {
-    if (!question.showWhen) return true;
+    if (!isEvaluable(question.showWhen)) return true;
     if (resolved.has(question.id)) return resolved.get(question.id);
     // Seed `false` before recursing so a cycle terminates. The schema
     // validator rejects a self-reference but not a longer loop, and nothing
@@ -42,7 +64,7 @@ export const visibleQuestions = (questions, answers) => {
     resolved.set(question.id, shown);
     return shown;
   };
-  return questions.filter(visible);
+  return list.filter(visible);
 };
 
 /**
@@ -63,3 +85,45 @@ export const otherSelected = (question, value) =>
   (question.type === "multi_choice"
     ? Array.isArray(value) && value.includes(question.otherOption)
     : value === question.otherOption);
+
+/**
+ * The answer keys this form still accounts for: one per visible question that
+ * has a recorded value, plus its `${id}__other` free text while the value
+ * still selects that question's "Other" option.
+ *
+ * This is the client-side statement of the rule `prune_answers` in
+ * `backend/recruiting/form_visibility.py` enforces when it *deletes* the rest
+ * at write time, and the shared vectors in
+ * `tests/shared/form_visibility_vectors.json` run both against the same
+ * expectations. It exists as production code, rather than as something each
+ * caller re-derives, so that pinning is against the function the app actually
+ * runs: a hand-written copy living only in a test would agree with Python on
+ * whatever cases someone thought to write down and drift everywhere else.
+ *
+ * Property access is `Object.hasOwn`, not `in`, so a question id that happens
+ * to name something on `Object.prototype` (`toString`, `constructor`) reports
+ * no recorded answer — matching what a Python dict lookup does.
+ *
+ * @param {object[]} questions
+ * @param {Record<string, unknown>} answers
+ * @returns {Record<string, unknown>}
+ */
+export const pruneAnswers = (questions, answers) => {
+  const kept = {};
+  visibleQuestions(questions, answers).forEach((question) => {
+    // A schema question with no id cannot own an answer; keying off it would
+    // invent an "undefined" entry.
+    if (question.id == null) return;
+    if (Object.hasOwn(answers, question.id)) {
+      kept[question.id] = answers[question.id];
+    }
+    const otherKey = `${question.id}${OTHER_SUFFIX}`;
+    if (
+      Object.hasOwn(answers, otherKey) &&
+      otherSelected(question, answers[question.id])
+    ) {
+      kept[otherKey] = answers[otherKey];
+    }
+  });
+  return kept;
+};

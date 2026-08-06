@@ -28,7 +28,12 @@ class SharedVectorTest(unittest.TestCase):
 
     def test_the_fixture_is_not_silently_empty(self):
         """A path typo would otherwise turn the whole contract into a no-op."""
-        self.assertGreaterEqual(len(_VECTORS["cases"]), 20)
+        self.assertGreaterEqual(len(_VECTORS["cases"]), 27)
+
+    def test_every_case_is_named_distinctly(self):
+        """Two cases sharing a name once hid that they were the same case."""
+        names = [case["name"] for case in _VECTORS["cases"]]
+        self.assertCountEqual(set(names), names)
 
     def test_visible_questions_matches_every_vector(self):
         for case in _VECTORS["cases"]:
@@ -36,7 +41,7 @@ class SharedVectorTest(unittest.TestCase):
                 visible = form_visibility.visible_questions(
                     {"questions": case["questions"]}, case["answers"]
                 )
-                self.assertEqual([q["id"] for q in visible], case["visible"])
+                self.assertEqual([q.get("id") for q in visible], case["visible"])
 
     def test_prune_answers_matches_every_vector(self):
         for case in _VECTORS["cases"]:
@@ -55,12 +60,17 @@ class SharedVectorTest(unittest.TestCase):
         is applied to its own output on every save. A rule resolved against an
         answer the first pass removes would peel one more layer each time and
         silently delete answers the candidate never withdrew.
+
+        Asserted against the vector rather than against the first pass, so an
+        implementation that prunes nothing at all cannot satisfy it.
         """
         for case in _VECTORS["cases"]:
             with self.subTest(case["name"]):
                 schema = {"questions": case["questions"]}
                 once = form_visibility.prune_answers(schema, case["answers"])
-                self.assertEqual(form_visibility.prune_answers(schema, once), once)
+                self.assertEqual(
+                    form_visibility.prune_answers(schema, once), case["pruned"]
+                )
 
 
 class OtherSelectedTest(unittest.TestCase):

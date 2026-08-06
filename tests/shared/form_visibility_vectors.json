@@ -103,6 +103,18 @@
       "pruned": { "q1": "Yes", "q2": "No" }
     },
     {
+      "name": "both branches gated on one hidden root disappear together",
+      "questions": [
+        { "id": "q1" },
+        { "id": "q2", "showWhen": { "questionId": "q1", "equals": "Yes" } },
+        { "id": "q3", "showWhen": { "questionId": "q1", "equals": "Yes" } },
+        { "id": "q4", "showWhen": { "questionId": "q2", "equals": "Yes" } }
+      ],
+      "answers": { "q1": "No", "q2": "Yes", "q3": "also", "q4": "deep" },
+      "visible": ["q1"],
+      "pruned": { "q1": "No" }
+    },
+    {
       "name": "a rule cycle shows nothing in the loop instead of recursing",
       "questions": [
         { "id": "q1" },
@@ -213,15 +225,63 @@
       "pruned": { "q1": "", "q2": [] }
     },
     {
-      "name": "a visible but unanswered question adds no key",
+      "name": "a null recorded answer is kept, not read as unanswered",
       "questions": [{ "id": "q1" }, { "id": "q2" }],
-      "answers": { "q1": "x" },
+      "answers": { "q1": null, "q2": "x" },
       "visible": ["q1", "q2"],
+      "pruned": { "q1": null, "q2": "x" }
+    },
+    {
+      "name": "an empty rule states no condition, so its question shows",
+      "questions": [{ "id": "q1" }, { "id": "q2", "showWhen": {} }],
+      "answers": { "q1": "x", "q2": "kept" },
+      "visible": ["q1", "q2"],
+      "pruned": { "q1": "x", "q2": "kept" }
+    },
+    {
+      "name": "a rule naming no value to compare states no condition",
+      "questions": [
+        { "id": "q1" },
+        { "id": "q2", "showWhen": { "questionId": "q1" } }
+      ],
+      "answers": { "q1": null, "q2": "kept" },
+      "visible": ["q1", "q2"],
+      "pruned": { "q1": null, "q2": "kept" }
+    },
+    {
+      "name": "a rule naming no gate to read states no condition",
+      "questions": [
+        { "id": "q1" },
+        { "id": "q2", "showWhen": { "equals": "Yes" } }
+      ],
+      "answers": { "q1": "No", "q2": "kept" },
+      "visible": ["q1", "q2"],
+      "pruned": { "q1": "No", "q2": "kept" }
+    },
+    {
+      "name": "a question with no id owns no answer key",
+      "questions": [{ "type": "short_text", "label": "orphan" }, { "id": "q1" }],
+      "answers": { "q1": "x" },
+      "visible": [null, "q1"],
+      "pruned": { "q1": "x" }
+    },
+    {
+      "name": "a question id that names an Object prototype member owns no answer",
+      "questions": [{ "id": "toString" }, { "id": "q1" }],
+      "answers": { "q1": "x" },
+      "visible": ["toString", "q1"],
       "pruned": { "q1": "x" }
     },
     {
       "name": "a form with no questions keeps no answers",
       "questions": [],
+      "answers": { "q1": "x" },
+      "visible": [],
+      "pruned": {}
+    },
+    {
+      "name": "a null questions list keeps no answers",
+      "questions": null,
       "answers": { "q1": "x" },
       "visible": [],
       "pruned": {}

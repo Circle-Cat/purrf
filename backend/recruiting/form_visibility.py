@@ -28,6 +28,29 @@ def _matches(answer, target) -> bool:
     return answer == target
 
 
+def _is_evaluable(rule) -> bool:
+    """Whether a showWhen rule states a condition at all.
+
+    A rule has to name both the gate to read and the value to compare against.
+    Anything else -- no rule, an empty object, a half-written one, a non-dict
+    left by a hand-edited row -- expresses no condition, so the question it
+    sits on is unconditional.
+
+    A rule that names both but points at a question that is not on the form
+    *does* state a condition, one nothing can satisfy, and so hides its
+    question. The distinction matters because this module deletes the answers
+    to whatever it leaves out: an unreadable rule must not be the reason an
+    answer disappears.
+
+    Args:
+        rule: The question's ``showWhen`` value, whatever the column holds.
+
+    Returns:
+        bool: True when the rule can be resolved against an answer.
+    """
+    return isinstance(rule, dict) and "questionId" in rule and "equals" in rule
+
+
 def other_selected(question, value) -> bool:
     """Whether a recorded value selects the question's "Other" option.
 
@@ -76,7 +99,7 @@ def visible_questions(form_schema: dict | None, answers: dict) -> list[dict]:
 
     def visible(question: dict) -> bool:
         show_when = question.get("showWhen")
-        if not show_when:
+        if not _is_evaluable(show_when):
             return True
         question_id = question.get("id")
         if question_id in resolved:
