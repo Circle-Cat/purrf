@@ -5,6 +5,7 @@ import { getPublicJob, getMyApplication } from "@/api/recruitingApi";
 import ApplicationForm from "@/pages/Recruiting/ApplicationForm";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
+import AnswersSection from "@/pages/Recruiting/components/AnswersSection";
 import { Button } from "@/components/ui/button";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
@@ -30,13 +31,14 @@ const formatStageLabel = (stage, jobKind) => {
  * Renders a "Reapply" button when `onReapply` is provided (only for a
  * `rejected` application — see `MyApplication`).
  *
+ * The reader here is the candidate themselves, so `AnswersSection` runs with
+ * `viewerIsApplicant` and drops its reviewer-facing notices.
+ *
  * @param {{job: object, application: object, onReapply?: () => void}} props
  */
 const ReadOnlySummary = ({ job, application, onReapply }) => {
   const submission = application.current?.submission ?? {};
   const personal = submission.personal ?? {};
-  const answers = submission.answers ?? {};
-  const questions = job.formSchema?.questions ?? [];
 
   return (
     <div className="space-y-4 p-6">
@@ -55,18 +57,11 @@ const ReadOnlySummary = ({ job, application, onReapply }) => {
       </div>
       <RowList title="Education" rows={submission.education ?? []} />
       <RowList title="Experience" rows={submission.experience ?? []} />
-      {questions.length > 0 && (
-        <div className="space-y-2">
-          <h2 className="text-sm font-medium text-slate-700">Answers</h2>
-          <ul className="space-y-1">
-            {questions.map((q) => (
-              <li key={q.id} className="text-sm text-slate-700">
-                {q.label}: {String(answers[q.id] ?? "—")}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <AnswersSection
+        submission={submission}
+        liveQuestions={job.formSchema?.questions ?? []}
+        viewerIsApplicant
+      />
       {onReapply && <Button onClick={onReapply}>Reapply</Button>}
     </div>
   );
