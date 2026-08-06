@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect } from "vitest";
+import { render, screen } from "@testing-library/react";
 import PostingStatusBadges from "@/pages/Recruiting/components/PostingStatusBadges";
 
 describe("PostingStatusBadges", () => {
@@ -59,7 +59,7 @@ describe("PostingStatusBadges", () => {
   it("does not render a reject badge when there is no reject comment", () => {
     render(<PostingStatusBadges job={{ status: "draft" }} />);
 
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.queryByText(/rejected|Sent back/)).not.toBeInTheDocument();
   });
 
   it("shows the state badge alongside a reject-reason badge, not instead of it", () => {
@@ -74,12 +74,29 @@ describe("PostingStatusBadges", () => {
     );
 
     expect(screen.getByText("Draft")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Initial submission rejected" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Initial submission rejected")).toBeInTheDocument();
   });
 
-  it("falls back to 'Sent back' / 'Rejected' for an unrecognized reject kind", () => {
+  it("renders the reject badge as plain, non-interactive text", () => {
+    render(
+      <PostingStatusBadges
+        job={{
+          status: "draft",
+          lastRejectComment: "Please fix the salary range.",
+          lastRejectKind: "initial",
+        }}
+      />,
+    );
+
+    // No popover trigger: nothing here is clickable or focusable, and the
+    // comment text is never rendered by this component.
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Please fix the salary range."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("falls back to 'Sent back' for an unrecognized reject kind", () => {
     render(
       <PostingStatusBadges
         job={{
@@ -90,28 +107,6 @@ describe("PostingStatusBadges", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Sent back" }));
-
-    expect(screen.getByText("Rejected")).toBeInTheDocument();
-  });
-
-  it("calls onRejectBadgeClick when the reject badge is clicked", () => {
-    const onRejectBadgeClick = vi.fn();
-    render(
-      <PostingStatusBadges
-        job={{
-          status: "draft",
-          lastRejectComment: "Please fix the salary range.",
-          lastRejectKind: "initial",
-        }}
-        onRejectBadgeClick={onRejectBadgeClick}
-      />,
-    );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Initial submission rejected" }),
-    );
-
-    expect(onRejectBadgeClick).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Sent back")).toBeInTheDocument();
   });
 });
