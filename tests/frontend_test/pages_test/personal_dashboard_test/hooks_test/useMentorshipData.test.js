@@ -609,6 +609,28 @@ describe("refreshMeetings", () => {
     expect(overview).toHaveLength(1);
     expect(overview[0].preferredName).toBe("Bob");
   });
+
+  it("clears loading state after a StrictMode remount", async () => {
+    const round1 = { id: "round-1", name: "R1", requiredMeetings: 5 };
+    calculateRoundStatus.mockReturnValue({
+      sortedRounds: [round1],
+      activeRoundId: "round-1",
+    });
+    getAllMentorshipRounds.mockResolvedValue({ data: [round1] });
+    getMyMentorshipMeetingLog.mockResolvedValue({ data: { meetingInfo: [] } });
+    getMyMentorshipPartners.mockResolvedValue({
+      data: [{ id: 1, preferredName: "Alice" }],
+    });
+
+    const { result } = renderHook(() => useMentorshipData(), {
+      wrapper: ({ children }) =>
+        React.createElement(React.StrictMode, null, children),
+    });
+
+    await waitFor(() =>
+      expect(result.current.isParticipantCardLoading).toBe(false),
+    );
+  });
 });
 
 describe("handleRoundChange", () => {
