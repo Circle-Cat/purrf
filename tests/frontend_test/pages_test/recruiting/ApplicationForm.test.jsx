@@ -157,6 +157,136 @@ describe("ApplicationForm", () => {
     expect(onSubmitted).toHaveBeenCalled();
   });
 
+  describe("discard warning", () => {
+    /** A posting whose q2 only appears while q1 answers "Yes". */
+    const GATED_JOB = {
+      ...JOB,
+      formSchema: {
+        questions: [
+          {
+            id: "q1",
+            type: "single_choice",
+            label: "Need sponsorship?",
+            options: ["Yes", "No"],
+          },
+          {
+            id: "q2",
+            type: "long_text",
+            label: "Which visa?",
+            showWhen: { questionId: "q1", equals: "Yes" },
+          },
+        ],
+      },
+    };
+
+    /** An editable application already holding an answer to the gated q2. */
+    const EXISTING_WITH_GATED_ANSWER = {
+      id: 7,
+      current: {
+        submission: {
+          personal: {},
+          education: [],
+          experience: [],
+          answers: { q1: "Yes", q2: "F-1 OPT" },
+        },
+      },
+    };
+
+    it("submits straight away when the save costs nothing", async () => {
+      const user = userEvent.setup();
+      api.submitApplication.mockResolvedValue({ data: { id: 100 } });
+      render(<ApplicationForm job={GATED_JOB} onSubmitted={vi.fn()} />);
+      await screen.findByLabelText("Contact email");
+
+      await user.click(screen.getByRole("button", { name: /submit/i }));
+
+      expect(api.submitApplication).toHaveBeenCalledTimes(1);
+      expect(
+        screen.queryByText("Some answers will be removed"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("asks before deleting an answer the form no longer shows", async () => {
+      // The candidate wrote a visa type, then said they need no sponsorship.
+      // The server keeps only what the form is showing and overwrites in
+      // place, so that text is gone for good the moment this is sent.
+      const user = userEvent.setup();
+      api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+      render(
+        <ApplicationForm
+          job={GATED_JOB}
+          existing={EXISTING_WITH_GATED_ANSWER}
+          onSubmitted={vi.fn()}
+        />,
+      );
+      await screen.findByLabelText("Contact email");
+      await user.click(screen.getByRole("radio", { name: "No" }));
+
+      await user.click(
+        screen.getByRole("button", { name: /submit application/i }),
+      );
+
+      expect(
+        await screen.findByText("Some answers will be removed"),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Which visa?")).toBeInTheDocument();
+      expect(api.updateApplication).not.toHaveBeenCalled();
+    });
+
+    it("sends nothing when the candidate goes back to editing", async () => {
+      const user = userEvent.setup();
+      api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+      render(
+        <ApplicationForm
+          job={GATED_JOB}
+          existing={EXISTING_WITH_GATED_ANSWER}
+          onSubmitted={vi.fn()}
+        />,
+      );
+      await screen.findByLabelText("Contact email");
+      await user.click(screen.getByRole("radio", { name: "No" }));
+      await user.click(
+        screen.getByRole("button", { name: /submit application/i }),
+      );
+      await screen.findByText("Some answers will be removed");
+
+      await user.click(screen.getByRole("button", { name: "Keep editing" }));
+
+      expect(api.updateApplication).not.toHaveBeenCalled();
+      await waitFor(() =>
+        expect(
+          screen.queryByText("Some answers will be removed"),
+        ).not.toBeInTheDocument(),
+      );
+    });
+
+    it("sends once the candidate confirms", async () => {
+      const user = userEvent.setup();
+      api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+      const onSubmitted = vi.fn();
+      render(
+        <ApplicationForm
+          job={GATED_JOB}
+          existing={EXISTING_WITH_GATED_ANSWER}
+          onSubmitted={onSubmitted}
+        />,
+      );
+      await screen.findByLabelText("Contact email");
+      await user.click(screen.getByRole("radio", { name: "No" }));
+      await user.click(
+        screen.getByRole("button", { name: /submit application/i }),
+      );
+      await screen.findByText("Some answers will be removed");
+
+      await user.click(screen.getByRole("button", { name: "Submit anyway" }));
+
+      await waitFor(() =>
+        expect(api.updateApplication).toHaveBeenCalledTimes(1),
+      );
+      expect(onSubmitted).toHaveBeenCalled();
+    });
+  });
+
   it("renders exactly one Contact email field", async () => {
     render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
     expect(await screen.findAllByLabelText("Contact email")).toHaveLength(1);
