@@ -23,11 +23,16 @@ export function hasAbsentTag(selectedTags) {
  * 1. Mutually exclusive absent tags (selecting one absent tag disables all other absent tags).
  * 2. Mutually exclusive late tags (selecting "unknown_late" disables specific late tags, and vice versa).
  * 3. The same role cannot be marked as both absent and late.
+ * 4. No absent tag can be selected while the meeting is marked Completed.
  *
  * @param {string[] | Set<string>} selectedTags - The currently selected tag identifiers.
+ * @param {{isCompleted?: boolean}} [options]
  * @returns {Set<string>} A set of tag identifiers that should be disabled.
  */
-export function getDisabledNoteTags(selectedTags) {
+export function getDisabledNoteTags(
+  selectedTags,
+  { isCompleted = false } = {},
+) {
   const selected = new Set(selectedTags);
   const disabled = new Set();
 
@@ -35,6 +40,10 @@ export function getDisabledNoteTags(selectedTags) {
     ABSENT_TAGS.forEach((tag) => {
       if (!selected.has(tag)) disabled.add(tag);
     });
+  }
+
+  if (isCompleted) {
+    ABSENT_TAGS.forEach((tag) => disabled.add(tag));
   }
 
   if (selected.has("unknown_late")) {
