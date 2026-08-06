@@ -126,6 +126,12 @@ class QuestionDto(BaseRequestDto):
                 raise ValueError(f"{self.type} requires a non-empty options list")
             if any(not opt or not opt.strip() for opt in self.options):
                 raise ValueError("options entries must be non-empty")
+            # Options are referenced by their text -- a showWhen rule stores it
+            # in ``equals`` and ``other_option`` names one outright -- so two
+            # options reading the same are one option wearing two rows:
+            # whichever the candidate picks, every rule on either fires.
+            if len(self.options) != len(set(self.options)):
+                raise ValueError("options entries must be unique")
         if self.type == "multi_choice" and self.max_selections is not None:
             if not (1 <= self.max_selections <= len(self.options)):
                 raise ValueError("max_selections must be within [1, len(options)]")
@@ -171,16 +177,32 @@ class FormSchemaDto(BaseRequestDto):
         ids = [q.id for q in self.questions]
         if len(ids) != len(set(ids)):
             raise ValueError("question ids must be unique within a form")
-        id_set = set(ids)
+        by_id = {q.id: q for q in self.questions}
         for q in self.questions:
             if q.show_when is None:
                 continue
             target = q.show_when.question_id
             if target == q.id:
                 raise ValueError(f"question {q.id} showWhen cannot reference itself")
-            if target not in id_set:
+            if target not in by_id:
                 raise ValueError(
                     f"question {q.id} showWhen references unknown question {target}"
+                )
+            # A rule is matched against a recorded answer, so on a choice
+            # question the only values that can ever match are its options. One
+            # that cannot hides the question from every candidate, for good and
+            # without a word -- and since submit now drops the answers to
+            # whatever the form did not show, a returning candidate's earlier
+            # answer to it goes too. The screen-rule side of this cross-check
+            # already exists in JobCreateDto.
+            gate = by_id[target]
+            if gate.type in (
+                "single_choice",
+                "multi_choice",
+            ) and q.show_when.equals not in (gate.options or []):
+                raise ValueError(
+                    f"question {q.id} showWhen value {q.show_when.equals!r} "
+                    f"not in options of {target}"
                 )
         if self.next_seq is not None:
             floor = question_seq_floor(q.id for q in self.questions)
@@ -324,6 +346,13 @@ class ScreenRuleConditionDto(BaseRequestDto):
         else:  # answer
             if not self.question_id:
                 raise ValueError("answer condition requires question_id")
+            # Same footgun as the email_domain branch above, plus a sharper
+            # one: ``screen_rules`` reads ``value[0]`` for the equals
+            # operator, so an empty list raises IndexError inside submit and
+            # every application to the posting fails with a 500.
+            values = self.value if isinstance(self.value, list) else [self.value]
+            if not any(str(v).strip() for v in values):
+                raise ValueError("answer condition requires a non-empty value")
         return self
 
 

@@ -15,13 +15,40 @@ describe("JobBasicsSection", () => {
     expect(onChange).toHaveBeenCalledWith({ title: "SWE" });
   });
 
-  it("emits kind changes via the Select", async () => {
+  it("clears the mentorship role when the type stops being an activity", async () => {
+    // The role select only renders for an activity, so left in place the value
+    // would ride into the saved posting where nobody can see or reach it.
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<JobBasicsSection {...props} onChange={onChange} />);
+    render(
+      <JobBasicsSection
+        {...props}
+        mentorshipRole="mentor"
+        onChange={onChange}
+      />,
+    );
     await user.click(screen.getByRole("combobox", { name: "Posting type" }));
     await user.click(screen.getByRole("option", { name: "Employment" }));
-    expect(onChange).toHaveBeenCalledWith({ kind: "employment" });
+    expect(onChange).toHaveBeenCalledWith({
+      kind: "employment",
+      mentorshipRole: null,
+    });
+  });
+
+  it("leaves the mentorship role alone when the type stays an activity", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <JobBasicsSection
+        {...props}
+        kind="employment"
+        mentorshipRole="mentor"
+        onChange={onChange}
+      />,
+    );
+    await user.click(screen.getByRole("combobox", { name: "Posting type" }));
+    await user.click(screen.getByRole("option", { name: "Activity" }));
+    expect(onChange).toHaveBeenCalledWith({ kind: "activity" });
   });
 
   it("explains the selected posting type under the picker", () => {

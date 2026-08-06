@@ -423,5 +423,82 @@ class TestProfileConfigDto(unittest.TestCase):
             ProfileConfigDto(education="mandatory")
 
 
+class TestNewCrossChecks(unittest.TestCase):
+    """Rules added with the posting editor's own validation."""
+
+    @staticmethod
+    def _gate(**kw):
+        return {
+            "id": "q1",
+            "type": "single_choice",
+            "label": "Need sponsorship?",
+            "options": ["Yes", "No"],
+            **kw,
+        }
+
+    def test_options_must_be_unique(self):
+        """Options are matched by text, so a duplicate is one option twice."""
+        with self.assertRaises(ValidationError):
+            QuestionDto(**self._gate(options=["Yes", "No", "Yes"]))
+
+    def test_show_when_value_must_be_an_option_of_its_gate(self):
+        """Renaming the option a rule names would otherwise hide the question
+        from every candidate, silently and for good."""
+        with self.assertRaises(ValidationError) as ctx:
+            FormSchemaDto(
+                questions=[
+                    self._gate(),
+                    {
+                        "id": "q2",
+                        "type": "short_text",
+                        "label": "Which visa?",
+                        "showWhen": {"questionId": "q1", "equals": "Nope"},
+                    },
+                ]
+            )
+        self.assertIn("not in options of q1", str(ctx.exception))
+
+    def test_show_when_value_matching_an_option_is_accepted(self):
+        schema = FormSchemaDto(
+            questions=[
+                self._gate(),
+                {
+                    "id": "q2",
+                    "type": "short_text",
+                    "label": "Which visa?",
+                    "showWhen": {"questionId": "q1", "equals": "Yes"},
+                },
+            ]
+        )
+        self.assertEqual(schema.questions[1].show_when.equals, "Yes")
+
+    def test_show_when_on_a_free_text_gate_is_not_checked(self):
+        """A text answer can be anything, so there is no option list to be in."""
+        schema = FormSchemaDto(
+            questions=[
+                {"id": "q1", "type": "short_text", "label": "Country"},
+                {
+                    "id": "q2",
+                    "type": "short_text",
+                    "label": "Which visa?",
+                    "showWhen": {"questionId": "q1", "equals": "Canada"},
+                },
+            ]
+        )
+        self.assertEqual(schema.questions[1].show_when.equals, "Canada")
+
+    def test_answer_condition_rejects_an_empty_value(self):
+        """An empty list reaches ``values[0]`` in screen_rules and 500s every
+        application to the posting."""
+        for value in ([], "", "  "):
+            with self.subTest(value=value), self.assertRaises(ValidationError):
+                ScreenRuleConditionDto(
+                    source="answer",
+                    operator="equals",
+                    questionId="q1",
+                    value=value,
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

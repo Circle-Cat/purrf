@@ -8,6 +8,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import FieldError from "@/pages/Recruiting/postings/FieldError";
+import {
+  errorBorder,
+  basicsKey,
+} from "@/pages/Recruiting/postings/postingValidation";
 
 /**
  * What each posting type means, shown under the picker. "Kind" is the stored
@@ -28,7 +33,8 @@ const KIND_HINTS = {
  *
  * @param {{title: string, description: string, kind: string, cooldownDays: (number|null|undefined),
  *          mentorshipRole: (string|null|undefined), kindLocked?: boolean,
- *          onChange: (patch: object) => void}} props
+ *          onChange: (patch: object) => void,
+ *          errors?: Record<string, string>}} props
  */
 const JobBasicsSection = ({
   title,
@@ -38,6 +44,7 @@ const JobBasicsSection = ({
   mentorshipRole,
   kindLocked = false,
   onChange,
+  errors = {},
 }) => (
   <div className="space-y-3">
     <div className="space-y-1">
@@ -45,9 +52,11 @@ const JobBasicsSection = ({
       <Input
         id="posting-title"
         aria-label="Title"
+        className={errorBorder(errors, basicsKey("title")).trim()}
         value={title ?? ""}
         onChange={(e) => onChange({ title: e.target.value })}
       />
+      <FieldError errors={errors} errorKey={basicsKey("title")} />
     </div>
     <div className="space-y-1">
       <Label htmlFor="posting-desc">Description</Label>
@@ -62,7 +71,14 @@ const JobBasicsSection = ({
       <Label htmlFor="posting-kind">Posting type</Label>
       <Select
         value={kind}
-        onValueChange={(v) => onChange({ kind: v })}
+        // Mentorship role only exists for an activity, and its select stops
+        // rendering below the moment this changes. Left in place it would ride
+        // along into the saved posting as a value nobody can see or reach.
+        onValueChange={(v) =>
+          onChange(
+            v === "activity" ? { kind: v } : { kind: v, mentorshipRole: null },
+          )
+        }
         disabled={kindLocked}
       >
         <SelectTrigger
@@ -113,7 +129,7 @@ const JobBasicsSection = ({
         type="number"
         min={0}
         aria-label="Cooldown days"
-        className="w-full max-w-xs"
+        className={`w-full max-w-xs${errorBorder(errors, basicsKey("cooldownDays"))}`}
         value={cooldownDays ?? ""}
         onChange={(e) =>
           onChange({
@@ -121,6 +137,7 @@ const JobBasicsSection = ({
           })
         }
       />
+      <FieldError errors={errors} errorKey={basicsKey("cooldownDays")} />
     </div>
   </div>
 );

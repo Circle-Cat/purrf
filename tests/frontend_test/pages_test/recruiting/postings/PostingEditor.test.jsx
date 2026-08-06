@@ -84,6 +84,38 @@ describe("PostingEditor", () => {
     }
   });
 
+  it("does not send a draft that fails validation", async () => {
+    // The API answers a bad draft with one sentence naming an internal
+    // question id; catching it here is what lets the page point at the field.
+    renderAt("/postings/new");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(screen.getByText("Title is required")).toBeInTheDocument(),
+    );
+    expect(api.createJob).not.toHaveBeenCalled();
+  });
+
+  it("clears an error as soon as its field is fixed", async () => {
+    renderAt("/postings/new");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(screen.getByText("Title is required")).toBeInTheDocument(),
+    );
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "SWE" },
+    });
+    await waitFor(() =>
+      expect(screen.queryByText("Title is required")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("does not turn the page red before the author tries to save", () => {
+    // Errors are only ever cleared while typing, never added, so a
+    // half-finished question does not light up mid-keystroke.
+    renderAt("/postings/new");
+    expect(screen.queryByText("Title is required")).not.toBeInTheDocument();
+  });
+
   it("creates a new posting from the typed draft", async () => {
     const { router } = renderAt("/postings/new");
     fireEvent.change(screen.getByLabelText("Title"), {
