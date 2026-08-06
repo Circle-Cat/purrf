@@ -110,6 +110,29 @@ vite_bin.vite_binary(
 # vite's default behaviour when a port is taken is to slide silently to the next
 # one — which lands you on whatever else is already serving 5173 and looks like
 # the prototype is broken. Failing loudly is the whole point of strictPort here.
+# Static bundle of the prototypes — the same artifact GitHub Pages serves.
+# Plain HTML/JS/CSS with relative asset URLs, so any static file server can
+# host it and no Node is needed at serve time:
+#
+#   bazel build //frontend:prototype_dist
+#   python3 -m http.server -d bazel-bin/frontend/dist-pages 8080
+#   open http://localhost:8080/prototype.html#leave
+vite_bin.vite(
+    name = "prototype_dist",
+    srcs = [
+        ":all_srcs",
+        ":prototype_files",
+        "//:npm_deps",
+    ],
+    args = [
+        "build",
+        "--config",
+        "vite.config.pages.mjs",
+    ],
+    chdir = package_name(),
+    out_dirs = ["dist-pages"],
+)
+
 vite_bin.vite_binary(
     name = "prototype_dev_server",
     args = [

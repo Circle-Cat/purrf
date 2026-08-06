@@ -31,6 +31,30 @@ locally with nothing else up.
 `/leave/prototype` route inside it has no permission check, but the app shell
 around it still authenticates, so that path needs a working backend and login.
 
+### Or serve the static bundle, with no Node at all
+
+```bash
+bazel build //frontend:prototype_dist
+python3 -m http.server -d bazel-bin/frontend/dist-pages 8080
+# open http://localhost:8080/prototype.html#leave
+```
+
+This is byte-for-byte what GitHub Pages serves: one HTML file, one JS bundle,
+one stylesheet, relative asset paths. Any static file server will do.
+
+### Why there is no backend to remove
+
+The prototypes never touch one. `prototype.html` loads `prototype-main.jsx`,
+which does not import `App.jsx` or `main.jsx` — the two files that pull in
+Auth0 and LaunchDarkly. Those files still exist in the branch, for the full
+app, but nothing on this path loads them, so deleting them would change
+nothing here and break the app.
+
+Verified against the built bundle rather than assumed: no Auth0 or
+LaunchDarkly string survives in it, and the only absolute URLs are mock
+résumé links that are rendered as `href` and never fetched, framework error-doc
+links, and SVG namespace constants.
+
 The GitHub Pages bundle serves both prototypes behind a hash switch —
 `#recruiting` and `#leave` — wired up in
 [`src/PrototypeSwitcher.jsx`](../../PrototypeSwitcher.jsx). Everything else about
