@@ -1,3 +1,4 @@
+import re
 from typing import Literal
 
 from pydantic import field_validator, model_validator
@@ -16,6 +17,31 @@ _ALLOWED_FIELDS: dict[str, set[str]] = {
     "multi_choice": {"options", "max_selections", "other_option"},
     "exact_text": {"expected_value"},
 }
+
+
+def question_seq_floor(question_ids) -> int:
+    """Lowest next_seq value that cannot recycle a question id already in use.
+
+    Answers are keyed by question id and every prior application's schema
+    snapshot still refers to a retired one, so an id must never be handed out
+    twice. Shared by ``FormSchemaDto``'s validator and the service layer's
+    counter resolution so the two cannot drift apart.
+
+    Args:
+        question_ids (Iterable[str]): Ids of the questions currently on the
+            form. Non-string and non-``q<digits>`` ids are ignored — they were
+            hand-authored and never came from the counter.
+
+    Returns:
+        int: One past the highest ``q<digits>`` suffix present, or 1 when the
+        form carries no numbered ids at all (including an empty form).
+    """
+    used = [
+        int(m.group(1))
+        for qid in question_ids
+        if isinstance(qid, str) and (m := re.fullmatch(r"q(\d+)", qid))
+    ]
+    return max(used) + 1 if used else 1
 
 
 class ShowWhenDto(BaseRequestDto):
@@ -122,17 +148,25 @@ class FormSchemaDto(BaseRequestDto):
     """A posting's submission form: an ordered list of questions."""
 
     questions: list[QuestionDto] = []
+    # One past the highest question number ever used on this form. Persisted
+    # so a delete cannot hand a recycled id to the next question added:
+    # answers are keyed by question id and every prior application's snapshot
+    # still refers to the retired one. None on forms authored before this
+    # field existed; the client derives a starting value from the live ids.
+    next_seq: int | None = None
 
     @model_validator(mode="after")
     def validate_schema(self) -> "FormSchemaDto":
-        """Enforce unique ids and valid single-layer showWhen references.
+        """Enforce unique ids, valid single-layer showWhen references, and a
+        non-recycling next_seq.
 
         Returns:
             FormSchemaDto: self, when valid.
 
         Raises:
-            ValueError: On duplicate ids, or a showWhen referencing a missing
-                question or itself.
+            ValueError: On duplicate ids, a showWhen referencing a missing
+                question or itself, or a next_seq low enough to recycle a
+                question id already in use.
         """
         ids = [q.id for q in self.questions]
         if len(ids) != len(set(ids)):
@@ -147,6 +181,12 @@ class FormSchemaDto(BaseRequestDto):
             if target not in id_set:
                 raise ValueError(
                     f"question {q.id} showWhen references unknown question {target}"
+                )
+        if self.next_seq is not None:
+            floor = question_seq_floor(q.id for q in self.questions)
+            if self.next_seq < floor:
+                raise ValueError(
+                    f"nextSeq must be at least {floor} so ids are never recycled"
                 )
         return self
 
