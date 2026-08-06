@@ -128,6 +128,7 @@ const EmployeeView = ({
         requests={requests}
         available={available}
         exchangeableDays={exchangeableDays}
+        approverName={CURRENT_USER.managerName}
         onSubmit={onSubmit}
       />
 

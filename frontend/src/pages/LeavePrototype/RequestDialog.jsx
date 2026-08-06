@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, Check, Info, X } from "lucide-react";
+import { AlertTriangle, Check, Info, UserCheck, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,6 +45,7 @@ import {
  * @param {Array<object>} props.requests - the requester's own requests, for clash detection
  * @param {number} props.available - balance minus pending reservations
  * @param {Array<{date: string, segment: object}>} props.exchangeableDays
+ * @param {string} props.approverName - who this request will go to
  * @param {(draft: object) => void} props.onSubmit
  * @returns {JSX.Element}
  */
@@ -54,6 +55,7 @@ const RequestDialog = ({
   requests,
   available,
   exchangeableDays,
+  approverName,
   onSubmit,
 }) => {
   const [type, setType] = useState("paid");
@@ -278,6 +280,39 @@ const RequestDialog = ({
             </div>
           )}
 
+          {/* Who acts on this. The approver is snapshotted when the request is
+              submitted, not looked up later, so naming them here is what will
+              actually be recorded. */}
+          {startDate && !error && (
+            <div className="flex items-start gap-2 rounded-lg border border-slate-200 p-3 text-sm">
+              {isAutoApproved(draft) ? (
+                <>
+                  <Check
+                    size={15}
+                    className="mt-0.5 shrink-0 text-emerald-600"
+                  />
+                  <p className="text-slate-700">
+                    Approved on submission — nobody has to action it.{" "}
+                    <strong className="font-medium">{approverName}</strong>{" "}
+                    still sees it in their list.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <UserCheck
+                    size={15}
+                    className="mt-0.5 shrink-0 text-slate-400"
+                  />
+                  <p className="text-slate-700">
+                    Goes to{" "}
+                    <strong className="font-medium">{approverName}</strong> for
+                    approval.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+
           {error && (
             <div className="flex items-start gap-2 rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-800">
               <X size={15} className="mt-0.5 shrink-0" />
@@ -297,22 +332,13 @@ const RequestDialog = ({
             ))}
         </div>
 
-        <DialogFooter className="sm:justify-between sm:items-center gap-2">
-          <span className="text-xs text-emerald-700 flex items-center gap-1">
-            {canSubmit && isAutoApproved(draft) && (
-              <>
-                <Check size={13} /> Takes effect immediately
-              </>
-            )}
-          </span>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => close(false)}>
-              Cancel
-            </Button>
-            <Button onClick={submit} disabled={!canSubmit}>
-              Submit request
-            </Button>
-          </div>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={() => close(false)}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={!canSubmit}>
+            Submit request
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
