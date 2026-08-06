@@ -25,11 +25,21 @@ function ControlledEditor({
       onRemove={onRemove ?? (() => {})}
       onMoveUp={onMoveUp ?? (() => {})}
       onMoveDown={onMoveDown ?? (() => {})}
+      optionOps={spyOps()}
     />
   );
 }
 
 const base = { id: "q2", type: "short_text", label: "Why", required: false };
+
+/** The five whole-form ops FormBuilder supplies, as spies. */
+const spyOps = () => ({
+  add: vi.fn(),
+  rename: vi.fn(),
+  remove: vi.fn(),
+  reveal: vi.fn(),
+  hide: vi.fn(),
+});
 
 describe("QuestionEditor", () => {
   it("edits the label", () => {
@@ -42,6 +52,7 @@ describe("QuestionEditor", () => {
         onRemove={() => {}}
         onMoveUp={() => {}}
         onMoveDown={() => {}}
+        optionOps={spyOps()}
       />,
     );
     fireEvent.change(screen.getByLabelText("Question"), {
@@ -80,6 +91,7 @@ describe("QuestionEditor", () => {
         onRemove={() => {}}
         onMoveUp={() => {}}
         onMoveDown={() => {}}
+        optionOps={spyOps()}
       />,
     );
     expect(
@@ -87,47 +99,58 @@ describe("QuestionEditor", () => {
     ).toBeInTheDocument();
   });
 
-  it("sets showWhen when a dependency is chosen", async () => {
-    const user = userEvent.setup();
-    const q1 = { id: "q1", type: "short_text", label: "First" };
-    const onChange = vi.fn();
+  // The rule is authored from the choice question that reveals this one, so
+  // this editor only explains it.
+  it("explains the rule that reveals it, naming the revealing question", () => {
     render(
       <QuestionEditor
-        question={base}
-        allQuestions={[q1, base]}
-        onChange={onChange}
-        onRemove={() => {}}
-        onMoveUp={() => {}}
-        onMoveDown={() => {}}
-      />,
-    );
-    await user.click(screen.getByRole("combobox", { name: "Depends on" }));
-    await user.click(screen.getByRole("option", { name: "First" }));
-    expect(onChange).toHaveBeenCalledWith({
-      ...base,
-      showWhen: { questionId: "q1", equals: "" },
-    });
-  });
-
-  it("lists only OTHER questions as showWhen dependencies", async () => {
-    const user = userEvent.setup();
-    const q1 = { id: "q1", type: "short_text", label: "First" };
-    render(
-      <QuestionEditor
-        question={base}
-        allQuestions={[q1, base]}
+        question={{ ...base, showWhen: { questionId: "q1", equals: "Yes" } }}
+        allQuestions={[
+          { id: "q1", type: "single_choice", label: "Car?" },
+          base,
+        ]}
         onChange={() => {}}
         onRemove={() => {}}
         onMoveUp={() => {}}
         onMoveDown={() => {}}
+        optionOps={spyOps()}
       />,
     );
-    await user.click(screen.getByRole("combobox", { name: "Depends on" }));
-    expect(screen.getByRole("option", { name: "First" })).toBeInTheDocument();
-    // base's own label ("Why") must not be selectable as its own dependency
     expect(
-      screen.queryByRole("option", { name: "Why" }),
-    ).not.toBeInTheDocument();
+      screen.getByText('Only shown when "Car?" = "Yes"'),
+    ).toBeInTheDocument();
+  });
+
+  it("says so when the question that revealed it is gone", () => {
+    render(
+      <QuestionEditor
+        question={{ ...base, showWhen: { questionId: "q1", equals: "Yes" } }}
+        allQuestions={[base]}
+        onChange={() => {}}
+        onRemove={() => {}}
+        onMoveUp={() => {}}
+        onMoveDown={() => {}}
+        optionOps={spyOps()}
+      />,
+    );
+    expect(
+      screen.getByText('Only shown when a removed question = "Yes"'),
+    ).toBeInTheDocument();
+  });
+
+  it("shows no rule at all for an unconditional question", () => {
+    render(
+      <QuestionEditor
+        question={base}
+        allQuestions={[base]}
+        onChange={() => {}}
+        onRemove={() => {}}
+        onMoveUp={() => {}}
+        onMoveDown={() => {}}
+        optionOps={spyOps()}
+      />,
+    );
+    expect(screen.queryByText(/Only shown when/)).not.toBeInTheDocument();
   });
 
   it("calls onRemove when the Remove question button is clicked", () => {
@@ -140,6 +163,7 @@ describe("QuestionEditor", () => {
         onRemove={onRemove}
         onMoveUp={() => {}}
         onMoveDown={() => {}}
+        optionOps={spyOps()}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Remove question" }));
@@ -190,6 +214,7 @@ describe("QuestionEditor", () => {
         onRemove={() => {}}
         onMoveUp={() => {}}
         onMoveDown={() => {}}
+        optionOps={spyOps()}
       />,
     );
     await user.click(screen.getByRole("combobox", { name: "Other option" }));
@@ -199,30 +224,106 @@ describe("QuestionEditor", () => {
     );
   });
 
-  it("clears otherOption when its option is removed", () => {
-    const onChange = vi.fn();
+  it("offers each option a picker over the form's other questions", async () => {
+    const user = userEvent.setup();
+    const parent = {
+      id: "q1",
+      type: "single_choice",
+      label: "Car?",
+      options: ["Yes"],
+    };
+    const ops = spyOps();
     render(
       <QuestionEditor
-        question={{
-          id: "q1",
-          type: "single_choice",
-          label: "Src",
-          options: ["A", "Others"],
-          otherOption: "Others",
-        }}
-        allQuestions={[]}
-        onChange={onChange}
+        question={parent}
+        allQuestions={[
+          parent,
+          { id: "q2", type: "short_text", label: "Model" },
+        ]}
+        onChange={() => {}}
         onRemove={() => {}}
         onMoveUp={() => {}}
         onMoveDown={() => {}}
+        optionOps={ops}
       />,
     );
-    // Remove the 2nd option ("Others") via OptionsEditor.
-    fireEvent.click(
-      screen.getAllByRole("button", { name: "Remove option" })[1],
+    await user.click(
+      screen.getByRole("combobox", {
+        name: "Reveal a question when option 1 is selected",
+      }),
     );
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ options: ["A"], otherOption: undefined }),
+    // Its own label is never offered -- a question cannot reveal itself.
+    expect(screen.queryByRole("option", { name: "Car?" })).toBeNull();
+    await user.click(screen.getByRole("option", { name: "Model" }));
+    expect(ops.reveal).toHaveBeenCalledWith("Yes", "q2");
+  });
+
+  it("shows what each option already reveals", () => {
+    const parent = {
+      id: "q1",
+      type: "single_choice",
+      label: "Car?",
+      options: ["Yes", "No"],
+    };
+    render(
+      <QuestionEditor
+        question={parent}
+        allQuestions={[
+          parent,
+          {
+            id: "q2",
+            type: "short_text",
+            label: "Model",
+            showWhen: { questionId: "q1", equals: "Yes" },
+          },
+        ]}
+        onChange={() => {}}
+        onRemove={() => {}}
+        onMoveUp={() => {}}
+        onMoveDown={() => {}}
+        optionOps={spyOps()}
+      />,
     );
+    expect(
+      screen.getByRole("button", { name: "Stop revealing Model" }),
+    ).toBeInTheDocument();
+    // "Yes" is pinned by Model; "No" reveals nothing and stays removable.
+    const removes = screen.getAllByRole("button", { name: "Remove option" });
+    expect(removes[0]).toBeDisabled();
+    expect(removes[1]).not.toBeDisabled();
+  });
+
+  // A pair that reveals each other can never be answered, so neither appears.
+  it("never offers the question that reveals this one", async () => {
+    const user = userEvent.setup();
+    const parent = {
+      id: "q2",
+      type: "single_choice",
+      label: "Colour?",
+      options: ["Red"],
+      showWhen: { questionId: "q1", equals: "Yes" },
+    };
+    render(
+      <QuestionEditor
+        question={parent}
+        allQuestions={[
+          { id: "q1", type: "single_choice", label: "Car?" },
+          parent,
+          { id: "q3", type: "short_text", label: "Model" },
+        ]}
+        onChange={() => {}}
+        onRemove={() => {}}
+        onMoveUp={() => {}}
+        onMoveDown={() => {}}
+        optionOps={spyOps()}
+      />,
+    );
+    await user.click(
+      screen.getByRole("combobox", {
+        name: "Reveal a question when option 1 is selected",
+      }),
+    );
+    expect(screen.getByRole("option", { name: "Model" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Car?" })).toBeNull();
   });
 });

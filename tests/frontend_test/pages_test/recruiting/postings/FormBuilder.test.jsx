@@ -71,6 +71,79 @@ describe("FormBuilder", () => {
     });
   });
 
+  // An option's reveal rule is stored on the question being revealed, and an
+  // option's text is what that rule matches on -- so both of these edits
+  // reach across questions and have to land as one schema change.
+  it("reveals another question from an option, writing the rule onto it", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const qs = [
+      {
+        id: "q1",
+        type: "single_choice",
+        label: "Car?",
+        options: ["Yes"],
+        required: false,
+      },
+      { id: "q2", type: "short_text", label: "Model", required: false },
+    ];
+    render(
+      <FormBuilder
+        formSchema={{ questions: qs, nextSeq: 3 }}
+        onChange={onChange}
+      />,
+    );
+    await user.click(
+      screen.getByRole("combobox", {
+        name: "Reveal a question when option 1 is selected",
+      }),
+    );
+    await user.click(screen.getByRole("option", { name: "Model" }));
+    expect(onChange).toHaveBeenCalledWith({
+      questions: [
+        qs[0],
+        { ...qs[1], showWhen: { questionId: "q1", equals: "Yes" } },
+      ],
+      nextSeq: 3,
+    });
+  });
+
+  it("carries a revealed question along when its option is renamed", () => {
+    const onChange = vi.fn();
+    const qs = [
+      {
+        id: "q1",
+        type: "single_choice",
+        label: "Car?",
+        options: ["Yes"],
+        required: false,
+      },
+      {
+        id: "q2",
+        type: "short_text",
+        label: "Model",
+        required: false,
+        showWhen: { questionId: "q1", equals: "Yes" },
+      },
+    ];
+    render(
+      <FormBuilder
+        formSchema={{ questions: qs, nextSeq: 3 }}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Option 1"), {
+      target: { value: "Yes, I do" },
+    });
+    expect(onChange).toHaveBeenCalledWith({
+      questions: [
+        { ...qs[0], options: ["Yes, I do"] },
+        { ...qs[1], showWhen: { questionId: "q1", equals: "Yes, I do" } },
+      ],
+      nextSeq: 3,
+    });
+  });
+
   it("updates a question, preserving the counter", () => {
     const onChange = vi.fn();
     const qs = [{ id: "q1", type: "short_text", label: "A", required: false }];
