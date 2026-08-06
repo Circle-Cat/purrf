@@ -235,7 +235,7 @@ const AdminView = ({ adjustments, onAdjust }) => {
               }}
             >
               <Gift size={15} />
-              Grant to a whole region
+              Grant holiday allowance
             </Button>
           </div>
 

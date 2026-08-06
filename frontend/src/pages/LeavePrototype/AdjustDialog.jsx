@@ -26,14 +26,15 @@ import { today } from "@/pages/LeavePrototype/leaveCalc";
  * AdjustDialog
  *
  * Writes ledger rows by hand — the only way hours move without the engine
- * doing it.
+ * doing it. Two jobs, told apart by where it was opened from rather than by a
+ * control inside it:
  *
- * Granting the hand-issued half of the extra leave before a holiday and
- * correcting one person's balance were separate screens, which was two ways to
- * do one thing. Who it lands on is the only choice that has to be made — a
- * region grant is how that allowance goes out, and adjusting one person is a
- * correction to them and nothing else — so scope is the only control, and
- * everything else follows from it.
+ *   from a person's row    a correction to that person, touching nothing else
+ *   from the grant button  issues holiday allowance to a whole region at once
+ *
+ * There is no scope selector, because the entry point already answered that
+ * question and offering it again only creates a way to answer it differently
+ * by accident.
  *
  * The note is required either way: a hand-written balance change with no
  * stated reason is the one entry nobody can reconstruct later.
@@ -41,8 +42,8 @@ import { today } from "@/pages/LeavePrototype/leaveCalc";
  * @param {object} props
  * @param {boolean} props.open
  * @param {(open: boolean) => void} props.onOpenChange
- * @param {object|null} props.person - preselected target, null for a region grant
- * @param {Array<object>} props.people - everyone, for resolving region scope
+ * @param {object|null} props.person - set for a correction, null for a grant
+ * @param {Array<object>} props.people - everyone, for resolving a region
  * @param {(id: number) => number} props.balanceOf
  * @param {(id: number) => number} props.allowanceUsedBy
  * @param {(region: string) => number} props.allowanceFor
@@ -59,12 +60,14 @@ const AdjustDialog = ({
   allowanceFor,
   onSubmit,
 }) => {
-  const [scope, setScope] = useState("person");
+  const [region, setRegion] = useState("CN");
   const [hours, setHours] = useState("");
   const [note, setNote] = useState("");
 
+  const isGrant = !person;
+
   const reset = () => {
-    setScope(person ? "person" : "region:CN");
+    setRegion("CN");
     setHours("");
     setNote("");
   };
@@ -81,27 +84,16 @@ const AdjustDialog = ({
   const delta = Number(hours);
   const entered = hours !== "" && !Number.isNaN(delta);
 
-  // Opened from the region button there is nobody preselected, and "this
-  // person" is not on the menu — fall back rather than showing an empty box.
-  const effectiveScope = scope === "person" && !person ? "region:CN" : scope;
+  const targets = isGrant
+    ? people.filter((p) => p.region === region)
+    : [person];
 
-  const targets =
-    effectiveScope === "person"
-      ? [person]
-      : people.filter((p) => p.region === effectiveScope.slice(7));
+  const allowance = isGrant ? allowanceFor(region) : 0;
 
-  // Scope decides everything else. Granting to a region is how the hand-issued
-  // half of the extra leave goes out, so it draws on the allowance; adjusting
-  // one person is a correction to that person and touches nothing else.
-  const isGrant = effectiveScope !== "person";
-  const region = isGrant ? effectiveScope.slice(7) : person?.region;
-  const allowance = isGrant && region ? allowanceFor(region) : 0;
-
-  /** Least headroom among the targets — the one that would overrun first. */
-  const remaining =
-    isGrant && targets.length
-      ? Math.min(...targets.map((p) => allowance - allowanceUsedBy(p.id)))
-      : 0;
+  /** Least headroom among the targets — whoever would run out first. */
+  const remaining = targets.length
+    ? Math.min(...targets.map((p) => allowance - allowanceUsedBy(p.id)))
+    : 0;
   const uniform = new Set(targets.map((p) => allowanceUsedBy(p.id))).size <= 1;
 
   const overruns = isGrant && entered && delta > remaining;
@@ -131,69 +123,91 @@ const AdjustDialog = ({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {isGrant
-              ? `Grant to everyone in ${REGIONS[region]?.label ?? region}`
-              : `Adjust ${person?.name ?? ""}`}
+            {isGrant ? "Grant holiday allowance" : `Adjust ${person.name}`}
           </DialogTitle>
           <DialogDescription>
             {isGrant
-              ? "Issues the hand-granted half of the extra leave, drawing on each person's allowance for the year."
-              : "Moves this person's balance only. Does not touch their holiday allowance."}
+              ? "Hands out part of this year's holiday allowance to a whole region at once. Issue it before the holiday it covers."
+              : "Corrects this person's balance and nothing else. Their holiday allowance is untouched."}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-1">
-          <div className="space-y-1.5">
-            <Label htmlFor="adjust-scope">Applies to</Label>
-            <Select value={effectiveScope} onValueChange={setScope}>
-              <SelectTrigger id="adjust-scope">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {person && (
-                  <SelectItem value="person">{person.name}</SelectItem>
-                )}
-                {Object.entries(REGIONS).map(([key, r]) => (
-                  <SelectItem key={key} value={`region:${key}`}>
-                    Everyone in {r.label} (
-                    {people.filter((p) => p.region === key).length})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {isGrant && (
+            <div className="space-y-1.5">
+              <Label htmlFor="grant-region">Region</Label>
+              <Select value={region} onValueChange={setRegion}>
+                <SelectTrigger id="grant-region">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(REGIONS).map(([key, r]) => (
+                    <SelectItem key={key} value={key}>
+                      {r.label} ({people.filter((p) => p.region === key).length}{" "}
+                      people)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* The allowance is the whole point of a grant, so it is stated
+              before the amount rather than annotated after it. */}
+          {isGrant &&
+            (allowance === 0 ? (
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-sm text-slate-600">
+                {REGIONS[region].label} has no holiday allowance — all of its
+                extra leave accrues weekly instead. Nothing to grant here.
+              </div>
+            ) : (
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-sm text-slate-700">
+                    Holiday allowance this year
+                  </span>
+                  <span className="text-sm tabular-nums text-slate-500">
+                    {allowance.toFixed(2)}h each
+                  </span>
+                </div>
+                <div className="flex items-baseline justify-between gap-3 mt-1">
+                  <span className="text-sm font-medium text-slate-900">
+                    {uniform ? "Left to give" : "Left for whoever has least"}
+                  </span>
+                  <span
+                    className={`text-sm font-semibold tabular-nums ${
+                      remaining <= 0 ? "text-rose-600" : "text-slate-900"
+                    }`}
+                  >
+                    {remaining.toFixed(2)}h
+                  </span>
+                </div>
+              </div>
+            ))}
 
           <div className="space-y-1.5">
-            <Label htmlFor="adjust-hours">Add or subtract</Label>
+            <Label htmlFor="adjust-hours">
+              {isGrant ? "Grant to each person" : "Add or subtract"}
+            </Label>
             <Input
               id="adjust-hours"
               type="number"
               step="0.25"
               value={hours}
-              placeholder="8 or -4"
+              placeholder={isGrant ? "8" : "8 or -4"}
               onChange={(e) => setHours(e.target.value)}
             />
           </div>
 
-          {/* What lands where */}
           <p className="text-xs text-slate-500 tabular-nums">
-            {effectiveScope === "person" && person
-              ? `Currently ${balanceOf(person.id).toFixed(2)}h.${
+            {isGrant
+              ? `Writes one row for each of ${targets.length} ${targets.length === 1 ? "person" : "people"}.`
+              : `Currently ${balanceOf(person.id).toFixed(2)}h.${
                   entered && delta !== 0
                     ? ` Leaves them at ${(balanceOf(person.id) + delta).toFixed(2)}h, unless something else moves it first.`
                     : ""
-                }`
-              : `Writes one row for each of ${targets.length} ${targets.length === 1 ? "person" : "people"}.`}
+                }`}
           </p>
-
-          {isGrant && (
-            <p className="text-xs text-slate-500 tabular-nums">
-              Allowance {allowance.toFixed(2)}h a year.{" "}
-              {uniform
-                ? `${remaining.toFixed(2)}h left.`
-                : `As little as ${remaining.toFixed(2)}h left for some of them.`}
-            </p>
-          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="adjust-note">Note</Label>
@@ -225,7 +239,9 @@ const AdjustDialog = ({
             Cancel
           </Button>
           <Button onClick={submit} disabled={!canSubmit}>
-            Write {targets.length > 1 ? `${targets.length} entries` : "entry"}
+            {isGrant && targets.length !== 1
+              ? `Grant to ${targets.length}`
+              : "Write entry"}
           </Button>
         </DialogFooter>
       </DialogContent>
