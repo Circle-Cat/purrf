@@ -253,3 +253,291 @@ describe("FormRenderer", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("read-only mode", () => {
+  // No onAnswerChange: read-only mode never calls it, and the prop defaults
+  // to a no-op precisely so no call site has to pass ceremony.
+  const renderReadOnly = (questions, answers, idPrefix) =>
+    render(
+      <FormRenderer
+        questions={questions}
+        answers={answers}
+        readOnly
+        idPrefix={idPrefix}
+      />,
+    );
+
+  it("keeps the line breaks in a long_text answer", () => {
+    renderReadOnly([{ id: "q1", type: "long_text", label: "Why us?" }], {
+      q1: "First paragraph.\n\nSecond paragraph.",
+    });
+    const block = screen.getByText(/First paragraph/);
+    expect(block).toHaveClass("whitespace-pre-wrap");
+    expect(block.textContent).toBe("First paragraph.\n\nSecond paragraph.");
+  });
+
+  it("renders a short_text answer as text, not an input", () => {
+    renderReadOnly([{ id: "q1", type: "short_text", label: "Name?" }], {
+      q1: "Alice",
+    });
+    expect(screen.getByText("Alice")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("treats a question with no type as text", () => {
+    renderReadOnly([{ id: "q1", label: "Legacy question" }], { q1: "Yes" });
+    expect(screen.getByText("Yes")).toBeInTheDocument();
+  });
+
+  it("shows Not answered for a blank answer", () => {
+    renderReadOnly([{ id: "q1", type: "short_text", label: "Salary?" }], {
+      q1: "   ",
+    });
+    expect(screen.getByText("Not answered")).toBeInTheDocument();
+  });
+
+  it("shows Not answered for a missing answer", () => {
+    renderReadOnly([{ id: "q1", type: "short_text", label: "Salary?" }], {});
+    expect(screen.getByText("Not answered")).toBeInTheDocument();
+  });
+
+  it("shows unselected options alongside selected ones, all disabled", () => {
+    renderReadOnly(
+      [
+        {
+          id: "q1",
+          type: "multi_choice",
+          label: "Work mode",
+          options: ["Remote", "Hybrid", "On-site"],
+        },
+      ],
+      { q1: ["Remote", "Hybrid"] },
+    );
+    const boxes = screen.getAllByRole("checkbox");
+    expect(boxes).toHaveLength(3);
+    expect(boxes[0]).toBeChecked();
+    expect(boxes[1]).toBeChecked();
+    expect(boxes[2]).not.toBeChecked();
+    boxes.forEach((b) => expect(b).toBeDisabled());
+  });
+
+  it("shows the other-option free text as text", () => {
+    renderReadOnly(
+      [
+        {
+          id: "q1",
+          type: "single_choice",
+          label: "Work mode",
+          options: ["Remote", "Other"],
+          otherOption: "Other",
+        },
+      ],
+      { q1: "Other", q1__other: "One day on-site weekly" },
+    );
+    expect(screen.getByText("One day on-site weekly")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("still hides a question whose showWhen condition is unmet", () => {
+    renderReadOnly(
+      [
+        { id: "q1", type: "short_text", label: "Base" },
+        {
+          id: "q2",
+          type: "short_text",
+          label: "Conditional",
+          showWhen: { questionId: "q1", equals: "yes" },
+        },
+      ],
+      { q1: "no", q2: "stale" },
+    );
+    expect(screen.queryByText("Conditional")).not.toBeInTheDocument();
+  });
+
+  it("renders a recorded array under a question whose type is now text", () => {
+    // The owner changed q1 from multi_choice to short_text after this answer
+    // was recorded. The value must still show, not read "Not answered".
+    renderReadOnly([{ id: "q1", type: "short_text", label: "Work mode" }], {
+      q1: ["Remote", "Hybrid"],
+    });
+    expect(screen.getByText("Remote")).toBeInTheDocument();
+    expect(screen.getByText("Hybrid")).toBeInTheDocument();
+    expect(screen.queryByText("Not answered")).not.toBeInTheDocument();
+  });
+
+  it("renders a recorded object under a text question as JSON", () => {
+    renderReadOnly([{ id: "q1", type: "short_text", label: "Work mode" }], {
+      q1: { nested: true },
+    });
+    expect(screen.getByText(/"nested": true/)).toBeInTheDocument();
+    expect(screen.queryByText("Not answered")).not.toBeInTheDocument();
+  });
+
+  it("keeps a multi_choice answer whose option was deleted from the form", () => {
+    renderReadOnly(
+      [
+        {
+          id: "q1",
+          type: "multi_choice",
+          label: "Work mode",
+          options: ["Remote", "Hybrid"],
+        },
+      ],
+      { q1: ["Remote", "Telepathy"] },
+    );
+    expect(screen.getByRole("checkbox", { name: "Remote" })).toBeChecked();
+    const retired = screen.getByRole("checkbox", {
+      name: "Telepathy (no longer an option)",
+    });
+    expect(retired).toBeChecked();
+    expect(retired).toBeDisabled();
+  });
+
+  it("keeps a single_choice answer whose option was deleted from the form", () => {
+    renderReadOnly(
+      [
+        {
+          id: "q1",
+          type: "single_choice",
+          label: "Work mode",
+          options: ["Remote", "Hybrid"],
+        },
+      ],
+      { q1: "Telepathy" },
+    );
+    const retired = screen.getByRole("radio", {
+      name: "Telepathy (no longer an option)",
+    });
+    expect(retired).toBeChecked();
+    expect(retired).toBeDisabled();
+  });
+
+  it("checks the matching box when a multi_choice answer was recorded as a string", () => {
+    // Drift the other way: the question was single_choice when this answer
+    // was recorded, so the value is a bare string.
+    renderReadOnly(
+      [
+        {
+          id: "q1",
+          type: "multi_choice",
+          label: "Work mode",
+          options: ["Remote", "Hybrid"],
+        },
+      ],
+      { q1: "Remote" },
+    );
+    expect(screen.getByRole("checkbox", { name: "Remote" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Hybrid" })).not.toBeChecked();
+    expect(screen.queryByText("(no longer an option)")).not.toBeInTheDocument();
+  });
+
+  it("keeps a single_choice answer recorded as an array", () => {
+    // A radio group can mark only one member, so the whole recorded list is
+    // surfaced as one retired row rather than being flattened and half lost.
+    renderReadOnly(
+      [
+        {
+          id: "q1",
+          type: "single_choice",
+          label: "Work mode",
+          options: ["Remote", "Hybrid"],
+        },
+      ],
+      { q1: ["Remote", "Telepathy"] },
+    );
+    expect(
+      screen.getByRole("radio", {
+        name: "Remote, Telepathy (no longer an option)",
+      }),
+    ).toBeChecked();
+  });
+
+  it("does not render a retired row for a single_choice answer recorded as an empty array", () => {
+    // The question was multi_choice with no options picked when this answer
+    // was recorded, then changed to single_choice. An empty selection means
+    // nothing was picked, not a retired choice — it must not surface as a
+    // checked row with no label text.
+    renderReadOnly(
+      [
+        {
+          id: "q1",
+          type: "single_choice",
+          label: "Work mode",
+          options: ["Remote", "Hybrid"],
+        },
+      ],
+      { q1: [] },
+    );
+    expect(screen.queryByText("(no longer an option)")).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Remote" })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: "Hybrid" })).not.toBeChecked();
+  });
+
+  it("does not duplicate the other option into the retired rows", () => {
+    renderReadOnly(
+      [
+        {
+          id: "q1",
+          type: "single_choice",
+          label: "Work mode",
+          options: ["Remote", "Other"],
+          otherOption: "Other",
+        },
+      ],
+      { q1: "Other", q1__other: "Two days on-site" },
+    );
+    expect(screen.getAllByRole("radio")).toHaveLength(2);
+    expect(screen.queryByText("(no longer an option)")).not.toBeInTheDocument();
+    expect(screen.getByText("Two days on-site")).toBeInTheDocument();
+  });
+
+  it("drops the required asterisk and labels no control", () => {
+    renderReadOnly(
+      [{ id: "q1", type: "short_text", label: "Name?", required: true }],
+      { q1: "Alice" },
+    );
+    const label = screen.getByText("Name?");
+    expect(label.tagName).toBe("P");
+    expect(label.textContent).toBe("Name?");
+  });
+
+  it("drops the required asterisk on the other-option label too", () => {
+    renderReadOnly(
+      [
+        {
+          id: "q1",
+          type: "single_choice",
+          label: "Work mode",
+          options: ["Remote", "Other"],
+          otherOption: "Other",
+        },
+      ],
+      { q1: "Other", q1__other: "Two days on-site" },
+    );
+    // The option row's own <label> also reads "Other"; the heading above the
+    // free text is the <p>.
+    const heading = screen
+      .getAllByText("Other")
+      .find((el) => el.tagName === "P");
+    expect(heading).toBeDefined();
+    expect(heading.textContent).toBe("Other");
+  });
+
+  it("prefixes DOM ids so two copies can coexist", () => {
+    const { container } = renderReadOnly(
+      [
+        {
+          id: "q1",
+          type: "single_choice",
+          label: "Work mode",
+          options: ["Remote"],
+        },
+      ],
+      { q1: "Remote" },
+      "other-201-",
+    );
+    expect(
+      container.querySelector('input[name="other-201-q1"]'),
+    ).toBeInTheDocument();
+  });
+});

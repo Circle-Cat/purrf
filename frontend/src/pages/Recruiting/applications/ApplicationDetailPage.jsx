@@ -44,6 +44,7 @@ import {
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
 import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
+import AnswersSection from "@/pages/Recruiting/components/AnswersSection";
 import ComposeEmailDialog from "@/pages/Recruiting/applications/ComposeEmailDialog";
 import EvaluationRubricForm from "@/pages/Recruiting/applications/EvaluationRubricForm";
 import { rubricFor } from "@/pages/Recruiting/applications/evaluationRubric";
@@ -243,31 +244,6 @@ const PersonalSection = ({ personal }) => (
     </p>
   </div>
 );
-
-/**
- * The submitted answers to the job's form questions, labeled via the detail
- * payload's `formSchema.questions`. Falls back to the raw question id when a
- * question was since removed from the live form schema.
- *
- * @param {{answers: object, questions: {id: string, label: string}[]}} props
- */
-const AnswersSection = ({ answers, questions }) => {
-  const entries = Object.entries(answers ?? {});
-  if (entries.length === 0) return null;
-  const labelById = new Map(questions.map((q) => [q.id, q.label]));
-  return (
-    <div className="space-y-2">
-      <h2 className="text-sm font-medium text-slate-700">Answers</h2>
-      <ul className="space-y-1">
-        {entries.map(([id, value]) => (
-          <li key={id} className="text-sm text-slate-700">
-            {labelById.get(id) ?? id}: {String(value ?? "—")}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-};
 
 /**
  * One field's recorded response inside the read-only evaluation summary:
@@ -842,6 +818,7 @@ const EmailsPanel = ({
  *
  * @param {{title: string, otherApplications: {application: object,
  *          jobTitle: string, jobKind: string, resumeAvailable: boolean,
+ *          formSchema: {questions: object[]}|null,
  *          evaluations: object[], activity: object[],
  *          comments: object[]}[],
  *          interviewPool: {userId: number, name: string}[],
@@ -898,8 +875,9 @@ const OtherApplicationsSection = ({
                     rows={otherSubmission.experience ?? []}
                   />
                   <AnswersSection
-                    answers={otherSubmission.answers ?? {}}
-                    questions={[]}
+                    submission={otherSubmission}
+                    liveQuestions={other.formSchema?.questions ?? []}
+                    idPrefix={`other-${other.application.id}-`}
                   />
                   {other.resumeAvailable && (
                     <iframe
@@ -1739,8 +1717,8 @@ const ApplicationDetailPage = () => {
           <RowList title="Education" rows={submission.education ?? []} />
           <RowList title="Experience" rows={submission.experience ?? []} />
           <AnswersSection
-            answers={submission.answers ?? {}}
-            questions={detail.formSchema?.questions ?? []}
+            submission={submission}
+            liveQuestions={detail.formSchema?.questions ?? []}
           />
           {detail.resumeAvailable && (
             <iframe
