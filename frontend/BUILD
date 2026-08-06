@@ -104,12 +104,20 @@ vite_bin.vite_binary(
 # locally without a backend; :dev_server boots the full app, which authenticates.
 #
 #   bazel run //frontend:prototype_dev_server
-#   open http://localhost:5173/prototype.html#leave
+#   open http://localhost:5273/prototype.html#leave
+#
+# Pinned to 5273 with --strictPort, deliberately. :dev_server owns 5173, and
+# vite's default behaviour when a port is taken is to slide silently to the next
+# one — which lands you on whatever else is already serving 5173 and looks like
+# the prototype is broken. Failing loudly is the whole point of strictPort here.
 vite_bin.vite_binary(
     name = "prototype_dev_server",
     args = [
         "--config",
         "vite.config.pages.mjs",
+        "--port",
+        "5273",
+        "--strictPort",
     ],
     chdir = package_name(),
     data = [

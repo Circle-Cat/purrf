@@ -20,7 +20,7 @@ renders from [`mockData.js`](./mockData.js) and React state.
 
 ```bash
 bazel run //frontend:prototype_dev_server
-# open http://localhost:5173/prototype.html#leave
+# open http://localhost:5273/prototype.html#leave
 ```
 
 That target serves `prototype.html`, whose entry mounts the prototype bare — no

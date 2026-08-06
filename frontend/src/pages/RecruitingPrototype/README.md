@@ -40,7 +40,7 @@ The form builder (`vendor/FormBuilder.jsx`, `JsonSchemaForm.jsx`,
 
 ```bash
 bazel run //frontend:prototype_dev_server    # or: ibazel run …
-# open http://localhost:5173/prototype.html#recruiting
+# open http://localhost:5273/prototype.html#recruiting
 ```
 
 That serves `prototype.html`, whose entry mounts the prototypes bare — no Auth0,
@@ -80,7 +80,8 @@ gh workflow run deploy-pages.yml --ref recruiting-v2-prototype-standalone
 
 Files involved:
 
-- `frontend/src/prototype-main.jsx` — bare entry, mounts only `<RecruitingPrototype/>` (no Auth0/LaunchDarkly/router)
+- `frontend/src/prototype-main.jsx` — bare entry, no Auth0/LaunchDarkly/router
+- `frontend/src/PrototypeSwitcher.jsx` — picks a prototype from the URL hash (`#recruiting` / `#leave`)
 - `frontend/prototype.html` — entry document
 - `frontend/vite.config.pages.mjs` — `base: "./"` (relative paths for the `/purrf/` subpath), outputs to `dist-pages/` (kept out of the Bazel build graph)
 - `.github/workflows/deploy-pages.yml` — build + deploy
