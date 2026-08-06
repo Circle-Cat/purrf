@@ -10,7 +10,9 @@
  *
  * Placeholder substitutions:
  *   level entitlement   real → replaced with L1 0h / L2-L4 96h
- *   extra paid leave    real → replaced with 40h weekly + 40h granted
+ *   extra paid leave    real → replaced with 32h weekly + 24h granted
+ *                       (the split is real in shape, the figures are not, and
+ *                        they deliberately do not add up to the real total)
  *   weekend days        real → replaced with Friday + Saturday
  *   holiday calendar    real → replaced with invented holidays
  */
@@ -38,8 +40,8 @@ export const LEVEL_POLICY = { L1: 0, L2: 96, L3: 96, L4: 96 };
  *
  * Placeholder figures.
  */
-export const WEEKLY_EXTRA_HOURS = 40;
-export const HOLIDAY_GRANT_ALLOWANCE = 40;
+export const WEEKLY_EXTRA_HOURS = 32;
+export const HOLIDAY_GRANT_ALLOWANCE = 24;
 
 /**
  * Placeholder company holidays, stored one row per date — the same shape as the
@@ -68,7 +70,7 @@ export const COMPANY_HOLIDAYS = [
   { date: "2026-10-03", name: "Founders Week", exchangeable: true },
   { date: "2026-10-05", name: "Founders Week", exchangeable: true },
 
-  { date: "2026-11-13", name: "Cat Day", exchangeable: false },
+  { date: "2026-11-13", name: "Founders Day", exchangeable: false },
 
   { date: "2026-12-23", name: "Year End Break", exchangeable: true },
   { date: "2026-12-24", name: "Year End Break", exchangeable: true },
