@@ -19,7 +19,7 @@ const personLabel = (pool, id) => {
 
 /**
  * Reviewer-facing readable summary of a posting's interview pipeline: owners
- * and the ordered stages with rounds, referral-skippable and assignee tags.
+ * and the ordered stages with rounds and assignee tags.
  * Owner and default-assignee ids are resolved to names via the provided
  * pools. An id no longer in its pool (permission revoked) renders in red
  * with a 'no permission, remove' suffix instead of a resolved name.
@@ -68,9 +68,6 @@ const PipelineSummary = ({
               className="flex flex-wrap items-center gap-2 text-sm text-slate-700"
             >
               <span>{`${i + 1}. ${stageLabel(s.stage)} — ${s.rounds ?? 1} round(s)`}</span>
-              {s.referralSkippable && (
-                <Badge variant="outline">Referral-skippable</Badge>
-              )}
               {s.defaultAssigneeId != null && (
                 <Badge
                   variant={

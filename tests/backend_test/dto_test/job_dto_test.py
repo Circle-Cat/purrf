@@ -95,14 +95,13 @@ class TestJobCreateDtoCrossValidation(unittest.TestCase):
                     {
                         "stage": "recruiter_screening",
                         "rounds": 1,
-                        "referralSkippable": True,
                         "defaultAssigneeId": 7,
                     },
                 ],
             },
         )
         self.assertEqual(dto.pipeline_config.owner_ids, [5])
-        self.assertTrue(dto.pipeline_config.stages[0].referral_skippable)
+        self.assertEqual(dto.pipeline_config.stages[0].default_assignee_id, 7)
 
 
 if __name__ == "__main__":
