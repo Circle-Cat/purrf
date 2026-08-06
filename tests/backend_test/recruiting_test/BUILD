@@ -40,6 +40,14 @@ py_test(
 )
 
 py_test(
+    name = "form_visibility_test",
+    srcs = ["form_visibility_test.py"],
+    deps = [
+        "//backend/recruiting",
+    ],
+)
+
+py_test(
     name = "screen_rules_test",
     srcs = ["screen_rules_test.py"],
     deps = [

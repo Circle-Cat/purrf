@@ -16,7 +16,7 @@ from backend.dto.user_context_dto import UserContextDto
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
 from backend.entity.notification_entity import NotificationEntity
-from backend.recruiting import cooldown, screen_rules, stage_machine
+from backend.recruiting import cooldown, form_visibility, screen_rules, stage_machine
 from backend.recruiting.board_service import INTERVIEW_STAGES
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 
@@ -121,6 +121,12 @@ class ApplicationService:
     def _validate_submission(self, job, dto) -> None:
         """Enforce résumé-required and required-question answers.
 
+        ``required`` is enforced only on the questions the form was actually
+        showing: a required question gated behind a showWhen rule is not
+        displayed once the rule stops matching, so demanding an answer for it
+        would leave the candidate unable to submit a form they have filled in
+        completely.
+
         Args:
             job (JobEntity): The posting the submission is for.
             dto (ApplicationSubmitDto | ApplicationEditDto): The payload.
@@ -131,12 +137,27 @@ class ApplicationService:
         profile_config = job.profile_config or {}
         if profile_config.get("resume") == "required" and not dto.resume_object_key:
             raise ValueError("this posting requires a résumé")
-        form_schema = job.form_schema or {}
-        for question in form_schema.get("questions", []):
+        for question in form_visibility.visible_questions(job.form_schema, dto.answers):
             if question.get("required") and not self._answered(
                 dto.answers.get(question["id"])
             ):
                 raise ValueError(f"question {question['id']} is required")
+
+    @staticmethod
+    def _prune_hidden_answers(job, dto) -> None:
+        """Drop answers the form was not showing at write time.
+
+        Runs before screening and before the snapshot is built, so a rule and
+        a reviewer both see the same answers the candidate last stood behind.
+        Called after ``_validate_submission`` so both resolve visibility
+        against the same submitted answers.
+
+        Args:
+            job (JobEntity): The posting the submission is for.
+            dto (ApplicationSubmitDto | ApplicationEditDto): The payload,
+                mutated in place.
+        """
+        dto.answers = form_visibility.prune_answers(job.form_schema, dto.answers)
 
     @staticmethod
     def _strip_uncollected_resume(job, dto) -> None:
@@ -267,6 +288,7 @@ class ApplicationService:
         if job is None or job.status not in PUBLICLY_VISIBLE_JOB_STATUSES:
             raise ValueError(f"Published job {dto.job_id} not found")
         self._validate_submission(job, dto)
+        self._prune_hidden_answers(job, dto)
         self._strip_uncollected_resume(job, dto)
 
         user = await self.users_repository.get_user_by_user_id(
@@ -549,6 +571,7 @@ class ApplicationService:
         if not self._is_editable(application, job, current_sub):
             raise ValueError("application is locked once processing has started")
         self._validate_submission(job, dto)
+        self._prune_hidden_answers(job, dto)
         self._strip_uncollected_resume(job, dto)
         version = current_sub.version if current_sub is not None else 1
         current_sub = await self._write_version(

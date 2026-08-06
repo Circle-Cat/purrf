@@ -181,6 +181,92 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         created_sub = self.sub_repo.create.call_args.args[1]
         self.assertEqual(created_sub.submission["formSchema"], {"questions": []})
 
+    def _gated_form_job(self):
+        """A posting whose q2 is required but only shown when q1 is "Yes"."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = {
+            "questions": [
+                {
+                    "id": "q1",
+                    "type": "single_choice",
+                    "label": "Need sponsorship?",
+                    "options": ["Yes", "No"],
+                },
+                {
+                    "id": "q2",
+                    "type": "short_text",
+                    "label": "Visa type?",
+                    "required": True,
+                    "showWhen": {"questionId": "q1", "equals": "Yes"},
+                },
+            ]
+        }
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        return job
+
+    async def test_submit_does_not_require_a_hidden_question(self):
+        """A required question the form never showed cannot block submission."""
+        self._gated_form_job()
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "answers": {"q1": "No"},
+        })
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["answers"], {"q1": "No"})
+
+    async def test_submit_still_requires_a_visible_question(self):
+        self._gated_form_job()
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "answers": {"q1": "Yes"},
+        })
+
+        with self.assertRaises(ValueError):
+            await self.service.submit(self.session, self._ctx(), dto)
+        self.sub_repo.create.assert_not_awaited()
+
+    async def test_submit_drops_an_answer_the_form_did_not_show(self):
+        """Only the state the candidate last stood behind is recorded."""
+        self._gated_form_job()
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "answers": {"q1": "No", "q2": "F-1 OPT", "q9": "retired question"},
+        })
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["answers"], {"q1": "No"})
+
+    async def test_screening_sees_the_pruned_answers(self):
+        """A rule must not fire on an answer the form had stopped showing."""
+        job = self._gated_form_job()
+        job.screen_rules = {
+            "rules": [
+                {
+                    "id": "r1",
+                    "condition": {
+                        "source": "answer",
+                        "operator": "equals",
+                        "value": "F-1 OPT",
+                        "questionId": "q2",
+                    },
+                    "action": "reject",
+                }
+            ]
+        }
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "answers": {"q1": "No", "q2": "F-1 OPT"},
+        })
+
+        result = await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(result.stage, ApplicationStage.RECRUITER_SCREENING)
+
     async def test_submit_creates_default_assignment_when_stage_has_default(self):
         """A stage's configured defaultAssigneeId is only a board display
         fallback until a real application_assignment row exists (My
@@ -396,6 +482,52 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
         written_sub = self.sub_repo.update.call_args.args[1]
         self.assertEqual(written_sub.submission["formSchema"], schema)
+
+    async def test_edit_drops_answers_the_revised_form_no_longer_shows(self):
+        """The candidate's client re-sends the whole prior answer bag, so an
+        answer stranded by their own change — or by an owner deleting the
+        question — arrives with the edit. Only the current state is kept."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = {
+            "questions": [
+                {
+                    "id": "q1",
+                    "type": "single_choice",
+                    "label": "Need sponsorship?",
+                    "options": ["Yes", "No"],
+                },
+                {
+                    "id": "q2",
+                    "type": "short_text",
+                    "label": "Visa type?",
+                    "showWhen": {"questionId": "q1", "equals": "Yes"},
+                },
+            ]
+        }
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        app = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+            sub_status="pending",
+            current_round=1,
+        )
+        app.application_id = 100
+        self.app_repo.get_by_id = AsyncMock(return_value=app)
+        current = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission={"personal": {}}
+        )
+        current.submission_id = 5
+        current.is_frozen = False
+        self.sub_repo.get_current = AsyncMock(return_value=current)
+        dto = ApplicationEditDto.model_validate({
+            "answers": {"q1": "No", "q2": "F-1 OPT", "q5": "WeChat"},
+        })
+
+        await self.service.edit(self.session, self._ctx(), 100, dto)
+
+        written_sub = self.sub_repo.update.call_args.args[1]
+        self.assertEqual(written_sub.submission["answers"], {"q1": "No"})
 
     async def test_get_mine_does_not_commit(self):
         result = await self.service.get_mine(self.session, self._ctx(), 1)
