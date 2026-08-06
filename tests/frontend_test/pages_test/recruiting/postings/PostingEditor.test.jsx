@@ -308,7 +308,7 @@ describe("PostingEditor", () => {
     expect(screen.getByRole("heading", { name: "SWE" })).toBeInTheDocument();
   });
 
-  it("locks Kind once a loaded posting is no longer a draft", async () => {
+  it("locks Posting type once a loaded posting is no longer a draft", async () => {
     api.getJob.mockResolvedValue({
       data: {
         id: 5,
@@ -329,10 +329,12 @@ describe("PostingEditor", () => {
     );
     render(<RouterProvider router={router} />);
     expect(await screen.findByDisplayValue("Loaded")).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Kind" })).toBeDisabled();
+    expect(
+      screen.getByRole("combobox", { name: "Posting type" }),
+    ).toBeDisabled();
   });
 
-  it("leaves Kind editable for a draft posting", async () => {
+  it("leaves Posting type editable for a draft posting", async () => {
     api.getJob.mockResolvedValue({
       data: {
         id: 5,
@@ -353,12 +355,16 @@ describe("PostingEditor", () => {
     );
     render(<RouterProvider router={router} />);
     expect(await screen.findByDisplayValue("Loaded")).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Kind" })).not.toBeDisabled();
+    expect(
+      screen.getByRole("combobox", { name: "Posting type" }),
+    ).not.toBeDisabled();
   });
 
-  it("leaves Kind editable for a brand-new posting", () => {
+  it("leaves Posting type editable for a brand-new posting", () => {
     renderAt("/postings/new");
-    expect(screen.getByRole("combobox", { name: "Kind" })).not.toBeDisabled();
+    expect(
+      screen.getByRole("combobox", { name: "Posting type" }),
+    ).not.toBeDisabled();
   });
 
   it("defaults the Cooldown days field to 0 on a new posting", () => {
