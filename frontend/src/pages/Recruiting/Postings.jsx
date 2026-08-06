@@ -49,15 +49,7 @@ const Postings = () => {
     <div className="space-y-4 p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Postings</h1>
-        <div className="flex items-center gap-2">
-          <HowItWorksDialog {...POSTINGS_GUIDE} />
-          <Button
-            disabled={!canWrite}
-            onClick={() => navigate(ROUTE_PATHS.RECRUITING_POSTING_NEW)}
-          >
-            New posting
-          </Button>
-        </div>
+        <HowItWorksDialog {...POSTINGS_GUIDE} />
       </div>
       <div className="flex items-center gap-2">
         <Checkbox
@@ -74,6 +66,16 @@ const Postings = () => {
           navigate(ROUTE_PATHS.RECRUITING_POSTING_DETAIL(job.id))
         }
       />
+      {/* Below the list rather than above it: the action that leaves this page
+          sits where the reader ends up after scanning the postings. */}
+      <div className="flex justify-end">
+        <Button
+          disabled={!canWrite}
+          onClick={() => navigate(ROUTE_PATHS.RECRUITING_POSTING_NEW)}
+        >
+          New posting
+        </Button>
+      </div>
     </div>
   );
 };

@@ -71,6 +71,19 @@ describe("PostingEditor", () => {
     expect(within(dialog).getByText("Recruiter")).toBeInTheDocument();
   });
 
+  // The form is long; from the top of the page, saving means scrolling back up
+  // past everything just edited.
+  it("renders Cancel and Save after the form", () => {
+    renderAt("/postings/new");
+    const preview = screen.getByText("Preview");
+    for (const name of ["Cancel", "Save"]) {
+      expect(
+        preview.compareDocumentPosition(screen.getByRole("button", { name })) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+
   it("creates a new posting from the typed draft", async () => {
     const { router } = renderAt("/postings/new");
     fireEvent.change(screen.getByLabelText("Title"), {

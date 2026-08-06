@@ -136,18 +136,7 @@ const PostingEditor = () => {
         <h1 className="text-xl font-semibold text-slate-900">
           {id ? "Edit posting" : "New posting"}
         </h1>
-        <div className="flex items-center gap-2">
-          <HowItWorksDialog {...POSTING_EDITOR_GUIDE} />
-          <Button
-            variant="outline"
-            onClick={() => navigate(ROUTE_PATHS.RECRUITING_POSTINGS)}
-          >
-            Cancel
-          </Button>
-          <Button onClick={save} disabled={saving}>
-            {saving ? "Saving…" : "Save"}
-          </Button>
-        </div>
+        <HowItWorksDialog {...POSTING_EDITOR_GUIDE} />
       </div>
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
         <div className="space-y-6">
@@ -195,6 +184,19 @@ const PostingEditor = () => {
             )}
           </div>
         </div>
+      </div>
+      {/* After the form, not above it: the editor is long enough that saving
+          from the top means scrolling back up past everything just edited. */}
+      <div className="flex justify-end gap-2">
+        <Button
+          variant="outline"
+          onClick={() => navigate(ROUTE_PATHS.RECRUITING_POSTINGS)}
+        >
+          Cancel
+        </Button>
+        <Button onClick={save} disabled={saving}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
       </div>
     </div>
   );
