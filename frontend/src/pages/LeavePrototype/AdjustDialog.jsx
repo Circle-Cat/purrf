@@ -45,13 +45,11 @@ const AdjustDialog = ({
   onSubmit,
 }) => {
   const [entryType, setEntryType] = useState("manual_adjustment");
-  const [mode, setMode] = useState("by");
   const [hours, setHours] = useState("");
   const [note, setNote] = useState("");
 
   const reset = () => {
     setEntryType("manual_adjustment");
-    setMode("by");
     setHours("");
     setNote("");
   };
@@ -64,11 +62,11 @@ const AdjustDialog = ({
   const parsed = Number(hours);
   const entered = hours !== "" && !Number.isNaN(parsed);
 
-  // "Set to" is the honest way to record a correction: the administrator knows
-  // what the balance ought to be, not what to add to reach it. Doing that
-  // subtraction by hand is how a correction becomes a second mistake.
-  const delta =
-    mode === "to" ? Math.round((parsed - currentBalance) * 100) / 100 : parsed;
+  // The figure entered is the balance it should end up at, not the amount to
+  // move it by. An administrator correcting something knows what the answer is
+  // meant to be; doing that subtraction by hand is how one mistake becomes two,
+  // and the ledger only grows, so the second one is permanent too.
+  const delta = Math.round((parsed - currentBalance) * 100) / 100;
 
   const duplicateOpening = entryType === "opening_balance" && hasOpeningBalance;
   const canSubmit =
@@ -116,39 +114,35 @@ const AdjustDialog = ({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="adjust-mode">Hours</Label>
-              <div className="flex gap-2">
-                <Select value={mode} onValueChange={setMode}>
-                  <SelectTrigger id="adjust-mode" className="w-28">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="by">Change by</SelectItem>
-                    <SelectItem value="to">Set to</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Input
-                  id="adjust-hours"
-                  type="number"
-                  step="0.25"
-                  value={hours}
-                  placeholder={mode === "to" ? "47.53" : "-4 or 12.5"}
-                  onChange={(e) => setHours(e.target.value)}
-                />
-              </div>
+              <Label htmlFor="adjust-hours">Set balance to</Label>
+              <Input
+                id="adjust-hours"
+                type="number"
+                step="0.25"
+                value={hours}
+                placeholder={currentBalance.toFixed(2)}
+                onChange={(e) => setHours(e.target.value)}
+              />
             </div>
           </div>
 
-          {entered && (
-            <p className="text-xs text-slate-500 tabular-nums">
-              {currentBalance.toFixed(2)}h{delta >= 0 ? " + " : " − "}
-              {Math.abs(delta).toFixed(2)}h ={" "}
-              <strong className="font-medium text-slate-900">
-                {(currentBalance + delta).toFixed(2)}h
-              </strong>
-              {delta === 0 && " — nothing to write"}
-            </p>
-          )}
+          <p className="text-xs text-slate-500 tabular-nums">
+            Currently {currentBalance.toFixed(2)}h.
+            {entered &&
+              (delta === 0 ? (
+                " Same as now — nothing to write."
+              ) : (
+                <>
+                  {" "}
+                  This writes a{" "}
+                  <strong className="font-medium text-slate-900">
+                    {delta > 0 ? "+" : "−"}
+                    {Math.abs(delta).toFixed(2)}h
+                  </strong>{" "}
+                  row.
+                </>
+              ))}
+          </p>
 
           <div className="space-y-1.5">
             <Label htmlFor="adjust-note">Note</Label>
