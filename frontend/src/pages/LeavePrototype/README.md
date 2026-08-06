@@ -72,7 +72,7 @@ three screens.
 |---|---|---|
 | Employee | `EmployeeView.jsx` | The personal-dashboard card and everything its buttons lead to |
 | Manager | `ManagerView.jsx` | Approval queue, each card showing the requester's balance *after* approval |
-| Administrator | `AdminView.jsx` | Data-health list, org-wide balances, manual ledger adjustments |
+| Administrator | `AdminView.jsx` | Calendar entry, policy, data health, balances, manual adjustments |
 
 The employee side is arranged the way it will ship: one card on the personal
 dashboard — three figures and four buttons, never growing — plus the places
@@ -114,6 +114,18 @@ each one:
   request is refused, across every leave type.
 - **The ledger only grows.** Cancelling an approved request writes a reversal
   row rather than editing the original.
+- **A missing calendar day cannot be caught by a total.** On Administrator →
+  Calendar, delete one statutory day and watch the payout table: every period
+  is re-priced, one break splits in two, and the annual total still comes to
+  exactly the entitlement — because it is divided out of the entitlement rather
+  than summed from the days. That table is the only place the mistake shows.
+
+### What the admin calendar does not do here
+
+Editing the calendar changes the payout table but does **not** reprice the
+Employee tab. The calculator reads its holidays once at module load, and
+threading a live calendar through it would be a refactor that buys the
+prototype nothing.
 
 ## Structure
 

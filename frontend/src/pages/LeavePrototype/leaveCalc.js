@@ -331,6 +331,49 @@ export const groupHolidays = (holidays) => {
 };
 
 /**
+ * Work out what each statutory holiday period pays, and when.
+ *
+ * Deliberately the same arithmetic as the accrual engine — a running target
+ * minus what earlier periods already paid, rather than a per-period share.
+ * A per-period share leaves the annual entitlement short by a few cents when
+ * the division does not come out even; taking differences of a running total
+ * makes the last period absorb the remainder and the year sum exactly.
+ *
+ * The denominator is the number of statutory days in the year, counted from
+ * the rows. Miss one when entering the calendar and every period's payout
+ * shifts — which is why the admin screen shows this table back rather than
+ * just saying "saved".
+ *
+ * @param {Array<{date: string, name: string}>} statutory
+ * @param {number} conversionHours - the year's conversion entitlement
+ * @returns {{periods: Array<{name: string, start: string, days: number, hours: number}>, totalDays: number, totalHours: number}}
+ */
+export const segmentGrants = (statutory, conversionHours) => {
+  const segments = groupHolidays(statutory);
+  const totalDays = statutory.length;
+
+  let cumulativeDays = 0;
+  let paidSoFar = 0;
+  const periods = segments.map((s) => {
+    cumulativeDays += s.days;
+    const target =
+      totalDays === 0
+        ? 0
+        : Math.round(((conversionHours * cumulativeDays) / totalDays) * 100) /
+          100;
+    const hours = Math.round((target - paidSoFar) * 100) / 100;
+    paidSoFar = target;
+    return { name: s.name, start: s.start, end: s.end, days: s.days, hours };
+  });
+
+  return {
+    periods,
+    totalDays,
+    totalHours: Math.round(paidSoFar * 100) / 100,
+  };
+};
+
+/**
  * Display label for each ledger entry type.
  *
  * The balance card shows three numbers and does not try to explain how the

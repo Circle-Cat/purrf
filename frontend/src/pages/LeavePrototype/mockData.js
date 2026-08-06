@@ -64,6 +64,45 @@ export const COMPANY_HOLIDAYS = [
   { date: "2026-12-25", name: "Year End Break", exchangeable: false },
 ];
 
+/**
+ * Placeholder statutory holidays — the government calendar the conversion
+ * entitlement is paid out against. A different thing from the company holidays
+ * above, and the single easiest thing in this design to confuse:
+ *
+ *   company rows        → the office is closed; never deducted from leave
+ *   statutory rows      → drive when conversion hours land; never affect
+ *                         whether a leave day is deducted
+ *
+ * Stored one row per date, like the company calendar. Consecutive dates merge
+ * into periods, and each period pays its share at its first day.
+ */
+export const STATUTORY_HOLIDAYS = [
+  { date: "2026-01-01", name: "New Year" },
+  { date: "2026-01-02", name: "New Year" },
+
+  { date: "2026-02-16", name: "Spring Festival" },
+  { date: "2026-02-17", name: "Spring Festival" },
+  { date: "2026-02-18", name: "Spring Festival" },
+  { date: "2026-02-19", name: "Spring Festival" },
+  { date: "2026-02-20", name: "Spring Festival" },
+  { date: "2026-02-21", name: "Spring Festival" },
+  { date: "2026-02-22", name: "Spring Festival" },
+
+  { date: "2026-05-01", name: "Labour Day" },
+  { date: "2026-05-02", name: "Labour Day" },
+  { date: "2026-05-03", name: "Labour Day" },
+
+  { date: "2026-09-03", name: "Harvest" },
+  { date: "2026-09-04", name: "Harvest" },
+  { date: "2026-09-05", name: "Harvest" },
+
+  { date: "2026-10-01", name: "Founders" },
+  { date: "2026-10-02", name: "Founders" },
+  { date: "2026-10-03", name: "Founders" },
+  { date: "2026-10-04", name: "Founders" },
+  { date: "2026-10-05", name: "Founders" },
+];
+
 /** The signed-in employee for the Employee view. */
 export const CURRENT_USER = {
   id: 1,

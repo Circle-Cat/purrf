@@ -22,11 +22,132 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import CalendarAdmin from "@/pages/LeavePrototype/CalendarAdmin";
 import {
+  COMPANY_HOLIDAYS,
+  CONVERSION_HOURS,
   DATA_ISSUE_LABELS,
+  LEVEL_POLICY,
   ORG_BALANCES,
+  STATUTORY_HOLIDAYS,
 } from "@/pages/LeavePrototype/mockData";
 import { today } from "@/pages/LeavePrototype/leaveCalc";
+
+/**
+ * The yearly policy numbers.
+ *
+ * Both caps are nullable on purpose: nobody has settled on a figure, and an
+ * empty box means no limit rather than zero. Storing them per year and region
+ * rather than as constants is deliberate too — when they do change, it will be
+ * because a year's policy changed.
+ *
+ * @param {object} props
+ * @param {object} props.policy
+ * @param {(policy: object) => void} props.onChange
+ * @returns {JSX.Element}
+ */
+const PolicyAdmin = ({ policy, onChange }) => {
+  const set = (key, value) => onChange({ ...policy, [key]: value });
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-5 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">
+            Annual entitlement
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Hours per year. Level leave depends only on the level; the
+            conversion entitlement depends only on the region, so everyone gets
+            it — including levels with no level leave of their own.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+          {["L1", "L2", "L3", "L4"].map((level) => (
+            <div key={level} className="space-y-1.5">
+              <Label htmlFor={`policy-${level}`}>{level}</Label>
+              <Input
+                id={`policy-${level}`}
+                type="number"
+                step="8"
+                value={policy.levels[level]}
+                onChange={(e) =>
+                  onChange({
+                    ...policy,
+                    levels: {
+                      ...policy.levels,
+                      [level]: Number(e.target.value),
+                    },
+                  })
+                }
+              />
+            </div>
+          ))}
+          <div className="space-y-1.5">
+            <Label htmlFor="policy-conversion">Conversion</Label>
+            <Input
+              id="policy-conversion"
+              type="number"
+              step="8"
+              value={policy.conversionHours}
+              onChange={(e) => set("conversionHours", Number(e.target.value))}
+            />
+          </div>
+        </div>
+      </Card>
+
+      <Card className="p-5 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Limits</h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Leave either box empty for no limit, which is where both start.
+          </p>
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="policy-carryover">Carry-over cap</Label>
+            <Input
+              id="policy-carryover"
+              type="number"
+              placeholder="No limit"
+              value={policy.carryoverCap ?? ""}
+              onChange={(e) =>
+                set(
+                  "carryoverCap",
+                  e.target.value === "" ? null : Number(e.target.value),
+                )
+              }
+            />
+            <p className="text-xs text-slate-400">
+              Balance carries between years untouched while this is empty.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="policy-overdraft">Overdraft cap</Label>
+            <Input
+              id="policy-overdraft"
+              type="number"
+              placeholder="No limit"
+              value={policy.overdraftCap ?? ""}
+              onChange={(e) =>
+                set(
+                  "overdraftCap",
+                  e.target.value === "" ? null : Number(e.target.value),
+                )
+              }
+            />
+            <p className="text-xs text-slate-400">
+              Requests past the balance are flagged, not blocked, until this has
+              a number in it.
+            </p>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+};
 
 /**
  * The data-health panel.
@@ -147,6 +268,20 @@ const AdminView = ({ adjustments, onAdjust }) => {
   const [hours, setHours] = useState("");
   const [note, setNote] = useState("");
 
+  // The calendar and policy are edited here but not shared with the employee
+  // view: the calculator reads its holidays at module load, and threading a
+  // live calendar through it would be a refactor that buys this prototype
+  // nothing. Editing here shows the admin screen doing its job; it does not
+  // reprice Dana's balance on the other tab.
+  const [company, setCompany] = useState(COMPANY_HOLIDAYS);
+  const [statutory, setStatutory] = useState(STATUTORY_HOLIDAYS);
+  const [policy, setPolicy] = useState({
+    levels: { ...LEVEL_POLICY },
+    conversionHours: CONVERSION_HOURS,
+    carryoverCap: null,
+    overdraftCap: null,
+  });
+
   /** Opening balance is a one-off per person, so block a second one. */
   const alreadyHasOpening = (id) =>
     adjustments.some(
@@ -195,12 +330,28 @@ const AdminView = ({ adjustments, onAdjust }) => {
         </p>
       </header>
 
-      <Tabs defaultValue="health">
+      <Tabs defaultValue="calendar">
         <TabsList>
+          <TabsTrigger value="calendar">Calendar</TabsTrigger>
+          <TabsTrigger value="policy">Policy</TabsTrigger>
           <TabsTrigger value="health">Data health</TabsTrigger>
           <TabsTrigger value="balances">Balances</TabsTrigger>
           <TabsTrigger value="adjust">Adjust a balance</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="calendar" className="mt-4">
+          <CalendarAdmin
+            company={company}
+            statutory={statutory}
+            conversionHours={policy.conversionHours}
+            onCompanyChange={setCompany}
+            onStatutoryChange={setStatutory}
+          />
+        </TabsContent>
+
+        <TabsContent value="policy" className="mt-4">
+          <PolicyAdmin policy={policy} onChange={setPolicy} />
+        </TabsContent>
 
         <TabsContent value="health" className="mt-4">
           <DataHealth people={ORG_BALANCES} />
