@@ -285,6 +285,11 @@ class OtherApplicationDto(BaseDto):
     job_title: str
     job_kind: JobKind
     resume_available: bool
+    # That job's LIVE form_schema — these applications belong to *other*
+    # postings, so the detail page's own schema cannot label their answers.
+    # Only a fallback: submissions written after the snapshot change carry
+    # their own schema inside `application.current.submission`.
+    form_schema: dict | None = None
     evaluations: list[EvaluationDto]
     activity: list[ApplicationActivityDto] = []
     comments: list[CommentDto] = []

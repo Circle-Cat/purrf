@@ -1369,9 +1369,11 @@ class BoardService:
         Returns:
             ApplicationAggregateDto: ``other_jobs`` (cross-job applications)
                 and ``previous_same_job`` (same-job prior attempts, newest
-                first), each entry carrying its job title, full application
-                snapshot, résumé availability, and every evaluation row
-                submitted for it.
+                first), each entry carrying its job title, its job's kind,
+                its job's live form schema (the label fallback for a
+                submission with no schema snapshot of its own), full
+                application snapshot, résumé availability, and every
+                evaluation row submitted for it.
 
         Raises:
             ValueError: If ``application_id`` is missing, or the caller is
@@ -1420,6 +1422,7 @@ class BoardService:
                 ),
                 job_title=other_job.title,
                 job_kind=other_job.kind,
+                form_schema=other_job.form_schema,
                 resume_available=bool(
                     current_sub is not None and current_sub.resume_object_key
                 ),

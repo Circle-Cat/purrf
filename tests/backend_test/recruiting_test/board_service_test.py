@@ -5247,6 +5247,42 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.other_jobs[0].job_title, "Job 2")
         self.app_repo.list_by_user.assert_awaited_once_with(self.session, 3)
 
+    async def test_other_application_carries_its_own_job_form_schema(self):
+        """Another application's answers can be labeled with its own job's
+        form -- it belongs to a job the detail page's own form_schema knows
+        nothing about."""
+        entry_job = self._job(job_id=1, owner_ids=(2,))
+        other_job = self._job(job_id=2, owner_ids=(9,))
+        schema = {
+            "questions": [{"id": "q9", "type": "short_text", "label": "Availability?"}]
+        }
+        other_job.form_schema = schema
+        entry_app = self._application(
+            application_id=10,
+            job_id=1,
+            user_id=3,
+        )
+        other_app = self._application(
+            application_id=11,
+            job_id=2,
+            user_id=3,
+            stage=ApplicationStage.TECH,
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=entry_app)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=entry_job)
+        self.assignment_repo.get.return_value = None
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[(entry_app, entry_job), (other_app, other_job)]
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.list_by_application.return_value = []
+
+        result = await self.service.get_other_applications(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result.other_jobs[0].form_schema, schema)
+
     async def test_get_other_applications_routes_same_job_prior_attempt_to_history(
         self,
     ):

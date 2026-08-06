@@ -83,13 +83,28 @@ class ApplicationService:
         return datetime.now(timezone.utc).date()
 
     @staticmethod
-    def _snapshot(dto) -> dict:
-        """Build the immutable submission snapshot from a submit/edit DTO."""
+    def _snapshot(dto, job) -> dict:
+        """Build the immutable submission snapshot from a submit/edit DTO.
+
+        Stores the job's form schema next to the answers so the answers can
+        always be labeled with the questions the candidate actually saw:
+        ``job.form_schema`` is overwritten in place whenever an owner edits
+        the posting, and no historical copy is kept anywhere else.
+
+        Args:
+            dto (ApplicationSubmitDto | ApplicationEditDto): The payload.
+            job (JobEntity): The posting being applied to, read for its
+                live ``form_schema`` at the moment of this write.
+
+        Returns:
+            dict: The snapshot persisted as ``ApplicationSubmissionEntity.submission``.
+        """
         return {
             "personal": dto.personal,
             "education": dto.education,
             "experience": dto.experience,
             "answers": dto.answers,
+            "formSchema": job.form_schema or {"questions": []},
         }
 
     @staticmethod
@@ -320,7 +335,7 @@ class ApplicationService:
             ),
         )
         current_sub = await self._write_version(
-            session, application.application_id, 1, None, dto
+            session, application.application_id, 1, None, dto, job
         )
 
         await self._assign_default_if_configured(
@@ -537,7 +552,7 @@ class ApplicationService:
         self._strip_uncollected_resume(job, dto)
         version = current_sub.version if current_sub is not None else 1
         current_sub = await self._write_version(
-            session, application_id, version, current_sub, dto
+            session, application_id, version, current_sub, dto, job
         )
         await session.commit()
         editable = self._is_editable(application, job, current_sub)
@@ -639,7 +654,9 @@ class ApplicationService:
             raise ValueError(f"application {application_id} not found")
         return application
 
-    async def _write_version(self, session, application_id, version, current_sub, dto):
+    async def _write_version(
+        self, session, application_id, version, current_sub, dto, job
+    ):
         """Overwrite the current version in place, or create version 1.
 
         Args:
@@ -649,11 +666,13 @@ class ApplicationService:
             current_sub (ApplicationSubmissionEntity | None): The existing
                 current version, or None to create version 1.
             dto (ApplicationSubmitDto | ApplicationEditDto): The payload.
+            job (JobEntity): The posting being applied to, read for its
+                live ``form_schema`` to snapshot.
 
         Returns:
             ApplicationSubmissionEntity: The persisted submission version.
         """
-        snapshot = self._snapshot(dto)
+        snapshot = self._snapshot(dto, job)
         if current_sub is None:
             return await self.application_submission_repository.create(
                 session,
