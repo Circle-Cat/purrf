@@ -23,6 +23,7 @@ import { SICK_AUTO_APPROVE_HOURS } from "@/pages/LeavePrototype/mockData";
 import {
   breakdownRange,
   datesBetween,
+  hoursBetweenTimes,
   isAutoApproved,
   today,
   validateDraft,
@@ -61,12 +62,16 @@ const RequestDialog = ({
   const [type, setType] = useState("paid");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
   const [reason, setReason] = useState("");
 
   const reset = () => {
     setType("paid");
     setStartDate("");
     setEndDate("");
+    setStartTime("");
+    setEndTime("");
     setReason("");
   };
 
@@ -75,8 +80,16 @@ const RequestDialog = ({
     onOpenChange(next);
   };
 
-  /** An unset end date means a single day, whatever the type. */
+  /**
+   * A single day is the two dates being the same, not the second one being
+   * absent — picking a start fills the end in, so what the box shows is what
+   * the state holds.
+   */
   const effectiveEnd = endDate || startDate;
+  const setStart = (next) => {
+    setStartDate(next);
+    if (!endDate || endDate < next) setEndDate(next);
+  };
 
   const breakdown = useMemo(
     () =>
@@ -96,22 +109,45 @@ const RequestDialog = ({
       ? datesBetween(startDate, effectiveEnd).length
       : 0;
 
-  const draft = {
-    type,
-    startDate,
-    endDate: effectiveEnd,
-    hours: type === "exchange" ? exchangeDays * 8 : (breakdown?.hours ?? 0),
-  };
+  /**
+   * Times are only offered on a single day. Over a range there is no way to
+   * say "the afternoon of the first and the morning of the last" with one
+   * pair, so the spec settled on whole days and the fields disappear.
+   */
+  const singleDay = Boolean(startDate) && effectiveEnd === startDate;
+  const partial = singleDay && type !== "exchange" && startTime && endTime;
+  const partialHours = partial ? hoursBetweenTimes(startTime, endTime) : 0;
+
+  // A part day of a day that is not worked anyway is still nothing.
+  const wholeDayHours = breakdown?.hours ?? 0;
+  const hours =
+    type === "exchange"
+      ? exchangeDays * 8
+      : partial && wholeDayHours > 0
+        ? Math.min(partialHours, 8)
+        : wholeDayHours;
+
+  const draft = { type, startDate, endDate: effectiveEnd, hours };
 
   const { error, warnings } = startDate
     ? validateDraft(draft, requests, available)
     : { error: null, warnings: [] };
 
-  const canSubmit = Boolean(startDate && effectiveEnd) && !error;
+  const timeError = !partial
+    ? null
+    : partialHours === 0
+      ? "The end time is not after the start time."
+      : [startTime, endTime].some((t) => !["00", "30"].includes(t.slice(3)))
+        ? "Times go in half hours."
+        : partialHours > 8
+          ? "A single day cannot be more than 8 hours."
+          : null;
+
+  const canSubmit = Boolean(startDate && effectiveEnd) && !error && !timeError;
 
   const submit = () => {
     if (!canSubmit) return;
-    onSubmit({ ...draft, reason });
+    onSubmit({ ...draft, reason, startTime, endTime });
     reset();
     onOpenChange(false);
   };
@@ -160,7 +196,7 @@ const RequestDialog = ({
                 {type === "exchange" ? "Holiday to work" : "First day"}
               </Label>
               {type === "exchange" ? (
-                <Select value={startDate} onValueChange={setStartDate}>
+                <Select value={startDate} onValueChange={setStart}>
                   <SelectTrigger id="leave-start">
                     <SelectValue placeholder="Pick a holiday" />
                   </SelectTrigger>
@@ -180,7 +216,7 @@ const RequestDialog = ({
                   type="date"
                   value={startDate}
                   min={today()}
-                  onChange={(e) => setStartDate(e.target.value)}
+                  onChange={(e) => setStart(e.target.value)}
                 />
               )}
             </div>
@@ -190,7 +226,7 @@ const RequestDialog = ({
               {type === "exchange" ? (
                 <Select value={endDate} onValueChange={setEndDate}>
                   <SelectTrigger id="leave-end">
-                    <SelectValue placeholder="Same day" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {exchangeableDays
@@ -213,11 +249,40 @@ const RequestDialog = ({
               )}
               {type === "exchange" && (
                 <p className="text-xs text-slate-400">
-                  Leave blank to work just one day.
+                  Same date in both to work a single day.
                 </p>
               )}
             </div>
           </div>
+
+          {/* Part days only exist on a single day (§6.1) */}
+          {singleDay && type !== "exchange" && (
+            <div className="grid sm:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="leave-from">From</Label>
+                <Input
+                  id="leave-from"
+                  type="time"
+                  step="1800"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="leave-to">To</Label>
+                <Input
+                  id="leave-to"
+                  type="time"
+                  step="1800"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                />
+              </div>
+              <p className="text-xs text-slate-400 sm:col-span-1 self-end pb-2">
+                Leave both blank for the whole day. Half hours.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="leave-reason">Reason</Label>
@@ -234,8 +299,10 @@ const RequestDialog = ({
           {breakdown && type !== "exchange" && (
             <div className="rounded-lg bg-slate-50 border border-slate-200 p-3.5 text-sm">
               <p className="font-medium text-slate-900 tabular-nums">
-                {breakdown.hours}h · {breakdown.workdays.length} working{" "}
-                {breakdown.workdays.length === 1 ? "day" : "days"}
+                {hours}h ·{" "}
+                {partial && wholeDayHours > 0
+                  ? `part of ${startDate}`
+                  : `${breakdown.workdays.length} working ${breakdown.workdays.length === 1 ? "day" : "days"}`}
               </p>
               {breakdown.skipped.length > 0 && (
                 <ul className="mt-2 space-y-0.5 text-xs text-slate-500">
@@ -310,6 +377,13 @@ const RequestDialog = ({
                   </p>
                 </>
               )}
+            </div>
+          )}
+
+          {!error && timeError && (
+            <div className="flex items-start gap-2 rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-800">
+              <X size={15} className="mt-0.5 shrink-0" />
+              <p>{timeError}</p>
             </div>
           )}
 

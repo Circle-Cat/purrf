@@ -105,6 +105,25 @@ export const breakdownRange = (startISO, endISO) => {
 };
 
 /**
+ * Hours between two "HH:MM" times, to two decimals.
+ *
+ * Only meaningful for a single-day request: a range spanning more than one day
+ * is whole days by definition, since there is no way to say "the afternoon of
+ * the first day and the morning of the last" with one pair of times.
+ *
+ * @param {string} from - "09:30"
+ * @param {string} to - "13:00"
+ * @returns {number} hours, 0 if the pair does not make sense
+ */
+export const hoursBetweenTimes = (from, to) => {
+  if (!from || !to) return 0;
+  const [fh, fm] = from.split(":").map(Number);
+  const [th, tm] = to.split(":").map(Number);
+  const minutes = th * 60 + tm - (fh * 60 + fm);
+  return minutes <= 0 ? 0 : Math.round((minutes / 60) * 100) / 100;
+};
+
+/**
  * Count working days in the half-open interval [fromISO, toISO).
  *
  * The submission day counts, the first day of leave does not — the boundary

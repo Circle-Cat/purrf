@@ -48,10 +48,7 @@ const HolidayEditor = ({
   const segments = useMemo(() => groupHolidays(rows), [rows]);
   const taken = useMemo(() => new Set(rows.map((r) => r.date)), [rows]);
 
-  /** An empty end date means a one-day holiday. */
-  const effectiveEnd = end || start;
-  const wouldAdd =
-    start && effectiveEnd >= start ? datesBetween(start, effectiveEnd) : [];
+  const wouldAdd = start && end >= start ? datesBetween(start, end) : [];
   const collisions = wouldAdd.filter((d) => taken.has(d));
   const canAdd =
     Boolean(name.trim()) && wouldAdd.length > 0 && collisions.length === 0;
@@ -105,7 +102,13 @@ const HolidayEditor = ({
             type="date"
             value={start}
             className="w-36"
-            onChange={(e) => setStart(e.target.value)}
+            onChange={(e) => {
+              // A one-day holiday is the two dates being the same, not the
+              // second one being absent — same shape a one-day leave request
+              // has, so neither screen needs a rule of its own.
+              setStart(e.target.value);
+              if (!end || end < e.target.value) setEnd(e.target.value);
+            }}
           />
         </div>
         <div className="space-y-1.5">
@@ -143,7 +146,7 @@ const HolidayEditor = ({
         </p>
       ) : (
         <p className="text-xs text-slate-400">
-          Leave “To” empty for a single day.
+          A one-day holiday has the same date in both.
           {withExchangeable &&
             " For a break that is only partly tradeable, add it as two entries with the same name."}
         </p>
