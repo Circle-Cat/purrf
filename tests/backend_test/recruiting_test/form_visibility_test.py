@@ -1,6 +1,16 @@
+import json
 import unittest
+from pathlib import Path
 
 from backend.recruiting import form_visibility
+
+# Contract shared with questionVisibility.test.js. See the file's own comment:
+# this module deletes the answers the renderer will not show, so both
+# implementations are held to one definition rather than to each other's
+# docstrings.
+_VECTORS = json.loads(
+    Path("tests/shared/form_visibility_vectors.json").read_text(encoding="utf-8")
+)
 
 
 def _question(id, **kw):
@@ -13,24 +23,44 @@ def _gated(id, on, equals, **kw):
     return _question(id, showWhen={"questionId": on, "equals": equals}, **kw)
 
 
-class IsVisibleTest(unittest.TestCase):
-    def test_question_without_a_rule_is_always_visible(self):
-        self.assertTrue(form_visibility.is_visible(_question("q1"), {}))
+class SharedVectorTest(unittest.TestCase):
+    """Every case in the cross-language fixture, run against this side."""
 
-    def test_rule_matches_a_scalar_answer(self):
-        question = _gated("q2", "q1", "Yes")
-        self.assertTrue(form_visibility.is_visible(question, {"q1": "Yes"}))
-        self.assertFalse(form_visibility.is_visible(question, {"q1": "No"}))
+    def test_the_fixture_is_not_silently_empty(self):
+        """A path typo would otherwise turn the whole contract into a no-op."""
+        self.assertGreaterEqual(len(_VECTORS["cases"]), 20)
 
-    def test_rule_matches_membership_in_a_list_answer(self):
-        question = _gated("q2", "q1", "Backend")
-        self.assertTrue(
-            form_visibility.is_visible(question, {"q1": ["Backend", "Frontend"]})
-        )
-        self.assertFalse(form_visibility.is_visible(question, {"q1": ["Frontend"]}))
+    def test_visible_questions_matches_every_vector(self):
+        for case in _VECTORS["cases"]:
+            with self.subTest(case["name"]):
+                visible = form_visibility.visible_questions(
+                    {"questions": case["questions"]}, case["answers"]
+                )
+                self.assertEqual([q["id"] for q in visible], case["visible"])
 
-    def test_unanswered_dependency_hides_the_question(self):
-        self.assertFalse(form_visibility.is_visible(_gated("q2", "q1", "Yes"), {}))
+    def test_prune_answers_matches_every_vector(self):
+        for case in _VECTORS["cases"]:
+            with self.subTest(case["name"]):
+                self.assertEqual(
+                    form_visibility.prune_answers(
+                        {"questions": case["questions"]}, case["answers"]
+                    ),
+                    case["pruned"],
+                )
+
+    def test_pruning_every_vector_twice_changes_nothing(self):
+        """Idempotence, over the whole corpus rather than one hand-picked form.
+
+        The client seeds the next edit from the previous submission, so prune
+        is applied to its own output on every save. A rule resolved against an
+        answer the first pass removes would peel one more layer each time and
+        silently delete answers the candidate never withdrew.
+        """
+        for case in _VECTORS["cases"]:
+            with self.subTest(case["name"]):
+                schema = {"questions": case["questions"]}
+                once = form_visibility.prune_answers(schema, case["answers"])
+                self.assertEqual(form_visibility.prune_answers(schema, once), once)
 
 
 class OtherSelectedTest(unittest.TestCase):
@@ -55,17 +85,16 @@ class OtherSelectedTest(unittest.TestCase):
         self.assertTrue(form_visibility.other_selected(question, ["A", "Other"]))
         self.assertFalse(form_visibility.other_selected(question, ["A"]))
 
-    def test_multi_choice_ignores_a_scalar_value(self):
-        """A multi_choice answer is a list; a bare string never selects Other."""
-        question = _question(
-            "q1", type="multi_choice", options=["Other"], otherOption="Other"
-        )
-        self.assertFalse(form_visibility.other_selected(question, "Other"))
-
 
 class VisibleQuestionsTest(unittest.TestCase):
     def test_no_schema_yields_nothing(self):
         self.assertEqual(form_visibility.visible_questions(None, {"q1": "x"}), [])
+
+    def test_a_null_questions_list_yields_nothing(self):
+        """Hand-edited JSONB can hold null where the DTO would write a list."""
+        self.assertEqual(
+            form_visibility.visible_questions({"questions": None}, {"q1": "x"}), []
+        )
 
     def test_keeps_schema_order(self):
         schema = {"questions": [_question("q1"), _question("q2"), _question("q3")]}
@@ -74,13 +103,12 @@ class VisibleQuestionsTest(unittest.TestCase):
             ["q1", "q2", "q3"],
         )
 
-    def test_chained_rule_resolves_in_one_pass(self):
-        """q3 depends on q2, which is itself hidden but still holds a value.
+    def test_a_gate_hidden_by_its_own_gate_hides_what_it_gates(self):
+        """The regression the shared chain vectors exist for.
 
-        Evaluated in a single pass q3 stays visible, matching what
-        ``questionVisibility.js`` renders. The two must not diverge: the
-        read-only view derives "answers the renderer will not show" from the
-        same rule, so a fixpoint here would hide q3's answer everywhere.
+        q3's rule reads q2's answer, and that answer is still recorded even
+        though q2 is hidden. Resolving q3's rule alone would show q3 on this
+        pass, then hide it on the next one once q2's answer had been pruned.
         """
         schema = {
             "questions": [
@@ -92,81 +120,42 @@ class VisibleQuestionsTest(unittest.TestCase):
         visible = form_visibility.visible_questions(
             schema, {"q1": "No", "q2": "Yes", "q3": "kept"}
         )
-        self.assertEqual([q["id"] for q in visible], ["q1", "q3"])
+        self.assertEqual([q["id"] for q in visible], ["q1"])
+
+    def test_a_gate_declared_after_the_question_it_gates_still_resolves(self):
+        """Resolution follows the rules, not the order questions appear in."""
+        schema = {
+            "questions": [_gated("q2", "q1", "Yes"), _question("q1")],
+        }
+        visible = form_visibility.visible_questions(schema, {"q1": "Yes"})
+        self.assertEqual([q["id"] for q in visible], ["q2", "q1"])
 
 
 class PruneAnswersTest(unittest.TestCase):
-    def test_drops_an_answer_whose_question_left_the_form(self):
-        schema = {"questions": [_question("q1")]}
-        self.assertEqual(
-            form_visibility.prune_answers(schema, {"q1": "kept", "q5": "WeChat"}),
-            {"q1": "kept"},
-        )
-
-    def test_drops_an_answer_under_a_now_hidden_question(self):
-        schema = {"questions": [_question("q1"), _gated("q2", "q1", "Yes")]}
-        self.assertEqual(
-            form_visibility.prune_answers(schema, {"q1": "No", "q2": "F-1 OPT"}),
-            {"q1": "No"},
-        )
-
-    def test_keeps_an_answer_under_a_still_visible_question(self):
-        schema = {"questions": [_question("q1"), _gated("q2", "q1", "Yes")]}
-        self.assertEqual(
-            form_visibility.prune_answers(schema, {"q1": "Yes", "q2": "F-1 OPT"}),
-            {"q1": "Yes", "q2": "F-1 OPT"},
-        )
-
-    def test_keeps_other_free_text_while_other_is_selected(self):
-        schema = {
-            "questions": [
-                _question(
-                    "q3",
-                    type="multi_choice",
-                    options=["Backend", "Other"],
-                    otherOption="Other",
-                )
-            ]
-        }
-        answers = {"q3": ["Backend", "Other"], "q3__other": "Infrastructure"}
-        self.assertEqual(form_visibility.prune_answers(schema, answers), answers)
-
-    def test_drops_other_free_text_once_other_is_deselected(self):
-        schema = {
-            "questions": [
-                _question(
-                    "q3",
-                    type="multi_choice",
-                    options=["Backend", "Frontend", "Other"],
-                    otherOption="Other",
-                )
-            ]
-        }
-        self.assertEqual(
-            form_visibility.prune_answers(
-                schema,
-                {"q3": ["Backend", "Frontend"], "q3__other": "Infrastructure"},
-            ),
-            {"q3": ["Backend", "Frontend"]},
-        )
-
-    def test_unanswered_visible_question_adds_no_key(self):
-        """Absent stays absent — pruning must not materialize empty answers."""
-        schema = {"questions": [_question("q1"), _question("q2")]}
-        self.assertEqual(
-            form_visibility.prune_answers(schema, {"q1": "x"}), {"q1": "x"}
-        )
-
-    def test_keeps_a_falsy_answer(self):
-        """Presence, not truthiness, decides: an empty answer was still given."""
-        schema = {"questions": [_question("q1"), _question("q2")]}
-        self.assertEqual(
-            form_visibility.prune_answers(schema, {"q1": "", "q2": []}),
-            {"q1": "", "q2": []},
-        )
+    def test_a_question_without_an_id_contributes_no_key(self):
+        """Keying off a missing id would write a literal "null" JSONB key."""
+        schema = {"questions": [{"type": "short_text", "label": "orphan"}]}
+        self.assertEqual(form_visibility.prune_answers(schema, {"q1": "x"}), {})
 
     def test_a_job_with_no_form_keeps_nothing(self):
         self.assertEqual(form_visibility.prune_answers(None, {"q1": "x"}), {})
+
+    def test_repeated_pruning_preserves_a_deep_satisfied_chain(self):
+        """The answers stay put however many times the candidate re-saves."""
+        schema = {
+            "questions": [
+                _question("q1"),
+                _gated("q2", "q1", "Yes"),
+                _gated("q3", "q2", "Yes"),
+                _gated("q4", "q3", "Yes", type="long_text"),
+            ]
+        }
+        answers = {"q1": "Yes", "q2": "Yes", "q3": "Yes", "q4": "an essay"}
+        for _ in range(3):
+            answers = form_visibility.prune_answers(schema, answers)
+        self.assertEqual(
+            answers, {"q1": "Yes", "q2": "Yes", "q3": "Yes", "q4": "an essay"}
+        )
 
 
 if __name__ == "__main__":

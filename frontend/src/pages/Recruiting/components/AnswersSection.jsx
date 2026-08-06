@@ -1,8 +1,8 @@
 import { RecordedValue } from "@/pages/Recruiting/components/RecordedValue";
 import FormRenderer from "@/pages/Recruiting/postings/FormRenderer";
 import {
-  isVisible,
   otherSelected,
+  visibleQuestions,
 } from "@/pages/Recruiting/postings/questionVisibility";
 
 /** Sibling-key suffix holding an "Other" option's free text. */
@@ -26,14 +26,12 @@ const OTHER_SUFFIX = "__other";
  */
 const unmatchedEntries = (answers, questions) => {
   const rendered = new Set();
-  questions
-    .filter((q) => isVisible(q, answers))
-    .forEach((q) => {
-      rendered.add(q.id);
-      if (otherSelected(q, answers[q.id])) {
-        rendered.add(`${q.id}${OTHER_SUFFIX}`);
-      }
-    });
+  visibleQuestions(questions, answers).forEach((q) => {
+    rendered.add(q.id);
+    if (otherSelected(q, answers[q.id])) {
+      rendered.add(`${q.id}${OTHER_SUFFIX}`);
+    }
+  });
   return Object.entries(answers).filter(([key]) => !rendered.has(key));
 };
 

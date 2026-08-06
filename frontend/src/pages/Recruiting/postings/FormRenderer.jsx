@@ -3,8 +3,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RecordedValue } from "@/pages/Recruiting/components/RecordedValue";
 import {
-  isVisible,
   otherSelected,
+  visibleQuestions,
 } from "@/pages/Recruiting/postings/questionVisibility";
 
 /**
@@ -249,38 +249,36 @@ const FormRenderer = ({
   idPrefix = "",
 }) => (
   <div className="space-y-4">
-    {questions
-      .filter((q) => isVisible(q, answers))
-      .map((q) => (
-        <div key={q.id} className="space-y-1">
-          {readOnly ? (
-            // A <Label> here would label no control (read-only text answers
-            // are not inputs), and the required marker is a form-filling
-            // affordance a reviewer takes no action on.
-            <p className="text-sm font-medium">{q.label}</p>
-          ) : (
-            <Label
-              {...(["short_text", "long_text", "exact_text"].includes(q.type)
-                ? { htmlFor: `${idPrefix}${q.id}` }
-                : {})}
-            >
-              {q.label}
-              {q.required && <span className="ml-1 text-red-500">*</span>}
-            </Label>
-          )}
-          {q.description && (
-            <p className="text-sm text-slate-500">{q.description}</p>
-          )}
-          <QuestionControl
-            question={q}
-            value={answers[q.id]}
-            otherValue={answers[`${q.id}__other`]}
-            onAnswerChange={onAnswerChange}
-            readOnly={readOnly}
-            idPrefix={idPrefix}
-          />
-        </div>
-      ))}
+    {visibleQuestions(questions, answers).map((q) => (
+      <div key={q.id} className="space-y-1">
+        {readOnly ? (
+          // A <Label> here would label no control (read-only text answers
+          // are not inputs), and the required marker is a form-filling
+          // affordance a reviewer takes no action on.
+          <p className="text-sm font-medium">{q.label}</p>
+        ) : (
+          <Label
+            {...(["short_text", "long_text", "exact_text"].includes(q.type)
+              ? { htmlFor: `${idPrefix}${q.id}` }
+              : {})}
+          >
+            {q.label}
+            {q.required && <span className="ml-1 text-red-500">*</span>}
+          </Label>
+        )}
+        {q.description && (
+          <p className="text-sm text-slate-500">{q.description}</p>
+        )}
+        <QuestionControl
+          question={q}
+          value={answers[q.id]}
+          otherValue={answers[`${q.id}__other`]}
+          onAnswerChange={onAnswerChange}
+          readOnly={readOnly}
+          idPrefix={idPrefix}
+        />
+      </div>
+    ))}
   </div>
 );
 

@@ -241,6 +241,35 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         created_sub = self.sub_repo.create.call_args.args[1]
         self.assertEqual(created_sub.submission["answers"], {"q1": "No"})
 
+    async def test_submit_keeps_other_free_text_through_the_write(self):
+        """The `__other` sibling is not a question, so nothing in the schema
+        loop keeps it -- only the explicit Other branch does."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = {
+            "questions": [
+                {
+                    "id": "q3",
+                    "type": "multi_choice",
+                    "label": "Teams?",
+                    "options": ["Backend", "Other"],
+                    "otherOption": "Other",
+                }
+            ]
+        }
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "answers": {"q3": ["Backend", "Other"], "q3__other": "Infrastructure"},
+        })
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(
+            created_sub.submission["answers"],
+            {"q3": ["Backend", "Other"], "q3__other": "Infrastructure"},
+        )
+
     async def test_screening_sees_the_pruned_answers(self):
         """A rule must not fire on an answer the form had stopped showing."""
         job = self._gated_form_job()
@@ -528,6 +557,84 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
         written_sub = self.sub_repo.update.call_args.args[1]
         self.assertEqual(written_sub.submission["answers"], {"q1": "No"})
+
+    async def test_edit_does_not_require_a_hidden_question(self):
+        """`required` is relaxed on the edit path too, not only on submit."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = {
+            "questions": [
+                {
+                    "id": "q1",
+                    "type": "single_choice",
+                    "label": "Need sponsorship?",
+                    "options": ["Yes", "No"],
+                },
+                {
+                    "id": "q2",
+                    "type": "short_text",
+                    "label": "Visa type?",
+                    "required": True,
+                    "showWhen": {"questionId": "q1", "equals": "Yes"},
+                },
+            ]
+        }
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        app = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+            sub_status="pending",
+            current_round=1,
+        )
+        app.application_id = 100
+        self.app_repo.get_by_id = AsyncMock(return_value=app)
+        current = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission={"personal": {}}
+        )
+        current.submission_id = 5
+        current.is_frozen = False
+        self.sub_repo.get_current = AsyncMock(return_value=current)
+        dto = ApplicationEditDto.model_validate({"answers": {"q1": "No"}})
+
+        await self.service.edit(self.session, self._ctx(), 100, dto)
+
+        written_sub = self.sub_repo.update.call_args.args[1]
+        self.assertEqual(written_sub.submission["answers"], {"q1": "No"})
+
+    async def test_pruning_leaves_the_other_snapshot_sections_alone(self):
+        """Only `answers` is narrowed -- profile sections are separate keys."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = {"questions": []}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        app = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+            sub_status="pending",
+            current_round=1,
+        )
+        app.application_id = 100
+        self.app_repo.get_by_id = AsyncMock(return_value=app)
+        current = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission={"personal": {}}
+        )
+        current.submission_id = 5
+        current.is_frozen = False
+        self.sub_repo.get_current = AsyncMock(return_value=current)
+        dto = ApplicationEditDto.model_validate({
+            "personal": {"firstName": "A"},
+            "education": [{"school": "S"}],
+            "experience": [{"company": "C"}],
+            "answers": {"q1": "dropped"},
+        })
+
+        await self.service.edit(self.session, self._ctx(), 100, dto)
+
+        written = self.sub_repo.update.call_args.args[1].submission
+        self.assertEqual(written["answers"], {})
+        self.assertEqual(written["personal"], {"firstName": "A"})
+        self.assertEqual(written["education"], [{"school": "S"}])
+        self.assertEqual(written["experience"], [{"company": "C"}])
 
     async def test_get_mine_does_not_commit(self):
         result = await self.service.get_mine(self.session, self._ctx(), 1)

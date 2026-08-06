@@ -1,0 +1,230 @@
+{
+  "_comment": [
+    "Shared contract for submission-form question visibility. Loaded by both",
+    "tests/backend_test/recruiting_test/form_visibility_test.py and",
+    "tests/frontend_test/pages_test/recruiting/postings/questionVisibility.test.js.",
+    "backend/recruiting/form_visibility.py deletes the answers to every question",
+    "the renderer in frontend/src/pages/Recruiting/postings/questionVisibility.js",
+    "leaves out, so the two must resolve identically. Defining the behaviour here",
+    "once turns a divergence into a red test on both sides instead of two",
+    "docstrings vouching for each other.",
+    "Schemas are written camelCase, exactly as they are persisted in JSONB."
+  ],
+  "cases": [
+    {
+      "name": "a question with no rule is always shown",
+      "questions": [{ "id": "q1" }, { "id": "q2" }],
+      "answers": { "q1": "x" },
+      "visible": ["q1", "q2"],
+      "pruned": { "q1": "x" }
+    },
+    {
+      "name": "a rule matching a scalar answer shows its question",
+      "questions": [
+        { "id": "q1" },
+        { "id": "q2", "showWhen": { "questionId": "q1", "equals": "Yes" } }
+      ],
+      "answers": { "q1": "Yes", "q2": "F-1 OPT" },
+      "visible": ["q1", "q2"],
+      "pruned": { "q1": "Yes", "q2": "F-1 OPT" }
+    },
+    {
+      "name": "a rule that stopped matching hides its question and drops its answer",
+      "questions": [
+        { "id": "q1" },
+        { "id": "q2", "showWhen": { "questionId": "q1", "equals": "Yes" } }
+      ],
+      "answers": { "q1": "No", "q2": "F-1 OPT" },
+      "visible": ["q1"],
+      "pruned": { "q1": "No" }
+    },
+    {
+      "name": "a rule matches membership in a list answer",
+      "questions": [
+        { "id": "q1", "type": "multi_choice" },
+        { "id": "q2", "showWhen": { "questionId": "q1", "equals": "Remote" } }
+      ],
+      "answers": { "q1": ["Remote", "Hybrid"], "q2": "kept" },
+      "visible": ["q1", "q2"],
+      "pruned": { "q1": ["Remote", "Hybrid"], "q2": "kept" }
+    },
+    {
+      "name": "a list answer without the target value hides the question",
+      "questions": [
+        { "id": "q1", "type": "multi_choice" },
+        { "id": "q2", "showWhen": { "questionId": "q1", "equals": "Remote" } }
+      ],
+      "answers": { "q1": ["On-site"], "q2": "dropped" },
+      "visible": ["q1"],
+      "pruned": { "q1": ["On-site"] }
+    },
+    {
+      "name": "an unanswered gate hides everything behind it",
+      "questions": [
+        { "id": "q1" },
+        { "id": "q2", "showWhen": { "questionId": "q1", "equals": "Yes" } }
+      ],
+      "answers": {},
+      "visible": ["q1"],
+      "pruned": {}
+    },
+    {
+      "name": "a chain hides transitively, not one layer per pass",
+      "questions": [
+        { "id": "q1" },
+        { "id": "q2", "showWhen": { "questionId": "q1", "equals": "Yes" } },
+        { "id": "q3", "showWhen": { "questionId": "q2", "equals": "Yes" } },
+        { "id": "q4", "showWhen": { "questionId": "q3", "equals": "Yes" } }
+      ],
+      "answers": { "q1": "No", "q2": "Yes", "q3": "Yes", "q4": "an essay" },
+      "visible": ["q1"],
+      "pruned": { "q1": "No" }
+    },
+    {
+      "name": "a fully satisfied chain stays visible end to end",
+      "questions": [
+        { "id": "q1" },
+        { "id": "q2", "showWhen": { "questionId": "q1", "equals": "Yes" } },
+        { "id": "q3", "showWhen": { "questionId": "q2", "equals": "Yes" } }
+      ],
+      "answers": { "q1": "Yes", "q2": "Yes", "q3": "deep" },
+      "visible": ["q1", "q2", "q3"],
+      "pruned": { "q1": "Yes", "q2": "Yes", "q3": "deep" }
+    },
+    {
+      "name": "a chain broken in the middle hides everything downstream",
+      "questions": [
+        { "id": "q1" },
+        { "id": "q2", "showWhen": { "questionId": "q1", "equals": "Yes" } },
+        { "id": "q3", "showWhen": { "questionId": "q2", "equals": "Yes" } }
+      ],
+      "answers": { "q1": "Yes", "q2": "No", "q3": "stale" },
+      "visible": ["q1", "q2"],
+      "pruned": { "q1": "Yes", "q2": "No" }
+    },
+    {
+      "name": "a rule cycle shows nothing in the loop instead of recursing",
+      "questions": [
+        { "id": "q1" },
+        { "id": "q2", "showWhen": { "questionId": "q3", "equals": "Yes" } },
+        { "id": "q3", "showWhen": { "questionId": "q2", "equals": "Yes" } }
+      ],
+      "answers": { "q1": "x", "q2": "Yes", "q3": "Yes" },
+      "visible": ["q1"],
+      "pruned": { "q1": "x" }
+    },
+    {
+      "name": "a rule pointing at a question that is not on the form hides it",
+      "questions": [
+        { "id": "q1" },
+        { "id": "q2", "showWhen": { "questionId": "gone", "equals": "Yes" } }
+      ],
+      "answers": { "q1": "x", "q2": "orphan" },
+      "visible": ["q1"],
+      "pruned": { "q1": "x" }
+    },
+    {
+      "name": "an answer whose question left the form is dropped",
+      "questions": [{ "id": "q1" }],
+      "answers": { "q1": "kept", "q5": "WeChat" },
+      "visible": ["q1"],
+      "pruned": { "q1": "kept" }
+    },
+    {
+      "name": "single_choice Other keeps its free text while selected",
+      "questions": [
+        {
+          "id": "q1",
+          "type": "single_choice",
+          "options": ["A", "Other"],
+          "otherOption": "Other"
+        }
+      ],
+      "answers": { "q1": "Other", "q1__other": "Infrastructure" },
+      "visible": ["q1"],
+      "pruned": { "q1": "Other", "q1__other": "Infrastructure" }
+    },
+    {
+      "name": "multi_choice Other keeps its free text while selected",
+      "questions": [
+        {
+          "id": "q3",
+          "type": "multi_choice",
+          "options": ["Backend", "Other"],
+          "otherOption": "Other"
+        }
+      ],
+      "answers": { "q3": ["Backend", "Other"], "q3__other": "Infrastructure" },
+      "visible": ["q3"],
+      "pruned": { "q3": ["Backend", "Other"], "q3__other": "Infrastructure" }
+    },
+    {
+      "name": "deselecting Other drops the free text but keeps the answer",
+      "questions": [
+        {
+          "id": "q3",
+          "type": "multi_choice",
+          "options": ["Backend", "Frontend", "Other"],
+          "otherOption": "Other"
+        }
+      ],
+      "answers": {
+        "q3": ["Backend", "Frontend"],
+        "q3__other": "Infrastructure"
+      },
+      "visible": ["q3"],
+      "pruned": { "q3": ["Backend", "Frontend"] }
+    },
+    {
+      "name": "hiding a question drops its Other free text with it",
+      "questions": [
+        { "id": "q1" },
+        {
+          "id": "q3",
+          "type": "multi_choice",
+          "options": ["Other"],
+          "otherOption": "Other",
+          "showWhen": { "questionId": "q1", "equals": "Yes" }
+        }
+      ],
+      "answers": { "q1": "No", "q3": ["Other"], "q3__other": "Infrastructure" },
+      "visible": ["q1"],
+      "pruned": { "q1": "No" }
+    },
+    {
+      "name": "a scalar value never selects a multi_choice Other option",
+      "questions": [
+        {
+          "id": "q3",
+          "type": "multi_choice",
+          "options": ["Other"],
+          "otherOption": "Other"
+        }
+      ],
+      "answers": { "q3": "Other", "q3__other": "Infrastructure" },
+      "visible": ["q3"],
+      "pruned": { "q3": "Other" }
+    },
+    {
+      "name": "falsy answers are kept: presence decides, not truthiness",
+      "questions": [{ "id": "q1" }, { "id": "q2" }],
+      "answers": { "q1": "", "q2": [] },
+      "visible": ["q1", "q2"],
+      "pruned": { "q1": "", "q2": [] }
+    },
+    {
+      "name": "a visible but unanswered question adds no key",
+      "questions": [{ "id": "q1" }, { "id": "q2" }],
+      "answers": { "q1": "x" },
+      "visible": ["q1", "q2"],
+      "pruned": { "q1": "x" }
+    },
+    {
+      "name": "a form with no questions keeps no answers",
+      "questions": [],
+      "answers": { "q1": "x" },
+      "visible": [],
+      "pruned": {}
+    }
+  ]
+}

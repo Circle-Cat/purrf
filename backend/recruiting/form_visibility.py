@@ -1,44 +1,31 @@
 """Which submission-form questions a candidate actually saw.
 
 Python twin of ``frontend/src/pages/Recruiting/postings/questionVisibility.js``.
-The two must agree exactly: the renderer decides what the candidate is shown,
-this module decides what the server enforces as required and what it keeps.
-A divergence either demands an answer to a question that was never displayed
-or discards one that was.
+The two must agree exactly, because this side *deletes* what it leaves out:
+the renderer decides what the candidate is shown, and this module decides
+which answers survive the write. Were this side the stricter of the two, an
+answer the candidate gave to a question the form displayed would be dropped
+silently, with no earlier version to recover it from; were it the looser, a
+key the renderer will not show would be stored and surface as a stray entry
+in the reviewer's "Other recorded answers" group.
 
 Form schemas live in a JSONB column and are stored camelCase — their contents
 never pass through a request DTO's alias generator — so keys are read here as
 ``showWhen`` / ``questionId`` / ``otherOption``.
 
-Visibility is evaluated in a single pass against the answers as submitted,
-exactly as the renderer evaluates it. A chained rule (q3 depends on q2, which
-is itself hidden) is therefore resolved the same way in both places rather
-than iterated to a fixpoint on one side only.
+The two are pinned to one another by the shared cases in
+``tests/shared/form_visibility_vectors.json``, which both test suites load.
 """
 
 # Sibling-key suffix holding an "Other" option's free text.
 OTHER_SUFFIX = "__other"
 
 
-def is_visible(question: dict, answers: dict) -> bool:
-    """Whether a question's showWhen rule is satisfied by the given answers.
-
-    Args:
-        question (dict): One question out of a form schema.
-        answers (dict): Answers keyed by question id.
-
-    Returns:
-        bool: True when the question has no showWhen rule, or the referenced
-        question's answer matches ``equals`` (membership, for a list answer).
-    """
-    show_when = question.get("showWhen")
-    if not show_when:
-        return True
-    dependency = answers.get(show_when.get("questionId"))
-    target = show_when.get("equals")
-    if isinstance(dependency, list):
-        return target in dependency
-    return dependency == target
+def _matches(answer, target) -> bool:
+    """Whether a recorded answer satisfies a showWhen rule's ``equals``."""
+    if isinstance(answer, list):
+        return target in answer
+    return answer == target
 
 
 def other_selected(question, value) -> bool:
@@ -67,6 +54,15 @@ def other_selected(question, value) -> bool:
 def visible_questions(form_schema: dict | None, answers: dict) -> list[dict]:
     """The questions the form displays for these answers, in schema order.
 
+    Visibility is transitive: a question is shown when its own rule matches
+    *and* the question that rule points at is itself shown. A rule may target
+    another gated question, so resolving each rule in isolation would keep a
+    question whose own gate is hidden, and would decide that from the stale
+    answer still sitting under the hidden gate. Since ``prune_answers``
+    deletes that stale answer, the next write would then resolve the same
+    form differently and drop one more layer -- evaluating the chain through
+    to its root is what makes pruning idempotent.
+
     Args:
         form_schema (dict | None): The job's live form schema.
         answers (dict): Answers keyed by question id.
@@ -74,8 +70,31 @@ def visible_questions(form_schema: dict | None, answers: dict) -> list[dict]:
     Returns:
         list[dict]: The visible subset of ``form_schema["questions"]``.
     """
-    questions = (form_schema or {}).get("questions", [])
-    return [q for q in questions if is_visible(q, answers)]
+    questions = (form_schema or {}).get("questions") or []
+    by_id = {q.get("id"): q for q in questions}
+    resolved: dict = {}
+
+    def visible(question: dict) -> bool:
+        show_when = question.get("showWhen")
+        if not show_when:
+            return True
+        question_id = question.get("id")
+        if question_id in resolved:
+            return resolved[question_id]
+        # Seed False before recursing so a cycle terminates. The schema
+        # validator rejects a self-reference but not a longer loop, and
+        # nothing in a loop has a reachable gate, so none of it is shown.
+        resolved[question_id] = False
+        gate = by_id.get(show_when.get("questionId"))
+        shown = (
+            gate is not None
+            and visible(gate)
+            and _matches(answers.get(gate.get("id")), show_when.get("equals"))
+        )
+        resolved[question_id] = shown
+        return shown
+
+    return [q for q in questions if visible(q)]
 
 
 def prune_answers(form_schema: dict | None, answers: dict) -> dict:
@@ -87,6 +106,11 @@ def prune_answers(form_schema: dict | None, answers: dict) -> dict:
     edits after an owner deletes a question — re-submits the stale value
     underneath. Only the current state is meaningful, so the stale keys are
     dropped at write time rather than stored and explained away later.
+
+    Idempotent: pruning an already-pruned set of answers is a no-op. It has to
+    be, because the client seeds the next edit from what this returned — a
+    rule resolved against an answer this call removes would drop one further
+    layer on every save until the chain was gone.
 
     Args:
         form_schema (dict | None): The job's live form schema.
@@ -100,6 +124,10 @@ def prune_answers(form_schema: dict | None, answers: dict) -> dict:
     kept = {}
     for question in visible_questions(form_schema, answers):
         question_id = question.get("id")
+        # A schema question with no id cannot own an answer; keying off None
+        # would write a literal "null" column key.
+        if question_id is None:
+            continue
         if question_id in answers:
             kept[question_id] = answers[question_id]
         other_key = f"{question_id}{OTHER_SUFFIX}"
