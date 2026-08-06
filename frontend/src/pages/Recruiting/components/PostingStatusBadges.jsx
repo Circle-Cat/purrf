@@ -1,9 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { rejectKindLabel } from "@/pages/Recruiting/components/rejectKindLabels";
 
 /** Maps every JobStatus to its 3-state base lifecycle stage. */
 const BASE_STATE = {
@@ -37,26 +33,21 @@ const ACTION_LABELS = {
   pending_reopen: "Pending reopen",
 };
 
-const REJECT_KIND_LABEL = {
-  initial: "Initial submission rejected",
-  revision: "Revision rejected",
-  close: "Close request rejected",
-  reopen: "Reopen request rejected",
-};
-
 /**
  * State badge (Draft/Published/Closed), plus an optional action badge when
- * a review is currently pending, plus an optional reject-reason badge (with
- * popover detail) when the posting's most recent review was a rejection.
+ * a review is currently pending, plus an optional reject-reason badge when
+ * the posting's most recent review was a rejection. Every badge is plain,
+ * non-interactive text: the rejection *comment* is not revealed here at all,
+ * it lives in the dedicated panel on PostingDetailPage.
  * The action and reject badges are mutually exclusive by construction: a
  * job's reject info self-clears the instant a new review opens (becoming
  * the "most recent" review), and every pending sub-status corresponds to
  * exactly one open review. Shared between PostingsList and PostingDetailPage.
  *
  * @param {{job: {status: string, lastRejectComment?: string,
- *          lastRejectKind?: string}, onRejectBadgeClick?: (e: Event) => void}} props
+ *          lastRejectKind?: string}}} props
  */
-const PostingStatusBadges = ({ job, onRejectBadgeClick = () => {} }) => {
+const PostingStatusBadges = ({ job }) => {
   const baseState = BASE_STATE[job.status];
   const actionLabel = ACTION_LABELS[job.status];
 
@@ -67,26 +58,9 @@ const PostingStatusBadges = ({ job, onRejectBadgeClick = () => {} }) => {
       </Badge>
       {actionLabel && <Badge variant="outline">{actionLabel}</Badge>}
       {job.lastRejectComment && (
-        <Popover>
-          <PopoverTrigger asChild>
-            <span
-              role="button"
-              tabIndex={0}
-              className="cursor-pointer"
-              onClick={onRejectBadgeClick}
-            >
-              <Badge variant="destructive">
-                {REJECT_KIND_LABEL[job.lastRejectKind] ?? "Sent back"}
-              </Badge>
-            </span>
-          </PopoverTrigger>
-          <PopoverContent className="w-72">
-            <p className="text-sm font-medium text-slate-700">
-              {REJECT_KIND_LABEL[job.lastRejectKind] ?? "Rejected"}
-            </p>
-            <p className="text-sm text-red-600">{job.lastRejectComment}</p>
-          </PopoverContent>
-        </Popover>
+        <Badge variant="destructive">
+          {rejectKindLabel(job.lastRejectKind)}
+        </Badge>
       )}
     </>
   );

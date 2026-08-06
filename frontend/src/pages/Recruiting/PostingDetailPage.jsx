@@ -30,6 +30,7 @@ import {
 } from "@/api/recruitingApi";
 import SubmitReviewDialog from "@/pages/Recruiting/components/SubmitReviewDialog";
 import PostingStatusBadges from "@/pages/Recruiting/components/PostingStatusBadges";
+import { rejectKindLabel } from "@/pages/Recruiting/components/rejectKindLabels";
 import PostingConfigSummary from "@/pages/Recruiting/components/PostingConfigSummary";
 import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
@@ -67,6 +68,11 @@ const REVIEW_ACTION = {
  * CLOSED — not PUBLISHED_PENDING_REVISION, which already has a staged
  * edit awaiting its own review). Approve/Reject only for the review's
  * actual assigned reviewer.
+ * When the posting's most recent review was a rejection, the reviewer's
+ * comment gets its own panel under the header -- this page is the only place
+ * that shows the comment text, since the status badge is plain, unclickable
+ * text everywhere. It's shown to every viewer of this page, exactly like the
+ * badge and the Review history tab already are.
  */
 const PostingDetailPage = () => {
   const { id } = useParams();
@@ -362,6 +368,17 @@ const PostingDetailPage = () => {
           </p>
         )}
       </div>
+
+      {job.lastRejectComment && (
+        <div className="space-y-1 rounded border border-red-200 bg-red-50 p-3">
+          <p className="text-sm font-medium text-red-800">
+            {rejectKindLabel(job.lastRejectKind)}
+          </p>
+          <p className="text-sm whitespace-pre-line text-red-700">
+            {job.lastRejectComment}
+          </p>
+        </div>
+      )}
 
       {canWrite && hasOperateAction && (
         <div className="flex flex-wrap items-center gap-2">
