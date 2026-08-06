@@ -82,10 +82,12 @@ const QuestionEditor = ({
       </div>
 
       <div className="space-y-1">
-        <Label htmlFor={`${question.id}-label`}>Label</Label>
+        {/* The schema field is `label`, but to an author this row is the
+            question they are asking, so the form says so. */}
+        <Label htmlFor={`${question.id}-label`}>Question</Label>
         <Input
           id={`${question.id}-label`}
-          aria-label="Label"
+          aria-label="Question"
           value={question.label}
           onChange={(e) => patch({ label: e.target.value })}
         />

@@ -80,7 +80,7 @@ describe("FormBuilder", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.change(screen.getByLabelText("Label"), {
+    fireEvent.change(screen.getByLabelText("Question"), {
       target: { value: "B" },
     });
     expect(onChange).toHaveBeenCalledWith({
