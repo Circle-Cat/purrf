@@ -198,13 +198,10 @@ export const validateDraft = (draft, existingRequests, available) => {
       warnings,
     };
   }
-  if (hours === 0) {
-    return {
-      error: "Every day in this range is a weekend or a company holiday.",
-      warnings,
-    };
-  }
-
+  // Checked before the empty-range case on purpose. Asking for a day you have
+  // already agreed to work is an overlap, and saying so names the request to
+  // cancel; falling through to "that day is a company holiday" would be true
+  // but useless to someone who just traded it away.
   const clash = existingRequests.find(
     (r) =>
       ["pending", "approved", "cancel_pending"].includes(r.status) &&
@@ -213,6 +210,13 @@ export const validateDraft = (draft, existingRequests, available) => {
   if (clash) {
     return {
       error: `This overlaps request #${clash.id} (${clash.startDate} → ${clash.endDate}).`,
+      warnings,
+    };
+  }
+
+  if (hours === 0) {
+    return {
+      error: "Every day in this range is a weekend or a company holiday.",
       warnings,
     };
   }
