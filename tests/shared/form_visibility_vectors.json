@@ -260,8 +260,11 @@
     },
     {
       "name": "a question with no id owns no answer key",
-      "questions": [{ "type": "short_text", "label": "orphan" }, { "id": "q1" }],
-      "answers": { "q1": "x" },
+      "questions": [
+        { "type": "short_text", "label": "orphan" },
+        { "id": "q1" }
+      ],
+      "answers": { "q1": "x", "undefined": "stray", "None__other": "stray" },
       "visible": [null, "q1"],
       "pruned": { "q1": "x" }
     },

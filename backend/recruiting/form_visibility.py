@@ -147,8 +147,11 @@ def prune_answers(form_schema: dict | None, answers: dict) -> dict:
     kept = {}
     for question in visible_questions(form_schema, answers):
         question_id = question.get("id")
-        # A schema question with no id cannot own an answer; keying off None
-        # would write a literal "null" column key.
+        # A schema question with no id cannot own an answer. Unreachable on
+        # this side -- JSONB keys are strings, so ``None`` never matches one --
+        # and kept only to mirror the JS twin, where the same lookup coerces
+        # a missing id to the string "undefined" and would resurrect a stray
+        # key of that name. The shared vector covers the JS half.
         if question_id is None:
             continue
         if question_id in answers:
