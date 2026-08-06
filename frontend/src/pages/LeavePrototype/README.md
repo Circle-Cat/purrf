@@ -84,6 +84,13 @@ each one:
 - **Short notice is a flag, not a block.** Requesting *n* days needs *2n* working
   days of notice. Paid leave submits anyway with a warning the manager sees;
   a holiday exchange is refused outright.
+- **A break can be part-exchanged.** Work two days of a three-day break and the
+  third stays yours. Pick a range inside the break; the request covers only what
+  you picked.
+- **Exchange is all-or-nothing over its range.** A break can be exchangeable on
+  some days and not others, and the calendar can skip a day mid-break. Include
+  a day that does not qualify and the whole request is refused, naming the day —
+  rather than silently crediting you for less than you worked.
 - **Short sick leave skips approval.** Three days or less is approved on
   submission and never touches the balance. Longer goes to the manager, still
   without touching the balance.

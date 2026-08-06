@@ -43,11 +43,9 @@ const ledgerRowFor = (request) => {
     entryType: isExchange ? "exchange_credit" : "leave_deduction",
     hours: isExchange ? request.hours : -request.hours,
     effectiveDate: request.startDate,
-    note: isExchange
-      ? `Worked ${request.startDate}`
-      : `Paid leave ${request.startDate}${
-          request.endDate !== request.startDate ? ` → ${request.endDate}` : ""
-        }`,
+    note: `${isExchange ? "Worked" : "Paid leave"} ${request.startDate}${
+      request.endDate !== request.startDate ? ` → ${request.endDate}` : ""
+    }`,
   };
 };
 

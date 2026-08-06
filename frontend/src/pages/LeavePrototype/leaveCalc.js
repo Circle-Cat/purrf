@@ -218,10 +218,18 @@ export const validateDraft = (draft, existingRequests, available) => {
   }
 
   if (type === "exchange") {
-    const holiday = HOLIDAY_BY_DATE.get(startDate);
-    if (!holiday || !holiday.exchangeable) {
+    // All-or-nothing: one ineligible day rejects the request rather than being
+    // quietly dropped, so nobody discovers after the fact that they worked a
+    // day they were never credited for.
+    const ineligible = datesBetween(startDate, endDate).filter(
+      (date) => !HOLIDAY_BY_DATE.get(date)?.exchangeable,
+    );
+    if (ineligible.length > 0) {
+      const shown = ineligible.slice(0, 3).join(", ");
+      const rest =
+        ineligible.length > 3 ? ` and ${ineligible.length - 3} more` : "";
       return {
-        error: "Pick a company holiday that is marked exchangeable.",
+        error: `Not exchangeable: ${shown}${rest}. Every day in the range has to be an exchangeable company holiday.`,
         warnings,
       };
     }

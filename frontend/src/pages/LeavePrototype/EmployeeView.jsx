@@ -30,6 +30,7 @@ import {
   STATUS_LABEL,
   TYPE_LABEL,
   breakdownRange,
+  datesBetween,
   groupHolidays,
   isAutoApproved,
   ledgerBalance,
@@ -107,8 +108,8 @@ const EmployeeView = ({
       : b.effectiveDate.localeCompare(a.effectiveDate),
   );
 
-  /** Exchange is always a single worked day, so the end date follows the start. */
-  const effectiveEnd = type === "exchange" ? startDate : endDate;
+  /** An unset end date means a single day, whatever the type. */
+  const effectiveEnd = endDate || startDate;
 
   const breakdown = useMemo(
     () =>
@@ -118,11 +119,21 @@ const EmployeeView = ({
     [startDate, effectiveEnd],
   );
 
+  /**
+   * Exchange credits every day in the range, because they must all be
+   * exchangeable holidays for it to submit at all — there is nothing to skip.
+   * Leave does the opposite and only counts working days.
+   */
+  const exchangeDays =
+    startDate && effectiveEnd >= startDate
+      ? datesBetween(startDate, effectiveEnd).length
+      : 0;
+
   const draft = {
     type,
     startDate,
     endDate: effectiveEnd,
-    hours: type === "exchange" ? 8 : (breakdown?.hours ?? 0),
+    hours: type === "exchange" ? exchangeDays * 8 : (breakdown?.hours ?? 0),
   };
 
   const { error, warnings } = startDate
@@ -144,7 +155,11 @@ const EmployeeView = ({
     (s) => s.end >= today(),
   );
 
-  /** Exchange is one day at a time, so the picker lists dates, not segments. */
+  /**
+   * The picker lists individual dates rather than whole segments: a break can
+   * be only partly exchangeable, so the choice is per day even though a single
+   * request may span several of them.
+   */
   const exchangeableDays = upcomingSegments.flatMap((segment) =>
     segment.dates
       .filter(
@@ -196,7 +211,17 @@ const EmployeeView = ({
         <div className="grid sm:grid-cols-3 gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="leave-type">Type</Label>
-            <Select value={type} onValueChange={setType}>
+            <Select
+              value={type}
+              onValueChange={(next) => {
+                // Dates carried across a type change are almost always wrong —
+                // an exchange only accepts holidays, leave only accepts
+                // non-holidays.
+                setType(next);
+                setStartDate("");
+                setEndDate("");
+              }}
+            >
               <SelectTrigger id="leave-type">
                 <SelectValue />
               </SelectTrigger>
@@ -242,17 +267,33 @@ const EmployeeView = ({
 
           <div className="space-y-1.5">
             <Label htmlFor="leave-end">Last day</Label>
-            <Input
-              id="leave-end"
-              type="date"
-              value={effectiveEnd}
-              min={startDate || today()}
-              disabled={type === "exchange"}
-              onChange={(e) => setEndDate(e.target.value)}
-            />
+            {type === "exchange" ? (
+              <Select value={endDate} onValueChange={setEndDate}>
+                <SelectTrigger id="leave-end">
+                  <SelectValue placeholder="Same day" />
+                </SelectTrigger>
+                <SelectContent>
+                  {exchangeableDays
+                    .filter(({ date }) => !startDate || date >= startDate)
+                    .map(({ date, segment }) => (
+                      <SelectItem key={date} value={date}>
+                        {date} · {segment.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                id="leave-end"
+                type="date"
+                value={effectiveEnd}
+                min={startDate || today()}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            )}
             {type === "exchange" && (
               <p className="text-xs text-slate-400">
-                An exchange is always a single day.
+                Leave blank to work just one day.
               </p>
             )}
           </div>
@@ -292,9 +333,19 @@ const EmployeeView = ({
           </div>
         )}
 
-        {type === "exchange" && startDate && (
+        {type === "exchange" && startDate && exchangeDays > 0 && (
           <div className="rounded-lg bg-slate-50 border border-slate-200 p-3.5 text-sm text-slate-700">
-            Working this holiday adds <strong>8h</strong> to your balance.
+            Working{" "}
+            {exchangeDays === 1
+              ? "this holiday"
+              : `${exchangeDays} holiday days`}{" "}
+            adds <strong>{exchangeDays * 8}h</strong> to your balance.
+            {exchangeDays > 1 && (
+              <p className="text-xs text-slate-500 mt-1">
+                The rest of the break stays yours — you only trade the days you
+                pick here.
+              </p>
+            )}
           </div>
         )}
 
