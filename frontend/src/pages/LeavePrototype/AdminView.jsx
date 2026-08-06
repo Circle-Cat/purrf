@@ -156,11 +156,11 @@ const AdminView = ({ adjustments, onAdjust }) => {
   });
   const [settings, setSettings] = useState({
     CN: {
-      conversionHours: REGIONS.CN.conversionHours,
+      extraLeaveHours: REGIONS.CN.extraLeaveHours,
       weekendLabel: REGIONS.CN.weekendLabel,
     },
     INTL: {
-      conversionHours: REGIONS.INTL.conversionHours,
+      extraLeaveHours: REGIONS.INTL.extraLeaveHours,
       weekendLabel: REGIONS.INTL.weekendLabel,
     },
   });

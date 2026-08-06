@@ -21,8 +21,8 @@ import { segmentGrants } from "@/pages/LeavePrototype/leaveCalc";
  * against.
  *
  * This is editable rather than loaded by migration because a region is created
- * the day somebody is hired into it. Its holidays, its conversion entitlement
- * and which days it treats as the weekend all have to exist from that moment,
+ * the day somebody is hired into it. Its holidays, its extra paid leave and
+ * which days it treats as the weekend all have to exist from that moment,
  * and none of those dates can be planned around a yearly release.
  *
  * The payout figures beside each statutory period are the only check on that
@@ -33,7 +33,7 @@ import { segmentGrants } from "@/pages/LeavePrototype/leaveCalc";
  * @param {object} props
  * @param {string} props.region
  * @param {(region: string) => void} props.onRegionChange
- * @param {object} props.settings - {conversionHours, weekendLabel}
+ * @param {object} props.settings - {extraLeaveHours, weekendLabel}
  * @param {(settings: object) => void} props.onSettingsChange
  * @param {Array<object>} props.company
  * @param {Array<object>} props.statutory
@@ -52,8 +52,8 @@ const CalendarAdmin = ({
   onStatutoryChange,
 }) => {
   const grants = useMemo(
-    () => segmentGrants(statutory, settings.conversionHours),
-    [statutory, settings.conversionHours],
+    () => segmentGrants(statutory, settings.extraLeaveHours),
+    [statutory, settings.extraLeaveHours],
   );
 
   const hoursByPeriod = useMemo(
@@ -92,19 +92,19 @@ const CalendarAdmin = ({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="calendar-conversion" className="text-xs">
-              Conversion hours
+            <Label htmlFor="calendar-extra-leave" className="text-xs">
+              Extra paid leave
             </Label>
             <Input
-              id="calendar-conversion"
+              id="calendar-extra-leave"
               type="number"
               step="8"
               className="w-32"
-              value={settings.conversionHours}
+              value={settings.extraLeaveHours}
               onChange={(e) =>
                 onSettingsChange({
                   ...settings,
-                  conversionHours: Number(e.target.value),
+                  extraLeaveHours: Number(e.target.value),
                 })
               }
             />
@@ -132,7 +132,7 @@ const CalendarAdmin = ({
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 Every request dated in {nextYear} will be refused until there
-                is, and no conversion hours will be paid out that year.
+                is, and no extra paid leave will be granted that year.
               </p>
             </div>
           </div>
@@ -149,7 +149,7 @@ const CalendarAdmin = ({
 
       <HolidayEditor
         title="Statutory holidays"
-        blurb="Each period pays its share of the conversion entitlement on its first day. No effect on whether a leave day is deducted."
+        blurb="Each period grants its share of the extra paid leave on its first day. No effect on whether a leave day is deducted."
         rows={statutory}
         withExchangeable={false}
         onChange={onStatutoryChange}
@@ -162,7 +162,7 @@ const CalendarAdmin = ({
 
       <p className="text-xs text-slate-500">
         Check the statutory periods against the published announcement. A
-        missing day still totals {settings.conversionHours.toFixed(2)}h — the
+        missing day still totals {settings.extraLeaveHours.toFixed(2)}h — the
         year is divided out of the entitlement, not added up from the days — so
         it will not show up anywhere else.
       </p>

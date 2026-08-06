@@ -345,10 +345,10 @@ export const groupHolidays = (holidays) => {
  * just saying "saved".
  *
  * @param {Array<{date: string, name: string}>} statutory
- * @param {number} conversionHours - the year's conversion entitlement
+ * @param {number} extraLeaveHours - the year's extra paid leave allowance
  * @returns {{periods: Array<{name: string, start: string, days: number, hours: number}>, totalDays: number, totalHours: number}}
  */
-export const segmentGrants = (statutory, conversionHours) => {
+export const segmentGrants = (statutory, extraLeaveHours) => {
   const segments = groupHolidays(statutory);
   const totalDays = statutory.length;
 
@@ -359,7 +359,7 @@ export const segmentGrants = (statutory, conversionHours) => {
     const target =
       totalDays === 0
         ? 0
-        : Math.round(((conversionHours * cumulativeDays) / totalDays) * 100) /
+        : Math.round(((extraLeaveHours * cumulativeDays) / totalDays) * 100) /
           100;
     const hours = Math.round((target - paidSoFar) * 100) / 100;
     paidSoFar = target;
@@ -382,7 +382,7 @@ export const segmentGrants = (statutory, conversionHours) => {
 export const ENTRY_LABEL = {
   opening_balance: "Opening balance",
   weekly_accrual: "Weekly accrual",
-  holiday_grant: "Public holiday conversion",
+  holiday_grant: "Extra paid leave",
   leave_deduction: "Leave taken",
   exchange_credit: "Holiday worked",
   manual_adjustment: "Adjustment by administrator",

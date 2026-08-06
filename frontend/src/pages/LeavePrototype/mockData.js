@@ -10,7 +10,7 @@
  *
  * Placeholder substitutions:
  *   level entitlement   real → replaced with L1 0h / L2-L4 96h
- *   holiday conversion  real → replaced with 64h
+ *   extra paid leave    real → replaced with 64h
  *   weekend days        real → replaced with Friday + Saturday
  *   holiday calendar    real → replaced with invented holidays
  */
@@ -27,8 +27,9 @@ export const SICK_AUTO_APPROVE_HOURS = 24;
 /** Placeholder entitlements, in hours per year. */
 export const LEVEL_POLICY = { L1: 0, L2: 96, L3: 96, L4: 96 };
 
-/** Placeholder public-holiday conversion, in hours per year. */
-export const CONVERSION_HOURS = 64;
+/** Placeholder extra paid leave, in hours per year. Granted because the
+ * company closes for fewer days than the statutory calendar has. */
+export const EXTRA_LEAVE_HOURS = 64;
 
 /**
  * Placeholder company holidays, stored one row per date — the same shape as the
@@ -65,12 +66,12 @@ export const COMPANY_HOLIDAYS = [
 ];
 
 /**
- * Placeholder statutory holidays — the government calendar the conversion
- * entitlement is paid out against. A different thing from the company holidays
+ * Placeholder statutory holidays — the government calendar the extra
+ * paid leave is granted against. A different thing from the company holidays
  * above, and the single easiest thing in this design to confuse:
  *
  *   company rows        → the office is closed; never deducted from leave
- *   statutory rows      → drive when conversion hours land; never affect
+ *   statutory rows      → drive when extra paid leave lands; never affect
  *                         whether a leave day is deducted
  *
  * Stored one row per date, like the company calendar. Consecutive dates merge
@@ -106,7 +107,7 @@ export const STATUTORY_HOLIDAYS = [
 /**
  * A second region, so the administrator screen has something to switch to.
  *
- * Regions differ in more than their holidays — the conversion entitlement and
+ * Regions differ in more than their holidays — the extra paid leave allowance and
  * which days count as the weekend are both regional. That is why these live in
  * the database with a screen to edit them: a region is created the day someone
  * is hired into it, which is not a date anyone can plan a yearly migration
@@ -117,13 +118,13 @@ export const STATUTORY_HOLIDAYS = [
 export const REGIONS = {
   CN: {
     label: "China",
-    conversionHours: CONVERSION_HOURS,
+    extraLeaveHours: EXTRA_LEAVE_HOURS,
     weekendDays: WEEKEND_DAYS,
     weekendLabel: "Friday + Saturday",
   },
   INTL: {
     label: "International",
-    conversionHours: 40,
+    extraLeaveHours: 40,
     weekendDays: [0, 6],
     weekendLabel: "Saturday + Sunday",
   },
