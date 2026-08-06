@@ -411,6 +411,87 @@ class ApplicationService:
             application, current_sub, editable=editable
         )
 
+    async def _rescreen_after_edit(
+        self, session, current_user, application, job, dto
+    ) -> None:
+        """Re-run machine screening against the answers an edit just stored.
+
+        An edit is not a draft: the candidate has no save that is not a
+        submission, so the answers this writes are the answers the posting is
+        being applied to. Screening them only the first time left a rule the
+        edit now matches unfired -- answer "yes" to the question that
+        auto-rejects, submit, then edit it to "no", and the application stayed
+        in the pipeline reading "no" with nothing having looked at it.
+
+        All three outcomes apply, the same as on submit, so the result is a
+        function of the recorded answers and not of which write recorded them.
+
+        The blacklist is deliberately not re-checked here: it is swept
+        separately across every application (see ``BlacklistService``), and
+        that sweep, not an applicant's own edit, is what should act on it.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated applicant.
+            application (ApplicationEntity): The row being edited, already
+                locked by ``edit``.
+            job (JobEntity): The posting applied to.
+            dto (ApplicationEditDto): The edit payload, post-validation.
+        """
+        applicant_email_rows = await self.user_emails_repository.list_by_user_id(
+            session, current_user.user_id
+        )
+        applicant_emails = [
+            row.email for row in applicant_email_rows if row.otp_confirmed
+        ]
+        result = screen_rules.evaluate(job.screen_rules, applicant_emails, dto.answers)
+        action, rule_id = result["action"], result["rule_id"]
+        if action is None or action == "qualify":
+            # "qualify" lands on the first stage on submit, which is where an
+            # editable application already sits. Nothing to move.
+            return
+
+        if action == "reject":
+            application.stage = ApplicationStage.REJECTED
+            application.stage_entered_at = datetime.now(timezone.utc)
+            application.sub_status = self._screened_sub_status(
+                ApplicationStage.REJECTED
+            )
+            application.tags = {"auto_reject": "screen_rule", "rule_id": rule_id}
+            await self.application_repository.update(session, application)
+            await self.application_activity_repository.create(
+                session,
+                application.application_id,
+                current_user.user_id,
+                "auto_rejected",
+                details={"reason": "screen_rule", "ruleId": rule_id, "onEdit": True},
+            )
+        else:  # auto_hire
+            application.stage = ApplicationStage.HIRED
+            application.stage_entered_at = datetime.now(timezone.utc)
+            application.sub_status = self._screened_sub_status(ApplicationStage.HIRED)
+            await self.application_repository.update(session, application)
+            await self.application_activity_repository.create(
+                session,
+                application.application_id,
+                current_user.user_id,
+                "application_submitted",
+                details={
+                    "stage": ApplicationStage.HIRED.value,
+                    "screenAutoHireRuleId": rule_id,
+                    "onEdit": True,
+                },
+            )
+            await self.onboarding_training_service.ensure_for_admitted(
+                session=session,
+                user_id=current_user.user_id,
+                job=job,
+            )
+
+        await self._notify_owners_of_submission(
+            session, application, job, False, action
+        )
+
     async def _assign_default_if_configured(
         self, session, application, job, current_user
     ):
@@ -577,6 +658,7 @@ class ApplicationService:
         current_sub = await self._write_version(
             session, application_id, version, current_sub, dto, job
         )
+        await self._rescreen_after_edit(session, current_user, application, job, dto)
         await session.commit()
         editable = self._is_editable(application, job, current_sub)
         return self.recruiting_mapper.to_application_dto(

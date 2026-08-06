@@ -790,6 +790,7 @@ class AppDependencyBuilder:
             self.job_repository,
             self.users_repository,
             self.application_activity_repository,
+            self.application_submission_repository,
         )
         self.evaluation_controller = EvaluationController(
             self.evaluation_service,
