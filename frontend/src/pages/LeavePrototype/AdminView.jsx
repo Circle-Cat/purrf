@@ -18,109 +18,13 @@ import CalendarAdmin from "@/pages/LeavePrototype/CalendarAdmin";
 import AdjustDialog from "@/pages/LeavePrototype/AdjustDialog";
 import {
   COMPANY_HOLIDAYS,
-  CONVERSION_HOURS,
   DATA_ISSUE_LABELS,
-  LEVEL_POLICY,
+  INTL_COMPANY_HOLIDAYS,
+  INTL_STATUTORY_HOLIDAYS,
   ORG_BALANCES,
+  REGIONS,
   STATUTORY_HOLIDAYS,
 } from "@/pages/LeavePrototype/mockData";
-
-/**
- * The yearly policy numbers.
- *
- * Both caps are nullable on purpose: nobody has settled on a figure, and an
- * empty box means no limit rather than zero.
- *
- * @param {object} props
- * @param {object} props.policy
- * @param {(policy: object) => void} props.onChange
- * @returns {JSX.Element}
- */
-const PolicyCard = ({ policy, onChange }) => {
-  const set = (key, value) => onChange({ ...policy, [key]: value });
-
-  return (
-    <Card className="p-5 space-y-4">
-      <div>
-        <h3 className="text-sm font-semibold text-slate-900">
-          Entitlement and limits
-        </h3>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Hours per year. Conversion goes to everyone in the region, including
-          levels with no level leave. Empty cap means no limit.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-3 sm:grid-cols-7 gap-3">
-        {["L1", "L2", "L3", "L4"].map((level) => (
-          <div key={level} className="space-y-1.5">
-            <Label htmlFor={`policy-${level}`} className="text-xs">
-              {level}
-            </Label>
-            <Input
-              id={`policy-${level}`}
-              type="number"
-              step="8"
-              value={policy.levels[level]}
-              onChange={(e) =>
-                onChange({
-                  ...policy,
-                  levels: { ...policy.levels, [level]: Number(e.target.value) },
-                })
-              }
-            />
-          </div>
-        ))}
-        <div className="space-y-1.5">
-          <Label htmlFor="policy-conversion" className="text-xs">
-            Conversion
-          </Label>
-          <Input
-            id="policy-conversion"
-            type="number"
-            step="8"
-            value={policy.conversionHours}
-            onChange={(e) => set("conversionHours", Number(e.target.value))}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="policy-carryover" className="text-xs">
-            Carry-over cap
-          </Label>
-          <Input
-            id="policy-carryover"
-            type="number"
-            placeholder="None"
-            value={policy.carryoverCap ?? ""}
-            onChange={(e) =>
-              set(
-                "carryoverCap",
-                e.target.value === "" ? null : Number(e.target.value),
-              )
-            }
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="policy-overdraft" className="text-xs">
-            Overdraft cap
-          </Label>
-          <Input
-            id="policy-overdraft"
-            type="number"
-            placeholder="None"
-            value={policy.overdraftCap ?? ""}
-            onChange={(e) =>
-              set(
-                "overdraftCap",
-                e.target.value === "" ? null : Number(e.target.value),
-              )
-            }
-          />
-        </div>
-      </div>
-    </Card>
-  );
-};
 
 /**
  * The data-health panel.
@@ -239,14 +143,33 @@ const DataHealth = ({ people }) => {
 const AdminView = ({ adjustments, onAdjust }) => {
   const [adjusting, setAdjusting] = useState(null);
 
-  // Both calendars are loaded into the database once a year and only read
-  // here, so they are constants rather than state.
-  const [policy, setPolicy] = useState({
-    levels: { ...LEVEL_POLICY },
-    conversionHours: CONVERSION_HOURS,
-    carryoverCap: null,
-    overdraftCap: null,
+  // Per region, because a region is created the day someone is hired into it
+  // and needs its own calendars and figures from that moment. Level
+  // entitlement is global and lives in code, so it is not here.
+  const [region, setRegion] = useState("CN");
+  const [calendars, setCalendars] = useState({
+    CN: { company: COMPANY_HOLIDAYS, statutory: STATUTORY_HOLIDAYS },
+    INTL: {
+      company: INTL_COMPANY_HOLIDAYS,
+      statutory: INTL_STATUTORY_HOLIDAYS,
+    },
   });
+  const [settings, setSettings] = useState({
+    CN: {
+      conversionHours: REGIONS.CN.conversionHours,
+      weekendLabel: REGIONS.CN.weekendLabel,
+    },
+    INTL: {
+      conversionHours: REGIONS.INTL.conversionHours,
+      weekendLabel: REGIONS.INTL.weekendLabel,
+    },
+  });
+
+  const patchCalendar = (key, rows) =>
+    setCalendars((prev) => ({
+      ...prev,
+      [region]: { ...prev[region], [key]: rows },
+    }));
 
   const hasOpeningBalance = (id) =>
     adjustments.some(
@@ -286,12 +209,18 @@ const AdminView = ({ adjustments, onAdjust }) => {
           <TabsTrigger value="health">Data health</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="year" className="mt-4 space-y-4">
-          <PolicyCard policy={policy} onChange={setPolicy} />
+        <TabsContent value="year" className="mt-4">
           <CalendarAdmin
-            company={COMPANY_HOLIDAYS}
-            statutory={STATUTORY_HOLIDAYS}
-            conversionHours={policy.conversionHours}
+            region={region}
+            onRegionChange={setRegion}
+            settings={settings[region]}
+            onSettingsChange={(next) =>
+              setSettings((prev) => ({ ...prev, [region]: next }))
+            }
+            company={calendars[region].company}
+            statutory={calendars[region].statutory}
+            onCompanyChange={(rows) => patchCalendar("company", rows)}
+            onStatutoryChange={(rows) => patchCalendar("statutory", rows)}
           />
         </TabsContent>
 

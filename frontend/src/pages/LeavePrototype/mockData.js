@@ -103,6 +103,50 @@ export const STATUTORY_HOLIDAYS = [
   { date: "2026-10-05", name: "Founders" },
 ];
 
+/**
+ * A second region, so the administrator screen has something to switch to.
+ *
+ * Regions differ in more than their holidays — the conversion entitlement and
+ * which days count as the weekend are both regional. That is why these live in
+ * the database with a screen to edit them: a region is created the day someone
+ * is hired into it, which is not a date anyone can plan a yearly migration
+ * around.
+ *
+ * Placeholder figures, like everything else here.
+ */
+export const REGIONS = {
+  CN: {
+    label: "China",
+    conversionHours: CONVERSION_HOURS,
+    weekendDays: WEEKEND_DAYS,
+    weekendLabel: "Friday + Saturday",
+  },
+  INTL: {
+    label: "International",
+    conversionHours: 40,
+    weekendDays: [0, 6],
+    weekendLabel: "Saturday + Sunday",
+  },
+};
+
+/** Placeholder company holidays for the second region. */
+export const INTL_COMPANY_HOLIDAYS = [
+  { date: "2026-09-07", name: "Labour Day", exchangeable: false },
+  { date: "2026-11-26", name: "Thanksgiving", exchangeable: false },
+  { date: "2026-11-27", name: "Thanksgiving", exchangeable: true },
+  { date: "2026-12-24", name: "Winter Break", exchangeable: false },
+  { date: "2026-12-25", name: "Winter Break", exchangeable: false },
+];
+
+/** Placeholder statutory holidays for the second region. */
+export const INTL_STATUTORY_HOLIDAYS = [
+  { date: "2026-07-03", name: "Independence Day" },
+  { date: "2026-09-07", name: "Labour Day" },
+  { date: "2026-11-26", name: "Thanksgiving" },
+  { date: "2026-11-27", name: "Thanksgiving" },
+  { date: "2026-12-25", name: "Christmas" },
+];
+
 /** The signed-in employee for the Employee view. */
 export const CURRENT_USER = {
   id: 1,
