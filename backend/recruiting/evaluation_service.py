@@ -30,6 +30,7 @@ class EvaluationService:
         job_repository,
         users_repository,
         application_activity_repository,
+        application_submission_repository,
     ):
         """
         Args:
@@ -41,6 +42,9 @@ class EvaluationService:
                 in "My Interview Evaluations".
             users_repository (UsersRepository): Applicant lookups, for
                 applicant names in "My Interview Evaluations".
+            application_submission_repository (ApplicationSubmissionRepository):
+                Submission data access, used to freeze the answers an
+                evaluation was written against.
             application_activity_repository (ApplicationActivityRepository):
                 Append-only audit log; ``submit`` writes an
                 ``"evaluation_confirmed"`` entry when ``dto.confirm`` is set.
@@ -51,6 +55,7 @@ class EvaluationService:
         self.job_repository = job_repository
         self.users_repository = users_repository
         self.application_activity_repository = application_activity_repository
+        self.application_submission_repository = application_submission_repository
 
     async def submit(
         self,
@@ -109,6 +114,19 @@ class EvaluationService:
                 session, row, datetime.now(timezone.utc)
             )
             application.sub_status = "evaluated"
+            # Freeze what was just scored. Every other mover of sub_status
+            # freezes, but set_sub_status only does so on the way *out* of
+            # "pending" -- so without this, an owner setting the status back
+            # to "pending" would hand the candidate the edit back, and a save
+            # would overwrite in place the answers this scorecard judged.
+            current_sub = await self.application_submission_repository.get_current(
+                session, application_id
+            )
+            if current_sub is not None and not current_sub.is_frozen:
+                current_sub.is_frozen = True
+                await self.application_submission_repository.update(
+                    session, current_sub
+                )
             await self.application_repository.update(session, application)
             await self.application_activity_repository.create(
                 session,
