@@ -1,12 +1,6 @@
 import { RecordedValue } from "@/pages/Recruiting/components/RecordedValue";
 import FormRenderer from "@/pages/Recruiting/postings/FormRenderer";
-import {
-  isVisible,
-  otherSelected,
-} from "@/pages/Recruiting/postings/questionVisibility";
-
-/** Sibling-key suffix holding an "Other" option's free text. */
-const OTHER_SUFFIX = "__other";
+import { pruneAnswers } from "@/pages/Recruiting/postings/questionVisibility";
 
 /**
  * Answer keys that `FormRenderer` will not display, given the question set it
@@ -20,20 +14,16 @@ const OTHER_SUFFIX = "__other";
  * selects that question's "Other" option (so `FormRenderer` no longer shows
  * the free text either).
  *
+ * Computed as the complement of `pruneAnswers`, the same function whose Python
+ * twin decides which answers survive a write — so this group holds exactly
+ * what the server would drop, and cannot disagree with it about a key.
+ *
  * @param {Record<string, unknown>} answers
  * @param {object[]} questions
  * @returns {[string, unknown][]} Entries in `answers` insertion order.
  */
 const unmatchedEntries = (answers, questions) => {
-  const rendered = new Set();
-  questions
-    .filter((q) => isVisible(q, answers))
-    .forEach((q) => {
-      rendered.add(q.id);
-      if (otherSelected(q, answers[q.id])) {
-        rendered.add(`${q.id}${OTHER_SUFFIX}`);
-      }
-    });
+  const rendered = new Set(Object.keys(pruneAnswers(questions, answers)));
   return Object.entries(answers).filter(([key]) => !rendered.has(key));
 };
 
