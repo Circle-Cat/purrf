@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,11 +30,13 @@ import { today } from "@/pages/LeavePrototype/leaveCalc";
  *
  * Granting the hand-issued half of the extra leave before a holiday and
  * correcting one person's balance were separate screens, which was two ways to
- * do one thing. They differ in exactly two respects, so those are the two
- * controls: who it lands on, and whether it draws down that person's holiday
- * allowance for the year. The note is required either way, because a
- * hand-written balance change without a stated reason is the one entry nobody
- * can reconstruct later.
+ * do one thing. Who it lands on is the only choice that has to be made — a
+ * region grant is how that allowance goes out, and adjusting one person is a
+ * correction to them and nothing else — so scope is the only control, and
+ * everything else follows from it.
+ *
+ * The note is required either way: a hand-written balance change with no
+ * stated reason is the one entry nobody can reconstruct later.
  *
  * @param {object} props
  * @param {boolean} props.open
@@ -45,7 +46,7 @@ import { today } from "@/pages/LeavePrototype/leaveCalc";
  * @param {(id: number) => number} props.balanceOf
  * @param {(id: number) => number} props.allowanceUsedBy
  * @param {(region: string) => number} props.allowanceFor
- * @param {(rows: Array<object>, countsAgainstAllowance: boolean) => void} props.onSubmit
+ * @param {(rows: Array<object>, isGrant: boolean) => void} props.onSubmit
  * @returns {JSX.Element}
  */
 const AdjustDialog = ({
@@ -61,13 +62,11 @@ const AdjustDialog = ({
   const [scope, setScope] = useState("person");
   const [hours, setHours] = useState("");
   const [note, setNote] = useState("");
-  const [fromAllowance, setFromAllowance] = useState(false);
 
   const reset = () => {
     setScope(person ? "person" : "region:CN");
     setHours("");
     setNote("");
-    setFromAllowance(false);
   };
 
   const close = () => {
@@ -91,17 +90,21 @@ const AdjustDialog = ({
       ? [person]
       : people.filter((p) => p.region === effectiveScope.slice(7));
 
-  const region =
-    effectiveScope === "person" ? person?.region : effectiveScope.slice(7);
-  const allowance = region ? allowanceFor(region) : 0;
+  // Scope decides everything else. Granting to a region is how the hand-issued
+  // half of the extra leave goes out, so it draws on the allowance; adjusting
+  // one person is a correction to that person and touches nothing else.
+  const isGrant = effectiveScope !== "person";
+  const region = isGrant ? effectiveScope.slice(7) : person?.region;
+  const allowance = isGrant && region ? allowanceFor(region) : 0;
 
   /** Least headroom among the targets — the one that would overrun first. */
-  const remaining = targets.length
-    ? Math.min(...targets.map((p) => allowance - allowanceUsedBy(p.id)))
-    : 0;
+  const remaining =
+    isGrant && targets.length
+      ? Math.min(...targets.map((p) => allowance - allowanceUsedBy(p.id)))
+      : 0;
   const uniform = new Set(targets.map((p) => allowanceUsedBy(p.id))).size <= 1;
 
-  const overruns = fromAllowance && entered && delta > remaining;
+  const overruns = isGrant && entered && delta > remaining;
   const canSubmit =
     entered && delta !== 0 && note.trim().length > 0 && targets.length > 0;
 
@@ -113,12 +116,12 @@ const AdjustDialog = ({
         id: stamp + i,
         personId: p.id,
         personName: p.name,
-        entryType: fromAllowance ? "holiday_grant" : "manual_adjustment",
+        entryType: isGrant ? "holiday_grant" : "manual_adjustment",
         hours: delta,
         note: note.trim(),
         effectiveDate: today(),
       })),
-      fromAllowance,
+      isGrant,
     );
     close();
   };
@@ -127,9 +130,15 @@ const AdjustDialog = ({
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Write a ledger entry</DialogTitle>
+          <DialogTitle>
+            {isGrant
+              ? `Grant to everyone in ${REGIONS[region]?.label ?? region}`
+              : `Adjust ${person?.name ?? ""}`}
+          </DialogTitle>
           <DialogDescription>
-            Existing rows are never edited — a correction is another row.
+            {isGrant
+              ? "Issues the hand-granted half of the extra leave, drawing on each person's allowance for the year."
+              : "Moves this person's balance only. Does not touch their holiday allowance."}
           </DialogDescription>
         </DialogHeader>
 
@@ -166,22 +175,6 @@ const AdjustDialog = ({
             />
           </div>
 
-          <label className="flex items-start gap-2.5 cursor-pointer">
-            <Checkbox
-              checked={fromAllowance}
-              className="mt-0.5"
-              onCheckedChange={(v) => setFromAllowance(Boolean(v))}
-            />
-            <span className="text-sm text-slate-700">
-              Counts against the holiday allowance
-              <span className="block text-xs text-slate-500">
-                Tick this when issuing the hand-granted half of the extra leave
-                before a holiday. Leave it clear for a plain correction, which
-                does not touch the allowance.
-              </span>
-            </span>
-          </label>
-
           {/* What lands where */}
           <p className="text-xs text-slate-500 tabular-nums">
             {effectiveScope === "person" && person
@@ -193,7 +186,7 @@ const AdjustDialog = ({
               : `Writes one row for each of ${targets.length} ${targets.length === 1 ? "person" : "people"}.`}
           </p>
 
-          {fromAllowance && region && (
+          {isGrant && (
             <p className="text-xs text-slate-500 tabular-nums">
               Allowance {allowance.toFixed(2)}h a year.{" "}
               {uniform
@@ -209,9 +202,7 @@ const AdjustDialog = ({
               rows={2}
               value={note}
               placeholder={
-                fromAllowance
-                  ? "Spring Festival"
-                  : "Why this correction exists."
+                isGrant ? "Spring Festival" : "Why this correction exists."
               }
               onChange={(e) => setNote(e.target.value)}
             />
