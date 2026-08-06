@@ -143,7 +143,7 @@ const EmployeeView = ({
           <Stat
             label="Reserved"
             value={`${reserved.toFixed(2)}h`}
-            hint="Held by pending requests"
+            hint="Held by requests awaiting a decision"
           />
           <Stat
             label="Used"
@@ -289,11 +289,36 @@ const EmployeeView = ({
             </li>
           ))}
         </ul>
-        <div className="flex items-baseline justify-between mt-3 pt-3 border-t border-slate-200">
-          <span className="text-sm font-medium text-slate-900">Balance</span>
-          <span className="text-sm font-semibold tabular-nums text-slate-900">
-            {balance.toFixed(2)}h
-          </span>
+        {/* Foots the list, and reconciles it with the Available figure up top
+            — otherwise the page shows two totals and no way to tell which one
+            is the real balance. */}
+        <div className="mt-3 pt-3 border-t border-slate-200 space-y-1">
+          <div className="flex items-baseline justify-between">
+            <span className="text-sm font-medium text-slate-900">
+              Total on record
+            </span>
+            <span className="text-sm font-semibold tabular-nums text-slate-900">
+              {balance.toFixed(2)}h
+            </span>
+          </div>
+          {reserved > 0 && (
+            <>
+              <div className="flex items-baseline justify-between text-slate-500">
+                <span className="text-sm">Less reserved by pending</span>
+                <span className="text-sm tabular-nums">
+                  −{reserved.toFixed(2)}h
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between pt-1">
+                <span className="text-sm font-medium text-slate-900">
+                  Available to request
+                </span>
+                <span className="text-sm font-semibold tabular-nums text-slate-900">
+                  {available.toFixed(2)}h
+                </span>
+              </div>
+            </>
+          )}
         </div>
       </Card>
 
