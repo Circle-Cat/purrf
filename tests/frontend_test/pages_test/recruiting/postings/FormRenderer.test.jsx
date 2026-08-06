@@ -540,4 +540,33 @@ describe("read-only mode", () => {
       container.querySelector('input[name="other-201-q1"]'),
     ).toBeInTheDocument();
   });
+
+  it("counts characters against a long_text budget as they are typed", () => {
+    // A budget the candidate cannot see is one they only learn about by being
+    // rejected at submit, after writing past it.
+    const questions = [
+      { id: "q1", type: "long_text", label: "Why?", maxLength: 10 },
+    ];
+    const { rerender } = render(
+      <FormRenderer questions={questions} answers={{ q1: "abc" }} />,
+    );
+    expect(screen.getByText("3 / 10 characters")).toBeInTheDocument();
+
+    rerender(
+      <FormRenderer questions={questions} answers={{ q1: "x".repeat(12) }} />,
+    );
+    expect(screen.getByText("12 / 10 characters")).toHaveClass(
+      "text-destructive",
+    );
+  });
+
+  it("shows no counter when the question sets no budget", () => {
+    render(
+      <FormRenderer
+        questions={[{ id: "q1", type: "long_text", label: "Why?" }]}
+        answers={{ q1: "abc" }}
+      />,
+    );
+    expect(screen.queryByText(/characters/)).not.toBeInTheDocument();
+  });
 });

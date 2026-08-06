@@ -1,3 +1,4 @@
+import FieldError from "@/components/common/FieldError";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -173,6 +174,7 @@ export default function ProfileSection({
               +
             </Button>
           </div>
+          <FieldError errors={errors} errorKey="profile:education" />
           {education.map((item) => (
             <EducationFormItem
               key={item.id}
@@ -202,6 +204,7 @@ export default function ProfileSection({
               +
             </Button>
           </div>
+          <FieldError errors={errors} errorKey="profile:experience" />
           {experience.map((item) => (
             <ExperienceFormItem
               key={item.id}

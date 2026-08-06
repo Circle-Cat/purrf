@@ -15,6 +15,7 @@ import {
 } from "@/pages/Recruiting/profileWriteBack";
 import { profileToApplicationForm } from "@/pages/Recruiting/profilePrefill";
 import { discardedAnswers } from "@/pages/Recruiting/discardedAnswers";
+import { validateApplication } from "@/pages/Recruiting/applicationValidation";
 import {
   Dialog,
   DialogContent,
@@ -99,6 +100,10 @@ const ApplicationForm = ({
   // Null until a save is found to cost something; then the list of answers it
   // would delete, which is also what opens the confirm dialog.
   const [pendingDiscard, setPendingDiscard] = useState(null);
+  // Empty until the candidate tries to submit. Only ever cleared as fields are
+  // fixed, never added to while typing, so a half-filled form does not turn
+  // red under someone still working through it.
+  const [errors, setErrors] = useState({});
   const [prefillLoading, setPrefillLoading] = useState(!existing && !seed);
 
   useEffect(() => {
@@ -159,7 +164,63 @@ const ApplicationForm = ({
   };
 
   /**
-   * Send, having already decided the cost is acceptable.
+   * Check the answers, and when something is wrong put the page on the first
+   * problem instead of sending it.
+   *
+   * The API reports one failure at a time and names the question by its
+   * internal id -- "question q7 is required" -- which appears nowhere on
+   * screen. Checking here is what lets the form point at the field.
+   *
+   * @returns {boolean} True when the application is worth sending.
+   */
+  const validate = () => {
+    const found = validateApplication(
+      job.formSchema?.questions ?? [],
+      answers,
+      { profileConfig: job.profileConfig, profile: profileValue },
+    );
+    setErrors(found);
+    const keys = Object.keys(found);
+    if (keys.length === 0) return true;
+    toast.error(
+      keys.length === 1
+        ? "Fix the highlighted field before submitting."
+        : `Fix ${keys.length} highlighted fields before submitting.`,
+    );
+    document
+      .querySelector(`[data-error-key="${CSS.escape(keys[0])}"]`)
+      ?.scrollIntoView({ block: "center" });
+    return false;
+  };
+
+  // Clear each error as its field is fixed, the way the profile modals do.
+  // Recomputed rather than tracked per keystroke: one answer can hide another
+  // question entirely, so an edit in one place resolves an error rendered in
+  // another. Narrowed to the keys already on screen, so fixing one problem
+  // cannot surface a new one mid-typing.
+  useEffect(() => {
+    setErrors((shown) => {
+      const keys = Object.keys(shown);
+      if (keys.length === 0) return shown;
+      const current = validateApplication(
+        job.formSchema?.questions ?? [],
+        answers,
+        { profileConfig: job.profileConfig, profile: profileValue },
+      );
+      const next = {};
+      keys.forEach((key) => {
+        if (current[key]) next[key] = current[key];
+      });
+      const unchanged =
+        Object.keys(next).length === keys.length &&
+        keys.every((key) => next[key] === shown[key]);
+      return unchanged ? shown : next;
+    });
+  }, [answers, profileValue, job]);
+
+  /**
+   * Send, having already decided the answers are worth sending and the cost is
+   * acceptable.
    *
    * Split from the click handler so the confirm dialog has something to call:
    * everything the server would drop is settled before this runs.
@@ -201,9 +262,14 @@ const ApplicationForm = ({
    * everything under it with no earlier version to recover from. Silent is
    * the wrong default for that; nothing is asked when the save costs nothing,
    * which is nearly every save.
+   *
+   * Checked before asked: a form that is not going to be accepted should send
+   * the candidate back to the bad field, not make them approve a deletion for
+   * a submission that then fails anyway.
    */
   const submit = () => {
     if (submitting) return;
+    if (!validate()) return;
     const losing = discardedAnswers(job.formSchema?.questions ?? [], answers);
     if (losing.length > 0) {
       setPendingDiscard(losing);
@@ -227,6 +293,7 @@ const ApplicationForm = ({
         answers={answers}
         onAnswerChange={(id, v) => setAnswers((a) => ({ ...a, [id]: v }))}
         contactEmail={user?.email ?? ""}
+        errors={errors}
         onResumeStored={setResume}
         existingResume={existingResume}
       />

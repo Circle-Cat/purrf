@@ -26,18 +26,6 @@ export const optionKey = (questionId, index) =>
 /** A field on one machine-screening rule. */
 export const ruleKey = (ruleId, field) => `rule:${ruleId}:${field}`;
 
-/**
- * Class to append to a control that failed validation. Lives here rather than
- * beside `FieldError` because a module that exports a component may export
- * nothing else (react-refresh/only-export-components).
- *
- * @param {Record<string, string>} errors
- * @param {string} errorKey
- * @returns {string} Empty when the field is fine, so it concatenates cleanly.
- */
-export const errorBorder = (errors, errorKey) =>
-  errors?.[errorKey] ? " border-destructive" : "";
-
 const CHOICE_TYPES = new Set(["single_choice", "multi_choice"]);
 
 /** Blank, or nothing but whitespace. */
@@ -117,13 +105,10 @@ export const validatePosting = (draft) => {
     }
 
     if (question.type === "long_text") {
-      // "max_length must be > 0" / "max_words must be > 0"
+      // "max_length must be > 0"
       if (question.maxLength != null && question.maxLength <= 0) {
         errors[questionKey(question.id, "maxLength")] =
           "Must be greater than 0";
-      }
-      if (question.maxWords != null && question.maxWords <= 0) {
-        errors[questionKey(question.id, "maxWords")] = "Must be greater than 0";
       }
     }
 

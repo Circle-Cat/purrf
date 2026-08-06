@@ -170,7 +170,7 @@ describe("QuestionEditor", () => {
     expect(onRemove).toHaveBeenCalledTimes(1);
   });
 
-  it("coerces Max length to number and undefined when cleared", () => {
+  it("coerces Max characters to number and undefined when cleared", () => {
     const onChange = vi.fn();
     const longTextQ = {
       id: "q3",
@@ -182,7 +182,7 @@ describe("QuestionEditor", () => {
       <ControlledEditor initialQuestion={longTextQ} onChange={onChange} />,
     );
 
-    const maxLenInput = screen.getByLabelText("Max length");
+    const maxLenInput = screen.getByLabelText("Max characters");
 
     act(() => {
       fireEvent.change(maxLenInput, { target: { value: "10" } });

@@ -287,6 +287,79 @@ describe("ApplicationForm", () => {
     });
   });
 
+  describe("submit validation", () => {
+    const REQUIRED_JOB = {
+      ...JOB,
+      formSchema: {
+        questions: [
+          {
+            id: "q1",
+            type: "short_text",
+            label: "Where are you based?",
+            required: true,
+          },
+        ],
+      },
+    };
+
+    it("does not send an application that fails validation", async () => {
+      // The API reports one failure at a time, naming the question `q1` --
+      // a string that appears nowhere on the candidate's screen.
+      const user = userEvent.setup();
+      render(<ApplicationForm job={REQUIRED_JOB} onSubmitted={vi.fn()} />);
+      await screen.findByLabelText("Contact email");
+
+      await user.click(screen.getByRole("button", { name: /submit/i }));
+
+      expect(
+        await screen.findByText("This question is required"),
+      ).toBeInTheDocument();
+      expect(api.submitApplication).not.toHaveBeenCalled();
+    });
+
+    it("clears the error as soon as the field is filled in", async () => {
+      const user = userEvent.setup();
+      render(<ApplicationForm job={REQUIRED_JOB} onSubmitted={vi.fn()} />);
+      await screen.findByLabelText("Contact email");
+      await user.click(screen.getByRole("button", { name: /submit/i }));
+      await screen.findByText("This question is required");
+
+      fireEvent.change(screen.getByLabelText("Where are you based?"), {
+        target: { value: "Taipei" },
+      });
+
+      await waitFor(() =>
+        expect(
+          screen.queryByText("This question is required"),
+        ).not.toBeInTheDocument(),
+      );
+    });
+
+    it("stays quiet until the candidate tries to submit", async () => {
+      render(<ApplicationForm job={REQUIRED_JOB} onSubmitted={vi.fn()} />);
+      await screen.findByLabelText("Contact email");
+      expect(
+        screen.queryByText("This question is required"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("sends once the form is valid", async () => {
+      const user = userEvent.setup();
+      api.submitApplication.mockResolvedValue({ data: { id: 100 } });
+      render(<ApplicationForm job={REQUIRED_JOB} onSubmitted={vi.fn()} />);
+      await screen.findByLabelText("Contact email");
+      fireEvent.change(screen.getByLabelText("Where are you based?"), {
+        target: { value: "Taipei" },
+      });
+
+      await user.click(screen.getByRole("button", { name: /submit/i }));
+
+      await waitFor(() =>
+        expect(api.submitApplication).toHaveBeenCalledTimes(1),
+      );
+    });
+  });
+
   it("renders exactly one Contact email field", async () => {
     render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
     expect(await screen.findAllByLabelText("Contact email")).toHaveLength(1);

@@ -7,11 +7,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import FieldError from "@/pages/Recruiting/postings/FieldError";
-import {
-  errorBorder,
-  optionKey,
-} from "@/pages/Recruiting/postings/postingValidation";
+import FieldError from "@/components/common/FieldError";
+import { errorBorder } from "@/components/common/fieldErrors";
+import { optionKey } from "@/pages/Recruiting/postings/postingValidation";
 
 /** How a question reads in the reveal chips and picker (labels can be blank). */
 const questionLabel = (q) => q.label || q.id;

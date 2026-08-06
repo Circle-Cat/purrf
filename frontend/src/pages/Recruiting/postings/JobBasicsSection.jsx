@@ -8,11 +8,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import FieldError from "@/pages/Recruiting/postings/FieldError";
-import {
-  errorBorder,
-  basicsKey,
-} from "@/pages/Recruiting/postings/postingValidation";
+import FieldError from "@/components/common/FieldError";
+import { errorBorder } from "@/components/common/fieldErrors";
+import { basicsKey } from "@/pages/Recruiting/postings/postingValidation";
 
 /**
  * What each posting type means, shown under the picker. "Kind" is the stored
