@@ -680,6 +680,127 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(written["education"], [{"school": "S"}])
         self.assertEqual(written["experience"], [{"company": "C"}])
 
+    def _editable_app(self):
+        """An application in the window where the candidate may still edit."""
+        app = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+            sub_status="pending",
+            current_round=1,
+        )
+        app.application_id = 100
+        self.app_repo.get_by_id = AsyncMock(return_value=app)
+        current = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission={"personal": {}}
+        )
+        current.submission_id = 5
+        current.is_frozen = False
+        self.sub_repo.get_current = AsyncMock(return_value=current)
+        return app
+
+    def _answer_rule(self, action):
+        """A posting that screens on q1 == "Yes"."""
+        job = self._job(
+            status=JobStatus.PUBLISHED,
+            screen_rules={
+                "rules": [
+                    {
+                        "id": "r1",
+                        "condition": {
+                            "source": "answer",
+                            "operator": "equals",
+                            "questionId": "q1",
+                            "value": "Yes",
+                        },
+                        "action": action,
+                    }
+                ]
+            },
+        )
+        job.form_schema = {
+            "questions": [
+                {
+                    "id": "q1",
+                    "type": "single_choice",
+                    "label": "Blocked?",
+                    "options": ["Yes", "No"],
+                }
+            ]
+        }
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        return job
+
+    async def test_edit_into_a_reject_rule_rejects(self):
+        """An edit is a submission -- there is no save that is not one.
+
+        Submitting "No" past a reject rule and then editing to "Yes" used to
+        leave the application in the pipeline reading "Yes", with the rule
+        that exists to catch exactly that never having run.
+        """
+        self._answer_rule("reject")
+        app = self._editable_app()
+        dto = ApplicationEditDto.model_validate({"answers": {"q1": "Yes"}})
+
+        result = await self.service.edit(self.session, self._ctx(), 100, dto)
+
+        self.assertEqual(app.stage, ApplicationStage.REJECTED)
+        self.assertEqual(app.tags, {"auto_reject": "screen_rule", "rule_id": "r1"})
+        self.assertFalse(result.editable)
+        self.activity_repo.create.assert_awaited_once_with(
+            self.session,
+            100,
+            2,
+            "auto_rejected",
+            details={"reason": "screen_rule", "ruleId": "r1", "onEdit": True},
+        )
+
+    async def test_edit_that_matches_nothing_leaves_the_stage_alone(self):
+        self._answer_rule("reject")
+        app = self._editable_app()
+        dto = ApplicationEditDto.model_validate({"answers": {"q1": "No"}})
+
+        result = await self.service.edit(self.session, self._ctx(), 100, dto)
+
+        self.assertEqual(app.stage, ApplicationStage.RECRUITER_SCREENING)
+        self.assertIsNone(app.tags)
+        self.assertTrue(result.editable)
+        self.activity_repo.create.assert_not_awaited()
+
+    async def test_edit_into_a_qualify_rule_stays_put(self):
+        """qualify lands on the first stage, which is where an editable
+        application already is."""
+        self._answer_rule("qualify")
+        app = self._editable_app()
+        dto = ApplicationEditDto.model_validate({"answers": {"q1": "Yes"}})
+
+        await self.service.edit(self.session, self._ctx(), 100, dto)
+
+        self.assertEqual(app.stage, ApplicationStage.RECRUITER_SCREENING)
+        self.assertIsNone(app.tags)
+
+    async def test_edit_into_an_auto_hire_rule_hires(self):
+        self._answer_rule("auto_hire")
+        app = self._editable_app()
+        dto = ApplicationEditDto.model_validate({"answers": {"q1": "Yes"}})
+
+        await self.service.edit(self.session, self._ctx(), 100, dto)
+
+        self.assertEqual(app.stage, ApplicationStage.HIRED)
+        self.onboarding_training_svc.ensure_for_admitted.assert_awaited_once()
+
+    async def test_edit_screens_the_answers_it_just_stored(self):
+        """The rule reads the edit's answers, not the ones already on file."""
+        self._answer_rule("reject")
+        app = self._editable_app()
+        app_sub = self.sub_repo.get_current.return_value
+        app_sub.submission = {"answers": {"q1": "No"}}
+        dto = ApplicationEditDto.model_validate({"answers": {"q1": "Yes"}})
+
+        await self.service.edit(self.session, self._ctx(), 100, dto)
+
+        self.assertEqual(app.stage, ApplicationStage.REJECTED)
+
     async def test_get_mine_does_not_commit(self):
         result = await self.service.get_mine(self.session, self._ctx(), 1)
         self.assertIsNone(result)
