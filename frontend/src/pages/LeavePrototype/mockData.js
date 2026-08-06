@@ -128,14 +128,14 @@ export const DEMO_MANAGER_ID = 9;
 
 /**
  * Ledger rows for the current user. Balance is the sum of this list — there is
- * no second source of truth. `openingBalance` is the one-off migration row
- * written when the system went live; it is deliberately excluded from the
- * accrual engine's "already granted" total.
+ * no second source of truth. The go-live balance carried over from the old
+ * system is just an adjustment with a note saying so — it needs no type of
+ * its own, and the engine ignores hand-written rows either way.
  */
 export const INITIAL_LEDGER = [
   {
     id: 1,
-    entryType: "opening_balance",
+    entryType: "manual_adjustment",
     hours: 46.5,
     effectiveDate: "2026-08-31",
     note: "Migrated from the previous system at go-live.",

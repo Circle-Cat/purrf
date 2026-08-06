@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertOctagon, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { AlertOctagon, AlertTriangle, CheckCircle2, Gift } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CalendarAdmin from "@/pages/LeavePrototype/CalendarAdmin";
-import GrantPanel from "@/pages/LeavePrototype/GrantPanel";
 import AdjustDialog from "@/pages/LeavePrototype/AdjustDialog";
 import {
   COMPANY_HOLIDAYS,
@@ -141,6 +140,7 @@ const DataHealth = ({ people }) => {
  */
 const AdminView = ({ adjustments, onAdjust }) => {
   const [adjusting, setAdjusting] = useState(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   // Per region, because a region is created the day someone is hired into it
   // and needs its own calendars and figures from that moment. Level
@@ -154,25 +154,21 @@ const AdminView = ({ adjustments, onAdjust }) => {
     CN: { ...REGIONS.CN },
     INTL: { ...REGIONS.INTL },
   });
-  const [grants, setGrants] = useState({ CN: [], INTL: [] });
+  const [allowanceUsed, setAllowanceUsed] = useState({});
 
-  const issueGrant = (grant) => {
-    setGrants((prev) => ({ ...prev, [region]: [...prev[region], grant] }));
-    onAdjust({
-      id: grant.id,
-      personId: null,
-      personName: `Everyone in ${REGIONS[region].label} (${grant.headcount})`,
-      entryType: "holiday_grant",
-      hours: grant.hours,
-      note: grant.reason,
-      effectiveDate: new Date().toISOString().slice(0, 10),
-    });
+  /** One dialog writes rows for one person or a whole region. */
+  const writeRows = (rows, countsAgainstAllowance) => {
+    rows.forEach(onAdjust);
+    if (countsAgainstAllowance) {
+      setAllowanceUsed((prev) => {
+        const next = { ...prev };
+        for (const r of rows) {
+          next[r.personId] = (next[r.personId] ?? 0) + r.hours;
+        }
+        return next;
+      });
+    }
   };
-
-  const hasOpeningBalance = (id) =>
-    adjustments.some(
-      (a) => a.personId === id && a.entryType === "opening_balance",
-    );
 
   /** Session adjustments folded into the seeded balances. */
   const balances = ORG_BALANCES.map((p) => ({
@@ -194,19 +190,22 @@ const AdminView = ({ adjustments, onAdjust }) => {
       </header>
 
       <AdjustDialog
+        open={dialogOpen}
+        onOpenChange={(next) => {
+          setDialogOpen(next);
+          if (!next) setAdjusting(null);
+        }}
         person={adjusting}
-        currentBalance={
-          balances.find((p) => p.id === adjusting?.id)?.balance ?? 0
-        }
-        onOpenChange={(next) => !next && setAdjusting(null)}
-        hasOpeningBalance={adjusting ? hasOpeningBalance(adjusting.id) : false}
-        onSubmit={onAdjust}
+        people={balances}
+        balanceOf={(id) => balances.find((p) => p.id === id)?.balance ?? 0}
+        allowanceUsedBy={(id) => allowanceUsed[id] ?? 0}
+        allowanceFor={(r) => settings[r]?.holidayGrantAllowance ?? 0}
+        onSubmit={writeRows}
       />
 
       <Tabs defaultValue="year">
         <TabsList>
           <TabsTrigger value="year">Yearly setup</TabsTrigger>
-          <TabsTrigger value="grants">Grants</TabsTrigger>
           <TabsTrigger value="balances">Balances</TabsTrigger>
           <TabsTrigger value="health">Data health</TabsTrigger>
         </TabsList>
@@ -226,17 +225,20 @@ const AdminView = ({ adjustments, onAdjust }) => {
           />
         </TabsContent>
 
-        <TabsContent value="grants" className="mt-4">
-          <GrantPanel
-            region={region}
-            allowance={settings[region].holidayGrantAllowance}
-            grants={grants[region]}
-            headcount={ORG_BALANCES.filter((p) => p.region === region).length}
-            onGrant={issueGrant}
-          />
-        </TabsContent>
-
         <TabsContent value="balances" className="mt-4 space-y-4">
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              onClick={() => {
+                setAdjusting(null);
+                setDialogOpen(true);
+              }}
+            >
+              <Gift size={15} />
+              Grant to a whole region
+            </Button>
+          </div>
+
           <Card className="p-0 overflow-x-auto">
             <Table>
               <TableHeader>
@@ -293,7 +295,10 @@ const AdminView = ({ adjustments, onAdjust }) => {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setAdjusting(p)}
+                        onClick={() => {
+                          setAdjusting(p);
+                          setDialogOpen(true);
+                        }}
                       >
                         Adjust
                       </Button>
@@ -316,9 +321,7 @@ const AdminView = ({ adjustments, onAdjust }) => {
                       <span className="text-slate-900">
                         {a.personName}
                         <span className="text-slate-400 ml-2 text-xs">
-                          {a.entryType === "opening_balance"
-                            ? "opening balance"
-                            : "adjustment"}
+                          "adjustment"
                         </span>
                       </span>
                       <span

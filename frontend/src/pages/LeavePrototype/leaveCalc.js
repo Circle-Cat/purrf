@@ -137,9 +137,9 @@ export const advanceNotice = (hours, startISO, submitISO) => {
 };
 
 /**
- * Sum a ledger. Every entry type counts toward the balance — the exclusion of
- * `opening_balance` applies only to the accrual engine's "already granted"
- * total, never to the balance itself.
+ * Sum a ledger. Every entry type counts toward the balance — the accrual
+ * engine's "already granted" total excludes hand-written rows, but that is a
+ * different sum and never touches this one.
  *
  * @param {Array<{hours: number}>} ledger
  * @returns {number}
@@ -337,7 +337,6 @@ export const groupHolidays = (holidays) => {
  * balance got there; this is where that question is answered instead.
  */
 export const ENTRY_LABEL = {
-  opening_balance: "Opening balance",
   weekly_accrual: "Weekly accrual",
   holiday_grant: "Public holiday grant",
   leave_deduction: "Leave taken",
