@@ -270,6 +270,55 @@ export const TYPE_LABEL = {
 };
 
 /**
+ * Merge holiday date rows into display segments.
+ *
+ * Holidays are stored one row per date, so a five-day break is five rows. Shown
+ * raw that is five identical-looking lines; shown as a start/end pair it is one.
+ * Rows join a segment only when they share a name *and* run consecutively, so a
+ * break split across a working day stays two segments — which is how the real
+ * calendar is actually written.
+ *
+ * Exchangeability is per date, so a segment reports how many of its days
+ * qualify rather than a single flag.
+ *
+ * @param {Array<{date: string, name: string, exchangeable: boolean}>} holidays
+ * @returns {Array<{name: string, start: string, end: string, days: number, exchangeableDays: number, dates: string[]}>}
+ */
+export const groupHolidays = (holidays) => {
+  const sorted = [...holidays].sort((a, b) => a.date.localeCompare(b.date));
+  const segments = [];
+
+  for (const row of sorted) {
+    const last = segments[segments.length - 1];
+    const dayAfterLast = last
+      ? toISODate(
+          new Date(
+            fromISODate(last.end).setDate(fromISODate(last.end).getDate() + 1),
+          ),
+        )
+      : null;
+
+    if (last && last.name === row.name && dayAfterLast === row.date) {
+      last.end = row.date;
+      last.days += 1;
+      last.dates.push(row.date);
+      if (row.exchangeable) last.exchangeableDays += 1;
+    } else {
+      segments.push({
+        name: row.name,
+        start: row.date,
+        end: row.date,
+        days: 1,
+        exchangeableDays: row.exchangeable ? 1 : 0,
+        dates: [row.date],
+      });
+    }
+  }
+
+  return segments;
+};
+
+/**
  * Display label for each ledger entry type.
  *
  * The balance card shows three numbers and does not try to explain how the

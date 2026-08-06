@@ -31,18 +31,37 @@ export const LEVEL_POLICY = { L1: 0, L2: 96, L3: 96, L4: 96 };
 export const CONVERSION_HOURS = 64;
 
 /**
- * Placeholder company holidays. `exchangeable` days can be worked in trade for
- * 8h of paid leave. Dates are spread across H2 so the demo always has an
- * upcoming holiday to point at.
+ * Placeholder company holidays, stored one row per date — the same shape as the
+ * real table, where a multi-day break is several rows sharing a name rather
+ * than a start/end pair.
+ *
+ * Two properties of the real calendar are reproduced here because they are what
+ * break naive display code:
+ *
+ *   - A named holiday can be split across non-consecutive dates (Founders Week
+ *     below covers Oct 1-3 and Oct 5, skipping Oct 4).
+ *   - Exchangeability is per date, not per holiday, so one break can be partly
+ *     exchangeable (Founders Week again).
  */
 export const COMPANY_HOLIDAYS = [
-  { date: "2026-08-21", name: "Founders Day", exchangeable: false },
+  { date: "2026-08-21", name: "Charter Day", exchangeable: false },
+
+  { date: "2026-09-03", name: "Harvest Break", exchangeable: true },
   { date: "2026-09-04", name: "Harvest Break", exchangeable: true },
+  { date: "2026-09-05", name: "Harvest Break", exchangeable: true },
+
   { date: "2026-09-25", name: "Autumn Festival", exchangeable: true },
-  { date: "2026-10-02", name: "National Week I", exchangeable: false },
-  { date: "2026-10-09", name: "National Week II", exchangeable: true },
+
+  { date: "2026-10-01", name: "Founders Week", exchangeable: false },
+  { date: "2026-10-02", name: "Founders Week", exchangeable: false },
+  { date: "2026-10-03", name: "Founders Week", exchangeable: true },
+  { date: "2026-10-05", name: "Founders Week", exchangeable: true },
+
   { date: "2026-11-13", name: "Cat Day", exchangeable: false },
+
+  { date: "2026-12-23", name: "Year End Break", exchangeable: true },
   { date: "2026-12-24", name: "Year End Break", exchangeable: true },
+  { date: "2026-12-25", name: "Year End Break", exchangeable: false },
 ];
 
 /** The signed-in employee for the Employee view. */

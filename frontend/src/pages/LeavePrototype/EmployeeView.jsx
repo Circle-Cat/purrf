@@ -30,6 +30,7 @@ import {
   STATUS_LABEL,
   TYPE_LABEL,
   breakdownRange,
+  groupHolidays,
   isAutoApproved,
   ledgerBalance,
   pendingReserved,
@@ -138,7 +139,21 @@ const EmployeeView = ({
     setReason("");
   };
 
-  const upcomingHolidays = COMPANY_HOLIDAYS.filter((h) => h.date >= today());
+  /** Segments still ahead — a segment counts as upcoming until its last day. */
+  const upcomingSegments = groupHolidays(COMPANY_HOLIDAYS).filter(
+    (s) => s.end >= today(),
+  );
+
+  /** Exchange is one day at a time, so the picker lists dates, not segments. */
+  const exchangeableDays = upcomingSegments.flatMap((segment) =>
+    segment.dates
+      .filter(
+        (date) =>
+          date >= today() &&
+          COMPANY_HOLIDAYS.find((h) => h.date === date)?.exchangeable,
+      )
+      .map((date) => ({ date, segment })),
+  );
 
   return (
     <div className="p-6 space-y-6 max-w-5xl">
@@ -205,11 +220,11 @@ const EmployeeView = ({
                   <SelectValue placeholder="Pick a holiday" />
                 </SelectTrigger>
                 <SelectContent>
-                  {COMPANY_HOLIDAYS.filter(
-                    (h) => h.exchangeable && h.date >= today(),
-                  ).map((h) => (
-                    <SelectItem key={h.date} value={h.date}>
-                      {h.date} · {h.name}
+                  {exchangeableDays.map(({ date, segment }) => (
+                    <SelectItem key={date} value={date}>
+                      {date} · {segment.name}
+                      {segment.days > 1 &&
+                        ` (${segment.start} – ${segment.end})`}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -468,23 +483,31 @@ const EmployeeView = ({
         </div>
         <p className="text-xs text-slate-500 mb-3">
           You do not request these — the office is closed. Days marked
-          exchangeable can be worked in trade for 8h of paid leave.
+          exchangeable can be worked in trade for 8h of paid leave, one day at a
+          time.
         </p>
         <ul className="divide-y divide-slate-100">
-          {upcomingHolidays.map((h) => (
+          {upcomingSegments.map((s) => (
             <li
-              key={h.date}
-              className="py-2 flex items-center justify-between text-sm"
+              key={`${s.name}-${s.start}`}
+              className="py-2.5 flex items-center justify-between gap-4 text-sm"
             >
-              <span className="text-slate-700">
+              <div className="min-w-0">
                 <span className="tabular-nums text-slate-500 mr-3">
-                  {h.date}
+                  {s.days === 1 ? s.start : `${s.start} – ${s.end}`}
                 </span>
-                {h.name}
-              </span>
-              {h.exchangeable && (
-                <Badge variant="outline" className="text-xs">
-                  Exchangeable
+                <span className="text-slate-700">{s.name}</span>
+                {s.days > 1 && (
+                  <span className="text-xs text-slate-400 ml-2">
+                    {s.days} days
+                  </span>
+                )}
+              </div>
+              {s.exchangeableDays > 0 && (
+                <Badge variant="outline" className="text-xs shrink-0">
+                  {s.exchangeableDays === s.days
+                    ? "Exchangeable"
+                    : `${s.exchangeableDays} of ${s.days} exchangeable`}
                 </Badge>
               )}
             </li>
