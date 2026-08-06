@@ -26,9 +26,18 @@ import { datesBetween, groupHolidays } from "@/pages/LeavePrototype/leaveCalc";
  * @param {Array<{date: string, name: string, exchangeable?: boolean}>} props.rows
  * @param {boolean} props.withExchangeable
  * @param {(rows: Array<object>) => void} props.onChange
+ * @param {JSX.Element} [props.children] - shown at the foot of the card, for
+ *   anything derived from this list specifically
  * @returns {JSX.Element}
  */
-const HolidayEditor = ({ title, blurb, rows, withExchangeable, onChange }) => {
+const HolidayEditor = ({
+  title,
+  blurb,
+  rows,
+  withExchangeable,
+  onChange,
+  children,
+}) => {
   const [name, setName] = useState("");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -184,6 +193,8 @@ const HolidayEditor = ({ title, blurb, rows, withExchangeable, onChange }) => {
       <p className="text-xs text-slate-400 pt-1 border-t border-slate-100 tabular-nums">
         {segments.length} periods · {rows.length} days
       </p>
+
+      {children}
     </Card>
   );
 };
