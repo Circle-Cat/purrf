@@ -12,7 +12,7 @@ import PostingsList from "@/pages/Recruiting/components/PostingsList";
 import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
 import { POSTINGS_GUIDE } from "@/pages/Recruiting/components/guideContent";
 
-/** Postings browse page: status + Managed-by list, click-through to the unified detail page. */
+/** Postings browse page: status + Recruiter list, click-through to the unified detail page. */
 const Postings = () => {
   const { user, permissions = [] } = useAuth();
   const canWrite = permissions.includes(PERMISSIONS.RECRUITING_JOB_WRITE);
@@ -65,7 +65,7 @@ const Postings = () => {
           checked={myPostingsOnly}
           onCheckedChange={(checked) => setMyPostingsOnly(Boolean(checked))}
         />
-        <Label htmlFor="my-postings">Managed by me</Label>
+        <Label htmlFor="my-postings">I&apos;m the recruiter</Label>
       </div>
       <PostingsList
         jobs={visibleJobs}

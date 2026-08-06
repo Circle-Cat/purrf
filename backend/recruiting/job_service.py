@@ -334,7 +334,7 @@ class JobService:
             )
         if not normalized_owner_ids(cfg):
             raise ValueError(
-                "the posting needs at least one manager (Managed by) before submission"
+                "the posting needs at least one recruiter before submission"
             )
         assignee_ids = {
             s.get("defaultAssigneeId")

@@ -2832,7 +2832,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             str(ctx.exception),
-            "sub-status evaluated requires a confirmed evaluation for the current round",
+            "sub-status evaluated requires a confirmed evaluation for the current session",
         )
         self.evaluation_repo.has_confirmed.assert_awaited_once_with(
             self.session, 10, ApplicationStage.RECRUITER_SCREENING, 2

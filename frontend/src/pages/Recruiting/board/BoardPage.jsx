@@ -268,7 +268,7 @@ const BoardPage = () => {
             stage,
             round: i + 1,
             isLastRound: i + 1 === rounds,
-            label: `${humanize(stage)} — Round ${i + 1}`,
+            label: `${humanize(stage)} — Session ${i + 1}`,
           }))
         : [
             {

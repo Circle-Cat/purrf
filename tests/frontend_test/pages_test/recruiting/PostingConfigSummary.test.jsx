@@ -22,7 +22,7 @@ describe("PostingConfigSummary", () => {
 
     expect(screen.getByText(/Recruiter screening/)).toBeInTheDocument();
     expect(screen.getByText(/Tech/)).toBeInTheDocument();
-    expect(screen.getByText(/2 round\(s\)/)).toBeInTheDocument();
+    expect(screen.getByText(/2 sessions/)).toBeInTheDocument();
   });
 
   it("renders a placeholder when no pipeline is configured yet", () => {
@@ -48,7 +48,7 @@ describe("PostingConfigSummary", () => {
     );
 
     expect(screen.getByText("Assignee Ann (#7)")).toBeInTheDocument();
-    expect(screen.getByText("Managed by: Bo (#2)")).toBeInTheDocument();
+    expect(screen.getByText("Recruiter: Bo (#2)")).toBeInTheDocument();
   });
 
   it("describes an answer screen rule with the question's label and chosen value", () => {

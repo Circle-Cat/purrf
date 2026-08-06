@@ -75,7 +75,7 @@ const MyEvaluations = () => {
                   </p>
                 </div>
                 <Badge variant="outline">
-                  {stageLabel(row.stage)} — Round {row.round}
+                  {stageLabel(row.stage)} — Session {row.round}
                 </Badge>
                 <Badge variant={row.isConfirmed ? "default" : "secondary"}>
                   {row.isConfirmed ? "Confirmed" : "Pending"}

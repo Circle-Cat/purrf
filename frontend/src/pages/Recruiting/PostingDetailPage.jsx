@@ -181,7 +181,7 @@ const PostingDetailPage = () => {
     : null;
   // Mirrors JobService._revalidate_job_config's publish gate: whatever
   // approval would put live (the staged pipeline when an edit is staged,
-  // else the live one) needs >=1 stage and >=1 Managed by owner, or every
+  // else the live one) needs >=1 stage and >=1 Recruiter owner, or every
   // application would land outside all board lanes with no one to see it.
   const effectivePipeline =
     (job.pendingPayload
@@ -193,7 +193,7 @@ const PostingDetailPage = () => {
   const submitBlocker = !effectivePipeline.stages?.length
     ? "Add at least one pipeline stage before submitting for review."
     : effectiveOwnerIds.length === 0
-      ? "Add at least one manager (Managed by) before submitting for review."
+      ? "Add at least one recruiter before submitting for review."
       : null;
 
   const formatActivity = (entry) => {
@@ -341,7 +341,7 @@ const PostingDetailPage = () => {
         <p className="text-sm text-slate-600">{job.description}</p>
         {ownerIds.length > 0 && (
           <p className="text-sm text-slate-500">
-            Managed by:
+            Recruiter:
             {ownerIds.map((oid, i) => (
               <Fragment key={oid}>
                 {i === 0 ? " " : ", "}
