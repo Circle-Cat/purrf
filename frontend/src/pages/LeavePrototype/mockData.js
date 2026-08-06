@@ -288,7 +288,8 @@ export const INITIAL_TEAM_REQUESTS = [
 ];
 
 /**
- * Org-wide balances for the Admin overview. `dataIssue` marks people the
+ * Org-wide balances for the Admin overview. `region` decides the weekend, the
+ * entitlement, and who a grant reaches, so it is not decoration. `dataIssue` marks people the
  * Azure sync could not fully resolve; `no_manager` is called out separately
  * because those people cannot submit any request at all.
  */
@@ -296,6 +297,7 @@ export const ORG_BALANCES = [
   {
     id: 1,
     name: "Dana Whitfield",
+    region: "CN",
     level: "L3",
     manager: "Priya Raghavan",
     balance: 47.53,
@@ -305,6 +307,7 @@ export const ORG_BALANCES = [
   {
     id: 2,
     name: "Marcus Bell",
+    region: "CN",
     level: "L2",
     manager: "Priya Raghavan",
     balance: 12,
@@ -314,6 +317,7 @@ export const ORG_BALANCES = [
   {
     id: 3,
     name: "Ines Okonkwo",
+    region: "CN",
     level: "L4",
     manager: "Priya Raghavan",
     balance: 88.25,
@@ -323,6 +327,7 @@ export const ORG_BALANCES = [
   {
     id: 4,
     name: "Tobias Lund",
+    region: "CN",
     level: "L3",
     manager: "Priya Raghavan",
     balance: 51,
@@ -332,6 +337,7 @@ export const ORG_BALANCES = [
   {
     id: 5,
     name: "Wei Zhang",
+    region: "CN",
     level: "L2",
     manager: "Priya Raghavan",
     balance: 33.75,
@@ -341,6 +347,7 @@ export const ORG_BALANCES = [
   {
     id: 9,
     name: "Priya Raghavan",
+    region: "CN",
     level: "L4",
     manager: "—",
     balance: 104,
@@ -350,6 +357,7 @@ export const ORG_BALANCES = [
   {
     id: 10,
     name: "Ravi Menon",
+    region: "INTL",
     level: null,
     manager: "Priya Raghavan",
     balance: 0,
@@ -359,6 +367,7 @@ export const ORG_BALANCES = [
   {
     id: 11,
     name: "Sofia Almeida",
+    region: "INTL",
     level: "L1",
     manager: "Priya Raghavan",
     balance: 0,

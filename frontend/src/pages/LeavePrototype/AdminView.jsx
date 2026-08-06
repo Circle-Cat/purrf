@@ -228,7 +228,7 @@ const AdminView = ({ adjustments, onAdjust }) => {
             region={region}
             allowance={settings[region].holidayGrantAllowance}
             grants={grants[region]}
-            headcount={ORG_BALANCES.length}
+            headcount={ORG_BALANCES.filter((p) => p.region === region).length}
             onGrant={issueGrant}
           />
         </TabsContent>
@@ -239,6 +239,7 @@ const AdminView = ({ adjustments, onAdjust }) => {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
+                  <TableHead>Region</TableHead>
                   <TableHead>Level</TableHead>
                   <TableHead>Manager</TableHead>
                   <TableHead className="text-right">Balance</TableHead>
@@ -262,6 +263,9 @@ const AdminView = ({ adjustments, onAdjust }) => {
                           </Badge>
                         )}
                       </div>
+                    </TableCell>
+                    <TableCell className="text-slate-500">
+                      {REGIONS[p.region]?.label ?? p.region}
                     </TableCell>
                     <TableCell className="text-slate-500">
                       {p.level ?? "—"}
