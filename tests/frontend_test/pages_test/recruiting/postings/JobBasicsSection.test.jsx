@@ -19,9 +19,30 @@ describe("JobBasicsSection", () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(<JobBasicsSection {...props} onChange={onChange} />);
-    await user.click(screen.getByRole("combobox", { name: "Kind" }));
+    await user.click(screen.getByRole("combobox", { name: "Posting type" }));
     await user.click(screen.getByRole("option", { name: "Employment" }));
     expect(onChange).toHaveBeenCalledWith({ kind: "employment" });
+  });
+
+  it("explains the selected posting type under the picker", () => {
+    const { rerender } = render(
+      <JobBasicsSection {...props} onChange={vi.fn()} />,
+    );
+    expect(
+      screen.getByText("An open program people apply to join."),
+    ).toBeInTheDocument();
+    rerender(
+      <JobBasicsSection {...props} kind="employment" onChange={vi.fn()} />,
+    );
+    expect(screen.getByText("Hiring a team member.")).toBeInTheDocument();
+    expect(
+      screen.queryByText("An open program people apply to join."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders no posting-type hint for an unset kind", () => {
+    render(<JobBasicsSection {...props} kind={undefined} onChange={vi.fn()} />);
+    expect(screen.queryByText(/apply to join|team member/)).toBeNull();
   });
 
   it("emits description changes", () => {
@@ -150,7 +171,7 @@ describe("JobBasicsSection", () => {
     expect(onChange).toHaveBeenCalledWith({ mentorshipRole: null });
   });
 
-  it("disables Kind and Mentorship role when kindLocked is true", () => {
+  it("disables Posting type and Mentorship role when kindLocked is true", () => {
     render(
       <JobBasicsSection
         title=""
@@ -161,13 +182,15 @@ describe("JobBasicsSection", () => {
         onChange={vi.fn()}
       />,
     );
-    expect(screen.getByRole("combobox", { name: "Kind" })).toBeDisabled();
+    expect(
+      screen.getByRole("combobox", { name: "Posting type" }),
+    ).toBeDisabled();
     expect(
       screen.getByRole("combobox", { name: "Mentorship role" }),
     ).toBeDisabled();
   });
 
-  it("leaves Kind and Mentorship role enabled when kindLocked is not set", () => {
+  it("leaves Posting type and Mentorship role enabled when kindLocked is not set", () => {
     render(
       <JobBasicsSection
         title=""
@@ -177,7 +200,9 @@ describe("JobBasicsSection", () => {
         onChange={vi.fn()}
       />,
     );
-    expect(screen.getByRole("combobox", { name: "Kind" })).not.toBeDisabled();
+    expect(
+      screen.getByRole("combobox", { name: "Posting type" }),
+    ).not.toBeDisabled();
     expect(
       screen.getByRole("combobox", { name: "Mentorship role" }),
     ).not.toBeDisabled();

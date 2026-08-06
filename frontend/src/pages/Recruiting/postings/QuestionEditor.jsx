@@ -11,17 +11,27 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import OptionsEditor from "@/pages/Recruiting/postings/OptionsEditor";
+import { revealedBy as revealedByOption } from "@/pages/Recruiting/postings/questionTypes";
 
 const CHOICE_TYPES = new Set(["single_choice", "multi_choice"]);
 const NONE = "__none__";
 
 /**
  * Editor for a single submission-form question: label, required flag,
- * type-specific fields, and a single-layer showWhen rule.
+ * type-specific fields, and -- for choice types -- which questions each of
+ * its options reveals.
+ *
+ * A question's own reveal condition is NOT editable here. It is authored from
+ * the choice question that reveals it (see `OptionsEditor`), and shown here
+ * read-only so a question that never appears on its own is still explicable.
+ *
+ * `optionOps` carries the whole-form operations `OptionsEditor` needs; see its
+ * JSDoc for why option edits cannot be expressed as a new options array.
  *
  * @param {{question: object, allQuestions: object[],
  *          onChange: (q: object) => void, onRemove: () => void,
- *          onMoveUp: () => void, onMoveDown: () => void}} props
+ *          onMoveUp: () => void, onMoveDown: () => void,
+ *          optionOps: object}} props
  */
 const QuestionEditor = ({
   question,
@@ -30,19 +40,38 @@ const QuestionEditor = ({
   onRemove,
   onMoveUp,
   onMoveDown,
+  optionOps,
 }) => {
   const patch = (fields) => onChange({ ...question, ...fields });
-  const others = allQuestions.filter((q) => q.id !== question.id);
-  const depId = question.showWhen?.questionId ?? "";
 
-  const setDep = (questionId) =>
-    patch({
-      showWhen: questionId
-        ? { questionId, equals: question.showWhen?.equals ?? "" }
-        : undefined,
-    });
-  const setEquals = (equals) =>
-    patch({ showWhen: { questionId: depId, equals } });
+  /** The questions this question's option `opt` reveals. */
+  const revealedBy = (opt) => revealedByOption(allQuestions, question.id, opt);
+  /**
+   * What `opt` can still be pointed at: any other question it isn't already
+   * revealing. The question this one is revealed by is excluded too -- a pair
+   * that reveals each other can never be answered, so neither would appear.
+   */
+  const pickable = (opt) => {
+    const already = new Set(revealedBy(opt).map((q) => q.id));
+    return allQuestions.filter(
+      (q) =>
+        q.id !== question.id &&
+        q.id !== question.showWhen?.questionId &&
+        !already.has(q.id),
+    );
+  };
+
+  /**
+   * How to name the question that reveals this one. Falls back for a dangling
+   * rule: deleting a question leaves the ones it revealed pointing at an id
+   * that is gone, and saying so beats naming nothing.
+   */
+  const parentLabel = () => {
+    const parent = allQuestions.find(
+      (q) => q.id === question.showWhen.questionId,
+    );
+    return parent ? `"${parent.label || parent.id}"` : "a removed question";
+  };
 
   return (
     <div className="space-y-3 rounded-md border border-slate-200 p-3">
@@ -81,11 +110,20 @@ const QuestionEditor = ({
         </div>
       </div>
 
+      {question.showWhen && (
+        <p className="text-xs text-slate-500">
+          Only shown when {parentLabel()} = &quot;
+          {question.showWhen.equals}&quot;
+        </p>
+      )}
+
       <div className="space-y-1">
-        <Label htmlFor={`${question.id}-label`}>Label</Label>
+        {/* The schema field is `label`, but to an author this row is the
+            question they are asking, so the form says so. */}
+        <Label htmlFor={`${question.id}-label`}>Question</Label>
         <Input
           id={`${question.id}-label`}
-          aria-label="Label"
+          aria-label="Question"
           value={question.label}
           onChange={(e) => patch({ label: e.target.value })}
         />
@@ -116,15 +154,9 @@ const QuestionEditor = ({
       {CHOICE_TYPES.has(question.type) && (
         <OptionsEditor
           options={question.options ?? []}
-          onChange={(options) =>
-            patch({
-              options,
-              ...(question.otherOption &&
-              !options.includes(question.otherOption)
-                ? { otherOption: undefined }
-                : {}),
-            })
-          }
+          revealedBy={revealedBy}
+          pickable={pickable}
+          ops={optionOps}
         />
       )}
       {CHOICE_TYPES.has(question.type) && (
@@ -221,43 +253,6 @@ const QuestionEditor = ({
           />
         </div>
       )}
-
-      <div className="flex gap-3">
-        <div className="space-y-1">
-          <Label htmlFor={`${question.id}-dep`}>Depends on</Label>
-          <Select
-            value={depId || NONE}
-            onValueChange={(v) => setDep(v === NONE ? "" : v)}
-          >
-            <SelectTrigger
-              id={`${question.id}-dep`}
-              aria-label="Depends on"
-              className="max-w-xs"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>— none —</SelectItem>
-              {others.map((q) => (
-                <SelectItem key={q.id} value={q.id}>
-                  {q.label || q.id}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        {depId && (
-          <div className="space-y-1">
-            <Label htmlFor={`${question.id}-eq`}>Equals</Label>
-            <Input
-              id={`${question.id}-eq`}
-              aria-label="Equals"
-              value={question.showWhen?.equals ?? ""}
-              onChange={(e) => setEquals(e.target.value)}
-            />
-          </div>
-        )}
-      </div>
     </div>
   );
 };

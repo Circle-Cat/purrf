@@ -129,7 +129,7 @@ describe("PostingConfigSummary", () => {
     expect(screen.getByText("Work experience: Required")).toBeInTheDocument();
   });
 
-  it("shows Kind, Mentorship role, and Cooldown days above the pipeline summary", () => {
+  it("shows Posting type, Mentorship role, and Cooldown days above the pipeline summary", () => {
     render(
       <PostingConfigSummary
         job={{
@@ -143,7 +143,7 @@ describe("PostingConfigSummary", () => {
       />,
     );
 
-    expect(screen.getByText("Kind: Activity")).toBeInTheDocument();
+    expect(screen.getByText("Posting type: Activity")).toBeInTheDocument();
     expect(screen.getByText("Mentorship role: Mentor")).toBeInTheDocument();
     expect(screen.getByText("Cooldown days: 30")).toBeInTheDocument();
   });
@@ -164,7 +164,7 @@ describe("PostingConfigSummary", () => {
       />,
     );
 
-    expect(screen.getByText("Kind: Employment")).toBeInTheDocument();
+    expect(screen.getByText("Posting type: Employment")).toBeInTheDocument();
     expect(screen.queryByText(/Mentorship role/)).not.toBeInTheDocument();
   });
 

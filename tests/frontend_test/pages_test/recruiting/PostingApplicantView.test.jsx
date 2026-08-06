@@ -151,7 +151,7 @@ describe("PostingApplicantView", () => {
         onProfileChange={onProfileChange}
       />,
     );
-    fireEvent.change(screen.getByLabelText("First name"), {
+    fireEvent.change(screen.getByLabelText(/^First name/), {
       target: { value: "Casey" },
     });
     expect(onProfileChange).toHaveBeenCalledWith(

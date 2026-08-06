@@ -99,6 +99,18 @@ describe("Postings", () => {
     );
   });
 
+  // The reader scans the list first, so the button that leaves the page sits
+  // after it rather than in the header.
+  it("renders New posting after the postings list", async () => {
+    renderPage();
+    const row = await waitFor(() => screen.getByText("Backend Engineer"));
+    const newPosting = screen.getByRole("button", { name: "New posting" });
+    expect(
+      row.compareDocumentPosition(newPosting) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("disables New posting when the user lacks recruiting.job.write", async () => {
     mockUseAuth.mockReturnValue({ user: { userId: 5 }, permissions: [] });
     renderPage();
