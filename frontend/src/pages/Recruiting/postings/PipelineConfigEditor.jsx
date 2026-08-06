@@ -23,8 +23,7 @@ const OwnerChip = ({ name, onRemove }) => (
 
 /**
  * Editor for a posting's interview pipeline: owners + ordered selected stages
- * (each with rounds / referralSkippable, and a default assignee on
- * screening/behavioral).
+ * (each with rounds, and a default assignee on screening/behavioral).
  *
  * @param {{value: {ownerIds?: number[], ownerId?: number, stages: object[]},
  *          onChange: (next: object) => void,
@@ -55,17 +54,27 @@ const PipelineConfigEditor = ({
     if (id != null) emitOwnerIds([...ownerIds, id]);
   };
 
+  /**
+   * Narrow a stage to the keys the API accepts. Postings saved by older
+   * versions of this editor carry retired keys, and the request DTO forbids
+   * unknown fields — so they are dropped here rather than echoed back on save.
+   */
+  const toStagePayload = ({ stage, rounds, defaultAssigneeId }) =>
+    defaultAssigneeId == null
+      ? { stage, rounds }
+      : { stage, rounds, defaultAssigneeId };
+
   /** Re-emit stages in canonical order after a mutation map. */
   const emitStages = (next) =>
     onChange({
       ...value,
-      stages: STAGES.filter((n) => next[n]).map((n) => next[n]),
+      stages: STAGES.filter((n) => next[n]).map((n) => toStagePayload(next[n])),
     });
   const asMap = () => Object.fromEntries(stages.map((s) => [s.stage, s]));
 
   const toggleStage = (name, on) => {
     const map = asMap();
-    if (on) map[name] = { stage: name, rounds: 1, referralSkippable: false };
+    if (on) map[name] = { stage: name, rounds: 1 };
     else delete map[name];
     emitStages(map);
   };
@@ -130,16 +139,6 @@ const PipelineConfigEditor = ({
                       })
                     }
                   />
-                </Label>
-                <Label className="flex items-center gap-2 text-sm">
-                  <Checkbox
-                    checked={s.referralSkippable}
-                    onCheckedChange={(v) =>
-                      patchStage(name, { referralSkippable: !!v })
-                    }
-                    aria-label={`${name} referral skippable`}
-                  />
-                  Referral skippable
                 </Label>
                 {ASSIGNABLE.has(name) && (
                   <Label className="flex items-center gap-2 text-sm">

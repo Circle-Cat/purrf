@@ -12,12 +12,10 @@ describe("PipelineSummary", () => {
             {
               stage: "recruiter_screening",
               rounds: 1,
-              referralSkippable: true,
             },
             {
               stage: "tech",
               rounds: 2,
-              referralSkippable: false,
               defaultAssigneeId: 7,
             },
           ],
@@ -28,7 +26,6 @@ describe("PipelineSummary", () => {
       screen.getByText("1. Recruiter screening — 1 round(s)"),
     ).toBeInTheDocument();
     expect(screen.getByText("2. Tech — 2 round(s)")).toBeInTheDocument();
-    expect(screen.getByText("Referral-skippable")).toBeInTheDocument();
     expect(
       screen.getByText("Assignee #7 — no permission, remove"),
     ).toBeInTheDocument();
