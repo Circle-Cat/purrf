@@ -26,8 +26,9 @@ import { datesBetween, groupHolidays } from "@/pages/LeavePrototype/leaveCalc";
  * @param {Array<{date: string, name: string, exchangeable?: boolean}>} props.rows
  * @param {boolean} props.withExchangeable
  * @param {(rows: Array<object>) => void} props.onChange
- * @param {JSX.Element} [props.children] - shown at the foot of the card, for
- *   anything derived from this list specifically
+ * @param {(segment: object) => string|null} [props.annotate] - extra figure to
+ *   show on each period row, for anything this list derives
+ * @param {string} [props.footnote] - shown next to the period/day count
  * @returns {JSX.Element}
  */
 const HolidayEditor = ({
@@ -36,7 +37,8 @@ const HolidayEditor = ({
   rows,
   withExchangeable,
   onChange,
-  children,
+  annotate,
+  footnote,
 }) => {
   const [name, setName] = useState("");
   const [start, setStart] = useState("");
@@ -166,7 +168,12 @@ const HolidayEditor = ({
                   </span>
                   <span className="text-xs text-slate-400 ml-2">{s.days}d</span>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-2 shrink-0">
+                  {annotate && (
+                    <span className="text-sm tabular-nums font-medium text-slate-700">
+                      {annotate(s)}
+                    </span>
+                  )}
                   {withExchangeable && s.exchangeableDays > 0 && (
                     <Badge variant="outline" className="text-xs">
                       {s.exchangeableDays === s.days
@@ -190,11 +197,12 @@ const HolidayEditor = ({
         )}
       </div>
 
-      <p className="text-xs text-slate-400 pt-1 border-t border-slate-100 tabular-nums">
-        {segments.length} periods · {rows.length} days
-      </p>
-
-      {children}
+      <div className="flex items-baseline justify-between gap-3 pt-1 border-t border-slate-100 text-xs text-slate-400">
+        <span className="tabular-nums">
+          {segments.length} periods · {rows.length} days
+        </span>
+        {footnote && <span className="tabular-nums">{footnote}</span>}
+      </div>
     </Card>
   );
 };
