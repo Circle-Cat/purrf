@@ -15,15 +15,14 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CalendarAdmin from "@/pages/LeavePrototype/CalendarAdmin";
+import GrantPanel from "@/pages/LeavePrototype/GrantPanel";
 import AdjustDialog from "@/pages/LeavePrototype/AdjustDialog";
 import {
   COMPANY_HOLIDAYS,
   DATA_ISSUE_LABELS,
   INTL_COMPANY_HOLIDAYS,
-  INTL_STATUTORY_HOLIDAYS,
   ORG_BALANCES,
   REGIONS,
-  STATUTORY_HOLIDAYS,
 } from "@/pages/LeavePrototype/mockData";
 
 /**
@@ -148,28 +147,27 @@ const AdminView = ({ adjustments, onAdjust }) => {
   // entitlement is global and lives in code, so it is not here.
   const [region, setRegion] = useState("CN");
   const [calendars, setCalendars] = useState({
-    CN: { company: COMPANY_HOLIDAYS, statutory: STATUTORY_HOLIDAYS },
-    INTL: {
-      company: INTL_COMPANY_HOLIDAYS,
-      statutory: INTL_STATUTORY_HOLIDAYS,
-    },
+    CN: COMPANY_HOLIDAYS,
+    INTL: INTL_COMPANY_HOLIDAYS,
   });
   const [settings, setSettings] = useState({
-    CN: {
-      extraLeaveHours: REGIONS.CN.extraLeaveHours,
-      weekendLabel: REGIONS.CN.weekendLabel,
-    },
-    INTL: {
-      extraLeaveHours: REGIONS.INTL.extraLeaveHours,
-      weekendLabel: REGIONS.INTL.weekendLabel,
-    },
+    CN: { ...REGIONS.CN },
+    INTL: { ...REGIONS.INTL },
   });
+  const [grants, setGrants] = useState({ CN: [], INTL: [] });
 
-  const patchCalendar = (key, rows) =>
-    setCalendars((prev) => ({
-      ...prev,
-      [region]: { ...prev[region], [key]: rows },
-    }));
+  const issueGrant = (grant) => {
+    setGrants((prev) => ({ ...prev, [region]: [...prev[region], grant] }));
+    onAdjust({
+      id: grant.id,
+      personId: null,
+      personName: `Everyone in ${REGIONS[region].label} (${grant.headcount})`,
+      entryType: "holiday_grant",
+      hours: grant.hours,
+      note: grant.reason,
+      effectiveDate: new Date().toISOString().slice(0, 10),
+    });
+  };
 
   const hasOpeningBalance = (id) =>
     adjustments.some(
@@ -205,6 +203,7 @@ const AdminView = ({ adjustments, onAdjust }) => {
       <Tabs defaultValue="year">
         <TabsList>
           <TabsTrigger value="year">Yearly setup</TabsTrigger>
+          <TabsTrigger value="grants">Grants</TabsTrigger>
           <TabsTrigger value="balances">Balances</TabsTrigger>
           <TabsTrigger value="health">Data health</TabsTrigger>
         </TabsList>
@@ -217,10 +216,20 @@ const AdminView = ({ adjustments, onAdjust }) => {
             onSettingsChange={(next) =>
               setSettings((prev) => ({ ...prev, [region]: next }))
             }
-            company={calendars[region].company}
-            statutory={calendars[region].statutory}
-            onCompanyChange={(rows) => patchCalendar("company", rows)}
-            onStatutoryChange={(rows) => patchCalendar("statutory", rows)}
+            company={calendars[region]}
+            onCompanyChange={(rows) =>
+              setCalendars((prev) => ({ ...prev, [region]: rows }))
+            }
+          />
+        </TabsContent>
+
+        <TabsContent value="grants" className="mt-4">
+          <GrantPanel
+            region={region}
+            allowance={settings[region].holidayGrantAllowance}
+            grants={grants[region]}
+            headcount={ORG_BALANCES.length}
+            onGrant={issueGrant}
           />
         </TabsContent>
 

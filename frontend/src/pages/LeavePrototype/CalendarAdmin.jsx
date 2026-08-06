@@ -12,33 +12,28 @@ import {
 } from "@/components/ui/select";
 import HolidayEditor from "@/pages/LeavePrototype/HolidayEditor";
 import { REGIONS } from "@/pages/LeavePrototype/mockData";
-import { segmentGrants } from "@/pages/LeavePrototype/leaveCalc";
 
 /**
  * CalendarAdmin
  *
- * Both calendars for one region, and the regional figures they are paid out
- * against.
+ * One region's company holidays and the figures that go with them.
  *
- * This is editable rather than loaded by migration because a region is created
- * the day somebody is hired into it. Its holidays, its extra paid leave and
- * which days it treats as the weekend all have to exist from that moment,
- * and none of those dates can be planned around a yearly release.
+ * There is no statutory calendar here. It used to exist only to decide when
+ * extra paid leave was paid out; now half of that accrues weekly and the other
+ * half is granted by hand before each holiday, so nothing reads a government
+ * calendar and there is nothing to keep in step with one.
  *
- * The payout figures beside each statutory period are the only check on that
- * list. Its days are the denominator of every payout, so a missing one
- * re-prices each period while the annual total still comes to exactly the
- * entitlement — the year is divided out of it, not summed from the days.
+ * Editable rather than loaded by migration because a region is created the day
+ * somebody is hired into it, and its holidays and figures have to exist from
+ * that moment.
  *
  * @param {object} props
  * @param {string} props.region
  * @param {(region: string) => void} props.onRegionChange
- * @param {object} props.settings - {extraLeaveHours, weekendLabel}
+ * @param {object} props.settings - {weeklyExtraHours, holidayGrantAllowance, weekendLabel}
  * @param {(settings: object) => void} props.onSettingsChange
  * @param {Array<object>} props.company
- * @param {Array<object>} props.statutory
  * @param {(rows: Array<object>) => void} props.onCompanyChange
- * @param {(rows: Array<object>) => void} props.onStatutoryChange
  * @returns {JSX.Element}
  */
 const CalendarAdmin = ({
@@ -47,39 +42,29 @@ const CalendarAdmin = ({
   settings,
   onSettingsChange,
   company,
-  statutory,
   onCompanyChange,
-  onStatutoryChange,
 }) => {
-  const grants = useMemo(
-    () => segmentGrants(statutory, settings.extraLeaveHours),
-    [statutory, settings.extraLeaveHours],
-  );
-
-  const hoursByPeriod = useMemo(
-    () => new Map(grants.periods.map((p) => [`${p.name}-${p.start}`, p.hours])),
-    [grants],
-  );
-
   const loadedYears = useMemo(() => {
     const years = new Set();
-    for (const r of [...company, ...statutory]) years.add(r.date.slice(0, 4));
+    for (const r of company) years.add(r.date.slice(0, 4));
     return years;
-  }, [company, statutory]);
+  }, [company]);
 
   const nextYear = String(new Date().getFullYear() + 1);
   const nextYearMissing = !loadedYears.has(nextYear);
 
+  const set = (key, value) => onSettingsChange({ ...settings, [key]: value });
+
   return (
     <div className="space-y-4">
-      <Card className="p-4">
+      <Card className="p-4 space-y-3">
         <div className="flex flex-wrap items-end gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="calendar-region" className="text-xs">
               Region
             </Label>
             <Select value={region} onValueChange={onRegionChange}>
-              <SelectTrigger id="calendar-region" className="w-48">
+              <SelectTrigger id="calendar-region" className="w-44">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -92,34 +77,46 @@ const CalendarAdmin = ({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="calendar-extra-leave" className="text-xs">
-              Extra paid leave
+            <Label htmlFor="calendar-weekly" className="text-xs">
+              Extra leave, accrued weekly
             </Label>
             <Input
-              id="calendar-extra-leave"
+              id="calendar-weekly"
               type="number"
               step="8"
-              className="w-32"
-              value={settings.extraLeaveHours}
+              className="w-36"
+              value={settings.weeklyExtraHours}
+              onChange={(e) => set("weeklyExtraHours", Number(e.target.value))}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="calendar-grant" className="text-xs">
+              Extra leave, granted by hand
+            </Label>
+            <Input
+              id="calendar-grant"
+              type="number"
+              step="8"
+              className="w-36"
+              value={settings.holidayGrantAllowance}
               onChange={(e) =>
-                onSettingsChange({
-                  ...settings,
-                  extraLeaveHours: Number(e.target.value),
-                })
+                set("holidayGrantAllowance", Number(e.target.value))
               }
             />
           </div>
-          <div className="space-y-1.5 min-w-40">
+          <div className="space-y-1.5 min-w-36">
             <Label className="text-xs">Weekend</Label>
             <p className="text-sm text-slate-700 h-9 flex items-center">
               {settings.weekendLabel}
             </p>
           </div>
-          <p className="text-xs text-slate-400 flex-1 min-w-48 pb-2">
-            Regional. Level entitlement is global and lives in code; these do
-            not, because a new region needs them the day it is created.
-          </p>
         </div>
+        <p className="text-xs text-slate-400">
+          Regional. The level entitlement is global and lives in code; these do
+          not, because a new region needs them the day it is created. Set the
+          granted figure to zero for a region that does not do it — the grant
+          screen then has nothing to issue there.
+        </p>
       </Card>
 
       {nextYearMissing && (
@@ -132,7 +129,7 @@ const CalendarAdmin = ({
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 Every request dated in {nextYear} will be refused until there
-                is, and no extra paid leave will be granted that year.
+                is.
               </p>
             </div>
           </div>
@@ -141,31 +138,11 @@ const CalendarAdmin = ({
 
       <HolidayEditor
         title="Company holidays"
-        blurb="Office closed. Never deducted from anyone's leave, and no effect on what anyone is paid."
+        blurb="Office closed. Never deducted from anyone's leave. Mark the days that may be worked in trade."
         rows={company}
         withExchangeable
         onChange={onCompanyChange}
       />
-
-      <HolidayEditor
-        title="Statutory holidays"
-        blurb="Each period grants its share of the extra paid leave on its first day. No effect on whether a leave day is deducted."
-        rows={statutory}
-        withExchangeable={false}
-        onChange={onStatutoryChange}
-        annotate={(s) => {
-          const hours = hoursByPeriod.get(`${s.name}-${s.start}`);
-          return hours === undefined ? null : `${hours.toFixed(2)}h`;
-        }}
-        footnote={`pays ${grants.totalHours.toFixed(2)}h`}
-      />
-
-      <p className="text-xs text-slate-500">
-        Check the statutory periods against the published announcement. A
-        missing day still totals {settings.extraLeaveHours.toFixed(2)}h — the
-        year is divided out of the entitlement, not added up from the days — so
-        it will not show up anywhere else.
-      </p>
     </div>
   );
 };

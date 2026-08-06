@@ -10,7 +10,7 @@
  *
  * Placeholder substitutions:
  *   level entitlement   real → replaced with L1 0h / L2-L4 96h
- *   extra paid leave    real → replaced with 64h
+ *   extra paid leave    real → replaced with 40h weekly + 40h granted
  *   weekend days        real → replaced with Friday + Saturday
  *   holiday calendar    real → replaced with invented holidays
  */
@@ -27,9 +27,19 @@ export const SICK_AUTO_APPROVE_HOURS = 24;
 /** Placeholder entitlements, in hours per year. */
 export const LEVEL_POLICY = { L1: 0, L2: 96, L3: 96, L4: 96 };
 
-/** Placeholder extra paid leave, in hours per year. Granted because the
- * company closes for fewer days than the statutory calendar has. */
-export const EXTRA_LEAVE_HOURS = 64;
+/**
+ * The two halves of the extra paid leave, which are granted quite differently.
+ *
+ *   weekly    accrues week by week alongside the level entitlement, so it is
+ *             just another number in the same sum
+ *   holiday   granted in a lump by an administrator ahead of each public
+ *             holiday, because that is when it is needed and no calendar in
+ *             this system knows when those fall
+ *
+ * Placeholder figures.
+ */
+export const WEEKLY_EXTRA_HOURS = 40;
+export const HOLIDAY_GRANT_ALLOWANCE = 40;
 
 /**
  * Placeholder company holidays, stored one row per date — the same shape as the
@@ -66,49 +76,11 @@ export const COMPANY_HOLIDAYS = [
 ];
 
 /**
- * Placeholder statutory holidays — the government calendar the extra
- * paid leave is granted against. A different thing from the company holidays
- * above, and the single easiest thing in this design to confuse:
- *
- *   company rows        → the office is closed; never deducted from leave
- *   statutory rows      → drive when extra paid leave lands; never affect
- *                         whether a leave day is deducted
- *
- * Stored one row per date, like the company calendar. Consecutive dates merge
- * into periods, and each period pays its share at its first day.
- */
-export const STATUTORY_HOLIDAYS = [
-  { date: "2026-01-01", name: "New Year" },
-  { date: "2026-01-02", name: "New Year" },
-
-  { date: "2026-02-16", name: "Spring Festival" },
-  { date: "2026-02-17", name: "Spring Festival" },
-  { date: "2026-02-18", name: "Spring Festival" },
-  { date: "2026-02-19", name: "Spring Festival" },
-  { date: "2026-02-20", name: "Spring Festival" },
-  { date: "2026-02-21", name: "Spring Festival" },
-  { date: "2026-02-22", name: "Spring Festival" },
-
-  { date: "2026-05-01", name: "Labour Day" },
-  { date: "2026-05-02", name: "Labour Day" },
-  { date: "2026-05-03", name: "Labour Day" },
-
-  { date: "2026-09-03", name: "Harvest" },
-  { date: "2026-09-04", name: "Harvest" },
-  { date: "2026-09-05", name: "Harvest" },
-
-  { date: "2026-10-01", name: "Founders" },
-  { date: "2026-10-02", name: "Founders" },
-  { date: "2026-10-03", name: "Founders" },
-  { date: "2026-10-04", name: "Founders" },
-  { date: "2026-10-05", name: "Founders" },
-];
-
-/**
  * A second region, so the administrator screen has something to switch to.
  *
- * Regions differ in more than their holidays — the extra paid leave allowance and
- * which days count as the weekend are both regional. That is why these live in
+ * Regions differ in more than their holidays — how much extra paid leave they
+ * get, whether any of it is granted around public holidays at all, and which
+ * days count as the weekend are all regional. That is why these live in
  * the database with a screen to edit them: a region is created the day someone
  * is hired into it, which is not a date anyone can plan a yearly migration
  * around.
@@ -118,13 +90,15 @@ export const STATUTORY_HOLIDAYS = [
 export const REGIONS = {
   CN: {
     label: "China",
-    extraLeaveHours: EXTRA_LEAVE_HOURS,
+    weeklyExtraHours: WEEKLY_EXTRA_HOURS,
+    holidayGrantAllowance: HOLIDAY_GRANT_ALLOWANCE,
     weekendDays: WEEKEND_DAYS,
     weekendLabel: "Friday + Saturday",
   },
   INTL: {
     label: "International",
-    extraLeaveHours: 40,
+    weeklyExtraHours: 40,
+    holidayGrantAllowance: 0,
     weekendDays: [0, 6],
     weekendLabel: "Saturday + Sunday",
   },
@@ -137,15 +111,6 @@ export const INTL_COMPANY_HOLIDAYS = [
   { date: "2026-11-27", name: "Thanksgiving", exchangeable: true },
   { date: "2026-12-24", name: "Winter Break", exchangeable: false },
   { date: "2026-12-25", name: "Winter Break", exchangeable: false },
-];
-
-/** Placeholder statutory holidays for the second region. */
-export const INTL_STATUTORY_HOLIDAYS = [
-  { date: "2026-07-03", name: "Independence Day" },
-  { date: "2026-09-07", name: "Labour Day" },
-  { date: "2026-11-26", name: "Thanksgiving" },
-  { date: "2026-11-27", name: "Thanksgiving" },
-  { date: "2026-12-25", name: "Christmas" },
 ];
 
 /** The signed-in employee for the Employee view. */
