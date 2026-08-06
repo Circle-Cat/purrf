@@ -132,6 +132,7 @@ prototype nothing.
 | File | Responsibility |
 |---|---|
 | `index.jsx` | Shell, role nav, all shared state and transitions |
+| `HolidayEditor.jsx` | Enter holidays as ranges, store and edit them as days |
 | `leaveCalc.js` | Working days, hour breakdown, advance notice, validation |
 | `mockData.js` | Placeholder policy, people, seeded ledger and requests |
 | `EmployeeView.jsx` / `ManagerView.jsx` / `AdminView.jsx` | The three views |
