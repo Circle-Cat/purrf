@@ -180,7 +180,7 @@ class InterviewSchedulingService:
             session, application_id, application.stage, application.current_round
         )
         if existing is not None:
-            raise ValueError("This round already has an interview meeting scheduled.")
+            raise ValueError("This session already has an interview meeting scheduled.")
         await self.application_access.validate_interview_assignee(
             session, dto.assignee_id
         )
@@ -329,7 +329,7 @@ class InterviewSchedulingService:
             session, application_id, application.stage, application.current_round
         )
         if interview is None:
-            raise ValueError("No interview meeting is scheduled for this round.")
+            raise ValueError("No interview meeting is scheduled for this session.")
         await self.application_access.validate_interview_assignee(
             session, dto.assignee_id
         )
@@ -453,7 +453,7 @@ class InterviewSchedulingService:
             session, application_id, application.stage, application.current_round
         )
         if interview is None:
-            raise ValueError("No interview meeting is scheduled for this round.")
+            raise ValueError("No interview meeting is scheduled for this session.")
         await self._delete_meeting(
             session, interview, application_id, current_user.user_id
         )

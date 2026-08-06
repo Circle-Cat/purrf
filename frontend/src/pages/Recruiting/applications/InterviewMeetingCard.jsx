@@ -79,7 +79,7 @@ const InterviewMeetingCard = ({
       <CardHeader>
         <div className="flex flex-wrap items-center gap-2">
           <CardTitle>Interview Meeting</CardTitle>
-          {round > 1 && <Badge variant="secondary">{`Round ${round}`}</Badge>}
+          {round > 1 && <Badge variant="secondary">{`Session ${round}`}</Badge>}
           {isPast && <Badge variant="outline">Past</Badge>}
         </div>
       </CardHeader>

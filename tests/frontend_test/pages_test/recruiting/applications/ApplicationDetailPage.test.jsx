@@ -1063,7 +1063,7 @@ describe("ApplicationDetailPage — operate row", () => {
     await waitLoaded();
 
     expect(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Advance to Behavioral" }),
@@ -1167,7 +1167,7 @@ describe("ApplicationDetailPage — advance round", () => {
     await waitLoaded();
 
     expect(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     ).toBeInTheDocument();
   });
 
@@ -1181,7 +1181,7 @@ describe("ApplicationDetailPage — advance round", () => {
     await waitLoaded();
 
     expect(
-      screen.queryByRole("button", { name: /Advance to Round/ }),
+      screen.queryByRole("button", { name: /Advance to Session/ }),
     ).not.toBeInTheDocument();
   });
 
@@ -1195,7 +1195,7 @@ describe("ApplicationDetailPage — advance round", () => {
     await waitLoaded();
 
     expect(
-      screen.queryByRole("button", { name: /Advance to Round/ }),
+      screen.queryByRole("button", { name: /Advance to Session/ }),
     ).not.toBeInTheDocument();
   });
 
@@ -1210,7 +1210,7 @@ describe("ApplicationDetailPage — advance round", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     );
 
     // Tech is card-managed (ASSIGNEE_VIA_CARD_STAGES): the round-advance
@@ -1219,7 +1219,7 @@ describe("ApplicationDetailPage — advance round", () => {
       screen.queryByRole("radio", { name: /decide later/i }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Confirm advance round" }),
+      screen.getByRole("button", { name: "Confirm advance session" }),
     ).not.toBeDisabled();
     expect(api.setApplicationRound).not.toHaveBeenCalled();
   });
@@ -1247,12 +1247,12 @@ describe("ApplicationDetailPage — advance round", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     );
 
     expect(screen.getByRole("radio", { name: /decide later/i })).toBeChecked();
     expect(
-      screen.getByRole("button", { name: "Confirm advance round" }),
+      screen.getByRole("button", { name: "Confirm advance session" }),
     ).not.toBeDisabled();
     expect(api.setApplicationRound).not.toHaveBeenCalled();
   });
@@ -1269,10 +1269,10 @@ describe("ApplicationDetailPage — advance round", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     );
     await user.click(
-      screen.getByRole("button", { name: "Confirm advance round" }),
+      screen.getByRole("button", { name: "Confirm advance session" }),
     );
 
     await waitFor(() =>
@@ -1308,11 +1308,11 @@ describe("ApplicationDetailPage — advance round", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     );
     await user.click(screen.getByRole("radio", { name: /ivan interviewer/i }));
     const confirmButton = screen.getByRole("button", {
-      name: "Confirm advance round",
+      name: "Confirm advance session",
     });
     expect(confirmButton).not.toBeDisabled();
     await user.click(confirmButton);
@@ -1327,7 +1327,7 @@ describe("ApplicationDetailPage — advance round", () => {
     );
     // Local state patched in place: the button now reflects round 2 -> 3.
     expect(
-      await screen.findByRole("button", { name: "Advance to Round 3" }),
+      await screen.findByRole("button", { name: "Advance to Session 3" }),
     ).toBeInTheDocument();
   });
 
@@ -1342,15 +1342,15 @@ describe("ApplicationDetailPage — advance round", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     );
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(
-      screen.queryByRole("button", { name: "Confirm advance round" }),
+      screen.queryByRole("button", { name: "Confirm advance session" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     ).toBeInTheDocument();
     expect(api.setApplicationRound).not.toHaveBeenCalled();
   });
@@ -1378,11 +1378,11 @@ describe("ApplicationDetailPage — advance round", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     );
     await user.click(screen.getByRole("radio", { name: /ivan interviewer/i }));
     await user.click(
-      screen.getByRole("button", { name: "Confirm advance round" }),
+      screen.getByRole("button", { name: "Confirm advance session" }),
     );
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("Round update failed"),
@@ -1632,7 +1632,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
 
     expect(
       screen.getByText(
-        /Advanced to round 2 of Tech, assigned to Ivan Interviewer, by Owen Owner/,
+        /Advanced to session 2 of Tech, assigned to Ivan Interviewer, by Owen Owner/,
       ),
     ).toBeInTheDocument();
   });
@@ -2759,7 +2759,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
 
     expect(
       screen.getByText(
-        "This round has no confirmed evaluation yet. Advance anyway?",
+        "This session has no confirmed evaluation yet. Advance anyway?",
       ),
     ).toBeInTheDocument();
     expect(
@@ -2803,7 +2803,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
 
     expect(
       screen.queryByText(
-        "This round has no confirmed evaluation yet. Advance anyway?",
+        "This session has no confirmed evaluation yet. Advance anyway?",
       ),
     ).not.toBeInTheDocument();
     expect(
@@ -2812,7 +2812,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
     expect(api.changeApplicationStage).not.toHaveBeenCalled();
   });
 
-  it("a confirmed evaluation for the current round skips the reminder", async () => {
+  it("a confirmed evaluation for the current session skips the reminder", async () => {
     const user = userEvent.setup();
     api.getEvaluationsForApplication.mockResolvedValue({
       data: [confirmedEval("recruiter_screening")],
@@ -2827,7 +2827,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
 
     expect(
       screen.queryByText(
-        "This round has no confirmed evaluation yet. Advance anyway?",
+        "This session has no confirmed evaluation yet. Advance anyway?",
       ),
     ).not.toBeInTheDocument();
     // No reminder AND no assignee dialog for a behavioral target -- the
@@ -2854,7 +2854,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
 
     expect(
       screen.getByText(
-        "This round has no confirmed evaluation yet. Advance anyway?",
+        "This session has no confirmed evaluation yet. Advance anyway?",
       ),
     ).toBeInTheDocument();
   });
@@ -2897,22 +2897,22 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     );
     expect(
       screen.getByText(
-        "This round has no confirmed evaluation yet. Advance anyway?",
+        "This session has no confirmed evaluation yet. Advance anyway?",
       ),
     ).toBeInTheDocument();
     expect(api.setApplicationRound).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Advance anyway" }));
     expect(
-      screen.getByRole("button", { name: "Confirm advance round" }),
+      screen.getByRole("button", { name: "Confirm advance session" }),
     ).toBeInTheDocument();
   });
 
-  it("disables the Evaluated status button while the current round has no confirmed evaluation", async () => {
+  it("disables the Evaluated status button while the current session has no confirmed evaluation", async () => {
     renderOwner({ stage: "recruiter_screening" });
     await waitLoaded();
 
@@ -2922,7 +2922,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
     ).not.toBeDisabled();
   });
 
-  it("enables the Evaluated status button once the current round has a confirmed evaluation", async () => {
+  it("enables the Evaluated status button once the current session has a confirmed evaluation", async () => {
     api.getEvaluationsForApplication.mockResolvedValue({
       data: [confirmedEval("recruiter_screening")],
     });
@@ -2977,7 +2977,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        /Advanced to round 2 of Tech \(no evaluation recorded\), by Owen Owner/,
+        /Advanced to session 2 of Tech \(no evaluation recorded\), by Owen Owner/,
       ),
     ).toBeInTheDocument();
   });
@@ -4675,11 +4675,11 @@ describe("ApplicationDetailPage — ghost meeting cleanup", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     );
     expect(screen.getByRole("checkbox", { name: CANCEL_BOX })).toBeChecked();
     await user.click(
-      screen.getByRole("button", { name: "Confirm advance round" }),
+      screen.getByRole("button", { name: "Confirm advance session" }),
     );
 
     await waitFor(() =>
@@ -4700,11 +4700,11 @@ describe("ApplicationDetailPage — ghost meeting cleanup", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     );
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
     await user.click(
-      screen.getByRole("button", { name: "Confirm advance round" }),
+      screen.getByRole("button", { name: "Confirm advance session" }),
     );
 
     await waitFor(() =>
@@ -4814,14 +4814,14 @@ describe("ApplicationDetailPage — blacklist cancels the upcoming interviews", 
 
     expect(
       await screen.findByText(
-        /Mentor — Behavioral round 1 — 2099-08-05 14:00 America\/Los_Angeles/,
+        /Mentor — Behavioral session 1 — 2099-08-05 14:00 America\/Los_Angeles/,
       ),
     ).toBeInTheDocument();
     expect(
       // Rendered in the READER's zone (pinned to Los Angeles by makeDetail),
       // not in whatever zone each meeting was booked in: 22:00Z is 15:00 there.
       screen.getByText(
-        /Backend Engineer — Tech round 2 — 2099-08-06 15:00 America\/Los_Angeles/,
+        /Backend Engineer — Tech session 2 — 2099-08-06 15:00 America\/Los_Angeles/,
       ),
     ).toBeInTheDocument();
     // Scoped to the candidate, not the application being viewed: a block is

@@ -72,13 +72,13 @@ describe("MyEvaluations page", () => {
     );
     expect(screen.getByText("Backend Engineer")).toBeInTheDocument();
     expect(
-      screen.getByText("Recruiter screening — Round 1"),
+      screen.getByText("Recruiter screening — Session 1"),
     ).toBeInTheDocument();
     expect(screen.getByText("Pending")).toBeInTheDocument();
 
     expect(screen.getByText("Grace Hopper")).toBeInTheDocument();
     expect(screen.getByText("Frontend Engineer")).toBeInTheDocument();
-    expect(screen.getByText("Tech — Round 2")).toBeInTheDocument();
+    expect(screen.getByText("Tech — Session 2")).toBeInTheDocument();
     expect(screen.getByText("Confirmed")).toBeInTheDocument();
 
     await user.click(screen.getByText("Ada Lovelace"));
@@ -111,9 +111,9 @@ describe("MyEvaluations page", () => {
     renderPage();
 
     await waitFor(() =>
-      expect(screen.getByText("Tech — Round 1")).toBeInTheDocument(),
+      expect(screen.getByText("Tech — Session 1")).toBeInTheDocument(),
     );
-    expect(screen.getByText("Tech — Round 2")).toBeInTheDocument();
+    expect(screen.getByText("Tech — Session 2")).toBeInTheDocument();
     expect(screen.getByText("Confirmed")).toBeInTheDocument();
     expect(screen.getByText("Pending")).toBeInTheDocument();
   });

@@ -210,7 +210,7 @@ const SubStatusSelector = ({
             disabled={disabled || (value === "evaluated" && evaluatedDisabled)}
             title={
               value === "evaluated" && evaluatedDisabled
-                ? "Requires a confirmed evaluation for the current round"
+                ? "Requires a confirmed evaluation for the current session"
                 : undefined
             }
             onClick={() => onSelect(value)}
@@ -314,7 +314,7 @@ const EvaluationSummary = ({ evaluations, interviewPool }) => (
         .map((evaluation) => (
           <div key={evaluation.id} className="space-y-3 rounded border p-3">
             <h3 className="text-sm font-medium text-slate-700">
-              {humanize(evaluation.stage)} — Round {evaluation.round}
+              {humanize(evaluation.stage)} — Session {evaluation.round}
             </h3>
             <p className="text-xs text-slate-500">
               Evaluated by:{" "}
@@ -465,13 +465,13 @@ const describeActivity = ({ eventType, details }, jobKind, timezone) => {
         details.fromAssigneeName ? ` from ${details.fromAssigneeName}` : ""
       } to ${details.toAssigneeName}`;
     case "round_advanced":
-      return `Advanced to round ${details.toRound} of ${humanize(details.stage)}${
+      return `Advanced to session ${details.toRound} of ${humanize(details.stage)}${
         details.assigneeName ? `, assigned to ${details.assigneeName}` : ""
       }${details.advancedWithoutEvaluation ? " (no evaluation recorded)" : ""}`;
     case "sub_status_changed":
       return `Status changed from ${humanize(details.fromSubStatus)} to ${humanize(details.toSubStatus)} on ${humanize(details.stage)}`;
     case "evaluation_confirmed":
-      return `Confirmed evaluation for round ${details.round} of ${humanize(details.stage)}`;
+      return `Confirmed evaluation for session ${details.round} of ${humanize(details.stage)}`;
     case "blacklisted":
       return `Blacklisted and rejected from ${humanize(details.fromStage)}: ${details.reason}`;
     case "auto_assigned":
@@ -1815,7 +1815,7 @@ const ApplicationDetailPage = () => {
                       disabled={advancingRound}
                       onClick={handleRoundAdvanceClick}
                     >
-                      Advance to Round{" "}
+                      Advance to Session{" "}
                       {(detail.application.currentRound ?? 1) + 1}
                     </Button>
                   ) : (
@@ -2019,7 +2019,7 @@ const ApplicationDetailPage = () => {
                   <li
                     key={`${entry.applicationId}-${entry.stage}-${entry.round}`}
                   >
-                    {`${entry.jobTitle} — ${humanize(entry.stage)} round ${
+                    {`${entry.jobTitle} — ${humanize(entry.stage)} session ${
                       entry.round
                     } — ${formatInterviewWhen(entry.startAt, viewerTimezone)}`}
                   </li>
@@ -2068,7 +2068,7 @@ const ApplicationDetailPage = () => {
             <DialogTitle>No evaluation recorded</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-slate-700">
-            This round has no confirmed evaluation yet. Advance anyway?
+            This session has no confirmed evaluation yet. Advance anyway?
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEvalReminderFor(null)}>
@@ -2163,7 +2163,7 @@ const ApplicationDetailPage = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              Advance to Round {(detail.application.currentRound ?? 1) + 1}
+              Advance to Session {(detail.application.currentRound ?? 1) + 1}
             </DialogTitle>
           </DialogHeader>
           {roundAdvanceNeedsAssignee && (
@@ -2196,7 +2196,7 @@ const ApplicationDetailPage = () => {
               onClick={handleConfirmAdvanceRound}
               disabled={advancingRound}
             >
-              Confirm advance round
+              Confirm advance session
             </Button>
           </DialogFooter>
         </DialogContent>

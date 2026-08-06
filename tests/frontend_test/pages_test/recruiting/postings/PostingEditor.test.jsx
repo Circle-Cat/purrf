@@ -68,7 +68,7 @@ describe("PostingEditor", () => {
     expect(
       within(dialog).getByRole("heading", { name: "How posting setup works" }),
     ).toBeInTheDocument();
-    expect(within(dialog).getByText("Managed by")).toBeInTheDocument();
+    expect(within(dialog).getByText("Recruiter")).toBeInTheDocument();
   });
 
   it("creates a new posting from the typed draft", async () => {
