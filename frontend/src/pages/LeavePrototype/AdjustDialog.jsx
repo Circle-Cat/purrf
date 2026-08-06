@@ -59,15 +59,18 @@ const AdjustDialog = ({
     onOpenChange(false);
   };
 
-  const parsed = Number(hours);
-  const entered = hours !== "" && !Number.isNaN(parsed);
+  const delta = Number(hours);
+  const entered = hours !== "" && !Number.isNaN(delta);
 
-  // The figure entered is the balance it should end up at, not the amount to
-  // move it by. An administrator correcting something knows what the answer is
-  // meant to be; doing that subtraction by hand is how one mistake becomes two,
-  // and the ledger only grows, so the second one is permanent too.
-  const delta = Math.round((parsed - currentBalance) * 100) / 100;
-
+  // What is typed is what is stored. Every ledger row is a signed number of
+  // hours, so asking for the change rather than the intended total means no
+  // arithmetic happens between the box and the database.
+  //
+  // Asking for the total would mean the row is derived from whatever the
+  // balance was when the dialog opened — and that can move underneath it. The
+  // weekly cron runs, a manager approves something, another administrator
+  // writes a row, and "set it to 47.53" quietly writes a different figure than
+  // the one previewed. "Add eight hours" adds eight hours regardless.
   const duplicateOpening = entryType === "opening_balance" && hasOpeningBalance;
   const canSubmit =
     entered && delta !== 0 && note.trim().length > 0 && !duplicateOpening;
@@ -114,13 +117,13 @@ const AdjustDialog = ({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="adjust-hours">Set balance to</Label>
+              <Label htmlFor="adjust-hours">Add or subtract</Label>
               <Input
                 id="adjust-hours"
                 type="number"
                 step="0.25"
                 value={hours}
-                placeholder={currentBalance.toFixed(2)}
+                placeholder="8 or -4"
                 onChange={(e) => setHours(e.target.value)}
               />
             </div>
@@ -130,16 +133,15 @@ const AdjustDialog = ({
             Currently {currentBalance.toFixed(2)}h.
             {entered &&
               (delta === 0 ? (
-                " Same as now — nothing to write."
+                " Zero — nothing to write."
               ) : (
                 <>
                   {" "}
-                  This writes a{" "}
+                  Leaves them at{" "}
                   <strong className="font-medium text-slate-900">
-                    {delta > 0 ? "+" : "−"}
-                    {Math.abs(delta).toFixed(2)}h
-                  </strong>{" "}
-                  row.
+                    {(currentBalance + delta).toFixed(2)}h
+                  </strong>
+                  , unless something else moves it first.
                 </>
               ))}
           </p>
