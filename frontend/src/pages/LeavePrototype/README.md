@@ -70,9 +70,23 @@ three screens.
 
 | View | Component | What it shows |
 |---|---|---|
-| Employee | `EmployeeView.jsx` | Balance, request form with live hour breakdown, own request history, company holidays |
+| Employee | `EmployeeView.jsx` | The personal-dashboard card and everything its buttons lead to |
 | Manager | `ManagerView.jsx` | Approval queue, each card showing the requester's balance *after* approval |
 | Administrator | `AdminView.jsx` | Data-health list, org-wide balances, manual ledger adjustments |
+
+The employee side is arranged the way it will ship: one card on the personal
+dashboard — three figures and four buttons, never growing — plus the places
+those buttons lead.
+
+| Button | Goes to | Why |
+|---|---|---|
+| Request time off | `RequestDialog.jsx` | Frequent, and you want to land back on the dashboard |
+| Company holidays | `HolidaysDialog.jsx` | Short reference list, glance and close |
+| My requests | `RequestsPage.jsx` | Scrolled back through; will want filtering later |
+| Balance history | `LedgerPage.jsx` | Same, and it only grows |
+
+The two pages are real routes in the shipped version. This bundle has no
+router, so they swap in behind a back link — the same shape, minus the URL.
 
 ## Rules worth clicking on
 
