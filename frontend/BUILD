@@ -25,6 +25,16 @@ js_library(
     srcs = ["vite.config.mjs"],
 )
 
+# Entry document and config for the standalone prototype bundle. Kept out of
+# :all_srcs so the normal app build graph is untouched.
+js_library(
+    name = "prototype_files",
+    srcs = [
+        "prototype.html",
+        "vite.config.pages.mjs",
+    ],
+)
+
 js_library(
     name = "all_srcs",
     srcs = [
@@ -88,6 +98,29 @@ vite_bin.vite_binary(
     tags = ["ibazel_notify_changes"],
 )
 
+# Dev server for the standalone prototypes. Serves prototype.html, whose entry
+# mounts the prototypes bare — no Auth0, no LaunchDarkly, no router, no API — so
+# it runs with nothing else up. This is the only way to view the prototypes
+# locally without a backend; :dev_server boots the full app, which authenticates.
+#
+#   bazel run //frontend:prototype_dev_server
+#   open http://localhost:5173/prototype.html#leave
+vite_bin.vite_binary(
+    name = "prototype_dev_server",
+    args = [
+        "--config",
+        "vite.config.pages.mjs",
+    ],
+    chdir = package_name(),
+    data = [
+        ":all_srcs",
+        ":prototype_files",
+        "//:npm_deps",
+    ],
+    tags = ["ibazel_notify_changes"],
+)
+
 # Build: Use bazel build //frontend:dist to generate production-ready static assets.
 # Development: Use bazel run //frontend:dev_server (with ibazel) for rapid iterative development.
 # Preview: Use bazel run //frontend:vite_preview to locally preview the production build.
+# Prototypes without a backend: bazel run //frontend:prototype_dev_server

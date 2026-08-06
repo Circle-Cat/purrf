@@ -36,14 +36,28 @@ The form builder (`vendor/FormBuilder.jsx`, `JsonSchemaForm.jsx`,
 
 ## Run locally
 
-Inside the full app — route `/recruiting/prototype` (no auth gate):
+**With nothing else running** — this is what you want almost always:
 
 ```bash
-bazel run //frontend:dev_server     # or: ibazel run //frontend:dev_server
+bazel run //frontend:prototype_dev_server    # or: ibazel run …
+# open http://localhost:5173/prototype.html#recruiting
+```
+
+That serves `prototype.html`, whose entry mounts the prototypes bare — no Auth0,
+no LaunchDarkly, no router, no API — so it needs no backend and no login.
+
+**Inside the full app** — route `/recruiting/prototype`:
+
+```bash
+bazel run //frontend:dev_server
 # open http://localhost:5173/recruiting/prototype
 ```
 
-Or build/preview just the standalone static bundle (what GitHub Pages serves):
+The route itself has no permission check, but the app shell around it still
+authenticates, so this path **does** need a working backend and a login. Use it
+only when you want the prototype in its real navigation context.
+
+**Build the static bundle** exactly as GitHub Pages does:
 
 ```bash
 # node 18 locally needs a pinned pnpm:

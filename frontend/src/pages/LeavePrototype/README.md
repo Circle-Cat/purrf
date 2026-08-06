@@ -15,12 +15,21 @@ renders from [`mockData.js`](./mockData.js) and React state.
 | | |
 |---|---|
 | Live demo | https://circle-cat.github.io/purrf/#leave |
-| Inside the full app | route `/leave/prototype` (no auth gate) |
+| Locally, nothing else running | `bazel run //frontend:prototype_dev_server` → `/prototype.html#leave` |
+| Inside the full app | route `/leave/prototype` — **needs a backend**, see below |
 
 ```bash
-bazel run //frontend:dev_server
-# open http://localhost:5173/leave/prototype
+bazel run //frontend:prototype_dev_server
+# open http://localhost:5173/prototype.html#leave
 ```
+
+That target serves `prototype.html`, whose entry mounts the prototype bare — no
+Auth0, no LaunchDarkly, no router, no API. It is the only way to view this
+locally with nothing else up.
+
+`bazel run //frontend:dev_server` boots the **full** app instead. The
+`/leave/prototype` route inside it has no permission check, but the app shell
+around it still authenticates, so that path needs a working backend and login.
 
 The GitHub Pages bundle serves both prototypes behind a hash switch —
 `#recruiting` and `#leave` — wired up in
