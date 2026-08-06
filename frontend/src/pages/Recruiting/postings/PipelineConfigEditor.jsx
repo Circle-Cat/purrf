@@ -13,7 +13,7 @@ const OwnerChip = ({ name, onRemove }) => (
     <button
       type="button"
       onClick={onRemove}
-      aria-label={`Remove manager ${name}`}
+      aria-label={`Remove recruiter ${name}`}
       className="text-slate-400 hover:text-slate-600"
     >
       ×
@@ -23,7 +23,7 @@ const OwnerChip = ({ name, onRemove }) => (
 
 /**
  * Editor for a posting's interview pipeline: owners + ordered selected stages
- * (each with rounds, and a default assignee on screening/behavioral).
+ * (each with sessions, and a default assignee on screening/behavioral).
  *
  * @param {{value: {ownerIds?: number[], ownerId?: number, stages: object[]},
  *          onChange: (next: object) => void,
@@ -89,22 +89,26 @@ const PipelineConfigEditor = ({
     <div className="space-y-3">
       <p className="text-sm font-medium text-slate-700">Interview pipeline</p>
       <div className="space-y-1">
-        <Label>Managed by</Label>
-        <div className="flex flex-wrap items-center gap-2">
-          {ownerIds.map((id) => (
-            <OwnerChip
-              key={id}
-              name={ownerName(id)}
-              onRemove={() => removeOwner(id)}
-            />
-          ))}
+        <div className="flex items-center gap-2">
+          <Label className="shrink-0">Recruiter</Label>
+          <PeoplePicker
+            label="Add recruiter"
+            pool={availableOwners}
+            value={undefined}
+            onChange={addOwner}
+          />
         </div>
-        <PeoplePicker
-          label="Add manager"
-          pool={availableOwners}
-          value={undefined}
-          onChange={addOwner}
-        />
+        {ownerIds.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            {ownerIds.map((id) => (
+              <OwnerChip
+                key={id}
+                name={ownerName(id)}
+                onRemove={() => removeOwner(id)}
+              />
+            ))}
+          </div>
+        )}
       </div>
       {STAGES.map((name) => {
         const s = stageOf(name);
@@ -124,13 +128,13 @@ const PipelineConfigEditor = ({
               {name}
             </Label>
             {s && (
-              <div className="flex flex-wrap items-center gap-4 pl-6">
-                <Label className="flex items-center gap-2 text-sm">
-                  Rounds
+              <div className="space-y-2 pl-6">
+                <Label className="flex flex-wrap items-center gap-2 text-sm font-normal">
+                  This stage has
                   <Input
                     type="number"
                     min={1}
-                    aria-label={`${name} rounds`}
+                    aria-label={`${name} sessions`}
                     className="w-20"
                     value={s.rounds}
                     onChange={(e) =>
@@ -139,18 +143,25 @@ const PipelineConfigEditor = ({
                       })
                     }
                   />
+                  {(s.rounds ?? 1) === 1 ? "session" : "sessions"} in total
                 </Label>
                 {ASSIGNABLE.has(name) && (
-                  <Label className="flex items-center gap-2 text-sm">
-                    Default assignee
-                    <PeoplePicker
-                      label={`${name} assignee`}
-                      pool={interviewPool}
-                      value={s.defaultAssigneeId}
-                      onChange={(id) =>
-                        patchStage(name, { defaultAssigneeId: id })
-                      }
-                    />
+                  <Label className="flex flex-wrap items-center gap-2 text-sm font-normal">
+                    Applicants entering this stage are assigned to
+                    {/* Bounded so the picker's own `w-full` trigger does not
+                        claim a whole flex line and split the sentence. */}
+                    <span className="inline-block w-64">
+                      <PeoplePicker
+                        label={`${name} assignee`}
+                        pool={interviewPool}
+                        value={s.defaultAssigneeId}
+                        onChange={(id) =>
+                          patchStage(name, { defaultAssigneeId: id })
+                        }
+                        noneLabel="no one"
+                      />
+                    </span>
+                    for evaluation by default
                   </Label>
                 )}
               </div>

@@ -11,7 +11,7 @@ describe("PostingsList", () => {
     pipelineConfig: { ownerIds: [2, 3] },
   };
 
-  it("renders status badge, Managed by line, and no action buttons", () => {
+  it("renders status badge, Recruiter line, and no action buttons", () => {
     render(
       <PostingsList
         jobs={[job]}
@@ -21,13 +21,13 @@ describe("PostingsList", () => {
     );
 
     expect(screen.getByText("Draft")).toBeInTheDocument();
-    expect(screen.getByText("Managed by: Alice, Bob")).toBeInTheDocument();
+    expect(screen.getByText("Recruiter: Alice, Bob")).toBeInTheDocument();
     // The row itself is a <button> (for click-through navigation), so
     // assert there are no *extra* action buttons beyond that single row.
     expect(screen.getAllByRole("button")).toHaveLength(1);
   });
 
-  it("omits the Managed by line when no owners are configured", () => {
+  it("omits the Recruiter line when no owners are configured", () => {
     render(
       <PostingsList
         jobs={[{ ...job, pipelineConfig: null }]}
@@ -36,7 +36,7 @@ describe("PostingsList", () => {
       />,
     );
 
-    expect(screen.queryByText(/Managed by/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Recruiter/)).not.toBeInTheDocument();
   });
 
   it("shows an unresolved owner in red with a 'no permission, remove' suffix, alongside a resolved one", () => {

@@ -72,10 +72,10 @@ def stage_label(stage: ApplicationStage | None, kind: JobKind | None) -> str:
 
 
 def _round_suffix(round_number: int | None) -> str:
-    """ ", round N" past the first round, "" otherwise (round 1 is noise)."""
+    """ ", session N" past the first session, "" otherwise (session 1 is noise)."""
     if round_number is None or round_number <= 1:
         return ""
-    return f", round {round_number}"
+    return f", session {round_number}"
 
 
 def _assigned_to_evaluate(dto, stage):

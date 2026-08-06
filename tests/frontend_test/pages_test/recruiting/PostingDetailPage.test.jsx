@@ -477,7 +477,7 @@ describe("PostingDetailPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("disables Submit for review with a hint when the draft has no manager", async () => {
+  it("disables Submit for review with a hint when the draft has no recruiter", async () => {
     api.getJob.mockResolvedValue({
       data: {
         id: 1,
@@ -504,12 +504,12 @@ describe("PostingDetailPage", () => {
     );
     expect(
       screen.getByText(
-        "Add at least one manager (Managed by) before submitting for review.",
+        "Add at least one recruiter before submitting for review.",
       ),
     ).toBeInTheDocument();
   });
 
-  it("enables Submit for review when the draft has a stage and a manager", async () => {
+  it("enables Submit for review when the draft has a stage and a recruiter", async () => {
     api.getJob.mockResolvedValue({
       data: {
         id: 1,

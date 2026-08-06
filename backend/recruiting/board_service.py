@@ -1859,7 +1859,7 @@ class BoardService:
         ):
             raise ValueError(
                 "sub-status evaluated requires a confirmed evaluation "
-                "for the current round"
+                "for the current session"
             )
 
         current_value = application.sub_status or "pending"
@@ -1948,8 +1948,8 @@ class BoardService:
         )
         if not (1 <= dto.round <= max_round):
             raise ValueError(
-                f"round {dto.round} is out of range for stage "
-                f"{application.stage!s} (configured rounds: {max_round})"
+                f"session {dto.round} is out of range for stage "
+                f"{application.stage!s} (configured sessions: {max_round})"
             )
         if application.stage in INTERVIEW_STAGES and dto.assignee_id is not None:
             await self._validate_interview_assignee(session, dto.assignee_id)

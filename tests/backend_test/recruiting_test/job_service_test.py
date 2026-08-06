@@ -559,7 +559,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_submit_draft_without_owner_raises(self):
-        """A posting with no Managed by owner cannot be submitted — applications
+        """A posting with no Recruiter owner cannot be submitted — applications
         would be visible to no one."""
         job = self._job(status=JobStatus.DRAFT)
         job.pipeline_config = {
@@ -569,7 +569,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.repo.get_by_job_id.return_value = job
         self._two_approvers()
 
-        with self.assertRaisesRegex(ValueError, "manager"):
+        with self.assertRaisesRegex(ValueError, "recruiter"):
             await self.service.submit_for_review(
                 self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
             )

@@ -79,7 +79,7 @@ class TestRender(unittest.TestCase):
     def test_assigned_to_evaluate_appends_the_round_only_past_the_first(self):
         _, body = notification_email_copy.render(_dto(round=2), ApplicationStage.TECH)
 
-        self.assertIn("Stage: Tech, round 2.", body)
+        self.assertIn("Stage: Tech, session 2.", body)
 
     def test_assigned_to_evaluate_says_automatic_without_an_actor(self):
         _, body = notification_email_copy.render(

@@ -2,7 +2,7 @@ import { Fragment } from "react";
 import PostingStatusBadges from "@/pages/Recruiting/components/PostingStatusBadges";
 
 /**
- * Read-only, browse-only table of postings — status Badge, "Managed by"
+ * Read-only, browse-only table of postings — status Badge, "Recruiter"
  * line, and a click-through to the unified job detail page. All lifecycle
  * actions (Edit/Submit/Delete/Request close/Request reopen) live on that
  * detail page now, not here, so this list is safe to show to
@@ -31,7 +31,7 @@ const PostingsList = ({ jobs, ownersById = {}, onRowClick }) => (
             <p className="text-xs text-slate-500">{job.kind}</p>
             {ownerIds.length > 0 && (
               <p className="text-xs text-slate-500">
-                Managed by:
+                Recruiter:
                 {ownerIds.map((oid, i) => (
                   <Fragment key={oid}>
                     {i === 0 ? " " : ", "}
