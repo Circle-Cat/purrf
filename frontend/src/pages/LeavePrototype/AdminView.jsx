@@ -195,6 +195,9 @@ const AdminView = ({ adjustments, onAdjust }) => {
 
       <AdjustDialog
         person={adjusting}
+        currentBalance={
+          balances.find((p) => p.id === adjusting?.id)?.balance ?? 0
+        }
         onOpenChange={(next) => !next && setAdjusting(null)}
         hasOpeningBalance={adjusting ? hasOpeningBalance(adjusting.id) : false}
         onSubmit={onAdjust}

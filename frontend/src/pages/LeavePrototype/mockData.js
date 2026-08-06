@@ -93,14 +93,14 @@ export const REGIONS = {
     weeklyExtraHours: WEEKLY_EXTRA_HOURS,
     holidayGrantAllowance: HOLIDAY_GRANT_ALLOWANCE,
     weekendDays: WEEKEND_DAYS,
-    weekendLabel: "Friday + Saturday",
+    weekendLabel: "Friday + Saturday (Local date)",
   },
   INTL: {
     label: "International",
     weeklyExtraHours: 40,
     holidayGrantAllowance: 0,
     weekendDays: [0, 6],
-    weekendLabel: "Saturday + Sunday",
+    weekendLabel: "Saturday + Sunday (Local date)",
   },
 };
 
