@@ -35,6 +35,7 @@ _SHARD_COUNT = 10
             ":vitest_config",
             "//:npm_deps",
             "//frontend:all_srcs",
+            "//tests/shared:form_visibility_vectors_js",
         ],
         flaky = True,
     )

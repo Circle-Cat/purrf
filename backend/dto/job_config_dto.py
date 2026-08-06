@@ -45,11 +45,15 @@ def question_seq_floor(question_ids) -> int:
 
 
 class ShowWhenDto(BaseRequestDto):
-    """Single-layer conditional-visibility rule on a question.
+    """Conditional-visibility rule on a question.
 
     Renders the owning question only when the referenced question's answer
     matches ``equals`` (exact match for scalar answers; membership for
-    multi_choice). Enforcement of visibility at submit time is flow-two.
+    multi_choice) *and* the referenced question is itself rendered -- rules
+    may chain, and ``backend/recruiting/form_visibility.py`` resolves the
+    chain through to its root. That module also enforces the rule at submit
+    time: answers to questions the form was not showing are dropped, and
+    ``required`` is checked only against the ones it was.
     """
 
     question_id: str
@@ -163,7 +167,7 @@ class FormSchemaDto(BaseRequestDto):
 
     @model_validator(mode="after")
     def validate_schema(self) -> "FormSchemaDto":
-        """Enforce unique ids, valid single-layer showWhen references, and a
+        """Enforce unique ids, resolvable showWhen references, and a
         non-recycling next_seq.
 
         Returns:
