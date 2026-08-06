@@ -30,6 +30,7 @@ import { MeetingStatus } from "@/constants/MeetingStatus";
 import { MEETING_NOTE_TAGS } from "@/constants/MeetingNoteTags";
 import {
   getDisabledNoteTags,
+  hasAbsentTag,
   noteTagLabel,
 } from "@/pages/MentorshipManagement/utils/meetingNoteTags";
 
@@ -138,10 +139,11 @@ function MeetingNoteCell({
 
 /**
  * Dropdown selector for a meeting's completion state.
+ * Disables "Completed" while an absent tag is selected in the meeting's note.
  *
- * @param {{isCompleted: boolean, onChange: (isCompleted: boolean) => void}} props
+ * @param {{isCompleted: boolean, note: string[], onChange: (isCompleted: boolean) => void}} props
  */
-function CompleteStatusSelect({ isCompleted, onChange }) {
+function CompleteStatusSelect({ isCompleted, note, onChange }) {
   return (
     <Select
       value={isCompleted ? "completed" : "incomplete"}
@@ -151,7 +153,9 @@ function CompleteStatusSelect({ isCompleted, onChange }) {
         <SelectValue />
       </SelectTrigger>
       <SelectContent className="z-[210]">
-        <SelectItem value="completed">Completed</SelectItem>
+        <SelectItem value="completed" disabled={hasAbsentTag(note)}>
+          Completed
+        </SelectItem>
         <SelectItem value="incomplete">Incomplete</SelectItem>
       </SelectContent>
     </Select>
@@ -165,13 +169,20 @@ function CompleteStatusSelect({ isCompleted, onChange }) {
  *
  * @param {{
  *   note: string[],
+ *   isCompleted: boolean,
  *   mentorName: string,
  *   menteeName: string,
  *   onChange: (tags: string[]) => void
  * }} props
  */
-function NoteTagPopover({ note, mentorName, menteeName, onChange }) {
-  const disabled = getDisabledNoteTags(note);
+function NoteTagPopover({
+  note,
+  isCompleted,
+  mentorName,
+  menteeName,
+  onChange,
+}) {
+  const disabled = getDisabledNoteTags(note, { isCompleted });
   const toggleTag = (tag, checked) =>
     onChange(checked ? [...note, tag] : note.filter((t) => t !== tag));
   const summary = note
@@ -265,21 +276,21 @@ const MeetingLogDialog = ({
   const mentorName = subjectRole === "mentor" ? subjectName : partnerName;
   const menteeName = subjectRole === "mentee" ? subjectName : partnerName;
   const [isEditing, setIsEditing] = useState(false);
-  const [editedFields, setEditedFields] = useState({});
-  const [checkedIds, setCheckedIds] = useState(new Set());
+  const [pendingUpdates, setPendingUpdates] = useState({});
+  const [pendingDeleteIds, setPendingDeleteIds] = useState(new Set());
   const [confirmAction, setConfirmAction] = useState(null); // null | "update" | "delete"
   const [isSaving, setIsSaving] = useState(false);
   const canEdit = roundVersion === "v2" && meetings.length > 0;
 
-  const updateCount = Object.keys(editedFields).filter(
-    (id) => !checkedIds.has(id),
+  const updateCount = Object.keys(pendingUpdates).filter(
+    (id) => !pendingDeleteIds.has(id),
   ).length;
-  const deleteCount = checkedIds.size;
+  const deleteCount = pendingDeleteIds.size;
 
   const resetEditState = () => {
     setIsEditing(false);
-    setEditedFields({});
-    setCheckedIds(new Set());
+    setPendingUpdates({});
+    setPendingDeleteIds(new Set());
   };
 
   useEffect(() => {
@@ -288,14 +299,14 @@ const MeetingLogDialog = ({
     resetEditState();
   }, [open]);
 
-  const fieldsFor = (meeting) => ({
+  const getEffectiveFields = (meeting) => ({
     isCompleted:
-      editedFields[meeting.meetingId]?.isCompleted ?? meeting.isCompleted,
-    note: editedFields[meeting.meetingId]?.note ?? meeting.note,
+      pendingUpdates[meeting.meetingId]?.isCompleted ?? meeting.isCompleted,
+    note: pendingUpdates[meeting.meetingId]?.note ?? meeting.note,
   });
 
   const patchField = (meetingId, patch) =>
-    setEditedFields((prev) => {
+    setPendingUpdates((prev) => {
       const merged = { ...prev[meetingId], ...patch };
       const original = meetings.find((m) => m.meetingId === meetingId);
       const isCompleted = merged.isCompleted ?? original.isCompleted;
@@ -311,8 +322,8 @@ const MeetingLogDialog = ({
       return { ...prev, [meetingId]: merged };
     });
 
-  const toggleChecked = (meetingId, checked) =>
-    setCheckedIds((prev) => {
+  const togglePendingDelete = (meetingId, checked) =>
+    setPendingDeleteIds((prev) => {
       const next = new Set(prev);
       if (checked) next.add(meetingId);
       else next.delete(meetingId);
@@ -320,16 +331,17 @@ const MeetingLogDialog = ({
     });
 
   const allSelected =
-    meetings.length > 0 && meetings.every((m) => checkedIds.has(m.meetingId));
+    meetings.length > 0 &&
+    meetings.every((m) => pendingDeleteIds.has(m.meetingId));
 
   const toggleSelectAll = (checked) =>
-    setCheckedIds(
+    setPendingDeleteIds(
       checked ? new Set(meetings.map((m) => m.meetingId)) : new Set(),
     );
 
   const buildUpdatePayload = () => ({
-    updates: Object.entries(editedFields)
-      .filter(([meetingId]) => !checkedIds.has(meetingId))
+    updates: Object.entries(pendingUpdates)
+      .filter(([meetingId]) => !pendingDeleteIds.has(meetingId))
       .map(([meetingId, fields]) => ({
         meetingId,
         ...fields,
@@ -339,7 +351,7 @@ const MeetingLogDialog = ({
 
   const buildDeletePayload = () => ({
     updates: [],
-    deletes: [...checkedIds],
+    deletes: [...pendingDeleteIds],
   });
 
   const handleConfirm = async () => {
@@ -468,7 +480,11 @@ const MeetingLogDialog = ({
                   </thead>
                   <tbody>
                     {meetings.map((meeting, index) => {
-                      const isChecked = checkedIds.has(meeting.meetingId);
+                      const isChecked = pendingDeleteIds.has(meeting.meetingId);
+                      const effectiveFields =
+                        isEditing && !isChecked
+                          ? getEffectiveFields(meeting)
+                          : null;
                       return (
                         <tr
                           key={meeting.meetingId}
@@ -481,7 +497,10 @@ const MeetingLogDialog = ({
                                   aria-label={`Select meeting ${index + 1} for deletion`}
                                   checked={isChecked}
                                   onCheckedChange={(checked) =>
-                                    toggleChecked(meeting.meetingId, checked)
+                                    togglePendingDelete(
+                                      meeting.meetingId,
+                                      checked,
+                                    )
                                   }
                                 />
                               )}
@@ -498,9 +517,10 @@ const MeetingLogDialog = ({
                             {formatCreateDatetime(meeting.createDatetime)}
                           </td>
                           <td className="px-3 py-3 border-l border-border align-top">
-                            {isEditing && !isChecked ? (
+                            {effectiveFields ? (
                               <CompleteStatusSelect
-                                isCompleted={fieldsFor(meeting).isCompleted}
+                                isCompleted={effectiveFields.isCompleted}
+                                note={effectiveFields.note}
                                 onChange={(v) =>
                                   patchField(meeting.meetingId, {
                                     isCompleted: v,
@@ -515,9 +535,10 @@ const MeetingLogDialog = ({
                             )}
                           </td>
                           <td className="px-3 py-3 border-l border-border align-top">
-                            {isEditing && !isChecked ? (
+                            {effectiveFields ? (
                               <NoteTagPopover
-                                note={fieldsFor(meeting).note}
+                                note={effectiveFields.note}
+                                isCompleted={effectiveFields.isCompleted}
                                 mentorName={mentorName}
                                 menteeName={menteeName}
                                 onChange={(v) =>

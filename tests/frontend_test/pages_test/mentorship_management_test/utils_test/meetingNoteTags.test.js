@@ -50,4 +50,14 @@ describe("getDisabledNoteTags", () => {
       new Set(["mentor_late", "mentee_late"]),
     );
   });
+
+  it("disables all absent tags when isCompleted is true, even with none selected", () => {
+    expect(getDisabledNoteTags([], { isCompleted: true })).toEqual(
+      new Set(["unknown_absent", "mentor_absent", "mentee_absent"]),
+    );
+  });
+
+  it("does not disable absent tags when isCompleted is false", () => {
+    expect(getDisabledNoteTags([], { isCompleted: false })).toEqual(new Set());
+  });
 });
