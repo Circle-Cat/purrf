@@ -1,5 +1,12 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, CalendarDays, Check, Info, X } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarDays,
+  Check,
+  History,
+  Info,
+  X,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -19,6 +26,7 @@ import {
   SICK_AUTO_APPROVE_HOURS,
 } from "@/pages/LeavePrototype/mockData";
 import {
+  ENTRY_LABEL,
   STATUS_LABEL,
   TYPE_LABEL,
   breakdownRange,
@@ -87,12 +95,16 @@ const EmployeeView = ({
   const reserved = pendingReserved(requests);
   const available = Math.round((balance - reserved) * 100) / 100;
 
-  const accrued = ledger
-    .filter((r) => ["weekly_accrual", "holiday_grant"].includes(r.entryType))
-    .reduce((s, r) => s + r.hours, 0);
   const used = ledger
     .filter((r) => r.entryType === "leave_deduction")
     .reduce((s, r) => s + Math.abs(r.hours), 0);
+
+  /** Newest first — the balance card deliberately does not explain itself. */
+  const history = [...ledger].sort((a, b) =>
+    a.effectiveDate === b.effectiveDate
+      ? b.id - a.id
+      : b.effectiveDate.localeCompare(a.effectiveDate),
+  );
 
   /** Exchange is always a single worked day, so the end date follows the start. */
   const effectiveEnd = type === "exchange" ? startDate : endDate;
@@ -140,7 +152,7 @@ const EmployeeView = ({
 
       {/* Balance */}
       <Card className="p-5">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+        <div className="grid grid-cols-3 gap-6">
           <Stat
             label="Available"
             value={`${available.toFixed(2)}h`}
@@ -153,16 +165,11 @@ const EmployeeView = ({
             hint="Held by pending requests"
           />
           <Stat
-            label="Accrued"
-            value={`${accrued.toFixed(2)}h`}
-            hint="Granted so far"
+            label="Used"
+            value={`${used.toFixed(2)}h`}
+            hint="Approved and taken"
           />
-          <Stat label="Used" value={`${used.toFixed(2)}h`} hint="Approved" />
         </div>
-        <p className="text-xs text-slate-400 mt-4 pt-4 border-t border-slate-100">
-          Balance accrues weekly and at the start of each public holiday period.
-          It carries over between years and is never zeroed out.
-        </p>
       </Card>
 
       {/* Request form */}
@@ -399,6 +406,56 @@ const EmployeeView = ({
             ))}
           </ul>
         )}
+      </Card>
+
+      {/* Balance history */}
+      <Card className="p-5">
+        <div className="flex items-center gap-2 mb-1">
+          <History size={15} className="text-slate-400" />
+          <h2 className="text-sm font-semibold text-slate-900">
+            Balance history
+          </h2>
+        </div>
+        <p className="text-xs text-slate-500 mb-3">
+          Every change to your balance, newest first. Entries are only ever
+          added — a correction is a new line, never an edit to an old one.
+        </p>
+        <ul className="divide-y divide-slate-100">
+          {history.map((row) => (
+            <li
+              key={row.id}
+              className="py-2.5 flex items-baseline justify-between gap-4"
+            >
+              <div className="min-w-0">
+                <span className="text-sm text-slate-800">
+                  {ENTRY_LABEL[row.entryType] ?? row.entryType}
+                </span>
+                {row.note && (
+                  <p className="text-xs text-slate-400 mt-0.5">{row.note}</p>
+                )}
+              </div>
+              <div className="shrink-0 text-right">
+                <span
+                  className={`text-sm font-medium tabular-nums ${
+                    row.hours < 0 ? "text-rose-600" : "text-emerald-700"
+                  }`}
+                >
+                  {row.hours > 0 ? "+" : ""}
+                  {row.hours.toFixed(2)}h
+                </span>
+                <p className="text-xs text-slate-400 tabular-nums">
+                  {row.effectiveDate}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <div className="flex items-baseline justify-between mt-3 pt-3 border-t border-slate-200">
+          <span className="text-sm font-medium text-slate-900">Balance</span>
+          <span className="text-sm font-semibold tabular-nums text-slate-900">
+            {balance.toFixed(2)}h
+          </span>
+        </div>
       </Card>
 
       {/* Company holidays */}

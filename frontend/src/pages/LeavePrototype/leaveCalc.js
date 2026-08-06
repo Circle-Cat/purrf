@@ -269,6 +269,23 @@ export const TYPE_LABEL = {
   exchange: "Holiday exchange",
 };
 
+/**
+ * Display label for each ledger entry type.
+ *
+ * The balance card shows three numbers and does not try to explain how the
+ * balance got there; this is where that question is answered instead.
+ */
+export const ENTRY_LABEL = {
+  opening_balance: "Opening balance",
+  weekly_accrual: "Weekly accrual",
+  holiday_grant: "Public holiday conversion",
+  leave_deduction: "Leave taken",
+  exchange_credit: "Holiday worked",
+  manual_adjustment: "Adjustment by administrator",
+  reversal: "Reversal",
+  carryover_forfeit: "Carry-over cap",
+};
+
 /** Display label for each request status. */
 export const STATUS_LABEL = {
   pending: "Pending",
