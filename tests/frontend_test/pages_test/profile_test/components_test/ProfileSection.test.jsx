@@ -22,7 +22,7 @@ describe("ProfileSection", () => {
   it("fires onChange when a personal field is edited", () => {
     const onChange = vi.fn();
     render(<ProfileSection value={baseValue()} onChange={onChange} />);
-    fireEvent.change(screen.getByLabelText("First name"), {
+    fireEvent.change(screen.getByLabelText(/^First name/), {
       target: { value: "Ann" },
     });
     expect(onChange).toHaveBeenCalledWith(
@@ -30,6 +30,21 @@ describe("ProfileSection", () => {
         personal: expect.objectContaining({ firstName: "Ann" }),
       }),
     );
+  });
+
+  // First/last name and timezone are always required, whatever the posting's
+  // profileConfig says; LinkedIn never is.
+  it("marks first name, last name, and timezone required, but not LinkedIn", () => {
+    render(<ProfileSection value={baseValue()} onChange={vi.fn()} />);
+    const marked = (text) =>
+      screen
+        .getByText(text)
+        .closest("label")
+        .querySelector("span.text-red-500");
+    expect(marked("First name")).toHaveTextContent("*");
+    expect(marked("Last name")).toHaveTextContent("*");
+    expect(marked("Timezone")).toHaveTextContent("*");
+    expect(marked("LinkedIn")).toBeNull();
   });
 
   it("hides the education section when its requirement is off", () => {

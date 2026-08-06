@@ -176,7 +176,7 @@ describe("RecruitingProfileForm", () => {
 
   it("always renders basic info even when every section is off", () => {
     renderForm({ education: "off", workExperience: "off", resume: "off" });
-    expect(screen.getByLabelText("First name")).toBeInTheDocument();
+    expect(screen.getByLabelText(/^First name/)).toBeInTheDocument();
   });
 
   it("shows the resume quick-fill upload with prefill copy even when resume is off", () => {
@@ -279,7 +279,7 @@ describe("RecruitingProfileForm", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.change(screen.getByLabelText("First name"), {
+    fireEvent.change(screen.getByLabelText(/^First name/), {
       target: { value: "Ada" },
     });
     expect(onChange).toHaveBeenCalledWith(
