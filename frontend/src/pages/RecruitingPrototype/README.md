@@ -7,9 +7,14 @@ stakeholder demos. No backend, no auth, no env vars — everything renders from
 > ⚠️ This is a **demo prototype**, not the real implementation. The production
 > recruiting feature ships separately via its own slices/PRs.
 
+> 📎 This branch now carries a second prototype too — see
+> [Leave & PTO](../LeavePrototype/README.md). The Pages bundle serves both
+> behind a hash switch (`#recruiting` / `#leave`); the deploy setup documented
+> below is shared and unchanged.
+
 ## 🔗 Live demo
 
-**https://circle-cat.github.io/purrf/**
+**https://circle-cat.github.io/purrf/#recruiting**
 
 Open it in a browser — nothing to install. (Public repo → the page is publicly
 visible on the internet. It only contains mock data.)

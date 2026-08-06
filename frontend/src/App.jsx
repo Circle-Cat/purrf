@@ -35,6 +35,7 @@ import Audit from "@/pages/Recruiting/audit/Audit";
 // Standalone mock-data prototype — self-contained under @/pages/RecruitingPrototype,
 // no coupling to business code. Remove this import + the route below to fully revert.
 import RecruitingPrototype from "@/pages/RecruitingPrototype";
+import LeavePrototype from "@/pages/LeavePrototype";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
 import { PERMISSIONS } from "@/constants/Permissions";
@@ -259,6 +260,10 @@ function App() {
                     <Route
                       path="/recruiting/prototype"
                       element={<RecruitingPrototype />}
+                    />
+                    <Route
+                      path="/leave/prototype"
+                      element={<LeavePrototype />}
                     />
                     <Route
                       path={ROUTE_PATHS.ROOT}

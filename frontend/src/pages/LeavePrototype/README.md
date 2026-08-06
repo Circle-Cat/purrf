@@ -1,0 +1,83 @@
+# Leave & PTO Prototype
+
+A self-contained, **mock-data** prototype of the leave and annual-leave design,
+built for stakeholder review. No backend, no auth, no env vars — everything
+renders from [`mockData.js`](./mockData.js) and React state.
+
+> ⚠️ **Every policy figure here is a placeholder, not the real policy.** This
+> prototype is published to a public URL, so entitlements, the weekend
+> arrangement, and the company holiday calendar are deliberately invented. What
+> it demonstrates is the *mechanism* — accrual, deduction, approval, advance
+> notice — not the numbers. Real figures live in the internal engineering spec.
+
+## Where to see it
+
+| | |
+|---|---|
+| Live demo | https://circle-cat.github.io/purrf/#leave |
+| Inside the full app | route `/leave/prototype` (no auth gate) |
+
+```bash
+bazel run //frontend:dev_server
+# open http://localhost:5173/leave/prototype
+```
+
+The GitHub Pages bundle serves both prototypes behind a hash switch —
+`#recruiting` and `#leave` — wired up in
+[`src/PrototypeSwitcher.jsx`](../../PrototypeSwitcher.jsx). Everything else about
+the Pages deploy is unchanged; see the
+[recruiting prototype README](../RecruitingPrototype/README.md).
+
+## What's in it
+
+Three role views share one set of state, so a request submitted on the Employee
+page appears in the Manager queue, and the decision made there flows back to the
+employee's balance. That coupling is the point — the design is one system, not
+three screens.
+
+| View | Component | What it shows |
+|---|---|---|
+| Employee | `EmployeeView.jsx` | Balance, request form with live hour breakdown, own request history, company holidays |
+| Manager | `ManagerView.jsx` | Approval queue, each card showing the requester's balance *after* approval |
+| Administrator | `AdminView.jsx` | Data-health list, org-wide balances, manual ledger adjustments |
+
+## Rules worth clicking on
+
+The behaviour that is easy to miss in a written spec, and the fastest way to see
+each one:
+
+- **Not every requested day is deducted.** Pick a range spanning a weekend or a
+  company holiday — the form lists which days it skipped and why.
+- **Short notice is a flag, not a block.** Requesting *n* days needs *2n* working
+  days of notice. Paid leave submits anyway with a warning the manager sees;
+  a holiday exchange is refused outright.
+- **Short sick leave skips approval.** Three days or less is approved on
+  submission and never touches the balance. Longer goes to the manager, still
+  without touching the balance.
+- **Overdraft is allowed.** Request more than the balance and it submits, marked,
+  with the resulting negative balance shown to the manager.
+- **Nothing is submitted twice for the same day.** Overlapping an existing
+  request is refused, across every leave type.
+- **The ledger only grows.** Cancelling an approved request writes a reversal
+  row rather than editing the original.
+
+## Structure
+
+| File | Responsibility |
+|---|---|
+| `index.jsx` | Shell, role nav, all shared state and transitions |
+| `leaveCalc.js` | Working days, hour breakdown, advance notice, validation |
+| `mockData.js` | Placeholder policy, people, seeded ledger and requests |
+| `EmployeeView.jsx` / `ManagerView.jsx` / `AdminView.jsx` | The three views |
+
+`leaveCalc.js` holds a single definition of "working day", shared by deduction,
+advance notice, and the sick-leave threshold. The spec is explicit that a second
+definition must never appear; the prototype mirrors that so the demo cannot
+drift from the design it is illustrating.
+
+## Known limits
+
+- Refreshing resets everything — there is no persistence of any kind.
+- No router, so page changes do not alter the URL and cannot be deep-linked
+  (the `#leave` hash selects the prototype, not the page within it).
+- Each visitor gets an independent copy; nothing is shared between browsers.
