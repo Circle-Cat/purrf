@@ -16,6 +16,7 @@ import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicant
 import PipelineConfigEditor from "@/pages/Recruiting/postings/PipelineConfigEditor";
 import ScreenRulesEditor from "@/pages/Recruiting/postings/ScreenRulesEditor";
 import ProfileConfigEditor from "@/pages/Recruiting/postings/ProfileConfigEditor";
+import { validatePosting } from "@/pages/Recruiting/postings/postingValidation";
 import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
 import { POSTING_EDITOR_GUIDE } from "@/pages/Recruiting/components/guideContent";
 
@@ -60,6 +61,10 @@ const PostingEditor = () => {
   const [draft, setDraft] = useState(BLANK);
   const [jobStatus, setJobStatus] = useState(null);
   const [saving, setSaving] = useState(false);
+  // Empty until the author tries to save. Errors are never added while they
+  // type -- only cleared as each one is resolved -- so the page does not turn
+  // red under a half-finished question.
+  const [errors, setErrors] = useState({});
   const [interviewPool, setInterviewPool] = useState([]);
   const [jobOwners, setJobOwners] = useState([]);
 
@@ -111,8 +116,57 @@ const PostingEditor = () => {
     [],
   );
 
+  // Clear each error the moment its field is fixed, the way the profile
+  // modals do. Recomputed from the draft rather than tracked per keystroke:
+  // one option's text is referenced by every question it reveals, so an edit
+  // in one card can resolve an error rendered in another. Narrowed to the
+  // keys already on screen, so resolving one problem cannot surface a new one
+  // mid-typing.
+  useEffect(() => {
+    setErrors((shown) => {
+      const keys = Object.keys(shown);
+      if (keys.length === 0) return shown;
+      const current = validatePosting(draft);
+      const next = {};
+      keys.forEach((key) => {
+        if (current[key]) next[key] = current[key];
+      });
+      const unchanged =
+        Object.keys(next).length === keys.length &&
+        keys.every((key) => next[key] === shown[key]);
+      return unchanged ? shown : next;
+    });
+  }, [draft]);
+
+  /**
+   * Check the draft and, when anything is wrong, put the page on the first
+   * problem instead of sending it.
+   *
+   * Reporting locally is not only faster than a round trip: the API answers
+   * with one sentence naming an internal question id, and nothing about it
+   * says which of a dozen cards to look at.
+   *
+   * @returns {boolean} True when the draft is worth sending.
+   */
+  const validate = () => {
+    const found = validatePosting(draft);
+    setErrors(found);
+    const keys = Object.keys(found);
+    if (keys.length === 0) return true;
+    toast.error(
+      keys.length === 1
+        ? "Fix the highlighted field before saving."
+        : `Fix ${keys.length} highlighted fields before saving.`,
+    );
+    document
+      .querySelector(`[data-error-key="${CSS.escape(keys[0])}"]`)
+      ?.scrollIntoView({ block: "center" });
+    return false;
+  };
+
   const save = async () => {
     if (saving) return;
+    if (!validate()) return;
     setSaving(true);
     try {
       const body = toBody(draft);
@@ -148,8 +202,13 @@ const PostingEditor = () => {
             mentorshipRole={draft.mentorshipRole}
             kindLocked={kindLocked}
             onChange={patch}
+            errors={errors}
           />
-          <FormBuilder formSchema={draft.formSchema} onChange={setFormSchema} />
+          <FormBuilder
+            formSchema={draft.formSchema}
+            onChange={setFormSchema}
+            errors={errors}
+          />
           <PipelineConfigEditor
             value={draft.pipelineConfig ?? { stages: [] }}
             onChange={(pipelineConfig) => patch({ pipelineConfig })}
@@ -160,6 +219,7 @@ const PostingEditor = () => {
             value={draft.screenRules ?? { rules: [] }}
             onChange={(screenRules) => patch({ screenRules })}
             questions={draft.formSchema.questions}
+            errors={errors}
           />
           <ProfileConfigEditor
             value={draft.profileConfig ?? {}}
