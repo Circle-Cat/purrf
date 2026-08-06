@@ -239,11 +239,8 @@ const DataHealth = ({ people }) => {
 const AdminView = ({ adjustments, onAdjust }) => {
   const [adjusting, setAdjusting] = useState(null);
 
-  // Calendar and policy are edited here but not shared with the employee view:
-  // the calculator reads its holidays at module load, and threading a live
-  // calendar through it would be a refactor that buys this prototype nothing.
-  const [company, setCompany] = useState(COMPANY_HOLIDAYS);
-  const [statutory, setStatutory] = useState(STATUTORY_HOLIDAYS);
+  // Both calendars are loaded into the database once a year and only read
+  // here, so they are constants rather than state.
   const [policy, setPolicy] = useState({
     levels: { ...LEVEL_POLICY },
     conversionHours: CONVERSION_HOURS,
@@ -292,11 +289,9 @@ const AdminView = ({ adjustments, onAdjust }) => {
         <TabsContent value="year" className="mt-4 space-y-4">
           <PolicyCard policy={policy} onChange={setPolicy} />
           <CalendarAdmin
-            company={company}
-            statutory={statutory}
+            company={COMPANY_HOLIDAYS}
+            statutory={STATUTORY_HOLIDAYS}
             conversionHours={policy.conversionHours}
-            onCompanyChange={setCompany}
-            onStatutoryChange={setStatutory}
           />
         </TabsContent>
 
