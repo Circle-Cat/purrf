@@ -326,4 +326,56 @@ describe("QuestionEditor", () => {
     expect(screen.getByRole("option", { name: "Model" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Car?" })).toBeNull();
   });
+
+  it("blocks removing a question that other questions are revealed by", () => {
+    // Same bind as an option's Remove one level down: dropping it would leave
+    // the questions it reveals waiting on an answer no one can give.
+    const parent = {
+      id: "q1",
+      type: "single_choice",
+      label: "Need sponsorship?",
+      options: ["Yes", "No"],
+    };
+    const child = {
+      id: "q2",
+      type: "short_text",
+      label: "Which visa?",
+      showWhen: { questionId: "q1", equals: "Yes" },
+    };
+    render(
+      <QuestionEditor
+        question={parent}
+        allQuestions={[parent, child]}
+        onChange={vi.fn()}
+        onRemove={vi.fn()}
+        onMoveUp={vi.fn()}
+        onMoveDown={vi.fn()}
+        optionOps={spyOps()}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Remove question" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(/Stop revealing "Which visa\?" to remove this question/),
+    ).toBeInTheDocument();
+  });
+
+  it("allows removing a question nothing depends on", () => {
+    const question = { id: "q1", type: "short_text", label: "Name" };
+    render(
+      <QuestionEditor
+        question={question}
+        allQuestions={[question]}
+        onChange={vi.fn()}
+        onRemove={vi.fn()}
+        onMoveUp={vi.fn()}
+        onMoveDown={vi.fn()}
+        optionOps={spyOps()}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Remove question" }),
+    ).not.toBeDisabled();
+  });
 });

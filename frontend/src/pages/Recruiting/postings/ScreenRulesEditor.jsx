@@ -8,6 +8,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import FieldError from "@/pages/Recruiting/postings/FieldError";
+import {
+  errorBorder,
+  ruleKey,
+} from "@/pages/Recruiting/postings/postingValidation";
 
 const ACTIONS = ["reject", "qualify", "auto_hire"];
 const EMAIL_MODES = [
@@ -72,6 +77,7 @@ const ScreenRulesEditor = ({
   value = { rules: [] },
   onChange,
   questions = [],
+  errors = {},
 }) => {
   // Fully controlled: derive from `value` so the editor always reflects the
   // loaded posting. (Holding a local copy in useState went stale when the
@@ -150,7 +156,7 @@ const ScreenRulesEditor = ({
               Domains
               <Input
                 aria-label="Email domains"
-                className="w-64"
+                className={`w-64${errorBorder(errors, ruleKey(rule.id, "value"))}`}
                 placeholder="google.com, circlecat.org"
                 value={conditionToDomains(rule.condition)}
                 onChange={(e) =>
@@ -177,6 +183,14 @@ const ScreenRulesEditor = ({
             >
               Remove
             </Button>
+            {/* w-full so flex-wrap drops the message onto its own line under
+                the controls rather than squeezing it in beside them. */}
+            <div className="w-full">
+              <FieldError
+                errors={errors}
+                errorKey={ruleKey(rule.id, "value")}
+              />
+            </div>
           </div>
         ))}
         <Button
@@ -213,7 +227,7 @@ const ScreenRulesEditor = ({
               >
                 <SelectTrigger
                   aria-label="Answer rule question"
-                  className="max-w-xs"
+                  className={`max-w-xs${errorBorder(errors, ruleKey(rule.id, "questionId"))}`}
                 >
                   <SelectValue placeholder="Question" />
                 </SelectTrigger>
@@ -235,7 +249,7 @@ const ScreenRulesEditor = ({
               >
                 <SelectTrigger
                   aria-label="Answer rule value"
-                  className="max-w-xs"
+                  className={`max-w-xs${errorBorder(errors, ruleKey(rule.id, "value"))}`}
                 >
                   <SelectValue placeholder="Value" />
                 </SelectTrigger>
@@ -261,6 +275,16 @@ const ScreenRulesEditor = ({
               >
                 Remove
               </Button>
+              <div className="w-full">
+                <FieldError
+                  errors={errors}
+                  errorKey={ruleKey(rule.id, "questionId")}
+                />
+                <FieldError
+                  errors={errors}
+                  errorKey={ruleKey(rule.id, "value")}
+                />
+              </div>
             </div>
           );
         })}

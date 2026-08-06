@@ -7,6 +7,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import FieldError from "@/pages/Recruiting/postings/FieldError";
+import {
+  errorBorder,
+  optionKey,
+} from "@/pages/Recruiting/postings/postingValidation";
 
 /** How a question reads in the reveal chips and picker (labels can be blank). */
 const questionLabel = (q) => q.label || q.id;
@@ -35,7 +40,8 @@ const RevealChip = ({ label, onRemove }) => (
  * array: renaming or removing an option has to rewrite other questions in the
  * same edit, which a component holding one question cannot do.
  *
- * @param {{options: string[],
+ * @param {{questionId: string, options: string[],
+ *          errors?: Record<string, string>,
  *          revealedBy: (option: string) => object[],
  *          pickable: (option: string) => object[],
  *          ops: {add: () => void, rename: (index: number, value: string) => void,
@@ -43,11 +49,19 @@ const RevealChip = ({ label, onRemove }) => (
  *                reveal: (option: string, questionId: string) => void,
  *                hide: (questionId: string) => void}}} props
  */
-const OptionsEditor = ({ options = [], revealedBy, pickable, ops }) => (
+const OptionsEditor = ({
+  questionId,
+  options = [],
+  errors = {},
+  revealedBy,
+  pickable,
+  ops,
+}) => (
   <div className="space-y-2">
     {options.map((opt, i) => {
       const revealed = revealedBy(opt);
       const candidates = pickable(opt);
+      const errorKey = optionKey(questionId, i);
       return (
         <div
           key={i}
@@ -56,6 +70,7 @@ const OptionsEditor = ({ options = [], revealedBy, pickable, ops }) => (
           <div className="flex items-center gap-2">
             <Input
               aria-label={`Option ${i + 1}`}
+              className={errorBorder(errors, errorKey).trim()}
               value={opt}
               onChange={(e) => ops.rename(i, e.target.value)}
             />
@@ -72,6 +87,7 @@ const OptionsEditor = ({ options = [], revealedBy, pickable, ops }) => (
               Remove
             </Button>
           </div>
+          <FieldError errors={errors} errorKey={errorKey} />
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
             Reveals
             {revealed.map((q) => (

@@ -12,6 +12,11 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import OptionsEditor from "@/pages/Recruiting/postings/OptionsEditor";
 import { revealedBy as revealedByOption } from "@/pages/Recruiting/postings/questionTypes";
+import FieldError from "@/pages/Recruiting/postings/FieldError";
+import {
+  errorBorder,
+  questionKey,
+} from "@/pages/Recruiting/postings/postingValidation";
 
 const CHOICE_TYPES = new Set(["single_choice", "multi_choice"]);
 const NONE = "__none__";
@@ -31,7 +36,7 @@ const NONE = "__none__";
  * @param {{question: object, allQuestions: object[],
  *          onChange: (q: object) => void, onRemove: () => void,
  *          onMoveUp: () => void, onMoveDown: () => void,
- *          optionOps: object}} props
+ *          optionOps: object, errors?: Record<string, string>}} props
  */
 const QuestionEditor = ({
   question,
@@ -41,8 +46,19 @@ const QuestionEditor = ({
   onMoveUp,
   onMoveDown,
   optionOps,
+  errors = {},
 }) => {
   const patch = (fields) => onChange({ ...question, ...fields });
+  const key = (field) => questionKey(question.id, field);
+
+  /**
+   * The questions that only appear because of an answer to this one. Removing
+   * it would leave them pointing at an id that is gone -- the same bind that
+   * disables an option's Remove in `OptionsEditor`, one level up.
+   */
+  const reveals = allQuestions.filter(
+    (q) => q.showWhen?.questionId === question.id,
+  );
 
   /** The questions this question's option `opt` reveals. */
   const revealedBy = (opt) => revealedByOption(allQuestions, question.id, opt);
@@ -103,6 +119,7 @@ const QuestionEditor = ({
             variant="outline"
             size="sm"
             aria-label="Remove question"
+            disabled={reveals.length > 0}
             onClick={onRemove}
           >
             Remove
@@ -110,11 +127,21 @@ const QuestionEditor = ({
         </div>
       </div>
 
-      {question.showWhen && (
+      {reveals.length > 0 && (
         <p className="text-xs text-slate-500">
-          Only shown when {parentLabel()} = &quot;
-          {question.showWhen.equals}&quot;
+          Stop revealing {reveals.map((q) => `"${q.label || q.id}"`).join(", ")}{" "}
+          to remove this question.
         </p>
+      )}
+
+      {question.showWhen && (
+        <>
+          <p className="text-xs text-slate-500">
+            Only shown when {parentLabel()} = &quot;
+            {question.showWhen.equals}&quot;
+          </p>
+          <FieldError errors={errors} errorKey={key("showWhen")} />
+        </>
       )}
 
       <div className="space-y-1">
@@ -124,9 +151,11 @@ const QuestionEditor = ({
         <Input
           id={`${question.id}-label`}
           aria-label="Question"
+          className={errorBorder(errors, key("label")).trim()}
           value={question.label}
           onChange={(e) => patch({ label: e.target.value })}
         />
+        <FieldError errors={errors} errorKey={key("label")} />
       </div>
 
       <div className="space-y-1">
@@ -152,12 +181,17 @@ const QuestionEditor = ({
       </div>
 
       {CHOICE_TYPES.has(question.type) && (
-        <OptionsEditor
-          options={question.options ?? []}
-          revealedBy={revealedBy}
-          pickable={pickable}
-          ops={optionOps}
-        />
+        <>
+          <OptionsEditor
+            questionId={question.id}
+            options={question.options ?? []}
+            revealedBy={revealedBy}
+            pickable={pickable}
+            ops={optionOps}
+            errors={errors}
+          />
+          <FieldError errors={errors} errorKey={key("options")} />
+        </>
       )}
       {CHOICE_TYPES.has(question.type) && (
         <div className="space-y-1">
@@ -195,6 +229,7 @@ const QuestionEditor = ({
           <Label htmlFor={`${question.id}-maxsel`}>Max selections</Label>
           <Input
             id={`${question.id}-maxsel`}
+            className={errorBorder(errors, key("maxSelections")).trim()}
             aria-label="Max selections"
             type="number"
             value={question.maxSelections ?? ""}
@@ -206,6 +241,7 @@ const QuestionEditor = ({
               })
             }
           />
+          <FieldError errors={errors} errorKey={key("maxSelections")} />
         </div>
       )}
       {question.type === "long_text" && (
@@ -214,6 +250,7 @@ const QuestionEditor = ({
             <Label htmlFor={`${question.id}-maxlen`}>Max length</Label>
             <Input
               id={`${question.id}-maxlen`}
+              className={errorBorder(errors, key("maxLength")).trim()}
               aria-label="Max length"
               type="number"
               value={question.maxLength ?? ""}
@@ -225,11 +262,13 @@ const QuestionEditor = ({
                 })
               }
             />
+            <FieldError errors={errors} errorKey={key("maxLength")} />
           </div>
           <div className="space-y-1">
             <Label htmlFor={`${question.id}-maxwords`}>Max words</Label>
             <Input
               id={`${question.id}-maxwords`}
+              className={errorBorder(errors, key("maxWords")).trim()}
               aria-label="Max words"
               type="number"
               value={question.maxWords ?? ""}
@@ -239,6 +278,7 @@ const QuestionEditor = ({
                 })
               }
             />
+            <FieldError errors={errors} errorKey={key("maxWords")} />
           </div>
         </div>
       )}
@@ -248,9 +288,11 @@ const QuestionEditor = ({
           <Input
             id={`${question.id}-expected`}
             aria-label="Expected value"
+            className={errorBorder(errors, key("expectedValue")).trim()}
             value={question.expectedValue ?? ""}
             onChange={(e) => patch({ expectedValue: e.target.value })}
           />
+          <FieldError errors={errors} errorKey={key("expectedValue")} />
         </div>
       )}
     </div>

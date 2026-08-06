@@ -20,9 +20,14 @@ import {
  * has to rewrite other questions in the same edit.
  *
  * @param {{formSchema: {questions?: object[], nextSeq?: number},
- *          onChange: (next: object) => void}} props
+ *          onChange: (next: object) => void,
+ *          errors?: Record<string, string>}} props
  */
-const FormBuilder = ({ formSchema = { questions: [] }, onChange }) => {
+const FormBuilder = ({
+  formSchema = { questions: [] },
+  onChange,
+  errors = {},
+}) => {
   const questions = formSchema.questions ?? [];
   const emit = (next) => onChange({ ...formSchema, questions: next });
   const add = (type) => onChange(addQuestion(formSchema, type));
@@ -63,6 +68,7 @@ const FormBuilder = ({ formSchema = { questions: [] }, onChange }) => {
           onMoveUp={() => move(i, -1)}
           onMoveDown={() => move(i, 1)}
           optionOps={optionOps(q)}
+          errors={errors}
         />
       ))}
       {/* Below the questions, like the Add rule buttons in ScreenRulesEditor:
