@@ -16,6 +16,26 @@ describe("FormBuilder", () => {
     });
   });
 
+  // A new question appends to the end, so the add buttons have to sit after
+  // the last one -- above the list they scroll out of reach as it grows.
+  it("renders the add buttons after the questions", () => {
+    const qs = [{ id: "q1", type: "short_text", label: "A", required: false }];
+    render(
+      <FormBuilder
+        formSchema={{ questions: qs, nextSeq: 2 }}
+        onChange={vi.fn()}
+      />,
+    );
+    const addShortText = screen.getByRole("button", { name: "Add Short text" });
+    const removeQuestion = screen.getByRole("button", {
+      name: "Remove question",
+    });
+    expect(
+      removeQuestion.compareDocumentPosition(addShortText) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   // The counter is what stops a delete-then-add from recycling an id, and
   // only the add path recomputes it — every other edit must carry it through
   // untouched, so each of these pins it explicitly.

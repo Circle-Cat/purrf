@@ -31,6 +31,20 @@ const FormBuilder = ({ formSchema = { questions: [] }, onChange }) => {
 
   return (
     <div className="space-y-4">
+      {questions.map((q, i) => (
+        <QuestionEditor
+          key={q.id}
+          question={q}
+          allQuestions={questions}
+          onChange={(updated) => updateAt(i, updated)}
+          onRemove={() => removeAt(i)}
+          onMoveUp={() => move(i, -1)}
+          onMoveDown={() => move(i, 1)}
+        />
+      ))}
+      {/* Below the questions, like the Add rule buttons in ScreenRulesEditor:
+          a new question appends to the end, so the control that adds it stays
+          next to where it lands instead of scrolling out of reach. */}
       <div className="flex flex-wrap gap-2">
         {QUESTION_TYPES.map((t) => (
           <Button
@@ -44,17 +58,6 @@ const FormBuilder = ({ formSchema = { questions: [] }, onChange }) => {
           </Button>
         ))}
       </div>
-      {questions.map((q, i) => (
-        <QuestionEditor
-          key={q.id}
-          question={q}
-          allQuestions={questions}
-          onChange={(updated) => updateAt(i, updated)}
-          onRemove={() => removeAt(i)}
-          onMoveUp={() => move(i, -1)}
-          onMoveDown={() => move(i, 1)}
-        />
-      ))}
     </div>
   );
 };
