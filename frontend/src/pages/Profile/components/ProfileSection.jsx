@@ -29,6 +29,14 @@ const emptyExperience = () => ({
   endYear: "",
 });
 
+/**
+ * Always-required marker for a single field's label, matching the one
+ * `FormRenderer` puts on required questions in the same applicant form.
+ */
+function RequiredMark() {
+  return <span className="ml-1 text-red-500">*</span>;
+}
+
 /** Required-marker shown after an optional/required section heading. */
 function ReqMark({ level }) {
   if (level === "required") return <span className="text-red-500"> *</span>;
@@ -106,7 +114,10 @@ export default function ProfileSection({
         <h3 className="text-base font-semibold">Personal</h3>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label htmlFor="ps-firstName">First name</Label>
+            <Label htmlFor="ps-firstName">
+              First name
+              <RequiredMark />
+            </Label>
             <Input
               id="ps-firstName"
               value={personal.firstName || ""}
@@ -114,7 +125,10 @@ export default function ProfileSection({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="ps-lastName">Last name</Label>
+            <Label htmlFor="ps-lastName">
+              Last name
+              <RequiredMark />
+            </Label>
             <Input
               id="ps-lastName"
               value={personal.lastName || ""}
@@ -131,7 +145,10 @@ export default function ProfileSection({
           />
         </div>
         <div className="space-y-1.5">
-          <Label>Timezone</Label>
+          <Label>
+            Timezone
+            <RequiredMark />
+          </Label>
           <TimezoneSelector
             value={personal.timezone || ""}
             onChange={(opt) => setPersonal("timezone", opt?.value ?? "")}

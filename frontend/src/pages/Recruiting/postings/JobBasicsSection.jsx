@@ -10,9 +10,19 @@ import {
 } from "@/components/ui/select";
 
 /**
- * Title / description / kind fields for a posting.
+ * What each posting type means, shown under the picker. "Kind" is the stored
+ * field name; the form calls it "Posting type" because the bare enum word
+ * says nothing about which of the two an author wants.
+ */
+const KIND_HINTS = {
+  activity: "An open program people apply to join.",
+  employment: "Hiring a team member.",
+};
+
+/**
+ * Title / description / posting-type fields for a posting.
  *
- * `kindLocked`, when true, disables the Kind and Mentorship role selects —
+ * `kindLocked`, when true, disables the Posting type and Mentorship role selects —
  * both are only editable while a posting is still a draft; the caller
  * decides when that applies (see `PostingEditor`).
  *
@@ -49,7 +59,7 @@ const JobBasicsSection = ({
       />
     </div>
     <div className="space-y-1">
-      <Label htmlFor="posting-kind">Kind</Label>
+      <Label htmlFor="posting-kind">Posting type</Label>
       <Select
         value={kind}
         onValueChange={(v) => onChange({ kind: v })}
@@ -57,7 +67,7 @@ const JobBasicsSection = ({
       >
         <SelectTrigger
           id="posting-kind"
-          aria-label="Kind"
+          aria-label="Posting type"
           className="w-full max-w-xs"
         >
           <SelectValue />
@@ -67,6 +77,9 @@ const JobBasicsSection = ({
           <SelectItem value="employment">Employment</SelectItem>
         </SelectContent>
       </Select>
+      {KIND_HINTS[kind] && (
+        <p className="text-sm text-slate-500">{KIND_HINTS[kind]}</p>
+      )}
     </div>
     {kind === "activity" && (
       <div className="space-y-1">

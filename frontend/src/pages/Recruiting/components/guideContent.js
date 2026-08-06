@@ -93,7 +93,7 @@ export const POSTING_EDITOR_GUIDE = {
     {
       title: "Basics",
       detail:
-        "Title, description, kind, optional mentorship role, and a cooldown before a rejected applicant can re-apply. Kind and mentorship role lock once the posting is published.",
+        "Title, description, posting type, optional mentorship role, and a cooldown before a rejected applicant can re-apply. Posting type and mentorship role lock once the posting is published.",
     },
     {
       title: "Application form",
@@ -145,7 +145,7 @@ export const POSTING_EDITOR_GUIDE = {
     },
   ],
   notes: [
-    "Kind and mentorship role can only be changed while the posting is a draft.",
+    "Posting type and mentorship role can only be changed while the posting is a draft.",
     'Submitting for review needs at least one pipeline stage and one owner ("Recruiter").',
     "The live preview on the right updates as you edit.",
   ],
