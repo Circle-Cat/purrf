@@ -48,10 +48,7 @@ const PostingsList = ({ jobs, ownersById = {}, onRowClick }) => (
             )}
           </div>
           <div className="flex flex-col items-end gap-1">
-            <PostingStatusBadges
-              job={job}
-              onRejectBadgeClick={(e) => e.stopPropagation()}
-            />
+            <PostingStatusBadges job={job} />
           </div>
         </button>
       );
