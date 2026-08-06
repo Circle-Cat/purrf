@@ -11,6 +11,7 @@ from backend.repository.users_repository import UsersRepository
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.job_activity_dto import JobActivityDto
+from backend.dto.job_config_dto import question_seq_floor
 from backend.dto.job_dto import JobCreateDto, JobDto, PublicJobDto, PublicJobSummaryDto
 from backend.dto.job_review_dto import ApproverDto, JobReviewDto
 from backend.common.permissions import Permission
@@ -151,6 +152,46 @@ class JobService:
         return model.model_dump(mode="json", by_alias=True, exclude_none=True)
 
     @staticmethod
+    def _with_monotonic_next_seq(
+        new_form: dict | None, stored_form: dict | None
+    ) -> dict | None:
+        """Resolve a form schema's question counter so it can only move forward.
+
+        ``nextSeq`` is what stops a delete-then-add from handing a recycled id
+        to a new question. ``_serialize`` drops it when the request omits it
+        (``exclude_none=True``), and a request can omit it for real: a browser
+        still running a pre-counter bundle rebuilds ``formSchema`` as
+        ``{questions}`` alone. Writing that through would erase the stored
+        counter, after which floor derivation resumes recycling ids on the
+        next delete-then-add. ``FormSchemaDto`` only rejects a value *below*
+        the floor; it cannot see an absent one, nor the stored value.
+
+        So the effective counter is the highest of the incoming value, the
+        value already on the posting, and the floor derived from the ids in
+        the incoming form.
+
+        Args:
+            new_form (dict | None): The incoming camelCase form schema, or
+                None when the request did not send one.
+            stored_form (dict | None): The posting's current form schema, or
+                None on create / a posting that never had one.
+
+        Returns:
+            dict | None: ``new_form`` carrying a non-recycling ``nextSeq``, or
+            None when ``new_form`` is None (the caller then falls back to the
+            stored schema, counter included).
+        """
+        if new_form is None:
+            return None
+        questions = new_form.get("questions") or []
+        floor = question_seq_floor(
+            q.get("id") for q in questions if isinstance(q, dict)
+        )
+        incoming = new_form.get("nextSeq") or 0
+        stored = (stored_form or {}).get("nextSeq") or 0
+        return {**new_form, "nextSeq": max(incoming, stored, floor)}
+
+    @staticmethod
     def _build_pending_payload(job: "JobEntity", dto: JobCreateDto) -> dict:
         """Merge an edit dto onto a posting's current live values.
 
@@ -170,7 +211,9 @@ class JobService:
             dict: A complete camelCase draft snapshot of all seven editable
             fields, ready to store as pending_payload and later apply verbatim.
         """
-        new_form = JobService._serialize(dto.form_schema)
+        new_form = JobService._with_monotonic_next_seq(
+            JobService._serialize(dto.form_schema), job.form_schema
+        )
         new_pipeline = JobService._serialize(dto.pipeline_config)
         new_screen = JobService._serialize(dto.screen_rules)
         new_profile = JobService._serialize(dto.profile_config)
@@ -343,7 +386,9 @@ class JobService:
             status=JobStatus.DRAFT,
             title=dto.title,
             description=dto.description,
-            form_schema=self._serialize(dto.form_schema),
+            form_schema=self._with_monotonic_next_seq(
+                self._serialize(dto.form_schema), None
+            ),
             pipeline_config=self._serialize(dto.pipeline_config),
             screen_rules=self._serialize(dto.screen_rules),
             profile_config=self._serialize(dto.profile_config),
@@ -402,7 +447,9 @@ class JobService:
         """
         job = await self._require_job(session, job_id)
         await self._validate_assignees_and_owner(session, dto)
-        new_form = self._serialize(dto.form_schema)
+        new_form = self._with_monotonic_next_seq(
+            self._serialize(dto.form_schema), job.form_schema
+        )
         new_pipeline = self._serialize(dto.pipeline_config)
         new_screen = self._serialize(dto.screen_rules)
         new_profile = self._serialize(dto.profile_config)

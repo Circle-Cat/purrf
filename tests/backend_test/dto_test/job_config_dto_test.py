@@ -12,6 +12,7 @@ from backend.dto.job_config_dto import (
     ScreenRuleDto,
     ScreenRulesDto,
     ShowWhenDto,
+    question_seq_floor,
 )
 
 
@@ -196,6 +197,66 @@ class TestFormSchemaDto(unittest.TestCase):
                 ]
             )
 
+    def test_next_seq_may_be_omitted(self):
+        """Existing postings have no counter yet."""
+        schema = FormSchemaDto(
+            questions=[{"id": "q1", "type": "short_text", "label": "A"}]
+        )
+        self.assertIsNone(schema.next_seq)
+
+    def test_next_seq_accepts_a_value_past_the_highest_id(self):
+        """A counter that cannot collide with a live question is fine."""
+        schema = FormSchemaDto(
+            questions=[{"id": "q1", "type": "short_text", "label": "A"}],
+            next_seq=5,
+        )
+        self.assertEqual(schema.next_seq, 5)
+
+    def test_next_seq_rejects_a_value_that_would_recycle_an_id(self):
+        """A stale client must not be able to rewind the counter."""
+        with self.assertRaises(ValidationError):
+            FormSchemaDto(
+                questions=[
+                    {"id": "q1", "type": "short_text", "label": "A"},
+                    {"id": "q4", "type": "short_text", "label": "B"},
+                ],
+                next_seq=3,
+            )
+
+    def test_next_seq_accepts_exactly_the_floor(self):
+        """The floor itself, not just past it, must be accepted."""
+        schema = FormSchemaDto(
+            questions=[{"id": "q1", "type": "short_text", "label": "A"}],
+            next_seq=2,
+        )
+        self.assertEqual(schema.next_seq, 2)
+
+    def test_next_seq_rejects_exactly_one_below_the_floor(self):
+        """One below the floor, not just well below it, must be rejected."""
+        with self.assertRaises(ValidationError):
+            FormSchemaDto(
+                questions=[{"id": "q1", "type": "short_text", "label": "A"}],
+                next_seq=1,
+            )
+
+    def test_next_seq_floor_is_one_for_an_empty_form(self):
+        """An empty form's counter may start at 1."""
+        schema = FormSchemaDto(questions=[], next_seq=1)
+        self.assertEqual(schema.next_seq, 1)
+
+    def test_next_seq_rejects_zero_on_an_empty_form(self):
+        """An empty form's floor is 1, so 0 must be rejected."""
+        with self.assertRaises(ValidationError):
+            FormSchemaDto(questions=[], next_seq=0)
+
+    def test_next_seq_ignores_non_numeric_ids(self):
+        """Hand-authored ids that aren't q<n> don't constrain the counter."""
+        schema = FormSchemaDto(
+            questions=[{"id": "custom", "type": "short_text", "label": "A"}],
+            next_seq=1,
+        )
+        self.assertEqual(schema.next_seq, 1)
+
 
 class TestPipelineConfigDto(unittest.TestCase):
     def test_minimal_stage(self):
@@ -332,6 +393,22 @@ class TestScreenRulesDto(unittest.TestCase):
             ScreenRuleConditionDto(
                 source="email_domain", operator="in", value=["  ", ""]
             )
+
+
+class TestQuestionSeqFloor(unittest.TestCase):
+    """The floor rule, shared by the DTO validator and the service layer."""
+
+    def test_one_past_the_highest_numbered_id(self):
+        """Gaps don't matter; only the highest id does."""
+        self.assertEqual(question_seq_floor(["q1", "q7", "q4"]), 8)
+
+    def test_one_for_an_empty_form(self):
+        """An empty form's first question is q1."""
+        self.assertEqual(question_seq_floor([]), 1)
+
+    def test_ignores_ids_the_counter_never_issued(self):
+        """Hand-authored and malformed ids don't constrain the counter."""
+        self.assertEqual(question_seq_floor(["custom", "q", "qx", None, 5]), 1)
 
 
 class TestProfileConfigDto(unittest.TestCase):

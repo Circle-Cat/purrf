@@ -288,6 +288,125 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(entity.form_schema["questions"][0]["maxWords"], 300)
         self.assertEqual(entity.profile_config["education"], "required")
 
+    def _form_dto(self, *, next_seq=None, ids=("q1",)):
+        """A minimal formSchema payload for a JobCreateDto.
+
+        Args:
+            next_seq (int | None): ``nextSeq`` to send, or None to omit it the
+                way a pre-counter client bundle would.
+            ids (tuple[str, ...]): Question ids the form carries.
+
+        Returns:
+            dict: A camelCase formSchema dict.
+        """
+        form = {
+            "questions": [
+                {"id": qid, "type": "short_text", "label": qid.upper()} for qid in ids
+            ]
+        }
+        if next_seq is not None:
+            form["nextSeq"] = next_seq
+        return form
+
+    async def test_create_job_derives_next_seq_from_the_ids_present(self):
+        """A create with no counter still persists one, past every live id."""
+        dto = JobCreateDto(title="T", formSchema=self._form_dto(ids=("q1", "q2")))
+
+        await self.service.create_job(self.session, dto, created_by=1)
+
+        entity = self.repo.create_job.call_args.args[1]
+        self.assertEqual(entity.form_schema["nextSeq"], 3)
+
+    async def test_create_job_keeps_a_higher_incoming_next_seq(self):
+        """A counter already past the floor (ids were deleted) is kept."""
+        dto = JobCreateDto(title="T", formSchema=self._form_dto(next_seq=9))
+
+        await self.service.create_job(self.session, dto, created_by=1)
+
+        entity = self.repo.create_job.call_args.args[1]
+        self.assertEqual(entity.form_schema["nextSeq"], 9)
+
+    async def test_update_draft_keeps_the_stored_next_seq_when_absent(self):
+        """A payload without a counter must not erase the stored one.
+
+        A browser on a pre-counter bundle rebuilds formSchema as {questions}
+        alone; letting that through would restart id recycling on the next
+        delete-then-add.
+        """
+        job = self._job(
+            status=JobStatus.DRAFT,
+            form_schema={"questions": [{"id": "q1"}], "nextSeq": 12},
+        )
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(title="T", kind=job.kind, formSchema=self._form_dto())
+
+        result = await self.service.update_job(self.session, job.job_id, dto)
+
+        self.assertEqual(result.form_schema["nextSeq"], 12)
+
+    async def test_update_draft_keeps_the_stored_next_seq_over_a_lower_one(self):
+        """The DTO's floor check only sees the live ids, not the stored counter.
+
+        nextSeq=3 clears the floor for a form holding q1, so validation lets
+        it through; only the comparison against the stored value stops it from
+        rewinding the counter.
+        """
+        job = self._job(
+            status=JobStatus.DRAFT,
+            form_schema={"questions": [{"id": "q1"}], "nextSeq": 12},
+        )
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(
+            title="T", kind=job.kind, formSchema=self._form_dto(next_seq=3)
+        )
+
+        result = await self.service.update_job(self.session, job.job_id, dto)
+
+        self.assertEqual(result.form_schema["nextSeq"], 12)
+
+    async def test_update_draft_takes_a_higher_incoming_next_seq(self):
+        """A client that has advanced the counter wins over the stored value."""
+        job = self._job(
+            status=JobStatus.DRAFT,
+            form_schema={"questions": [{"id": "q1"}], "nextSeq": 12},
+        )
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(
+            title="T", kind=job.kind, formSchema=self._form_dto(next_seq=20)
+        )
+
+        result = await self.service.update_job(self.session, job.job_id, dto)
+
+        self.assertEqual(result.form_schema["nextSeq"], 20)
+
+    async def test_update_published_pending_payload_keeps_the_stored_next_seq(self):
+        """The staged-edit path carries the counter forward too."""
+        job = self._job(
+            status=JobStatus.PUBLISHED,
+            form_schema={"questions": [{"id": "q1"}], "nextSeq": 12},
+        )
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(title="T", kind=job.kind, formSchema=self._form_dto())
+
+        result = await self.service.update_job(self.session, job.job_id, dto)
+
+        self.assertEqual(result.pending_payload["formSchema"]["nextSeq"], 12)
+
+    async def test_update_published_pending_payload_takes_a_higher_next_seq(self):
+        """A higher incoming counter reaches the staged payload."""
+        job = self._job(
+            status=JobStatus.PUBLISHED,
+            form_schema={"questions": [{"id": "q1"}], "nextSeq": 12},
+        )
+        self.repo.get_by_job_id.return_value = job
+        dto = JobCreateDto(
+            title="T", kind=job.kind, formSchema=self._form_dto(next_seq=20)
+        )
+
+        result = await self.service.update_job(self.session, job.job_id, dto)
+
+        self.assertEqual(result.pending_payload["formSchema"]["nextSeq"], 20)
+
     async def test_create_job_rejects_unqualified_assignee(self):
         """A pre-set assignee who is not an interview evaluator is rejected."""
         self.perms.get_active_users_with_permission = AsyncMock(return_value=[])
