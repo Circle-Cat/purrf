@@ -1,42 +1,21 @@
-import { useMemo, useState } from "react";
-import {
-  AlertTriangle,
-  CalendarDays,
-  Check,
-  History,
-  Info,
-  X,
-} from "lucide-react";
+import { useState } from "react";
+import { CalendarDays, History, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import RequestDialog from "@/pages/LeavePrototype/RequestDialog";
 import {
   COMPANY_HOLIDAYS,
   CURRENT_USER,
-  SICK_AUTO_APPROVE_HOURS,
 } from "@/pages/LeavePrototype/mockData";
 import {
   ENTRY_LABEL,
   STATUS_LABEL,
   TYPE_LABEL,
-  breakdownRange,
-  datesBetween,
   groupHolidays,
-  isAutoApproved,
   ledgerBalance,
   pendingReserved,
   today,
-  validateDraft,
 } from "@/pages/LeavePrototype/leaveCalc";
 
 /** Colour treatment per request status. */
@@ -68,10 +47,12 @@ const Stat = ({ label, value, hint, tone = "text-slate-900" }) => (
 /**
  * EmployeeView
  *
- * What a regular employee sees: their balance, the company holiday calendar,
- * the request form, and their own request history. The form computes hours
- * live and shows which days it skipped, because "I asked for five days and it
- * says sixteen hours" is the first question anyone asks.
+ * What a regular employee sees: what they can spend, what they have booked,
+ * how the balance got where it is, and when the office is closed anyway.
+ *
+ * Requesting happens in a dialog rather than a form pinned to the page. The
+ * page is read most days and written a handful of times a year, so the form
+ * earns its space only when someone asks for it.
  *
  * @param {object} props
  * @param {Array<object>} props.ledger - balance rows for the current user
@@ -88,10 +69,7 @@ const EmployeeView = ({
   onWithdraw,
   onRequestCancel,
 }) => {
-  const [type, setType] = useState("paid");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [reason, setReason] = useState("");
+  const [requesting, setRequesting] = useState(false);
 
   const balance = ledgerBalance(ledger);
   const reserved = pendingReserved(requests);
@@ -107,48 +85,6 @@ const EmployeeView = ({
       ? b.id - a.id
       : b.effectiveDate.localeCompare(a.effectiveDate),
   );
-
-  /** An unset end date means a single day, whatever the type. */
-  const effectiveEnd = endDate || startDate;
-
-  const breakdown = useMemo(
-    () =>
-      startDate && effectiveEnd && effectiveEnd >= startDate
-        ? breakdownRange(startDate, effectiveEnd)
-        : null,
-    [startDate, effectiveEnd],
-  );
-
-  /**
-   * Exchange credits every day in the range, because they must all be
-   * exchangeable holidays for it to submit at all — there is nothing to skip.
-   * Leave does the opposite and only counts working days.
-   */
-  const exchangeDays =
-    startDate && effectiveEnd >= startDate
-      ? datesBetween(startDate, effectiveEnd).length
-      : 0;
-
-  const draft = {
-    type,
-    startDate,
-    endDate: effectiveEnd,
-    hours: type === "exchange" ? exchangeDays * 8 : (breakdown?.hours ?? 0),
-  };
-
-  const { error, warnings } = startDate
-    ? validateDraft(draft, requests, available)
-    : { error: null, warnings: [] };
-
-  const canSubmit = Boolean(startDate && effectiveEnd) && !error;
-
-  const submit = () => {
-    if (!canSubmit) return;
-    onSubmit({ ...draft, reason });
-    setStartDate("");
-    setEndDate("");
-    setReason("");
-  };
 
   /** Segments still ahead — a segment counts as upcoming until its last day. */
   const upcomingSegments = groupHolidays(COMPANY_HOLIDAYS).filter(
@@ -172,13 +108,28 @@ const EmployeeView = ({
 
   return (
     <div className="p-6 space-y-6 max-w-5xl">
-      <header>
-        <h1 className="text-xl font-semibold text-slate-900">Time off</h1>
-        <p className="text-sm text-slate-500 mt-0.5">
-          {CURRENT_USER.name} · {CURRENT_USER.level} · approver{" "}
-          {CURRENT_USER.managerName}
-        </p>
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Time off</h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {CURRENT_USER.name} · {CURRENT_USER.level} · approver{" "}
+            {CURRENT_USER.managerName}
+          </p>
+        </div>
+        <Button onClick={() => setRequesting(true)} className="shrink-0">
+          <Plus size={15} />
+          Request time off
+        </Button>
       </header>
+
+      <RequestDialog
+        open={requesting}
+        onOpenChange={setRequesting}
+        requests={requests}
+        available={available}
+        exchangeableDays={exchangeableDays}
+        onSubmit={onSubmit}
+      />
 
       {/* Balance */}
       <Card className="p-5">
@@ -202,201 +153,23 @@ const EmployeeView = ({
         </div>
       </Card>
 
-      {/* Request form */}
-      <Card className="p-5 space-y-4">
-        <h2 className="text-sm font-semibold text-slate-900">
-          Request time off
-        </h2>
-
-        <div className="grid sm:grid-cols-3 gap-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="leave-type">Type</Label>
-            <Select
-              value={type}
-              onValueChange={(next) => {
-                // Dates carried across a type change are almost always wrong —
-                // an exchange only accepts holidays, leave only accepts
-                // non-holidays.
-                setType(next);
-                setStartDate("");
-                setEndDate("");
-              }}
-            >
-              <SelectTrigger id="leave-type">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="paid">Paid leave</SelectItem>
-                <SelectItem value="sick">Sick leave</SelectItem>
-                <SelectItem value="exchange">
-                  Work a holiday (exchange)
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="leave-start">
-              {type === "exchange" ? "Holiday to work" : "First day"}
-            </Label>
-            {type === "exchange" ? (
-              <Select value={startDate} onValueChange={setStartDate}>
-                <SelectTrigger id="leave-start">
-                  <SelectValue placeholder="Pick a holiday" />
-                </SelectTrigger>
-                <SelectContent>
-                  {exchangeableDays.map(({ date, segment }) => (
-                    <SelectItem key={date} value={date}>
-                      {date} · {segment.name}
-                      {segment.days > 1 &&
-                        ` (${segment.start} – ${segment.end})`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <Input
-                id="leave-start"
-                type="date"
-                value={startDate}
-                min={today()}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="leave-end">Last day</Label>
-            {type === "exchange" ? (
-              <Select value={endDate} onValueChange={setEndDate}>
-                <SelectTrigger id="leave-end">
-                  <SelectValue placeholder="Same day" />
-                </SelectTrigger>
-                <SelectContent>
-                  {exchangeableDays
-                    .filter(({ date }) => !startDate || date >= startDate)
-                    .map(({ date, segment }) => (
-                      <SelectItem key={date} value={date}>
-                        {date} · {segment.name}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <Input
-                id="leave-end"
-                type="date"
-                value={effectiveEnd}
-                min={startDate || today()}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
-            )}
-            {type === "exchange" && (
-              <p className="text-xs text-slate-400">
-                Leave blank to work just one day.
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="leave-reason">Reason</Label>
-          <Textarea
-            id="leave-reason"
-            rows={2}
-            value={reason}
-            placeholder="Optional, but it helps your manager decide."
-            onChange={(e) => setReason(e.target.value)}
-          />
-        </div>
-
-        {/* Live hours breakdown */}
-        {breakdown && type !== "exchange" && (
-          <div className="rounded-lg bg-slate-50 border border-slate-200 p-3.5 text-sm">
-            <p className="font-medium text-slate-900 tabular-nums">
-              {breakdown.hours}h · {breakdown.workdays.length} working{" "}
-              {breakdown.workdays.length === 1 ? "day" : "days"}
-            </p>
-            {breakdown.skipped.length > 0 && (
-              <ul className="mt-2 space-y-0.5 text-xs text-slate-500">
-                {breakdown.skipped.map((s) => (
-                  <li key={s.date}>
-                    {s.date} —{" "}
-                    {s.reason === "holiday"
-                      ? `${s.holidayName} (company holiday)`
-                      : "weekend"}
-                    , not deducted
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-
-        {type === "exchange" && startDate && exchangeDays > 0 && (
-          <div className="rounded-lg bg-slate-50 border border-slate-200 p-3.5 text-sm text-slate-700">
-            Working{" "}
-            {exchangeDays === 1
-              ? "this holiday"
-              : `${exchangeDays} holiday days`}{" "}
-            adds <strong>{exchangeDays * 8}h</strong> to your balance.
-            {exchangeDays > 1 && (
-              <p className="text-xs text-slate-500 mt-1">
-                The rest of the break stays yours — you only trade the days you
-                pick here.
-              </p>
-            )}
-          </div>
-        )}
-
-        {type === "sick" && breakdown && (
-          <div className="flex items-start gap-2 text-sm text-slate-600">
-            <Info size={15} className="mt-0.5 shrink-0 text-slate-400" />
-            <p>
-              {breakdown.hours <= SICK_AUTO_APPROVE_HOURS
-                ? "Approved immediately — sick leave of three days or less does not wait on your manager. It does not reduce your balance."
-                : "Longer than three days, so this goes to your manager. It still does not reduce your balance."}
-            </p>
-          </div>
-        )}
-
-        {error && (
-          <div className="flex items-start gap-2 rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-800">
-            <X size={15} className="mt-0.5 shrink-0" />
-            <p>{error}</p>
-          </div>
-        )}
-
-        {!error &&
-          warnings.map((w) => (
-            <div
-              key={w.key}
-              className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900"
-            >
-              <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-              <p>{w.text}</p>
-            </div>
-          ))}
-
-        <div className="flex items-center gap-3 pt-1">
-          <Button onClick={submit} disabled={!canSubmit}>
-            Submit request
-          </Button>
-          {canSubmit && isAutoApproved(draft) && (
-            <span className="text-xs text-emerald-700 flex items-center gap-1">
-              <Check size={13} /> Takes effect immediately
-            </span>
-          )}
-        </div>
-      </Card>
-
       {/* My requests */}
       <Card className="p-5">
         <h2 className="text-sm font-semibold text-slate-900 mb-3">
           My requests
         </h2>
         {requests.length === 0 ? (
-          <p className="text-sm text-slate-400">Nothing submitted yet.</p>
+          <div className="py-6 text-center">
+            <p className="text-sm text-slate-400">Nothing submitted yet.</p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              onClick={() => setRequesting(true)}
+            >
+              Request time off
+            </Button>
+          </div>
         ) : (
           <ul className="divide-y divide-slate-100">
             {requests.map((r) => (
@@ -534,8 +307,7 @@ const EmployeeView = ({
         </div>
         <p className="text-xs text-slate-500 mb-3">
           You do not request these — the office is closed. Days marked
-          exchangeable can be worked in trade for 8h of paid leave, one day at a
-          time.
+          exchangeable can be worked in trade for 8h of paid leave.
         </p>
         <ul className="divide-y divide-slate-100">
           {upcomingSegments.map((s) => (
