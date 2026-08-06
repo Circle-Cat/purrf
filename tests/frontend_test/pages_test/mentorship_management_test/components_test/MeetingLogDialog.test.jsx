@@ -345,10 +345,10 @@ describe("MeetingLogDialog", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "Note" }));
     await userEvent.click(
-      screen.getByRole("checkbox", { name: "Sarah Lee absent" }),
+      screen.getByRole("checkbox", { name: "Sarah Lee late arrival" }),
     );
     expect(screen.getByRole("button", { name: "Note" })).toHaveTextContent(
-      "Sarah Lee absent",
+      "Sarah Lee late arrival",
     );
   });
 
@@ -398,6 +398,60 @@ describe("MeetingLogDialog", () => {
     expect(
       screen.getByRole("checkbox", { name: "Unknown late arrival" }),
     ).toBeEnabled();
+  });
+
+  it("disables the absent Note checkboxes once Complete Status is Completed", async () => {
+    render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v2"
+        meetings={[makeMeeting({ meetingId: "gm-1", isCompleted: false })]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await userEvent.click(
+      screen.getByRole("combobox", { name: "Complete Status" }),
+    );
+    await userEvent.click(screen.getByRole("option", { name: "Completed" }));
+    await userEvent.click(screen.getByRole("button", { name: "Note" }));
+
+    expect(
+      screen.getByRole("checkbox", { name: "Unknown absence" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("checkbox", { name: "Sarah Lee absent" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("checkbox", { name: "Henry Zhang absent" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("checkbox", { name: "Unknown late arrival" }),
+    ).toBeEnabled();
+  });
+
+  it("disables the Completed option once an absent tag is selected", async () => {
+    render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v2"
+        meetings={[
+          makeMeeting({
+            meetingId: "gm-1",
+            isCompleted: false,
+            note: ["mentor_absent"],
+          }),
+        ]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await userEvent.click(
+      screen.getByRole("combobox", { name: "Complete Status" }),
+    );
+
+    expect(screen.getByRole("option", { name: "Completed" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 
   it("checking a row's checkbox immediately locks its cells to read-only; unchecking it restores them", async () => {
