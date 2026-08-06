@@ -19,9 +19,7 @@ class TestJobRepository(BaseRepositoryTestLib):
             kind=JobKind.EMPLOYMENT,
             title="SWE Intern",
             status=JobStatus.DRAFT,
-            pipeline_config=[
-                {"stage": "recruiter_screening", "referral_skippable": False}
-            ],
+            pipeline_config=[{"stage": "recruiter_screening", "rounds": 1}],
         )
         saved = await self.repo.create_job(self.session, job)
 
@@ -127,7 +125,6 @@ class TestJobRepository(BaseRepositoryTestLib):
                     {
                         "stage": "recruiter_screening",
                         "rounds": 1,
-                        "referralSkippable": False,
                     }
                 ]
             },

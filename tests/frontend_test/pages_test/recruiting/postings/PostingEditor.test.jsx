@@ -272,7 +272,7 @@ describe("PostingEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(api.createJob).toHaveBeenCalled());
     expect(api.createJob.mock.calls[0][0].pipelineConfig.stages).toEqual([
-      { stage: "tech", rounds: 1, referralSkippable: false },
+      { stage: "tech", rounds: 1 },
     ]);
   });
 

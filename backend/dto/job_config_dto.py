@@ -200,7 +200,6 @@ class PipelineStageDto(BaseRequestDto):
 
     stage: PipelineStage
     rounds: int
-    referral_skippable: bool = False
     default_assignee_id: int | None = None
 
     @field_validator("rounds")

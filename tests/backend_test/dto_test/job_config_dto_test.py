@@ -262,7 +262,6 @@ class TestPipelineConfigDto(unittest.TestCase):
     def test_minimal_stage(self):
         cfg = PipelineConfigDto(stages=[PipelineStageDto(stage="tech", rounds=2)])
         self.assertEqual(cfg.stages[0].rounds, 2)
-        self.assertFalse(cfg.stages[0].referral_skippable)
 
     def test_rounds_must_be_positive(self):
         with self.assertRaises(ValidationError):
