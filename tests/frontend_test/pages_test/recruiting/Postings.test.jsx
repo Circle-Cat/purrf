@@ -99,15 +99,15 @@ describe("Postings", () => {
     );
   });
 
-  // The reader scans the list first, so the button that leaves the page sits
-  // after it rather than in the header.
-  it("renders New posting after the postings list", async () => {
+  // Starting a new posting has nothing to do with the list, so it stays
+  // reachable without scrolling past however many postings there are.
+  it("renders New posting in the header, above the postings list", async () => {
     renderPage();
     const row = await waitFor(() => screen.getByText("Backend Engineer"));
     const newPosting = screen.getByRole("button", { name: "New posting" });
     expect(
       row.compareDocumentPosition(newPosting) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
+        Node.DOCUMENT_POSITION_PRECEDING,
     ).toBeTruthy();
   });
 
