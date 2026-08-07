@@ -657,6 +657,80 @@ describe("MeetingLogDialog", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows the update confirmation row by table position, with a diff line only for the touched field", async () => {
+    render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v2"
+        meetings={[
+          makeMeeting({ meetingId: "gm-1" }),
+          makeMeeting({ meetingId: "gm-2" }),
+          makeMeeting({ meetingId: "gm-3", isCompleted: false }),
+        ]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await userEvent.click(
+      screen.getAllByRole("combobox", { name: "Complete Status" })[2],
+    );
+    await userEvent.click(screen.getByRole("option", { name: "Completed" }));
+    await userEvent.click(screen.getByRole("button", { name: "Update (1)" }));
+
+    expect(
+      screen.getByText("# 3 2024-03-01 · 15:30 – 16:30"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/^# 1 /)).not.toBeInTheDocument();
+    expect(screen.getByText("Complete Status:").closest("p")).toHaveTextContent(
+      "Complete Status: Incomplete → Completed",
+    );
+    expect(screen.queryByText(/^Note:/)).not.toBeInTheDocument();
+  });
+
+  it("shows a Note diff line when the pending update changes note tags", async () => {
+    render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v2"
+        meetings={[makeMeeting({ meetingId: "gm-1" })]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await userEvent.click(screen.getByRole("button", { name: "Note" }));
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Sarah Lee late arrival" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Update (1)" }));
+
+    expect(screen.getByText("Note:").closest("p")).toHaveTextContent(
+      "Note: No note → Sarah Lee late arrival",
+    );
+  });
+
+  it("shows the delete confirmation row by table position, not a sequential count", async () => {
+    render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundVersion="v2"
+        meetings={[
+          makeMeeting({ meetingId: "gm-1" }),
+          makeMeeting({ meetingId: "gm-2" }),
+          makeMeeting({ meetingId: "gm-3" }),
+        ]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select meeting 2 for deletion" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Delete (1)" }));
+
+    expect(
+      screen.getByText("# 2 2024-03-01 · 15:30 – 16:30"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/^# 1 /)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^# 3 /)).not.toBeInTheDocument();
+  });
+
   it("on save failure, shows an error toast and keeps edit-mode state so the admin can retry", async () => {
     const onSave = vi.fn().mockRejectedValue({ message: "network error" });
     render(
