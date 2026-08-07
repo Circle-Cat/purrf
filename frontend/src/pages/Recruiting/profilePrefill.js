@@ -59,6 +59,10 @@ export function profileToApplicationForm(fetchedProfile) {
       const end = parseDateParts(row.endDate);
       return {
         id: nextId(),
+        // The profile's own row id, kept so a save updates this row rather
+        // than replacing it with a copy. The `id` above is this form's, and
+        // means nothing to the profile.
+        profileRowId: row.id,
         institution: row.school ?? "",
         degree: row.degree ?? "",
         field: row.fieldOfStudy ?? "",
@@ -80,6 +84,8 @@ export function profileToApplicationForm(fetchedProfile) {
         : parseDateParts(row.endDate);
       return {
         id: nextId(),
+        // See the education rows above: the profile's id, kept for saving.
+        profileRowId: row.id,
         title: row.title ?? "",
         company: row.companyOrOrganization ?? "",
         isCurrentlyWorking,

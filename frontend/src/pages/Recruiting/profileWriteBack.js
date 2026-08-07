@@ -82,6 +82,9 @@ export const buildNewWriteBackRows = (profileValue) => {
   const education = (profileValue.education ?? [])
     .filter((row) => isCompleteEducationRow(row, now))
     .map((row) => ({
+      // Present only for a row that came from the profile, so the backend
+      // updates that row; a row added here has none and is created.
+      ...(row.profileRowId != null ? { id: row.profileRowId } : {}),
       school: row.institution,
       degree: row.degree,
       fieldOfStudy: row.field,
@@ -92,6 +95,7 @@ export const buildNewWriteBackRows = (profileValue) => {
   const workHistory = (profileValue.experience ?? [])
     .filter((row) => isCompleteExperienceRow(row, now))
     .map((row) => ({
+      ...(row.profileRowId != null ? { id: row.profileRowId } : {}),
       title: row.title,
       companyOrOrganization: row.company,
       isCurrentJob: row.isCurrentlyWorking,
