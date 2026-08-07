@@ -59,3 +59,21 @@ describe("ExperienceFormItem", () => {
     expect(selects[selects.length - 2]).toBeDisabled();
   });
 });
+
+describe("ExperienceFormItem error keys", () => {
+  it("reads errors under whatever key the caller builds", () => {
+    const { container } = render(
+      <ExperienceFormItem
+        item={item}
+        errors={{ "experience:2:company": "Company is required" }}
+        errorKeyFor={(field) => `experience:${item.id}:${field}`}
+        onChange={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Company is required")).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-error-key="experience:2:company"]'),
+    ).toBeInTheDocument();
+  });
+});

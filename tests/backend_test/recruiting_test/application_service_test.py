@@ -27,6 +27,34 @@ from backend.repository.application_activity_repository import (
 )
 
 
+# The three fields every submission must carry, and one complete row of each
+# list, in the shape the candidate form puts on the wire.
+REQUIRED_PERSONAL = {
+    "firstName": "Cand",
+    "lastName": "Idate",
+    "timezone": "Asia/Taipei",
+}
+COMPLETE_EDUCATION = {
+    "id": "rpf-1",
+    "institution": "Tsinghua University",
+    "degree": "BSc",
+    "field": "Computer Science",
+    "startMonth": "September",
+    "startYear": "2018",
+    "endMonth": "June",
+    "endYear": "2022",
+}
+COMPLETE_EXPERIENCE = {
+    "id": "rpf-2",
+    "title": "Backend Engineer",
+    "company": "Circle Cat",
+    "startMonth": "July",
+    "startYear": "2022",
+    "endMonth": "March",
+    "endYear": "2024",
+}
+
+
 class TestApplicationService(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.app_repo = MagicMock()
@@ -141,7 +169,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
     async def test_submit_lands_first_stage_with_version_one(self):
         dto = ApplicationSubmitDto.model_validate({
             "jobId": 1,
-            "personal": {"firstName": "A"},
+            "personal": {**REQUIRED_PERSONAL, "firstName": "A"},
         })
         result = await self.service.submit(self.session, self._ctx(), dto)
         self.assertEqual(result.stage, ApplicationStage.RECRUITER_SCREENING)
@@ -160,6 +188,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         job.form_schema = schema
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         dto = ApplicationSubmitDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
             "jobId": 1,
             "answers": {"q1": "Because"},
         })
@@ -174,7 +203,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         job = self._job(status=JobStatus.PUBLISHED)
         job.form_schema = None
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
@@ -208,6 +240,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         """A required question the form never showed cannot block submission."""
         self._gated_form_job()
         dto = ApplicationSubmitDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
             "jobId": 1,
             "answers": {"q1": "No"},
         })
@@ -252,6 +285,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         }
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         dto = ApplicationSubmitDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
             "jobId": 1,
             "answers": {"q1": "No", "q2": "Yes"},
         })
@@ -264,6 +298,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
     async def test_submit_still_requires_a_visible_question(self):
         self._gated_form_job()
         dto = ApplicationSubmitDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
             "jobId": 1,
             "answers": {"q1": "Yes"},
         })
@@ -276,6 +311,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         """Only the state the candidate last stood behind is recorded."""
         self._gated_form_job()
         dto = ApplicationSubmitDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
             "jobId": 1,
             "answers": {"q1": "No", "q2": "F-1 OPT", "q9": "retired question"},
         })
@@ -302,6 +338,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         }
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         dto = ApplicationSubmitDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
             "jobId": 1,
             "answers": {"q3": ["Backend", "Other"], "q3__other": "Infrastructure"},
         })
@@ -332,6 +369,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             ]
         }
         dto = ApplicationSubmitDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
             "jobId": 1,
             "answers": {"q1": "No", "q2": "F-1 OPT"},
         })
@@ -352,7 +390,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         await self.service.submit(self.session, self._ctx(), dto)
         self.assignment_repo.upsert.assert_awaited_once_with(
             self.session, 100, ApplicationStage.RECRUITER_SCREENING, 1, 5, 9
@@ -368,7 +409,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         await self.service.submit(self.session, self._ctx(), dto)
         self.activity_repo.create.assert_any_await(
             self.session,
@@ -379,7 +423,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_submit_skips_assignment_when_no_default_configured(self):
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         await self.service.submit(self.session, self._ctx(), dto)
         self.assignment_repo.upsert.assert_not_awaited()
 
@@ -394,7 +441,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         await self.service.submit(self.session, self._ctx(), dto)
         self.assignment_repo.upsert.assert_not_awaited()
 
@@ -408,12 +458,18 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         await self.service.submit(self.session, self._ctx(), dto)
         self.assignment_repo.upsert.assert_not_awaited()
 
     async def test_submit_logs_application_submitted_activity(self):
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         await self.service.submit(self.session, self._ctx(), dto)
         self.activity_repo.create.assert_awaited_once_with(
             self.session,
@@ -441,7 +497,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         current.submission_id = 5
         current.is_frozen = False
         self.sub_repo.get_current = AsyncMock(return_value=current)
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
@@ -457,7 +516,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.users_repo.get_user_by_user_id = AsyncMock(
             return_value=self._user(is_blocked=True)
         )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         result = await self.service.submit(self.session, self._ctx(), dto)
         self.assertEqual(result.stage, ApplicationStage.REJECTED)
         self.assertFalse(result.editable)
@@ -466,7 +528,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.users_repo.get_user_by_user_id = AsyncMock(
             return_value=self._user(is_blocked=True)
         )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
@@ -497,7 +562,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         app.application_id = 100
         self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         with self.assertRaises(ValueError):
             await self.service.submit(self.session, self._ctx(), dto)
         self.app_repo.create.assert_not_awaited()
@@ -519,7 +587,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         current.submission_id = 5
         current.is_frozen = False
         self.sub_repo.get_current = AsyncMock(return_value=current)
-        dto = ApplicationEditDto.model_validate({"answers": {"q1": "z"}})
+        dto = ApplicationEditDto.model_validate({
+            "answers": {"q1": "z"},
+            "personal": REQUIRED_PERSONAL,
+        })
         result = await self.service.edit(self.session, self._ctx(), 100, dto)
         self.sub_repo.update.assert_awaited_once()
         self.sub_repo.create.assert_not_awaited()
@@ -549,7 +620,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         current.submission_id = 5
         current.is_frozen = False
         self.sub_repo.get_current = AsyncMock(return_value=current)
-        dto = ApplicationEditDto.model_validate({"answers": {"q1": "Yes"}})
+        dto = ApplicationEditDto.model_validate({
+            "answers": {"q1": "Yes"},
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.edit(self.session, self._ctx(), 100, dto)
 
@@ -594,6 +668,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         current.is_frozen = False
         self.sub_repo.get_current = AsyncMock(return_value=current)
         dto = ApplicationEditDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
             "answers": {"q1": "No", "q2": "F-1 OPT", "q5": "WeChat"},
         })
 
@@ -638,7 +713,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         current.submission_id = 5
         current.is_frozen = False
         self.sub_repo.get_current = AsyncMock(return_value=current)
-        dto = ApplicationEditDto.model_validate({"answers": {"q1": "No"}})
+        dto = ApplicationEditDto.model_validate({
+            "answers": {"q1": "No"},
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.edit(self.session, self._ctx(), 100, dto)
 
@@ -665,10 +743,14 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         current.submission_id = 5
         current.is_frozen = False
         self.sub_repo.get_current = AsyncMock(return_value=current)
+        personal = {**REQUIRED_PERSONAL, "firstName": "A"}
+        # Rows in the form's shape, which is what actually goes on the wire and
+        # gets stored verbatim -- the placeholders here used to be in the
+        # profile PATCH shape, which the candidate form never sends.
         dto = ApplicationEditDto.model_validate({
-            "personal": {"firstName": "A"},
-            "education": [{"school": "S"}],
-            "experience": [{"company": "C"}],
+            "personal": personal,
+            "education": [COMPLETE_EDUCATION],
+            "experience": [COMPLETE_EXPERIENCE],
             "answers": {"q1": "dropped"},
         })
 
@@ -676,9 +758,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
         written = self.sub_repo.update.call_args.args[1].submission
         self.assertEqual(written["answers"], {})
-        self.assertEqual(written["personal"], {"firstName": "A"})
-        self.assertEqual(written["education"], [{"school": "S"}])
-        self.assertEqual(written["experience"], [{"company": "C"}])
+        self.assertEqual(written["personal"], personal)
+        self.assertEqual(written["education"], [COMPLETE_EDUCATION])
+        self.assertEqual(written["experience"], [COMPLETE_EXPERIENCE])
 
     def _editable_app(self):
         """An application in the window where the candidate may still edit."""
@@ -740,7 +822,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         """
         self._answer_rule("reject")
         app = self._editable_app()
-        dto = ApplicationEditDto.model_validate({"answers": {"q1": "Yes"}})
+        dto = ApplicationEditDto.model_validate({
+            "answers": {"q1": "Yes"},
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.edit(self.session, self._ctx(), 100, dto)
 
@@ -758,7 +843,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
     async def test_edit_that_matches_nothing_leaves_the_stage_alone(self):
         self._answer_rule("reject")
         app = self._editable_app()
-        dto = ApplicationEditDto.model_validate({"answers": {"q1": "No"}})
+        dto = ApplicationEditDto.model_validate({
+            "answers": {"q1": "No"},
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.edit(self.session, self._ctx(), 100, dto)
 
@@ -772,7 +860,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         application already is."""
         self._answer_rule("qualify")
         app = self._editable_app()
-        dto = ApplicationEditDto.model_validate({"answers": {"q1": "Yes"}})
+        dto = ApplicationEditDto.model_validate({
+            "answers": {"q1": "Yes"},
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.edit(self.session, self._ctx(), 100, dto)
 
@@ -782,7 +873,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
     async def test_edit_into_an_auto_hire_rule_hires(self):
         self._answer_rule("auto_hire")
         app = self._editable_app()
-        dto = ApplicationEditDto.model_validate({"answers": {"q1": "Yes"}})
+        dto = ApplicationEditDto.model_validate({
+            "answers": {"q1": "Yes"},
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.edit(self.session, self._ctx(), 100, dto)
 
@@ -795,7 +889,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         app = self._editable_app()
         app_sub = self.sub_repo.get_current.return_value
         app_sub.submission = {"answers": {"q1": "No"}}
-        dto = ApplicationEditDto.model_validate({"answers": {"q1": "Yes"}})
+        dto = ApplicationEditDto.model_validate({
+            "answers": {"q1": "Yes"},
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.edit(self.session, self._ctx(), 100, dto)
 
@@ -808,8 +905,16 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         return job
 
-    async def _submit_answers(self, answers):
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1, "answers": answers})
+    async def _submit_answers(self, answers, **overrides):
+        """Submit `answers` with a personal block that satisfies the required
+        fields, so a test about answers is not also a test about the name."""
+        body = {
+            "jobId": 1,
+            "answers": answers,
+            "personal": REQUIRED_PERSONAL,
+            **overrides,
+        }
+        dto = ApplicationSubmitDto.model_validate(body)
         return await self.service.submit(self.session, self._ctx(), dto)
 
     async def test_required_message_names_the_question_not_its_id(self):
@@ -964,6 +1069,132 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("education entry", str(ctx.exception))
 
+    async def test_a_submission_needs_a_first_name(self):
+        """The form marks it required; nothing used to hold the API to that."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers(
+                {}, personal={**REQUIRED_PERSONAL, "firstName": "  "}
+            )
+
+        self.assertIn("first name", str(ctx.exception).lower())
+
+    async def test_a_submission_needs_a_last_name_and_a_timezone(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        for field, needle in (("lastName", "last name"), ("timezone", "timezone")):
+            with self.subTest(field=field):
+                self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+                with self.assertRaises(ValueError) as ctx:
+                    await self._submit_answers(
+                        {}, personal={**REQUIRED_PERSONAL, field: ""}
+                    )
+                self.assertIn(needle, str(ctx.exception).lower())
+
+    async def test_a_personal_block_is_required_whatever_the_profile_config(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "off", "workExperience": "off"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({}, personal={})
+
+        self.assertIn("first name", str(ctx.exception).lower())
+
+    async def test_an_education_row_must_be_filled_in(self):
+        """A row the candidate started counts; an empty one is not an entry."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "optional", "workExperience": "off"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({}, education=[{"id": "rpf-9"}])
+
+        message = str(ctx.exception).lower()
+        self.assertIn("education", message)
+        self.assertIn("school", message)
+
+    async def test_a_complete_education_row_is_accepted(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "required", "workExperience": "off"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self._submit_answers({}, education=[COMPLETE_EDUCATION])
+
+        self.sub_repo.create.assert_awaited()
+
+    async def test_an_experience_row_must_be_filled_in(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "off", "workExperience": "optional"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers(
+                {}, experience=[{**COMPLETE_EXPERIENCE, "company": " "}]
+            )
+
+        self.assertIn("company", str(ctx.exception).lower())
+
+    async def test_an_ongoing_role_needs_no_end_date(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "off", "workExperience": "optional"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self._submit_answers(
+            {},
+            experience=[
+                {
+                    **COMPLETE_EXPERIENCE,
+                    "isCurrentlyWorking": True,
+                    "endMonth": "",
+                    "endYear": "",
+                }
+            ],
+        )
+
+        self.sub_repo.create.assert_awaited()
+
+    async def test_a_finished_role_needs_an_end_date(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "off", "workExperience": "optional"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers(
+                {},
+                experience=[{**COMPLETE_EXPERIENCE, "endMonth": "", "endYear": ""}],
+            )
+
+        self.assertIn("end date", str(ctx.exception).lower())
+
+    async def test_a_switched_off_section_has_its_rows_ignored(self):
+        """The section is not on screen, so an error there is unfixable."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "off", "workExperience": "off"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self._submit_answers({}, education=[{"id": "rpf-9"}])
+
+        self.sub_repo.create.assert_awaited()
+
+    async def test_a_row_problem_names_which_entry_it_is(self):
+        """`rpf-9` appears nowhere on the candidate's screen; "entry 2" does."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "optional", "workExperience": "off"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers(
+                {}, education=[COMPLETE_EDUCATION, {"id": "rpf-9"}]
+            )
+
+        message = str(ctx.exception)
+        self.assertIn("2", message)
+        self.assertNotIn("rpf-9", message)
+
     async def test_get_mine_does_not_commit(self):
         result = await self.service.get_mine(self.session, self._ctx(), 1)
         self.assertIsNone(result)
@@ -983,7 +1214,12 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         app.application_id = 100
         self.app_repo.get_by_id = AsyncMock(return_value=app)
-        await self.service.edit(self.session, self._ctx(), 100, ApplicationEditDto())
+        await self.service.edit(
+            self.session,
+            self._ctx(),
+            100,
+            ApplicationEditDto(personal=REQUIRED_PERSONAL),
+        )
         self.app_repo.get_by_id.assert_awaited_once_with(
             self.session, 100, for_update=True
         )
@@ -1016,7 +1252,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_by_id = AsyncMock(return_value=app)
         with self.assertRaises(ValueError):
             await self.service.edit(
-                self.session, self._ctx(), 100, ApplicationEditDto()
+                self.session,
+                self._ctx(),
+                100,
+                ApplicationEditDto(personal=REQUIRED_PERSONAL),
             )
 
     async def test_edit_blocked_when_sub_status_not_pending(self):
@@ -1031,7 +1270,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_by_id = AsyncMock(return_value=app)
         with self.assertRaises(ValueError):
             await self.service.edit(
-                self.session, self._ctx(), 100, ApplicationEditDto()
+                self.session,
+                self._ctx(),
+                100,
+                ApplicationEditDto(personal=REQUIRED_PERSONAL),
             )
 
     async def test_edit_blocked_when_current_submission_frozen(self):
@@ -1052,7 +1294,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.sub_repo.get_current = AsyncMock(return_value=current)
         with self.assertRaises(ValueError):
             await self.service.edit(
-                self.session, self._ctx(), 100, ApplicationEditDto()
+                self.session,
+                self._ctx(),
+                100,
+                ApplicationEditDto(personal=REQUIRED_PERSONAL),
             )
 
     async def test_get_mine_editable_true_when_first_stage_pending_unfrozen(self):
@@ -1096,7 +1341,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(
             return_value=self._job(status=JobStatus.PUBLISHED_PENDING_REVISION)
         )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1107,7 +1355,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(
             return_value=self._job(status=JobStatus.PENDING_CLOSE)
         )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1129,7 +1380,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
                     await self.service.submit(
                         self.session,
                         self._ctx(),
-                        ApplicationSubmitDto.model_validate({"jobId": 1}),
+                        ApplicationSubmitDto.model_validate({
+                            "jobId": 1,
+                            "personal": REQUIRED_PERSONAL,
+                        }),
                     )
 
     async def test_submit_requires_resume_when_config_requires(self):
@@ -1140,7 +1394,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             await self.service.submit(
                 self.session,
                 self._ctx(),
-                ApplicationSubmitDto.model_validate({"jobId": 1}),
+                ApplicationSubmitDto.model_validate({
+                    "jobId": 1,
+                    "personal": REQUIRED_PERSONAL,
+                }),
             )
 
     async def test_submit_drops_resume_when_posting_collects_none(self):
@@ -1148,6 +1405,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         job.profile_config = {"resume": "off"}
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         dto = ApplicationSubmitDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
             "jobId": 1,
             "resumeObjectKey": "resumes/abc.pdf",
             "resumeSha256": "abc",
@@ -1177,6 +1435,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         current.is_frozen = False
         self.sub_repo.get_current = AsyncMock(return_value=current)
         dto = ApplicationEditDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
             "resumeObjectKey": "resumes/abc.pdf",
             "resumeSha256": "abc",
         })
@@ -1197,7 +1456,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             await self.service.submit(
                 self.session,
                 self._ctx(),
-                ApplicationSubmitDto.model_validate({"jobId": 1}),
+                ApplicationSubmitDto.model_validate({
+                    "jobId": 1,
+                    "personal": REQUIRED_PERSONAL,
+                }),
             )
 
     async def test_reapply_creates_new_application_row(self):
@@ -1219,7 +1481,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
         dto = ApplicationSubmitDto.model_validate({
             "jobId": 1,
-            "personal": {"firstName": "New"},
+            "personal": {**REQUIRED_PERSONAL, "firstName": "New"},
         })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
@@ -1249,7 +1511,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
         dto = ApplicationSubmitDto.model_validate({
             "jobId": 1,
-            "personal": {"firstName": "New"},
+            "personal": {**REQUIRED_PERSONAL, "firstName": "New"},
         })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
@@ -1276,7 +1538,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
         dto = ApplicationSubmitDto.model_validate({
             "jobId": 1,
-            "personal": {"firstName": "New"},
+            "personal": {**REQUIRED_PERSONAL, "firstName": "New"},
         })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
@@ -1302,7 +1564,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             return_value=rejected_application
         )
         self.service._today = lambda: date(2026, 2, 1)
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1324,7 +1589,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         app.application_id = 100
         self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         with self.assertRaises(ValueError):
             await self.service.submit(self.session, self._ctx(), dto)
@@ -1348,7 +1616,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_latest_by_job_and_user = AsyncMock(
             return_value=rejected_application
         )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1386,7 +1657,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             return_value=rejected_application
         )
         self.service._today = lambda: date(2026, 5, 1)  # outside cooldown
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         result = await self.service.submit(self.session, self._ctx(), dto)
         self.assignment_repo.upsert.assert_awaited_once_with(
             self.session, result.id, ApplicationStage.RECRUITER_SCREENING, 1, 5, 9
@@ -1418,7 +1692,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.service._today = lambda: date(2026, 4, 1)  # inside 90-day window
         dto = ApplicationSubmitDto.model_validate({
             "jobId": 1,
-            "personal": {"firstName": "New"},
+            "personal": {**REQUIRED_PERSONAL, "firstName": "New"},
         })
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1449,7 +1723,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.user_emails_repo.list_by_user_id.return_value = [
             self._email_row("a@spam.com")
         ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1485,7 +1762,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.user_emails_repo.list_by_user_id.return_value = [
             self._email_row("a@google.com")
         ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1523,7 +1803,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.user_emails_repo.list_by_user_id.return_value = [
             self._email_row("a@circlecat.org")
         ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1563,7 +1846,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.user_emails_repo.list_by_user_id.return_value = [
             self._email_row("a@circlecat.org")
         ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1574,7 +1860,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_submit_without_auto_hire_does_not_assign_onboarding_training(self):
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1615,7 +1904,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.user_emails_repo.list_by_user_id.return_value = [
             self._email_row("a@circlecat.org")
         ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         hired_result = await self.service.submit(self.session, self._ctx(), dto)
         self.assertEqual(hired_result.stage, ApplicationStage.HIRED)
 
@@ -1658,7 +1950,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self._email_row("a@gmail.com"),
             self._email_row("a@circlecat.org"),
         ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1687,7 +1982,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self._email_row("a@gmail.com"),
             self._email_row("a@circlecat.org", otp_confirmed=False),
         ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1720,7 +2018,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.user_emails_repo.list_by_user_id.return_value = [
             self._email_row("a@circlecat.org")
         ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1748,7 +2049,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.users_repo.get_user_by_user_id = AsyncMock(
             return_value=self._user(is_blocked=True, email="a@circlecat.org")
         )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1788,7 +2092,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         prior.submitted_at = datetime(2026, 1, 20, tzinfo=timezone.utc)
         self.sub_repo.get_current = AsyncMock(return_value=prior)
         self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1829,7 +2136,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         prior.submitted_at = datetime(2026, 1, 20, tzinfo=timezone.utc)
         self.sub_repo.get_current = AsyncMock(return_value=prior)
         self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1851,7 +2161,12 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.sub_repo.get_current = AsyncMock(return_value=prior)
         self.service._today = lambda: date(2026, 5, 1)  # past thaw (>= 2026-01-10)
         result = await self.service.submit(
-            self.session, self._ctx(), ApplicationSubmitDto.model_validate({"jobId": 1})
+            self.session,
+            self._ctx(),
+            ApplicationSubmitDto.model_validate({
+                "jobId": 1,
+                "personal": REQUIRED_PERSONAL,
+            }),
         )
         self.assertNotIn("cold_freeze", result.tags or {})
 
@@ -1938,7 +2253,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
                 }
             )
         )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1962,7 +2280,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
                 }
             )
         )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(user_id=2), dto)
 
@@ -1971,7 +2292,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_submit_writes_no_owner_notification_without_an_owner(self):
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1989,7 +2313,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
                 }
             )
         )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
@@ -2024,7 +2351,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.user_emails_repo.list_by_user_id.return_value = [
             self._email_row("a@spam.com")
         ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
@@ -2057,7 +2387,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.user_emails_repo.list_by_user_id.return_value = [
             self._email_row("a@circlecat.org")
         ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
@@ -2090,7 +2423,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.user_emails_repo.list_by_user_id.return_value = [
             self._email_row("a@circlecat.org")
         ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
@@ -2118,7 +2454,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
                 }
             )
         )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
@@ -2151,7 +2490,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.notification_repo.create = AsyncMock(
             side_effect=lambda *args, **kwargs: events.append("notify")
         )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
@@ -2177,7 +2519,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
                 }
             )
         )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
@@ -2212,7 +2557,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
         dto = ApplicationSubmitDto.model_validate({
             "jobId": 1,
-            "personal": {"firstName": "New"},
+            "personal": {**REQUIRED_PERSONAL, "firstName": "New"},
         })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
@@ -2238,7 +2583,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
                 }
             )
         )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
