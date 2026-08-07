@@ -1,4 +1,5 @@
 import FieldError from "@/components/common/FieldError";
+import { errorBorder } from "@/components/common/fieldErrors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -121,9 +122,11 @@ export default function ProfileSection({
             </Label>
             <Input
               id="ps-firstName"
+              className={errorBorder(errors, "profile:firstName").trim()}
               value={personal.firstName || ""}
               onChange={(e) => setPersonal("firstName", e.target.value)}
             />
+            <FieldError errors={errors} errorKey="profile:firstName" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="ps-lastName">
@@ -132,9 +135,11 @@ export default function ProfileSection({
             </Label>
             <Input
               id="ps-lastName"
+              className={errorBorder(errors, "profile:lastName").trim()}
               value={personal.lastName || ""}
               onChange={(e) => setPersonal("lastName", e.target.value)}
             />
+            <FieldError errors={errors} errorKey="profile:lastName" />
           </div>
         </div>
         <div className="space-y-1.5">
@@ -154,6 +159,7 @@ export default function ProfileSection({
             value={personal.timezone || ""}
             onChange={(opt) => setPersonal("timezone", opt?.value ?? "")}
           />
+          <FieldError errors={errors} errorKey="profile:timezone" />
         </div>
       </section>
 
@@ -180,6 +186,7 @@ export default function ProfileSection({
               key={item.id}
               item={item}
               errors={errors}
+              errorKeyFor={(field) => `education:${item.id}:${field}`}
               onChange={changeEducation}
               onDelete={deleteEducation}
             />
@@ -210,6 +217,7 @@ export default function ProfileSection({
               key={item.id}
               item={item}
               errors={errors}
+              errorKeyFor={(field) => `experience:${item.id}:${field}`}
               onChange={changeExperience}
               onDelete={deleteExperience}
             />

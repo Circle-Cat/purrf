@@ -21,6 +21,28 @@ from backend.recruiting.board_service import INTERVIEW_STAGES
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 
 
+# The fields every candidate must give, whatever the posting asks for: the
+# form marks them with a plain asterisk rather than a configurable one.
+_REQUIRED_PERSONAL = (
+    ("firstName", "a first name"),
+    ("lastName", "a last name"),
+    ("timezone", "a timezone"),
+)
+
+# What makes one row of each list an entry rather than a blank the candidate
+# started and left. Field names are the form's, because the form's shape is
+# what goes on the wire and gets stored verbatim.
+_EDUCATION_FIELDS = (
+    ("institution", "school"),
+    ("degree", "degree"),
+    ("field", "field of study"),
+)
+_EXPERIENCE_FIELDS = (("title", "title"), ("company", "company"))
+
+# Which `profile_config` key gates each list.
+_SECTION_CONFIG_KEY = {"education": "education", "experience": "workExperience"}
+
+
 class ApplicationService:
     """Candidate-facing application submission + auto-screening."""
 
@@ -194,6 +216,34 @@ class ApplicationService:
         if profile_config.get("workExperience") == "required" and not dto.experience:
             raise ValueError("this posting requires at least one experience entry")
 
+        personal = dto.personal or {}
+        for key, needed in _REQUIRED_PERSONAL:
+            if self._blank(personal.get(key)):
+                raise ValueError(f"your application needs {needed}")
+
+        # Rows are checked wherever they are shown -- an `optional` section
+        # means "you need not add one", not "a half-filled one is fine". A
+        # section switched `off` is skipped: it is not rendered, so a problem
+        # there could never be seen, let alone fixed.
+        #
+        # Deliberately only the presence rules, not the ordering ones the form
+        # also applies (a start date in the future, an end before a start).
+        # Those live in the browser alone, as they always have on the Profile
+        # page; mirroring them here would mean parsing the form's month names
+        # in Python for no protection that matters.
+        for section, rows, fields in (
+            ("education", dto.education, _EDUCATION_FIELDS),
+            ("experience", dto.experience, _EXPERIENCE_FIELDS),
+        ):
+            if profile_config.get(_SECTION_CONFIG_KEY[section]) == "off":
+                continue
+            for index, row in enumerate(rows or [], start=1):
+                problem = self._row_problem(row, fields)
+                if problem is not None:
+                    # Numbered, not keyed: the row's `rpf-9` id appears nowhere
+                    # on the page the candidate is looking at.
+                    raise ValueError(f"{section} entry {index}: {problem}")
+
         for question in form_visibility.visible_questions(job.form_schema, dto.answers):
             label = question.get("label") or question.get("id")
             value = dto.answers.get(question["id"])
@@ -210,6 +260,36 @@ class ApplicationService:
                 dto.answers.get(f"{question['id']}{form_visibility.OTHER_SUFFIX}")
             ):
                 raise ValueError(f"{label}: describe your answer")
+
+    @staticmethod
+    def _blank(value) -> bool:
+        """Missing, or nothing but whitespace."""
+        return not str(value or "").strip()
+
+    @classmethod
+    def _row_problem(cls, row, fields) -> str | None:
+        """What is missing from one education or experience row, if anything.
+
+        Args:
+            row (dict): One row in the form's shape.
+            fields (tuple): (key, human name) pairs that must be filled in.
+
+        Returns:
+            str | None: A phrase naming the first gap, or None when the row is
+                a real entry.
+        """
+        entry = row or {}
+        for key, name in fields:
+            if cls._blank(entry.get(key)):
+                return f"{name} is required"
+        if cls._blank(entry.get("startMonth")) or cls._blank(entry.get("startYear")):
+            return "a start date is required"
+        # A role still held has no end to give; the form hides the field.
+        if entry.get("isCurrentlyWorking"):
+            return None
+        if cls._blank(entry.get("endMonth")) or cls._blank(entry.get("endYear")):
+            return "an end date is required"
+        return None
 
     @staticmethod
     def _prune_hidden_answers(job, dto) -> None:
