@@ -14,9 +14,15 @@ const PROFILE_FIELDS = [
   { key: "resume", label: "Resume" },
 ];
 
-/** "google.com" for a single value, "one of google.com, circlecat.org" for a list. */
-const domainsPhrase = (value) =>
-  Array.isArray(value) ? `one of ${value.join(", ")}` : value;
+/**
+ * "google.com" for a single domain, "one of google.com, circlecat.org" for
+ * several. A one-element list reads as the bare domain: the editor emits every
+ * rule as a list now, so list-ness no longer implies more than one.
+ */
+const domainsPhrase = (value) => {
+  const domains = Array.isArray(value) ? value : [value];
+  return domains.length === 1 ? domains[0] : `one of ${domains.join(", ")}`;
+};
 
 /** Human-readable description of one screen rule's condition. */
 const describeCondition = (condition, questions) => {

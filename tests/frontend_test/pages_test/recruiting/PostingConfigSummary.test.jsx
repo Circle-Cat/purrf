@@ -115,6 +115,36 @@ describe("PostingConfigSummary", () => {
     ).toBeInTheDocument();
   });
 
+  it("drops the 'one of' when a domain rule holds a single domain", () => {
+    // The editor now emits a one-element list where it used to emit a bare
+    // string, so the list phrasing has to stop at two or more.
+    render(
+      <PostingConfigSummary
+        job={{
+          pipelineConfig: null,
+          screenRules: {
+            rules: [
+              {
+                id: "r1",
+                condition: {
+                  source: "email_domain",
+                  operator: "in",
+                  value: ["google.com"],
+                },
+                action: "reject",
+              },
+            ],
+          },
+          profileConfig: {},
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByText("Reject if email domain is google.com"),
+    ).toBeInTheDocument();
+  });
+
   it("reads the work-experience requirement from workExperience, not experience", () => {
     render(
       <PostingConfigSummary
