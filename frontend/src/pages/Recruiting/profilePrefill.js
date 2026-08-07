@@ -1,4 +1,5 @@
 import { parseDateParts } from "@/pages/Profile/utils";
+import { browserTimezone } from "@/components/common/timezoneDefault";
 
 let uid = 0;
 /**
@@ -49,7 +50,9 @@ export function profileToApplicationForm(fetchedProfile) {
       firstName: user.firstName ?? EMPTY_PERSONAL.firstName,
       lastName: user.lastName ?? EMPTY_PERSONAL.lastName,
       linkedin: user.linkedinLink ?? EMPTY_PERSONAL.linkedin,
-      timezone: user.timezone ?? EMPTY_PERSONAL.timezone,
+      // `||`, not `??`: a stored blank is as unset as a missing key, and
+      // the browser already knows the answer.
+      timezone: user.timezone || browserTimezone(),
     },
     education: education.map((row) => {
       const start = parseDateParts(row.startDate);

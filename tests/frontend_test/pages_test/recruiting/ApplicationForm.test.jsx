@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { toast } from "sonner";
@@ -1201,5 +1201,90 @@ describe("ApplicationForm sections the posting does not collect", () => {
     const body = api.updateApplication.mock.calls[0][1];
     expect(body.education).toHaveLength(1);
     expect(body.experience).toHaveLength(1);
+  });
+});
+
+describe("ApplicationForm timezone default", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  /** Make the environment claim it is in `zone`, leaving formatting alone. */
+  const inZone = (zone) => {
+    const real = Intl.DateTimeFormat;
+    vi.spyOn(Intl, "DateTimeFormat").mockImplementation((...args) =>
+      args.length
+        ? new real(...args)
+        : { resolvedOptions: () => ({ timeZone: zone }) },
+    );
+  };
+
+  it("submits the candidate's own zone when their profile has none", async () => {
+    // Without this the candidate has to hunt through the picker for a value
+    // the browser already knows, on a posting that may ask nothing else of
+    // their profile at all.
+    inZone("Asia/Shanghai");
+    const user = userEvent.setup();
+    api.submitApplication.mockResolvedValue({ data: { id: 100 } });
+    profileApi.getMyProfile.mockResolvedValue({
+      data: { profile: { user: { firstName: "Cand", lastName: "Idate" } } },
+    });
+    render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
+    await screen.findByLabelText("Contact email");
+
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    await waitFor(() => expect(api.submitApplication).toHaveBeenCalledTimes(1));
+    expect(api.submitApplication.mock.calls[0][0].personal.timezone).toBe(
+      "Asia/Shanghai",
+    );
+  });
+
+  it("treats a stored blank as no zone at all", async () => {
+    // The users row defaults these to "" rather than leaving them null, so a
+    // check for a missing key would sail straight past it.
+    inZone("Asia/Shanghai");
+    const user = userEvent.setup();
+    api.submitApplication.mockResolvedValue({ data: { id: 100 } });
+    profileApi.getMyProfile.mockResolvedValue({
+      data: {
+        profile: {
+          user: { firstName: "Cand", lastName: "Idate", timezone: "" },
+        },
+      },
+    });
+    render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
+    await screen.findByLabelText("Contact email");
+
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    await waitFor(() => expect(api.submitApplication).toHaveBeenCalledTimes(1));
+    expect(api.submitApplication.mock.calls[0][0].personal.timezone).toBe(
+      "Asia/Shanghai",
+    );
+  });
+
+  it("leaves a stored zone alone", async () => {
+    inZone("Asia/Shanghai");
+    const user = userEvent.setup();
+    api.submitApplication.mockResolvedValue({ data: { id: 100 } });
+    profileApi.getMyProfile.mockResolvedValue({
+      data: {
+        profile: {
+          user: {
+            firstName: "Cand",
+            lastName: "Idate",
+            timezone: "America/New_York",
+          },
+        },
+      },
+    });
+    render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
+    await screen.findByLabelText("Contact email");
+
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    await waitFor(() => expect(api.submitApplication).toHaveBeenCalledTimes(1));
+    expect(api.submitApplication.mock.calls[0][0].personal.timezone).toBe(
+      "America/New_York",
+    );
   });
 });

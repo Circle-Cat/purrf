@@ -14,6 +14,7 @@ import {
   buildWriteBackPayload,
 } from "@/pages/Recruiting/profileWriteBack";
 import { profileToApplicationForm } from "@/pages/Recruiting/profilePrefill";
+import { browserTimezone } from "@/components/common/timezoneDefault";
 import { discardedAnswers } from "@/pages/Recruiting/discardedAnswers";
 import { validateApplication } from "@/pages/Recruiting/applicationValidation";
 import {
@@ -80,7 +81,11 @@ const ApplicationForm = ({
   const priorSubmission = existing?.current ?? seed ?? {};
   const submissionSeed = priorSubmission.submission ?? {};
   const [profileValue, setProfileValue] = useState({
-    personal: submissionSeed.personal ?? {},
+    personal: {
+      ...(submissionSeed.personal ?? {}),
+      // A submission from before this defaulted may carry no zone at all.
+      timezone: submissionSeed.personal?.timezone || browserTimezone(),
+    },
     education: submissionSeed.education ?? [],
     experience: submissionSeed.experience ?? [],
   });
