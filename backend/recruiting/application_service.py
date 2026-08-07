@@ -118,8 +118,53 @@ class ApplicationService:
             return len(value) > 0
         return True
 
+    @staticmethod
+    def _question_value_error(question, value) -> str | None:
+        """Why an answer does not fit the question that was asked, if it does not.
+
+        The form's own constraints -- an option list, a selection cap, a
+        length budget, a phrase to type back -- were authored and validated
+        but never enforced against a submission. Enforcing them here rather
+        than only in the browser matters twice over: the API accepts any JSON
+        for an answer, and a choice value outside the option list also decides
+        whether the questions that one gates are shown at all, so an
+        unconstrained value could hide a required question instead of
+        answering it.
+
+        Args:
+            question (dict): One question out of the form schema.
+            value: The recorded answer, already known to be non-empty.
+
+        Returns:
+            str | None: A message naming the question, or None when the
+                answer fits.
+        """
+        label = question.get("label") or question.get("id")
+        qtype = question.get("type")
+        options = question.get("options") or []
+
+        if qtype == "single_choice" and value not in options:
+            return f"{label}: pick one of the listed options"
+        if qtype == "multi_choice":
+            if not isinstance(value, list):
+                return f"{label}: pick from the listed options"
+            if any(v not in options for v in value):
+                return f"{label}: pick from the listed options"
+            cap = question.get("maxSelections")
+            if cap is not None and len(value) > cap:
+                return f"{label}: pick at most {cap}"
+        if qtype == "long_text":
+            cap = question.get("maxLength")
+            if cap is not None and len(str(value)) > cap:
+                return f"{label}: keep this under {cap} characters"
+        if qtype == "exact_text":
+            expected = question.get("expectedValue") or ""
+            if str(value).strip() != expected:
+                return f"{label}: type {expected} exactly"
+        return None
+
     def _validate_submission(self, job, dto) -> None:
-        """Enforce résumé-required and required-question answers.
+        """Enforce what the posting asks of a submission.
 
         ``required`` is enforced only on the questions the form was actually
         showing: a required question gated behind a showWhen rule is not
@@ -127,21 +172,44 @@ class ApplicationService:
         would leave the candidate unable to submit a form they have filled in
         completely.
 
+        Messages name a question by its label, not its id. They reach the
+        candidate verbatim, and ``q7`` appears nowhere on the page they are
+        looking at.
+
         Args:
             job (JobEntity): The posting the submission is for.
             dto (ApplicationSubmitDto | ApplicationEditDto): The payload.
 
         Raises:
-            ValueError: If a required résumé/answer is missing.
+            ValueError: If a required résumé, profile section or answer is
+                missing, or an answer does not fit the question asked.
         """
         profile_config = job.profile_config or {}
         if profile_config.get("resume") == "required" and not dto.resume_object_key:
             raise ValueError("this posting requires a résumé")
+        # Both sections carry a required marker in the form; nothing held the
+        # submission to it.
+        if profile_config.get("education") == "required" and not dto.education:
+            raise ValueError("this posting requires at least one education entry")
+        if profile_config.get("workExperience") == "required" and not dto.experience:
+            raise ValueError("this posting requires at least one experience entry")
+
         for question in form_visibility.visible_questions(job.form_schema, dto.answers):
-            if question.get("required") and not self._answered(
-                dto.answers.get(question["id"])
+            label = question.get("label") or question.get("id")
+            value = dto.answers.get(question["id"])
+            if not self._answered(value):
+                if question.get("required"):
+                    raise ValueError(f"{label} is required")
+                continue
+            problem = self._question_value_error(question, value)
+            if problem is not None:
+                raise ValueError(problem)
+            # The renderer marks the "Other" free text required whenever that
+            # option is picked, and until now nothing held it to that.
+            if form_visibility.other_selected(question, value) and not self._answered(
+                dto.answers.get(f"{question['id']}{form_visibility.OTHER_SUFFIX}")
             ):
-                raise ValueError(f"question {question['id']} is required")
+                raise ValueError(f"{label}: describe your answer")
 
     @staticmethod
     def _prune_hidden_answers(job, dto) -> None:

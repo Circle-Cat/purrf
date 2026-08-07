@@ -6,12 +6,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import FieldError from "@/components/common/FieldError";
+import { errorBorder } from "@/components/common/fieldErrors";
 import DomainsInput from "@/pages/Recruiting/postings/DomainsInput";
-import FieldError from "@/pages/Recruiting/postings/FieldError";
-import {
-  errorBorder,
-  ruleKey,
-} from "@/pages/Recruiting/postings/postingValidation";
+import { ruleKey } from "@/pages/Recruiting/postings/postingValidation";
 
 const ACTIONS = ["reject", "qualify", "auto_hire"];
 const EMAIL_MODES = [

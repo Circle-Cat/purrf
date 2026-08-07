@@ -47,11 +47,11 @@ class TestQuestionDto(unittest.TestCase):
         self.assertEqual(q2.description, "Choose one")
 
     def test_long_text_maxlength_and_maxwords_must_be_positive(self):
-        QuestionDto(id="q1", type="long_text", label="Why", max_length=10, max_words=5)
+        QuestionDto(id="q1", type="long_text", label="Why", max_length=10)
         with self.assertRaises(ValidationError):
             QuestionDto(id="q1", type="long_text", label="Why", max_length=0)
         with self.assertRaises(ValidationError):
-            QuestionDto(id="q1", type="long_text", label="Why", max_words=0)
+            QuestionDto(id="q1", type="long_text", label="Why", max_length=0)
 
     def test_single_choice_requires_nonempty_options(self):
         QuestionDto(id="q1", type="single_choice", label="Pick", options=["a", "b"])

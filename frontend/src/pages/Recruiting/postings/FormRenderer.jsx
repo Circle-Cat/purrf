@@ -6,6 +6,9 @@ import {
   otherSelected,
   visibleQuestions,
 } from "@/pages/Recruiting/postings/questionVisibility";
+import FieldError from "@/components/common/FieldError";
+import { errorBorder } from "@/components/common/fieldErrors";
+import { answerKey, otherKey } from "@/pages/Recruiting/applicationValidation";
 
 /**
  * A recorded value as one line of text, for a choice row's label. Arrays join
@@ -78,6 +81,7 @@ const QuestionControl = ({
   onAnswerChange,
   readOnly = false,
   idPrefix = "",
+  errors = {},
 }) => {
   const { id, type, label, options = [] } = question;
   const domId = `${idPrefix}${id}`;
@@ -97,12 +101,16 @@ const QuestionControl = ({
       {readOnly ? (
         <RecordedValue value={otherValue} />
       ) : (
-        <Input
-          id={`${domId}__other`}
-          aria-label={`${question.otherOption} (please specify)`}
-          value={otherValue ?? ""}
-          onChange={(e) => onAnswerChange(`${id}__other`, e.target.value)}
-        />
+        <>
+          <Input
+            id={`${domId}__other`}
+            aria-label={`${question.otherOption} (please specify)`}
+            className={errorBorder(errors, otherKey(id)).trim()}
+            value={otherValue ?? ""}
+            onChange={(e) => onAnswerChange(`${id}__other`, e.target.value)}
+          />
+          <FieldError errors={errors} errorKey={otherKey(id)} />
+        </>
       )}
     </div>
   ) : null;
@@ -111,12 +119,28 @@ const QuestionControl = ({
     return readOnly ? (
       <RecordedValue value={value} />
     ) : (
-      <Textarea
-        id={domId}
-        aria-label={label}
-        value={value ?? ""}
-        onChange={(e) => set(e.target.value)}
-      />
+      <>
+        <Textarea
+          id={domId}
+          aria-label={label}
+          className={errorBorder(errors, answerKey(id)).trim()}
+          value={value ?? ""}
+          onChange={(e) => set(e.target.value)}
+        />
+        {question.maxLength != null && (
+          // A character budget the candidate cannot see is one they only
+          // learn about by being rejected at submit, after writing past it.
+          <p
+            className={`text-xs ${
+              String(value ?? "").length > question.maxLength
+                ? "text-destructive"
+                : "text-slate-500"
+            }`}
+          >
+            {String(value ?? "").length} / {question.maxLength} characters
+          </p>
+        )}
+      </>
     );
   }
   if (type === "single_choice") {
@@ -248,6 +272,7 @@ const FormRenderer = ({
   onAnswerChange = () => {},
   readOnly = false,
   idPrefix = "",
+  errors = {},
 }) => (
   <div className="space-y-4">
     {visibleQuestions(questions, answers).map((q) => (
@@ -277,7 +302,9 @@ const FormRenderer = ({
           onAnswerChange={onAnswerChange}
           readOnly={readOnly}
           idPrefix={idPrefix}
+          errors={errors}
         />
+        <FieldError errors={errors} errorKey={answerKey(q.id)} />
       </div>
     ))}
   </div>

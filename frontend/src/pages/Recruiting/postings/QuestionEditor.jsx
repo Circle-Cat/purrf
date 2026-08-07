@@ -12,11 +12,9 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import OptionsEditor from "@/pages/Recruiting/postings/OptionsEditor";
 import { revealedBy as revealedByOption } from "@/pages/Recruiting/postings/questionTypes";
-import FieldError from "@/pages/Recruiting/postings/FieldError";
-import {
-  errorBorder,
-  questionKey,
-} from "@/pages/Recruiting/postings/postingValidation";
+import FieldError from "@/components/common/FieldError";
+import { errorBorder } from "@/components/common/fieldErrors";
+import { questionKey } from "@/pages/Recruiting/postings/postingValidation";
 
 const CHOICE_TYPES = new Set(["single_choice", "multi_choice"]);
 const NONE = "__none__";
@@ -247,11 +245,11 @@ const QuestionEditor = ({
       {question.type === "long_text" && (
         <div className="flex gap-3">
           <div className="space-y-1">
-            <Label htmlFor={`${question.id}-maxlen`}>Max length</Label>
+            <Label htmlFor={`${question.id}-maxlen`}>Max characters</Label>
             <Input
               id={`${question.id}-maxlen`}
               className={errorBorder(errors, key("maxLength")).trim()}
-              aria-label="Max length"
+              aria-label="Max characters"
               type="number"
               value={question.maxLength ?? ""}
               onChange={(e) =>
@@ -263,22 +261,6 @@ const QuestionEditor = ({
               }
             />
             <FieldError errors={errors} errorKey={key("maxLength")} />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor={`${question.id}-maxwords`}>Max words</Label>
-            <Input
-              id={`${question.id}-maxwords`}
-              className={errorBorder(errors, key("maxWords")).trim()}
-              aria-label="Max words"
-              type="number"
-              value={question.maxWords ?? ""}
-              onChange={(e) =>
-                patch({
-                  maxWords: e.target.value ? Number(e.target.value) : undefined,
-                })
-              }
-            />
-            <FieldError errors={errors} errorKey={key("maxWords")} />
           </div>
         </div>
       )}

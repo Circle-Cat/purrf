@@ -801,6 +801,169 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(app.stage, ApplicationStage.REJECTED)
 
+    def _typed_job(self, question):
+        """A published posting whose only question is the one given."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = {"questions": [question]}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        return job
+
+    async def _submit_answers(self, answers):
+        dto = ApplicationSubmitDto.model_validate({"jobId": 1, "answers": answers})
+        return await self.service.submit(self.session, self._ctx(), dto)
+
+    async def test_required_message_names_the_question_not_its_id(self):
+        """The message reaches the candidate verbatim, and `q1` is nowhere on
+        the page they are looking at."""
+        self._typed_job({
+            "id": "q1",
+            "type": "short_text",
+            "label": "Where are you based?",
+            "required": True,
+        })
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({})
+
+        self.assertEqual(str(ctx.exception), "Where are you based? is required")
+
+    async def test_a_choice_answer_must_be_one_of_the_options(self):
+        """Also closes a required-bypass: an off-list value counts as answered
+        for the gate, so the question it gates is never shown and its own
+        `required` is never checked."""
+        self._typed_job({
+            "id": "q1",
+            "type": "single_choice",
+            "label": "Need sponsorship?",
+            "options": ["Yes", "No"],
+        })
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({"q1": "maybe"})
+
+        self.assertIn("pick one of the listed options", str(ctx.exception))
+        self.sub_repo.create.assert_not_awaited()
+
+    async def test_multi_choice_rejects_more_than_the_cap(self):
+        self._typed_job({
+            "id": "q1",
+            "type": "multi_choice",
+            "label": "Teams?",
+            "options": ["A", "B", "C"],
+            "maxSelections": 2,
+        })
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({"q1": ["A", "B", "C"]})
+
+        self.assertIn("pick at most 2", str(ctx.exception))
+
+    async def test_multi_choice_accepts_the_cap_exactly(self):
+        self._typed_job({
+            "id": "q1",
+            "type": "multi_choice",
+            "label": "Teams?",
+            "options": ["A", "B", "C"],
+            "maxSelections": 2,
+        })
+
+        await self._submit_answers({"q1": ["A", "B"]})
+
+        self.sub_repo.create.assert_awaited_once()
+
+    async def test_long_text_rejects_more_than_the_character_budget(self):
+        self._typed_job({
+            "id": "q1",
+            "type": "long_text",
+            "label": "Why?",
+            "maxLength": 10,
+        })
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({"q1": "x" * 11})
+
+        self.assertIn("under 10 characters", str(ctx.exception))
+
+    async def test_exact_text_must_match_after_trimming(self):
+        self._typed_job({
+            "id": "q1",
+            "type": "exact_text",
+            "label": "Confirm",
+            "expectedValue": "I AGREE",
+        })
+
+        await self._submit_answers({"q1": "  I AGREE  "})
+        self.sub_repo.create.assert_awaited_once()
+
+        with self.assertRaises(ValueError):
+            await self._submit_answers({"q1": "i agree"})
+
+    async def test_other_free_text_is_required_once_other_is_picked(self):
+        """The renderer marks it required; nothing used to hold it to that."""
+        self._typed_job({
+            "id": "q1",
+            "type": "single_choice",
+            "label": "How did you hear?",
+            "options": ["Friend", "Other"],
+            "otherOption": "Other",
+        })
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({"q1": "Other", "q1__other": "  "})
+
+        self.assertIn("describe your answer", str(ctx.exception))
+
+    async def test_other_free_text_is_not_required_when_other_is_not_picked(self):
+        self._typed_job({
+            "id": "q1",
+            "type": "single_choice",
+            "label": "How did you hear?",
+            "options": ["Friend", "Other"],
+            "otherOption": "Other",
+        })
+
+        await self._submit_answers({"q1": "Friend"})
+
+        self.sub_repo.create.assert_awaited_once()
+
+    async def test_a_hidden_question_is_not_value_checked(self):
+        """A stale answer under a question the form stopped showing is pruned,
+        not rejected -- otherwise changing your mind would wedge the form."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = {
+            "questions": [
+                {
+                    "id": "q1",
+                    "type": "single_choice",
+                    "label": "Need sponsorship?",
+                    "options": ["Yes", "No"],
+                },
+                {
+                    "id": "q2",
+                    "type": "exact_text",
+                    "label": "Confirm",
+                    "expectedValue": "I AGREE",
+                    "showWhen": {"questionId": "q1", "equals": "Yes"},
+                },
+            ]
+        }
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self._submit_answers({"q1": "No", "q2": "nonsense"})
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["answers"], {"q1": "No"})
+
+    async def test_a_required_profile_section_must_have_an_entry(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "required", "workExperience": "off"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({})
+
+        self.assertIn("education entry", str(ctx.exception))
+
     async def test_get_mine_does_not_commit(self):
         result = await self.service.get_mine(self.session, self._ctx(), 1)
         self.assertIsNone(result)

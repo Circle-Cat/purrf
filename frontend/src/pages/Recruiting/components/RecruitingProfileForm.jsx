@@ -93,6 +93,7 @@ const RecruitingProfileForm = ({
   contactEmail,
   onResumeStored,
   existingResume,
+  errors = {},
 }) => {
   const [internal, setInternal] = useState({
     personal: {},
@@ -225,7 +226,7 @@ const RecruitingProfileForm = ({
         value={value}
         onChange={setValue}
         requirements={requirements}
-        errors={{}}
+        errors={errors}
       />
     </div>
   );
