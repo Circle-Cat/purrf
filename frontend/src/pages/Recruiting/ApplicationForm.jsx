@@ -16,7 +16,6 @@ import {
 } from "@/pages/Recruiting/profileWriteBack";
 import { profileToApplicationForm } from "@/pages/Recruiting/profilePrefill";
 import { browserTimezone } from "@/components/common/timezoneDefault";
-import { discardedAnswers } from "@/pages/Recruiting/discardedAnswers";
 import { validateApplication } from "@/pages/Recruiting/applicationValidation";
 import {
   Dialog,
@@ -203,9 +202,6 @@ const ApplicationForm = ({
   // asking whether to carry those changes over.
   const [pendingSync, setPendingSync] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  // Null until a save is found to cost something; then the list of answers it
-  // would delete, which is also what opens the confirm dialog.
-  const [pendingDiscard, setPendingDiscard] = useState(null);
   // Empty until the candidate tries to submit. Only ever cleared as fields are
   // fixed, never added to while typing, so a half-filled form does not turn
   // red under someone still working through it.
@@ -362,7 +358,6 @@ const ApplicationForm = ({
    */
   const send = async (sync) => {
     if (submitting) return;
-    setPendingDiscard(null);
     setPendingSync(null);
     setSubmitting(true);
     try {
@@ -406,26 +401,17 @@ const ApplicationForm = ({
   };
 
   /**
-   * Ask first when saving would throw answers away.
+   * Send what the candidate is looking at.
    *
-   * The server keeps only what the form is showing and overwrites the
-   * submission in place, so a gate the candidate has since changed takes
-   * everything under it with no earlier version to recover from. Silent is
-   * the wrong default for that; nothing is asked when the save costs nothing,
-   * which is nearly every save.
-   *
-   * Checked before asked: a form that is not going to be accepted should send
-   * the candidate back to the bad field, not make them approve a deletion for
-   * a submission that then fails anyway.
+   * The server keeps only the answers the form was showing and overwrites the
+   * submission in place, so an answer to a question a gate has since hidden is
+   * dropped for good. That is deliberate rather than silent: the submission is
+   * what is on screen, and asking someone to approve deleting an answer to a
+   * question they cannot see explains less than it confuses.
    */
   const submit = () => {
     if (submitting) return;
     if (!validate()) return;
-    const losing = discardedAnswers(job.formSchema?.questions ?? [], answers);
-    if (losing.length > 0) {
-      setPendingDiscard(losing);
-      return;
-    }
     askAboutProfile();
   };
 
@@ -534,33 +520,6 @@ const ApplicationForm = ({
               disabled={submitting}
             >
               Update &amp; submit
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog
-        open={pendingDiscard !== null}
-        onOpenChange={(open) => !open && setPendingDiscard(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Some answers will be removed</DialogTitle>
-            <DialogDescription>
-              The form no longer asks these, so submitting will delete what you
-              wrote. This cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <ul className="list-disc space-y-1 pl-5 text-sm">
-            {(pendingDiscard ?? []).map((entry) => (
-              <li key={entry.key}>{entry.label}</li>
-            ))}
-          </ul>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPendingDiscard(null)}>
-              Keep editing
-            </Button>
-            <Button onClick={() => askAboutProfile()} disabled={submitting}>
-              Submit anyway
             </Button>
           </DialogFooter>
         </DialogContent>
