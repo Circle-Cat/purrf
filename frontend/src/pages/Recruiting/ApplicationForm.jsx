@@ -14,6 +14,15 @@ import {
   buildWriteBackPayload,
 } from "@/pages/Recruiting/profileWriteBack";
 import { profileToApplicationForm } from "@/pages/Recruiting/profilePrefill";
+import { discardedAnswers } from "@/pages/Recruiting/discardedAnswers";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 /**
  * Candidate application form for a published job. Owns the applicant's
@@ -87,6 +96,9 @@ const ApplicationForm = ({
       : null;
   const [saveToProfile, setSaveToProfile] = useState(!existing);
   const [submitting, setSubmitting] = useState(false);
+  // Null until a save is found to cost something; then the list of answers it
+  // would delete, which is also what opens the confirm dialog.
+  const [pendingDiscard, setPendingDiscard] = useState(null);
   const [prefillLoading, setPrefillLoading] = useState(!existing && !seed);
 
   useEffect(() => {
@@ -146,8 +158,15 @@ const ApplicationForm = ({
     }
   };
 
-  const submit = async () => {
+  /**
+   * Send, having already decided the cost is acceptable.
+   *
+   * Split from the click handler so the confirm dialog has something to call:
+   * everything the server would drop is settled before this runs.
+   */
+  const send = async () => {
     if (submitting) return;
+    setPendingDiscard(null);
     setSubmitting(true);
     try {
       const base = {
@@ -172,6 +191,25 @@ const ApplicationForm = ({
     } finally {
       setSubmitting(false);
     }
+  };
+
+  /**
+   * Ask first when saving would throw answers away.
+   *
+   * The server keeps only what the form is showing and overwrites the
+   * submission in place, so a gate the candidate has since changed takes
+   * everything under it with no earlier version to recover from. Silent is
+   * the wrong default for that; nothing is asked when the save costs nothing,
+   * which is nearly every save.
+   */
+  const submit = () => {
+    if (submitting) return;
+    const losing = discardedAnswers(job.formSchema?.questions ?? [], answers);
+    if (losing.length > 0) {
+      setPendingDiscard(losing);
+      return;
+    }
+    send();
   };
 
   if (prefillLoading) {
@@ -203,6 +241,33 @@ const ApplicationForm = ({
       <Button onClick={submit} disabled={submitting}>
         Submit application
       </Button>
+      <Dialog
+        open={pendingDiscard !== null}
+        onOpenChange={(open) => !open && setPendingDiscard(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Some answers will be removed</DialogTitle>
+            <DialogDescription>
+              The form no longer asks these, so submitting will delete what you
+              wrote. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="list-disc space-y-1 pl-5 text-sm">
+            {(pendingDiscard ?? []).map((entry) => (
+              <li key={entry.key}>{entry.label}</li>
+            ))}
+          </ul>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingDiscard(null)}>
+              Keep editing
+            </Button>
+            <Button onClick={send} disabled={submitting}>
+              Submit anyway
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
