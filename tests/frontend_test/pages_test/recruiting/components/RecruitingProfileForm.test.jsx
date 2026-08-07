@@ -340,3 +340,21 @@ describe("RecruitingProfileForm", () => {
     );
   });
 });
+
+describe("RecruitingProfileForm résumé error", () => {
+  it("shows the message in the résumé section, with an anchor to scroll to", () => {
+    const { container } = renderForm(
+      { resume: "required" },
+      { errors: { "profile:resume": "A résumé is required" } },
+    );
+    expect(screen.getByText("A résumé is required")).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-error-key="profile:resume"]'),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing when no résumé problem was reported", () => {
+    renderForm({ resume: "required" }, { errors: {} });
+    expect(screen.queryByText("A résumé is required")).not.toBeInTheDocument();
+  });
+});

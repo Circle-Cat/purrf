@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import ResumeUpload from "@/components/common/ResumeUpload";
+import FieldError from "@/components/common/FieldError";
 import ProfileSection from "@/pages/Profile/components/ProfileSection";
 import { resumeUrl, uploadResume } from "@/api/recruitingApi";
 import {
@@ -196,6 +197,7 @@ const RecruitingProfileForm = ({
             ? " This posting doesn't collect a resume; uploading only saves you time and the file itself isn't saved."
             : " The file you upload is saved with your application."}
         </p>
+        <FieldError errors={errors} errorKey="profile:resume" />
         {existingResume && (
           <div className="rounded-md border border-muted-foreground/30 p-2 text-sm">
             <div className="flex items-center justify-between">

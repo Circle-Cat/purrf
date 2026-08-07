@@ -88,7 +88,7 @@ const answered = (value) => {
  * one", not "a half-filled one is fine". The section-level "add at least one"
  * therefore only ever fires while the section is genuinely empty.
  *
- * @param {{profileConfig?: object, profile?: object}} given
+ * @param {{profileConfig?: object, profile?: object, resume?: object}} given
  * @param {Record<string, string>} errors Accumulator, mutated in place.
  */
 const collectProfileErrors = (given, errors) => {
@@ -99,6 +99,18 @@ const collectProfileErrors = (given, errors) => {
   // One `now` for the whole form, so two rows cannot be judged against
   // different months.
   const now = new Date();
+
+  // First, because the résumé block is rendered above the personal fields.
+  //
+  // `=== "required"` exactly, never `!== "optional"`: `off` means the posting
+  // collects no résumé at all and the server discards any file attached, so
+  // demanding one there would ask the candidate for a file that is thrown
+  // away. What counts is the stored key, whatever produced it -- a file picked
+  // this session or one carried over from a previous application -- which is
+  // also all `_validate_submission` looks at.
+  if (config.resume === "required" && !given.resume?.objectKey) {
+    errors[profileKey("resume")] = "A résumé is required";
+  }
 
   Object.entries(validatePersonal(entered.personal)).forEach(
     ([field, message]) => {
