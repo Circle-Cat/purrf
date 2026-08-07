@@ -1195,6 +1195,58 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertIn("2", message)
         self.assertNotIn("rpf-9", message)
 
+    async def test_an_off_education_section_is_not_stored(self):
+        """A posting that collects no education must not keep any.
+
+        The candidate never saw the section -- it is not rendered -- so rows
+        reaching here came from a résumé parse or an older submission, and
+        storing them would put data on the application that nobody reviewed
+        and that a later write-back could push into the profile.
+        """
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "off", "workExperience": "optional"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self._submit_answers({}, education=[COMPLETE_EDUCATION])
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["education"], [])
+
+    async def test_an_off_experience_section_is_not_stored(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "optional", "workExperience": "off"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self._submit_answers({}, experience=[COMPLETE_EXPERIENCE])
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["experience"], [])
+
+    async def test_a_collected_section_is_still_stored(self):
+        """The strip is scoped to `off`; anything else passes through."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "optional", "workExperience": "required"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self._submit_answers(
+            {}, education=[COMPLETE_EDUCATION], experience=[COMPLETE_EXPERIENCE]
+        )
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["education"], [COMPLETE_EDUCATION])
+        self.assertEqual(created_sub.submission["experience"], [COMPLETE_EXPERIENCE])
+
+    async def test_a_section_with_no_config_at_all_is_stored(self):
+        """`off` is opt-in; a posting saying nothing collects both."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self._submit_answers({}, education=[COMPLETE_EDUCATION])
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["education"], [COMPLETE_EDUCATION])
+
     async def test_get_mine_does_not_commit(self):
         result = await self.service.get_mine(self.session, self._ctx(), 1)
         self.assertIsNone(result)
