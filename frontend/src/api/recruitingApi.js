@@ -74,6 +74,11 @@ export const uploadResume = (file) => {
   form.append("file", file);
   return request.post(API_ENDPOINTS.RECRUITING_RESUMES, form, {
     headers: { "Content-Type": "multipart/form-data" },
+    // The shared instance allows 10s, which is a request/response round trip
+    // budget, not an upload one: a few-megabyte PDF on a slow uplink aborts
+    // partway and the candidate is told their résumé failed for no reason
+    // they can act on.
+    timeout: 120000,
   });
 };
 

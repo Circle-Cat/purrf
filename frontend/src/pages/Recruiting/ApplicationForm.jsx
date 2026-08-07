@@ -26,6 +26,13 @@ import {
 } from "@/components/ui/dialog";
 
 /**
+ * The server's answer when a create lands on an application that already
+ * exists. Matched on the message because that is all the API returns; the
+ * consequence of a miss is the old behaviour, not a wrong action.
+ */
+const ALREADY_APPLIED = /already have an application/i;
+
+/**
  * Candidate application form for a published job. Owns the applicant's
  * profile/answers/resume state and submits it via `submitApplication`
  * (create) or `updateApplication` (edit, when `existing` is provided). Both
@@ -104,6 +111,10 @@ const ApplicationForm = ({
   // fixed, never added to while typing, so a half-filled form does not turn
   // red under someone still working through it.
   const [errors, setErrors] = useState({});
+  // A résumé upload runs beside the form, so without this the candidate can
+  // submit while their file is still on the wire and land an application that
+  // has no résumé attached at all.
+  const [resumeUploading, setResumeUploading] = useState(false);
   const [prefillLoading, setPrefillLoading] = useState(!existing && !seed);
 
   useEffect(() => {
@@ -248,6 +259,15 @@ const ApplicationForm = ({
       if (saveToProfile) await writeBackProfile();
       onSubmitted(res?.data ?? res);
     } catch (e) {
+      if (ALREADY_APPLIED.test(e.message ?? "")) {
+        // The application exists -- this is a create whose response was lost,
+        // typically to a timeout, and every retry from here says the same
+        // thing. Move the candidate on rather than leaving them pressing a
+        // button that can only ever fail.
+        toast.success("Your application is already in.");
+        onSubmitted(null);
+        return;
+      }
       toast.error(e.message);
     } finally {
       setSubmitting(false);
@@ -294,6 +314,7 @@ const ApplicationForm = ({
         onAnswerChange={(id, v) => setAnswers((a) => ({ ...a, [id]: v }))}
         contactEmail={user?.email ?? ""}
         errors={errors}
+        onResumeUploadingChange={setResumeUploading}
         onResumeStored={setResume}
         existingResume={existingResume}
       />
@@ -305,8 +326,8 @@ const ApplicationForm = ({
         />
         Also save to my profile
       </Label>
-      <Button onClick={submit} disabled={submitting}>
-        Submit application
+      <Button onClick={submit} disabled={submitting || resumeUploading}>
+        {resumeUploading ? "Uploading résumé…" : "Submit application"}
       </Button>
       <Dialog
         open={pendingDiscard !== null}

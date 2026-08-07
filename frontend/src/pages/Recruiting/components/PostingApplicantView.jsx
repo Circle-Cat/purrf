@@ -36,6 +36,7 @@ const PostingApplicantView = ({
   onResumeStored,
   existingResume,
   errors = {},
+  onResumeUploadingChange,
 }) => {
   const [internalAnswers, setInternalAnswers] = useState({});
   const answers = controlledAnswers ?? internalAnswers;
@@ -66,6 +67,7 @@ const PostingApplicantView = ({
         onResumeStored={onResumeStored}
         existingResume={existingResume}
         errors={errors}
+        onUploadingChange={onResumeUploadingChange}
       />
       <FormRenderer
         questions={questions}
