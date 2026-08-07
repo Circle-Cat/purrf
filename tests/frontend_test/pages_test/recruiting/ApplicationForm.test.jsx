@@ -712,6 +712,9 @@ describe("ApplicationForm", () => {
       expect(profileApi.updateMyProfile).toHaveBeenCalledWith({
         education: [
           {
+            // The profile's own row id, so this updates that row rather than
+            // replacing it with a copy under a new id.
+            id: 41,
             school: "Peking University",
             degree: "Bachelor",
             fieldOfStudy: "Computer Science",

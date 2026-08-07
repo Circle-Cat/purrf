@@ -226,3 +226,21 @@ describe("buildWriteBackPayload only writes blocks the posting showed", () => {
     expect(payload).toEqual({ education: [] });
   });
 });
+
+describe("buildNewWriteBackRows preserves a row's profile identity", () => {
+  it("sends the profile row id back so the row is updated, not recreated", () => {
+    const { education, workHistory } = buildNewWriteBackRows({
+      education: [{ ...COMPLETE_EDUCATION, profileRowId: 41 }],
+      experience: [{ ...COMPLETE_EXPERIENCE, profileRowId: 42 }],
+    });
+    expect(education[0].id).toBe(41);
+    expect(workHistory[0].id).toBe(42);
+  });
+
+  it("sends no id for a row the candidate added here", () => {
+    const { education } = buildNewWriteBackRows({
+      education: [COMPLETE_EDUCATION],
+    });
+    expect(education[0]).not.toHaveProperty("id");
+  });
+});
