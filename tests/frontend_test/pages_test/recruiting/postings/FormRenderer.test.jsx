@@ -573,7 +573,9 @@ describe("read-only mode", () => {
   it("keeps a counter on a budgeted long text from the first keystroke", () => {
     render(
       <FormRenderer
-        questions={[{ id: "q1", type: "long_text", label: "Why", maxLength: 200 }]}
+        questions={[
+          { id: "q1", type: "long_text", label: "Why", maxLength: 200 },
+        ]}
         answers={{ q1: "hello" }}
       />,
     );
@@ -627,7 +629,12 @@ describe("read-only mode", () => {
     render(
       <FormRenderer
         questions={[
-          { id: "q1", type: "exact_text", label: "Confirm", expectedValue: "YES" },
+          {
+            id: "q1",
+            type: "exact_text",
+            label: "Confirm",
+            expectedValue: "YES",
+          },
         ]}
         answers={{ q1: "x".repeat(600) }}
       />,
