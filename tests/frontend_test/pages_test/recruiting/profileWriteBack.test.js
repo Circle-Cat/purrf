@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 
 import {
   buildNewWriteBackRows,
+  buildWriteBackPayload,
   hasPersonalWriteBackInput,
 } from "@/pages/Recruiting/profileWriteBack";
 
@@ -140,5 +141,88 @@ describe("hasPersonalWriteBackInput", () => {
     expect(hasPersonalWriteBackInput({ lastName: "Liu" })).toBe(true);
     expect(hasPersonalWriteBackInput({ linkedin: "x" })).toBe(true);
     expect(hasPersonalWriteBackInput({ timezone: "Asia/Taipei" })).toBe(true);
+  });
+});
+
+describe("buildWriteBackPayload only writes blocks the posting showed", () => {
+  // Pinned here rather than through the form: after the read invariant, a
+  // hidden block's rows always equal the profile's, so the form cannot
+  // construct a case where this gate is the thing that saves you. It still
+  // guards the payload builder for any caller that can.
+  const STORED = {
+    user: {
+      firstName: "Cand",
+      lastName: "Idate",
+      preferredName: null,
+      timezone: "Asia/Taipei",
+      linkedinLink: null,
+      communicationMethod: "email",
+    },
+    education: [],
+    workHistory: [],
+  };
+  const PERSONAL = {
+    firstName: "Cand",
+    lastName: "Idate",
+    timezone: "Asia/Taipei",
+  };
+  const rows = {
+    education: [
+      {
+        school: "Peking University",
+        degree: "MSc",
+        fieldOfStudy: "Statistics",
+        startDate: "2022-09-01",
+        endDate: "2024-06-01",
+      },
+    ],
+    workHistory: [
+      {
+        title: "Backend Engineer",
+        companyOrOrganization: "Circle Cat",
+        isCurrentJob: false,
+        startDate: "2022-07-01",
+        endDate: "2024-03-01",
+      },
+    ],
+  };
+
+  it("writes a block the posting showed", () => {
+    const payload = buildWriteBackPayload(STORED, rows, PERSONAL, {
+      education: true,
+      workExperience: true,
+    });
+    expect(payload.education).toHaveLength(1);
+    expect(payload.workHistory).toHaveLength(1);
+  });
+
+  it("leaves a hidden block alone even with rows to write", () => {
+    const payload = buildWriteBackPayload(STORED, rows, PERSONAL, {
+      education: false,
+      workExperience: true,
+    });
+    expect(payload).not.toHaveProperty("education");
+    expect(payload.workHistory).toHaveLength(1);
+  });
+
+  it("writes nothing at all when every block is hidden", () => {
+    expect(
+      buildWriteBackPayload(STORED, rows, PERSONAL, {
+        education: false,
+        workExperience: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("clears a shown block the candidate emptied", () => {
+    // Emptiness is not a reason to skip: on a block they were shown, it is a
+    // deletion they asked for.
+    const payload = buildWriteBackPayload(
+      { ...STORED, education: [{ id: 41, school: "Tsinghua" }] },
+      { education: [], workHistory: [] },
+      PERSONAL,
+      { education: true, workExperience: true },
+    );
+    expect(payload).toEqual({ education: [] });
   });
 });

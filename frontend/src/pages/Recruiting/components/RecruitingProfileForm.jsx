@@ -241,6 +241,7 @@ const RecruitingProfileForm = ({
         onChange={setValue}
         requirements={requirements}
         errors={errors}
+        note="From your profile. When you submit, you can save any changes back to it."
       />
     </div>
   );

@@ -101,6 +101,17 @@ export const listMyApplications = () =>
   request.get(API_ENDPOINTS.RECRUITING_MY_APPLICATIONS);
 
 /**
+ * The profile blocks of the caller's most recent submission, across every job.
+ *
+ * What the application form falls back to for a block the caller's profile has
+ * nothing for -- someone who applied once without saving to their profile
+ * should not have to retype it. Answers are deliberately not included: they
+ * belong to the job they were asked for.
+ */
+export const getMyLatestProfile = () =>
+  request.get(API_ENDPOINTS.RECRUITING_MY_LATEST_PROFILE);
+
+/**
  * List all jobs accessible to the current recruiter on the board (job switcher).
  */
 export const listBoardJobs = () =>

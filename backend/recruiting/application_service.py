@@ -840,6 +840,36 @@ class ApplicationService:
             application, current_sub, editable=editable
         )
 
+    async def get_my_latest_profile(self, session, current_user: UserContextDto):
+        """The profile blocks of this candidate's most recent submission.
+
+        What the application form falls back to when the candidate's profile
+        has nothing for a block: someone who applied once without saving to
+        their profile should not have to retype it for the next posting.
+
+        Only the profile blocks. Answers belong to the job they were asked
+        for -- prefilling another posting's answers would be wrong, whatever
+        the questions happened to be.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            current_user (UserContextDto): The caller, who can only ever read
+                their own submissions here.
+
+        Returns:
+            dict: `personal`, `education` and `experience`, empty when the
+                candidate has never submitted anything.
+        """
+        latest = await self.application_submission_repository.get_latest_by_user(
+            session, current_user.user_id
+        )
+        submission = (latest.submission if latest is not None else None) or {}
+        return {
+            "personal": submission.get("personal") or {},
+            "education": submission.get("education") or [],
+            "experience": submission.get("experience") or [],
+        }
+
     async def get_mine(
         self, session: AsyncSession, current_user: UserContextDto, job_id: int
     ) -> ApplicationDto | None:
