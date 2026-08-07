@@ -102,7 +102,31 @@ describe("questions", () => {
     const errors = validatePosting(
       withQuestions({ id: "q1", type: "long_text", label: "Why?", [field]: 0 }),
     );
-    expect(errors[questionKey("q1", field)]).toBe("Must be greater than 0");
+    expect(errors[questionKey("q1", field)]).toBe("Must be between 1 and 5000");
+  });
+
+  it("rejects a budget past the hard ceiling", () => {
+    const errors = validatePosting({
+      title: "Engineer",
+      formSchema: {
+        questions: [
+          { id: "q1", type: "long_text", label: "Why", maxLength: 5001 },
+        ],
+      },
+    });
+    expect(errors["q:q1:maxLength"]).toBe("Must be between 1 and 5000");
+  });
+
+  it("accepts a budget of exactly the hard ceiling", () => {
+    const errors = validatePosting({
+      title: "Engineer",
+      formSchema: {
+        questions: [
+          { id: "q1", type: "long_text", label: "Why", maxLength: 5000 },
+        ],
+      },
+    });
+    expect(errors["q:q1:maxLength"]).toBeUndefined();
   });
 
   it("rejects a blank exact_text expected value", () => {
