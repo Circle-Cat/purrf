@@ -232,6 +232,41 @@ function NoteTagPopover({
 }
 
 /**
+ * Renders a visual comparison of a field's previous and updated values.
+ * The `note` field's tag array is joined into a semicolon-separated
+ * string first; other fields' values are already plain strings.
+ *
+ * @param {{
+ *   change: {field: string, label: string, from: (string|string[]), to: (string|string[])},
+ *   mentorName: string,
+ *   menteeName: string,
+ * }} props
+ */
+function FieldChangeDiff({ change, mentorName, menteeName }) {
+  const formatValue = (value) => {
+    if (change.field !== "note") return value;
+    return value.length > 0
+      ? value
+          .map((tag) => noteTagLabel(tag, { mentorName, menteeName }))
+          .join("; ")
+      : "No note";
+  };
+
+  return (
+    <p className="break-words text-sm text-gray-900 dark:text-gray-100">
+      <span className="font-medium">{change.label}:</span>{" "}
+      <span className="font-medium text-gray-500 line-through dark:text-gray-400">
+        {formatValue(change.from)}
+      </span>{" "}
+      <span className="text-gray-400 dark:text-gray-500">→</span>{" "}
+      <span className="font-medium text-violet-600/85 dark:text-violet-400/85">
+        {formatValue(change.to)}
+      </span>
+    </p>
+  );
+}
+
+/**
  * Dialog showing a pair's full meeting log for a round. Read-only by default;
  * a non-empty v2 pair gets an Edit mode for Complete Status/Note and batch
  * deletion. Update and delete are independent actions, each sent as its own
@@ -282,10 +317,46 @@ const MeetingLogDialog = ({
   const [isSaving, setIsSaving] = useState(false);
   const canEdit = roundVersion === "v2" && meetings.length > 0;
 
-  const updateCount = Object.keys(pendingUpdates).filter(
+  const updateIds = Object.keys(pendingUpdates).filter(
     (id) => !pendingDeleteIds.has(id),
-  ).length;
+  );
+  const updateCount = updateIds.length;
   const deleteCount = pendingDeleteIds.size;
+
+  // Row number matches the table's own "#" column.
+  const affectedMeetingRows = (ids) =>
+    meetings
+      .map((meeting, i) => ({ ...meeting, rowNumber: i + 1 }))
+      .filter((meeting) => ids.includes(meeting.meetingId));
+
+  /**
+   * Generates a list of changed fields between the original meeting and its pending patch.
+   *
+   * @param {{meetingId: string, isCompleted: boolean, note: string[]}} meeting - The original meeting data.
+   * @returns {Array<{field: string, label: string, from: (string|string[]), to: (string|string[])}>} A list of changes per field.
+   */
+  const describeFieldChanges = (meeting) => {
+    const patch = pendingUpdates[meeting.meetingId] ?? {};
+    const changes = [];
+    if (patch.isCompleted !== undefined) {
+      const statusLabel = (v) => (v ? "Completed" : "Incomplete");
+      changes.push({
+        field: "isCompleted",
+        label: "Complete Status",
+        from: statusLabel(meeting.isCompleted),
+        to: statusLabel(patch.isCompleted),
+      });
+    }
+    if (patch.note !== undefined) {
+      changes.push({
+        field: "note",
+        label: "Note",
+        from: meeting.note,
+        to: patch.note,
+      });
+    }
+    return changes;
+  };
 
   const resetEditState = () => {
     setIsEditing(false);
@@ -374,10 +445,18 @@ const MeetingLogDialog = ({
     }
   };
 
+  const handleOpenChange = (next) => {
+    if (!next && confirmAction) {
+      setConfirmAction(null);
+      return;
+    }
+    onOpenChange(next);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        className={`z-[200] ${confirmAction ? "sm:max-w-sm" : "sm:max-w-5xl"}`}
+        className={`z-[200] max-h-[85vh] overflow-y-auto ${confirmAction ? "sm:max-w-lg" : "sm:max-w-5xl"}`}
         onPointerDownOutside={(e) => e.preventDefault()}
       >
         {confirmAction ? (
@@ -393,18 +472,64 @@ const MeetingLogDialog = ({
               </DialogDescription>
             </DialogHeader>
             <div className="text-sm text-center">
-              <div className="inline-flex flex-col items-start gap-1">
+              <div className="flex flex-col items-center gap-1">
                 {confirmAction === "update" && (
-                  <p className="flex items-center gap-2">
-                    <Pencil className="h-4 w-4 shrink-0" />
-                    Updates: {updateCount}
-                  </p>
+                  <>
+                    <p className="flex items-center gap-2">
+                      <Pencil className="h-4 w-4 shrink-0" />
+                      Updates: {updateCount}
+                    </p>
+                    <div className="w-full max-h-[50vh] overflow-y-auto space-y-2">
+                      {affectedMeetingRows(updateIds).map((meeting) => (
+                        <div
+                          key={meeting.meetingId}
+                          className="rounded-lg border border-violet-100 bg-violet-50 p-3 text-left dark:border-violet-800/40 dark:bg-violet-950/30"
+                        >
+                          <p className="break-words text-sm font-medium text-gray-900 dark:text-gray-100">
+                            # {meeting.rowNumber}{" "}
+                            {formatMeetingTimeRange(
+                              meeting.startDatetime,
+                              meeting.endDatetime,
+                            )}
+                          </p>
+                          <div className="mt-2 space-y-2">
+                            {describeFieldChanges(meeting).map((change) => (
+                              <FieldChangeDiff
+                                key={change.field}
+                                change={change}
+                                mentorName={mentorName}
+                                menteeName={menteeName}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
                 {confirmAction === "delete" && (
-                  <p className="flex items-center gap-2">
-                    <Trash2 className="h-4 w-4 shrink-0" />
-                    Deletes: {deleteCount}
-                  </p>
+                  <>
+                    <p className="flex items-center gap-2">
+                      <Trash2 className="h-4 w-4 shrink-0" />
+                      Deletes: {deleteCount}
+                    </p>
+                    <div className="max-h-[50vh] overflow-y-auto">
+                      {affectedMeetingRows([...pendingDeleteIds]).map(
+                        (meeting) => (
+                          <p
+                            key={meeting.meetingId}
+                            className="break-words text-sm font-medium text-gray-900 dark:text-gray-100"
+                          >
+                            # {meeting.rowNumber}{" "}
+                            {formatMeetingTimeRange(
+                              meeting.startDatetime,
+                              meeting.endDatetime,
+                            )}
+                          </p>
+                        ),
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
               <p className="mt-2">These changes cannot be undone.</p>
