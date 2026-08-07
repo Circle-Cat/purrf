@@ -569,4 +569,69 @@ describe("read-only mode", () => {
     );
     expect(screen.queryByText(/characters/)).not.toBeInTheDocument();
   });
+
+  it("keeps a counter on a budgeted long text from the first keystroke", () => {
+    render(
+      <FormRenderer
+        questions={[{ id: "q1", type: "long_text", label: "Why", maxLength: 200 }]}
+        answers={{ q1: "hello" }}
+      />,
+    );
+    expect(screen.getByText("5 / 200 characters")).toBeInTheDocument();
+  });
+
+  it("shows no counter on a short text that is within its ceiling", () => {
+    render(
+      <FormRenderer
+        questions={[{ id: "q1", type: "short_text", label: "City" }]}
+        answers={{ q1: "Taipei" }}
+      />,
+    );
+    expect(screen.queryByText(/characters$/)).not.toBeInTheDocument();
+  });
+
+  it("surfaces a counter once a short text is over its ceiling", () => {
+    render(
+      <FormRenderer
+        questions={[{ id: "q1", type: "short_text", label: "City" }]}
+        answers={{ q1: "x".repeat(256) }}
+      />,
+    );
+    expect(screen.getByText("256 / 255 characters")).toHaveClass(
+      "text-destructive",
+    );
+  });
+
+  it("shows no counter on an unbudgeted long text within the fallback", () => {
+    render(
+      <FormRenderer
+        questions={[{ id: "q1", type: "long_text", label: "Why" }]}
+        answers={{ q1: "short answer" }}
+      />,
+    );
+    expect(screen.queryByText(/characters$/)).not.toBeInTheDocument();
+  });
+
+  it("shows no counter at all in read-only mode", () => {
+    render(
+      <FormRenderer
+        questions={[{ id: "q1", type: "short_text", label: "City" }]}
+        answers={{ q1: "x".repeat(256) }}
+        readOnly
+      />,
+    );
+    expect(screen.queryByText(/characters$/)).not.toBeInTheDocument();
+  });
+
+  it("never counts an exact text answer", () => {
+    render(
+      <FormRenderer
+        questions={[
+          { id: "q1", type: "exact_text", label: "Confirm", expectedValue: "YES" },
+        ]}
+        answers={{ q1: "x".repeat(600) }}
+      />,
+    );
+    expect(screen.queryByText(/characters$/)).not.toBeInTheDocument();
+  });
 });
