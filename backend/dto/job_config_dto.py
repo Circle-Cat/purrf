@@ -12,7 +12,7 @@ QuestionType = Literal[
 # Which optional fields each question type is allowed to carry.
 _ALLOWED_FIELDS: dict[str, set[str]] = {
     "short_text": set(),
-    "long_text": {"max_length", "max_words"},
+    "long_text": {"max_length"},
     "single_choice": {"options", "other_option"},
     "multi_choice": {"options", "max_selections", "other_option"},
     "exact_text": {"expected_value"},
@@ -74,8 +74,10 @@ class QuestionDto(BaseRequestDto):
     show_when: ShowWhenDto | None = None
     options: list[str] | None = None
     max_selections: int | None = None
+    # Characters, not words: a word count splits on whitespace and so means
+    # nothing for an answer written in Chinese, where one limit would bind
+    # for some candidates and never for others.
     max_length: int | None = None
-    max_words: int | None = None
     expected_value: str | None = None
     other_option: str | None = None
 
@@ -115,7 +117,6 @@ class QuestionDto(BaseRequestDto):
                 "options",
                 "max_selections",
                 "max_length",
-                "max_words",
                 "expected_value",
                 "other_option",
             )
@@ -142,8 +143,6 @@ class QuestionDto(BaseRequestDto):
         if self.type == "long_text":
             if self.max_length is not None and self.max_length <= 0:
                 raise ValueError("max_length must be > 0")
-            if self.max_words is not None and self.max_words <= 0:
-                raise ValueError("max_words must be > 0")
         if self.type == "exact_text":
             if not self.expected_value or not self.expected_value.strip():
                 raise ValueError("exact_text requires a non-empty expected_value")

@@ -274,7 +274,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             title="T",
             formSchema={
                 "questions": [
-                    {"id": "q1", "type": "long_text", "label": "Why", "maxWords": 300}
+                    {"id": "q1", "type": "long_text", "label": "Why", "maxLength": 300}
                 ]
             },
             profileConfig={
@@ -285,7 +285,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         )
         await self.service.create_job(self.session, dto, created_by=1)
         entity = self.repo.create_job.call_args.args[1]
-        self.assertEqual(entity.form_schema["questions"][0]["maxWords"], 300)
+        self.assertEqual(entity.form_schema["questions"][0]["maxLength"], 300)
         self.assertEqual(entity.profile_config["education"], "required")
 
     def _form_dto(self, *, next_seq=None, ids=("q1",)):

@@ -98,7 +98,7 @@ describe("questions", () => {
     });
   });
 
-  it.each(["maxLength", "maxWords"])("rejects %s of 0", (field) => {
+  it.each(["maxLength"])("rejects %s of 0", (field) => {
     const errors = validatePosting(
       withQuestions({ id: "q1", type: "long_text", label: "Why?", [field]: 0 }),
     );
