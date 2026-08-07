@@ -360,6 +360,76 @@ describe("ApplicationForm", () => {
     });
   });
 
+  describe("in-flight résumé and lost responses", () => {
+    it("holds Submit while a résumé is still uploading", async () => {
+      // The preview renders the moment the file is picked, so without this a
+      // candidate who clicks Submit two seconds later lands an application
+      // with no résumé attached and no error to tell them.
+      let resolveUpload;
+      api.uploadResume.mockReturnValue(
+        new Promise((resolve) => {
+          resolveUpload = resolve;
+        }),
+      );
+      render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
+      await screen.findByLabelText("Contact email");
+
+      fireEvent.change(screen.getByTestId("resume-file-input"), {
+        target: {
+          files: [
+            new File(["%PDF-1.4"], "cv.pdf", { type: "application/pdf" }),
+          ],
+        },
+      });
+
+      const button = await screen.findByRole("button", {
+        name: /uploading résumé/i,
+      });
+      expect(button).toBeDisabled();
+      expect(api.submitApplication).not.toHaveBeenCalled();
+
+      resolveUpload({ data: { sha256: "a", objectKey: "k" } });
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: /submit application/i }),
+        ).not.toBeDisabled(),
+      );
+    });
+
+    it("moves on instead of looping when the application already exists", async () => {
+      // A create whose response was lost -- typically to a timeout -- leaves
+      // the row committed, so every retry returns this and only a manual
+      // reload used to get the candidate out.
+      const user = userEvent.setup();
+      api.submitApplication.mockRejectedValue(
+        new Error(
+          "you already have an application for this job; edit it instead",
+        ),
+      );
+      const onSubmitted = vi.fn();
+      render(<ApplicationForm job={JOB} onSubmitted={onSubmitted} />);
+      await screen.findByLabelText("Contact email");
+
+      await user.click(screen.getByRole("button", { name: /submit/i }));
+
+      await waitFor(() => expect(onSubmitted).toHaveBeenCalled());
+      expect(toast.error).not.toHaveBeenCalled();
+    });
+
+    it("still surfaces any other failure as an error", async () => {
+      const user = userEvent.setup();
+      api.submitApplication.mockRejectedValue(new Error("boom"));
+      const onSubmitted = vi.fn();
+      render(<ApplicationForm job={JOB} onSubmitted={onSubmitted} />);
+      await screen.findByLabelText("Contact email");
+
+      await user.click(screen.getByRole("button", { name: /submit/i }));
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith("boom"));
+      expect(onSubmitted).not.toHaveBeenCalled();
+    });
+  });
+
   it("renders exactly one Contact email field", async () => {
     render(<ApplicationForm job={JOB} onSubmitted={vi.fn()} />);
     expect(await screen.findAllByLabelText("Contact email")).toHaveLength(1);

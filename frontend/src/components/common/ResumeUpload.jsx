@@ -80,6 +80,9 @@ export default function ResumeUpload({
       previewUrlRef.current = url;
       setPreview({ url, name: file.name });
     }
+    // Not awaited: the parent reports the upload separately via
+    // `onUploadingChange`, which is what actually holds Submit, and parsing
+    // is the cheap half that should not queue behind a multi-megabyte POST.
     onFile?.(file);
     setIsParsing(true);
     let result;

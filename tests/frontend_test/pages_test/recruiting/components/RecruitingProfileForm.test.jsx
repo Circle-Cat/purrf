@@ -138,7 +138,7 @@ describe("RecruitingProfileForm", () => {
     });
   });
 
-  it("toasts an error and does not call onResumeStored when the resume upload fails", async () => {
+  it("toasts and stores no key when the resume upload fails", async () => {
     api.uploadResume.mockRejectedValue(new Error("upload failed"));
     const onResumeStored = vi.fn();
     renderForm({}, { onResumeStored });
@@ -147,7 +147,58 @@ describe("RecruitingProfileForm", () => {
 
     await waitFor(() => expect(api.uploadResume).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
-    expect(onResumeStored).not.toHaveBeenCalled();
+    // Cleared, never stored: the preview is showing the file the candidate
+    // just picked, so pointing at anything else would misrepresent what is
+    // about to be submitted.
+    expect(onResumeStored).toHaveBeenCalledTimes(1);
+    expect(onResumeStored).toHaveBeenCalledWith({
+      sha256: undefined,
+      objectKey: undefined,
+    });
+  });
+
+  it("stops pointing at the previous resume the moment a new one is picked", async () => {
+    // Otherwise an edit shows the new file's name while the stored key still
+    // refers to the old file, and submitting mid-upload sends the old résumé
+    // under the new file's apparent identity.
+    let resolveUpload;
+    api.uploadResume.mockReturnValue(
+      new Promise((resolve) => {
+        resolveUpload = resolve;
+      }),
+    );
+    const onResumeStored = vi.fn();
+    renderForm({}, { onResumeStored });
+
+    selectResumeFile(pdfFile());
+
+    await waitFor(() =>
+      expect(onResumeStored).toHaveBeenCalledWith({
+        sha256: undefined,
+        objectKey: undefined,
+      }),
+    );
+    resolveUpload({ data: { sha256: "abc", objectKey: "k" } });
+    await waitFor(() =>
+      expect(onResumeStored).toHaveBeenLastCalledWith({
+        sha256: "abc",
+        objectKey: "k",
+      }),
+    );
+  });
+
+  it("reports an upload failure honestly when the posting requires a resume", async () => {
+    // "You can still submit" is false there -- the server rejects it.
+    api.uploadResume.mockRejectedValue(new Error("upload failed"));
+    renderForm({ resume: "required" }, { onResumeStored: vi.fn() });
+
+    selectResumeFile(pdfFile());
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        expect.stringContaining("requires one"),
+      ),
+    );
   });
 
   it("does not call uploadResume when onResumeStored is not provided", async () => {
