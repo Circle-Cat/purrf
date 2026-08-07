@@ -188,7 +188,7 @@ const ApplicationForm = ({
     const found = validateApplication(
       job.formSchema?.questions ?? [],
       answers,
-      { profileConfig: job.profileConfig, profile: profileValue },
+      { profileConfig: job.profileConfig, profile: profileValue, resume },
     );
     setErrors(found);
     const keys = Object.keys(found);
@@ -216,7 +216,7 @@ const ApplicationForm = ({
       const current = validateApplication(
         job.formSchema?.questions ?? [],
         answers,
-        { profileConfig: job.profileConfig, profile: profileValue },
+        { profileConfig: job.profileConfig, profile: profileValue, resume },
       );
       const next = {};
       keys.forEach((key) => {
@@ -227,7 +227,7 @@ const ApplicationForm = ({
         keys.every((key) => next[key] === shown[key]);
       return unchanged ? shown : next;
     });
-  }, [answers, profileValue, job]);
+  }, [answers, profileValue, resume, job]);
 
   /**
    * Send, having already decided the answers are worth sending and the cost is

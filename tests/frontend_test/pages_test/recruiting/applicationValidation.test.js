@@ -406,3 +406,61 @@ describe("key helpers", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 });
+
+describe("the résumé a posting requires", () => {
+  const check = (resume, level) =>
+    validateApplication(
+      [],
+      {},
+      {
+        profileConfig: { resume: level },
+        profile: { personal: PERSONAL },
+        resume,
+      },
+    );
+
+  it("asks for one when the posting requires it and none is attached", () => {
+    expect(check({ objectKey: null }, "required")[profileKey("resume")]).toBe(
+      "A résumé is required",
+    );
+  });
+
+  it("is satisfied by a résumé carried over from a previous application", () => {
+    // The key is what the server looks at; where it came from is irrelevant.
+    expect(check({ objectKey: "resumes/7.pdf" }, "required")).toEqual({});
+  });
+
+  it("treats a cleared key as no résumé, however it was cleared", () => {
+    // The upload path clears it with `undefined`, Remove with `null`.
+    expect(
+      check({ objectKey: undefined }, "required")[profileKey("resume")],
+    ).toBe("A résumé is required");
+  });
+
+  it("asks for nothing when the posting only invites one", () => {
+    expect(check({ objectKey: null }, "optional")).toEqual({});
+  });
+
+  it("asks for nothing when the posting collects none at all", () => {
+    // `off` means an upload is prefill-only and the server discards the file;
+    // demanding one would ask for a file that is thrown away.
+    expect(check({ objectKey: null }, "off")).toEqual({});
+  });
+
+  it("asks for nothing when the posting says nothing about résumés", () => {
+    expect(check({ objectKey: null }, undefined)).toEqual({});
+  });
+
+  it("comes before the answers, since the résumé sits above them", () => {
+    const errors = validateApplication(
+      [q({ id: "q1", required: true })],
+      {},
+      {
+        profileConfig: { resume: "required" },
+        profile: { personal: PERSONAL },
+        resume: { objectKey: null },
+      },
+    );
+    expect(Object.keys(errors)[0]).toBe(profileKey("resume"));
+  });
+});
