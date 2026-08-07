@@ -8,6 +8,10 @@ from backend.recruiting.application_service import ApplicationService
 from backend.repository.notification_repository import NotificationRepository
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.application_dto import ApplicationSubmitDto, ApplicationEditDto
+from backend.dto.job_config_dto import (
+    LONG_TEXT_MAX_LENGTH,
+    SHORT_TEXT_MAX_LENGTH,
+)
 from backend.dto.user_context_dto import UserContextDto
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
@@ -988,6 +992,40 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             await self._submit_answers({"q1": "x" * 11})
 
         self.assertIn("under 10 characters", str(ctx.exception))
+
+    async def test_short_text_rejects_more_than_the_hard_ceiling(self):
+        self._typed_job({
+            "id": "q1",
+            "type": "short_text",
+            "label": "City",
+        })
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({"q1": "x" * (SHORT_TEXT_MAX_LENGTH + 1)})
+
+        self.assertIn(f"under {SHORT_TEXT_MAX_LENGTH} characters", str(ctx.exception))
+
+    async def test_short_text_accepts_exactly_the_hard_ceiling(self):
+        self._typed_job({
+            "id": "q1",
+            "type": "short_text",
+            "label": "City",
+        })
+
+        await self._submit_answers({"q1": "x" * SHORT_TEXT_MAX_LENGTH})
+        self.sub_repo.create.assert_awaited_once()
+
+    async def test_long_text_without_a_budget_falls_back_to_the_ceiling(self):
+        self._typed_job({
+            "id": "q1",
+            "type": "long_text",
+            "label": "Why",
+        })
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({"q1": "x" * (LONG_TEXT_MAX_LENGTH + 1)})
+
+        self.assertIn(f"under {LONG_TEXT_MAX_LENGTH} characters", str(ctx.exception))
 
     async def test_exact_text_must_match_after_trimming(self):
         self._typed_job({

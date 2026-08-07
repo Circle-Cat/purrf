@@ -12,6 +12,10 @@ from backend.dto.application_dto import (
     ApplicationEditDto,
     ApplicationSubmitDto,
 )
+from backend.dto.job_config_dto import (
+    LONG_TEXT_MAX_LENGTH,
+    SHORT_TEXT_MAX_LENGTH,
+)
 from backend.dto.user_context_dto import UserContextDto
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
@@ -141,7 +145,31 @@ class ApplicationService:
         return True
 
     @staticmethod
-    def _question_value_error(question, value) -> str | None:
+    def _text_answer_cap(question) -> int | None:
+        """The character budget a text question actually enforces.
+
+        `short_text` has no length configuration and never will: choosing that
+        type is the author's statement about length. `long_text` takes the
+        author's budget when they set one and the hard ceiling when they did
+        not, so no text question is ever unbounded.
+
+        Args:
+            question (dict): One question out of the form schema, in the
+                camelCase shape the JSONB column stores.
+
+        Returns:
+            int | None: The budget, or None for a question that is not text.
+        """
+        qtype = question.get("type")
+        if qtype == "short_text":
+            return SHORT_TEXT_MAX_LENGTH
+        if qtype == "long_text":
+            authored = question.get("maxLength")
+            return LONG_TEXT_MAX_LENGTH if authored is None else authored
+        return None
+
+    @classmethod
+    def _question_value_error(cls, question, value) -> str | None:
         """Why an answer does not fit the question that was asked, if it does not.
 
         The form's own constraints -- an option list, a selection cap, a
@@ -175,10 +203,9 @@ class ApplicationService:
             cap = question.get("maxSelections")
             if cap is not None and len(value) > cap:
                 return f"{label}: pick at most {cap}"
-        if qtype == "long_text":
-            cap = question.get("maxLength")
-            if cap is not None and len(str(value)) > cap:
-                return f"{label}: keep this under {cap} characters"
+        cap = cls._text_answer_cap(question)
+        if cap is not None and len(str(value)) > cap:
+            return f"{label}: keep this under {cap} characters"
         if qtype == "exact_text":
             expected = question.get("expectedValue") or ""
             if str(value).strip() != expected:
