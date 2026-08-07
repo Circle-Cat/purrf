@@ -1,19 +1,22 @@
+import FieldError from "@/components/common/FieldError";
 import { Button } from "@/components/ui/button";
 import { months, years, years60Range, DegreeEnum } from "@/pages/Profile/utils";
 
 const LABEL = "mb-2 block text-sm font-semibold text-foreground";
 const FIELD_BASE =
   "rounded-[10px] border-2 bg-background px-4 py-3 text-[0.9375rem] text-foreground transition-all focus:border-primary focus:shadow-sm focus:outline-none";
-const ERROR_TEXT = "mt-1 block text-xs text-destructive";
 
 /**
  * Controlled form body for a single education entry. Pure presentation: the
- * parent owns the list and validation, passing the item, its errors (keyed
- * `${id}-${field}`), and change/delete callbacks.
+ * parent owns the list and validation, passing the item, its errors, and
+ * change/delete callbacks.
  *
  * @param {Object} props
  * @param {Object} props.item - Education entry.
- * @param {Object<string, string>} props.errors - Validation errors keyed `${id}-${field}`.
+ * @param {Object<string, string>} props.errors - Validation errors, keyed by
+ *   `errorKeyFor` below.
+ * @param {(field: string) => string} [props.errorKeyFor] - Builds the
+ *   error key for one field; defaults to `${id}-${field}`.
  * @param {(id: string|number, field: string, value: any) => void} props.onChange
  * @param {(id: string|number) => void} props.onDelete
  * @returns {JSX.Element}
@@ -21,10 +24,12 @@ const ERROR_TEXT = "mt-1 block text-xs text-destructive";
 export default function EducationFormItem({
   item,
   errors,
+  errorKeyFor,
   onChange,
   onDelete,
 }) {
-  const hasError = (field) => errors[`${item.id}-${field}`];
+  const keyFor = errorKeyFor ?? ((field) => `${item.id}-${field}`);
+  const hasError = (field) => errors[keyFor(field)];
   const fieldClass = (field, width = "w-full") =>
     `${width} ${FIELD_BASE}${hasError(field) ? " border-destructive" : ""}`;
 
@@ -41,9 +46,7 @@ export default function EducationFormItem({
           value={item.institution || ""}
           onChange={(e) => onChange(item.id, "institution", e.target.value)}
         />
-        {hasError("institution") && (
-          <span className={ERROR_TEXT}>{hasError("institution")}</span>
-        )}
+        <FieldError errors={errors} errorKey={keyFor("institution")} />
       </div>
 
       {/* Degree */}
@@ -63,9 +66,7 @@ export default function EducationFormItem({
             </option>
           ))}
         </select>
-        {hasError("degree") && (
-          <span className={ERROR_TEXT}>{hasError("degree")}</span>
-        )}
+        <FieldError errors={errors} errorKey={keyFor("degree")} />
       </div>
 
       {/* Field of study */}
@@ -79,9 +80,7 @@ export default function EducationFormItem({
           value={item.field || ""}
           onChange={(e) => onChange(item.id, "field", e.target.value)}
         />
-        {hasError("field") && (
-          <span className={ERROR_TEXT}>{hasError("field")}</span>
-        )}
+        <FieldError errors={errors} errorKey={keyFor("field")} />
       </div>
 
       {/* Start date */}
@@ -115,9 +114,7 @@ export default function EducationFormItem({
             ))}
           </select>
         </div>
-        {hasError("startDate") && (
-          <span className={ERROR_TEXT}>{hasError("startDate")}</span>
-        )}
+        <FieldError errors={errors} errorKey={keyFor("startDate")} />
       </div>
 
       {/* End date */}
@@ -151,9 +148,7 @@ export default function EducationFormItem({
             ))}
           </select>
         </div>
-        {hasError("endDate") && (
-          <span className={ERROR_TEXT}>{hasError("endDate")}</span>
-        )}
+        <FieldError errors={errors} errorKey={keyFor("endDate")} />
       </div>
 
       <Button

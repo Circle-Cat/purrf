@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 
-import { buildNewWriteBackRows } from "@/pages/Recruiting/profileWriteBack";
+import {
+  buildNewWriteBackRows,
+  hasPersonalWriteBackInput,
+} from "@/pages/Recruiting/profileWriteBack";
 
 const COMPLETE_EDUCATION = {
   id: "rpf-1",
@@ -113,5 +116,29 @@ describe("buildNewWriteBackRows", () => {
       education: [],
       workHistory: [],
     });
+  });
+});
+
+describe("hasPersonalWriteBackInput", () => {
+  // Pinned here rather than through the application form: that form now
+  // requires a name and a timezone of every submission, so by the time one
+  // goes out this can no longer be false. The guard stays because
+  // `buildWriteBackPayload` is not the form's alone to reason about.
+  it("is false for an empty personal block", () => {
+    expect(hasPersonalWriteBackInput({})).toBe(false);
+    expect(hasPersonalWriteBackInput(undefined)).toBe(false);
+  });
+
+  it("is false when every field is whitespace", () => {
+    expect(hasPersonalWriteBackInput({ firstName: " ", lastName: "  " })).toBe(
+      false,
+    );
+  });
+
+  it("is true as soon as any one of the four fields is filled", () => {
+    expect(hasPersonalWriteBackInput({ firstName: "Ann" })).toBe(true);
+    expect(hasPersonalWriteBackInput({ lastName: "Liu" })).toBe(true);
+    expect(hasPersonalWriteBackInput({ linkedin: "x" })).toBe(true);
+    expect(hasPersonalWriteBackInput({ timezone: "Asia/Taipei" })).toBe(true);
   });
 });

@@ -1,10 +1,10 @@
+import FieldError from "@/components/common/FieldError";
 import { Button } from "@/components/ui/button";
 import { months, years } from "@/pages/Profile/utils";
 
 const LABEL = "mb-2 block text-sm font-semibold text-foreground";
 const FIELD_BASE =
   "rounded-[10px] border-2 bg-background px-4 py-3 text-[0.9375rem] text-foreground transition-all focus:border-primary focus:shadow-sm focus:outline-none";
-const ERROR_TEXT = "mt-1 block text-xs text-destructive";
 
 /**
  * Controlled form body for a single experience entry. Pure presentation: the
@@ -13,7 +13,10 @@ const ERROR_TEXT = "mt-1 block text-xs text-destructive";
  *
  * @param {Object} props
  * @param {Object} props.item - Experience entry.
- * @param {Object<string, string>} props.errors - Validation errors keyed `${id}-${field}`.
+ * @param {Object<string, string>} props.errors - Validation errors, keyed by
+ *   `errorKeyFor` below.
+ * @param {(field: string) => string} [props.errorKeyFor] - Builds the
+ *   error key for one field; defaults to `${id}-${field}`.
  * @param {(id: string|number, field: string, value: any) => void} props.onChange
  * @param {(id: string|number) => void} props.onDelete
  * @returns {JSX.Element}
@@ -21,10 +24,12 @@ const ERROR_TEXT = "mt-1 block text-xs text-destructive";
 export default function ExperienceFormItem({
   item,
   errors,
+  errorKeyFor,
   onChange,
   onDelete,
 }) {
-  const hasError = (field) => errors[`${item.id}-${field}`];
+  const keyFor = errorKeyFor ?? ((field) => `${item.id}-${field}`);
+  const hasError = (field) => errors[keyFor(field)];
   const fieldClass = (field, width = "w-full") =>
     `${width} ${FIELD_BASE}${hasError(field) ? " border-destructive" : ""}`;
 
@@ -41,9 +46,7 @@ export default function ExperienceFormItem({
           value={item.title || ""}
           onChange={(e) => onChange(item.id, "title", e.target.value)}
         />
-        {hasError("title") && (
-          <span className={ERROR_TEXT}>{hasError("title")}</span>
-        )}
+        <FieldError errors={errors} errorKey={keyFor("title")} />
       </div>
 
       {/* Company or organization */}
@@ -58,9 +61,7 @@ export default function ExperienceFormItem({
           value={item.company || ""}
           onChange={(e) => onChange(item.id, "company", e.target.value)}
         />
-        {hasError("company") && (
-          <span className={ERROR_TEXT}>{hasError("company")}</span>
-        )}
+        <FieldError errors={errors} errorKey={keyFor("company")} />
       </div>
 
       {/* Currently working checkbox */}
@@ -113,9 +114,7 @@ export default function ExperienceFormItem({
             ))}
           </select>
         </div>
-        {hasError("startDate") && (
-          <span className={ERROR_TEXT}>{hasError("startDate")}</span>
-        )}
+        <FieldError errors={errors} errorKey={keyFor("startDate")} />
       </div>
 
       {/* End date */}
@@ -154,9 +153,7 @@ export default function ExperienceFormItem({
             ))}
           </select>
         </div>
-        {hasError("endDate") && (
-          <span className={ERROR_TEXT}>{hasError("endDate")}</span>
-        )}
+        <FieldError errors={errors} errorKey={keyFor("endDate")} />
       </div>
 
       <Button

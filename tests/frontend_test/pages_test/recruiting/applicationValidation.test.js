@@ -3,10 +3,38 @@ import {
   answerKey,
   otherKey,
   profileKey,
+  rowKey,
   validateApplication,
 } from "@/pages/Recruiting/applicationValidation";
 
 const q = (overrides) => ({ id: "q1", label: "Q", ...overrides });
+
+const PERSONAL = {
+  firstName: "Yuji",
+  lastName: "Wang",
+  timezone: "Asia/Taipei",
+};
+
+const EDUCATION_ROW = {
+  id: "rpf-1",
+  institution: "Tsinghua University",
+  degree: "BSc",
+  field: "Computer Science",
+  startMonth: "September",
+  startYear: "2018",
+  endMonth: "June",
+  endYear: "2022",
+};
+
+const EXPERIENCE_ROW = {
+  id: "rpf-2",
+  title: "Backend Engineer",
+  company: "Circle Cat",
+  startMonth: "July",
+  startYear: "2022",
+  endMonth: "March",
+  endYear: "2024",
+};
 
 describe("required", () => {
   it("accepts a form with nothing required", () => {
@@ -200,7 +228,7 @@ describe("profile sections", () => {
     );
   });
 
-  it("is satisfied by one entry", () => {
+  it("is satisfied by one complete entry", () => {
     expect(
       validateApplication(
         [],
@@ -208,8 +236,9 @@ describe("profile sections", () => {
         {
           profileConfig: config,
           profile: {
-            education: [{ school: "S" }],
-            experience: [{ title: "T" }],
+            personal: PERSONAL,
+            education: [EDUCATION_ROW],
+            experience: [EXPERIENCE_ROW],
           },
         },
       ),
@@ -223,7 +252,7 @@ describe("profile sections", () => {
         {},
         {
           profileConfig: { education: "optional", workExperience: "off" },
-          profile: { education: [], experience: [] },
+          profile: { personal: PERSONAL, education: [], experience: [] },
         },
       ),
     ).toEqual({});
@@ -231,6 +260,137 @@ describe("profile sections", () => {
 
   it("checks no profile section when the caller passes none", () => {
     expect(validateApplication([], {})).toEqual({});
+  });
+});
+
+describe("personal fields", () => {
+  const withPersonal = (personal) =>
+    validateApplication([], {}, { profile: { personal } });
+
+  it("accepts a first name, a last name and a timezone", () => {
+    expect(withPersonal(PERSONAL)).toEqual({});
+  });
+
+  it("requires all three, whatever the posting's profileConfig says", () => {
+    // The form marks them with a plain asterisk, not a configurable one.
+    const errors = validateApplication(
+      [],
+      {},
+      {
+        profileConfig: { education: "off", workExperience: "off" },
+        profile: {},
+      },
+    );
+    expect(errors[profileKey("firstName")]).toBe("First name is required");
+    expect(errors[profileKey("lastName")]).toBe("Last name is required");
+    expect(errors[profileKey("timezone")]).toBe("Timezone is required");
+  });
+
+  it("keys each problem under the field that has it", () => {
+    expect(withPersonal({ ...PERSONAL, lastName: "  " })).toEqual({
+      [profileKey("lastName")]: "Last name is required",
+    });
+  });
+
+  it("checks nothing when the caller hands over no profile at all", () => {
+    expect(validateApplication([q({ required: false })], {})).toEqual({});
+  });
+});
+
+describe("profile rows", () => {
+  const check = (profile, profileConfig) =>
+    validateApplication([], {}, { profileConfig, profile });
+
+  it("requires every field of an education row the candidate added", () => {
+    const errors = check(
+      { personal: PERSONAL, education: [{ id: "rpf-9" }] },
+      { education: "optional" },
+    );
+    expect(errors[rowKey("education", "rpf-9", "institution")]).toBe(
+      "School is required",
+    );
+    expect(errors[rowKey("education", "rpf-9", "field")]).toBe(
+      "Field of study is required",
+    );
+    expect(errors[rowKey("education", "rpf-9", "endDate")]).toBe(
+      "End date is required",
+    );
+  });
+
+  it("checks a row even when the section is only optional", () => {
+    // Optional means "you need not add one", not "a half-filled one is fine".
+    const errors = check(
+      { personal: PERSONAL, education: [{ ...EDUCATION_ROW, degree: "" }] },
+      { education: "optional" },
+    );
+    expect(errors[rowKey("education", "rpf-1", "degree")]).toBe(
+      "Degree is required",
+    );
+  });
+
+  it("checks no row in a section the posting switched off", () => {
+    // The section is not rendered at all, so an error there could never be
+    // seen, let alone fixed.
+    expect(
+      check(
+        { personal: PERSONAL, education: [{ id: "rpf-9" }] },
+        { education: "off" },
+      ),
+    ).toEqual({});
+  });
+
+  it("asks for the section itself only while it is still empty", () => {
+    const errors = check(
+      { personal: PERSONAL, education: [{ id: "rpf-9" }] },
+      { education: "required" },
+    );
+    expect(errors[profileKey("education")]).toBeUndefined();
+    expect(errors[rowKey("education", "rpf-9", "institution")]).toBe(
+      "School is required",
+    );
+  });
+
+  it("keys an experience row under its own section", () => {
+    const errors = check(
+      { personal: PERSONAL, experience: [{ ...EXPERIENCE_ROW, company: "" }] },
+      { workExperience: "optional" },
+    );
+    expect(errors[rowKey("experience", "rpf-2", "company")]).toBe(
+      "Company is required",
+    );
+  });
+
+  it("lets an ongoing role skip its end date", () => {
+    expect(
+      check(
+        {
+          personal: PERSONAL,
+          experience: [
+            {
+              ...EXPERIENCE_ROW,
+              isCurrentlyWorking: true,
+              endMonth: "",
+              endYear: "",
+            },
+          ],
+        },
+        { workExperience: "required" },
+      ),
+    ).toEqual({});
+  });
+});
+
+describe("the order problems are reported in", () => {
+  it("puts the profile before the answers, the way the page does", () => {
+    // The first key is what the form scrolls to, and the profile block is
+    // rendered above the questions.
+    const errors = validateApplication(
+      [q({ id: "q1", required: true })],
+      {},
+      { profile: { personal: {} } },
+    );
+    expect(Object.keys(errors)[0]).toBe(profileKey("firstName"));
+    expect(Object.keys(errors)).toContain(answerKey("q1"));
   });
 });
 

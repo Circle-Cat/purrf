@@ -3,6 +3,11 @@ import {
   otherSelected,
   visibleQuestions,
 } from "@/pages/Recruiting/postings/questionVisibility";
+import {
+  validatePersonal,
+  validateEducationRow,
+  validateExperienceRow,
+} from "@/pages/Profile/profileValidation";
 
 /**
  * What a candidate's application has to satisfy before it is worth sending.
@@ -21,14 +26,36 @@ import {
  * Keys come from the exported helpers rather than being written out at each
  * use, so a hand-typed string cannot drift by a character and quietly disable
  * a rule.
+ *
+ * The profile half of the form -- the personal fields and each education or
+ * experience row -- is judged by `profileValidation`, the same module the
+ * Profile page's edit modals use, so a row the candidate could not save on
+ * their profile cannot be sent with an application either.
+ *
+ * Problems are collected profile-first and answers second, matching the order
+ * they appear on screen: `PostingApplicantView` renders the profile block above
+ * the questions, and the caller scrolls to whichever key comes out first.
  */
 
 /** A question's own answer. */
 export const answerKey = (questionId) => `answer:${questionId}`;
 /** The free text beside a question's "Other" option. */
 export const otherKey = (questionId) => `answer:${questionId}${OTHER_SUFFIX}`;
-/** A profile section the posting requires. */
-export const profileKey = (section) => `profile:${section}`;
+/** A personal field, or a profile section the posting requires. */
+export const profileKey = (field) => `profile:${field}`;
+/**
+ * One field of one education or experience row.
+ *
+ * Namespaced by section rather than by row id alone: row ids come from
+ * whatever produced the row -- a fresh add, a résumé parse, a stored
+ * submission -- and nothing guarantees an education row and an experience row
+ * cannot end up sharing one.
+ *
+ * @param {"education"|"experience"} section
+ * @param {string|number} rowId
+ * @param {string} field
+ */
+export const rowKey = (section, rowId, field) => `${section}:${rowId}:${field}`;
 
 /** Blank, or nothing but whitespace. */
 const isBlank = (value) => !value || !String(value).trim();
@@ -48,6 +75,69 @@ const answered = (value) => {
 };
 
 /**
+ * Collect everything wrong with the profile half of the form, in the order it
+ * is rendered: personal fields, then education, then experience.
+ *
+ * Only runs when the caller hands over a profile or its requirements; the
+ * posting editor's preview and the answer-only unit paths pass neither and are
+ * asking about answers alone.
+ *
+ * A section switched `off` is skipped entirely, rows included: it is not
+ * rendered, so an error there could never be seen, let alone fixed. A section
+ * left `optional` still has its rows checked — optional means "you need not add
+ * one", not "a half-filled one is fine". The section-level "add at least one"
+ * therefore only ever fires while the section is genuinely empty.
+ *
+ * @param {{profileConfig?: object, profile?: object}} given
+ * @param {Record<string, string>} errors Accumulator, mutated in place.
+ */
+const collectProfileErrors = (given, errors) => {
+  if (given.profile == null && given.profileConfig == null) return;
+
+  const config = given.profileConfig ?? {};
+  const entered = given.profile ?? {};
+  // One `now` for the whole form, so two rows cannot be judged against
+  // different months.
+  const now = new Date();
+
+  Object.entries(validatePersonal(entered.personal)).forEach(
+    ([field, message]) => {
+      errors[profileKey(field)] = message;
+    },
+  );
+
+  const sections = [
+    {
+      name: "education",
+      level: config.education,
+      rows: entered.education ?? [],
+      rule: validateEducationRow,
+      empty: "Add at least one education entry",
+    },
+    {
+      name: "experience",
+      level: config.workExperience,
+      rows: entered.experience ?? [],
+      rule: validateExperienceRow,
+      empty: "Add at least one experience entry",
+    },
+  ];
+
+  sections.forEach(({ name, level, rows, rule, empty }) => {
+    if (level === "off") return;
+    if (level === "required" && rows.length === 0) {
+      errors[profileKey(name)] = empty;
+      return;
+    }
+    rows.forEach((row) => {
+      Object.entries(rule(row, now)).forEach(([field, message]) => {
+        errors[rowKey(name, row.id, field)] = message;
+      });
+    });
+  });
+};
+
+/**
  * Check a candidate's answers against the form they are looking at.
  *
  * @param {object[]} questions The posting's form schema questions.
@@ -60,6 +150,8 @@ const answered = (value) => {
 export const validateApplication = (questions, answers, profile = {}) => {
   const errors = {};
   const recorded = answers ?? {};
+
+  collectProfileErrors(profile, errors);
 
   visibleQuestions(questions ?? [], recorded).forEach((question) => {
     const value = recorded[question.id];
@@ -114,21 +206,6 @@ export const validateApplication = (questions, answers, profile = {}) => {
       errors[otherKey(question.id)] = "Please describe your answer";
     }
   });
-
-  const config = profile.profileConfig ?? {};
-  const entered = profile.profile ?? {};
-  if (
-    config.education === "required" &&
-    (entered.education ?? []).length === 0
-  ) {
-    errors[profileKey("education")] = "Add at least one education entry";
-  }
-  if (
-    config.workExperience === "required" &&
-    (entered.experience ?? []).length === 0
-  ) {
-    errors[profileKey("experience")] = "Add at least one experience entry";
-  }
 
   return errors;
 };

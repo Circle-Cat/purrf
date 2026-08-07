@@ -79,3 +79,76 @@ describe("ProfileSection", () => {
 // Per-field education/experience editing is covered by the FormItem tests
 // (Tasks 1-2); ProfileSection only needs to prove personal edits, requirement
 // gating, and list add wiring.
+
+describe("ProfileSection validation errors", () => {
+  const errors = {
+    "profile:firstName": "First name is required",
+    "profile:timezone": "Timezone is required",
+    "education:1:institution": "School is required",
+    "experience:2:company": "Company is required",
+  };
+
+  const rows = () => ({
+    personal: { firstName: "", lastName: "Wang", linkedin: "", timezone: "" },
+    education: [{ id: 1, institution: "", degree: "", field: "" }],
+    experience: [{ id: 2, title: "", company: "" }],
+  });
+
+  it("shows a personal field's message under that field", () => {
+    render(
+      <ProfileSection value={rows()} onChange={vi.fn()} errors={errors} />,
+    );
+    expect(screen.getByText("First name is required")).toBeInTheDocument();
+    expect(screen.getByText("Timezone is required")).toBeInTheDocument();
+  });
+
+  it("says nothing about a personal field that is fine", () => {
+    render(
+      <ProfileSection value={rows()} onChange={vi.fn()} errors={errors} />,
+    );
+    expect(screen.queryByText("Last name is required")).not.toBeInTheDocument();
+  });
+
+  it("anchors every personal message so the form can scroll to it", () => {
+    const { container } = render(
+      <ProfileSection value={rows()} onChange={vi.fn()} errors={errors} />,
+    );
+    expect(
+      container.querySelector('[data-error-key="profile:firstName"]'),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-error-key="profile:timezone"]'),
+    ).toBeInTheDocument();
+  });
+
+  it("outlines the control a personal message belongs to", () => {
+    render(
+      <ProfileSection value={rows()} onChange={vi.fn()} errors={errors} />,
+    );
+    // Token-wise, not substring-wise: `Input`'s own classes already include
+    // `aria-invalid:border-destructive`, so a substring check can never fail.
+    const classes = (label) =>
+      screen.getByLabelText(label).className.split(/\s+/);
+    expect(classes(/^First name/)).toContain("border-destructive");
+    expect(classes(/^Last name/)).not.toContain("border-destructive");
+  });
+
+  it("passes each row its own namespaced errors", () => {
+    const { container } = render(
+      <ProfileSection
+        value={rows()}
+        onChange={vi.fn()}
+        requirements={{ education: "required", experience: "required" }}
+        errors={errors}
+      />,
+    );
+    expect(screen.getByText("School is required")).toBeInTheDocument();
+    expect(screen.getByText("Company is required")).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-error-key="education:1:institution"]'),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-error-key="experience:2:company"]'),
+    ).toBeInTheDocument();
+  });
+});

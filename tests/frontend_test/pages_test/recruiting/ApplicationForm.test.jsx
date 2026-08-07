@@ -25,9 +25,25 @@ vi.spyOn(toast, "success").mockImplementation(() => {});
 vi.spyOn(toast, "error").mockImplementation(() => {});
 vi.spyOn(toast, "warning").mockImplementation(() => {});
 
+/** The three fields the form requires of everyone, as the profile API returns them. */
+const PROFILE_USER = {
+  firstName: "Cand",
+  lastName: "Idate",
+  timezone: "Asia/Taipei",
+};
+
+/** The same three, in the shape a stored submission holds them. */
+const REQUIRED_PERSONAL = {
+  firstName: "Cand",
+  lastName: "Idate",
+  timezone: "Asia/Taipei",
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
-  profileApi.getMyProfile.mockResolvedValue({ data: { profile: {} } });
+  profileApi.getMyProfile.mockResolvedValue({
+    data: { profile: { user: PROFILE_USER } },
+  });
 });
 
 const JOB = {
@@ -43,12 +59,20 @@ const JOB = {
   },
 };
 
-/** A profile with one complete education row, one incomplete one, and one complete (ongoing) experience row. */
+/**
+ * A profile with one complete education row and one complete (ongoing)
+ * experience row.
+ *
+ * It used to carry a deliberately incomplete education row as well, to show
+ * write-back skipping it. The form now refuses to submit an incomplete row at
+ * all, so that can no longer be reached from here; `profileWriteBack.test.js`
+ * pins the filter directly instead.
+ */
 const FILLED_EXISTING = {
   id: 7,
   current: {
     submission: {
-      personal: { firstName: "Ann" },
+      personal: { ...REQUIRED_PERSONAL, firstName: "Ann" },
       education: [
         {
           id: "rpf-1",
@@ -59,16 +83,6 @@ const FILLED_EXISTING = {
           startYear: "2016",
           endMonth: "May",
           endYear: "2020",
-        },
-        {
-          id: "rpf-2",
-          institution: "",
-          degree: "",
-          field: "",
-          startMonth: "",
-          startYear: "",
-          endMonth: "",
-          endYear: "",
         },
       ],
       experience: [
@@ -96,9 +110,9 @@ const FILLED_EXISTING = {
  */
 const FETCHED_USER_ANN = {
   firstName: "Ann",
-  lastName: "",
+  lastName: REQUIRED_PERSONAL.lastName,
   preferredName: null,
-  timezone: "America/Los_Angeles",
+  timezone: REQUIRED_PERSONAL.timezone,
   linkedinLink: null,
   communicationMethod: "email",
   timezoneUpdatedAt: "1970-01-01T00:00:00Z",
@@ -184,7 +198,7 @@ describe("ApplicationForm", () => {
       id: 7,
       current: {
         submission: {
-          personal: {},
+          personal: REQUIRED_PERSONAL,
           education: [],
           experience: [],
           answers: { q1: "Yes", q2: "F-1 OPT" },
@@ -456,7 +470,7 @@ describe("ApplicationForm", () => {
     // sent on the edit path, or every edit 422s.
     expect(api.updateApplication.mock.calls[0][1]).not.toHaveProperty("jobId");
     expect(api.updateApplication.mock.calls[0][1]).toMatchObject({
-      personal: { firstName: "Ann" },
+      personal: { ...REQUIRED_PERSONAL, firstName: "Ann" },
       answers: {},
       resumeSha256: null,
       resumeObjectKey: null,
@@ -487,7 +501,7 @@ describe("ApplicationForm", () => {
     expect(api.submitApplication).toHaveBeenCalledTimes(1);
     expect(api.submitApplication.mock.calls[0][0]).toMatchObject({
       jobId: 5,
-      personal: { firstName: "Ann" },
+      personal: { ...REQUIRED_PERSONAL, firstName: "Ann" },
     });
     expect(api.updateApplication).not.toHaveBeenCalled();
     expect(onSubmitted).toHaveBeenCalled();
@@ -512,7 +526,7 @@ describe("ApplicationForm", () => {
     resolveProfile({
       data: {
         profile: {
-          user: { firstName: "Ann", lastName: "Liu" },
+          user: { ...PROFILE_USER, firstName: "Ann", lastName: "Liu" },
           education: [],
           workHistory: [],
         },
@@ -527,7 +541,7 @@ describe("ApplicationForm", () => {
     await user.click(screen.getByRole("button", { name: /submit/i }));
 
     expect(api.submitApplication.mock.calls[0][0]).toMatchObject({
-      personal: { firstName: "Ann", lastName: "Liu" },
+      personal: { ...REQUIRED_PERSONAL, firstName: "Ann", lastName: "Liu" },
     });
   });
 
@@ -567,7 +581,11 @@ describe("ApplicationForm", () => {
     expect(profileApi.getMyProfile).not.toHaveBeenCalled();
   });
 
-  it("renders an empty, submittable form when the profile prefill fetch fails", async () => {
+  it("asks for the required fields when the profile prefill fetch fails", async () => {
+    // The prefill is a convenience, so a failure must not wedge the form --
+    // but the fields it would have filled are required of everyone, so what
+    // the candidate gets is a form that tells them what is missing rather
+    // than one that submits an empty personal block.
     const user = userEvent.setup();
     profileApi.getMyProfile.mockRejectedValue(new Error("boom"));
     api.submitApplication.mockResolvedValue({ data: { id: 100 } });
@@ -581,11 +599,13 @@ describe("ApplicationForm", () => {
     );
     await user.click(screen.getByRole("button", { name: /submit/i }));
 
-    expect(onSubmitted).toHaveBeenCalled();
-    // A vacuous `toMatchObject({ personal: {} })` would pass for ANY
-    // personal value (an empty object subset-matches anything) -- assert
-    // the field directly to actually prove the form stayed empty.
-    expect(api.submitApplication.mock.calls[0][0].personal).toEqual({});
+    expect(
+      await screen.findByText("First name is required"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Last name is required")).toBeInTheDocument();
+    expect(screen.getByText("Timezone is required")).toBeInTheDocument();
+    expect(api.submitApplication).not.toHaveBeenCalled();
+    expect(onSubmitted).not.toHaveBeenCalled();
   });
 
   it("guards against double submission", async () => {
@@ -825,154 +845,13 @@ describe("ApplicationForm", () => {
     expect(profileApi.updateMyProfile).not.toHaveBeenCalled();
   });
 
-  it("sends no profile requests at all when the form has no complete rows and no personal input", async () => {
-    const user = userEvent.setup();
-    api.submitApplication.mockResolvedValue({ data: { id: 100 } });
-    const onSubmitted = vi.fn();
-    // No `existing` -> empty profile, save-to-profile defaults checked. The
-    // brand-new-application prefill effect calls getMyProfile once on mount
-    // regardless; this test's job is to prove write-back does NOT call it
-    // again (or call updateMyProfile at all) when there's nothing to write.
-    render(<ApplicationForm job={JOB} onSubmitted={onSubmitted} />);
-
-    await user.click(await screen.findByRole("button", { name: /submit/i }));
-
-    await waitFor(() => expect(onSubmitted).toHaveBeenCalled());
-    expect(profileApi.getMyProfile).toHaveBeenCalledTimes(1);
-    expect(profileApi.updateMyProfile).not.toHaveBeenCalled();
-  });
-
-  it("writes back personal fields for a fresh account (form values win, defaults pass through)", async () => {
-    const user = userEvent.setup();
-    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
-    profileApi.getMyProfile.mockResolvedValue({
-      data: {
-        profile: { user: FETCHED_USER_NEW, education: [], workHistory: [] },
-      },
-    });
-    profileApi.updateMyProfile.mockResolvedValue({ data: {} });
-    render(
-      <ApplicationForm
-        job={JOB}
-        existing={PERSONAL_ONLY_EXISTING}
-        onSubmitted={vi.fn()}
-      />,
-    );
-
-    await user.click(
-      screen.getByRole("checkbox", { name: /save to my profile/i }),
-    );
-    await user.click(screen.getByRole("button", { name: /submit/i }));
-
-    await waitFor(() =>
-      expect(profileApi.updateMyProfile).toHaveBeenCalledTimes(1),
-    );
-    // timezoneUpdatedAt is 1970, but that no longer matters -- there's no
-    // cooldown restriction on timezone changes.
-    expect(profileApi.updateMyProfile).toHaveBeenCalledWith({
-      user: {
-        firstName: "Ada",
-        lastName: "L",
-        preferredName: null,
-        timezone: "Asia/Shanghai",
-        linkedinLink: null,
-        communicationMethod: "email",
-      },
-    });
-  });
-
-  it("always adopts a non-empty form timezone, even with a very recent timezoneUpdatedAt", async () => {
-    const user = userEvent.setup();
-    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
-    profileApi.getMyProfile.mockResolvedValue({
-      data: {
-        profile: {
-          user: {
-            ...FETCHED_USER_NEW,
-            // Changed just now -- there is no cooldown restriction, so the
-            // form's timezone must still win.
-            timezoneUpdatedAt: new Date().toISOString(),
-          },
-          education: [],
-          workHistory: [],
-        },
-      },
-    });
-    profileApi.updateMyProfile.mockResolvedValue({ data: {} });
-    render(
-      <ApplicationForm
-        job={JOB}
-        existing={PERSONAL_ONLY_EXISTING}
-        onSubmitted={vi.fn()}
-      />,
-    );
-
-    await user.click(
-      screen.getByRole("checkbox", { name: /save to my profile/i }),
-    );
-    await user.click(screen.getByRole("button", { name: /submit/i }));
-
-    await waitFor(() =>
-      expect(profileApi.updateMyProfile).toHaveBeenCalledTimes(1),
-    );
-    expect(profileApi.updateMyProfile).toHaveBeenCalledWith({
-      user: {
-        firstName: "Ada",
-        lastName: "L",
-        preferredName: null,
-        timezone: "Asia/Shanghai",
-        linkedinLink: null,
-        communicationMethod: "email",
-      },
-    });
-  });
-
-  it("treats an education row missing `field` as incomplete and excludes it from write-back", async () => {
-    const user = userEvent.setup();
-    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
-    const existingWithMissingField = {
-      ...FILLED_EXISTING,
-      current: {
-        ...FILLED_EXISTING.current,
-        submission: {
-          ...FILLED_EXISTING.current.submission,
-          // No personal input either, so the only write-back candidate is
-          // the (incomplete) education row below.
-          personal: {},
-          education: [
-            {
-              id: "rpf-4",
-              institution: "CMU",
-              degree: "Master",
-              // `field` deliberately omitted (undefined) -- would 422
-              // against the backend's required `fieldOfStudy: str`.
-              startMonth: "September",
-              startYear: "2018",
-              endMonth: "May",
-              endYear: "2020",
-            },
-          ],
-          experience: [],
-        },
-      },
-    };
-    render(
-      <ApplicationForm
-        job={JOB}
-        existing={existingWithMissingField}
-        onSubmitted={vi.fn()}
-      />,
-    );
-
-    await user.click(
-      screen.getByRole("checkbox", { name: /save to my profile/i }),
-    );
-    await user.click(screen.getByRole("button", { name: /submit/i }));
-
-    await waitFor(() => expect(api.updateApplication).toHaveBeenCalledTimes(1));
-    expect(profileApi.getMyProfile).not.toHaveBeenCalled();
-    expect(profileApi.updateMyProfile).not.toHaveBeenCalled();
-  });
+  // Two write-back cases used to be covered from here and no longer can be:
+  // "no personal input" (a name and timezone are now required of every
+  // submission, so `hasPersonalWriteBackInput` is never false by the time a
+  // submission goes out) and "an education row missing `field`" (an
+  // incomplete row now fails validation, so it never reaches write-back).
+  // Both guards still exist and are pinned directly in
+  // `profileWriteBack.test.js`.
 
   it("does not write back to the profile when save-to-profile is unchecked", async () => {
     const user = userEvent.setup();
