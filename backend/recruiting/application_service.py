@@ -308,6 +308,31 @@ class ApplicationService:
         dto.answers = form_visibility.prune_answers(job.form_schema, dto.answers)
 
     @staticmethod
+    def _strip_uncollected_sections(job, dto) -> None:
+        """Drop profile rows for a section the posting doesn't collect.
+
+        The sibling of ``_strip_uncollected_resume``, for the same reason. A
+        ``profile_config`` section set to ``"off"`` is not rendered at all, so
+        rows still attached to the payload were never on the candidate's
+        screen -- they came from a résumé parse, which autofills regardless, or
+        from an older submission. Keeping them would store data nobody
+        reviewed, and a later profile write-back could push it into the
+        candidate's profile, replacing rows they never saw.
+
+        Stripped rather than rejected, again like the résumé: the candidate did
+        nothing wrong, and there is nothing for them to fix.
+
+        Args:
+            job (JobEntity): The posting the submission is for.
+            dto (ApplicationSubmitDto | ApplicationEditDto): Mutated in place.
+        """
+        profile_config = job.profile_config or {}
+        if profile_config.get(_SECTION_CONFIG_KEY["education"]) == "off":
+            dto.education = []
+        if profile_config.get(_SECTION_CONFIG_KEY["experience"]) == "off":
+            dto.experience = []
+
+    @staticmethod
     def _strip_uncollected_resume(job, dto) -> None:
         """Drop resume keys when the posting doesn't collect a resume.
 
@@ -438,6 +463,7 @@ class ApplicationService:
         self._validate_submission(job, dto)
         self._prune_hidden_answers(job, dto)
         self._strip_uncollected_resume(job, dto)
+        self._strip_uncollected_sections(job, dto)
 
         user = await self.users_repository.get_user_by_user_id(
             session, current_user.user_id
@@ -802,6 +828,7 @@ class ApplicationService:
         self._validate_submission(job, dto)
         self._prune_hidden_answers(job, dto)
         self._strip_uncollected_resume(job, dto)
+        self._strip_uncollected_sections(job, dto)
         version = current_sub.version if current_sub is not None else 1
         current_sub = await self._write_version(
             session, application_id, version, current_sub, dto, job

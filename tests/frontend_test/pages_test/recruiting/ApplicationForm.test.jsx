@@ -1151,3 +1151,55 @@ describe("ApplicationForm résumé requirement", () => {
     expect(screen.queryByText("A résumé is required")).not.toBeInTheDocument();
   });
 });
+
+describe("ApplicationForm sections the posting does not collect", () => {
+  const NO_SECTIONS_JOB = {
+    ...JOB,
+    profileConfig: { education: "off", workExperience: "off", resume: "off" },
+  };
+
+  it("sends no rows for a section the posting switched off", async () => {
+    // The section is not rendered, so these rows -- carried over from an
+    // earlier submission -- were never on this candidate's screen.
+    const user = userEvent.setup();
+    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+    render(
+      <ApplicationForm
+        job={NO_SECTIONS_JOB}
+        existing={FILLED_EXISTING}
+        onSubmitted={vi.fn()}
+      />,
+    );
+    await screen.findByLabelText("Contact email");
+
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    await waitFor(() => expect(api.updateApplication).toHaveBeenCalledTimes(1));
+    const body = api.updateApplication.mock.calls[0][1];
+    expect(body.education).toEqual([]);
+    expect(body.experience).toEqual([]);
+  });
+
+  it("still sends the rows of a section it does collect", async () => {
+    const user = userEvent.setup();
+    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+    render(
+      <ApplicationForm
+        job={JOB}
+        existing={FILLED_EXISTING}
+        onSubmitted={vi.fn()}
+      />,
+    );
+    await screen.findByLabelText("Contact email");
+    await user.click(
+      screen.getByRole("checkbox", { name: /save to my profile/i }),
+    );
+
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    await waitFor(() => expect(api.updateApplication).toHaveBeenCalledTimes(1));
+    const body = api.updateApplication.mock.calls[0][1];
+    expect(body.education).toHaveLength(1);
+    expect(body.experience).toHaveLength(1);
+  });
+});

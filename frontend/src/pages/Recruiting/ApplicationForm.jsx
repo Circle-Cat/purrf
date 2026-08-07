@@ -229,6 +229,9 @@ const ApplicationForm = ({
     });
   }, [answers, profileValue, resume, job]);
 
+  /** Whether the posting asks for a profile section at all. */
+  const collects = (key) => job.profileConfig?.[key] !== "off";
+
   /**
    * Send, having already decided the answers are worth sending and the cost is
    * acceptable.
@@ -243,8 +246,14 @@ const ApplicationForm = ({
     try {
       const base = {
         personal: profileValue.personal,
-        education: profileValue.education,
-        experience: profileValue.experience,
+        // A section the posting doesn't collect is not rendered, so whatever
+        // rows the form is still holding for it -- carried over from an
+        // earlier submission, or autofilled by a résumé parse, which runs
+        // regardless -- were never on this candidate's screen. Sending them
+        // would store data nobody reviewed. The server strips them too, for a
+        // caller that isn't this form.
+        education: collects("education") ? profileValue.education : [],
+        experience: collects("workExperience") ? profileValue.experience : [],
         answers,
         resumeSha256: resume.sha256,
         resumeObjectKey: resume.objectKey,
