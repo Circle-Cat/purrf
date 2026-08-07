@@ -1108,3 +1108,46 @@ describe("ApplicationForm", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe("ApplicationForm résumé requirement", () => {
+  const RESUME_JOB = {
+    ...JOB,
+    profileConfig: { ...JOB.profileConfig, resume: "required" },
+  };
+
+  it("refuses to send an application with no résumé when the posting needs one", async () => {
+    const user = userEvent.setup();
+    render(<ApplicationForm job={RESUME_JOB} onSubmitted={vi.fn()} />);
+    await screen.findByLabelText("Contact email");
+
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    expect(await screen.findByText("A résumé is required")).toBeInTheDocument();
+    expect(api.submitApplication).not.toHaveBeenCalled();
+  });
+
+  it("sends when a résumé carried over from a previous application is on file", async () => {
+    const user = userEvent.setup();
+    api.updateApplication.mockResolvedValue({ data: { id: 7 } });
+    const withResume = {
+      ...FILLED_EXISTING,
+      current: { ...FILLED_EXISTING.current, resumeObjectKey: "resumes/7.pdf" },
+    };
+    render(
+      <ApplicationForm
+        job={RESUME_JOB}
+        existing={withResume}
+        onSubmitted={vi.fn()}
+      />,
+    );
+    await screen.findByLabelText("Contact email");
+    await user.click(
+      screen.getByRole("checkbox", { name: /save to my profile/i }),
+    );
+
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    await waitFor(() => expect(api.updateApplication).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("A résumé is required")).not.toBeInTheDocument();
+  });
+});
