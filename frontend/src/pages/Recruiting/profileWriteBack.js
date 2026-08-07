@@ -176,26 +176,28 @@ const sameRowSet = (a, b, keyFn) => {
 
 /**
  * Build the profile PATCH payload from the application form's reviewed
- * write-back data, OVERWRITING the user's profile lists with what the form
- * shows -- the applicant reviewed their info while applying (opt-in via
- * "save to my profile"), so the reviewed version becomes their profile.
+ * write-back data, replacing each block the posting SHOWED with what the
+ * candidate has in it.
  *
- * The backend's profile upsert has full-overwrite semantics (a PATCHed list
- * fully replaces what's stored), so each written list is simply the form's
- * complete rows. Two deliberate guards:
+ * The candidate is asked before this runs, so replacing -- deletions included
+ * -- is what they agreed to. What makes that safe is the scope: only a block
+ * that was on their screen can be written. `profileConfig` can narrow the form
+ * to a subset of the profile or hide a section outright, and a block nobody
+ * was shown is a block nobody reviewed.
  *
- * - A section the form has NO complete rows for is left out of the payload
- *   entirely -- an empty section means "not filled in here", never "clear my
- *   profile", so it never wipes a stored list to empty.
- * - A section whose form rows already match the stored ones (by content,
- *   order-insensitive) is omitted too, so no-op writes are never sent.
+ * The backend's profile upsert replaces a PATCHed list wholesale, so each
+ * written list is simply the form's rows. Two guards:
+ *
+ * - A block the posting did not show is never written, whatever the form is
+ *   still holding for it.
+ * - A list identical to the stored one is omitted, so a no-op write is never
+ *   sent and untouched rows are not needlessly recreated.
  *
  * The `user` key is included only when the merged personal fields differ
  * from the fetched ones (see `mergeUserWriteBack`).
  *
- * Note: overwriting a list drops any stored rows the form doesn't show
- * (what-you-see-is-what-your-profile-becomes) and assigns fresh ids to the
- * written rows, since the form's rows carry no profile-DB id.
+ * Note: written rows carry no profile-DB id, so the rows of a list that did
+ * change are recreated. Carrying the id through prefill is a separate change.
  *
  * @param {object|undefined} fetchedProfile - Profile from `getMyProfile`
  *   ({user?: object, education?: object[], workHistory?: object[]} in
@@ -204,9 +206,16 @@ const sameRowSet = (a, b, keyFn) => {
  *   `buildNewWriteBackRows`.
  * @param {{firstName?: string, lastName?: string, linkedin?: string, timezone?: string}|undefined} personal -
  *   The form's `profileValue.personal`.
+ * @param {{education: boolean, workExperience: boolean}} [shown] - Which
+ *   blocks the posting rendered, and so which may be written.
  * @returns {{user?: object, education?: object[], workHistory?: object[]}|null}
  */
-export const buildWriteBackPayload = (fetchedProfile, newRows, personal) => {
+export const buildWriteBackPayload = (
+  fetchedProfile,
+  newRows,
+  personal,
+  shown = { education: true, workExperience: true },
+) => {
   const existingEducation = (fetchedProfile?.education ?? []).map(
     fetchedEducationToRequest,
   );
@@ -219,14 +228,18 @@ export const buildWriteBackPayload = (fetchedProfile, newRows, personal) => {
   if (user) {
     payload.user = user;
   }
+  // A block is written when the posting showed it and the candidate's rows
+  // differ from the stored ones. Showing decides it, not emptiness: a block
+  // the candidate emptied on screen is a deletion they asked for, while a
+  // block the posting never rendered was never theirs to change here.
   if (
-    newRows.education.length &&
+    shown.education &&
     !sameRowSet(newRows.education, existingEducation, educationKey)
   ) {
     payload.education = newRows.education;
   }
   if (
-    newRows.workHistory.length &&
+    shown.workExperience &&
     !sameRowSet(newRows.workHistory, existingWork, workKey)
   ) {
     payload.workHistory = newRows.workHistory;

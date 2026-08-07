@@ -1247,6 +1247,57 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         created_sub = self.sub_repo.create.call_args.args[1]
         self.assertEqual(created_sub.submission["education"], [COMPLETE_EDUCATION])
 
+    async def test_latest_profile_returns_the_blocks_of_the_newest_submission(self):
+        """The application form falls back to this when the profile is empty.
+
+        Only the profile blocks: answers belong to the job they were asked
+        for, and prefilling another posting's answers would be wrong.
+        """
+        sub = ApplicationSubmissionEntity(
+            application_id=100,
+            version=1,
+            submission={
+                "personal": REQUIRED_PERSONAL,
+                "education": [COMPLETE_EDUCATION],
+                "experience": [COMPLETE_EXPERIENCE],
+                "answers": {"q1": "for another job"},
+            },
+        )
+        self.sub_repo.get_latest_by_user = AsyncMock(return_value=sub)
+
+        result = await self.service.get_my_latest_profile(self.session, self._ctx())
+
+        self.sub_repo.get_latest_by_user.assert_awaited_once_with(self.session, 2)
+        self.assertEqual(result["personal"], REQUIRED_PERSONAL)
+        self.assertEqual(result["education"], [COMPLETE_EDUCATION])
+        self.assertEqual(result["experience"], [COMPLETE_EXPERIENCE])
+        self.assertNotIn("answers", result)
+
+    async def test_latest_profile_is_empty_for_a_first_time_applicant(self):
+        self.sub_repo.get_latest_by_user = AsyncMock(return_value=None)
+
+        result = await self.service.get_my_latest_profile(self.session, self._ctx())
+
+        self.assertEqual(result, {"personal": {}, "education": [], "experience": []})
+
+    async def test_latest_profile_survives_a_submission_with_no_body(self):
+        """`submission` is a nullable JSONB column."""
+        sub = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission=None
+        )
+        self.sub_repo.get_latest_by_user = AsyncMock(return_value=sub)
+
+        result = await self.service.get_my_latest_profile(self.session, self._ctx())
+
+        self.assertEqual(result, {"personal": {}, "education": [], "experience": []})
+
+    async def test_latest_profile_is_a_read(self):
+        self.sub_repo.get_latest_by_user = AsyncMock(return_value=None)
+
+        await self.service.get_my_latest_profile(self.session, self._ctx())
+
+        self.session.commit.assert_not_awaited()
+
     async def test_get_mine_does_not_commit(self):
         result = await self.service.get_mine(self.session, self._ctx(), 1)
         self.assertIsNone(result)

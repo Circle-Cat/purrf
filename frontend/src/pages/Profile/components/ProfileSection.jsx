@@ -70,6 +70,7 @@ export default function ProfileSection({
   onChange,
   requirements = { education: "optional", experience: "optional" },
   errors = {},
+  note,
 }) {
   const { personal, education, experience } = value;
 
@@ -114,6 +115,7 @@ export default function ProfileSection({
       {/* Personal */}
       <section className="space-y-4">
         <h3 className="text-base font-semibold">Personal</h3>
+        {note && <p className="text-sm text-muted-foreground">{note}</p>}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="ps-firstName">
