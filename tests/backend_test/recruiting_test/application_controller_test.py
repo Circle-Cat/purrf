@@ -97,6 +97,19 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
         self.app_service.list_mine.assert_awaited_once_with(self.session, self.ctx)
         self.assertEqual(resp["data"], [{"applicationId": 10}])
 
+    async def test_get_my_latest_profile_delegates_and_passes_no_id(self):
+        """There is no id to pass, so no application but the caller's own can
+        be reached through this route."""
+        blocks = {"personal": {"firstName": "Cand"}, "education": [], "experience": []}
+        self.app_service.get_my_latest_profile = AsyncMock(return_value=blocks)
+
+        resp = await self.controller.get_my_latest_profile(self.ctx)
+
+        self.app_service.get_my_latest_profile.assert_awaited_once_with(
+            self.session, self.ctx
+        )
+        self.assertEqual(resp["data"], blocks)
+
 
 if __name__ == "__main__":
     unittest.main()
