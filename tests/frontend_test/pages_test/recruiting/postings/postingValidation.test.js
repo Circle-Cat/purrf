@@ -170,6 +170,25 @@ describe("screen rules", () => {
     );
   });
 
+  it("rejects an email domain rule with no domains at all", () => {
+    // A freshly added rule, and a rule whose last tag was removed, are both
+    // an empty list now — the shape the editor never used to produce.
+    const draft = valid({
+      screenRules: {
+        rules: [
+          {
+            id: "r1",
+            action: "reject",
+            condition: { source: "email_domain", operator: "in", value: [] },
+          },
+        ],
+      },
+    });
+    expect(validatePosting(draft)[ruleKey("r1", "value")]).toBe(
+      "Enter at least one domain",
+    );
+  });
+
   it("rejects an answer rule with no question picked", () => {
     const draft = valid({
       formSchema: { questions: [choice()] },

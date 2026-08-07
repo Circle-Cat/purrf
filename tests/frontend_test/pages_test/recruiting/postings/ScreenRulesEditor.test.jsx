@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import ScreenRulesEditor from "@/pages/Recruiting/postings/ScreenRulesEditor";
@@ -61,7 +61,27 @@ describe("ScreenRulesEditor", () => {
         onChange={vi.fn()}
       />,
     );
-    expect(screen.getByLabelText("Email domains")).toHaveValue("google.com");
+    expect(
+      screen.getByRole("button", { name: "Remove google.com" }),
+    ).toBeInTheDocument();
+  });
+
+  it("starts a new email domain rule as an empty in-list", async () => {
+    // The editor no longer produces the `equals` + string shape at all; a fresh
+    // rule is an empty array so the tag field has something to append to.
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<ControlledScreenRules initialRules={[]} onChange={onChange} />);
+    await user.click(
+      screen.getByRole("button", { name: "Add email domain rule" }),
+    );
+    expect(onChange.mock.calls.at(-1)[0].rules).toEqual([
+      {
+        id: "r1",
+        condition: { source: "email_domain", operator: "in", value: [] },
+        action: "qualify",
+      },
+    ]);
   });
 
   it("adds an email domain rule defaulting to Include mode", async () => {
@@ -71,9 +91,10 @@ describe("ScreenRulesEditor", () => {
     await user.click(
       screen.getByRole("button", { name: "Add email domain rule" }),
     );
-    fireEvent.change(screen.getByLabelText("Email domains"), {
-      target: { value: "google.com" },
-    });
+    await user.type(
+      screen.getByLabelText("Email domains"),
+      "google.com{Enter}",
+    );
     await user.click(
       screen.getByRole("combobox", { name: "Email domain action" }),
     );
@@ -84,8 +105,8 @@ describe("ScreenRulesEditor", () => {
         id: "r1",
         condition: {
           source: "email_domain",
-          operator: "equals",
-          value: "google.com",
+          operator: "in",
+          value: ["google.com"],
         },
         action: "qualify",
       },
@@ -99,9 +120,10 @@ describe("ScreenRulesEditor", () => {
     await user.click(
       screen.getByRole("button", { name: "Add email domain rule" }),
     );
-    fireEvent.change(screen.getByLabelText("Email domains"), {
-      target: { value: "circlecat.org" },
-    });
+    await user.type(
+      screen.getByLabelText("Email domains"),
+      "circlecat.org{Enter}",
+    );
     await user.click(
       screen.getByRole("combobox", { name: "Email domain action" }),
     );
@@ -112,15 +134,19 @@ describe("ScreenRulesEditor", () => {
         id: "r1",
         condition: {
           source: "email_domain",
-          operator: "equals",
-          value: "circlecat.org",
+          operator: "in",
+          value: ["circlecat.org"],
         },
         action: "auto_hire",
       },
     ]);
   });
 
-  it("emits an email_domain=in rule for multiple comma-separated domains", () => {
+  it("reads a legacy equals-string rule and re-emits it as an in-list", async () => {
+    // The backend still accepts `equals` + string, so a rule authored by the
+    // seed script or a direct API call must load as a tag rather than render
+    // blank and be wiped on the next save.
+    const user = userEvent.setup();
     const onChange = vi.fn();
     render(
       <ControlledScreenRules
@@ -138,9 +164,15 @@ describe("ScreenRulesEditor", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.change(screen.getByLabelText("Email domains"), {
-      target: { value: "google.com, circlecat.org" },
-    });
+    expect(
+      screen.getByRole("button", { name: "Remove google.com" }),
+    ).toBeInTheDocument();
+
+    await user.type(
+      screen.getByLabelText("Email domains"),
+      "circlecat.org{Enter}",
+    );
+
     const last = onChange.mock.calls.at(-1)[0];
     expect(last.rules[0].condition).toEqual({
       source: "email_domain",
@@ -226,9 +258,7 @@ describe("ScreenRulesEditor", () => {
     );
     const domainInputs = screen.getAllByLabelText("Email domains");
     expect(domainInputs).toHaveLength(2);
-    fireEvent.change(domainInputs[1], {
-      target: { value: "circlecat.org" },
-    });
+    await user.type(domainInputs[1], "circlecat.org{Enter}");
     const modeSelects = screen.getAllByRole("combobox", {
       name: "Email domain mode",
     });
