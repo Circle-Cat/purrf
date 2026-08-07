@@ -1,33 +1,8 @@
 import { formatDateFromParts } from "@/pages/Profile/utils";
-
-/**
- * Whether an education row has enough data for the profile PATCH DTO
- * (school, degree, and a complete start + end date).
- *
- * @param {object} row
- * @returns {boolean}
- */
-const isCompleteEducationRow = (row) =>
-  Boolean(row.institution?.trim()) &&
-  Boolean(row.degree?.trim()) &&
-  // `field` maps to the backend's required `fieldOfStudy` (str) -- an
-  // undefined key would 422; an empty string stays acceptable.
-  row.field != null &&
-  Boolean(row.startMonth && row.startYear) &&
-  Boolean(row.endMonth && row.endYear);
-
-/**
- * Whether a work-experience row has enough data for the profile PATCH DTO
- * (title, company, and a start date; the end date is optional for an
- * ongoing role).
- *
- * @param {object} row
- * @returns {boolean}
- */
-const isCompleteExperienceRow = (row) =>
-  Boolean(row.title?.trim()) &&
-  Boolean(row.company?.trim()) &&
-  Boolean(row.startMonth && row.startYear);
+import {
+  isCompleteEducationRow,
+  isCompleteExperienceRow,
+} from "@/pages/Profile/profileValidation";
 
 /**
  * Map a fetched profile education row (backend field names) into the
@@ -100,8 +75,12 @@ const workKey = (row) =>
  * @returns {{education: object[], workHistory: object[]}}
  */
 export const buildNewWriteBackRows = (profileValue) => {
+  // One `now` for the whole build, and never handed to `filter` bare: the row
+  // rules take `(row, now)` and `filter` calls back with (row, index, array),
+  // so the second row would be judged against the number 1.
+  const now = new Date();
   const education = (profileValue.education ?? [])
-    .filter(isCompleteEducationRow)
+    .filter((row) => isCompleteEducationRow(row, now))
     .map((row) => ({
       school: row.institution,
       degree: row.degree,
@@ -111,7 +90,7 @@ export const buildNewWriteBackRows = (profileValue) => {
     }));
 
   const workHistory = (profileValue.experience ?? [])
-    .filter(isCompleteExperienceRow)
+    .filter((row) => isCompleteExperienceRow(row, now))
     .map((row) => ({
       title: row.title,
       companyOrOrganization: row.company,

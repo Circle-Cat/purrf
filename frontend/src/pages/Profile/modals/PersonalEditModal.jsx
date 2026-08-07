@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
 import TimezoneSelector from "@/components/common/TimezoneSelector";
 import { Button } from "@/components/ui/button";
+import { validatePersonal } from "@/pages/Profile/profileValidation";
 
 const LABEL = "mb-2 block text-sm font-semibold text-foreground";
 const FIELD =
@@ -46,15 +47,8 @@ const PersonalEditModal = ({ isOpen, onClose, initialData, onSave }) => {
 
   /** Validate the entire form */
   const validate = () => {
-    const newErrors = {};
-
-    // Required field validation
-    if (!formData.firstName?.trim())
-      newErrors.firstName = "First name is required";
-    if (!formData.lastName?.trim())
-      newErrors.lastName = "Last name is required";
-    if (!formData.timezone) newErrors.timezone = "Timezone is required";
-
+    // Keyed by bare field name here, which is what `validatePersonal` returns.
+    const newErrors = validatePersonal(formData);
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
