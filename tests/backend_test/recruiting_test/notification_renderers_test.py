@@ -85,6 +85,48 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
         self.assertEqual(subject, "New application: Ada Lovelace for Backend Engineer")
         self.assertIn("Recruiter screening stage", body)
 
+    async def test_application_submitted_reads_as_auto_hired_when_a_rule_hired_it(
+        self,
+    ):
+        """A screen rule hiring outright is the same event, worded differently.
+
+        Both land as ``application_submitted``; the auto-hire marker in the
+        details is the only thing separating "someone applied, go look" from
+        "this is already decided". Without it an owner would be sent chasing
+        work a rule already finished.
+        """
+        owner, candidate = _make_user("Grace", "Hopper"), _make_user("Ada", "Lovelace")
+        await self.insert_entities([owner, candidate])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        event = await self._make_event(
+            "recruiting.application_submitted",
+            "application",
+            application.application_id,
+            owner,
+            details={
+                "stage": ApplicationStage.HIRED.value,
+                "screenAutoHireRuleId": "rule-1",
+            },
+        )
+
+        subject, body = await render_registry.render(self.session, event)
+
+        # Same stage, no marker: the marker is then the only difference
+        # between the two renders, so this cannot pass on stage wording alone.
+        plain_subject, plain_body = await render_registry.render(
+            self.session,
+            await self._make_event(
+                "recruiting.application_submitted",
+                "application",
+                application.application_id,
+                owner,
+                details={"stage": ApplicationStage.HIRED.value},
+            ),
+        )
+        self.assertNotEqual(subject, plain_subject)
+        self.assertNotEqual(body, plain_body)
+
     async def test_mentioned_names_the_actor_and_applicant(self):
         actor, candidate = _make_user("Grace", "Hopper"), _make_user("Ada", "Lovelace")
         await self.insert_entities([actor, candidate])

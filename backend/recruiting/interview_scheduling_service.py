@@ -12,9 +12,10 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exceptions import MeetingGoneError
-from backend.common.recruiting_enums import ApplicationStage
+from backend.common.recruiting_enums import ApplicationStage, RecruitingEvent
 from backend.dto.interview_dto import InterviewDto, InterviewScheduleRequestDto
 from backend.dto.user_context_dto import UserContextDto
+from backend.notification_management.event_recorder import record_event
 
 # Only these two stages meet the candidate; recruiter screening and board
 # review evaluate on materials alone (their assignees are still evaluators —
@@ -258,11 +259,12 @@ class InterviewSchedulingService:
         # exactly "scheduled".
         application.sub_status = "scheduled"
         await self.application_repository.update(session, application)
-        await self.application_activity_repository.create(
+        await record_event(
             session,
-            application_id,
-            current_user.user_id,
-            "interview_scheduled",
+            subject_type="application",
+            subject_id=application_id,
+            actor_id=current_user.user_id,
+            event_type=RecruitingEvent.INTERVIEW_SCHEDULED,
             details={
                 "stage": application.stage.value,
                 "round": application.current_round,
@@ -385,11 +387,12 @@ class InterviewSchedulingService:
             dto.assignee_id,
             current_user.user_id,
         )
-        await self.application_activity_repository.create(
+        await record_event(
             session,
-            application_id,
-            current_user.user_id,
-            "interview_updated",
+            subject_type="application",
+            subject_id=application_id,
+            actor_id=current_user.user_id,
+            event_type=RecruitingEvent.INTERVIEW_UPDATED,
             details={
                 "stage": application.stage.value,
                 "round": application.current_round,
@@ -586,11 +589,12 @@ class InterviewSchedulingService:
             )
 
         await self.application_interview_repository.delete(session, interview)
-        await self.application_activity_repository.create(
+        await record_event(
             session,
-            application_id,
-            actor_user_id,
-            "interview_cancelled",
+            subject_type="application",
+            subject_id=application_id,
+            actor_id=actor_user_id,
+            event_type=RecruitingEvent.INTERVIEW_CANCELLED,
             details={
                 "stage": interview.stage.value,
                 "round": interview.round,

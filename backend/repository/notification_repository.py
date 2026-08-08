@@ -1,11 +1,17 @@
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.entity.notification_entity import NotificationEntity
 
 
 class NotificationRepository:
-    """Database operations for NotificationEntity (append-only; dismissing deletes the row)."""
+    """Database operations for NotificationEntity (append-only; dismissing marks the row).
+
+    Dismissing sets ``dismissed_at`` rather than removing the row: the same
+    row carries the delivery state, so deleting it would drop a mail that had
+    not gone out and erase the record of one that had. Every read here is
+    scoped to undismissed rows.
+    """
 
     async def create(
         self, session: AsyncSession, entity: NotificationEntity
@@ -22,19 +28,12 @@ class NotificationRepository:
         limit: int = 20,
         offset: int = 0,
     ) -> list[NotificationEntity]:
-        """List one user's notifications, newest first.
-
-        Only rows that name what they are about in their own columns. Rows
-        that carry an ``event_id`` instead leave ``type`` NULL, and every
-        renderer downstream of here reads ``type`` -- one such row would fail
-        the whole list rather than itself. They become visible when a renderer
-        that reads the event exists.
-        """
+        """List one user's undismissed notifications, newest first."""
         result = await session.execute(
             select(NotificationEntity)
             .where(
                 NotificationEntity.user_id == user_id,
-                NotificationEntity.type.is_not(None),
+                NotificationEntity.dismissed_at.is_(None),
             )
             .order_by(
                 NotificationEntity.created_at.desc(),
@@ -46,40 +45,47 @@ class NotificationRepository:
         return list(result.scalars().all())
 
     async def count_by_user(self, session: AsyncSession, user_id: int) -> int:
-        """Count one user's notifications (all pending -- dismissed rows are deleted).
-
-        Counts exactly the rows ``list_by_user`` returns, so the badge cannot
-        promise a row the list will not hand over.
-        """
+        """Count one user's undismissed notifications."""
         result = await session.execute(
             select(func.count())
             .select_from(NotificationEntity)
             .where(
                 NotificationEntity.user_id == user_id,
-                NotificationEntity.type.is_not(None),
+                NotificationEntity.dismissed_at.is_(None),
             )
         )
         return result.scalar_one()
 
-    async def delete_by_id(
+    async def dismiss_by_id(
         self, session: AsyncSession, notification_id: int, user_id: int
     ) -> bool:
-        """Delete one notification, only if it belongs to user_id.
+        """Mark one notification dismissed, only if it belongs to user_id.
 
         Returns False (no-op) if the notification is missing or owned by a
         different user -- the caller must not learn anything about another
-        user's notification ids via this call's return value.
+        user's notification ids via this call's return value. Dismissing an
+        already-dismissed row refreshes the timestamp and still returns True;
+        the caller asked for it to be gone and it is.
         """
-        entity = await session.get(NotificationEntity, notification_id)
-        if entity is None or entity.user_id != user_id:
-            return False
-        await session.delete(entity)
+        result = await session.execute(
+            update(NotificationEntity)
+            .where(
+                NotificationEntity.notification_id == notification_id,
+                NotificationEntity.user_id == user_id,
+            )
+            .values(dismissed_at=func.now())
+        )
         await session.flush()
-        return True
+        return result.rowcount > 0
 
-    async def delete_all_by_user(self, session: AsyncSession, user_id: int) -> None:
-        """Delete every notification for user_id."""
+    async def dismiss_all_by_user(self, session: AsyncSession, user_id: int) -> None:
+        """Mark every one of user_id's undismissed notifications dismissed."""
         await session.execute(
-            delete(NotificationEntity).where(NotificationEntity.user_id == user_id)
+            update(NotificationEntity)
+            .where(
+                NotificationEntity.user_id == user_id,
+                NotificationEntity.dismissed_at.is_(None),
+            )
+            .values(dismissed_at=func.now())
         )
         await session.flush()

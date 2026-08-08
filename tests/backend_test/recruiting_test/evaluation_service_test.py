@@ -1,6 +1,6 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, create_autospec
+from unittest.mock import AsyncMock, MagicMock, create_autospec, patch
 
 from backend.recruiting.evaluation_service import EvaluationService
 from backend.dto.evaluation_dto import EvaluationSubmitDto
@@ -61,6 +61,12 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
             ApplicationSubmissionRepository, instance=True
         )
         self.session = AsyncMock()
+        recorder = patch(
+            "backend.recruiting.evaluation_service.record_event",
+            new_callable=AsyncMock,
+        )
+        self.record_event = recorder.start()
+        self.addCleanup(recorder.stop)
         self.service = EvaluationService(
             self.app_repo,
             self.assignment_repo,
@@ -179,7 +185,7 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.update.assert_not_awaited()
         self.assertEqual(application.sub_status, "pending")
         self.session.commit.assert_awaited_once()
-        self.activity_repo.create.assert_not_awaited()
+        self.record_event.assert_not_awaited()
 
     async def test_submit_on_round_two_scopes_the_key_to_that_round(self):
         """Confirming round 1 must not affect round 2: the evaluation key
@@ -240,11 +246,12 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(application.sub_status, "evaluated")
         self.app_repo.update.assert_awaited_once_with(self.session, application)
         self.session.commit.assert_awaited_once()
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            10,
-            2,
-            "evaluation_confirmed",
+            subject_type="application",
+            subject_id=10,
+            actor_id=2,
+            event_type="recruiting.evaluation_confirmed",
             details={"stage": ApplicationStage.RECRUITER_SCREENING.value, "round": 1},
         )
 

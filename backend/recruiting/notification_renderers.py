@@ -135,8 +135,19 @@ def _stage(details: dict, key: str = "stage") -> ApplicationStage:
 
 @register_render("recruiting.application_submitted")
 async def _render_application_submitted(session, event):
+    """A landing application, worded by how it landed.
+
+    One event type covers both a plain submission and one a screen rule hired
+    outright, because both are the same thing happening to the application.
+    They read differently to an owner though -- one is work waiting on the
+    board, the other is already decided -- so the auto-hire marker in the
+    details selects the copy.
+    """
     dto = await _base_dto(session, event)
-    return copy._application_submitted(dto, _stage(event.details))
+    stage = _stage(event.details)
+    if "screenAutoHireRuleId" in event.details:
+        return copy._application_auto_hired(dto, stage)
+    return copy._application_submitted(dto, stage)
 
 
 @register_render("recruiting.auto_rejected")
