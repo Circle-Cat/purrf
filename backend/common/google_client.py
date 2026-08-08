@@ -10,6 +10,53 @@ from backend.common.environment_constants import (
     ADMIN_EMAIL,
 )
 import os
+import threading
+
+
+class _ThreadLocalResource:
+    """A Google API resource that resolves to one service per calling thread.
+
+    A ``googleapiclient`` service owns a single ``httplib2`` connection, and
+    httplib2 requires one instance per thread: threads sharing a service write
+    into the same socket and read each other's replies. These resources are
+    held as process-wide singletons and reached from worker threads through
+    ``asyncio.to_thread``, so the resource resolves a service on each attribute
+    access instead of closing over one.
+
+    Attribute access is the entire surface callers use --- ``events()``,
+    ``people()``, ``new_batch_http_request()`` --- so forwarding it covers every
+    call. A request object built through this resource belongs to the thread
+    that built it and must be executed on that thread.
+    """
+
+    def __init__(self, build_service):
+        """Wraps a service factory and resolves a service for the caller.
+
+        Resolving here means a broken configuration still fails when the
+        resource is created rather than on a later call.
+
+        Args:
+            build_service (Callable[[], googleapiclient.discovery.Resource]):
+                Builds a service for one thread.
+        """
+        self._build_service = build_service
+        self._local = threading.local()
+        self._resolve()
+
+    def _resolve(self):
+        """Returns the calling thread's service, building it on first use.
+
+        Returns:
+            googleapiclient.discovery.Resource: The calling thread's service.
+        """
+        service = getattr(self._local, "service", None)
+        if service is None:
+            service = self._build_service()
+            self._local.service = service
+        return service
+
+    def __getattr__(self, name):
+        return getattr(self._resolve(), name)
 
 
 class GoogleClient:
@@ -25,7 +72,7 @@ class GoogleClient:
     an injected `retry_utils` helper that handles transient errors.
 
     Attributes:
-        _credentials (dict[str, google.auth.credentials.Credentials]): Cached impersonated credentials keyed by user email.
+        _credentials (dict[str, google.auth.credentials.Credentials]): Impersonated credentials keyed by user email, cached per calling thread.
         _user_email (str): The user email to impersonate by default.
         _service_account_email (str): The target service account used for impersonation.
         _admin_email (str): Admin user email for domain-wide delegated APIs (e.g. Reports API).
@@ -38,7 +85,7 @@ class GoogleClient:
         logger,
         retry_utils,
     ):
-        self._credentials = {}
+        self._local = threading.local()
         self._user_email = os.getenv(USER_EMAIL)
         self._service_account_email = os.getenv(SERVICE_ACCOUNT_EMAIL)
         self._admin_email = os.getenv(ADMIN_EMAIL)
@@ -55,6 +102,23 @@ class GoogleClient:
             raise ValueError("logger must be provided")
         if not self.retry_utils:
             raise ValueError("retry_utils must be provided")
+
+    @property
+    def _credentials(self):
+        """Returns the calling thread's cache of impersonated credentials.
+
+        A ``Credentials`` object holds a mutable access token and its expiry,
+        so threads refreshing one shared instance race on it. Each thread keeps
+        its own cache and pays one token exchange per email per hour.
+
+        Returns:
+            dict[str, google.auth.credentials.Credentials]: Credentials keyed by user email.
+        """
+        cache = getattr(self._local, "credentials", None)
+        if cache is None:
+            cache = {}
+            self._local.credentials = cache
+        return cache
 
     def _get_impersonate_credentials(self, user_email=None, scopes=None):
         """
@@ -141,7 +205,8 @@ class GoogleClient:
             scopes (list[str] | None): OAuth2 scopes.
 
         Returns:
-            googleapiclient.discovery.Resource: The API client, or None if an error occurs after all retries.
+            _ThreadLocalResource: A client that builds one service per calling
+                thread. It is used exactly like the underlying resource.
 
         Raises:
             google.auth.exceptions.DefaultCredentialsError: If ADC fails to retrieve credentials.
@@ -155,18 +220,24 @@ class GoogleClient:
             else:
                 print("Failed to create Chat client.")
         """
-        credentials = self.retry_utils.get_retry_on_transient(
-            lambda: self._get_impersonate_credentials(
-                user_email=user_email, scopes=scopes
+
+        def build_service():
+            credentials = self.retry_utils.get_retry_on_transient(
+                lambda: self._get_impersonate_credentials(
+                    user_email=user_email, scopes=scopes
+                )
             )
-        )
-        if not credentials:
-            raise ValueError("Credentials are not available for creating the client.")
-        service = build(api_name, api_version, credentials=credentials)
-        if not service:
-            raise ValueError(f"Failed to create client for {api_name}.")
-        self.logger.info(f"Created {api_name} client successfully.")
-        return service
+            if not credentials:
+                raise ValueError(
+                    "Credentials are not available for creating the client."
+                )
+            service = build(api_name, api_version, credentials=credentials)
+            if not service:
+                raise ValueError(f"Failed to create client for {api_name}.")
+            self.logger.info(f"Created {api_name} client successfully.")
+            return service
+
+        return _ThreadLocalResource(build_service)
 
     def create_chat_client(self):
         """
