@@ -218,3 +218,142 @@ def render(dto: NotificationDto, stage: ApplicationStage | None) -> tuple[str, s
     """
     subject, body = TEMPLATES[dto.type](dto, stage)
     return subject, body + _FOOTER
+
+
+# ---------------------------------------------------------------------------
+# New-model templates (backend.notification_management.event_recorder /
+# EventEntity.event_type), added for the 8 recruiting event types with no
+# NotificationType counterpart. Dispatched by event_type, not by this file --
+# see backend/recruiting/notification_renderers.py, which builds the ``dto``
+# each of these takes from EventEntity.details rather than from
+# NotificationDto/NotificationEntity's legacy columns.
+#
+# The 7 existing functions above cover the other 7 notifying event types
+# verbatim (reassigned/auto_assigned share _assigned_to_evaluate;
+# review_decided picks _job_review_approved/_job_review_rejected by
+# ``details["decision"]``) -- untouched, per the standing rule that shipped
+# template English does not change once live.
+# ---------------------------------------------------------------------------
+
+
+def _humanize(value: str) -> str:
+    """ "in_progress" -> "In progress". Mirrors frontend/.../stageFormat.js's ``humanize``.
+
+    Used for sub-status values, which (like stages) are snake_case and have
+    no friendlier rename table of their own.
+    """
+    spaced = value.replace("_", " ")
+    return spaced[:1].upper() + spaced[1:]
+
+
+def _format_utc(instant) -> str:
+    """ "2026-08-12 15:00 UTC" -- a meeting instant, always in UTC.
+
+    Interview times have no stored booking timezone the way an email
+    renderer could safely reuse (see ``ApplicationInterviewEntity``'s own
+    docstring on why): the wall clock a recruiter typed is not necessarily
+    the zone of every owner/assignee this email goes to. UTC is the one
+    reading that is never wrong, at the cost of not being the reader's own
+    time -- the same trade every other surface in this codebase resolves the
+    other way only because it knows who the *viewer* is; a static email body
+    does not.
+
+    Args:
+        instant (datetime): A timezone-aware instant (UTC).
+
+    Returns:
+        str: The formatted instant.
+    """
+    return instant.strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _blacklisted(dto, stage):
+    actor = dto.actor_name or _MISSING_ACTOR
+    applicant = dto.applicant_name or _MISSING_APPLICANT
+    return (
+        f"Application blacklisted: {applicant} ({dto.job_title})",
+        f"<p>{actor} blacklisted {applicant} and rejected their application "
+        f'for {dto.job_title}, with the reason: "{dto.reason}".</p>'
+        "<p>Open the Blacklist page in Purrf to review the block.</p>",
+    )
+
+
+def _stage_changed(dto, stage):
+    actor = dto.actor_name or _MISSING_ACTOR
+    applicant = dto.applicant_name or _MISSING_APPLICANT
+    return (
+        f"Stage changed: {applicant} ({dto.job_title})",
+        f"<p>{actor} moved {applicant}'s application for {dto.job_title} to "
+        f"the {stage_label(stage, dto.job_kind)} stage.</p>"
+        "<p>Open the Applications Board in Purrf to see it.</p>",
+    )
+
+
+def _round_advanced(dto, stage):
+    actor = dto.actor_name or _MISSING_ACTOR
+    applicant = dto.applicant_name or _MISSING_APPLICANT
+    return (
+        f"Round advanced: {applicant} ({dto.job_title})",
+        f"<p>{actor} advanced {applicant}'s {stage_label(stage, dto.job_kind)} "
+        f"round for {dto.job_title} to round {dto.round}.</p>"
+        "<p>Open the Applications Board in Purrf to see it.</p>",
+    )
+
+
+def _sub_status_changed(dto, stage):
+    actor = dto.actor_name or _MISSING_ACTOR
+    applicant = dto.applicant_name or _MISSING_APPLICANT
+    return (
+        f"Status changed: {applicant} ({dto.job_title})",
+        f"<p>{actor} moved {applicant}'s {stage_label(stage, dto.job_kind)} "
+        f"status for {dto.job_title} to {_humanize(dto.to_sub_status)}.</p>"
+        "<p>Open the Applications Board in Purrf to see it.</p>",
+    )
+
+
+def _evaluation_confirmed(dto, stage):
+    actor = dto.actor_name or _MISSING_ACTOR
+    applicant = dto.applicant_name or _MISSING_APPLICANT
+    return (
+        f"Evaluation submitted: {applicant} ({dto.job_title})",
+        f"<p>{actor} submitted their evaluation of {applicant} for "
+        f"{dto.job_title}.</p>"
+        f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
+        "<p>Open the Applications Board in Purrf to read it.</p>",
+    )
+
+
+def _interview_scheduled(dto, stage):
+    actor = dto.actor_name or _MISSING_ACTOR
+    applicant = dto.applicant_name or _MISSING_APPLICANT
+    return (
+        f"Interview scheduled: {applicant} ({dto.job_title})",
+        f"<p>{actor} scheduled an interview with {applicant} for "
+        f"{dto.job_title}, on {_format_utc(dto.start_at)}.</p>"
+        f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
+        "<p>Open the Applications Board in Purrf to see it.</p>",
+    )
+
+
+def _interview_updated(dto, stage):
+    actor = dto.actor_name or _MISSING_ACTOR
+    applicant = dto.applicant_name or _MISSING_APPLICANT
+    return (
+        f"Interview rescheduled: {applicant} ({dto.job_title})",
+        f"<p>{actor} rescheduled {applicant}'s interview for {dto.job_title} "
+        f"to {_format_utc(dto.start_at)}.</p>"
+        f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
+        "<p>Open the Applications Board in Purrf to see it.</p>",
+    )
+
+
+def _interview_cancelled(dto, stage):
+    actor = dto.actor_name or _MISSING_ACTOR
+    applicant = dto.applicant_name or _MISSING_APPLICANT
+    return (
+        f"Interview cancelled: {applicant} ({dto.job_title})",
+        f"<p>{actor} cancelled {applicant}'s interview for {dto.job_title}, "
+        f"which was set for {_format_utc(dto.start_at)}.</p>"
+        f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
+        "<p>Open the Applications Board in Purrf to see it.</p>",
+    )

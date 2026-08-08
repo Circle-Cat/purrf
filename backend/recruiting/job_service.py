@@ -51,8 +51,12 @@ class JobService:
                 JobReviewEntity (the review gate).
             notification_repository (NotificationRepository): Writes in-app
                 notification rows inside this transaction. The row is also
-                the email outbox -- NotificationEmailWorker picks it up once
-                it commits -- so nothing here sends mail. Used by
+                meant to double as an email outbox, but nothing drains it for
+                these legacy-model rows -- NotificationEmailWorker, which
+                used to, was retired with no replacement for this write path
+                (see NotificationEntity's docstring); the delivery pipeline in
+                notification_management/delivery_service.py only drains
+                event-based rows. So nothing here sends mail. Used by
                 ``_open_review`` (reviewer notified) and ``approve``/
                 ``reject`` (submitter notified of the decision).
             users_repository (UsersRepository): Actor-name resolution for the

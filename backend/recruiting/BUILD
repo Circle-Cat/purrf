@@ -17,6 +17,7 @@ py_library(
         "//backend/dto",
         "//backend/entity:entities",
         "//backend/notification_management:recipient_registry",
+        "//backend/notification_management:render_registry",
         "//backend/repository:repositories",
         "//backend/utils:permission_decorators",
         "@pypi//fastapi",
