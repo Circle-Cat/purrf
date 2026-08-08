@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from backend.common.fast_api_error_handler import register_exception_handlers
+from backend.recruiting import recipient_resolvers  # noqa: F401 (registers)
 from backend.utils.auth_middleware import AuthMiddleware
 
 

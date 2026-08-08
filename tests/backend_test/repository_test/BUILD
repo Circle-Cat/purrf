@@ -4,6 +4,7 @@ py_library(
     name = "base_repository_test_lib",
     testonly = True,
     srcs = ["base_repository_test_lib.py"],
+    visibility = ["//visibility:public"],
     deps = [
         "//backend/common:database",
         "//backend/common:mentorship_enums",

@@ -44,3 +44,25 @@ py_test(
         "//backend/notification_management:gerrit_webhook_lib",
     ],
 )
+
+py_test(
+    name = "recipient_registry_test",
+    srcs = ["recipient_registry_test.py"],
+    deps = [
+        "//backend/notification_management:recipient_registry",
+    ],
+)
+
+py_test(
+    name = "event_recorder_test",
+    srcs = ["event_recorder_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/notification_management:event_recorder",
+        "//backend/notification_management:recipient_registry",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)

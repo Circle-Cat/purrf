@@ -28,6 +28,10 @@ class NotificationRepository:
         costs nothing now and is what keeps scaling to two from silently
         emailing everyone twice.
 
+        Claims only rows that name what they are about in their own columns,
+        for the reason given on ``list_by_user``: the email renderer reads
+        ``type`` too.
+
         Args:
             session (AsyncSession): Active database async session, inside a
                 transaction that must stay open until the rows are stamped.
@@ -38,7 +42,10 @@ class NotificationRepository:
         """
         result = await session.execute(
             select(NotificationEntity)
-            .where(NotificationEntity.email_sent_at.is_(None))
+            .where(
+                NotificationEntity.email_sent_at.is_(None),
+                NotificationEntity.type.is_not(None),
+            )
             .order_by(NotificationEntity.created_at.asc())
             .limit(limit)
             .with_for_update(skip_locked=True)
@@ -74,10 +81,20 @@ class NotificationRepository:
         limit: int = 20,
         offset: int = 0,
     ) -> list[NotificationEntity]:
-        """List one user's notifications, newest first."""
+        """List one user's notifications, newest first.
+
+        Only rows that name what they are about in their own columns. Rows
+        that carry an ``event_id`` instead leave ``type`` NULL, and every
+        renderer downstream of here reads ``type`` -- one such row would fail
+        the whole list rather than itself. They become visible when a renderer
+        that reads the event exists.
+        """
         result = await session.execute(
             select(NotificationEntity)
-            .where(NotificationEntity.user_id == user_id)
+            .where(
+                NotificationEntity.user_id == user_id,
+                NotificationEntity.type.is_not(None),
+            )
             .order_by(
                 NotificationEntity.created_at.desc(),
                 NotificationEntity.notification_id.desc(),
@@ -88,11 +105,18 @@ class NotificationRepository:
         return list(result.scalars().all())
 
     async def count_by_user(self, session: AsyncSession, user_id: int) -> int:
-        """Count one user's notifications (all pending -- dismissed rows are deleted)."""
+        """Count one user's notifications (all pending -- dismissed rows are deleted).
+
+        Counts exactly the rows ``list_by_user`` returns, so the badge cannot
+        promise a row the list will not hand over.
+        """
         result = await session.execute(
             select(func.count())
             .select_from(NotificationEntity)
-            .where(NotificationEntity.user_id == user_id)
+            .where(
+                NotificationEntity.user_id == user_id,
+                NotificationEntity.type.is_not(None),
+            )
         )
         return result.scalar_one()
 
