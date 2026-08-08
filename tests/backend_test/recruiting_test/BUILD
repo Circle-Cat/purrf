@@ -261,3 +261,17 @@ py_test(
         "//backend/recruiting",
     ],
 )
+
+py_test(
+    name = "recipient_resolvers_test",
+    srcs = ["recipient_resolvers_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/notification_management:recipient_registry",
+        "//backend/recruiting",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)

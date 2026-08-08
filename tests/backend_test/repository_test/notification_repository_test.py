@@ -77,6 +77,32 @@ class TestNotificationRepository(BaseRepositoryTestLib):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].notification_id, created.notification_id)
 
+    async def test_event_shaped_rows_are_left_out_of_the_read_paths(self):
+        """An event-shaped row has type NULL, and every renderer reads type.
+
+        Returned rather than skipped, one such row fails the whole list -- the
+        user's bell breaks instead of one entry going missing -- and the badge
+        would promise a row the list cannot hand over. They become visible
+        when a renderer that reads the event exists.
+        """
+        app, recipient = await self._seed()
+        repo = NotificationRepository()
+        event = EventEntity(
+            subject_type="application",
+            subject_id=app.application_id,
+            actor_id=recipient.user_id,
+            event_type="recruiting.stage_changed",
+        )
+        await self.insert_entities([event])
+        await repo.create(
+            self.session,
+            NotificationEntity(user_id=recipient.user_id, event_id=event.event_id),
+        )
+
+        self.assertEqual(await repo.list_by_user(self.session, recipient.user_id), [])
+        self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 0)
+        self.assertEqual(await repo.claim_unemailed(self.session, 10), [])
+
     async def test_list_by_user_orders_newest_first(self):
         app, recipient = await self._seed()
         repo = NotificationRepository()
