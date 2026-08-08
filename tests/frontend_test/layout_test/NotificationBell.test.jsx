@@ -54,10 +54,7 @@ describe("NotificationBell", () => {
         notifications: [
           {
             id: 1,
-            type: "assigned_to_evaluate",
-            applicationId: 7,
-            jobId: 1,
-            round: 1,
+            eventType: "recruiting.reassigned",
             jobTitle: "Backend Engineer",
             applicantName: "Ada Lovelace",
             actorName: "Grace Hopper",
@@ -86,10 +83,7 @@ describe("NotificationBell", () => {
         notifications: [
           {
             id: 1,
-            type: "mentioned",
-            applicationId: 7,
-            jobId: 1,
-            round: null,
+            eventType: "recruiting.mentioned",
             jobTitle: "Backend Engineer",
             applicantName: "Ada Lovelace",
             actorName: "Grace Hopper",
@@ -121,10 +115,7 @@ describe("NotificationBell", () => {
         notifications: [
           {
             id: 1,
-            type: "mentioned",
-            applicationId: 7,
-            jobId: 1,
-            round: null,
+            eventType: "recruiting.mentioned",
             jobTitle: "Backend Engineer",
             applicantName: "Ada Lovelace",
             actorName: "Grace Hopper",
@@ -132,10 +123,7 @@ describe("NotificationBell", () => {
           },
           {
             id: 2,
-            type: "mentioned",
-            applicationId: 8,
-            jobId: 1,
-            round: null,
+            eventType: "recruiting.mentioned",
             jobTitle: "Backend Engineer",
             applicantName: "Grace Hopper",
             actorName: "Ada Lovelace",
@@ -176,28 +164,32 @@ describe("NotificationBell", () => {
 
   it.each([
     [
-      "application_submitted",
+      "recruiting.application_submitted",
+      {},
       "employment",
       "Ada Lovelace applied to Backend Engineer",
     ],
     [
-      "application_auto_rejected",
+      "recruiting.auto_rejected",
+      {},
       "employment",
       "Ada Lovelace applied to Backend Engineer and was rejected automatically",
     ],
     [
-      "application_auto_hired",
+      "recruiting.application_submitted",
+      { screenAutoHireRuleId: "r1" },
       "activity",
       "Ada Lovelace applied to Backend Engineer and was admitted automatically",
     ],
     [
-      "application_auto_hired",
+      "recruiting.application_submitted",
+      { screenAutoHireRuleId: "r1" },
       "employment",
       "Ada Lovelace applied to Backend Engineer and was hired automatically",
     ],
   ])(
     "describes a %s notification (%s posting)",
-    async (type, jobKind, text) => {
+    async (eventType, details, jobKind, text) => {
       const user = userEvent.setup();
       api.listNotifications.mockResolvedValue({
         data: {
@@ -205,9 +197,8 @@ describe("NotificationBell", () => {
           notifications: [
             {
               id: 1,
-              type,
-              applicationId: 7,
-              jobId: 1,
+              eventType,
+              details,
               jobTitle: "Backend Engineer",
               jobKind,
               applicantName: "Ada Lovelace",
@@ -231,10 +222,7 @@ describe("NotificationBell", () => {
 
 const MENTION = {
   id: 1,
-  type: "mentioned",
-  applicationId: 7,
-  jobId: 1,
-  round: null,
+  eventType: "recruiting.mentioned",
   jobTitle: "Backend Engineer",
   applicantName: "Ada Lovelace",
   actorName: "Grace Hopper",

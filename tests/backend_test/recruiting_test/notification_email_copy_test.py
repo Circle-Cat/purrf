@@ -1,21 +1,25 @@
 import unittest
 from datetime import datetime, timezone
 
+from types import SimpleNamespace
+
 from backend.common.recruiting_enums import (
     ApplicationStage,
     JobKind,
     NotificationType,
 )
-from backend.dto.notification_dto import NotificationDto
 from backend.recruiting import notification_email_copy
 
 
 def _dto(**overrides):
+    """The display fields the copy functions read.
+
+    A plain namespace, because that is what the renderers hand them: the
+    fields are resolved per event rather than read off a notification row.
+    """
     defaults = dict(
         id=1,
         type=NotificationType.ASSIGNED_TO_EVALUATE,
-        application_id=10,
-        job_id=3,
         round=1,
         job_title="Backend Engineer",
         job_kind=JobKind.EMPLOYMENT,
@@ -24,7 +28,7 @@ def _dto(**overrides):
         created_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
     )
     defaults.update(overrides)
-    return NotificationDto(**defaults)
+    return SimpleNamespace(**defaults)
 
 
 class TestStageLabel(unittest.TestCase):

@@ -37,10 +37,10 @@ from backend.dto.interview_dto import InterviewDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.communication_enums import ContextType
 from backend.common.permissions import Permission
-from backend.common.recruiting_enums import ApplicationStage, NotificationType
+from backend.common.recruiting_enums import ApplicationStage, RecruitingEvent
+from backend.notification_management.event_recorder import record_event
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.job_entity import JobEntity
-from backend.entity.notification_entity import NotificationEntity
 from backend.recruiting import stage_machine
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 
@@ -69,16 +69,16 @@ SEARCH_RESULT_LIMIT = 20
 # name field to add). get_application_activity uses this to know which
 # fields to look up and inject, without hardcoding each event type inline.
 _ASSIGNEE_NAME_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
-    "stage_changed": (("assigneeId", "assigneeName"),),
-    "round_advanced": (("assigneeId", "assigneeName"),),
-    "auto_assigned": (("assigneeId", "assigneeName"),),
-    "reassigned": (
+    "recruiting.stage_changed": (("assigneeId", "assigneeName"),),
+    "recruiting.round_advanced": (("assigneeId", "assigneeName"),),
+    "recruiting.auto_assigned": (("assigneeId", "assigneeName"),),
+    "recruiting.reassigned": (
         ("fromAssigneeId", "fromAssigneeName"),
         ("toAssigneeId", "toAssigneeName"),
     ),
-    "interview_scheduled": (("assigneeId", "assigneeName"),),
-    "interview_cancelled": (("assigneeId", "assigneeName"),),
-    "interview_updated": (
+    "recruiting.interview_scheduled": (("assigneeId", "assigneeName"),),
+    "recruiting.interview_cancelled": (("assigneeId", "assigneeName"),),
+    "recruiting.interview_updated": (
         ("assigneeId", "assigneeName"),
         ("fromAssigneeId", "fromAssigneeName"),
     ),
@@ -89,8 +89,8 @@ _ASSIGNEE_NAME_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
 # WHICH configured screening rule produced an automated outcome, read-time
 # only — the stored row keeps just the id.
 _SCREEN_RULE_ID_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
-    "auto_rejected": (("ruleId", "ruleLabel"),),
-    "application_submitted": (
+    "recruiting.auto_rejected": (("ruleId", "ruleLabel"),),
+    "recruiting.application_submitted": (
         ("screenQualifyRuleId", "screenQualifyRuleLabel"),
         ("screenAutoHireRuleId", "screenAutoHireRuleLabel"),
     ),
@@ -177,6 +177,7 @@ class BoardService:
         application_assignment_repository,
         user_permissions_repository,
         application_activity_repository,
+        event_repository,
         application_comment_repository,
         application_comment_mention_repository,
         evaluation_repository,
@@ -208,13 +209,15 @@ class BoardService:
                 verify a proposed assignee actively holds
                 ``Permission.RECRUITING_INTERVIEW_EVALUATE``.
             application_activity_repository (ApplicationActivityRepository):
-                Append-only audit log, written by ``change_stage``/
-                ``reassign``/``set_round``/``set_sub_status``/``blacklist``
-                and read by ``get_application_activity``.
+                Retained until the legacy activity tables are dropped;
+                nothing reads or writes through it any more.
+            event_repository (EventRepository): Reads the event log behind
+                ``get_application_activity`` and the history embedded in
+                ``get_other_applications``.
             application_comment_repository (ApplicationCommentRepository):
                 Append-only free-text discussion thread, written by
                 ``add_comment`` and read by ``list_comments`` -- independent
-                of ``application_activity_repository``.
+                of the event log.
             application_comment_mention_repository
                 (ApplicationCommentMentionRepository): Append-only
                 @-mention rows, written by ``add_comment`` and read by
@@ -265,6 +268,7 @@ class BoardService:
         self.application_assignment_repository = application_assignment_repository
         self.user_permissions_repository = user_permissions_repository
         self.application_activity_repository = application_activity_repository
+        self.event_repository = event_repository
         self.application_comment_repository = application_comment_repository
         self.application_comment_mention_repository = (
             application_comment_mention_repository
@@ -525,11 +529,12 @@ class BoardService:
             sender_user_id=current_user.user_id,
             thread_id=dto.thread_id,
         )
-        await self.application_activity_repository.create(
+        await record_event(
             session,
-            application_id,
-            current_user.user_id,
-            "email_sent",
+            subject_type="application",
+            subject_id=application_id,
+            actor_id=current_user.user_id,
+            event_type=RecruitingEvent.EMAIL_SENT,
             details={
                 "subject": dto.subject,
                 "to": recipients,
@@ -1245,8 +1250,8 @@ class BoardService:
         _application, job = await self._load_owned_application(
             session, current_user, application_id, allow_read_all=True
         )
-        rows = await self.application_activity_repository.list_by_application(
-            session, application_id
+        rows = await self.event_repository.list_by_subject(
+            session, "application", application_id
         )
         return await self._activity_dtos(session, rows, job)
 
@@ -1289,7 +1294,7 @@ class BoardService:
             for question in ((job.form_schema or {}).get("questions") or [])
             if isinstance(question, dict)
         }
-        ids_to_resolve = {row.actor_id for row in rows}
+        ids_to_resolve = {row.actor_id for row in rows if row.actor_id is not None}
         for row in rows:
             for raw_field, _ in _ASSIGNEE_NAME_FIELDS.get(row.event_type, ()):
                 raw_id = row.details.get(raw_field)
@@ -1321,11 +1326,15 @@ class BoardService:
                 )
             result.append(
                 ApplicationActivityDto(
-                    id=row.activity_id,
+                    id=row.event_id,
                     event_type=row.event_type,
                     details=details,
                     actor_id=row.actor_id,
-                    actor_name=names_by_id.get(row.actor_id, f"User {row.actor_id}"),
+                    actor_name=(
+                        None
+                        if row.actor_id is None
+                        else names_by_id.get(row.actor_id, f"User {row.actor_id}")
+                    ),
                     created_at=row.created_at,
                 )
             )
@@ -1407,10 +1416,8 @@ class BoardService:
             activity: list[ApplicationActivityDto] = []
             comments: list[CommentDto] = []
             if include_history:
-                activity_rows = (
-                    await self.application_activity_repository.list_by_application(
-                        session, other_application.application_id
-                    )
+                activity_rows = await self.event_repository.list_by_subject(
+                    session, "application", other_application.application_id
                 )
                 activity = await self._activity_dtos(session, activity_rows, other_job)
                 comment_rows = (
@@ -1642,11 +1649,12 @@ class BoardService:
 
         current_sub = await self._freeze_current_submission(session, application_id)
         application = await self.application_repository.update(session, application)
-        await self.application_activity_repository.create(
+        await record_event(
             session,
-            application_id,
-            current_user.user_id,
-            "stage_changed",
+            subject_type="application",
+            subject_id=application_id,
+            actor_id=current_user.user_id,
+            event_type=RecruitingEvent.STAGE_CHANGED,
             details={
                 "fromStage": from_stage.value,
                 "toStage": dto.to_stage.value,
@@ -1676,19 +1684,21 @@ class BoardService:
                 user_id=application.user_id,
                 job=job,
             )
-        if (
-            new_interview_assignee is not None
-            and new_interview_assignee != current_user.user_id
-        ):
-            await self.notification_repository.create(
+        if new_interview_assignee is not None:
+            # A stage move that lands on an interview stage also hands someone
+            # the evaluation. That reads as its own thing to the person picking
+            # it up, so it is its own event rather than a detail of the move.
+            await record_event(
                 session,
-                NotificationEntity(
-                    user_id=new_interview_assignee,
-                    type=NotificationType.ASSIGNED_TO_EVALUATE,
-                    application_id=application_id,
-                    round=1,
-                    actor_user_id=current_user.user_id,
-                ),
+                subject_type="application",
+                subject_id=application_id,
+                actor_id=current_user.user_id,
+                event_type=RecruitingEvent.REASSIGNED,
+                details={
+                    "stage": dto.to_stage.value,
+                    "assigneeId": new_interview_assignee,
+                    "round": 1,
+                },
             )
         await session.commit()
         # `editable` encodes the CANDIDATE's edit window (see
@@ -1778,32 +1788,20 @@ class BoardService:
         previous_assignee_id = (
             previous_assignment.assignee_id if previous_assignment is not None else None
         )
-        await self.application_activity_repository.create(
+        await record_event(
             session,
-            application_id,
-            current_user.user_id,
-            "reassigned",
+            subject_type="application",
+            subject_id=application_id,
+            actor_id=current_user.user_id,
+            event_type=RecruitingEvent.REASSIGNED,
             details={
                 "stage": application.stage.value,
                 "round": application.current_round,
                 "fromAssigneeId": previous_assignee_id,
                 "toAssigneeId": dto.assignee_id,
+                "assigneeId": dto.assignee_id,
             },
         )
-        if (
-            dto.assignee_id != previous_assignee_id
-            and dto.assignee_id != current_user.user_id
-        ):
-            await self.notification_repository.create(
-                session,
-                NotificationEntity(
-                    user_id=dto.assignee_id,
-                    type=NotificationType.ASSIGNED_TO_EVALUATE,
-                    application_id=application_id,
-                    round=application.current_round,
-                    actor_user_id=current_user.user_id,
-                ),
-            )
         await session.commit()
         current_sub = await self.application_submission_repository.get_current(
             session, application_id
@@ -1875,11 +1873,12 @@ class BoardService:
         application.sub_status = dto.sub_status
 
         application = await self.application_repository.update(session, application)
-        await self.application_activity_repository.create(
+        await record_event(
             session,
-            application_id,
-            current_user.user_id,
-            "sub_status_changed",
+            subject_type="application",
+            subject_id=application_id,
+            actor_id=current_user.user_id,
+            event_type=RecruitingEvent.SUB_STATUS_CHANGED,
             details={
                 "stage": application.stage.value,
                 "fromSubStatus": current_value,
@@ -1992,11 +1991,12 @@ class BoardService:
             session, application_id
         )
         application = await self.application_repository.update(session, application)
-        await self.application_activity_repository.create(
+        await record_event(
             session,
-            application_id,
-            current_user.user_id,
-            "round_advanced",
+            subject_type="application",
+            subject_id=application_id,
+            actor_id=current_user.user_id,
+            event_type=RecruitingEvent.ROUND_ADVANCED,
             details={
                 "stage": application.stage.value,
                 "fromRound": from_round,
@@ -2085,11 +2085,12 @@ class BoardService:
 
         current_sub = await self._freeze_current_submission(session, dto.application_id)
         application = await self.application_repository.update(session, application)
-        await self.application_activity_repository.create(
+        await record_event(
             session,
-            dto.application_id,
-            current_user.user_id,
-            "blacklisted",
+            subject_type="application",
+            subject_id=dto.application_id,
+            actor_id=current_user.user_id,
+            event_type=RecruitingEvent.BLACKLISTED,
             details={"fromStage": from_stage.value, "reason": dto.reason},
         )
 
@@ -2123,11 +2124,12 @@ class BoardService:
                 locked.current_round = 1
                 await self._freeze_current_submission(session, locked.application_id)
             await self.application_repository.update(session, locked)
-            await self.application_activity_repository.create(
+            await record_event(
                 session,
-                locked.application_id,
-                current_user.user_id,
-                "blacklisted",
+                subject_type="application",
+                subject_id=locked.application_id,
+                actor_id=current_user.user_id,
+                event_type=RecruitingEvent.BLACKLISTED,
                 details={"fromStage": other_from_stage.value, "reason": dto.reason},
             )
             swept_application_ids.append(locked.application_id)
@@ -2469,19 +2471,21 @@ class BoardService:
             await self.application_comment_mention_repository.create_mentions(
                 session, row.comment_id, mentioned_ids
             )
-            for mentioned_id in mentioned_ids:
-                if mentioned_id == current_user.user_id:
-                    continue
-                await self.notification_repository.create(
-                    session,
-                    NotificationEntity(
-                        user_id=mentioned_id,
-                        type=NotificationType.MENTIONED,
-                        application_id=application_id,
-                        comment_id=row.comment_id,
-                        actor_user_id=current_user.user_id,
-                    ),
-                )
+            # mentionedIds is what decides who hears about this: who was
+            # mentioned is a property of the comment, not something derivable
+            # from the application afterwards, so it travels on the event. A
+            # different spelling resolves to nobody without erroring.
+            await record_event(
+                session,
+                subject_type="application",
+                subject_id=application_id,
+                actor_id=current_user.user_id,
+                event_type=RecruitingEvent.MENTIONED,
+                details={
+                    "mentionedIds": mentioned_ids,
+                    "commentId": row.comment_id,
+                },
+            )
         await session.commit()
         author = await self.users_repository.get_user_by_user_id(
             session, current_user.user_id
