@@ -641,4 +641,120 @@ describe("read-only mode", () => {
     );
     expect(screen.queryByText(/characters$/)).not.toBeInTheDocument();
   });
+
+  it("disables the unpicked options once the cap is reached", () => {
+    render(
+      <FormRenderer
+        questions={[
+          {
+            id: "q1",
+            type: "multi_choice",
+            label: "Pick",
+            options: ["a", "b", "c"],
+            maxSelections: 2,
+          },
+        ]}
+        answers={{ q1: ["a", "b"] }}
+      />,
+    );
+    expect(screen.getByRole("checkbox", { name: "c" })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "a" })).not.toBeDisabled();
+    expect(screen.getByText("Selected 2 / 2")).toBeInTheDocument();
+  });
+
+  it("lets the unpicked options back in when one is cleared", () => {
+    render(
+      <FormRenderer
+        questions={[
+          {
+            id: "q1",
+            type: "multi_choice",
+            label: "Pick",
+            options: ["a", "b", "c"],
+            maxSelections: 2,
+          },
+        ]}
+        answers={{ q1: ["a"] }}
+      />,
+    );
+    expect(screen.getByRole("checkbox", { name: "c" })).not.toBeDisabled();
+    expect(screen.getByText("Selected 1 / 2")).toBeInTheDocument();
+  });
+
+  it("keeps an over-cap selection clearable after the author lowers the cap", () => {
+    render(
+      <FormRenderer
+        questions={[
+          {
+            id: "q1",
+            type: "multi_choice",
+            label: "Pick",
+            options: ["a", "b", "c"],
+            maxSelections: 2,
+          },
+        ]}
+        answers={{ q1: ["a", "b", "c"] }}
+      />,
+    );
+    // Every option is picked, so none is disabled and the candidate can climb
+    // back down; the count says why they must.
+    expect(screen.getByRole("checkbox", { name: "a" })).not.toBeDisabled();
+    expect(screen.getByText("Selected 3 / 2")).toHaveClass("text-destructive");
+  });
+
+  it("still disables an unpicked option while a selection sits above the cap", () => {
+    render(
+      <FormRenderer
+        questions={[
+          {
+            id: "q1",
+            type: "multi_choice",
+            label: "Pick",
+            options: ["a", "b", "c", "d", "e", "f"],
+            maxSelections: 3,
+          },
+        ]}
+        answers={{ q1: ["a", "b", "c", "d", "e"] }}
+      />,
+    );
+    expect(screen.getByRole("checkbox", { name: "f" })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "a" })).not.toBeDisabled();
+  });
+
+  it("disables nothing when the question has no cap", () => {
+    render(
+      <FormRenderer
+        questions={[
+          {
+            id: "q1",
+            type: "multi_choice",
+            label: "Pick",
+            options: ["a", "b"],
+          },
+        ]}
+        answers={{ q1: ["a"] }}
+      />,
+    );
+    expect(screen.getByRole("checkbox", { name: "b" })).not.toBeDisabled();
+    expect(screen.getByText("Selected 1")).toBeInTheDocument();
+  });
+
+  it("shows no selection count in read-only mode", () => {
+    render(
+      <FormRenderer
+        questions={[
+          {
+            id: "q1",
+            type: "multi_choice",
+            label: "Pick",
+            options: ["a", "b"],
+            maxSelections: 1,
+          },
+        ]}
+        answers={{ q1: ["a"] }}
+        readOnly
+      />,
+    );
+    expect(screen.queryByText(/^Selected /)).not.toBeInTheDocument();
+  });
 });

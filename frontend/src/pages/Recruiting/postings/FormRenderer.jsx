@@ -224,6 +224,10 @@ const QuestionControl = ({
           ? selected.filter((o) => o !== opt)
           : [...selected, opt],
       );
+    const cap = question.maxSelections;
+    // `>=`, not `===`: an author who lowers the cap leaves candidates sitting
+    // above it, and those must stop gaining options too.
+    const atCap = cap != null && selected.length >= cap;
     return (
       <div className="space-y-2">
         <div role="group" aria-label={label} className="space-y-1">
@@ -238,7 +242,7 @@ const QuestionControl = ({
                 type="checkbox"
                 value={opt}
                 checked={selected.includes(opt)}
-                disabled={readOnly}
+                disabled={readOnly || (atCap && !selected.includes(opt))}
                 onChange={readOnly ? () => {} : () => toggle(opt)}
               />
               {opt}
@@ -248,6 +252,21 @@ const QuestionControl = ({
             <RetiredChoice key={answerLabel(v)} kind="checkbox" value={v} />
           ))}
         </div>
+        {!readOnly && (
+          // A cap the candidate cannot see is one they only learn about by
+          // being rejected at submit, after picking past it.
+          <p
+            className={`text-xs ${
+              cap != null && selected.length > cap
+                ? "text-destructive"
+                : "text-slate-500"
+            }`}
+          >
+            {cap == null
+              ? `Selected ${selected.length}`
+              : `Selected ${selected.length} / ${cap}`}
+          </p>
+        )}
         {specifyInput}
       </div>
     );
