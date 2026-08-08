@@ -12,6 +12,10 @@ locals {
     api   = "${local.subdomain_prefix}api.${var.base_domain}"
     login = "${local.subdomain_prefix}login.${var.base_domain}"
     cf    = "${local.subdomain_prefix}cf.${var.base_domain}"
+    # Worker-only hostname for Pub/Sub push. Nothing is served from an origin
+    # here: the DNS record is a placeholder address behind Cloudflare's proxy
+    # and a Worker route answers every request.
+    hook = "${local.subdomain_prefix}hook.${var.base_domain}"
   }
 
   common_labels = {
