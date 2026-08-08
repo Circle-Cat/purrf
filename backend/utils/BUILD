@@ -78,6 +78,7 @@ py_library(
     deps = [
         ":auth_middleware",
         "//backend/common:fast_api_error_handler",
+        "//backend/recruiting",
         "@pypi//fastapi",
     ],
 )
