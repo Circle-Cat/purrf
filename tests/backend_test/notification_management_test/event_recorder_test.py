@@ -52,7 +52,9 @@ class EventRecorderTest(BaseRepositoryTestLib):
         await self.insert_entities([actor, *recipients])
         recipient_ids = [user.user_id for user in recipients]
 
-        @recipient_registry.register_recipients("demo.three")
+        @recipient_registry.register_recipients(
+            "demo.three", subject_type="application"
+        )
         async def resolver(session, event):
             return recipient_ids
 
@@ -78,7 +80,9 @@ class EventRecorderTest(BaseRepositoryTestLib):
         other = _make_user()
         await self.insert_entities([actor, other])
 
-        @recipient_registry.register_recipients("demo.includes_actor")
+        @recipient_registry.register_recipients(
+            "demo.includes_actor", subject_type="application"
+        )
         async def resolver(session, event):
             return [other.user_id, actor.user_id]
 
