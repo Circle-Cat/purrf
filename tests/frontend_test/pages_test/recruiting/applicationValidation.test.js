@@ -163,6 +163,25 @@ describe("long text", () => {
   });
 });
 
+describe("hard ceiling", () => {
+  it("rejects a short text answer past the hard ceiling", () => {
+    const questions = [{ id: "q1", type: "short_text", label: "City" }];
+    const errors = validateApplication(questions, { q1: "x".repeat(256) });
+    expect(errors["answer:q1"]).toBe("Keep this under 255 characters");
+  });
+
+  it("accepts a short text answer of exactly the hard ceiling", () => {
+    const questions = [{ id: "q1", type: "short_text", label: "City" }];
+    expect(validateApplication(questions, { q1: "x".repeat(255) })).toEqual({});
+  });
+
+  it("holds an unbudgeted long text answer to the fallback ceiling", () => {
+    const questions = [{ id: "q1", type: "long_text", label: "Why" }];
+    const errors = validateApplication(questions, { q1: "x".repeat(5001) });
+    expect(errors["answer:q1"]).toBe("Keep this under 5000 characters");
+  });
+});
+
 describe("exact text", () => {
   const exact = q({
     type: "exact_text",

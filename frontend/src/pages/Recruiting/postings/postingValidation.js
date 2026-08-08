@@ -16,6 +16,8 @@
  * and quietly disable a rule.
  */
 
+import { LONG_TEXT_MAX_LENGTH } from "@/pages/Recruiting/postings/questionLimits";
+
 /** A field on the posting itself. */
 export const basicsKey = (field) => `basics:${field}`;
 /** A field on one question. */
@@ -105,10 +107,16 @@ export const validatePosting = (draft) => {
     }
 
     if (question.type === "long_text") {
-      // "max_length must be > 0"
-      if (question.maxLength != null && question.maxLength <= 0) {
+      // QuestionDto.validate_type_fields: "max_length must be within [1, N]".
+      // The upper bound is the same ceiling an unbudgeted long text falls back
+      // to -- a budget above it would promise the candidate room the submit
+      // check will not give them.
+      if (
+        question.maxLength != null &&
+        (question.maxLength < 1 || question.maxLength > LONG_TEXT_MAX_LENGTH)
+      ) {
         errors[questionKey(question.id, "maxLength")] =
-          "Must be greater than 0";
+          `Must be between 1 and ${LONG_TEXT_MAX_LENGTH}`;
       }
     }
 
