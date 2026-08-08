@@ -1,4 +1,4 @@
-from enum import StrEnum
+from enum import Enum, StrEnum
 
 
 class UserType(StrEnum):
@@ -98,3 +98,19 @@ class NotificationType(StrEnum):
     APPLICATION_SUBMITTED = "application_submitted"
     APPLICATION_AUTO_REJECTED = "application_auto_rejected"
     APPLICATION_AUTO_HIRED = "application_auto_hired"
+
+
+class NotificationStatus(str, Enum):
+    """Where a notification's email is in its delivery lifecycle.
+
+    ``FAILED`` and ``EXPIRED`` are deliberately distinct: FAILED means this
+    row can never succeed (no address on file, template blew up), EXPIRED
+    means it could still succeed but no longer matters. Collapsing them
+    loses the answer to "why did this never arrive".
+    """
+
+    PENDING = "pending"
+    SENDING = "sending"
+    SENT = "sent"
+    FAILED = "failed"
+    EXPIRED = "expired"
