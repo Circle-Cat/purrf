@@ -105,3 +105,11 @@ output "auth0_backend_management_m2m_client_secret" {
   value     = auth0_client_credentials.backend_management_m2m.client_secret
   sensitive = true
 }
+
+# Numeric unique_id of the notification push service account, for the gateway
+# Worker's ALLOWED_SUBS. The Worker's secrets live in the global bootstrap
+# configuration, which is a separate state and cannot read this one, so the
+# value is carried across by hand -- apply this module first.
+output "notification_pusher_sub" {
+  value = google_service_account.notification_pusher.unique_id
+}
