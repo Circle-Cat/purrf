@@ -791,3 +791,83 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_staging" {
     },
   ]
 }
+
+# Notification push gateway, test only for now: the rest of the environments
+# get theirs once this one has run for real.
+#
+# test-hook.purrf.io is answered entirely by a Worker. The AAAA record points
+# at the reserved discard address and is proxied, so the name resolves and
+# Cloudflare terminates it, but there is no origin behind it. The route that
+# actually serves the hostname is declared in
+# workers/pubsub-gateway/wrangler.jsonc.
+
+
+resource "cloudflare_dns_record" "hook_test" {
+  zone_id = local.zone_id
+  name    = "test-hook"
+  type    = "AAAA"
+  content = "100::"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [comment]
+  }
+}
+
+
+# The gateway Worker reaches the backend with an Access service token, which
+# is the Worker's entire reason for existing: Pub/Sub cannot send one itself.
+# client_id and client_secret are computed here and applied to the Worker out
+# of band -- provider v5 has no Worker-secret resource, and the script is
+# owned by its own deploy rather than by Terraform. See the runbook.
+
+resource "cloudflare_zero_trust_access_service_token" "notification_gateway_test" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf-notification-gateway-test"
+  # Non-expiring. An expiry would be silent from the outside: Access starts
+  # refusing the gateway, delivery reads that as a transient failure, and the
+  # messages retry until they dead-letter, with nothing raised. Rotation is a
+  # deliberate act instead -- see outputs.tf.
+  duration = "forever"
+}
+
+
+# A path-scoped Access application, deliberately separate from the host-wide
+# purrf application rather than another policy on it: Cloudflare matches the
+# most specific application, so this one governs the delivery route alone and
+# leaves the application covering the rest of the host untouched.
+
+resource "cloudflare_zero_trust_access_application" "notification_delivery_test" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf-notification-delivery-test"
+  type       = "self_hosted"
+  destinations = [
+    { type = "public", uri = "${local.environments.test.api_host}/api/notifications/deliver" },
+  ]
+  # A machine endpoint: nobody should find it in the App Launcher.
+  app_launcher_visible = false
+  session_duration     = "0s"
+  policies = [
+    {
+      id         = cloudflare_zero_trust_access_policy.notification_delivery_test.id
+      precedence = 1
+    },
+  ]
+}
+
+
+# Only the gateway Worker's service token gets through. non_identity because
+# there is no human on this path -- a browser reaching it should be rejected,
+# not shown a login.
+
+resource "cloudflare_zero_trust_access_policy" "notification_delivery_test" {
+  account_id = local.cloudflare_account_id
+  name       = "gateway-worker-only-test"
+  decision   = "non_identity"
+  include = [{
+    service_token = {
+      token_id = cloudflare_zero_trust_access_service_token.notification_gateway_test.id
+    }
+  }]
+}
+
