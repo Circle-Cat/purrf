@@ -87,7 +87,6 @@ class InterviewSchedulingService:
         application_repository,
         application_assignment_repository,
         application_interview_repository,
-        application_activity_repository,
         users_repository,
         user_emails_repository,
         meeting_scheduling_service,
@@ -107,8 +106,6 @@ class InterviewSchedulingService:
                 access; the meeting's assignee IS the round's assignment.
             application_interview_repository (ApplicationInterviewRepository):
                 Scheduled-meeting row data access.
-            application_activity_repository (ApplicationActivityRepository):
-                Append-only audit log, written on schedule/update/cancel.
             users_repository (UsersRepository): Candidate/interviewer/
                 recruiter name resolution for the meeting title and the
                 response DTO.
@@ -129,7 +126,6 @@ class InterviewSchedulingService:
         self.application_repository = application_repository
         self.application_assignment_repository = application_assignment_repository
         self.application_interview_repository = application_interview_repository
-        self.application_activity_repository = application_activity_repository
         self.users_repository = users_repository
         self.user_emails_repository = user_emails_repository
         self.meeting_scheduling_service = meeting_scheduling_service

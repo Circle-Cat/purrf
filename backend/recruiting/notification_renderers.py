@@ -1,28 +1,21 @@
 """Renders one recruiting event into (subject, HTML body) for delivery.
 
 Bridges the domain-neutral ``render_registry``/``DeliveryService`` to
-``notification_email_copy``'s per-type template functions. ``NotificationDto``
-served that role for the old ``NotificationType``-keyed model;
-``EventEntity.event_type`` replaces it here, so this module resolves the same
-display fields (applicant_name/job_title/actor_name/job_kind/stage/round)
-from ``subject_id`` + ``event.details`` instead of from ``NotificationEntity``'s
-legacy columns, and hands them to the template functions as a plain
-``SimpleNamespace`` rather than a ``NotificationDto`` (whose ``type`` field a
-new-model row has no value for).
+``notification_email_copy``'s per-type template functions. Dispatch is by
+``EventEntity.event_type``, and the display fields each template reads
+(applicant_name/job_title/actor_name/job_kind/stage/round) are resolved from
+``subject_id`` + ``event.details`` and handed over as a plain
+``SimpleNamespace``.
 
 Stage and round are read from ``event.details`` -- the value captured at the
 instant the write site recorded the event -- never re-queried live. A Pub/Sub
 redelivery can render this notification hours after the event (see
 ``EXPIRY`` in ``delivery_service.py``), by which point the application may
 have moved to a different stage or round; a live read would misreport a
-point-in-time fact as current. This is exactly the risk
-``notification_email_copy``'s module docstring calls out for the old model's
-near-immediate worker, sharpened by how much slower Pub/Sub delivery can be.
-The ``details`` keys each renderer below reads are a cross-task contract
-with the write-site migration (record_event's future callers): every key is
-taken from that call site's *existing* (pre-migration) activity-log
-``details`` dict, on the theory that the migration swaps the API call and
-keeps the payload. If a future write site spells or nests a key
+point-in-time fact as current.
+
+The ``details`` keys each renderer below reads are a contract with the write
+site that records the event. If a write site spells or nests a key
 differently, the affected renderer raises ``KeyError``/``ValueError``, which
 ``DeliveryService`` treats as a transient failure (retried, then expired
 after 24h) rather than a silent wrong render.
@@ -130,6 +123,15 @@ def _stage(details: dict, key: str = "stage") -> ApplicationStage:
     return ApplicationStage(details[key])
 
 
+def _with_footer(rendered: tuple[str, str]) -> tuple[str, str]:
+    """Append the standard automated-message footer.
+
+    Every renderer here goes through this, so the footer reads the same on
+    each notification email regardless of which template produced the body."""
+    subject, body = rendered
+    return subject, body + copy._FOOTER
+
+
 # --- application_submitted / auto_rejected -----------------------------
 
 
@@ -146,14 +148,14 @@ async def _render_application_submitted(session, event):
     dto = await _base_dto(session, event)
     stage = _stage(event.details)
     if "screenAutoHireRuleId" in event.details:
-        return copy._application_auto_hired(dto, stage)
-    return copy._application_submitted(dto, stage)
+        return _with_footer(copy._application_auto_hired(dto, stage))
+    return _with_footer(copy._application_submitted(dto, stage))
 
 
 @register_render("recruiting.auto_rejected")
 async def _render_auto_rejected(session, event):
     dto = await _base_dto(session, event)
-    return copy._application_auto_rejected(dto, None)
+    return _with_footer(copy._application_auto_rejected(dto, None))
 
 
 # --- reassigned / auto_assigned -> _assigned_to_evaluate ----------------
@@ -162,7 +164,7 @@ async def _render_auto_rejected(session, event):
 async def _render_assigned_to_evaluate(session, event):
     dto = await _base_dto(session, event)
     dto.round = event.details.get("round")
-    return copy._assigned_to_evaluate(dto, _stage(event.details))
+    return _with_footer(copy._assigned_to_evaluate(dto, _stage(event.details)))
 
 
 register_render("recruiting.reassigned")(_render_assigned_to_evaluate)
@@ -175,7 +177,7 @@ register_render("recruiting.auto_assigned")(_render_assigned_to_evaluate)
 @register_render("recruiting.mentioned")
 async def _render_mentioned(session, event):
     dto = await _base_dto(session, event)
-    return copy._mentioned(dto, None)
+    return _with_footer(copy._mentioned(dto, None))
 
 
 # --- review_opened / review_decided (subject is the job) ----------------
@@ -184,7 +186,7 @@ async def _render_mentioned(session, event):
 @register_render("recruiting.review_opened")
 async def _render_review_opened(session, event):
     dto = await _base_dto(session, event)
-    return copy._job_review_requested(dto, None)
+    return _with_footer(copy._job_review_requested(dto, None))
 
 
 @register_render("recruiting.review_decided")
@@ -195,22 +197,13 @@ async def _render_review_decided(session, event):
         if event.details["decision"] == "approved"
         else copy._job_review_rejected
     )
-    return template(dto, None)
+    return _with_footer(template(dto, None))
 
 
-# --- the 8 new event types -----------------------------------------------
+# --- events whose copy reads details straight through --------------------
 #
-# None of these go through notification_email_copy.render() -- that
-# function dispatches by NotificationType, not event_type, and is the one
-# thing this module must not touch. render() is also the only place that
-# appends copy._FOOTER, so each wrapper below does it explicitly instead.
-
-
-def _with_footer(rendered: tuple[str, str]) -> tuple[str, str]:
-    """Append the standard automated-message footer, same text every
-    NotificationType-keyed template gets via render()."""
-    subject, body = rendered
-    return subject, body + copy._FOOTER
+# Each wrapper below takes what its template needs from event.details and
+# passes it on, with no context lookup beyond the base dto.
 
 
 @register_render("recruiting.blacklisted")
