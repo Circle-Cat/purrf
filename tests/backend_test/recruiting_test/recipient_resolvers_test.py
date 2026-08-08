@@ -60,9 +60,7 @@ def _event(
 class RecipientResolversTest(BaseRepositoryTestLib):
     """DB-backed tests for the recruiting event_type -> recipients wiring.
 
-    ``tests/backend_test/helpers/recruiting_fixtures.py`` (used by the task
-    brief's literal code) does not exist in this repo. This subclasses
-    ``BaseRepositoryTestLib`` instead, matching every other DB-backed test in
+    Subclasses ``BaseRepositoryTestLib``, like every other DB-backed test in
     this codebase, so each test runs in its own rolled-back transaction and
     the shared CI database never accumulates rows.
     """
@@ -204,13 +202,13 @@ class RecipientResolversTest(BaseRepositoryTestLib):
         self.assertEqual(await resolve_recipients(self.session, event), {owner.user_id})
 
     async def test_review_opened_reaches_the_reviewer_ids_on_the_event(self):
-        """``reviewerIds`` is a cross-task contract, not an internal detail.
+        """``reviewerIds`` is a contract with the write site, not an internal detail.
 
-        Task 8's write site is the only producer of this key. If it spells
-        it differently (e.g. ``reviewer_ids``) or nests it, this resolver
-        returns an empty set with no exception and no log -- the review
-        opens and nobody is told. This test is the only thing that would
-        catch that mismatch.
+        The write site is the only producer of this key. If it spells the key
+        differently (e.g. ``reviewer_ids``) or nests it, this resolver returns
+        an empty set with no exception and no log -- the review opens and
+        nobody is told. This test is the only thing that would catch that
+        mismatch.
         """
         job = await self._make_job([])
         event = _event(
@@ -223,12 +221,12 @@ class RecipientResolversTest(BaseRepositoryTestLib):
         self.assertEqual(await resolve_recipients(self.session, event), {21, 22})
 
     async def test_mentioned_reaches_the_mentioned_ids_on_the_event(self):
-        """``mentionedIds`` is a cross-task contract, not an internal detail.
+        """``mentionedIds`` is a contract with the write site, not an internal detail.
 
-        ``board_service.add_comment`` (migrated onto ``record_event`` in
-        Task 8) is the sole producer of this key. A misspelling or
-        restructuring there yields an empty recipient set with no exception
-        and no log -- @-mentions would silently stop notifying anyone.
+        ``board_service.add_comment`` is the sole producer of this key. A
+        misspelling or restructuring there yields an empty recipient set with
+        no exception and no log -- @-mentions would silently stop notifying
+        anyone.
         """
         event = _event(
             "recruiting.mentioned",

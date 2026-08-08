@@ -91,17 +91,23 @@ class EventRecorderTest(BaseRepositoryTestLib):
         )
         self.assertEqual({n.user_id for n in notifications}, {other.user_id})
 
-    async def test_event_row_is_written_even_with_no_recipients(self):
-        """job_created and friends belong on the timeline but notify nobody."""
+    async def test_event_row_is_written_when_no_resolver_is_registered(self):
+        """An unregistered type still lands on the timeline, notifying nobody.
+
+        Which production types are deliberately silent is asserted against the
+        real registry in ``recipient_resolvers_test``; this covers only what
+        ``record_event`` does when nothing resolves.
+        """
         actor = _make_user()
         await self.insert_entities([actor])
+        self.assertNotIn("demo.unregistered", recipient_registry._RESOLVERS)
 
         event, notifications = await record_event(
             self.session,
             subject_type="job",
             subject_id=3,
             actor_id=actor.user_id,
-            event_type="recruiting.job_created",
+            event_type="demo.unregistered",
         )
         self.assertIsNotNone(event.event_id)
         self.assertEqual(notifications, [])
@@ -115,7 +121,7 @@ class EventRecorderTest(BaseRepositoryTestLib):
             subject_type="job",
             subject_id=3,
             actor_id=actor.user_id,
-            event_type="recruiting.job_created",
+            event_type="demo.unregistered",
         )
         self.assertEqual(event.details, {})
 
