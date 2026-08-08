@@ -83,8 +83,11 @@ class ApplicationService:
                 every call, attributed to the candidate themselves.
             notification_repository (NotificationRepository): Writes in-app
                 notification rows inside this transaction. The row is also
-                the email outbox -- NotificationEmailWorker picks it up once
-                it commits -- so nothing here sends mail. ``_assign_default_if_configured``
+                meant to double as an email outbox, but nothing drains it for
+                these legacy-model rows -- NotificationEmailWorker, which
+                used to, was retired with no replacement for this write path
+                (see NotificationEntity's docstring). So nothing here sends
+                mail. ``_assign_default_if_configured``
                 notifies the materialized default assignee here, and
                 ``_notify_owners_of_submission`` notifies the posting's
                 owners.

@@ -1,11 +1,20 @@
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.entity.notification_entity import NotificationEntity
 
 
 class NotificationRepository:
-    """Database operations for NotificationEntity (append-only; dismissing deletes the row)."""
+    """Database operations for NotificationEntity (append-only; dismissing deletes the row).
+
+    Email delivery for the new event-based rows is NOT here: it is a state
+    machine (PENDING/SENDING/SENT/FAILED/EXPIRED) owned end-to-end by
+    ``DeliveryService``, which claims/settles rows with its own inline
+    ``update()`` statements rather than through this repository. The
+    ``claim_unemailed``/``mark_emailed`` pair that used to live here served
+    the old ``email_sent_at``-polling worker (``NotificationEmailWorker``,
+    removed) and had no equivalent once that worker was retired.
+    """
 
     async def create(
         self, session: AsyncSession, entity: NotificationEntity
@@ -14,58 +23,6 @@ class NotificationRepository:
         session.add(entity)
         await session.flush()
         return entity
-
-    async def claim_unemailed(
-        self, session: AsyncSession, limit: int
-    ) -> list[NotificationEntity]:
-        """Lock and return up to ``limit`` notifications still awaiting email.
-
-        Oldest first, so a backlog drains in the order it accrued. The rows
-        are locked ``FOR UPDATE SKIP LOCKED`` and stay locked until the
-        caller's transaction ends: a second worker (a replica, or an
-        overlapping pass) skips them rather than blocking on them or
-        double-sending. The deployment runs a single replica today, so this
-        costs nothing now and is what keeps scaling to two from silently
-        emailing everyone twice.
-
-        Args:
-            session (AsyncSession): Active database async session, inside a
-                transaction that must stay open until the rows are stamped.
-            limit (int): Maximum rows to claim in one pass.
-
-        Returns:
-            list[NotificationEntity]: The claimed rows, oldest first.
-        """
-        result = await session.execute(
-            select(NotificationEntity)
-            .where(NotificationEntity.email_sent_at.is_(None))
-            .order_by(NotificationEntity.created_at.asc())
-            .limit(limit)
-            .with_for_update(skip_locked=True)
-        )
-        return list(result.scalars().all())
-
-    async def mark_emailed(
-        self, session: AsyncSession, notification_ids: list[int], sent_at
-    ) -> None:
-        """Stamp ``email_sent_at`` on the given rows.
-
-        Called for every claimed row, delivered or not -- see
-        :class:`NotificationEntity` on why an undeliverable row is stamped
-        rather than left for the next pass.
-
-        Args:
-            session (AsyncSession): Active database async session.
-            notification_ids (list[int]): Rows to stamp; empty is a no-op.
-            sent_at (datetime): The stamp value.
-        """
-        if not notification_ids:
-            return
-        await session.execute(
-            update(NotificationEntity)
-            .where(NotificationEntity.notification_id.in_(notification_ids))
-            .values(email_sent_at=sent_at)
-        )
 
     async def list_by_user(
         self,
