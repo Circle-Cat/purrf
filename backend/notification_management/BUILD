@@ -29,6 +29,29 @@ py_library(
 )
 
 py_library(
+    name = "recipient_registry",
+    srcs = [
+        "recipient_registry.py",
+    ],
+    deps = [
+        "//backend/entity:entities",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "event_recorder",
+    srcs = [
+        "event_recorder.py",
+    ],
+    deps = [
+        ":recipient_registry",
+        "//backend/entity:entities",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "gerrit_subscription_service",
     srcs = [
         "gerrit_subscription_service.py",
