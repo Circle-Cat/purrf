@@ -60,4 +60,9 @@ async def record_event(
     if notifications:
         await session.flush()
 
+    if notifications:
+        session.info.setdefault("pending_notification_ids", []).extend(
+            notification.notification_id for notification in notifications
+        )
+
     return event, notifications

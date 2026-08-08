@@ -104,3 +104,13 @@ GMAIL_SENDER_RECRUITING = "GMAIL_SENDER_RECRUITING"
 # distinguishable in a recipient's inbox, and each environment sends from its
 # own alias so a non-prod message can never look like a prod one.
 GMAIL_SENDER_NOTIFICATION = "GMAIL_SENDER_NOTIFICATION"
+
+# Fully qualified Pub/Sub topic (``projects/<p>/topics/<t>``) that
+# publish_on_commit.install_publish_listener() publishes to once a
+# notification-creating transaction commits. Holds the whole path, not just
+# a bare topic id, so the app never has to know which project it is in --
+# matching how GOOGLE_CHAT_SUBSCRIPTION_ID/GERRIT_SUBSCRIPTION_ID are ids
+# combined with PUBSUB_PROJECT_ID elsewhere, this is its own env var instead
+# because it is a topic, not a subscription, and is consumed as a complete
+# path by a single call site rather than built up per-client.
+NOTIFICATION_TOPIC = "NOTIFICATION_TOPIC"

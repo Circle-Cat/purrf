@@ -1,6 +1,10 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from backend.common.fast_api_error_handler import register_exception_handlers
+from backend.notification_management.publish_on_commit import (
+    install_publish_listener,
+)
+from backend.recruiting import notification_renderers  # noqa: F401 (registers)
 from backend.recruiting import recipient_resolvers  # noqa: F401 (registers)
 from backend.utils.auth_middleware import AuthMiddleware
 
@@ -35,7 +39,9 @@ class FastAppFactory:
         evaluation_controller,
         audit_controller,
         recruiting_notification_controller,
-        notification_email_worker,
+        notification_delivery_controller,
+        notification_publisher,
+        notification_topic_path,
         launchdarkly_client,
         database,
         logger,
@@ -62,6 +68,12 @@ class FastAppFactory:
             evaluation_controller: An instance of EvaluationController that manages API routes for assignee-facing interview evaluation scorecards.
             audit_controller: An instance of AuditController that manages API routes for the cross-posting recruiting audit page.
             recruiting_notification_controller: An instance of RecruitingNotificationController that manages API routes for the caller's own in-app notifications.
+            notification_delivery_controller: An instance of NotificationDeliveryController that manages the Pub/Sub push endpoint which sends notification emails.
+            notification_publisher: Pub/Sub publisher client used to deliver a
+                notification once its creating transaction commits.
+            notification_topic_path: Fully qualified Pub/Sub topic
+                (``projects/<p>/topics/<t>``) that notification messages are
+                published to.
             launchdarkly_client: LaunchDarklyClient instance for feature flag lifecycle management.
             database: Database instance for application lifecycle cleanup.
         """
@@ -85,7 +97,9 @@ class FastAppFactory:
         self.evaluation_controller = evaluation_controller
         self.audit_controller = audit_controller
         self.recruiting_notification_controller = recruiting_notification_controller
-        self.notification_email_worker = notification_email_worker
+        self.notification_delivery_controller = notification_delivery_controller
+        self.notification_publisher = notification_publisher
+        self.notification_topic_path = notification_topic_path
         self.launchdarkly_client = launchdarkly_client
         self.database = database
         self.logger = logger
@@ -123,16 +137,6 @@ class FastAppFactory:
         @asynccontextmanager
         async def lifespan(app):
             self.launchdarkly_client.initialize()
-            # notification_email_worker is deliberately NOT started. Its
-            # fixed-interval sweep is being replaced, so the outbox drains
-            # nowhere for now: services still commit notification rows and the
-            # in-app notification -- the authoritative copy -- is unaffected,
-            # but nothing turns those rows into email. The worker stays wired
-            # so re-enabling it is one line once the trigger is decided.
-            #
-            # Note for whoever re-enables it: every row written while this is
-            # off is still email_sent_at IS NULL, so the first pass after
-            # startup will send the whole accumulated backlog at once.
             yield
             await self.database.close()
             self.launchdarkly_client.close()
@@ -147,6 +151,17 @@ class FastAppFactory:
 
         # Register global exception handlers
         register_exception_handlers(app)
+
+        # Wire the after-commit publish listener once, here, rather than at
+        # each of the roughly twenty call sites that record a notification --
+        # a forgotten publish call at a call site is a notification that
+        # silently never sends. install_publish_listener() itself is
+        # idempotent (it replaces rather than stacks), but create_app() is
+        # still only invoked once per process (see prod_runner.py /
+        # fast_app_dev_runner.py), so this really does run exactly once.
+        install_publish_listener(
+            self.notification_publisher, self.notification_topic_path
+        )
 
         # Add authentication middleware
         app.add_middleware(
@@ -178,6 +193,11 @@ class FastAppFactory:
         app.include_router(
             self.recruiting_notification_controller.router, prefix="/api"
         )
+        # Deliberately NOT authenticate()-gated -- this route has no Auth0
+        # session. Its guard is the Cloudflare Worker + Access Service Auth
+        # policy in front of it, the same trust boundary every other route
+        # behind Access relies on.
+        app.include_router(self.notification_delivery_controller.router, prefix="/api")
 
         @app.get("/fastapi/health")
         def health_check():
