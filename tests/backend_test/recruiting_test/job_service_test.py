@@ -1,11 +1,14 @@
 import unittest
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, create_autospec
+from unittest.mock import AsyncMock, MagicMock, create_autospec, patch
 
+from backend.notification_management.recipient_registry import resolve_recipients
 from backend.recruiting.job_service import JobService
+import backend.recruiting.recipient_resolvers  # noqa: F401 -- registers resolvers
 from backend.repository.notification_repository import NotificationRepository
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.job_dto import JobCreateDto
+from backend.entity.event_entity import EventEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.job_review_entity import JobReviewEntity
 from backend.entity.users_entity import UsersEntity
@@ -16,6 +19,7 @@ from backend.common.recruiting_enums import (
     JobReviewStatus,
     JobStatus,
     NotificationType,
+    RecruitingEvent,
 )
 from backend.common.mentorship_enums import ParticipantRole
 
@@ -35,13 +39,34 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.perms = MagicMock()
         self.perms.get_active_users_with_permission = AsyncMock(return_value=[])
         self.review_repo = MagicMock()
-        self.review_repo.create = AsyncMock(side_effect=lambda session, entity: entity)
+
+        def _create_review(session, entity):
+            # The real repository flushes, which is where the id comes from;
+            # events name the review by that id.
+            entity.review_id = 3
+            return entity
+
+        self.review_repo.create = AsyncMock(side_effect=_create_review)
         self.review_repo.get = AsyncMock()
         self.review_repo.get_open_for_job = AsyncMock(return_value=None)
         self.review_repo.list_by_reviewer = AsyncMock(return_value=[])
         self.review_repo.get_latest_reviews = AsyncMock(return_value={})
         self.review_repo.delete_by_job = AsyncMock()
         self.session = AsyncMock()
+        self.event_repo = MagicMock()
+        self.event_repo.list_by_subject = AsyncMock(return_value=[])
+
+        async def _record(session, **kwargs):
+            self.call_order.append("record")
+            return None
+
+        recorder = patch(
+            "backend.recruiting.job_service.record_event",
+            new_callable=AsyncMock,
+            side_effect=_record,
+        )
+        self.record_event = recorder.start()
+        self.addCleanup(recorder.stop)
         self.notification_repo = self._notification_repository_double()
         self.users_repo = MagicMock()
         self.users_repo.get_all_by_ids = AsyncMock(return_value=[])
@@ -61,25 +86,20 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             self.users_repo,
             self.job_activity_repo,
             self.user_emails_repo,
+            self.event_repo,
         )
 
     def _notification_repository_double(self):
-        """A notification repository whose writes are observable and ordered.
+        """A notification repository stand-in, plus the ordering harness.
 
-        `self.call_order` records the write and the commit so a test can
-        assert the row lands *inside* the transaction. Asserting only "it was
-        awaited" would pass even if the row were written after the commit,
-        which would let a rollback drop the notification while the event it
-        announces survived.
+        `self.call_order` records the event write and the commit so a test can
+        assert the rows land *inside* the transaction. Asserting only "it was
+        awaited" would pass even if they were written after the commit, which
+        would let a rollback drop the notifications while the change they
+        announce survived.
         """
         self.call_order = []
         repository = create_autospec(NotificationRepository, instance=True)
-
-        async def _create(session, entity):
-            self.call_order.append("record")
-            return entity
-
-        repository.create = AsyncMock(side_effect=_create)
         self.session.commit = AsyncMock(
             side_effect=lambda: self.call_order.append("commit")
         )
@@ -131,8 +151,12 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         await self.service.create_job(self.session, dto, created_by=7)
 
-        self.job_activity_repo.create.assert_awaited_once_with(
-            self.session, 1, 7, "job_created"
+        self.record_event.assert_awaited_once_with(
+            self.session,
+            subject_type="job",
+            subject_id=1,
+            actor_id=7,
+            event_type=RecruitingEvent.JOB_CREATED,
         )
 
     async def test_get_job_exposes_pending_payload(self):
@@ -731,30 +755,6 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(created.reviewer_id, 2)
         self.assertEqual(result.reviewer_id, 2)
 
-    async def test_submit_for_review_notifies_the_reviewer(self):
-        """submit_for_review inserts a JOB_REVIEW_REQUESTED notification for the reviewer."""
-        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.DRAFT)
-        job.job_id = 1
-        job.pipeline_config = self._valid_pipeline(owner_id=6)
-        self.repo.get_by_job_id = AsyncMock(return_value=job)
-        self.review_repo.get_open_for_job = AsyncMock(return_value=None)
-        approver1 = UsersEntity(first_name="A", last_name="B")
-        approver1.user_id = 6
-        approver2 = UsersEntity(first_name="C", last_name="D")
-        approver2.user_id = 7
-        self.perms.get_active_users_with_permission = AsyncMock(
-            return_value=[approver1, approver2]
-        )
-
-        await self.service.submit_for_review(self.session, 1, 6, 9, "please review")
-
-        self.notification_repo.create.assert_awaited_once()
-        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
-        self.assertEqual(entity_arg.user_id, 6)
-        self.assertEqual(entity_arg.type, NotificationType.JOB_REVIEW_REQUESTED)
-        self.assertEqual(entity_arg.job_id, 1)
-        self.assertEqual(entity_arg.actor_user_id, 9)
-
     async def test_submit_for_review_records_the_notification_inside_the_transaction(
         self,
     ):
@@ -774,24 +774,57 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         await self.service.submit_for_review(self.session, 1, 6, 9, "please review")
 
-        self.notification_repo.create.assert_awaited_once()
+        self.record_event.assert_awaited_once()
         self.assertEqual(self.call_order, ["record", "commit"])
 
-    async def test_submit_for_review_logs_review_opened_activity(self):
-        """submit_for_review logs a review_opened activity entry."""
+    async def test_submit_for_review_records_review_opened(self):
+        """submit_for_review records a review_opened event."""
         self._two_approvers()
         job = self._job(status=JobStatus.DRAFT)
         job.pipeline_config = self._valid_pipeline(owner_id=2)
         self.repo.get_by_job_id.return_value = job
 
-        await self.service.submit_for_review(self.session, job.job_id, 2, 5, "please")
+        with patch(
+            "backend.recruiting.job_service.record_event", new_callable=AsyncMock
+        ) as record:
+            await self.service.submit_for_review(
+                self.session, job.job_id, 2, 5, "please"
+            )
 
-        self.job_activity_repo.create.assert_awaited_once_with(
+        record.assert_awaited_once_with(
             self.session,
-            job.job_id,
-            5,
-            "review_opened",
-            {"kind": "initial", "reviewerId": 2, "message": "please"},
+            subject_type="job",
+            subject_id=job.job_id,
+            actor_id=5,
+            event_type=RecruitingEvent.REVIEW_OPENED,
+            details={"kind": "initial", "reviewId": 3, "message": "please"},
+        )
+
+    async def test_review_opened_names_the_review_it_just_opened(self):
+        """The id on the event has to be the review this call created.
+
+        The resolver reads the reviewer off that row, so emitting the wrong
+        id -- or spelling the key differently -- resolves to nobody, or to
+        somebody else's reviewer, without erroring. What the resolver does
+        with the id once it has it is covered against a real database in
+        recipient_resolvers_test.
+        """
+        self._two_approvers()
+        job = self._job(status=JobStatus.DRAFT)
+        job.pipeline_config = self._valid_pipeline(owner_id=2)
+        self.repo.get_by_job_id.return_value = job
+
+        with patch(
+            "backend.recruiting.job_service.record_event", new_callable=AsyncMock
+        ) as record:
+            await self.service.submit_for_review(
+                self.session, job.job_id, 2, 5, "please"
+            )
+
+        created_review = self.review_repo.create.await_args.args[1]
+        self.assertEqual(
+            record.await_args.kwargs["details"]["reviewId"],
+            created_review.review_id,
         )
 
     async def test_submit_published_with_staged_edit_opens_revision_review(self):
@@ -931,12 +964,18 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         await self.service.approve(self.session, 3, 9)
 
-        self.job_activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            job.job_id,
-            9,
-            "review_decided",
-            {"kind": "initial", "decision": "approved", "comment": None},
+            subject_type="job",
+            subject_id=job.job_id,
+            actor_id=9,
+            event_type=RecruitingEvent.REVIEW_DECIDED,
+            details={
+                "kind": "initial",
+                "reviewId": 3,
+                "decision": "approved",
+                "comment": None,
+            },
         )
 
     async def test_approve_requires_pending_review(self):
@@ -1067,12 +1106,18 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         await self.service.reject(self.session, 3, "not ready", 9)
 
-        self.job_activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            job.job_id,
-            9,
-            "review_decided",
-            {"kind": "initial", "decision": "rejected", "comment": "not ready"},
+            subject_type="job",
+            subject_id=job.job_id,
+            actor_id=9,
+            event_type=RecruitingEvent.REVIEW_DECIDED,
+            details={
+                "kind": "initial",
+                "reviewId": 3,
+                "decision": "rejected",
+                "comment": "not ready",
+            },
         )
 
     async def test_reject_revision_keeps_published_and_keeps_pending(self):
@@ -1715,8 +1760,12 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, JobStatus.PUBLISHED)
         self.assertEqual(result.title, "live title")
         self.assertIsNone(result.pending_payload)
-        self.job_activity_repo.create.assert_awaited_once_with(
-            self.session, job.job_id, 1, "pending_edit_discarded", {}
+        self.record_event.assert_awaited_once_with(
+            self.session,
+            subject_type="job",
+            subject_id=job.job_id,
+            actor_id=1,
+            event_type=RecruitingEvent.PENDING_EDIT_DISCARDED,
         )
 
     async def test_discard_pending_edit_from_closed_clears_it(self):
@@ -1896,30 +1945,6 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.status, JobStatus.PENDING_CLOSE)
 
-    async def test_approve_notifies_the_submitter(self):
-        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.DRAFT)
-        job.job_id = 1
-        review = JobReviewEntity(
-            job_id=1,
-            submitted_by=9,
-            reviewer_id=6,
-            status=JobReviewStatus.PENDING,
-            kind=JobReviewKind.INITIAL,
-        )
-        review.review_id = 100
-        self.review_repo.get = AsyncMock(return_value=review)
-        self.repo.get_by_job_id = AsyncMock(return_value=job)
-
-        await self.service.approve(self.session, 100, acting_user_id=6)
-
-        self.notification_repo.create.assert_awaited_once()
-        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
-        self.assertEqual(entity_arg.user_id, 9)
-        self.assertEqual(entity_arg.type, NotificationType.JOB_REVIEW_APPROVED)
-        self.assertEqual(entity_arg.job_id, 1)
-        self.assertEqual(entity_arg.job_review_id, 100)
-        self.assertEqual(entity_arg.actor_user_id, 6)
-
     async def test_approve_records_the_notification_inside_the_transaction(self):
         # Same setup as test_approve_notifies_the_submitter.
         job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.DRAFT)
@@ -1937,34 +1962,8 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         await self.service.approve(self.session, review_id=100, acting_user_id=6)
 
-        self.notification_repo.create.assert_awaited_once()
+        self.record_event.assert_awaited_once()
         self.assertEqual(self.call_order, ["record", "commit"])
-
-    async def test_reject_notifies_the_submitter(self):
-        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.DRAFT)
-        job.job_id = 1
-        review = JobReviewEntity(
-            job_id=1,
-            submitted_by=9,
-            reviewer_id=6,
-            status=JobReviewStatus.PENDING,
-            kind=JobReviewKind.INITIAL,
-        )
-        review.review_id = 100
-        self.review_repo.get = AsyncMock(return_value=review)
-        self.repo.get_by_job_id = AsyncMock(return_value=job)
-
-        await self.service.reject(
-            self.session, 100, "needs more detail", acting_user_id=6
-        )
-
-        self.notification_repo.create.assert_awaited_once()
-        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
-        self.assertEqual(entity_arg.user_id, 9)
-        self.assertEqual(entity_arg.type, NotificationType.JOB_REVIEW_REJECTED)
-        self.assertEqual(entity_arg.job_id, 1)
-        self.assertEqual(entity_arg.job_review_id, 100)
-        self.assertEqual(entity_arg.actor_user_id, 6)
 
     async def test_reject_records_the_notification_inside_the_transaction(self):
         # Same setup as test_reject_notifies_the_submitter.
@@ -1985,19 +1984,20 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             self.session, 100, "needs more detail", acting_user_id=6
         )
 
-        self.notification_repo.create.assert_awaited_once()
+        self.record_event.assert_awaited_once()
         self.assertEqual(self.call_order, ["record", "commit"])
 
     async def test_get_job_activity_resolves_actor_names(self):
         """get_job_activity returns rows newest-first with actor names resolved."""
         row = MagicMock()
-        row.activity_id = 1
-        row.job_id = 9
+        row.event_id = 1
+        row.subject_type = "job"
+        row.subject_id = 9
         row.actor_id = 7
-        row.event_type = "job_created"
+        row.event_type = "recruiting.job_created"
         row.details = {}
         row.created_at = datetime(2026, 7, 4, 12, 0, 0)
-        self.job_activity_repo.list_by_job.return_value = [row]
+        self.event_repo.list_by_subject.return_value = [row]
         actor = MagicMock()
         actor.user_id = 7
         actor.first_name = "Ada"
@@ -2006,21 +2006,22 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         result = await self.service.get_job_activity(self.session, 9)
 
-        self.job_activity_repo.list_by_job.assert_awaited_once_with(self.session, 9)
+        self.event_repo.list_by_subject.assert_awaited_once_with(self.session, "job", 9)
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].actor_name, "Ada Lovelace")
-        self.assertEqual(result[0].event_type, "job_created")
+        self.assertEqual(result[0].event_type, "recruiting.job_created")
 
     async def test_get_job_activity_falls_back_for_unresolved_actor(self):
         """A since-removed actor resolves to a 'User {id}' fallback."""
         row = MagicMock()
-        row.activity_id = 1
-        row.job_id = 9
+        row.event_id = 1
+        row.subject_type = "job"
+        row.subject_id = 9
         row.actor_id = 7
-        row.event_type = "job_created"
+        row.event_type = "recruiting.job_created"
         row.details = {}
         row.created_at = datetime(2026, 7, 4, 12, 0, 0)
-        self.job_activity_repo.list_by_job.return_value = [row]
+        self.event_repo.list_by_subject.return_value = [row]
         self.users_repo.get_all_by_ids.return_value = []
 
         result = await self.service.get_job_activity(self.session, 9)

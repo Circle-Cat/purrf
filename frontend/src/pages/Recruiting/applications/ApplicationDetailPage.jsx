@@ -426,7 +426,7 @@ const CancelUpcomingMeetingField = ({
  */
 const describeActivity = ({ eventType, details }, jobKind, timezone) => {
   switch (eventType) {
-    case "application_submitted": {
+    case "recruiting.application_submitted": {
       if (details.screenAutoHireRuleId) {
         return `Submitted — auto-approved by screening rule${
           details.screenAutoHireRuleLabel
@@ -443,13 +443,13 @@ const describeActivity = ({ eventType, details }, jobKind, timezone) => {
           })`
         : base;
     }
-    case "auto_rejected":
+    case "recruiting.auto_rejected":
       return details.reason === "screen_rule"
         ? `Automatically rejected by screening rule${
             details.ruleLabel ? ` "${details.ruleLabel}"` : ""
           }`
         : "Automatically rejected (blocked applicant)";
-    case "stage_changed":
+    case "recruiting.stage_changed":
       if (details.reason) {
         return `Rejected from ${humanize(details.fromStage)}${
           details.note
@@ -460,29 +460,29 @@ const describeActivity = ({ eventType, details }, jobKind, timezone) => {
       return `Advanced from ${humanize(details.fromStage)} to ${stageLabel(details.toStage, jobKind)}${
         details.assigneeName ? `, assigned to ${details.assigneeName}` : ""
       }${details.advancedWithoutEvaluation ? " (no evaluation recorded)" : ""}`;
-    case "reassigned":
+    case "recruiting.reassigned":
       return `Reassigned on ${humanize(details.stage)}${
         details.fromAssigneeName ? ` from ${details.fromAssigneeName}` : ""
       } to ${details.toAssigneeName}`;
-    case "round_advanced":
+    case "recruiting.round_advanced":
       return `Advanced to session ${details.toRound} of ${humanize(details.stage)}${
         details.assigneeName ? `, assigned to ${details.assigneeName}` : ""
       }${details.advancedWithoutEvaluation ? " (no evaluation recorded)" : ""}`;
-    case "sub_status_changed":
+    case "recruiting.sub_status_changed":
       return `Status changed from ${humanize(details.fromSubStatus)} to ${humanize(details.toSubStatus)} on ${humanize(details.stage)}`;
-    case "evaluation_confirmed":
+    case "recruiting.evaluation_confirmed":
       return `Confirmed evaluation for session ${details.round} of ${humanize(details.stage)}`;
-    case "blacklisted":
+    case "recruiting.blacklisted":
       return `Blacklisted and rejected from ${humanize(details.fromStage)}: ${details.reason}`;
-    case "auto_assigned":
+    case "recruiting.auto_assigned":
       return `Automatically assigned to ${details.assigneeName} on ${humanize(details.stage)}`;
-    case "interview_scheduled": {
+    case "recruiting.interview_scheduled": {
       const when = formatInterviewWhen(details.startAt, timezone);
       return `Scheduled the ${humanize(details.stage)} interview meeting${
         when ? ` for ${when}` : ""
       }${details.assigneeName ? ` with ${details.assigneeName}` : ""}`;
     }
-    case "interview_updated": {
+    case "recruiting.interview_updated": {
       const stageText = humanize(details.stage);
       const newWhen = formatInterviewWhen(details.startAt, timezone);
       const oldWhen = formatInterviewWhen(details.fromStartAt, timezone);
@@ -506,20 +506,20 @@ const describeActivity = ({ eventType, details }, jobKind, timezone) => {
       }
       return `Updated the ${stageText} interview meeting${newWhen ? ` for ${newWhen}` : ""}`;
     }
-    case "interview_cancelled": {
+    case "recruiting.interview_cancelled": {
       const when = formatInterviewWhen(details.startAt, timezone);
       return `Cancelled the ${humanize(details.stage)} interview meeting${
         when ? ` that was set for ${when}` : ""
       }`;
     }
-    case "email_sent":
+    case "recruiting.email_sent":
       return `Sent email "${details.subject}" to ${(details.to ?? []).join(", ")}${
         details.cc?.length ? `, cc ${details.cc.join(", ")}` : ""
       }`;
-    case "email_received":
+    case "recruiting.email_received":
       return `Received reply "${details.subject}" from ${details.from}`;
     default:
-      return humanize(eventType);
+      return humanize(eventType.replace(/^[^.]+\./, ""));
   }
 };
 

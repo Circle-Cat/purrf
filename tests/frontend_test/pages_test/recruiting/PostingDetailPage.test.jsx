@@ -401,7 +401,7 @@ describe("PostingDetailPage", () => {
       data: [
         {
           id: 1,
-          eventType: "job_created",
+          eventType: "recruiting.job_created",
           details: {},
           actorId: 3,
           actorName: "Yuanyuan Huang",
@@ -409,15 +409,15 @@ describe("PostingDetailPage", () => {
         },
         {
           id: 2,
-          eventType: "review_opened",
-          details: { kind: "initial", reviewerId: 9, message: null },
+          eventType: "recruiting.review_opened",
+          details: { kind: "initial", reviewerIds: [9], message: null },
           actorId: 3,
           actorName: "Yuanyuan Huang",
           createdAt: "2026-07-11T09:20:00Z",
         },
         {
           id: 3,
-          eventType: "review_decided",
+          eventType: "recruiting.review_decided",
           details: {
             kind: "initial",
             decision: "rejected",
@@ -823,7 +823,7 @@ describe("PostingDetailPage", () => {
           id: 1,
           createdAt: "2026-07-14T00:00:00Z",
           actorName: "Alex",
-          eventType: "review_decided",
+          eventType: "recruiting.review_decided",
           details: {
             kind: "revision",
             decision: "rejected",
@@ -857,7 +857,7 @@ describe("PostingDetailPage", () => {
           id: 1,
           createdAt: "2026-07-14T00:00:00Z",
           actorName: "Alex",
-          eventType: "pending_edit_discarded",
+          eventType: "recruiting.pending_edit_discarded",
           details: {},
         },
       ],
