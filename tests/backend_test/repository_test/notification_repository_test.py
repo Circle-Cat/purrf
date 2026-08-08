@@ -12,6 +12,9 @@ from backend.entity.application_comment_entity import (  # noqa: F401 (registers
     ApplicationCommentEntity,
 )
 from backend.entity.application_entity import ApplicationEntity
+from backend.entity.event_entity import (  # noqa: F401 (registers table for NotificationEntity's FK)
+    EventEntity,
+)
 from backend.entity.job_entity import JobEntity
 from backend.entity.job_review_entity import (  # noqa: F401 (registers table for NotificationEntity's FK)
     JobReviewEntity,

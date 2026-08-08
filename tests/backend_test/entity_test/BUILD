@@ -26,3 +26,18 @@ py_test(
         "//backend/entity:entities",
     ],
 )
+
+py_test(
+    name = "event_entity_test",
+    srcs = ["event_entity_test.py"],
+    deps = ["//backend/entity:entities"],
+)
+
+py_test(
+    name = "notification_entity_test",
+    srcs = ["notification_entity_test.py"],
+    deps = [
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+    ],
+)
