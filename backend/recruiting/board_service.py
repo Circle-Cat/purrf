@@ -224,8 +224,11 @@ class BoardService:
                 applications' evaluations in the aggregation view.
             notification_repository (NotificationRepository): Writes in-app
                 notification rows inside this transaction. The row is also
-                the email outbox -- NotificationEmailWorker picks it up once
-                it commits -- so nothing here sends mail. Used by ``change_stage``/
+                meant to double as an email outbox, but nothing drains it for
+                these legacy-model rows -- NotificationEmailWorker, which
+                used to, was retired with no replacement for this write path
+                (see NotificationEntity's docstring). So nothing here sends
+                mail. Used by ``change_stage``/
                 ``reassign`` (assignee notified) and ``add_comment``
                 (mentioned users notified) -- independent, explicit calls,
                 not merged with the activity log (see the notification-system

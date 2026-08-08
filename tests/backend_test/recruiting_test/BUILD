@@ -242,17 +242,6 @@ py_test(
 )
 
 py_test(
-    name = "notification_email_worker_test",
-    srcs = ["notification_email_worker_test.py"],
-    deps = [
-        "//backend/common:recruiting_enums",
-        "//backend/dto",
-        "//backend/entity:entities",
-        "//backend/recruiting",
-    ],
-)
-
-py_test(
     name = "notification_email_copy_test",
     srcs = ["notification_email_copy_test.py"],
     deps = [
@@ -271,6 +260,21 @@ py_test(
         "//backend/common:recruiting_enums",
         "//backend/entity:entities",
         "//backend/notification_management:recipient_registry",
+        "//backend/recruiting",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "notification_renderers_test",
+    srcs = ["notification_renderers_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/notification_management:recipient_registry",
+        "//backend/notification_management:render_registry",
         "//backend/recruiting",
         "//tests/backend_test/repository_test:base_repository_test_lib",
     ],

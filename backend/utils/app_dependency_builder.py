@@ -75,6 +75,7 @@ from backend.common.environment_constants import (
     JIRA_USER,
     MENTORSHIP_CALENDAR_ID,
     INTERVIEW_CALENDAR_ID,
+    NOTIFICATION_TOPIC,
     USER_EMAIL,
 )
 from backend.historical_data.google_chat_history_sync_service import (
@@ -133,8 +134,14 @@ from backend.recruiting.audit_service import AuditService
 from backend.recruiting.audit_controller import AuditController
 from backend.recruiting.notification_service import RecruitingNotificationService
 from backend.recruiting.notification_controller import RecruitingNotificationController
-from backend.recruiting.notification_email_worker import NotificationEmailWorker
 from backend.communication.notification_email_service import NotificationEmailService
+from backend.notification_management.notification_event_email_service import (
+    NotificationEventEmailService,
+)
+from backend.notification_management.delivery_service import DeliveryService
+from backend.notification_management.delivery_controller import (
+    NotificationDeliveryController,
+)
 from backend.common.environment_constants import RESUME_BUCKET
 from backend.common.auth0_client import Auth0Client
 from backend.repository.users_repository import UsersRepository
@@ -210,6 +217,13 @@ class AppDependencyBuilder:
         if not interview_calendar_id:
             raise ValueError(f"Missing environment variable: {INTERVIEW_CALENDAR_ID}")
 
+        # The fully qualified Pub/Sub topic publish_on_commit publishes to.
+        # Missing this must fail at startup, not silently no-op every publish
+        # for the life of the process.
+        notification_topic_path = os.getenv(NOTIFICATION_TOPIC)
+        if not notification_topic_path:
+            raise ValueError(f"Missing environment variable: {NOTIFICATION_TOPIC}")
+
         # No presence check here: GoogleClient already validates USER_EMAIL and
         # raises before this point, so repeating it would just be noise.
         user_email = os.getenv(USER_EMAIL)
@@ -238,6 +252,10 @@ class AppDependencyBuilder:
             self.google_client.create_workspaceevents_client()
         )
         self.subscriber_client = self.google_client.create_subscriber_client()
+        self.notification_publisher_client = (
+            self.google_client.create_publisher_client()
+        )
+        self.notification_topic_path = notification_topic_path
         self.google_chat_client = self.google_client.create_chat_client()
         self.google_people_client = self.google_client.create_people_client()
         self.jira_client = JiraClient(
@@ -653,13 +671,25 @@ class AppDependencyBuilder:
             logger=self.logger,
             sender_address=self.notification_sender_address,
         )
-        self.notification_email_worker = NotificationEmailWorker(
-            database=self.database,
-            notification_repository=self.notification_repository,
-            notification_service=self.recruiting_notification_service,
+        # The delivery pipeline for the new event-based notification rows:
+        # NotificationEventEmailService renders (by event_type, via
+        # notification_renderers's registrations) and resolves the
+        # recipient's address, then hands off to notification_email_service
+        # above for the actual Gmail send. DeliveryService wraps that in the
+        # claim/settle state machine; NotificationDeliveryController is the
+        # Pub/Sub push endpoint that drives it.
+        self.notification_event_email_service = NotificationEventEmailService(
             user_emails_repository=self.user_emails_repository,
             email_service=self.notification_email_service,
-            logger=self.logger,
+        )
+        self.delivery_service = DeliveryService(
+            email_service=self.notification_event_email_service,
+        )
+        self.notification_delivery_controller = NotificationDeliveryController(
+            delivery_service=self.delivery_service,
+            publisher=self.notification_publisher_client,
+            topic_path=self.notification_topic_path,
+            database=self.database,
         )
         self.job_service = JobService(
             self.job_repository,
@@ -829,7 +859,9 @@ class AppDependencyBuilder:
             evaluation_controller=self.evaluation_controller,
             audit_controller=self.audit_controller,
             recruiting_notification_controller=self.recruiting_notification_controller,
-            notification_email_worker=self.notification_email_worker,
+            notification_delivery_controller=self.notification_delivery_controller,
+            notification_publisher=self.notification_publisher_client,
+            notification_topic_path=self.notification_topic_path,
             launchdarkly_client=self.launchdarkly_client,
             database=self.database,
             logger=self.logger,

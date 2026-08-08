@@ -1,0 +1,35 @@
+{
+  "name": "purrf-pubsub-gateway",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-07",
+  // vars is not inherited by a named environment, so every deployable
+  // environment below repeats the two that do not vary. Leaving them at the
+  // top level alone would deploy a Worker with no expected audience, which
+  // rejects every caller, and no JWKS url, which cannot verify one.
+  "env": {
+    "test": {
+      "routes": [{ "pattern": "test-hook.purrf.io/*", "zone_name": "purrf.io" }],
+      "vars": {
+        "EXPECTED_AUDIENCE": "purrf",
+        "JWKS_URL": "https://www.googleapis.com/oauth2/v3/certs",
+        "ORIGIN_URL": "https://test-api.purrf.io/api/notifications/deliver"
+      }
+    },
+    "staging": {
+      "routes": [{ "pattern": "staging-hook.purrf.io/*", "zone_name": "purrf.io" }],
+      "vars": {
+        "EXPECTED_AUDIENCE": "purrf",
+        "JWKS_URL": "https://www.googleapis.com/oauth2/v3/certs",
+        "ORIGIN_URL": "https://staging-api.purrf.io/api/notifications/deliver"
+      }
+    },
+    "prod": {
+      "routes": [{ "pattern": "hook.purrf.io/*", "zone_name": "purrf.io" }],
+      "vars": {
+        "EXPECTED_AUDIENCE": "purrf",
+        "JWKS_URL": "https://www.googleapis.com/oauth2/v3/certs",
+        "ORIGIN_URL": "https://api.purrf.io/api/notifications/deliver"
+      }
+    }
+  }
+}

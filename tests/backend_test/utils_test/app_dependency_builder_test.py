@@ -11,6 +11,7 @@ from backend.common.environment_constants import (
     GMAIL_SENDER_NOTIFICATION,
     MENTORSHIP_CALENDAR_ID,
     INTERVIEW_CALENDAR_ID,
+    NOTIFICATION_TOPIC,
     USER_EMAIL,
 )
 
@@ -201,6 +202,10 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_client_instance.create_subscriber_client.return_value = (
             mock_google_subscriber_client
         )
+        mock_notification_publisher_client = MagicMock()
+        mock_google_client_instance.create_publisher_client.return_value = (
+            mock_notification_publisher_client
+        )
         mock_google_client_instance.create_workspaceevents_client.return_value = (
             mock_google_workspaceevents_client
         )
@@ -264,6 +269,7 @@ class TestAppDependencyBuilder(TestCase):
             # forgetting to pass the id is a TypeError right here.
             MENTORSHIP_CALENDAR_ID: "cal-mentorship",
             INTERVIEW_CALENDAR_ID: "cal-interview",
+            NOTIFICATION_TOPIC: "projects/test-project/topics/notifications",
             USER_EMAIL: "purrf@circlecat.org",
         }.get(key)
 
@@ -287,6 +293,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_client_instance.create_reports_client.assert_called_once()
         mock_google_client_instance.create_meet_spaces_client.assert_called_once()
         mock_google_client_instance.create_meet_conference_records_client.assert_called_once()
+        mock_google_client_instance.create_publisher_client.assert_called_once()
         mock_retry_utils_cls.assert_called_once()
         mock_gerrit_client_cls.assert_called_once()
         mock_jira_client_cls.assert_called_once()
@@ -599,7 +606,9 @@ class TestAppDependencyBuilder(TestCase):
             evaluation_controller=ANY,
             audit_controller=ANY,
             recruiting_notification_controller=ANY,
-            notification_email_worker=ANY,
+            notification_delivery_controller=ANY,
+            notification_publisher=mock_notification_publisher_client,
+            notification_topic_path="projects/test-project/topics/notifications",
             launchdarkly_client=mock_launchdarkly_client_cls.return_value,
             database=mock_database_cls.return_value,
             logger=mock_logger,
