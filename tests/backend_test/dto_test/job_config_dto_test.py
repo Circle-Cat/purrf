@@ -4,6 +4,7 @@ from pydantic import ValidationError
 
 from backend.dto.job_config_dto import (
     FormSchemaDto,
+    LONG_TEXT_MAX_LENGTH,
     PipelineConfigDto,
     PipelineStageDto,
     ProfileConfigDto,
@@ -11,6 +12,7 @@ from backend.dto.job_config_dto import (
     ScreenRuleConditionDto,
     ScreenRuleDto,
     ScreenRulesDto,
+    SHORT_TEXT_MAX_LENGTH,
     ShowWhenDto,
     question_seq_floor,
 )
@@ -52,6 +54,24 @@ class TestQuestionDto(unittest.TestCase):
             QuestionDto(id="q1", type="long_text", label="Why", max_length=0)
         with self.assertRaises(ValidationError):
             QuestionDto(id="q1", type="long_text", label="Why", max_length=0)
+
+    def test_long_text_max_length_must_not_exceed_the_hard_ceiling(self):
+        QuestionDto(
+            id="q1", type="long_text", label="Why", max_length=LONG_TEXT_MAX_LENGTH
+        )
+        with self.assertRaises(ValidationError):
+            QuestionDto(
+                id="q1",
+                type="long_text",
+                label="Why",
+                max_length=LONG_TEXT_MAX_LENGTH + 1,
+            )
+
+    def test_the_two_text_ceilings_are_the_documented_values(self):
+        # Pinned rather than derived: the JS mirror in questionLimits.js
+        # carries the same two numbers and nothing else would catch a drift.
+        self.assertEqual(SHORT_TEXT_MAX_LENGTH, 255)
+        self.assertEqual(LONG_TEXT_MAX_LENGTH, 5000)
 
     def test_single_choice_requires_nonempty_options(self):
         QuestionDto(id="q1", type="single_choice", label="Pick", options=["a", "b"])

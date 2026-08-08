@@ -8,6 +8,7 @@ import {
   validateEducationRow,
   validateExperienceRow,
 } from "@/pages/Profile/profileValidation";
+import { textBudget } from "@/pages/Recruiting/postings/questionLimits";
 
 /**
  * What a candidate's application has to satisfy before it is worth sending.
@@ -195,11 +196,13 @@ export const validateApplication = (questions, answers, profile = {}) => {
         }`;
       }
     } else if (
-      question.type === "long_text" &&
-      question.maxLength != null &&
-      String(value).length > question.maxLength
+      textBudget(question) !== null &&
+      String(value).length > textBudget(question).cap
     ) {
-      errors[key] = `Keep this under ${question.maxLength} characters`;
+      // Both text types, and both the authored budget and the fallback
+      // ceiling: no text question is unbounded, so this arm covers every one
+      // of them.
+      errors[key] = `Keep this under ${textBudget(question).cap} characters`;
     } else if (
       question.type === "exact_text" &&
       String(value).trim() !== (question.expectedValue ?? "")

@@ -18,6 +18,18 @@ _ALLOWED_FIELDS: dict[str, set[str]] = {
     "exact_text": {"expected_value"},
 }
 
+# The character ceiling a text answer can never exceed, whatever the posting
+# says. `short_text` carries no length configuration at all -- picking that
+# type is the author's answer to "how long" -- so 255 is simply what a short
+# text is: the VARCHAR(255) default that holds a name, a job title, a company,
+# a city, a URL or a one-line answer.
+SHORT_TEXT_MAX_LENGTH = 255
+
+# The fallback for a `long_text` question whose author set no budget, and the
+# upper bound on the budget they may set. Not an expected value -- an author
+# who wants a smaller one says so.
+LONG_TEXT_MAX_LENGTH = 5000
+
 
 def question_seq_floor(question_ids) -> int:
     """Lowest next_seq value that cannot recycle a question id already in use.
@@ -140,9 +152,11 @@ class QuestionDto(BaseRequestDto):
         if self.type == "multi_choice" and self.max_selections is not None:
             if not (1 <= self.max_selections <= len(self.options)):
                 raise ValueError("max_selections must be within [1, len(options)]")
-        if self.type == "long_text":
-            if self.max_length is not None and self.max_length <= 0:
-                raise ValueError("max_length must be > 0")
+        if self.type == "long_text" and self.max_length is not None:
+            if not (1 <= self.max_length <= LONG_TEXT_MAX_LENGTH):
+                raise ValueError(
+                    f"max_length must be within [1, {LONG_TEXT_MAX_LENGTH}]"
+                )
         if self.type == "exact_text":
             if not self.expected_value or not self.expected_value.strip():
                 raise ValueError("exact_text requires a non-empty expected_value")

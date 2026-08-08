@@ -9,6 +9,7 @@ import {
 import FieldError from "@/components/common/FieldError";
 import { errorBorder } from "@/components/common/fieldErrors";
 import { answerKey, otherKey } from "@/pages/Recruiting/applicationValidation";
+import { textBudget } from "@/pages/Recruiting/postings/questionLimits";
 
 /**
  * A recorded value as one line of text, for a choice row's label. Arrays join
@@ -54,6 +55,32 @@ const RetiredChoice = ({ kind, name, value }) => (
     <span className="font-normal text-slate-500">(no longer an option)</span>
   </label>
 );
+
+/**
+ * The `<n> / <cap> characters` line under a text answer.
+ *
+ * Shown from the first keystroke when the author set a budget — a limit the
+ * candidate only learns about by being rejected at submit is a limit they will
+ * write past. Otherwise the cap is the fallback ceiling, a guard nobody should
+ * meet, so the line stays out of the way until it is actually crossed rather
+ * than parking `0 / 255` under a name field.
+ *
+ * Renders nothing for a question that is not text.
+ *
+ * @param {{question: object, value: unknown}} props
+ */
+const CharacterCounter = ({ question, value }) => {
+  const budget = textBudget(question);
+  if (budget === null) return null;
+  const length = String(value ?? "").length;
+  const over = length > budget.cap;
+  if (!budget.explicit && !over) return null;
+  return (
+    <p className={`text-xs ${over ? "text-destructive" : "text-slate-500"}`}>
+      {length} / {budget.cap} characters
+    </p>
+  );
+};
 
 /**
  * Renders a single question's control based on its type.
@@ -127,19 +154,7 @@ const QuestionControl = ({
           value={value ?? ""}
           onChange={(e) => set(e.target.value)}
         />
-        {question.maxLength != null && (
-          // A character budget the candidate cannot see is one they only
-          // learn about by being rejected at submit, after writing past it.
-          <p
-            className={`text-xs ${
-              String(value ?? "").length > question.maxLength
-                ? "text-destructive"
-                : "text-slate-500"
-            }`}
-          >
-            {String(value ?? "").length} / {question.maxLength} characters
-          </p>
-        )}
+        <CharacterCounter question={question} value={value} />
       </>
     );
   }
@@ -241,12 +256,16 @@ const QuestionControl = ({
   return readOnly ? (
     <RecordedValue value={value} />
   ) : (
-    <Input
-      id={domId}
-      aria-label={label}
-      value={value ?? ""}
-      onChange={(e) => set(e.target.value)}
-    />
+    <>
+      <Input
+        id={domId}
+        aria-label={label}
+        className={errorBorder(errors, answerKey(id)).trim()}
+        value={value ?? ""}
+        onChange={(e) => set(e.target.value)}
+      />
+      <CharacterCounter question={question} value={value} />
+    </>
   );
 };
 
