@@ -57,7 +57,6 @@ class ApplicationService:
         users_repository,
         recruiting_mapper,
         application_assignment_repository,
-        application_activity_repository,
         notification_repository,
         user_emails_repository,
         onboarding_training_service,
@@ -76,10 +75,6 @@ class ApplicationService:
                 Used to materialize a stage's configured default assignee
                 into a real assignment row when an application first lands
                 there (see ``_assign_default_if_configured``).
-            application_activity_repository (ApplicationActivityRepository):
-                Retained only until the legacy activity tables are dropped;
-                what happens is now recorded through ``record_event``, which
-                writes the event and fans out its own notifications.
             notification_repository (NotificationRepository): Same -- notification
                 rows are written by ``record_event`` from the resolved
                 recipients, not by this service.
@@ -93,7 +88,6 @@ class ApplicationService:
         self.users_repository = users_repository
         self.recruiting_mapper = recruiting_mapper
         self.application_assignment_repository = application_assignment_repository
-        self.application_activity_repository = application_activity_repository
         self.notification_repository = notification_repository
         self.user_emails_repository = user_emails_repository
         self.onboarding_training_service = onboarding_training_service

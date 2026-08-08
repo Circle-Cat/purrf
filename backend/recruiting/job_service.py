@@ -3,7 +3,6 @@ from datetime import datetime, timezone
 from backend.entity.job_entity import JobEntity
 from backend.entity.job_review_entity import JobReviewEntity
 from backend.notification_management.event_recorder import record_event
-from backend.repository.job_activity_repository import JobActivityRepository
 from backend.repository.job_repository import JobRepository
 from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.user_permissions_repository import UserPermissionsRepository
@@ -35,7 +34,6 @@ class JobService:
         job_review_repository: JobReviewRepository,
         notification_repository,
         users_repository: UsersRepository,
-        job_activity_repository: JobActivityRepository,
         user_emails_repository,
         event_repository,
     ):
@@ -55,9 +53,6 @@ class JobService:
                 the notification rows for whoever its resolver returns.
             users_repository (UsersRepository): Actor-name resolution for the
                 audit timeline.
-            job_activity_repository (JobActivityRepository): Retained until
-                the legacy activity tables are dropped; nothing reads or
-                writes through it any more.
             event_repository (EventRepository): Reads the event log behind
                 the posting's history panel.
             user_emails_repository (UserEmailsRepository): Contact-email
@@ -69,7 +64,6 @@ class JobService:
         self.job_review_repository = job_review_repository
         self.notification_repository = notification_repository
         self.users_repository = users_repository
-        self.job_activity_repository = job_activity_repository
         self.user_emails_repository = user_emails_repository
         self.event_repository = event_repository
 

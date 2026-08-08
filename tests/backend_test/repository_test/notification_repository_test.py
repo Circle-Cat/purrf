@@ -6,15 +6,12 @@ from backend.common.recruiting_enums import (
     ApplicationStage,
     JobKind,
     JobStatus,
-    NotificationType,
 )
 from backend.entity.application_comment_entity import (  # noqa: F401 (registers table for NotificationEntity's FK)
     ApplicationCommentEntity,
 )
 from backend.entity.application_entity import ApplicationEntity
-from backend.entity.event_entity import (  # noqa: F401 (registers table for NotificationEntity's FK)
-    EventEntity,
-)
+from backend.entity.event_entity import EventEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.job_review_entity import (  # noqa: F401 (registers table for NotificationEntity's FK)
     JobReviewEntity,
@@ -45,7 +42,8 @@ class TestNotificationRepository(BaseRepositoryTestLib):
 
         Returns:
             tuple[ApplicationEntity, UsersEntity]: The application and the
-                notification recipient.
+                notification recipient. The event every notification here
+                points at is created alongside them as ``self.event``.
         """
         job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.PUBLISHED)
         recipient = _make_user()
@@ -56,6 +54,14 @@ class TestNotificationRepository(BaseRepositoryTestLib):
             stage=ApplicationStage.RECRUITER_SCREENING,
         )
         await self.insert_entities([app])
+        self.event = EventEntity(
+            subject_type="application",
+            subject_id=app.application_id,
+            actor_id=recipient.user_id,
+            event_type="recruiting.mentioned",
+            details={},
+        )
+        await self.insert_entities([self.event])
         return app, recipient
 
     async def test_create_and_list_by_user(self):
@@ -66,7 +72,6 @@ class TestNotificationRepository(BaseRepositoryTestLib):
             self.session,
             NotificationEntity(
                 user_id=recipient.user_id,
-                type=NotificationType.ASSIGNED_TO_EVALUATE,
                 application_id=app.application_id,
                 round=1,
             ),
@@ -78,22 +83,20 @@ class TestNotificationRepository(BaseRepositoryTestLib):
         self.assertEqual(result[0].notification_id, created.notification_id)
 
     async def test_list_by_user_orders_newest_first(self):
-        app, recipient = await self._seed()
+        _app, recipient = await self._seed()
         repo = NotificationRepository()
         first = await repo.create(
             self.session,
             NotificationEntity(
                 user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
+                event_id=self.event.event_id,
             ),
         )
         second = await repo.create(
             self.session,
             NotificationEntity(
                 user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
+                event_id=self.event.event_id,
             ),
         )
 
@@ -105,7 +108,7 @@ class TestNotificationRepository(BaseRepositoryTestLib):
         )
 
     async def test_count_by_user_only_counts_that_user(self):
-        app, recipient = await self._seed()
+        _app, recipient = await self._seed()
         other = _make_user()
         await self.insert_entities([other])
         repo = NotificationRepository()
@@ -113,16 +116,13 @@ class TestNotificationRepository(BaseRepositoryTestLib):
             self.session,
             NotificationEntity(
                 user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
+                event_id=self.event.event_id,
             ),
         )
         await repo.create(
             self.session,
             NotificationEntity(
                 user_id=other.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
             ),
         )
 
@@ -137,14 +137,13 @@ class TestNotificationRepository(BaseRepositoryTestLib):
         would drop an email that had not gone out yet -- and would erase the
         record of one that had.
         """
-        app, recipient = await self._seed()
+        _app, recipient = await self._seed()
         repo = NotificationRepository()
         created = await repo.create(
             self.session,
             NotificationEntity(
                 user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
+                event_id=self.event.event_id,
             ),
         )
 
@@ -159,7 +158,7 @@ class TestNotificationRepository(BaseRepositoryTestLib):
         self.assertEqual(await repo.list_by_user(self.session, recipient.user_id), [])
 
     async def test_dismiss_by_id_wrong_user_is_a_no_op(self):
-        app, recipient = await self._seed()
+        _app, recipient = await self._seed()
         other = _make_user()
         await self.insert_entities([other])
         repo = NotificationRepository()
@@ -167,8 +166,7 @@ class TestNotificationRepository(BaseRepositoryTestLib):
             self.session,
             NotificationEntity(
                 user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
+                event_id=self.event.event_id,
             ),
         )
 
@@ -182,15 +180,13 @@ class TestNotificationRepository(BaseRepositoryTestLib):
         self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 1)
 
     async def test_dismiss_all_by_user_marks_every_row_and_keeps_them(self):
-        app, recipient = await self._seed()
+        _app, recipient = await self._seed()
         repo = NotificationRepository()
         rows = [
             await repo.create(
                 self.session,
                 NotificationEntity(
                     user_id=recipient.user_id,
-                    type=NotificationType.MENTIONED,
-                    application_id=app.application_id,
                 ),
             )
             for _ in range(2)

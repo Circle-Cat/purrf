@@ -2,7 +2,7 @@ import logging
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from sqlalchemy.exc import MissingGreenlet
 
@@ -93,14 +93,18 @@ class TestSyncApplication(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.conversation_service = AsyncMock()
         self.conversation_service.sync_context = AsyncMock(return_value=[])
-        self.activity_repo = AsyncMock()
+        recorder = patch(
+            "backend.recruiting.email_sync_service.record_event",
+            new_callable=AsyncMock,
+        )
+        self.record_event = recorder.start()
+        self.addCleanup(recorder.stop)
         self.session = Mock()
         self.gmail = Mock()
         self.gmail.list_recent_message_thread_ids = Mock(return_value=set())
         self.service = EmailSyncService(
             gmail_client=self.gmail,
             email_conversation_service=self.conversation_service,
-            application_activity_repository=self.activity_repo,
             application_repository=AsyncMock(),
             logger=Mock(),
         )
@@ -120,12 +124,12 @@ class TestSyncApplication(unittest.IsolatedAsyncioTestCase):
 
         await self.service.sync_application(self.session, self.application)
 
-        self.activity_repo.create.assert_awaited_once()
-        args, kwargs = self.activity_repo.create.await_args
-        self.assertEqual(args[1], 7)
+        self.record_event.assert_awaited_once()
+        _args, kwargs = self.record_event.await_args
+        self.assertEqual(kwargs["subject_id"], 7)
         # Actor is the candidate (thread owner), not the recruiter.
-        self.assertEqual(args[2], 5)
-        self.assertEqual(args[3], "email_received")
+        self.assertEqual(kwargs["actor_id"], 5)
+        self.assertEqual(kwargs["event_type"], "recruiting.email_received")
         self.assertEqual(kwargs["details"]["subject"], "Re: Hello")
         self.assertEqual(kwargs["details"]["from"], "cand@x")
         self.assertEqual(kwargs["details"]["to"], "recruiting@corp.com")
@@ -137,7 +141,7 @@ class TestSyncApplication(unittest.IsolatedAsyncioTestCase):
 
     async def test_no_new_messages_writes_no_activity(self):
         await self.service.sync_application(self.session, self.application)
-        self.activity_repo.create.assert_not_awaited()
+        self.record_event.assert_not_awaited()
 
     async def test_returns_the_new_messages(self):
         messages = [_message(EmailDirection.INBOUND)]
@@ -159,7 +163,12 @@ class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.conversation_service = AsyncMock()
         self.conversation_service.sync_context = AsyncMock(return_value=[])
-        self.activity_repo = AsyncMock()
+        recorder = patch(
+            "backend.recruiting.email_sync_service.record_event",
+            new_callable=AsyncMock,
+        )
+        self.record_event = recorder.start()
+        self.addCleanup(recorder.stop)
         self.application_repo = AsyncMock()
         self.logger = Mock()
         self.session = AsyncMock()
@@ -168,7 +177,6 @@ class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
         self.service = EmailSyncService(
             gmail_client=self.gmail,
             email_conversation_service=self.conversation_service,
-            application_activity_repository=self.activity_repo,
             application_repository=self.application_repo,
             logger=self.logger,
         )
@@ -337,7 +345,12 @@ class TestSyncRecentApplications(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.conversation_service = AsyncMock()
         self.conversation_service.sync_context = AsyncMock(return_value=[])
-        self.activity_repo = AsyncMock()
+        recorder = patch(
+            "backend.recruiting.email_sync_service.record_event",
+            new_callable=AsyncMock,
+        )
+        self.record_event = recorder.start()
+        self.addCleanup(recorder.stop)
         self.application_repo = AsyncMock()
         self.application_repo.list_due_email_sync_applications = AsyncMock(
             return_value=[]
@@ -348,7 +361,6 @@ class TestSyncRecentApplications(unittest.IsolatedAsyncioTestCase):
         self.service = EmailSyncService(
             gmail_client=self.gmail,
             email_conversation_service=self.conversation_service,
-            application_activity_repository=self.activity_repo,
             application_repository=self.application_repo,
             logger=self.logger,
         )

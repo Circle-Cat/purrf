@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.entity.event_entity import EventEntity
@@ -13,6 +15,7 @@ async def record_event(
     actor_id: int | None,
     event_type: str,
     details: dict | None = None,
+    created_at: datetime | None = None,
 ) -> tuple[EventEntity, list[NotificationEntity]]:
     """Record what happened and fan it out to everyone who needs to know.
 
@@ -38,6 +41,10 @@ async def record_event(
             requesting user for those would name the candidate as the actor.
         event_type (str): Domain-prefixed type, e.g. ``"recruiting.reassigned"``.
         details (dict | None): Extra payload for rendering. Defaults to ``{}``.
+        created_at (datetime | None): When it happened, if that is not now.
+            An inbound email is found by a sweep some time after it arrived,
+            and the timeline should read as the conversation ran, not as we
+            noticed it. Defaults to the database's clock.
 
     Returns:
         tuple[EventEntity, list[NotificationEntity]]: The event, and the
@@ -49,6 +56,7 @@ async def record_event(
         actor_id=actor_id,
         event_type=event_type,
         details=details or {},
+        **({"created_at": created_at} if created_at is not None else {}),
     )
     session.add(event)
     await session.flush()

@@ -176,7 +176,6 @@ class BoardService:
         resume_storage,
         application_assignment_repository,
         user_permissions_repository,
-        application_activity_repository,
         event_repository,
         application_comment_repository,
         application_comment_mention_repository,
@@ -208,9 +207,6 @@ class BoardService:
             user_permissions_repository (UserPermissionsRepository): Used to
                 verify a proposed assignee actively holds
                 ``Permission.RECRUITING_INTERVIEW_EVALUATE``.
-            application_activity_repository (ApplicationActivityRepository):
-                Retained until the legacy activity tables are dropped;
-                nothing reads or writes through it any more.
             event_repository (EventRepository): Reads the event log behind
                 ``get_application_activity`` and the history embedded in
                 ``get_other_applications``.
@@ -267,7 +263,6 @@ class BoardService:
         self.resume_storage = resume_storage
         self.application_assignment_repository = application_assignment_repository
         self.user_permissions_repository = user_permissions_repository
-        self.application_activity_repository = application_activity_repository
         self.event_repository = event_repository
         self.application_comment_repository = application_comment_repository
         self.application_comment_mention_repository = (
@@ -1274,7 +1269,7 @@ class BoardService:
         Args:
             session (AsyncSession): Active database async session.
             rows: Activity rows for ONE application, as returned by
-                ``ApplicationActivityRepository.list_by_application``.
+                ``EventRepository.list_by_subject``.
             job (JobEntity): The job those rows' application belongs to,
                 for screen-rule and question-label resolution.
 
