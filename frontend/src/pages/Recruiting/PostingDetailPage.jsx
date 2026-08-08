@@ -204,13 +204,16 @@ const PostingDetailPage = () => {
 
   const formatActivity = (entry) => {
     const { eventType, actorName, details = {} } = entry;
-    const reviewerName = details.reviewerId
-      ? (approversById[details.reviewerId] ?? `Reviewer #${details.reviewerId}`)
+    // Null actorName means the rules did it, not a person.
+    const who = actorName ?? "Automatically";
+    const reviewerId = details.reviewerIds?.[0];
+    const reviewerName = reviewerId
+      ? (approversById[reviewerId] ?? `Reviewer #${reviewerId}`)
       : null;
-    if (eventType === "job_created") {
-      return `${actorName} created this posting as a draft`;
+    if (eventType === "recruiting.job_created") {
+      return `${who} created this posting as a draft`;
     }
-    if (eventType === "review_opened") {
+    if (eventType === "recruiting.review_opened") {
       const verb =
         {
           initial: "submitted for review",
@@ -219,37 +222,37 @@ const PostingDetailPage = () => {
           reopen: "requested to reopen",
         }[details.kind] ?? "submitted for review";
       return reviewerName
-        ? `${actorName} ${verb}, assigned to ${reviewerName}`
-        : `${actorName} ${verb}`;
+        ? `${who} ${verb}, assigned to ${reviewerName}`
+        : `${who} ${verb}`;
     }
-    if (eventType === "review_decided") {
+    if (eventType === "recruiting.review_decided") {
       const templates = {
         initial: {
-          approved: `${actorName} approved the review — posting published`,
-          rejected: `${actorName} rejected the review: "${details.comment}" — sent back to draft`,
+          approved: `${who} approved the review — posting published`,
+          rejected: `${who} rejected the review: "${details.comment}" — sent back to draft`,
         },
         revision: {
-          approved: `${actorName} approved the revision — changes published`,
-          rejected: `${actorName} rejected the revision: "${details.comment}" — posting stays published`,
+          approved: `${who} approved the revision — changes published`,
+          rejected: `${who} rejected the revision: "${details.comment}" — posting stays published`,
         },
         close: {
-          approved: `${actorName} approved the close request — posting closed`,
-          rejected: `${actorName} rejected the close request: "${details.comment}" — posting stays published`,
+          approved: `${who} approved the close request — posting closed`,
+          rejected: `${who} rejected the close request: "${details.comment}" — posting stays published`,
         },
         reopen: {
-          approved: `${actorName} approved the reopen request — posting republished`,
-          rejected: `${actorName} rejected the reopen request: "${details.comment}" — posting stays closed`,
+          approved: `${who} approved the reopen request — posting republished`,
+          rejected: `${who} rejected the reopen request: "${details.comment}" — posting stays closed`,
         },
       };
       return (
         templates[details.kind]?.[details.decision] ??
-        `${actorName} ${eventType}`
+        `${who} ${eventType.replace(/^[^.]+\./, "")}`
       );
     }
-    if (eventType === "pending_edit_discarded") {
-      return `${actorName} discarded a staged edit`;
+    if (eventType === "recruiting.pending_edit_discarded") {
+      return `${who} discarded a staged edit`;
     }
-    return `${actorName} ${eventType}`;
+    return `${who} ${eventType.replace(/^[^.]+\./, "")}`;
   };
 
   const openReview = async (kind) => {

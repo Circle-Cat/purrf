@@ -1,7 +1,7 @@
 import unittest
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, create_autospec
+from unittest.mock import AsyncMock, MagicMock, create_autospec, patch
 from backend.common.mentorship_enums import ParticipantRole
 from backend.mentorship.onboarding_training_service import OnboardingTrainingService
 from backend.recruiting.application_service import ApplicationService
@@ -89,6 +89,12 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             ApplicationActivityRepository, instance=True
         )
         self.session = AsyncMock()
+        recorder = patch(
+            "backend.recruiting.application_service.record_event",
+            new_callable=AsyncMock,
+        )
+        self.record_event = recorder.start()
+        self.addCleanup(recorder.stop)
         self.notification_repo = self._notification_repository_double()
         # The applicant's screen-rule emails come from user_emails; submit
         # matches against every confirmed claim, not one contact address.
@@ -418,12 +424,17 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             "personal": REQUIRED_PERSONAL,
         })
         await self.service.submit(self.session, self._ctx(), dto)
-        self.activity_repo.create.assert_any_await(
+        self.record_event.assert_any_await(
             self.session,
-            100,
-            2,
-            "auto_assigned",
-            details={"stage": "recruiter_screening", "assigneeId": 5},
+            subject_type="application",
+            subject_id=100,
+            actor_id=None,
+            event_type="recruiting.auto_assigned",
+            details={
+                "stage": "recruiter_screening",
+                "assigneeId": 5,
+                "round": 1,
+            },
         )
 
     async def test_submit_skips_assignment_when_no_default_configured(self):
@@ -475,11 +486,12 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             "personal": REQUIRED_PERSONAL,
         })
         await self.service.submit(self.session, self._ctx(), dto)
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            100,
-            2,
-            "application_submitted",
+            subject_type="application",
+            subject_id=100,
+            actor_id=2,
+            event_type="recruiting.application_submitted",
             details={"stage": "recruiter_screening"},
         )
 
@@ -508,11 +520,12 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
         await self.service.submit(self.session, self._ctx(), dto)
 
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            100,
-            2,
-            "application_submitted",
+            subject_type="application",
+            subject_id=100,
+            actor_id=2,
+            event_type="recruiting.application_submitted",
             details={"stage": "recruiter_screening"},
         )
 
@@ -539,11 +552,12 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
         await self.service.submit(self.session, self._ctx(), dto)
 
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            100,
-            2,
-            "auto_rejected",
+            subject_type="application",
+            subject_id=100,
+            actor_id=None,
+            event_type="recruiting.auto_rejected",
             details={"reason": "blocked"},
         )
 
@@ -836,11 +850,12 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(app.stage, ApplicationStage.REJECTED)
         self.assertEqual(app.tags, {"auto_reject": "screen_rule", "rule_id": "r1"})
         self.assertFalse(result.editable)
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            100,
-            2,
-            "auto_rejected",
+            subject_type="application",
+            subject_id=100,
+            actor_id=None,
+            event_type="recruiting.auto_rejected",
             details={"reason": "screen_rule", "ruleId": "r1", "onEdit": True},
         )
 
@@ -857,7 +872,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(app.stage, ApplicationStage.RECRUITER_SCREENING)
         self.assertIsNone(app.tags)
         self.assertTrue(result.editable)
-        self.activity_repo.create.assert_not_awaited()
+        self.record_event.assert_not_awaited()
 
     async def test_edit_into_a_qualify_rule_stays_put(self):
         """qualify lands on the first stage, which is where an editable
@@ -1768,11 +1783,12 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.stage, ApplicationStage.REJECTED)
         self.assertEqual(result.tags, {"auto_reject": "blocked"})
         self.app_repo.update.assert_not_awaited()
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            result.id,
-            2,
-            "auto_rejected",
+            subject_type="application",
+            subject_id=result.id,
+            actor_id=None,
+            event_type="recruiting.auto_rejected",
             details={"reason": "blocked"},
         )
 
@@ -1873,11 +1889,12 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.stage, ApplicationStage.REJECTED)
         self.assertEqual(result.tags, {"auto_reject": "screen_rule", "rule_id": "r1"})
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            100,
-            2,
-            "auto_rejected",
+            subject_type="application",
+            subject_id=100,
+            actor_id=None,
+            event_type="recruiting.auto_rejected",
             details={"reason": "screen_rule", "ruleId": "r1"},
         )
 
@@ -1913,11 +1930,12 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.stage, ApplicationStage.RECRUITER_SCREENING)
         self.assertEqual(result.sub_status, "pending")
         self.assertIsNone(result.tags)
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            100,
-            2,
-            "application_submitted",
+            subject_type="application",
+            subject_id=100,
+            actor_id=2,
+            event_type="recruiting.application_submitted",
             details={
                 "stage": "recruiter_screening",
                 "screenQualifyRuleId": "r1",
@@ -1954,11 +1972,12 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.stage, ApplicationStage.HIRED)
         self.assertIsNone(result.sub_status)
         self.assertIsNone(result.tags)
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            100,
-            2,
-            "application_submitted",
+            subject_type="application",
+            subject_id=100,
+            actor_id=2,
+            event_type="recruiting.application_submitted",
             details={"stage": "hired", "screenAutoHireRuleId": "r1"},
         )
 
@@ -2351,86 +2370,12 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, [])
 
-    async def test_assign_default_if_configured_notifies_default_assignee(self):
-        job = self._job(status=JobStatus.PUBLISHED)
-        job.pipeline_config = {
-            "ownerIds": [9],
-            "stages": [
-                {"stage": "recruiter_screening", "defaultAssigneeId": 5},
-            ],
-        }
-        application = ApplicationEntity(
-            job_id=job.job_id,
-            user_id=3,
-            stage=ApplicationStage.RECRUITER_SCREENING,
-            current_round=1,
-        )
-        application.application_id = 10
-
-        await self.service._assign_default_if_configured(
-            self.session, application, job, self._ctx(user_id=3)
-        )
-
-        self.notification_repo.create.assert_awaited_once()
-        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
-        self.assertEqual(entity_arg.user_id, 5)
-        self.assertEqual(entity_arg.type, NotificationType.ASSIGNED_TO_EVALUATE)
-        self.assertEqual(entity_arg.application_id, 10)
-        self.assertIsNone(entity_arg.actor_user_id)
-
     def _owner_types(self):
         """The (user_id, type) pairs of every notification submit wrote."""
         return [
             (call.args[1].user_id, call.args[1].type)
             for call in self.notification_repo.create.await_args_list
         ]
-
-    async def test_submit_notifies_every_owner_of_a_new_application(self):
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerIds": [5, 6],
-                    "stages": [{"stage": "recruiter_screening"}],
-                }
-            )
-        )
-        dto = ApplicationSubmitDto.model_validate({
-            "jobId": 1,
-            "personal": REQUIRED_PERSONAL,
-        })
-
-        await self.service.submit(self.session, self._ctx(), dto)
-
-        self.assertEqual(
-            self._owner_types(),
-            [
-                (5, NotificationType.APPLICATION_SUBMITTED),
-                (6, NotificationType.APPLICATION_SUBMITTED),
-            ],
-        )
-        entity = self.notification_repo.create.await_args_list[0].args[1]
-        self.assertEqual(entity.application_id, 100)
-        self.assertEqual(entity.actor_user_id, 2)
-
-    async def test_submit_skips_an_owner_who_is_the_applicant(self):
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerIds": [2, 5],
-                    "stages": [{"stage": "recruiter_screening"}],
-                }
-            )
-        )
-        dto = ApplicationSubmitDto.model_validate({
-            "jobId": 1,
-            "personal": REQUIRED_PERSONAL,
-        })
-
-        await self.service.submit(self.session, self._ctx(user_id=2), dto)
-
-        self.assertEqual(
-            self._owner_types(), [(5, NotificationType.APPLICATION_SUBMITTED)]
-        )
 
     async def test_submit_writes_no_owner_notification_without_an_owner(self):
         dto = ApplicationSubmitDto.model_validate({
@@ -2441,302 +2386,3 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         await self.service.submit(self.session, self._ctx(), dto)
 
         self.notification_repo.create.assert_not_awaited()
-
-    async def test_submit_tells_owners_a_blocked_application_was_auto_rejected(self):
-        self.users_repo.get_user_by_user_id = AsyncMock(
-            return_value=self._user(is_blocked=True)
-        )
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerIds": [5],
-                    "stages": [{"stage": "recruiter_screening"}],
-                }
-            )
-        )
-        dto = ApplicationSubmitDto.model_validate({
-            "jobId": 1,
-            "personal": REQUIRED_PERSONAL,
-        })
-
-        await self.service.submit(self.session, self._ctx(), dto)
-
-        self.assertEqual(
-            self._owner_types(), [(5, NotificationType.APPLICATION_AUTO_REJECTED)]
-        )
-
-    async def test_submit_tells_owners_a_screen_rejected_application_was_auto_rejected(
-        self,
-    ):
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerIds": [5],
-                    "stages": [{"stage": "recruiter_screening"}],
-                },
-                screen_rules={
-                    "rules": [
-                        {
-                            "id": "r1",
-                            "condition": {
-                                "source": "email_domain",
-                                "operator": "equals",
-                                "value": "spam.com",
-                            },
-                            "action": "reject",
-                        }
-                    ]
-                },
-            )
-        )
-        self.user_emails_repo.list_by_user_id.return_value = [
-            self._email_row("a@spam.com")
-        ]
-        dto = ApplicationSubmitDto.model_validate({
-            "jobId": 1,
-            "personal": REQUIRED_PERSONAL,
-        })
-
-        await self.service.submit(self.session, self._ctx(), dto)
-
-        self.assertEqual(
-            self._owner_types(), [(5, NotificationType.APPLICATION_AUTO_REJECTED)]
-        )
-
-    async def test_submit_tells_owners_an_auto_hired_application_was_auto_hired(self):
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerIds": [5],
-                    "stages": [{"stage": "recruiter_screening"}],
-                },
-                screen_rules={
-                    "rules": [
-                        {
-                            "id": "r1",
-                            "condition": {
-                                "source": "email_domain",
-                                "operator": "equals",
-                                "value": "circlecat.org",
-                            },
-                            "action": "auto_hire",
-                        }
-                    ]
-                },
-            )
-        )
-        self.user_emails_repo.list_by_user_id.return_value = [
-            self._email_row("a@circlecat.org")
-        ]
-        dto = ApplicationSubmitDto.model_validate({
-            "jobId": 1,
-            "personal": REQUIRED_PERSONAL,
-        })
-
-        await self.service.submit(self.session, self._ctx(), dto)
-
-        self.assertEqual(
-            self._owner_types(), [(5, NotificationType.APPLICATION_AUTO_HIRED)]
-        )
-
-    async def test_submit_treats_a_qualify_match_as_an_ordinary_submission(self):
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerIds": [5],
-                    "stages": [{"stage": "recruiter_screening"}],
-                },
-                screen_rules={
-                    "rules": [
-                        {
-                            "id": "r1",
-                            "condition": {
-                                "source": "email_domain",
-                                "operator": "equals",
-                                "value": "circlecat.org",
-                            },
-                            "action": "qualify",
-                        }
-                    ]
-                },
-            )
-        )
-        self.user_emails_repo.list_by_user_id.return_value = [
-            self._email_row("a@circlecat.org")
-        ]
-        dto = ApplicationSubmitDto.model_validate({
-            "jobId": 1,
-            "personal": REQUIRED_PERSONAL,
-        })
-
-        await self.service.submit(self.session, self._ctx(), dto)
-
-        self.assertEqual(
-            self._owner_types(), [(5, NotificationType.APPLICATION_SUBMITTED)]
-        )
-
-    async def test_submit_notifies_default_assignee_owner_twice_and_other_owner_once(
-        self,
-    ):
-        """The default assignee and the owner list are different facts about
-        the same person when they overlap: user 5 is both the stage's
-        defaultAssigneeId and one of two owners, so they must get both an
-        ASSIGNED_TO_EVALUATE row and their own APPLICATION_SUBMITTED owner
-        row, while user 8 (owner only) gets just the latter. The applicant
-        (user 2, from the default _ctx()) is neither owner, so nothing here
-        is suppressed by the applicant-skip logic either."""
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerIds": [5, 8],
-                    "stages": [
-                        {"stage": "recruiter_screening", "defaultAssigneeId": 5}
-                    ],
-                }
-            )
-        )
-        dto = ApplicationSubmitDto.model_validate({
-            "jobId": 1,
-            "personal": REQUIRED_PERSONAL,
-        })
-
-        await self.service.submit(self.session, self._ctx(), dto)
-
-        self.assertEqual(
-            self._owner_types(),
-            [
-                (5, NotificationType.ASSIGNED_TO_EVALUATE),
-                (5, NotificationType.APPLICATION_SUBMITTED),
-                (8, NotificationType.APPLICATION_SUBMITTED),
-            ],
-        )
-
-    async def test_submit_notifies_owners_before_committing(self):
-        """An AsyncMock session doesn't pin write order: if the
-        `_notify_owners_of_submission` call in `submit` were moved below
-        `await session.commit()`, every other test here would still pass,
-        even though writing the notification rows after the commit would
-        no longer be atomic with the application row. Record the real
-        interleaving of events instead of asserting on call arity."""
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerIds": [5, 6],
-                    "stages": [{"stage": "recruiter_screening"}],
-                }
-            )
-        )
-        events = []
-        self.session.commit = AsyncMock(side_effect=lambda: events.append("commit"))
-        self.notification_repo.create = AsyncMock(
-            side_effect=lambda *args, **kwargs: events.append("notify")
-        )
-        dto = ApplicationSubmitDto.model_validate({
-            "jobId": 1,
-            "personal": REQUIRED_PERSONAL,
-        })
-
-        await self.service.submit(self.session, self._ctx(), dto)
-
-        self.assertIn("commit", events)
-        notify_indices = [i for i, e in enumerate(events) if e == "notify"]
-        commit_index = events.index("commit")
-        self.assertTrue(notify_indices, "expected at least one notify event")
-        self.assertTrue(
-            all(i < commit_index for i in notify_indices),
-            f"expected every notify event before commit, got {events}",
-        )
-
-    async def test_submit_notifies_owner_from_legacy_scalar_owner_id(self):
-        """normalized_owner_ids tolerates configs saved before multi-owner
-        support, which carry a scalar `{"ownerId": 5}` instead of
-        `{"ownerIds": [5]}` -- the owner fan-out in submit must resolve
-        that legacy shape too, not just the current one."""
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerId": 5,
-                    "stages": [{"stage": "recruiter_screening"}],
-                }
-            )
-        )
-        dto = ApplicationSubmitDto.model_validate({
-            "jobId": 1,
-            "personal": REQUIRED_PERSONAL,
-        })
-
-        await self.service.submit(self.session, self._ctx(), dto)
-
-        self.assertEqual(
-            self._owner_types(), [(5, NotificationType.APPLICATION_SUBMITTED)]
-        )
-
-    async def test_reapply_inside_cooldown_notifies_owners(self):
-        """The re-apply-after-rejection path -- a brand-new application row,
-        plus a cold_freeze tag inside the posting's cooldown window -- is
-        the path with the most moving parts; owner notifications must still
-        fire through it exactly as they do for a fresh submission."""
-        job = self._job(
-            cooldown_days=90,
-            status=JobStatus.PUBLISHED,
-            pipeline_config={
-                "ownerIds": [5, 6],
-                "stages": [{"stage": "recruiter_screening"}],
-            },
-        )
-        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        rejected_application = ApplicationEntity(
-            job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
-        )
-        rejected_application.application_id = 55
-        rejected_application.created_datetime = datetime(
-            2026, 1, 10, tzinfo=timezone.utc
-        )
-        self.app_repo.get_latest_by_job_and_user = AsyncMock(
-            return_value=rejected_application
-        )
-        self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
-        dto = ApplicationSubmitDto.model_validate({
-            "jobId": 1,
-            "personal": {**REQUIRED_PERSONAL, "firstName": "New"},
-        })
-
-        result = await self.service.submit(self.session, self._ctx(), dto)
-
-        self.assertIn("cold_freeze", result.tags or {})
-        self.assertEqual(
-            self._owner_types(),
-            [
-                (5, NotificationType.APPLICATION_SUBMITTED),
-                (6, NotificationType.APPLICATION_SUBMITTED),
-            ],
-        )
-        entity = self.notification_repo.create.await_args_list[0].args[1]
-        self.assertEqual(entity.application_id, result.id)
-        self.assertEqual(entity.actor_user_id, 2)
-
-    async def test_submit_records_the_notification_inside_the_transaction(self):
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerIds": [5],
-                    "stages": [{"stage": "recruiter_screening"}],
-                }
-            )
-        )
-        dto = ApplicationSubmitDto.model_validate({
-            "jobId": 1,
-            "personal": REQUIRED_PERSONAL,
-        })
-
-        await self.service.submit(self.session, self._ctx(), dto)
-
-        self.notification_repo.create.assert_awaited_once()
-        # Order, not just occurrence: writing the row after the commit would
-        # let a rollback drop the notification while the application it
-        # announces survived.
-        self.assertEqual(self.call_order, ["record", "commit"])
-
-
-if __name__ == "__main__":
-    unittest.main()

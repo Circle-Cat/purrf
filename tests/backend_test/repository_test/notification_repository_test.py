@@ -130,7 +130,13 @@ class TestNotificationRepository(BaseRepositoryTestLib):
 
         self.assertEqual(count, 1)
 
-    async def test_delete_by_id_removes_the_row_and_returns_true(self):
+    async def test_dismiss_by_id_marks_the_row_and_keeps_it(self):
+        """Dismissing hides a notification; it must not destroy it.
+
+        The row carries the email state machine, so deleting it on dismiss
+        would drop an email that had not gone out yet -- and would erase the
+        record of one that had.
+        """
         app, recipient = await self._seed()
         repo = NotificationRepository()
         created = await repo.create(
@@ -142,14 +148,17 @@ class TestNotificationRepository(BaseRepositoryTestLib):
             ),
         )
 
-        deleted = await repo.delete_by_id(
+        dismissed = await repo.dismiss_by_id(
             self.session, created.notification_id, recipient.user_id
         )
 
-        self.assertTrue(deleted)
+        self.assertTrue(dismissed)
+        await self.session.refresh(created)
+        self.assertIsNotNone(created.dismissed_at)
         self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 0)
+        self.assertEqual(await repo.list_by_user(self.session, recipient.user_id), [])
 
-    async def test_delete_by_id_wrong_user_is_a_no_op(self):
+    async def test_dismiss_by_id_wrong_user_is_a_no_op(self):
         app, recipient = await self._seed()
         other = _make_user()
         await self.insert_entities([other])
@@ -163,37 +172,33 @@ class TestNotificationRepository(BaseRepositoryTestLib):
             ),
         )
 
-        result = await repo.delete_by_id(
+        result = await repo.dismiss_by_id(
             self.session, created.notification_id, other.user_id
         )
 
         self.assertFalse(result)
+        await self.session.refresh(created)
+        self.assertIsNone(created.dismissed_at)
         self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 1)
 
-    async def test_delete_all_by_user_removes_every_row_for_that_user(self):
+    async def test_dismiss_all_by_user_marks_every_row_and_keeps_them(self):
         app, recipient = await self._seed()
         repo = NotificationRepository()
-        await repo.create(
-            self.session,
-            NotificationEntity(
-                user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
-            ),
-        )
-        await repo.create(
-            self.session,
-            NotificationEntity(
-                user_id=recipient.user_id,
-                type=NotificationType.ASSIGNED_TO_EVALUATE,
-                application_id=app.application_id,
-            ),
-        )
+        rows = [
+            await repo.create(
+                self.session,
+                NotificationEntity(
+                    user_id=recipient.user_id,
+                    type=NotificationType.MENTIONED,
+                    application_id=app.application_id,
+                ),
+            )
+            for _ in range(2)
+        ]
 
-        await repo.delete_all_by_user(self.session, recipient.user_id)
+        await repo.dismiss_all_by_user(self.session, recipient.user_id)
 
         self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 0)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        for row in rows:
+            await self.session.refresh(row)
+            self.assertIsNotNone(row.dismissed_at)

@@ -1,8 +1,10 @@
 """Who needs to know about each recruiting event.
 
 Recipients are derived from data already in the database -- job owners and
-assignees -- rather than from a subscription table. The candidate is never
-a recipient: notifications are internal only.
+assignees -- rather than from a subscription table. Notifications are
+internal: nobody is a recipient by virtue of being the candidate. Someone
+who applied to a posting they own is still notified, because owning it is
+what puts them on the list.
 
 Importing this module registers every resolver. ``fast_app_factory`` imports
 it once at startup for that side effect.
@@ -66,6 +68,9 @@ async def _assignees(session: AsyncSession, application_id: int) -> set[int]:
 
 async def _owners_only(session: AsyncSession, event: EventEntity) -> set[int]:
     """Resolve recipients as just the job's owners.
+
+    An owner who is also the applicant still counts: they are being told
+    about a posting they are accountable for, in that capacity.
 
     Args:
         session (AsyncSession): Session inside the caller's open transaction.

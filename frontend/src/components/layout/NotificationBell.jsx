@@ -15,29 +15,46 @@ import {
   listNotifications,
 } from "@/api/recruitingApi";
 
-/** Compose a notification's display text, by type. */
+/** Compose a notification's display text from its event type and details. */
 const describe = (n) => {
-  switch (n.type) {
-    case "assigned_to_evaluate":
-      return n.actorName
-        ? `${n.actorName} assigned you to evaluate ${n.applicantName} — ${n.jobTitle}`
-        : `You were auto-assigned to evaluate ${n.applicantName} — ${n.jobTitle}`;
-    case "mentioned":
-      return `${n.actorName ?? "Someone"} mentioned you in a comment on ${n.applicantName} — ${n.jobTitle}`;
-    case "job_review_requested":
-      return `${n.actorName ?? "Someone"} submitted "${n.jobTitle}" for your review`;
-    case "job_review_approved":
-      return `${n.actorName ?? "Someone"} approved "${n.jobTitle}"`;
-    case "job_review_rejected":
-      return `${n.actorName ?? "Someone"} rejected "${n.jobTitle}"`;
-    case "application_submitted":
-      return `${n.applicantName} applied to ${n.jobTitle}`;
-    case "application_auto_rejected":
+  const actor = n.actorName ?? "Someone";
+  switch (n.eventType) {
+    case "recruiting.reassigned":
+      return `${actor} assigned you to evaluate ${n.applicantName} — ${n.jobTitle}`;
+    case "recruiting.auto_assigned":
+      return `You were auto-assigned to evaluate ${n.applicantName} — ${n.jobTitle}`;
+    case "recruiting.mentioned":
+      return `${actor} mentioned you in a comment on ${n.applicantName} — ${n.jobTitle}`;
+    case "recruiting.review_opened":
+      return `${actor} submitted "${n.jobTitle}" for your review`;
+    case "recruiting.review_decided":
+      return n.details?.decision === "approved"
+        ? `${actor} approved "${n.jobTitle}"`
+        : `${actor} rejected "${n.jobTitle}"`;
+    case "recruiting.application_submitted":
+      return n.details?.screenAutoHireRuleId
+        ? `${n.applicantName} applied to ${n.jobTitle} and was ${
+            n.jobKind === "activity" ? "admitted" : "hired"
+          } automatically`
+        : `${n.applicantName} applied to ${n.jobTitle}`;
+    case "recruiting.auto_rejected":
       return `${n.applicantName} applied to ${n.jobTitle} and was rejected automatically`;
-    case "application_auto_hired":
-      return `${n.applicantName} applied to ${n.jobTitle} and was ${
-        n.jobKind === "activity" ? "admitted" : "hired"
-      } automatically`;
+    case "recruiting.blacklisted":
+      return `${actor} blacklisted ${n.applicantName} — ${n.jobTitle}`;
+    case "recruiting.stage_changed":
+      return `${actor} moved ${n.applicantName} to a new stage — ${n.jobTitle}`;
+    case "recruiting.round_advanced":
+      return `${actor} advanced ${n.applicantName} to another session — ${n.jobTitle}`;
+    case "recruiting.sub_status_changed":
+      return `${actor} changed the status of ${n.applicantName} — ${n.jobTitle}`;
+    case "recruiting.evaluation_confirmed":
+      return `${actor} confirmed an evaluation for ${n.applicantName} — ${n.jobTitle}`;
+    case "recruiting.interview_scheduled":
+      return `${actor} scheduled an interview with ${n.applicantName} — ${n.jobTitle}`;
+    case "recruiting.interview_updated":
+      return `${actor} changed the interview with ${n.applicantName} — ${n.jobTitle}`;
+    case "recruiting.interview_cancelled":
+      return `${actor} cancelled the interview with ${n.applicantName} — ${n.jobTitle}`;
     default:
       return "";
   }
@@ -47,7 +64,7 @@ const describe = (n) => {
  * Header bell + popover for in-app recruiting notifications.
  *
  * Notifications are light reminders: they don't navigate anywhere.
- * Dismissing one (the X) or "Clear all" deletes it server-side and drops
+ * Dismissing one (the X) or "Clear all" marks it server-side and drops
  * it from the list.
  *
  * Refetches on three user-driven triggers: the tab/window becoming visible

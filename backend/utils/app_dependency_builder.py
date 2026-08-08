@@ -94,6 +94,7 @@ from backend.admin.permission_admin_controller import PermissionAdminController
 from backend.repository.job_repository import JobRepository
 from backend.repository.job_activity_repository import JobActivityRepository
 from backend.repository.job_review_repository import JobReviewRepository
+from backend.repository.event_repository import EventRepository
 from backend.repository.notification_repository import NotificationRepository
 from backend.repository.application_repository import ApplicationRepository
 from backend.repository.application_assignment_repository import (
@@ -633,6 +634,7 @@ class AppDependencyBuilder:
             database=self.database,
         )
         self.notification_repository = NotificationRepository()
+        self.event_repository = EventRepository()
         self.job_review_repository = JobReviewRepository()
         self.job_activity_repository = JobActivityRepository()
         self.recruiting_mapper = RecruitingMapper()
@@ -700,6 +702,7 @@ class AppDependencyBuilder:
             self.users_repository,
             self.job_activity_repository,
             self.user_emails_repository,
+            self.event_repository,
         )
         self.application_assignment_repository = ApplicationAssignmentRepository()
         self.application_interview_repository = ApplicationInterviewRepository()
@@ -789,6 +792,7 @@ class AppDependencyBuilder:
             self.application_assignment_repository,
             self.user_permissions_repository,
             self.application_activity_repository,
+            self.event_repository,
             self.application_comment_repository,
             self.application_comment_mention_repository,
             self.evaluation_repository,
