@@ -1,39 +1,36 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.common.base import Base
-from backend.common.recruiting_enums import NotificationType
+from backend.common.recruiting_enums import NotificationStatus, NotificationType
 
 
 class NotificationEntity(Base):
     """One in-app notification for a single recipient.
 
-    Notifications are light reminders: rows are written synchronously, in
-    the same transaction as the triggering event, by BoardService
-    (assignment/mention), ApplicationService (default-assignee
-    materialization, and notifying a posting's owners when an application
-    lands), and JobService (review request/decision) -- never updated, and
-    deleted outright when the recipient dismisses them.
+    A row is written in the same transaction as the change it announces, and
+    is never rewritten except by the two marks below.
 
-    Exactly one of application_id or (job_id, job_review_id) is set,
-    never both: application_id/round/comment_id serve ASSIGNED_TO_EVALUATE
-    and MENTIONED; application_id alone (round left None) serves
-    APPLICATION_SUBMITTED/APPLICATION_AUTO_REJECTED/APPLICATION_AUTO_HIRED;
-    job_id/job_review_id serve
-    JOB_REVIEW_REQUESTED/JOB_REVIEW_APPROVED/JOB_REVIEW_REJECTED.
+    Two shapes overlap here. The columns naming what the notification is
+    about (``type`` and the ids beside it) describe it directly; ``event_id``
+    points at an :class:`EventEntity` that describes it instead. Both are
+    nullable because each path sets only its own, and ``type IS NULL`` is how
+    a row of the second kind is recognised.
 
-    The table doubles as the email outbox. ``email_sent_at`` is NULL from the
-    moment the row is written until NotificationEmailWorker has dealt with it,
-    which is what makes the email survive a pod that dies between the commit
-    and the send: the row is already committed, so the next worker pass picks
-    it up. "Dealt with" is deliberately wider than "delivered" -- a recipient
-    with no address, or a row that fails to render, is stamped too, because a
-    row that can never succeed must not be retried forever.
+    ``status`` and ``claimed_at`` are the claim a sender takes before sending,
+    so a redelivered message cannot send a second copy; a claim older than the
+    ack deadline may be retaken, since a process that died mid-send would
+    otherwise strand the row. ``dismissed_at`` marks a row as gone from the
+    bell rather than deleting it, because that delivery state lives here too.
     """
 
     __tablename__ = "notification"
+    __table_args__ = (
+        Index("ix_notification_user_undismissed", "user_id", "dismissed_at"),
+        Index("ix_notification_pending", "status", "created_at"),
+    )
 
     notification_id: Mapped[int] = mapped_column(
         Integer, primary_key=True, autoincrement=True
@@ -41,13 +38,13 @@ class NotificationEntity(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.user_id", ondelete="CASCADE"), index=True, nullable=False
     )
-    type: Mapped[NotificationType] = mapped_column(
+    type: Mapped[NotificationType | None] = mapped_column(
         Enum(
             NotificationType,
             name="notification_type_enum",
             values_callable=lambda obj: [e.value for e in obj],
         ),
-        nullable=False,
+        nullable=True,
     )
     application_id: Mapped[int | None] = mapped_column(
         ForeignKey("application.application_id", ondelete="CASCADE"),
@@ -72,5 +69,24 @@ class NotificationEntity(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     email_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    event_id: Mapped[int | None] = mapped_column(
+        ForeignKey("event.event_id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    status: Mapped[NotificationStatus] = mapped_column(
+        Enum(
+            NotificationStatus,
+            name="notification_status_enum",
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        nullable=False,
+        default=NotificationStatus.PENDING,
+        server_default=NotificationStatus.PENDING.value,
+    )
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    dismissed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
