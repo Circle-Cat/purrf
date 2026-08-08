@@ -130,6 +130,13 @@ def _stage(details: dict, key: str = "stage") -> ApplicationStage:
     return ApplicationStage(details[key])
 
 
+def _with_footer(rendered: tuple[str, str]) -> tuple[str, str]:
+    """Append the standard automated-message footer, same text every
+    NotificationType-keyed template gets via render()."""
+    subject, body = rendered
+    return subject, body + copy._FOOTER
+
+
 # --- application_submitted / auto_rejected -----------------------------
 
 
@@ -146,14 +153,14 @@ async def _render_application_submitted(session, event):
     dto = await _base_dto(session, event)
     stage = _stage(event.details)
     if "screenAutoHireRuleId" in event.details:
-        return copy._application_auto_hired(dto, stage)
-    return copy._application_submitted(dto, stage)
+        return _with_footer(copy._application_auto_hired(dto, stage))
+    return _with_footer(copy._application_submitted(dto, stage))
 
 
 @register_render("recruiting.auto_rejected")
 async def _render_auto_rejected(session, event):
     dto = await _base_dto(session, event)
-    return copy._application_auto_rejected(dto, None)
+    return _with_footer(copy._application_auto_rejected(dto, None))
 
 
 # --- reassigned / auto_assigned -> _assigned_to_evaluate ----------------
@@ -162,7 +169,7 @@ async def _render_auto_rejected(session, event):
 async def _render_assigned_to_evaluate(session, event):
     dto = await _base_dto(session, event)
     dto.round = event.details.get("round")
-    return copy._assigned_to_evaluate(dto, _stage(event.details))
+    return _with_footer(copy._assigned_to_evaluate(dto, _stage(event.details)))
 
 
 register_render("recruiting.reassigned")(_render_assigned_to_evaluate)
@@ -175,7 +182,7 @@ register_render("recruiting.auto_assigned")(_render_assigned_to_evaluate)
 @register_render("recruiting.mentioned")
 async def _render_mentioned(session, event):
     dto = await _base_dto(session, event)
-    return copy._mentioned(dto, None)
+    return _with_footer(copy._mentioned(dto, None))
 
 
 # --- review_opened / review_decided (subject is the job) ----------------
@@ -184,7 +191,7 @@ async def _render_mentioned(session, event):
 @register_render("recruiting.review_opened")
 async def _render_review_opened(session, event):
     dto = await _base_dto(session, event)
-    return copy._job_review_requested(dto, None)
+    return _with_footer(copy._job_review_requested(dto, None))
 
 
 @register_render("recruiting.review_decided")
@@ -195,7 +202,7 @@ async def _render_review_decided(session, event):
         if event.details["decision"] == "approved"
         else copy._job_review_rejected
     )
-    return template(dto, None)
+    return _with_footer(template(dto, None))
 
 
 # --- the 8 new event types -----------------------------------------------
@@ -204,13 +211,6 @@ async def _render_review_decided(session, event):
 # function dispatches by NotificationType, not event_type, and is the one
 # thing this module must not touch. render() is also the only place that
 # appends copy._FOOTER, so each wrapper below does it explicitly instead.
-
-
-def _with_footer(rendered: tuple[str, str]) -> tuple[str, str]:
-    """Append the standard automated-message footer, same text every
-    NotificationType-keyed template gets via render()."""
-    subject, body = rendered
-    return subject, body + copy._FOOTER
 
 
 @register_render("recruiting.blacklisted")

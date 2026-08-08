@@ -30,9 +30,7 @@ case falls back to ``_MISSING_ACTOR``. A real string names them.
 from backend.common.recruiting_enums import (
     ApplicationStage,
     JobKind,
-    NotificationType,
 )
-from backend.dto.notification_dto import NotificationDto
 
 _FOOTER = (
     "<p>This is an automated message from Purrf. Replies to this address "
@@ -184,49 +182,10 @@ def _application_auto_hired(dto, stage):
     )
 
 
-TEMPLATES = {
-    NotificationType.ASSIGNED_TO_EVALUATE: _assigned_to_evaluate,
-    NotificationType.MENTIONED: _mentioned,
-    NotificationType.JOB_REVIEW_REQUESTED: _job_review_requested,
-    NotificationType.JOB_REVIEW_APPROVED: _job_review_approved,
-    NotificationType.JOB_REVIEW_REJECTED: _job_review_rejected,
-    NotificationType.APPLICATION_SUBMITTED: _application_submitted,
-    NotificationType.APPLICATION_AUTO_REJECTED: _application_auto_rejected,
-    NotificationType.APPLICATION_AUTO_HIRED: _application_auto_hired,
-}
-
-
-def render(dto: NotificationDto, stage: ApplicationStage | None) -> tuple[str, str]:
-    """Render one notification as (subject, HTML body).
-
-    Args:
-        dto (NotificationDto): The resolved notification, whose display
-            fields (job_title/applicant_name/actor_name/job_kind) are
-            already looked up.
-        stage (ApplicationStage | None): The application's stage at the
-            moment of the event. None for notifications that are not
-            application-scoped; only the two types that mention a stage
-            read it.
-
-    Returns:
-        tuple[str, str]: Subject line and HTML body, footer included.
-
-    Raises:
-        KeyError: If dto.type has no template. Deliberately not a silent
-            fallback -- a blank email is worse than a loud failure, and the
-            exhaustiveness test makes this unreachable.
-    """
-    subject, body = TEMPLATES[dto.type](dto, stage)
-    return subject, body + _FOOTER
-
-
 # ---------------------------------------------------------------------------
-# New-model templates (backend.notification_management.event_recorder /
-# EventEntity.event_type), added for the 8 recruiting event types with no
-# NotificationType counterpart. Dispatched by event_type, not by this file --
-# see backend/recruiting/notification_renderers.py, which builds the ``dto``
-# each of these takes from EventEntity.details rather than from
-# NotificationDto/NotificationEntity's legacy columns.
+# Templates are dispatched by event_type, not from this file -- see
+# backend/recruiting/notification_renderers.py, which builds the ``dto`` each
+# of these takes from EventEntity.details.
 #
 # The 7 existing functions above cover the other 7 notifying event types
 # verbatim (reassigned/auto_assigned share _assigned_to_evaluate;

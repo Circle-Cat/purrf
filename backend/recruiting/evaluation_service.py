@@ -30,7 +30,6 @@ class EvaluationService:
         evaluation_repository,
         job_repository,
         users_repository,
-        application_activity_repository,
         application_submission_repository,
     ):
         """
@@ -46,16 +45,12 @@ class EvaluationService:
             application_submission_repository (ApplicationSubmissionRepository):
                 Submission data access, used to freeze the answers an
                 evaluation was written against.
-            application_activity_repository (ApplicationActivityRepository):
-                Append-only audit log; ``submit`` writes an
-                ``"evaluation_confirmed"`` entry when ``dto.confirm`` is set.
         """
         self.application_repository = application_repository
         self.application_assignment_repository = application_assignment_repository
         self.evaluation_repository = evaluation_repository
         self.job_repository = job_repository
         self.users_repository = users_repository
-        self.application_activity_repository = application_activity_repository
         self.application_submission_repository = application_submission_repository
 
     async def submit(

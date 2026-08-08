@@ -5,18 +5,17 @@ from backend.entity.notification_entity import NotificationEntity
 
 
 class NotificationEntityTest(unittest.TestCase):
-    def test_can_point_at_an_event(self):
+    def test_points_at_an_event_instead_of_five_nullable_foreign_keys(self):
+        """A row says only "this user needs to know about this event".
+
+        What happened, who did it and what it was about all live on the
+        event, so the columns that used to carry them here are gone and the
+        pointer that replaced them is required.
+        """
         columns = NotificationEntity.__table__.columns
         self.assertIn("event_id", columns)
-
-    def test_event_id_is_nullable_until_the_old_writers_are_migrated(self):
-        """Expand now, contract in Task 11. Existing writers set no event_id."""
-        self.assertTrue(NotificationEntity.__table__.columns["event_id"].nullable)
-
-    def test_the_retired_columns_are_still_here_during_the_expand(self):
-        """Removing them now would break seven test targets until Task 8."""
-        columns = NotificationEntity.__table__.columns
-        for still_needed in (
+        self.assertFalse(columns["event_id"].nullable)
+        for retired in (
             "application_id",
             "round",
             "comment_id",
@@ -26,7 +25,7 @@ class NotificationEntityTest(unittest.TestCase):
             "actor_user_id",
             "email_sent_at",
         ):
-            self.assertIn(still_needed, columns)
+            self.assertNotIn(retired, columns)
 
     def test_delivery_status_defaults_to_pending(self):
         self.assertEqual(

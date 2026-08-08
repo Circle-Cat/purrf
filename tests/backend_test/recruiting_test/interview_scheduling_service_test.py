@@ -11,9 +11,6 @@ from backend.entity.application_entity import ApplicationEntity
 from backend.recruiting.application_access import ApplicationAccess
 from backend.recruiting.interview_scheduling_service import InterviewSchedulingService
 from backend.recruiting.recruiting_mapper import RecruitingMapper
-from backend.repository.application_activity_repository import (
-    ApplicationActivityRepository,
-)
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
 )
@@ -47,9 +44,6 @@ class _BaseTest(unittest.IsolatedAsyncioTestCase):
         )
         self.interview_repo = create_autospec(
             ApplicationInterviewRepository, instance=True
-        )
-        self.activity_repo = create_autospec(
-            ApplicationActivityRepository, instance=True
         )
         self.application_repo = MagicMock()
         self.application_repo.update = AsyncMock(
@@ -95,7 +89,6 @@ class _BaseTest(unittest.IsolatedAsyncioTestCase):
             self.application_repo,
             self.assignment_repo,
             self.interview_repo,
-            self.activity_repo,
             self.users_repo,
             self.user_emails_repo,
             self.meeting_svc,
