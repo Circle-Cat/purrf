@@ -174,7 +174,7 @@ describe("ApplicationForm", () => {
     expect(onSubmitted).toHaveBeenCalled();
   });
 
-  describe("discard warning", () => {
+  describe("answers a changed gate no longer shows", () => {
     /** A posting whose q2 only appears while q1 answers "Yes". */
     const GATED_JOB = {
       ...JOB,
@@ -223,61 +223,12 @@ describe("ApplicationForm", () => {
       ).not.toBeInTheDocument();
     });
 
-    it("asks before deleting an answer the form no longer shows", async () => {
+    it("submits what is on screen without asking about answers it drops", async () => {
       // The candidate wrote a visa type, then said they need no sponsorship.
       // The server keeps only what the form is showing and overwrites in
-      // place, so that text is gone for good the moment this is sent.
-      const user = userEvent.setup();
-      api.updateApplication.mockResolvedValue({ data: { id: 7 } });
-      render(
-        <ApplicationForm
-          job={GATED_JOB}
-          existing={EXISTING_WITH_GATED_ANSWER}
-          onSubmitted={vi.fn()}
-        />,
-      );
-      await screen.findByLabelText("Contact email");
-      await user.click(screen.getByRole("radio", { name: "No" }));
-
-      await user.click(
-        screen.getByRole("button", { name: /submit application/i }),
-      );
-
-      expect(
-        await screen.findByText("Some answers will be removed"),
-      ).toBeInTheDocument();
-      expect(screen.getByText("Which visa?")).toBeInTheDocument();
-      expect(api.updateApplication).not.toHaveBeenCalled();
-    });
-
-    it("sends nothing when the candidate goes back to editing", async () => {
-      const user = userEvent.setup();
-      api.updateApplication.mockResolvedValue({ data: { id: 7 } });
-      render(
-        <ApplicationForm
-          job={GATED_JOB}
-          existing={EXISTING_WITH_GATED_ANSWER}
-          onSubmitted={vi.fn()}
-        />,
-      );
-      await screen.findByLabelText("Contact email");
-      await user.click(screen.getByRole("radio", { name: "No" }));
-      await user.click(
-        screen.getByRole("button", { name: /submit application/i }),
-      );
-      await screen.findByText("Some answers will be removed");
-
-      await user.click(screen.getByRole("button", { name: "Keep editing" }));
-
-      expect(api.updateApplication).not.toHaveBeenCalled();
-      await waitFor(() =>
-        expect(
-          screen.queryByText("Some answers will be removed"),
-        ).not.toBeInTheDocument(),
-      );
-    });
-
-    it("sends once the candidate confirms", async () => {
+      // place, so that text is gone for good the moment this is sent -- but
+      // the candidate is not asked: a question they cannot see is not one to
+      // make them approve deleting.
       const user = userEvent.setup();
       api.updateApplication.mockResolvedValue({ data: { id: 7 } });
       const onSubmitted = vi.fn();
@@ -290,13 +241,14 @@ describe("ApplicationForm", () => {
       );
       await screen.findByLabelText("Contact email");
       await user.click(screen.getByRole("radio", { name: "No" }));
+
       await user.click(
         screen.getByRole("button", { name: /submit application/i }),
       );
-      await screen.findByText("Some answers will be removed");
 
-      await user.click(screen.getByRole("button", { name: "Submit anyway" }));
-
+      expect(
+        screen.queryByText("Some answers will be removed"),
+      ).not.toBeInTheDocument();
       await waitFor(() =>
         expect(api.updateApplication).toHaveBeenCalledTimes(1),
       );
