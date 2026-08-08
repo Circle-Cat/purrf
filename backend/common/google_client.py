@@ -72,7 +72,7 @@ class GoogleClient:
     an injected `retry_utils` helper that handles transient errors.
 
     Attributes:
-        _credentials (dict[str, google.auth.credentials.Credentials]): Impersonated credentials keyed by user email, cached per calling thread.
+        _credentials (dict[tuple[str, tuple[str, ...]], google.auth.credentials.Credentials]): Impersonated credentials keyed by user email and requested scopes, cached per calling thread.
         _user_email (str): The user email to impersonate by default.
         _service_account_email (str): The target service account used for impersonation.
         _admin_email (str): Admin user email for domain-wide delegated APIs (e.g. Reports API).
@@ -112,7 +112,8 @@ class GoogleClient:
         its own cache and pays one token exchange per email per hour.
 
         Returns:
-            dict[str, google.auth.credentials.Credentials]: Credentials keyed by user email.
+            dict[tuple[str, tuple[str, ...]], google.auth.credentials.Credentials]:
+                Credentials keyed by user email and the scopes they were granted.
         """
         cache = getattr(self._local, "credentials", None)
         if cache is None:
@@ -123,6 +124,10 @@ class GoogleClient:
     def _get_impersonate_credentials(self, user_email=None, scopes=None):
         """
         Retrieves and caches impersonated credentials using ADC and the injected service account.
+
+        A credential carries the scopes it was granted, so the cache is keyed by
+        email and scopes together. Scope order carries no authority and is
+        normalised away, and only a completed impersonation is cached.
 
         Args:
             user_email (str | None): The user to impersonate. Defaults to the injected user.
@@ -142,25 +147,26 @@ class GoogleClient:
             )
             raise ValueError(f"Please set environment variable: {email}.")
 
-        if email in self._credentials:
+        cache_key = (email, tuple(sorted(scopes)))
+        if cache_key in self._credentials:
             self.logger.info("Credentials are already cached.")
-            return self._credentials[email]
+            return self._credentials[cache_key]
 
-        self._credentials[email], project_id = default()
-        if not self._credentials[email]:
+        source_credentials, project_id = default()
+        if not source_credentials:
             self.logger.error(
                 "Failed to obtain ADC credentials: no valid default credentials found."
             )
             raise ValueError("Google authentication service unavailable.")
 
-        credentials_type = type(self._credentials[email])
+        credentials_type = type(source_credentials)
         self.logger.info(
             f"Credentials retrieved successfully. Project ID: {project_id}. Credentials type: {credentials_type}"
         )
 
         try:
-            self._credentials[email] = ImpersonatedCredentials(
-                source_credentials=self._credentials[email],
+            credentials = ImpersonatedCredentials(
+                source_credentials=source_credentials,
                 target_principal=self._service_account_email,
                 target_scopes=scopes,
                 subject=email,
@@ -190,7 +196,8 @@ class GoogleClient:
                 "Authentication failed. Please contact support for assistance."
             )
 
-        return self._credentials[email]
+        self._credentials[cache_key] = credentials
+        return credentials
 
     def _create_client(
         self, api_name: str, api_version: str, user_email=None, scopes=None

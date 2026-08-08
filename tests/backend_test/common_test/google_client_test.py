@@ -153,7 +153,7 @@ class TestGoogleClient(TestCase):
             subject=TEST_USER_EMAIL,
         )
         self.assertIs(creds1, self.mock_impersonated_credentials)
-        self.assertIn(TEST_USER_EMAIL, self.client._credentials)
+        self.assertEqual(len(self.client._credentials), 1)
 
         creds2 = self.client._get_impersonate_credentials(user_email=TEST_USER_EMAIL)
 
@@ -189,6 +189,98 @@ class TestGoogleClient(TestCase):
             "Authentication failed. Please contact support", str(cm.exception)
         )
         self.mock_logger.error.assert_called()
+
+    @patch("backend.common.google_client.default")
+    @patch("backend.common.google_client.ImpersonatedCredentials")
+    def test_same_email_with_different_scopes_gets_its_own_credentials(
+        self, mock_impersonated_creds, mock_default
+    ):
+        """Scopes decide what a credential may do, so they belong in the key."""
+
+        mock_default.return_value = (self.mock_credentials, TEST_PROJECT_NAME)
+        mock_impersonated_creds.side_effect = lambda **_kwargs: Mock(
+            spec=UserCredentials
+        )
+
+        user_creds = self.client._get_impersonate_credentials(
+            user_email=TEST_USER_EMAIL, scopes=GOOGLE_USER_SCOPES_LIST
+        )
+        admin_creds = self.client._get_impersonate_credentials(
+            user_email=TEST_USER_EMAIL, scopes=GOOGLE_ADMIN_SCOPES_LIST
+        )
+
+        self.assertIsNot(user_creds, admin_creds)
+        self.assertEqual(
+            [
+                call.kwargs["target_scopes"]
+                for call in mock_impersonated_creds.call_args_list
+            ],
+            [GOOGLE_USER_SCOPES_LIST, GOOGLE_ADMIN_SCOPES_LIST],
+        )
+
+    @patch("backend.common.google_client.default")
+    @patch("backend.common.google_client.ImpersonatedCredentials")
+    def test_same_scopes_in_a_different_order_reuse_one_credential(
+        self, mock_impersonated_creds, mock_default
+    ):
+        """Order carries no authority, so a reordered list is the same request."""
+
+        mock_default.return_value = (self.mock_credentials, TEST_PROJECT_NAME)
+        mock_impersonated_creds.side_effect = lambda **_kwargs: Mock(
+            spec=UserCredentials
+        )
+
+        creds1 = self.client._get_impersonate_credentials(
+            user_email=TEST_USER_EMAIL, scopes=GOOGLE_USER_SCOPES_LIST
+        )
+        creds2 = self.client._get_impersonate_credentials(
+            user_email=TEST_USER_EMAIL, scopes=list(reversed(GOOGLE_USER_SCOPES_LIST))
+        )
+
+        self.assertIs(creds1, creds2)
+        mock_impersonated_creds.assert_called_once()
+
+    @patch("backend.common.google_client.default")
+    @patch("backend.common.google_client.ImpersonatedCredentials")
+    def test_omitted_scopes_reuse_the_default_scope_entry(
+        self, mock_impersonated_creds, mock_default
+    ):
+        """Omitting scopes asks for the default set, not for a second entry."""
+
+        mock_default.return_value = (self.mock_credentials, TEST_PROJECT_NAME)
+        mock_impersonated_creds.side_effect = lambda **_kwargs: Mock(
+            spec=UserCredentials
+        )
+
+        creds1 = self.client._get_impersonate_credentials(user_email=TEST_USER_EMAIL)
+        creds2 = self.client._get_impersonate_credentials(
+            user_email=TEST_USER_EMAIL, scopes=GOOGLE_USER_SCOPES_LIST
+        )
+
+        self.assertIs(creds1, creds2)
+        mock_impersonated_creds.assert_called_once()
+
+    @patch("backend.common.google_client.default")
+    @patch("backend.common.google_client.ImpersonatedCredentials")
+    def test_failed_impersonation_caches_nothing(
+        self, mock_impersonated_creds, mock_default
+    ):
+        """A failed exchange must not leave the un-impersonated ADC credentials behind."""
+
+        mock_default.return_value = (self.mock_credentials, TEST_PROJECT_NAME)
+        mock_impersonated_creds.side_effect = [
+            Exception("Auth failed"),
+            self.mock_impersonated_credentials,
+        ]
+
+        with self.assertRaises(ValueError):
+            self.client._get_impersonate_credentials(user_email=TEST_USER_EMAIL)
+
+        self.assertEqual(self.client._credentials, {})
+
+        creds = self.client._get_impersonate_credentials(user_email=TEST_USER_EMAIL)
+
+        self.assertIs(creds, self.mock_impersonated_credentials)
 
     @patch("backend.common.google_client.build")
     @patch.object(GoogleClient, "_get_impersonate_credentials")
