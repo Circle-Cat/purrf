@@ -58,6 +58,7 @@ py_test(
     name = "auth_middleware_test",
     srcs = ["auth_middleware_test.py"],
     deps = [
+        "//backend/common:api_endpoints",
         "//backend/common:identity_type",
         "//backend/common:permissions",
         "//backend/utils:auth_middleware",
