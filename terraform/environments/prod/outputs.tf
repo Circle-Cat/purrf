@@ -82,3 +82,10 @@ output "readonly_connection_uris" {
   }
   sensitive = true
 }
+
+# The push service account's numeric id, which the gateway Worker checks every
+# caller against. A module output is not a root output, so without this the
+# value cannot be read back out of the state at all.
+output "notification_pusher_sub" {
+  value = module.purrf_instance.notification_pusher_sub
+}
