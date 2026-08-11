@@ -67,9 +67,6 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.notification_repo = self._notification_repository_double()
         self.users_repo = MagicMock()
         self.users_repo.get_all_by_ids = AsyncMock(return_value=[])
-        self.job_activity_repo = MagicMock()
-        self.job_activity_repo.create = AsyncMock()
-        self.job_activity_repo.list_by_job = AsyncMock(return_value=[])
         self.user_emails_repo = MagicMock()
         self.user_emails_repo.get_contact_emails_by_user_ids = AsyncMock(
             return_value={}
@@ -81,7 +78,6 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             self.review_repo,
             self.notification_repo,
             self.users_repo,
-            self.job_activity_repo,
             self.user_emails_repo,
             self.event_repo,
         )

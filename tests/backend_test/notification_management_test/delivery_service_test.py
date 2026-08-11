@@ -3,21 +3,7 @@ from unittest.mock import AsyncMock
 
 from backend.common.mentorship_enums import CommunicationMethod
 from backend.common.recruiting_enums import NotificationStatus
-from backend.entity.application_comment_entity import (  # noqa: F401 (registers table for NotificationEntity's FK)
-    ApplicationCommentEntity,
-)
-from backend.entity.application_entity import (  # noqa: F401 (registers table for NotificationEntity's FK)
-    ApplicationEntity,
-)
-from backend.entity.event_entity import (  # noqa: F401 (registers table for NotificationEntity's FK)
-    EventEntity,
-)
-from backend.entity.job_entity import (  # noqa: F401 (registers table for NotificationEntity's FK)
-    JobEntity,
-)
-from backend.entity.job_review_entity import (  # noqa: F401 (registers table for NotificationEntity's FK)
-    JobReviewEntity,
-)
+from backend.entity.event_entity import EventEntity
 from backend.entity.notification_entity import NotificationEntity
 from backend.entity.users_entity import UsersEntity
 from backend.notification_management.delivery_service import (
@@ -67,8 +53,16 @@ class DeliveryServiceTest(BaseRepositoryTestLib):
         """A notification owned by a freshly created user, PENDING unless overridden."""
         recipient = _make_user()
         await self.insert_entities([recipient])
+        event = EventEntity(
+            subject_type="application",
+            subject_id=1,
+            actor_id=recipient.user_id,
+            event_type="demo.thing",
+        )
+        await self.insert_entities([event])
         kwargs = {
             "user_id": recipient.user_id,
+            "event_id": event.event_id,
             "created_at": created_at or datetime.now(timezone.utc),
         }
         if status is not None:

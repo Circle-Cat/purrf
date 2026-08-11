@@ -15,9 +15,6 @@ from backend.common.permissions import Permission
 from backend.repository.application_submission_repository import (
     ApplicationSubmissionRepository,
 )
-from backend.repository.application_activity_repository import (
-    ApplicationActivityRepository,
-)
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
 )
@@ -54,9 +51,6 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         self.evaluation_repo = create_autospec(EvaluationRepository, instance=True)
         self.job_repo = MagicMock()
         self.users_repo = MagicMock()
-        self.activity_repo = create_autospec(
-            ApplicationActivityRepository, instance=True
-        )
         self.submission_repo = create_autospec(
             ApplicationSubmissionRepository, instance=True
         )
@@ -73,7 +67,6 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
             self.evaluation_repo,
             self.job_repo,
             self.users_repo,
-            self.activity_repo,
             self.submission_repo,
         )
 

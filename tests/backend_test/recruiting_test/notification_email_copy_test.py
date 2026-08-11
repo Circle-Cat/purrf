@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from backend.common.recruiting_enums import (
     ApplicationStage,
     JobKind,
-    NotificationType,
 )
 from backend.recruiting import notification_email_copy
 
@@ -19,16 +18,39 @@ def _dto(**overrides):
     """
     defaults = dict(
         id=1,
-        type=NotificationType.ASSIGNED_TO_EVALUATE,
         round=1,
         job_title="Backend Engineer",
         job_kind=JobKind.EMPLOYMENT,
         applicant_name="Ada Lovelace",
         actor_name="Grace Hopper",
         created_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+        # Read only by the templates that mention them; harmless elsewhere.
+        reason="Not a fit",
+        to_sub_status="scheduled",
+        start_at=datetime(2026, 8, 5, 21, tzinfo=timezone.utc),
     )
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
+
+
+def _every_template():
+    """Every copy function in the module, by name.
+
+    Swept rather than listed so a template added later cannot quietly skip
+    the rules below.
+    """
+    import inspect
+
+    return [
+        (name, value)
+        for name, value in vars(notification_email_copy).items()
+        if name.startswith("_")
+        and callable(value)
+        and not name.startswith("__")
+        and getattr(value, "__module__", "") == notification_email_copy.__name__
+        # A template takes (dto, stage); the module's small helpers do not.
+        and list(inspect.signature(value).parameters) == ["dto", "stage"]
+    ]
 
 
 class TestStageLabel(unittest.TestCase):
@@ -63,12 +85,10 @@ class TestStageLabel(unittest.TestCase):
 
 
 class TestRender(unittest.TestCase):
-    def test_every_notification_type_has_a_template(self):
-        """A type with no template would render a blank email."""
-        self.assertEqual(set(notification_email_copy.TEMPLATES), set(NotificationType))
-
     def test_assigned_to_evaluate_names_the_actor_stage_and_destination(self):
-        subject, body = notification_email_copy.render(_dto(), ApplicationStage.TECH)
+        subject, body = notification_email_copy._assigned_to_evaluate(
+            _dto(), ApplicationStage.TECH
+        )
 
         self.assertEqual(
             subject, "Evaluation assigned: Ada Lovelace (Backend Engineer)"
@@ -81,21 +101,21 @@ class TestRender(unittest.TestCase):
         self.assertIn("Open My Interview Evaluations in Purrf", body)
 
     def test_assigned_to_evaluate_appends_the_round_only_past_the_first(self):
-        _, body = notification_email_copy.render(_dto(round=2), ApplicationStage.TECH)
+        _, body = notification_email_copy._assigned_to_evaluate(
+            _dto(round=2), ApplicationStage.TECH
+        )
 
         self.assertIn("Stage: Tech, session 2.", body)
 
     def test_assigned_to_evaluate_says_automatic_without_an_actor(self):
-        _, body = notification_email_copy.render(
+        _, body = notification_email_copy._assigned_to_evaluate(
             _dto(actor_name=None), ApplicationStage.RECRUITER_SCREENING
         )
 
         self.assertIn("You were automatically assigned to evaluate", body)
 
     def test_mentioned_points_at_the_comments_tab(self):
-        subject, body = notification_email_copy.render(
-            _dto(type=NotificationType.MENTIONED), None
-        )
+        subject, body = notification_email_copy._mentioned(_dto(), None)
 
         self.assertEqual(
             subject, "Grace Hopper mentioned you: Ada Lovelace (Backend Engineer)"
@@ -103,9 +123,7 @@ class TestRender(unittest.TestCase):
         self.assertIn("Comments tab", body)
 
     def test_job_review_requested_avoids_claiming_the_posting_is_unpublished(self):
-        subject, body = notification_email_copy.render(
-            _dto(type=NotificationType.JOB_REVIEW_REQUESTED), None
-        )
+        subject, body = notification_email_copy._job_review_requested(_dto(), None)
 
         self.assertEqual(subject, "Posting review requested: Backend Engineer")
         self.assertIn("waiting on your decision", body)
@@ -115,12 +133,8 @@ class TestRender(unittest.TestCase):
         self.assertNotIn("publish", body.lower())
 
     def test_job_review_approved_and_rejected_name_the_actor(self):
-        _, approved = notification_email_copy.render(
-            _dto(type=NotificationType.JOB_REVIEW_APPROVED), None
-        )
-        subject, rejected = notification_email_copy.render(
-            _dto(type=NotificationType.JOB_REVIEW_REJECTED), None
-        )
+        _, approved = notification_email_copy._job_review_approved(_dto(), None)
+        subject, rejected = notification_email_copy._job_review_rejected(_dto(), None)
 
         self.assertIn("Grace Hopper approved your submission", approved)
         self.assertIn("Open Job Postings in Purrf", approved)
@@ -130,8 +144,8 @@ class TestRender(unittest.TestCase):
         self.assertIn("any comment", rejected)
 
     def test_application_submitted_explains_why_the_owner_got_it(self):
-        subject, body = notification_email_copy.render(
-            _dto(type=NotificationType.APPLICATION_SUBMITTED),
+        subject, body = notification_email_copy._application_submitted(
+            _dto(),
             ApplicationStage.RECRUITER_SCREENING,
         )
 
@@ -141,9 +155,7 @@ class TestRender(unittest.TestCase):
         self.assertIn("Open the Applications Board in Purrf", body)
 
     def test_application_auto_rejected_says_no_human_review(self):
-        subject, body = notification_email_copy.render(
-            _dto(type=NotificationType.APPLICATION_AUTO_REJECTED), None
-        )
+        subject, body = notification_email_copy._application_auto_rejected(_dto(), None)
 
         self.assertEqual(
             subject, "Application auto-rejected: Ada Lovelace (Backend Engineer)"
@@ -152,9 +164,8 @@ class TestRender(unittest.TestCase):
         self.assertIn("timeline", body)
 
     def test_application_auto_hired_says_admitted_for_an_activity_posting(self):
-        subject, body = notification_email_copy.render(
+        subject, body = notification_email_copy._application_auto_hired(
             _dto(
-                type=NotificationType.APPLICATION_AUTO_HIRED,
                 job_kind=JobKind.ACTIVITY,
             ),
             None,
@@ -166,9 +177,8 @@ class TestRender(unittest.TestCase):
         self.assertIn("admitted automatically", body)
 
     def test_application_auto_hired_says_hired_for_an_employment_posting(self):
-        subject, body = notification_email_copy.render(
+        subject, body = notification_email_copy._application_auto_hired(
             _dto(
-                type=NotificationType.APPLICATION_AUTO_HIRED,
                 job_kind=JobKind.EMPLOYMENT,
             ),
             None,
@@ -180,7 +190,7 @@ class TestRender(unittest.TestCase):
         self.assertIn("hired automatically", body)
 
     def test_falls_back_to_placeholders_for_missing_names(self):
-        _, body = notification_email_copy.render(
+        _, body = notification_email_copy._mentioned(
             _dto(actor_name="", applicant_name=""), None
         )
 
@@ -194,20 +204,10 @@ class TestRender(unittest.TestCase):
         "Open Recruiting -> Postings", but Sidebar.jsx has no Recruiting
         group to open. Every destination has to be a top-level nav label.
         """
-        for notification_type in NotificationType:
-            with self.subTest(type=notification_type):
-                _, body = notification_email_copy.render(
-                    _dto(type=notification_type), ApplicationStage.TECH
-                )
+        for name, template in _every_template():
+            with self.subTest(template=name):
+                _, body = template(_dto(), ApplicationStage.TECH)
                 self.assertNotIn("&rarr;", body)
-
-    def test_every_body_carries_the_automated_footer(self):
-        for notification_type in NotificationType:
-            with self.subTest(type=notification_type):
-                _, body = notification_email_copy.render(
-                    _dto(type=notification_type), ApplicationStage.TECH
-                )
-                self.assertIn("Replies to this address aren't monitored", body)
 
 
 if __name__ == "__main__":

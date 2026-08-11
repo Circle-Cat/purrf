@@ -2,19 +2,7 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
 from backend.common.mentorship_enums import CommunicationMethod
-from backend.entity.application_comment_entity import (  # noqa: F401 (registers table for NotificationEntity's FK)
-    ApplicationCommentEntity,
-)
-from backend.entity.application_entity import (  # noqa: F401 (registers table for NotificationEntity's FK)
-    ApplicationEntity,
-)
 from backend.entity.event_entity import EventEntity
-from backend.entity.job_entity import (  # noqa: F401 (registers table for NotificationEntity's FK)
-    JobEntity,
-)
-from backend.entity.job_review_entity import (  # noqa: F401 (registers table for NotificationEntity's FK)
-    JobReviewEntity,
-)
 from backend.entity.notification_entity import NotificationEntity
 from backend.entity.users_entity import UsersEntity
 from backend.notification_management.notification_event_email_service import (
@@ -38,43 +26,23 @@ def _make_user() -> UsersEntity:
 
 
 class NotificationEventEmailServiceTest(BaseRepositoryTestLib):
-    async def _make_notification(self, with_event=True):
-        """A notification for a fresh recipient, pointing at a fresh event
-        unless ``with_event`` is False.
-
-        ``event_id`` is nullable and FK-enforced (``ondelete="CASCADE"``),
-        so a nonexistent id cannot be inserted directly -- ``event_id=None``
-        is the realistic way to exercise "this notification has no event to
-        render": it is exactly what a legacy-path row (pre-Task-2) looks
-        like, per NotificationEntity's own docstring.
-        """
+    async def _make_notification(self):
+        """A notification for a fresh recipient, pointing at a fresh event."""
         actor = _make_user()
         recipient = _make_user()
         await self.insert_entities([actor, recipient])
-        event_id = None
-        if with_event:
-            event = EventEntity(
-                subject_type="application",
-                subject_id=1,
-                actor_id=actor.user_id,
-                event_type="demo.thing",
-            )
-            await self.insert_entities([event])
-            event_id = event.event_id
-        notification = NotificationEntity(user_id=recipient.user_id, event_id=event_id)
+        event = EventEntity(
+            subject_type="application",
+            subject_id=1,
+            actor_id=actor.user_id,
+            event_type="demo.thing",
+        )
+        await self.insert_entities([event])
+        notification = NotificationEntity(
+            user_id=recipient.user_id, event_id=event.event_id
+        )
         await self.insert_entities([notification])
         return notification
-
-    async def test_missing_event_raises_lookup_error(self):
-        notification = await self._make_notification(with_event=False)
-        service = NotificationEventEmailService(
-            user_emails_repository=AsyncMock(),
-            email_service=AsyncMock(),
-            render=AsyncMock(),
-        )
-
-        with self.assertRaises(LookupError):
-            await service.send(self.session, notification)
 
     async def test_no_address_on_file_raises_lookup_error(self):
         notification = await self._make_notification()

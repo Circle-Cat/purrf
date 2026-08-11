@@ -193,11 +193,10 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
         self.assertIn("fabricated credentials", body)
         self.assertIn("Blacklist", body)
 
-    async def test_new_event_types_still_carry_the_automated_footer(self):
-        """The 8 new templates bypass notification_email_copy.render() (it
-        dispatches by NotificationType, not event_type, and must not be
-        touched), which is the only place that normally appends the footer.
-        notification_renderers.py must append it itself instead."""
+    async def test_rendered_emails_carry_the_automated_footer(self):
+        """Each renderer appends the footer itself -- nothing downstream of
+        here adds one -- so a renderer that skipped it would send a body with
+        no footer and nothing else would notice."""
         actor, candidate = _make_user("Grace", "Hopper"), _make_user("Ada", "Lovelace")
         await self.insert_entities([actor, candidate])
         job = await self._make_job()
