@@ -3,9 +3,9 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.recruiting_enums import (
-    PUBLICLY_VISIBLE_JOB_STATUSES,
     ApplicationStage,
-    NotificationType,
+    PUBLICLY_VISIBLE_JOB_STATUSES,
+    RecruitingEvent,
 )
 from backend.dto.application_dto import (
     ApplicationDto,
@@ -19,7 +19,7 @@ from backend.dto.job_config_dto import (
 from backend.dto.user_context_dto import UserContextDto
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
-from backend.entity.notification_entity import NotificationEntity
+from backend.notification_management.event_recorder import record_event
 from backend.recruiting import cooldown, form_visibility, screen_rules, stage_machine
 from backend.recruiting.board_service import INTERVIEW_STAGES
 from backend.recruiting.pipeline_owners import normalized_owner_ids
@@ -78,19 +78,12 @@ class ApplicationService:
                 into a real assignment row when an application first lands
                 there (see ``_assign_default_if_configured``).
             application_activity_repository (ApplicationActivityRepository):
-                Append-only audit log; ``submit`` logs
-                ``"application_submitted"`` or ``"auto_rejected"`` here on
-                every call, attributed to the candidate themselves.
-            notification_repository (NotificationRepository): Writes in-app
-                notification rows inside this transaction. The row is also
-                meant to double as an email outbox, but nothing drains it for
-                these legacy-model rows -- NotificationEmailWorker, which
-                used to, was retired with no replacement for this write path
-                (see NotificationEntity's docstring). So nothing here sends
-                mail. ``_assign_default_if_configured``
-                notifies the materialized default assignee here, and
-                ``_notify_owners_of_submission`` notifies the posting's
-                owners.
+                Retained only until the legacy activity tables are dropped;
+                what happens is now recorded through ``record_event``, which
+                writes the event and fans out its own notifications.
+            notification_repository (NotificationRepository): Same -- notification
+                rows are written by ``record_event`` from the resolved
+                recipients, not by this service.
             onboarding_training_service (OnboardingTrainingService): Assigns
                 the mentorship onboarding training task when an `auto_hire`
                 screen rule lands the submission directly on HIRED.
@@ -568,10 +561,6 @@ class ApplicationService:
             session, application, job, current_user
         )
 
-        await self._notify_owners_of_submission(
-            session, application, job, blocked, screen_action
-        )
-
         if stage == ApplicationStage.HIRED:
             await self.onboarding_training_service.ensure_for_admitted(
                 session=session,
@@ -580,19 +569,26 @@ class ApplicationService:
             )
 
         if blocked:
-            await self.application_activity_repository.create(
+            # actor_id is None because the rules did this, not a person. The
+            # request that triggered it comes from the *candidate*, so passing
+            # current_user here would tell our own staff that the applicant
+            # rejected the applicant. The copy also selects its "happened
+            # automatically" wording on actor_name being None.
+            await record_event(
                 session,
-                application.application_id,
-                current_user.user_id,
-                "auto_rejected",
+                subject_type="application",
+                subject_id=application.application_id,
+                actor_id=None,
+                event_type=RecruitingEvent.AUTO_REJECTED,
                 details={"reason": "blocked"},
             )
         elif screen_action == "reject":
-            await self.application_activity_repository.create(
+            await record_event(
                 session,
-                application.application_id,
-                current_user.user_id,
-                "auto_rejected",
+                subject_type="application",
+                subject_id=application.application_id,
+                actor_id=None,
+                event_type=RecruitingEvent.AUTO_REJECTED,
                 details={"reason": "screen_rule", "ruleId": screen_rule_id},
             )
         else:
@@ -601,11 +597,12 @@ class ApplicationService:
                 details["screenQualifyRuleId"] = screen_rule_id
             elif screen_action == "auto_hire":
                 details["screenAutoHireRuleId"] = screen_rule_id
-            await self.application_activity_repository.create(
+            await record_event(
                 session,
-                application.application_id,
-                current_user.user_id,
-                "application_submitted",
+                subject_type="application",
+                subject_id=application.application_id,
+                actor_id=current_user.user_id,
+                event_type=RecruitingEvent.APPLICATION_SUBMITTED,
                 details=details,
             )
 
@@ -663,11 +660,12 @@ class ApplicationService:
             )
             application.tags = {"auto_reject": "screen_rule", "rule_id": rule_id}
             await self.application_repository.update(session, application)
-            await self.application_activity_repository.create(
+            await record_event(
                 session,
-                application.application_id,
-                current_user.user_id,
-                "auto_rejected",
+                subject_type="application",
+                subject_id=application.application_id,
+                actor_id=None,
+                event_type=RecruitingEvent.AUTO_REJECTED,
                 details={"reason": "screen_rule", "ruleId": rule_id, "onEdit": True},
             )
         else:  # auto_hire
@@ -675,11 +673,12 @@ class ApplicationService:
             application.stage_entered_at = datetime.now(timezone.utc)
             application.sub_status = self._screened_sub_status(ApplicationStage.HIRED)
             await self.application_repository.update(session, application)
-            await self.application_activity_repository.create(
+            await record_event(
                 session,
-                application.application_id,
-                current_user.user_id,
-                "application_submitted",
+                subject_type="application",
+                subject_id=application.application_id,
+                actor_id=current_user.user_id,
+                event_type=RecruitingEvent.APPLICATION_SUBMITTED,
                 details={
                     "stage": ApplicationStage.HIRED.value,
                     "screenAutoHireRuleId": rule_id,
@@ -691,10 +690,6 @@ class ApplicationService:
                 user_id=current_user.user_id,
                 job=job,
             )
-
-        await self._notify_owners_of_submission(
-            session, application, job, False, action
-        )
 
     async def _assign_default_if_configured(
         self, session, application, job, current_user
@@ -749,72 +744,21 @@ class ApplicationService:
             default_id,
             owner_ids[0],
         )
-        await self.application_activity_repository.create(
+        # actor_id is None for the same reason as the automatic rejections
+        # above: the pipeline's default-assignee rule did this, and the
+        # request behind it is the candidate's.
+        await record_event(
             session,
-            application.application_id,
-            current_user.user_id,
-            "auto_assigned",
-            details={"stage": application.stage.value, "assigneeId": default_id},
+            subject_type="application",
+            subject_id=application.application_id,
+            actor_id=None,
+            event_type=RecruitingEvent.AUTO_ASSIGNED,
+            details={
+                "stage": application.stage.value,
+                "assigneeId": default_id,
+                "round": application.current_round,
+            },
         )
-        await self.notification_repository.create(
-            session,
-            NotificationEntity(
-                user_id=default_id,
-                type=NotificationType.ASSIGNED_TO_EVALUATE,
-                application_id=application.application_id,
-                round=application.current_round,
-                actor_user_id=None,
-            ),
-        )
-
-    async def _notify_owners_of_submission(
-        self, session, application, job, blocked, screen_action
-    ):
-        """Tell every owner of the posting that an application landed.
-
-        Owners (``pipeline_config.ownerIds``) are the posting's accountable
-        humans, and before this nothing told them a candidate had applied:
-        the only submit-time notification went to a stage's configured
-        default assignee, and none was written at all when the blacklist or
-        a screen rule disposed of the application without human review.
-
-        The outcome is read from ``blocked``/``screen_action`` rather than
-        from the landed stage, because a stage can be reached by more than
-        one path and the caller already knows exactly which one this was.
-        The three types carry different copy: an auto-rejected or auto-hired
-        application is already decided (informational, overturn it if you
-        disagree), while a plain submission is work waiting on the board.
-
-        Skips the applicant themselves -- an internal member applying to an
-        activity posting they own must not be notified about their own
-        application. Writes nothing when the posting has no owner, mirroring
-        ``_assign_default_if_configured``'s no-owner no-op.
-
-        Args:
-            session (AsyncSession): Active database async session.
-            application (ApplicationEntity): The just-landed application.
-            job (JobEntity): Its posting, for the owner list.
-            blocked (bool): Whether the applicant is blacklisted.
-            screen_action (str | None): The matched screen rule's action, if any.
-        """
-        if blocked or screen_action == "reject":
-            notification_type = NotificationType.APPLICATION_AUTO_REJECTED
-        elif screen_action == "auto_hire":
-            notification_type = NotificationType.APPLICATION_AUTO_HIRED
-        else:
-            notification_type = NotificationType.APPLICATION_SUBMITTED
-        for owner_id in normalized_owner_ids(job.pipeline_config):
-            if owner_id == application.user_id:
-                continue
-            await self.notification_repository.create(
-                session,
-                NotificationEntity(
-                    user_id=owner_id,
-                    type=notification_type,
-                    application_id=application.application_id,
-                    actor_user_id=application.user_id,
-                ),
-            )
 
     async def edit(
         self,

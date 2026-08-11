@@ -16,6 +16,7 @@ py_library(
         "//backend/communication",
         "//backend/dto",
         "//backend/entity:entities",
+        "//backend/notification_management:event_recorder",
         "//backend/notification_management:recipient_registry",
         "//backend/notification_management:render_registry",
         "//backend/repository:repositories",

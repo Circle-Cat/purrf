@@ -1400,7 +1400,7 @@ describe("ApplicationDetailPage — activity timeline", () => {
       data: [
         {
           id: 1,
-          eventType: "stage_changed",
+          eventType: "recruiting.stage_changed",
           details: { fromStage: "recruiter_screening", toStage: "tech" },
           actorId: OWNER_ID,
           actorName: "Owen Owner",
@@ -1425,7 +1425,7 @@ describe("ApplicationDetailPage — activity timeline", () => {
       data: [
         {
           id: 1,
-          eventType: "stage_changed",
+          eventType: "recruiting.stage_changed",
           details: { fromStage: "recruiter_screening", toStage: "tech" },
           actorId: OWNER_ID,
           actorName: "Owen Owner",
@@ -1433,7 +1433,7 @@ describe("ApplicationDetailPage — activity timeline", () => {
         },
         {
           id: 2,
-          eventType: "reassigned",
+          eventType: "recruiting.reassigned",
           details: {
             stage: "tech",
             fromAssigneeId: null,
@@ -1471,7 +1471,7 @@ describe("ApplicationDetailPage — activity timeline", () => {
       data: [
         {
           id: 1,
-          eventType: "email_sent",
+          eventType: "recruiting.email_sent",
           details: {
             subject: "Interview Availability",
             to: ["cand@x.com"],
@@ -1484,7 +1484,7 @@ describe("ApplicationDetailPage — activity timeline", () => {
         },
         {
           id: 2,
-          eventType: "email_received",
+          eventType: "recruiting.email_received",
           details: {
             subject: "Re: Interview Availability",
             from: "cand@x.com",
@@ -1523,7 +1523,7 @@ describe("ApplicationDetailPage — activity timeline", () => {
       data: [
         {
           id: 1,
-          eventType: "stage_changed",
+          eventType: "recruiting.stage_changed",
           details: {
             fromStage: "tech",
             toStage: "rejected",
@@ -1595,7 +1595,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
   it("shows the assignee name when advancing into a stage with one picked", async () => {
     await renderTimelineWith({
       id: 1,
-      eventType: "stage_changed",
+      eventType: "recruiting.stage_changed",
       details: {
         fromStage: "recruiter_screening",
         toStage: "tech",
@@ -1617,7 +1617,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
   it("shows the assignee name when round-advancing with one picked", async () => {
     await renderTimelineWith({
       id: 1,
-      eventType: "round_advanced",
+      eventType: "recruiting.round_advanced",
       details: {
         stage: "tech",
         fromRound: 1,
@@ -1640,7 +1640,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
   it("shows both names when reassigning from a previous assignee", async () => {
     await renderTimelineWith({
       id: 1,
-      eventType: "reassigned",
+      eventType: "recruiting.reassigned",
       details: {
         stage: "tech",
         fromAssigneeId: 7,
@@ -1663,7 +1663,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
   it("shows the auto_assigned event with the assignee name and the candidate as actor", async () => {
     await renderTimelineWith({
       id: 1,
-      eventType: "auto_assigned",
+      eventType: "recruiting.auto_assigned",
       details: {
         stage: "recruiter_screening",
         assigneeId: 11,
@@ -1684,7 +1684,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
   it("applies the shared by-actor suffix to an event type with no assignee concept", async () => {
     await renderTimelineWith({
       id: 1,
-      eventType: "sub_status_changed",
+      eventType: "recruiting.sub_status_changed",
       details: {
         stage: "tech",
         fromSubStatus: "pending",
@@ -1705,7 +1705,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
   it("omits the assignee clause when advancing with no assignee picked", async () => {
     await renderTimelineWith({
       id: 1,
-      eventType: "stage_changed",
+      eventType: "recruiting.stage_changed",
       details: { fromStage: "recruiter_screening", toStage: "tech" },
       actorId: OWNER_ID,
       actorName: "Owen Owner",
@@ -2430,7 +2430,7 @@ describe("ApplicationDetailPage — history row timeline and comments", () => {
         activity: [
           {
             id: 2,
-            eventType: "stage_changed",
+            eventType: "recruiting.stage_changed",
             details: {
               fromStage: "tech",
               toStage: "rejected",
@@ -2466,7 +2466,7 @@ describe("ApplicationDetailPage — history row timeline and comments", () => {
         activity: [
           {
             id: 3,
-            eventType: "stage_changed",
+            eventType: "recruiting.stage_changed",
             details: { fromStage: "tech", toStage: "hired" },
             actorId: OWNER_ID,
             actorName: "Olga Owner",
@@ -2524,7 +2524,7 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
       data: [
         {
           id: 1,
-          eventType: "auto_rejected",
+          eventType: "recruiting.auto_rejected",
           details: { reason: "screen_rule", ruleId: "r1" },
           actorId: OWNER_ID,
           actorName: "Casey Candidate",
@@ -2555,7 +2555,7 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
       data: [
         {
           id: 1,
-          eventType: "application_submitted",
+          eventType: "recruiting.application_submitted",
           details: {
             stage: "recruiter_screening",
             screenQualifyRuleId: "r1",
@@ -2588,7 +2588,7 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
       data: [
         {
           id: 1,
-          eventType: "application_submitted",
+          eventType: "recruiting.application_submitted",
           details: {
             stage: "recruiter_screening",
             screenQualifyRuleId: "r2",
@@ -2622,7 +2622,7 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
       data: [
         {
           id: 1,
-          eventType: "application_submitted",
+          eventType: "recruiting.application_submitted",
           details: { stage: "hired", screenAutoHireRuleId: "r1" },
           actorId: OWNER_ID,
           actorName: "Casey Candidate",
@@ -2652,7 +2652,7 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
       data: [
         {
           id: 1,
-          eventType: "application_submitted",
+          eventType: "recruiting.application_submitted",
           details: {
             stage: "hired",
             screenAutoHireRuleId: "r1",
@@ -2686,7 +2686,7 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
       data: [
         {
           id: 1,
-          eventType: "auto_rejected",
+          eventType: "recruiting.auto_rejected",
           details: {
             reason: "screen_rule",
             ruleId: "r1",
@@ -2720,7 +2720,7 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
       data: [
         {
           id: 1,
-          eventType: "auto_rejected",
+          eventType: "recruiting.auto_rejected",
           details: { reason: "screen_rule", ruleId: "r1" },
           actorId: OWNER_ID,
           actorName: "Casey Candidate",
@@ -2940,7 +2940,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
       data: [
         {
           id: 1,
-          eventType: "stage_changed",
+          eventType: "recruiting.stage_changed",
           details: {
             fromStage: "recruiter_screening",
             toStage: "tech",
@@ -2952,7 +2952,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
         },
         {
           id: 2,
-          eventType: "round_advanced",
+          eventType: "recruiting.round_advanced",
           details: {
             stage: "tech",
             fromRound: 1,
@@ -4370,7 +4370,7 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
   it("describes interview_scheduled with the resolved zone, time and interviewer", async () => {
     await renderTimelineWith({
       id: 1,
-      eventType: "interview_scheduled",
+      eventType: "recruiting.interview_scheduled",
       details: {
         stage: "behavioral",
         round: 1,
@@ -4397,7 +4397,7 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
   it("describes interview_cancelled with what was cancelled and when", async () => {
     await renderTimelineWith({
       id: 3,
-      eventType: "interview_cancelled",
+      eventType: "recruiting.interview_cancelled",
       details: {
         stage: "behavioral",
         round: 1,
@@ -4422,7 +4422,7 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
   it("describes interview_updated as a reschedule when only the time moved", async () => {
     await renderTimelineWith({
       id: 2,
-      eventType: "interview_updated",
+      eventType: "recruiting.interview_updated",
       details: {
         stage: "behavioral",
         round: 1,
@@ -4450,7 +4450,7 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
   it("describes interview_updated as a reassignment when only the interviewer swapped", async () => {
     await renderTimelineWith({
       id: 2,
-      eventType: "interview_updated",
+      eventType: "recruiting.interview_updated",
       details: {
         stage: "behavioral",
         round: 1,
@@ -4479,7 +4479,7 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
   it("describes interview_updated as both when the time and the interviewer both changed", async () => {
     await renderTimelineWith({
       id: 2,
-      eventType: "interview_updated",
+      eventType: "recruiting.interview_updated",
       details: {
         stage: "behavioral",
         round: 1,

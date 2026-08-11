@@ -2,12 +2,14 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.common.recruiting_enums import RecruitingEvent
 from backend.dto.evaluation_dto import (
     EvaluationDto,
     EvaluationSubmitDto,
     MyEvaluationDto,
 )
 from backend.dto.user_context_dto import UserContextDto
+from backend.notification_management.event_recorder import record_event
 from backend.recruiting import evaluation_rubric
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 from backend.common.permissions import Permission
@@ -128,11 +130,12 @@ class EvaluationService:
                     session, current_sub
                 )
             await self.application_repository.update(session, application)
-            await self.application_activity_repository.create(
+            await record_event(
                 session,
-                application_id,
-                current_user.user_id,
-                "evaluation_confirmed",
+                subject_type="application",
+                subject_id=application_id,
+                actor_id=current_user.user_id,
+                event_type=RecruitingEvent.EVALUATION_CONFIRMED,
                 details={
                     "stage": application.stage.value,
                     "round": application.current_round,
