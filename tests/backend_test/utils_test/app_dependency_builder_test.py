@@ -237,11 +237,9 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_client_cls.return_value = mock_google_client_instance
         mock_retry_utils_instance = MagicMock()
         mock_retry_utils_cls.return_value = mock_retry_utils_instance
-        mock_jira_client_instance = MagicMock()
-        mock_jira_client_cls.return_value.get_jira_client.return_value = (
-            mock_jira_client_instance
-        )
-        mock_jira_client = mock_jira_client_cls.return_value.get_jira_client()
+        # The builder wires the client itself, not a connection: opening one is
+        # left to the first service call that needs Jira.
+        mock_jira_client = mock_jira_client_cls.return_value
         mock_jira_history_service = mock_jira_history_cls.return_value
         mock_json_schema_validator_instance = MagicMock()
         mock_json_schema_validator_cls.return_value = (

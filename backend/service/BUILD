@@ -17,6 +17,7 @@ py_library(
     srcs = ["jira_search_service.py"],
     deps = [
         "//backend/common:constants",
+        "//backend/common:jira_client",
         "//backend/utils:retry_utils",
         "@pypi//jira",
     ],
