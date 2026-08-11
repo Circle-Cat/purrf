@@ -1,4 +1,5 @@
 import os
+import threading
 from jira import JIRA
 from backend.common.environment_constants import (
     JIRA_PASSWORD,
@@ -8,10 +9,18 @@ from backend.common.environment_constants import (
 
 class JiraClient:
     """
-    A class for creating and managing a single, eagerly-initialized Jira client.
+    A class for creating and managing a single, lazily-connected Jira client.
 
-    This class establishes and verifies the connection upon instantiation, ensuring
-    that a valid client is immediately available for use via the get_client() method.
+    Configuration and connectivity are checked at different times on purpose.
+    Missing configuration is a broken deployment, so the constructor rejects it
+    outright, using nothing but the environment. Reaching Jira is what waits:
+    a rejected credential or an outage is something this process can neither
+    tell apart from a transient failure nor fix by refusing to start, and the
+    routes that never touch Jira should keep serving through it.
+
+    The connection is opened by the first caller that asks for the client and
+    reused from then on. A failed attempt is not remembered, so Jira coming
+    back is enough -- no redeploy.
     """
 
     def __init__(
@@ -22,12 +31,11 @@ class JiraClient:
         retry_utils,
     ):
         """
-        Initializes the JiraClient and establishes the connection.
+        Initializes the JiraClient without contacting Jira.
 
         Args:
             jira_server: The base URL of the Jira server.
             jira_user: The username or email for authentication.
-            jira_password: The API token or password for authentication.
             logger: A logger instance for logging operations.
             retry_utils: A utility for retrying transient connection errors.
 
@@ -36,19 +44,17 @@ class JiraClient:
         """
         if not all([jira_server, jira_user]):
             raise ValueError("Jira server and user must be provided.")
+        if not os.getenv(JIRA_PASSWORD):
+            raise ValueError(
+                f"Jira password not found in environment variable: {JIRA_PASSWORD}"
+            )
 
         self._jira_server = jira_server.rstrip("/")
         self._jira_user = jira_user
         self.logger = logger
         self.retry_utils = retry_utils
-
-        try:
-            jira_client = self.retry_utils.get_retry_on_transient(self._connect_to_jira)
-            self.logger.info("[JiraClient] Created Jira client successfully.")
-            self._jira_client = jira_client
-        except Exception as e:
-            self.logger.error("[JiraClient] Failed to create Jira client: %s", e)
-            raise
+        self._jira_client = None
+        self._lock = threading.Lock()
 
     def _connect_to_jira(self) -> JIRA:
         """
@@ -73,5 +79,28 @@ class JiraClient:
         return client
 
     def get_jira_client(self) -> JIRA:
-        """Provides public access to the initialized Jira client."""
+        """
+        Provides the Jira client, connecting on the first call.
+
+        Returns:
+            JIRA: The connected Jira client.
+
+        Raises:
+            Exception: Whatever connecting raised, so the caller that needed
+                Jira is the one that hears about it.
+        """
+        if self._jira_client is None:
+            with self._lock:
+                if self._jira_client is None:
+                    try:
+                        client = self.retry_utils.get_retry_on_transient(
+                            self._connect_to_jira
+                        )
+                    except Exception as e:
+                        self.logger.error(
+                            "[JiraClient] Failed to create Jira client: %s", e
+                        )
+                        raise
+                    self.logger.info("[JiraClient] Created Jira client successfully.")
+                    self._jira_client = client
         return self._jira_client
