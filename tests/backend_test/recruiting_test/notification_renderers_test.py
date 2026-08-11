@@ -54,13 +54,13 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
         event_type: str,
         subject_type: str,
         subject_id: int,
-        actor: UsersEntity,
+        actor: UsersEntity | None,
         details: dict | None = None,
     ) -> EventEntity:
         event = EventEntity(
             subject_type=subject_type,
             subject_id=subject_id,
-            actor_id=actor.user_id,
+            actor_id=None if actor is None else actor.user_id,
             event_type=event_type,
             details=details or {},
         )
@@ -141,6 +141,34 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
         self.assertEqual(
             subject, "Grace Hopper mentioned you: Ada Lovelace (Backend Engineer)"
         )
+
+    async def test_auto_assigned_reads_as_automatic_when_the_event_has_no_actor(self):
+        """A null actor must reach the "nobody did this" branch of the copy.
+
+        ``_display_name`` answers "" for a user it cannot resolve, which is
+        also what a deleted actor looks like -- and the copy deliberately
+        words that case as "Someone assigned you", because claiming an
+        assignment was automatic when a person made it would be a lie. So a
+        null actor has to arrive as None, not as "": resolving it first
+        collapses the two and mislabels the pipeline's own rule as a person.
+        """
+        candidate = _make_user("Ada", "Lovelace")
+        await self.insert_entities([candidate])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        event = await self._make_event(
+            "recruiting.auto_assigned",
+            "application",
+            application.application_id,
+            None,
+            details={"stage": ApplicationStage.RECRUITER_SCREENING.value, "round": 1},
+        )
+
+        _, body = await render_registry.render(self.session, event)
+
+        self.assertIn("You were automatically assigned", body)
+        self.assertIn("default assignee", body)
+        self.assertNotIn("Someone", body)
 
     async def test_review_decided_dispatches_to_approved_or_rejected_by_details(self):
         actor = _make_user("Grace", "Hopper")
