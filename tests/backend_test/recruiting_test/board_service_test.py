@@ -48,9 +48,6 @@ from backend.repository.application_assignment_repository import (
 from backend.repository.application_interview_repository import (
     ApplicationInterviewRepository,
 )
-from backend.repository.application_activity_repository import (
-    ApplicationActivityRepository,
-)
 from backend.repository.application_comment_repository import (
     ApplicationCommentRepository,
 )
@@ -80,9 +77,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         # unless a test seeds an existing assignment via .get.return_value.
         self.assignment_repo.get.return_value = None
         self.user_permissions_repo = MagicMock()
-        self.activity_repo = create_autospec(
-            ApplicationActivityRepository, instance=True
-        )
         self.event_repo = MagicMock()
         # Default: no event/comment rows, so get_other_applications'
         # embedded-history fetches map to empty lists unless a test seeds rows.
@@ -164,7 +158,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.resume_storage,
             self.assignment_repo,
             self.user_permissions_repo,
-            self.activity_repo,
             self.event_repo,
             self.comment_repo,
             self.comment_mention_repo,

@@ -92,7 +92,6 @@ from backend.authentication.email_management_controller import (
 from backend.admin.permission_admin_service import PermissionAdminService
 from backend.admin.permission_admin_controller import PermissionAdminController
 from backend.repository.job_repository import JobRepository
-from backend.repository.job_activity_repository import JobActivityRepository
 from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.event_repository import EventRepository
 from backend.repository.notification_repository import NotificationRepository
@@ -102,9 +101,6 @@ from backend.repository.application_assignment_repository import (
 )
 from backend.repository.application_interview_repository import (
     ApplicationInterviewRepository,
-)
-from backend.repository.application_activity_repository import (
-    ApplicationActivityRepository,
 )
 from backend.repository.application_comment_repository import (
     ApplicationCommentRepository,
@@ -639,7 +635,6 @@ class AppDependencyBuilder:
         self.notification_repository = NotificationRepository()
         self.event_repository = EventRepository()
         self.job_review_repository = JobReviewRepository()
-        self.job_activity_repository = JobActivityRepository()
         self.recruiting_mapper = RecruitingMapper()
         # Person-anchored email transport, needed by the notification email
         # channel below. GmailClient reads the GMAIL_* credentials from the
@@ -703,13 +698,11 @@ class AppDependencyBuilder:
             self.job_review_repository,
             self.notification_repository,
             self.users_repository,
-            self.job_activity_repository,
             self.user_emails_repository,
             self.event_repository,
         )
         self.application_assignment_repository = ApplicationAssignmentRepository()
         self.application_interview_repository = ApplicationInterviewRepository()
-        self.application_activity_repository = ApplicationActivityRepository()
         self.application_comment_repository = ApplicationCommentRepository()
         self.application_comment_mention_repository = (
             ApplicationCommentMentionRepository()
@@ -724,7 +717,6 @@ class AppDependencyBuilder:
             self.users_repository,
             self.recruiting_mapper,
             self.application_assignment_repository,
-            self.application_activity_repository,
             self.notification_repository,
             self.user_emails_repository,
             self.onboarding_training_service,
@@ -750,7 +742,6 @@ class AppDependencyBuilder:
         self.email_sync_service = EmailSyncService(
             gmail_client=self.gmail_client,
             email_conversation_service=self.email_conversation_service,
-            application_activity_repository=self.application_activity_repository,
             application_repository=self.application_repository,
             logger=self.logger,
         )
@@ -778,7 +769,6 @@ class AppDependencyBuilder:
             self.application_repository,
             self.application_assignment_repository,
             self.application_interview_repository,
-            self.application_activity_repository,
             self.users_repository,
             self.user_emails_repository,
             self.meeting_scheduling_service,
@@ -794,7 +784,6 @@ class AppDependencyBuilder:
             self.resume_storage,
             self.application_assignment_repository,
             self.user_permissions_repository,
-            self.application_activity_repository,
             self.event_repository,
             self.application_comment_repository,
             self.application_comment_mention_repository,
@@ -826,7 +815,6 @@ class AppDependencyBuilder:
             self.evaluation_repository,
             self.job_repository,
             self.users_repository,
-            self.application_activity_repository,
             self.application_submission_repository,
         )
         self.evaluation_controller = EvaluationController(

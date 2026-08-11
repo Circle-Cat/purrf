@@ -46,18 +46,15 @@ class NotificationEventEmailService:
             notification (NotificationEntity): The row being delivered.
 
         Raises:
-            LookupError: The notification's event is gone, its event_type
-                has no renderer, or the recipient has no email on file --
-                all permanent, since none can change on retry.
+            LookupError: The event's event_type has no renderer, or the
+                recipient has no email on file -- both permanent, since
+                neither can change on retry.
             RuntimeError: The underlying transport reported failure (e.g.
                 Gmail down) -- ask the caller for a retry.
         """
+        # event_id is NOT NULL and FK'd with ON DELETE CASCADE, so the row
+        # cannot outlive the event it points at.
         event = await session.get(EventEntity, notification.event_id)
-        if event is None:
-            raise LookupError(
-                f"notification {notification.notification_id} has no event "
-                f"(event_id={notification.event_id!r})"
-            )
         subject, body = await self.render(session, event)
 
         address = await self.user_emails_repository.get_contact_email(
