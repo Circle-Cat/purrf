@@ -76,6 +76,9 @@ resource "kubernetes_secret" "purrf_app" {
     # is what the publisher takes. The backend refuses to start without it, so
     # this apply has to land before the image that reads it rolls out.
     NOTIFICATION_TOPIC = google_pubsub_topic.notifications.id
+
+    # The service accounts whose tokens the delivery route accepts.
+    NOTIFICATION_PUSHER_SUBS = google_service_account.notification_pusher.unique_id
   }
 }
 
