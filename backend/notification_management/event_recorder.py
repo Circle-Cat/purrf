@@ -10,7 +10,7 @@ async def record_event(
     *,
     subject_type: str,
     subject_id: int,
-    actor_id: int,
+    actor_id: int | None,
     event_type: str,
     details: dict | None = None,
 ) -> tuple[EventEntity, list[NotificationEntity]]:
@@ -31,7 +31,11 @@ async def record_event(
         session (AsyncSession): Session inside an open transaction.
         subject_type (str): What the event is about, e.g. ``"application"``.
         subject_id (int): Primary key of that subject.
-        actor_id (int): Who did it. Excluded from the recipients.
+        actor_id (int | None): Who did it, excluded from the recipients.
+            ``None`` when the system did it under its own rules rather than
+            on someone's behalf -- an automatic rejection or assignment is
+            nobody's action, and the copy words it that way. Passing the
+            requesting user for those would name the candidate as the actor.
         event_type (str): Domain-prefixed type, e.g. ``"recruiting.reassigned"``.
         details (dict | None): Extra payload for rendering. Defaults to ``{}``.
 

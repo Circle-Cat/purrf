@@ -77,16 +77,16 @@ class TestNotificationRepository(BaseRepositoryTestLib):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].notification_id, created.notification_id)
 
-    async def test_event_shaped_rows_are_left_out_of_the_read_paths(self):
-        """An event-shaped row has type NULL, and every renderer reads type.
+    async def test_event_shaped_rows_are_returned_by_the_read_paths(self):
+        """An event-shaped row has type NULL, and the reader resolves the event.
 
-        Returned rather than skipped, one such row fails the whole list -- the
-        user's bell breaks instead of one entry going missing -- and the badge
-        would promise a row the list cannot hand over. They become visible
-        when a renderer that reads the event exists.
+        The read paths scope on dismissed_at alone: what a notification is
+        about is read from the event it points at, so a NULL type is the
+        normal shape now rather than a row the bell cannot render. The badge
+        counts exactly what the list hands over.
 
-        Email is not checked here any more: those rows are the only ones the
-        delivery pipeline sends, and it claims them itself.
+        Email is not checked here: those rows are the only ones the delivery
+        pipeline sends, and it claims them itself.
         """
         app, recipient = await self._seed()
         repo = NotificationRepository()
@@ -97,13 +97,18 @@ class TestNotificationRepository(BaseRepositoryTestLib):
             event_type="recruiting.stage_changed",
         )
         await self.insert_entities([event])
-        await repo.create(
+        created = await repo.create(
             self.session,
             NotificationEntity(user_id=recipient.user_id, event_id=event.event_id),
         )
 
-        self.assertEqual(await repo.list_by_user(self.session, recipient.user_id), [])
-        self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 0)
+        result = await repo.list_by_user(self.session, recipient.user_id)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].notification_id, created.notification_id)
+        self.assertIsNone(result[0].type)
+        self.assertEqual(result[0].event_id, event.event_id)
+        self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 1)
 
     async def test_list_by_user_orders_newest_first(self):
         app, recipient = await self._seed()
@@ -158,7 +163,13 @@ class TestNotificationRepository(BaseRepositoryTestLib):
 
         self.assertEqual(count, 1)
 
-    async def test_delete_by_id_removes_the_row_and_returns_true(self):
+    async def test_dismiss_by_id_marks_the_row_and_keeps_it(self):
+        """Dismissing hides a notification; it must not destroy it.
+
+        The row carries the email state machine, so deleting it on dismiss
+        would drop an email that had not gone out yet -- and would erase the
+        record of one that had.
+        """
         app, recipient = await self._seed()
         repo = NotificationRepository()
         created = await repo.create(
@@ -170,14 +181,17 @@ class TestNotificationRepository(BaseRepositoryTestLib):
             ),
         )
 
-        deleted = await repo.delete_by_id(
+        dismissed = await repo.dismiss_by_id(
             self.session, created.notification_id, recipient.user_id
         )
 
-        self.assertTrue(deleted)
+        self.assertTrue(dismissed)
+        await self.session.refresh(created)
+        self.assertIsNotNone(created.dismissed_at)
         self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 0)
+        self.assertEqual(await repo.list_by_user(self.session, recipient.user_id), [])
 
-    async def test_delete_by_id_wrong_user_is_a_no_op(self):
+    async def test_dismiss_by_id_wrong_user_is_a_no_op(self):
         app, recipient = await self._seed()
         other = _make_user()
         await self.insert_entities([other])
@@ -191,36 +205,36 @@ class TestNotificationRepository(BaseRepositoryTestLib):
             ),
         )
 
-        result = await repo.delete_by_id(
+        result = await repo.dismiss_by_id(
             self.session, created.notification_id, other.user_id
         )
 
         self.assertFalse(result)
+        await self.session.refresh(created)
+        self.assertIsNone(created.dismissed_at)
         self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 1)
 
-    async def test_delete_all_by_user_removes_every_row_for_that_user(self):
+    async def test_dismiss_all_by_user_marks_every_row_and_keeps_them(self):
         app, recipient = await self._seed()
         repo = NotificationRepository()
-        await repo.create(
-            self.session,
-            NotificationEntity(
-                user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
-            ),
-        )
-        await repo.create(
-            self.session,
-            NotificationEntity(
-                user_id=recipient.user_id,
-                type=NotificationType.ASSIGNED_TO_EVALUATE,
-                application_id=app.application_id,
-            ),
-        )
+        rows = [
+            await repo.create(
+                self.session,
+                NotificationEntity(
+                    user_id=recipient.user_id,
+                    type=NotificationType.MENTIONED,
+                    application_id=app.application_id,
+                ),
+            )
+            for _ in range(2)
+        ]
 
-        await repo.delete_all_by_user(self.session, recipient.user_id)
+        await repo.dismiss_all_by_user(self.session, recipient.user_id)
 
         self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 0)
+        for row in rows:
+            await self.session.refresh(row)
+            self.assertIsNotNone(row.dismissed_at)
 
 
 if __name__ == "__main__":
