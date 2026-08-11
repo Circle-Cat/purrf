@@ -170,14 +170,18 @@ const PostingEditor = () => {
     setSaving(true);
     try {
       const body = toBody(draft);
-      if (id) await updateJob(id, body);
-      else await createJob(body);
+      // Both paths land on the posting's own page: saving only ever produces a
+      // draft (or stages an edit), and everything the author does next --
+      // submitting for review above all -- lives there, not on the list.
+      let savedId = id;
+      if (id) {
+        await updateJob(id, body);
+      } else {
+        const { data } = await createJob(body);
+        savedId = data.id;
+      }
       toast.success(id ? "Posting updated." : "Posting created.");
-      navigate(
-        id
-          ? ROUTE_PATHS.RECRUITING_POSTING_DETAIL(id)
-          : ROUTE_PATHS.RECRUITING_POSTINGS,
-      );
+      navigate(ROUTE_PATHS.RECRUITING_POSTING_DETAIL(savedId));
     } catch (e) {
       toast.error(e.message);
       setSaving(false);
