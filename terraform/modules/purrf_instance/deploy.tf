@@ -92,9 +92,6 @@ resource "random_password" "email_otp_state_secret" {
   special = false
 }
 
-# The application's service account lives in another project and is not managed
-# here (it is referenced by literal above and below), so read it to get the
-# numeric unique_id the backend asserts token `sub` against.
 data "google_service_account" "purrf_service" {
   account_id = "projects/purrf-452300/serviceAccounts/purrf-service@purrf-452300.iam.gserviceaccount.com"
 }
