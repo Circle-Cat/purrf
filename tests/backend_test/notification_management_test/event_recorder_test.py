@@ -95,6 +95,36 @@ class EventRecorderTest(BaseRepositoryTestLib):
         )
         self.assertEqual({n.user_id for n in notifications}, {other.user_id})
 
+    async def test_records_a_system_event_with_no_actor(self):
+        """``actor_id=None`` writes, and subtracts nobody from the recipients.
+
+        A screen rule auto-rejecting an application, or a stage's default
+        assignee being materialised, is nobody's action -- the request behind
+        it is the candidate's. ``actor_id`` has to accept NULL for those, and
+        the whole resolved set still hears about it.
+        """
+        recipients = [_make_user(), _make_user()]
+        await self.insert_entities(recipients)
+        recipient_ids = [user.user_id for user in recipients]
+
+        @recipient_registry.register_recipients(
+            "demo.system", subject_type="application"
+        )
+        async def resolver(session, event):
+            return recipient_ids
+
+        event, notifications = await record_event(
+            self.session,
+            subject_type="application",
+            subject_id=7,
+            actor_id=None,
+            event_type="demo.system",
+        )
+
+        self.assertIsNotNone(event.event_id)
+        self.assertIsNone(event.actor_id)
+        self.assertEqual({n.user_id for n in notifications}, set(recipient_ids))
+
     async def test_event_row_is_written_when_no_resolver_is_registered(self):
         """An unregistered type still lands on the timeline, notifying nobody.
 
