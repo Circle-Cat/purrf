@@ -75,6 +75,7 @@ from backend.common.environment_constants import (
     JIRA_USER,
     MENTORSHIP_CALENDAR_ID,
     INTERVIEW_CALENDAR_ID,
+    NOTIFICATION_PUSHER_SUBS,
     NOTIFICATION_TOPIC,
     USER_EMAIL,
 )
@@ -221,6 +222,12 @@ class AppDependencyBuilder:
         if not notification_topic_path:
             raise ValueError(f"Missing environment variable: {NOTIFICATION_TOPIC}")
 
+        notification_pusher_subs = frozenset(
+            sub.strip()
+            for sub in (os.getenv(NOTIFICATION_PUSHER_SUBS) or "").split(",")
+            if sub.strip()
+        )
+
         # No presence check here: GoogleClient already validates USER_EMAIL and
         # raises before this point, so repeating it would just be noise.
         user_email = os.getenv(USER_EMAIL)
@@ -253,6 +260,7 @@ class AppDependencyBuilder:
             self.google_client.create_publisher_client()
         )
         self.notification_topic_path = notification_topic_path
+        self.notification_pusher_subs = notification_pusher_subs
         self.google_chat_client = self.google_client.create_chat_client()
         self.google_people_client = self.google_client.create_people_client()
         # Constructed, not connected: the services below open the connection on
@@ -690,6 +698,8 @@ class AppDependencyBuilder:
             publisher=self.notification_publisher_client,
             topic_path=self.notification_topic_path,
             database=self.database,
+            auth_service=self.authentication_service,
+            pusher_subs=self.notification_pusher_subs,
         )
         self.job_service = JobService(
             self.job_repository,
