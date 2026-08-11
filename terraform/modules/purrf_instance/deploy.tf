@@ -80,24 +80,6 @@ resource "kubernetes_secret" "purrf_app" {
     # The service accounts whose tokens the delivery route accepts.
     NOTIFICATION_PUSHER_SUBS = google_service_account.notification_pusher.unique_id
 
-    # Which service accounts may authenticate with a Google identity token.
-    # GOOGLE_AUDIENCE above is the app label, not a secret: any service account
-    # in any project can mint a Google-signed token for it, so the audience
-    # alone does not establish who is calling. The backend asserts the token's
-    # `sub` -- the account's numeric unique_id -- against this list.
-    #
-    # Read from a data source rather than written as a literal, so recreating
-    # the account (which changes the unique_id while keeping the email) is
-    # picked up by the next apply.
-    #
-    # Deliberately NOT merged with NOTIFICATION_PUSHER_SUBS above. Every caller
-    # that clears this check receives the same flat SERVICE_ACCOUNT_PERMISSIONS
-    # bundle, so naming the pusher here would grant it all eight cronjob
-    # endpoints. That account is also per-environment, while this one is a
-    # single literal shared by all three.
-    #
-    # Comma-separated, holding one id today. Admitting a second machine caller
-    # becomes join(",", [...]) here, with no code change.
     GOOGLE_SERVICE_ACCOUNT_SUBS = data.google_service_account.purrf_service.unique_id
   }
 }
