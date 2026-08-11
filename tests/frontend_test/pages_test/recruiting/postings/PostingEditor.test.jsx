@@ -131,9 +131,11 @@ describe("PostingEditor", () => {
       formSchema: { questions: [] },
     });
     expect(toast.success).toHaveBeenCalled();
+    // Straight to the new posting's page: Submit for review lives there, and
+    // the author has nothing left to do on the list they came from.
     await waitFor(() =>
       expect(router.state.location.pathname).toBe(
-        ROUTE_PATHS.RECRUITING_POSTINGS,
+        ROUTE_PATHS.RECRUITING_POSTING_DETAIL(1),
       ),
     );
   });
@@ -340,7 +342,7 @@ describe("PostingEditor", () => {
     resolveCreate({ data: { id: 1 } });
     await waitFor(() =>
       expect(router.state.location.pathname).toBe(
-        ROUTE_PATHS.RECRUITING_POSTINGS,
+        ROUTE_PATHS.RECRUITING_POSTING_DETAIL(1),
       ),
     );
   });
