@@ -79,6 +79,8 @@ resource "kubernetes_secret" "purrf_app" {
 
     # The service accounts whose tokens the delivery route accepts.
     NOTIFICATION_PUSHER_SUBS = google_service_account.notification_pusher.unique_id
+
+    GOOGLE_SERVICE_ACCOUNT_SUBS = data.google_service_account.purrf_service.unique_id
   }
 }
 
@@ -88,6 +90,10 @@ resource "kubernetes_secret" "purrf_app" {
 resource "random_password" "email_otp_state_secret" {
   length  = 64
   special = false
+}
+
+data "google_service_account" "purrf_service" {
+  account_id = "projects/purrf-452300/serviceAccounts/purrf-service@purrf-452300.iam.gserviceaccount.com"
 }
 
 resource "google_service_account_iam_member" "purrf_service_wi" {
