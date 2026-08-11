@@ -258,12 +258,15 @@ class AppDependencyBuilder:
         self.notification_topic_path = notification_topic_path
         self.google_chat_client = self.google_client.create_chat_client()
         self.google_people_client = self.google_client.create_people_client()
+        # Constructed, not connected: the services below open the connection on
+        # the first call that needs Jira. Missing configuration still fails
+        # here, at startup.
         self.jira_client = JiraClient(
             jira_server=jira_server,
             jira_user=jira_user,
             logger=self.logger,
             retry_utils=self.retry_utils,
-        ).get_jira_client()
+        )
         self.google_calendar_client = self.google_client.create_calendar_client()
         self.google_reports_client = self.google_client.create_reports_client()
         self.meet_spaces_client = self.google_client.create_meet_spaces_client()
