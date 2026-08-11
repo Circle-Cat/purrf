@@ -114,3 +114,9 @@ GMAIL_SENDER_NOTIFICATION = "GMAIL_SENDER_NOTIFICATION"
 # because it is a topic, not a subscription, and is consumed as a complete
 # path by a single call site rather than built up per-client.
 NOTIFICATION_TOPIC = "NOTIFICATION_TOPIC"
+
+# Comma-separated `sub` claims of the service accounts allowed to POST the
+# notification delivery route. Absent does not raise at startup the way
+# NOTIFICATION_TOPIC does: the route refuses every request instead, rather than
+# crash-looping the whole API over one variable.
+NOTIFICATION_PUSHER_SUBS = "NOTIFICATION_PUSHER_SUBS"

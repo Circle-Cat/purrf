@@ -362,6 +362,8 @@ class TestFastAppFactory(unittest.TestCase):
             publisher=MagicMock(),
             topic_path="projects/p/topics/t",
             database=MagicMock(),
+            auth_service=MagicMock(),
+            pusher_subs=frozenset({"111-pusher"}),
         )
         factory = FastAppFactory(
             authentication_controller=self.mock_controller,

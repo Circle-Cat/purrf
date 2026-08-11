@@ -98,7 +98,19 @@ describe("pubsub gateway", () => {
     expect(forwarded[1].headers["CF-Access-Client-Secret"]).toBe(
       "client-secret",
     );
-    expect(forwarded[1].headers.authorization).toBeUndefined();
+  });
+
+  it("forwards the verified token so the origin can assert the caller too", async () => {
+    const token = await makeToken();
+    const fetchMock = stubFetch(new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await worker.fetch(request(token), environment());
+
+    const forwarded = fetchMock.mock.calls.find(([input]) =>
+      (typeof input === "string" ? input : input.url).includes("api.purrf.io"),
+    );
+    expect(forwarded[1].headers.authorization).toBe(`Bearer ${token}`);
   });
 
   it("passes the origin status straight back so Pub/Sub sees the truth", async () => {

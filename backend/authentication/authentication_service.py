@@ -100,6 +100,31 @@ class AuthenticationService:
 
         return self._build_context(payload, source="cloudflare")
 
+    def verify_google_token(self, token: str) -> dict[str, Any]:
+        """
+        Verify a Google identity token and return its claims.
+
+        For callers that assert on the claims themselves rather than acting as
+        a user -- the notification delivery route checks `sub` against the
+        pusher accounts this deployment provisioned and builds no user context.
+
+        Args:
+            token (str): Google Identity token.
+
+        Returns:
+            dict[str, Any]: The verified claims.
+
+        Raises:
+            ValueError: The token is not a valid Google token for this
+                audience.
+        """
+        try:
+            return id_token.verify_token(
+                token, self.google_request, audience=GOOGLE_AUDIENCE
+            )
+        except ValueError as e:
+            raise ValueError(f"Google Token Invalid: {str(e)}")
+
     def _verify_google(self, token: str) -> UserContextDto:
         """
         Verify a Google identity token and construct the user context.
@@ -110,34 +135,7 @@ class AuthenticationService:
         Returns:
             UserContextDto: User information including roles.
         """
-        try:
-            payload = id_token.verify_token(
-                token, self.google_request, audience=GOOGLE_AUDIENCE
-            )
-        except ValueError as e:
-            raise ValueError(f"Google Token Invalid: {str(e)}")
-
-        # TEMPORARY DIAGNOSTIC (PUR-505). This check is about to be tightened
-        # from "the audience matches" to "the caller is one of these known
-        # service accounts", because the audience is not a secret -- it is the
-        # app label, so any Google-signed token minted for that audience passes
-        # today. Writing that allowlist requires knowing which claims the
-        # metadata server actually puts on the tokens our cronjobs present:
-        # if `email` is absent there, asserting on it would 401 every cronjob.
-        #
-        # This logs the claim names (not their values, beyond the identity
-        # ones) and rejects nothing. Remove it once the identity assertion
-        # lands.
-        self.logger.info(
-            "[AuthenticationService] Google token claims: keys=%s email=%s "
-            "email_verified=%s sub=%s",
-            sorted(payload.keys()),
-            payload.get("email"),
-            payload.get("email_verified"),
-            payload.get("sub"),
-        )
-
-        return self._build_context(payload, source="google")
+        return self._build_context(self.verify_google_token(token), source="google")
 
     def _get_cf_signing_key(self, token: str):
         """

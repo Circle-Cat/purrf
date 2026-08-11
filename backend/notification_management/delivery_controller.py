@@ -23,7 +23,15 @@ class NotificationDeliveryController:
     that a redelivery could not improve returns 200.
     """
 
-    def __init__(self, delivery_service, publisher, topic_path, database):
+    def __init__(
+        self,
+        delivery_service,
+        publisher,
+        topic_path,
+        database,
+        auth_service,
+        pusher_subs,
+    ):
         """
         Args:
             delivery_service (DeliveryService): Claims, renders and sends
@@ -38,6 +46,8 @@ class NotificationDeliveryController:
         self.publisher = publisher
         self.topic_path = topic_path
         self.database = database
+        self.auth_service = auth_service
+        self.pusher_subs = pusher_subs
         self.router = APIRouter(tags=["notification-delivery"])
         self.router.add_api_route(
             NOTIFICATION_DELIVER_ENDPOINT,
@@ -48,6 +58,30 @@ class NotificationDeliveryController:
 
     async def deliver(self, request: Request) -> Response:
         """Deliver the notification named in a Pub/Sub push envelope."""
+        authorization = request.headers.get("Authorization", "")
+        if not authorization.startswith("Bearer "):
+            logger.warning("[Delivery] request carried no token; refusing")
+            return Response(status_code=HTTPStatus.FORBIDDEN)
+
+        try:
+            claims = self.auth_service.verify_google_token(
+                authorization.removeprefix("Bearer ")
+            )
+        except ValueError as e:
+            logger.warning("[Delivery] token rejected: %s", e)
+            return Response(status_code=HTTPStatus.FORBIDDEN)
+
+        if not self.pusher_subs:
+            logger.warning(
+                "[Delivery] NOTIFICATION_PUSHER_SUBS is missing or empty -- "
+                "refusing every caller until it is configured"
+            )
+            return Response(status_code=HTTPStatus.FORBIDDEN)
+
+        if claims.get("sub") not in self.pusher_subs:
+            logger.warning("[Delivery] token sub is not a provisioned pusher; refusing")
+            return Response(status_code=HTTPStatus.FORBIDDEN)
+
         envelope = await request.json()
         try:
             data = envelope["message"]["data"]

@@ -174,6 +174,26 @@ class TestAuthenticationService(unittest.TestCase):
         mock_verify_google.assert_called_with("google_token")
 
     @patch("google.oauth2.id_token.verify_token")
+    def test_verify_google_token_returns_the_claims(self, mock_verify):
+        """Callers that assert on the claims rather than acting as a user."""
+        mock_verify.return_value = {"sub": "111-pusher", "aud": "valid_google_aud"}
+
+        claims = self.auth_service.verify_google_token("g_token")
+
+        self.assertEqual(claims["sub"], "111-pusher")
+        mock_verify.assert_called_with(
+            "g_token", self.auth_service.google_request, audience="valid_google_aud"
+        )
+
+    @patch("google.oauth2.id_token.verify_token")
+    def test_verify_google_token_raises_value_error_when_invalid(self, mock_verify):
+        """A rejected token must not reach the caller as a falsy payload."""
+        mock_verify.side_effect = ValueError("Token expired")
+
+        with self.assertRaises(ValueError):
+            self.auth_service.verify_google_token("g_token")
+
+    @patch("google.oauth2.id_token.verify_token")
     def test_verify_google_valid(self, mock_verify):
         """
         Test: Valid Google ID token.
@@ -194,56 +214,6 @@ class TestAuthenticationService(unittest.TestCase):
         mock_verify.assert_called_with(
             token, self.auth_service.google_request, audience="valid_google_aud"
         )
-
-    @patch("google.oauth2.id_token.verify_token")
-    def test_verify_google_logs_the_caller_identity(self, mock_verify):
-        """
-        Test: the claims of an accepted Google token are logged.
-
-        This log is the only way to learn which claims the metadata server puts
-        on the tokens our cronjobs present, which is a prerequisite for
-        tightening this method from "the audience matches" to "the caller is a
-        known service account". Asserting on the individual arguments -- not
-        merely that something was logged -- is the point: dropping the email or
-        the claim-name list would leave the log looking healthy while making it
-        useless for writing that allowlist.
-        """
-        mock_verify.return_value = {
-            "email": "purrf-service@purrf-452300.iam.gserviceaccount.com",
-            "email_verified": True,
-            "sub": "123",
-            "aud": "valid_google_aud",
-        }
-
-        self.auth_service._verify_google("g_token")
-
-        self.mock_logger.info.assert_called_once()
-        args = self.mock_logger.info.call_args.args
-        self.assertIn("keys=%s", args[0])
-        self.assertEqual(args[1], ["aud", "email", "email_verified", "sub"])
-        self.assertEqual(args[2], "purrf-service@purrf-452300.iam.gserviceaccount.com")
-        self.assertIs(args[3], True)
-        self.assertEqual(args[4], "123")
-
-    @patch("google.oauth2.id_token.verify_token")
-    def test_verify_google_logs_absent_identity_claims_as_none(self, mock_verify):
-        """
-        Test: a token without identity claims still logs, with None values.
-
-        This is the outcome the diagnostic exists to detect -- if the cronjob
-        tokens look like this, the planned allowlist cannot key on `email` and
-        the design has to change. So the log must survive their absence rather
-        than raising a KeyError inside the auth path.
-        """
-        mock_verify.return_value = {"aud": "valid_google_aud"}
-
-        self.auth_service._verify_google("g_token")
-
-        args = self.mock_logger.info.call_args.args
-        self.assertEqual(args[1], ["aud"])
-        self.assertIsNone(args[2])
-        self.assertIsNone(args[3])
-        self.assertIsNone(args[4])
 
     @patch("jwt.get_unverified_header")
     @patch("jwt.algorithms.RSAAlgorithm.from_jwk")

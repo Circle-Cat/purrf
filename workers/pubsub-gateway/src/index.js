@@ -152,6 +152,9 @@ export default {
         "content-type": "application/json",
         "CF-Access-Client-Id": env.CF_ACCESS_CLIENT_ID,
         "CF-Access-Client-Secret": env.CF_ACCESS_CLIENT_SECRET,
+        // Passed on, not consumed: the origin asserts the caller too, so a
+        // request arriving some other way carries nothing it will accept.
+        authorization,
       },
       body: await request.text(),
     });
