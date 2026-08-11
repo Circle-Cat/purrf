@@ -38,6 +38,10 @@ from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
 from backend.notification_management.render_registry import register_render
 from backend.recruiting import notification_email_copy as copy
+from backend.repository.user_emails_repository import UserEmailsRepository
+
+# Stateless, so one module-level instance serves every render.
+_user_emails_repository = UserEmailsRepository()
 
 
 async def _display_name(session: AsyncSession, user_id: int) -> str:
@@ -60,11 +64,17 @@ async def _display_name(session: AsyncSession, user_id: int) -> str:
 
 
 async def _application_context(session: AsyncSession, application_id: int):
-    """job_title/job_kind/applicant_name for an application-scoped event.
+    """job_title/job_kind/applicant_name/applicant_email for an
+    application-scoped event.
 
-    Returns ("", None, "") if the application (or its job) is gone --
+    Returns ("", None, "", None) if the application (or its job) is gone --
     same "resolved to nothing" convention ``RecruitingNotificationService
     ._to_dto`` uses for the bell.
+
+    The address comes from ``UserEmailsRepository.get_contact_email`` rather
+    than a join written here: primary-else-oldest-claim is one rule, shared
+    with the board and the blacklist page, and a second copy of it would
+    drift.
     """
     result = await session.execute(
         select(JobEntity.title, JobEntity.kind, ApplicationEntity.user_id)
@@ -73,9 +83,14 @@ async def _application_context(session: AsyncSession, application_id: int):
     )
     row = result.first()
     if row is None:
-        return "", None, ""
+        return "", None, "", None
     job_title, job_kind, candidate_id = row
-    return job_title, job_kind, await _display_name(session, candidate_id)
+    return (
+        job_title,
+        job_kind,
+        await _display_name(session, candidate_id),
+        await _user_emails_repository.get_contact_email(session, candidate_id),
+    )
 
 
 async def _job_context(session: AsyncSession, job_id: int):
@@ -95,8 +110,11 @@ async def _base_dto(session: AsyncSession, event: EventEntity) -> SimpleNamespac
         event (EventEntity): The event being rendered.
 
     Returns:
-        SimpleNamespace: job_title/job_kind/applicant_name/actor_name, plus
-            whatever event-type-specific fields the caller adds afterwards.
+        SimpleNamespace: job_title/job_kind/applicant_name/applicant_email/
+            actor_name, plus whatever event-type-specific fields the caller
+            adds afterwards. ``applicant_email`` is the candidate's contact
+            address, or None when the event has no candidate or the candidate
+            has no address on file.
             ``actor_name`` is None for an event the system recorded under its
             own rules, "" for an actor who no longer resolves, and a name
             otherwise -- three states the copy reads apart.
@@ -110,18 +128,22 @@ async def _base_dto(session: AsyncSession, event: EventEntity) -> SimpleNamespac
         None if event.actor_id is None else await _display_name(session, event.actor_id)
     )
     if event.subject_type == "application":
-        job_title, job_kind, applicant_name = await _application_context(
-            session, event.subject_id
-        )
+        (
+            job_title,
+            job_kind,
+            applicant_name,
+            applicant_email,
+        ) = await _application_context(session, event.subject_id)
     elif event.subject_type == "job":
         job_title, job_kind = await _job_context(session, event.subject_id)
-        applicant_name = ""
+        applicant_name, applicant_email = "", None
     else:
-        job_title, job_kind, applicant_name = "", None, ""
+        job_title, job_kind, applicant_name, applicant_email = "", None, "", None
     return SimpleNamespace(
         job_title=job_title,
         job_kind=job_kind,
         applicant_name=applicant_name,
+        applicant_email=applicant_email,
         actor_name=actor_name,
     )
 
