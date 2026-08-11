@@ -76,6 +76,21 @@ resource "kubernetes_secret" "purrf_app" {
     # is what the publisher takes. The backend refuses to start without it, so
     # this apply has to land before the image that reads it rolls out.
     NOTIFICATION_TOPIC = google_pubsub_topic.notifications.id
+
+    # The service accounts whose tokens the delivery route accepts. Read off
+    # the resource, so an account recreated here updates on the next apply
+    # instead of leaving a stale literal that refuses every push.
+    #
+    # One value today; the backend splits on commas, so a second pusher is
+    # added here without touching code. This is deliberately NOT the list the
+    # cronjob endpoints check: every machine identity that passes those gets
+    # the same flat permission bundle, so naming the pusher there would hand
+    # it all eight of them.
+    #
+    # Fail closed, and envFrom changes do not restart pods: this apply has to
+    # land before the image that reads it rolls out, or deliveries stop until
+    # it does.
+    NOTIFICATION_PUSHER_SUBS = google_service_account.notification_pusher.unique_id
   }
 }
 
