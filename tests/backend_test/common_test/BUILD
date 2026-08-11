@@ -9,6 +9,14 @@ py_test(
 )
 
 py_test(
+    name = "environment_constants_test",
+    srcs = ["environment_constants_test.py"],
+    deps = [
+        "//backend/common:environment_constants",
+    ],
+)
+
+py_test(
     name = "permissions_test",
     srcs = ["permissions_test.py"],
     deps = [

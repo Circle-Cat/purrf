@@ -12,6 +12,7 @@ from backend.common.environment_constants import (
     CF_TEAM_DOMAIN,
     CF_AUD_TAG,
     GOOGLE_AUDIENCE,
+    GOOGLE_SERVICE_ACCOUNT_SUBS,
 )
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.constants import is_company_email
@@ -129,13 +130,43 @@ class AuthenticationService:
         """
         Verify a Google identity token and construct the user context.
 
+        The `sub` assertion cannot move up into verify_google_token: the
+        notification delivery route shares it and checks its own pusher
+        allowlist, so this check one level higher would reject every push.
+
         Args:
             token (str): Google Identity token.
 
         Returns:
             UserContextDto: User information including roles.
+
+        Raises:
+            ValueError: The token is not a valid Google token for this
+                audience, or it was minted by a service account that is not
+                allowlisted.
         """
-        return self._build_context(self.verify_google_token(token), source="google")
+        payload = self.verify_google_token(token)
+
+        if not GOOGLE_SERVICE_ACCOUNT_SUBS:
+            self.logger.error(
+                "[AuthenticationService] GOOGLE_SERVICE_ACCOUNT_SUBS is empty, "
+                "rejecting every Google token. Set it on the environment's secret."
+            )
+            raise ValueError("Google Token Invalid: caller not allowed")
+
+        # Omitted from the raised message so a caller probing the endpoint
+        # learns nothing about the expected value.
+        sub = payload.get("sub")
+        if sub not in GOOGLE_SERVICE_ACCOUNT_SUBS:
+            self.logger.warning(
+                "[AuthenticationService] Rejected Google token from "
+                "non-allowlisted service account: sub=%s email=%s",
+                sub,
+                payload.get("email"),
+            )
+            raise ValueError("Google Token Invalid: caller not allowed")
+
+        return self._build_context(payload, source="google")
 
     def _get_cf_signing_key(self, token: str):
         """
