@@ -6,6 +6,7 @@ from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.event_entity import EventEntity
 from backend.entity.job_entity import JobEntity
+from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.users_entity import UsersEntity
 from backend.notification_management import recipient_registry, render_registry
 from backend.recruiting import notification_renderers  # noqa: F401 (registers)
@@ -84,6 +85,84 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
 
         self.assertEqual(subject, "New application: Ada Lovelace for Backend Engineer")
         self.assertIn("Recruiter screening stage", body)
+
+    async def test_base_dto_resolves_the_candidate_primary_address(self):
+        """The primary address wins over an older claim.
+
+        A candidate typically has more than one row: the address seeded from
+        their first login, plus whatever they later made primary. Picking the
+        first row found would name the stale one, so this asserts the mail
+        goes through the same primary-else-oldest rule the board and the
+        blacklist page read.
+        """
+        candidate = _make_user("Ada", "Lovelace")
+        await self.insert_entities([candidate])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=candidate.user_id,
+                email="old@example.com",
+                otp_confirmed=True,
+                is_primary=False,
+            ),
+            UserEmailsEntity(
+                user_id=candidate.user_id,
+                email="ada@example.com",
+                otp_confirmed=True,
+                is_primary=True,
+            ),
+        ])
+        event = await self._make_event(
+            "recruiting.application_submitted",
+            "application",
+            application.application_id,
+            candidate,
+            details={"stage": ApplicationStage.RECRUITER_SCREENING.value},
+        )
+
+        dto = await notification_renderers._base_dto(self.session, event)
+
+        self.assertEqual(dto.applicant_email, "ada@example.com")
+
+        # And it reaches the body: the copy tests prove the line's shape from
+        # a hand-built dto, which cannot catch the renderer failing to feed it.
+        _, body = await render_registry.render(self.session, event)
+        self.assertIn("Candidate: Ada Lovelace (ada@example.com)", body)
+
+    async def test_base_dto_leaves_the_address_none_when_there_is_none(self):
+        """A candidate with no email rows, and a job-scoped event that has no
+        candidate at all, both resolve to None rather than "" -- the copy
+        decides what to print from that."""
+        candidate = _make_user("Ada", "Lovelace")
+        await self.insert_entities([candidate])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        application_event = await self._make_event(
+            "recruiting.application_submitted",
+            "application",
+            application.application_id,
+            candidate,
+            details={"stage": ApplicationStage.RECRUITER_SCREENING.value},
+        )
+        job_event = await self._make_event(
+            "recruiting.review_decided",
+            "job",
+            job.job_id,
+            candidate,
+            details={"kind": "initial", "decision": "approved", "comment": None},
+        )
+
+        self.assertIsNone(
+            (
+                await notification_renderers._base_dto(self.session, application_event)
+            ).applicant_email
+        )
+        self.assertIsNone(
+            (
+                await notification_renderers._base_dto(self.session, job_event)
+            ).applicant_email
+        )
 
     async def test_application_submitted_reads_as_auto_hired_when_a_rule_hired_it(
         self,

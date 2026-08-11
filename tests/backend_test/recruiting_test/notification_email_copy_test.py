@@ -22,6 +22,7 @@ def _dto(**overrides):
         job_title="Backend Engineer",
         job_kind=JobKind.EMPLOYMENT,
         applicant_name="Ada Lovelace",
+        applicant_email="ada@example.com",
         actor_name="Grace Hopper",
         created_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
         # Read only by the templates that mention them; harmless elsewhere.
@@ -208,6 +209,73 @@ class TestRender(unittest.TestCase):
             with self.subTest(template=name):
                 _, body = template(_dto(), ApplicationStage.TECH)
                 self.assertNotIn("&rarr;", body)
+
+
+class TestCandidateLine(unittest.TestCase):
+    """The address exists in the copy to survive a renamed candidate.
+
+    A display name is mutable and not unique, so an owner reading mail about
+    "Ada Lovelace" may not be able to tell which application it means. The
+    address is the handle they can paste into the board's search.
+    """
+
+    # The three job-scoped templates: a posting under review has no
+    # candidate, so there is no address to print.
+    _NO_CANDIDATE = {
+        "_job_review_requested",
+        "_job_review_approved",
+        "_job_review_rejected",
+    }
+
+    def test_names_the_candidate_and_the_address(self):
+        _, body = notification_email_copy._stage_changed(_dto(), ApplicationStage.TECH)
+
+        self.assertIn("Candidate: Ada Lovelace (ada@example.com)", body)
+
+    def test_prints_the_address_alone_when_the_name_resolves_to_nothing(self):
+        """The case the line exists for: no name to show, address still known."""
+        _, body = notification_email_copy._stage_changed(
+            _dto(applicant_name=""), ApplicationStage.TECH
+        )
+
+        self.assertIn("Candidate: ada@example.com", body)
+        self.assertNotIn("()", body)
+
+    def test_omits_the_line_when_there_is_no_address(self):
+        """A name-only line would repeat what the body already says."""
+        _, body = notification_email_copy._stage_changed(
+            _dto(applicant_email=None), ApplicationStage.TECH
+        )
+
+        self.assertNotIn("Candidate:", body)
+
+    def test_omits_the_line_when_neither_is_known(self):
+        _, body = notification_email_copy._stage_changed(
+            _dto(applicant_name="", applicant_email=None), ApplicationStage.TECH
+        )
+
+        self.assertNotIn("Candidate:", body)
+
+    def test_every_candidate_template_prints_the_line(self):
+        """Swept, not listed, so a template added later cannot skip it.
+
+        A template that forgot the line would send mail identifying its
+        candidate by a mutable name only, and nothing else would notice.
+        """
+        for name, template in _every_template():
+            if name in self._NO_CANDIDATE:
+                continue
+            with self.subTest(template=name):
+                _, body = template(_dto(), ApplicationStage.TECH)
+                self.assertIn("Candidate: Ada Lovelace (ada@example.com)", body)
+
+    def test_no_job_scoped_template_prints_the_line(self):
+        for name in self._NO_CANDIDATE:
+            with self.subTest(template=name):
+                _, body = getattr(notification_email_copy, name)(
+                    _dto(), ApplicationStage.TECH
+                )
+                self.assertNotIn("Candidate:", body)
 
 
 if __name__ == "__main__":
