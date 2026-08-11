@@ -43,6 +43,15 @@ CF_TEAM_DOMAIN = os.getenv("CF_TEAM_DOMAIN")
 CF_AUD_TAG = os.getenv("CF_AUD_TAG")
 GOOGLE_AUDIENCE = os.getenv("GOOGLE_AUDIENCE")
 
+# Comma-separated `unique_id`s of the service accounts allowed to authenticate
+# with a Google identity token. Unset or empty parses to an empty set, which
+# _verify_google refuses rather than falling back to the audience-only check.
+GOOGLE_SERVICE_ACCOUNT_SUBS = frozenset(
+    s.strip()
+    for s in (os.getenv("GOOGLE_SERVICE_ACCOUNT_SUBS") or "").split(",")
+    if s.strip()
+)
+
 TAILSCALE_PROXY = "TAILSCALE_PROXY"
 
 MENTORSHIP_MENTOR_ONBOARDING_LINK = "MENTORSHIP_MENTOR_ONBOARDING_LINK"
