@@ -97,8 +97,18 @@ async def _base_dto(session: AsyncSession, event: EventEntity) -> SimpleNamespac
     Returns:
         SimpleNamespace: job_title/job_kind/applicant_name/actor_name, plus
             whatever event-type-specific fields the caller adds afterwards.
+            ``actor_name`` is None for an event the system recorded under its
+            own rules, "" for an actor who no longer resolves, and a name
+            otherwise -- three states the copy reads apart.
     """
-    actor_name = await _display_name(session, event.actor_id)
+    # A null actor stays None instead of being resolved: "" is what an actor
+    # whose user row is gone resolves to, and the copy words those two cases
+    # differently on purpose (see ``notification_email_copy``'s module
+    # docstring). Resolving NULL here would answer "" for it as well and
+    # report the pipeline's own rule as a person nobody can name.
+    actor_name = (
+        None if event.actor_id is None else await _display_name(session, event.actor_id)
+    )
     if event.subject_type == "application":
         job_title, job_kind, applicant_name = await _application_context(
             session, event.subject_id
