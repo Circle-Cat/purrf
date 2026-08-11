@@ -89,17 +89,6 @@ class ApplicationStage(StrEnum):
 MENTOR_ALLOWED_EMAIL_DOMAINS: frozenset[str] = frozenset({"google.com"})
 
 
-class NotificationType(StrEnum):
-    ASSIGNED_TO_EVALUATE = "assigned_to_evaluate"
-    MENTIONED = "mentioned"
-    JOB_REVIEW_REQUESTED = "job_review_requested"
-    JOB_REVIEW_APPROVED = "job_review_approved"
-    JOB_REVIEW_REJECTED = "job_review_rejected"
-    APPLICATION_SUBMITTED = "application_submitted"
-    APPLICATION_AUTO_REJECTED = "application_auto_rejected"
-    APPLICATION_AUTO_HIRED = "application_auto_hired"
-
-
 class RecruitingEvent(StrEnum):
     """Every recruiting event type that may be recorded on the event log.
 

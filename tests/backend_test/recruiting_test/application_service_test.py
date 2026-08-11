@@ -25,9 +25,6 @@ from backend.common.recruiting_enums import (
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
 )
-from backend.repository.application_activity_repository import (
-    ApplicationActivityRepository,
-)
 
 
 # The three fields every submission must carry, and one complete row of each
@@ -84,9 +81,6 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assignment_repo = create_autospec(
             ApplicationAssignmentRepository, instance=True
         )
-        self.activity_repo = create_autospec(
-            ApplicationActivityRepository, instance=True
-        )
         self.session = AsyncMock()
         recorder = patch(
             "backend.recruiting.application_service.record_event",
@@ -111,7 +105,6 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self.users_repo,
             RecruitingMapper(),
             self.assignment_repo,
-            self.activity_repo,
             self.notification_repo,
             self.user_emails_repo,
             self.onboarding_training_svc,
