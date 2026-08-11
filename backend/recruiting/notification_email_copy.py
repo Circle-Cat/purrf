@@ -76,6 +76,31 @@ def _round_suffix(round_number: int | None) -> str:
     return f", session {round_number}"
 
 
+def _candidate_line(dto) -> str:
+    """The "Candidate: ..." paragraph, or "" when there is no address.
+
+    A display name is mutable and not unique, so naming the candidate's
+    address gives the reader a handle that survives a rename and can be
+    pasted into the board's search. It is its own paragraph rather than
+    inlined because every body names the candidate possessively
+    ("{applicant}'s interview"), where an inlined address would read
+    "Ada Lovelace (ada@example.com)'s interview".
+
+    Args:
+        dto: The display fields, carrying applicant_name and applicant_email.
+
+    Returns:
+        str: "<p>Candidate: Name (address)</p>", "<p>Candidate: address</p>"
+            when the name resolved to nothing, or "" when no address is on
+            file -- a name-only line would only repeat the body.
+    """
+    if not dto.applicant_email:
+        return ""
+    if not dto.applicant_name:
+        return f"<p>Candidate: {dto.applicant_email}</p>"
+    return f"<p>Candidate: {dto.applicant_name} ({dto.applicant_email})</p>"
+
+
 def _assigned_to_evaluate(dto, stage):
     applicant = dto.applicant_name or _MISSING_APPLICANT
     if dto.actor_name is None:
@@ -95,6 +120,7 @@ def _assigned_to_evaluate(dto, stage):
     return (
         f"Evaluation assigned: {applicant} ({dto.job_title})",
         f"<p>{opening}</p>"
+        f"{_candidate_line(dto)}"
         f"<p>Stage: {stage_label(stage, dto.job_kind)}"
         f"{_round_suffix(dto.round)}.</p>"
         "<p>Open My Interview Evaluations in Purrf to submit your "
@@ -109,6 +135,7 @@ def _mentioned(dto, stage):
         f"{actor} mentioned you: {applicant} ({dto.job_title})",
         f"<p>{actor} mentioned you in a comment on {applicant}'s "
         f"application for {dto.job_title}.</p>"
+        f"{_candidate_line(dto)}"
         "<p>Open the application in Purrf and go to its Comments tab to "
         "read the thread and reply.</p>",
     )
@@ -152,6 +179,7 @@ def _application_submitted(dto, stage):
         f"<p>{applicant} applied to {dto.job_title}. The application is "
         f"waiting for review at the {stage_label(stage, dto.job_kind)} "
         "stage.</p>"
+        f"{_candidate_line(dto)}"
         "<p>You're receiving this because you own this posting. Open the "
         "Applications Board in Purrf to review it.</p>",
     )
@@ -163,6 +191,7 @@ def _application_auto_rejected(dto, stage):
         f"Application auto-rejected: {applicant} ({dto.job_title})",
         f"<p>{applicant} applied to {dto.job_title} and was rejected "
         "automatically, with no human review.</p>"
+        f"{_candidate_line(dto)}"
         "<p>The reason is recorded on the application's timeline in Purrf. "
         "No action is needed unless you want to overturn it.</p>",
     )
@@ -177,6 +206,7 @@ def _application_auto_hired(dto, stage):
         f"Application auto-{verb}: {applicant} ({dto.job_title})",
         f"<p>{applicant} applied to {dto.job_title} and was {verb} "
         "automatically, with no human review.</p>"
+        f"{_candidate_line(dto)}"
         "<p>The matching screening rule is recorded on the application's "
         "timeline in Purrf.</p>",
     )
@@ -233,6 +263,7 @@ def _blacklisted(dto, stage):
         f"Application blacklisted: {applicant} ({dto.job_title})",
         f"<p>{actor} blacklisted {applicant} and rejected their application "
         f'for {dto.job_title}, with the reason: "{dto.reason}".</p>'
+        f"{_candidate_line(dto)}"
         "<p>Open the Blacklist page in Purrf to review the block.</p>",
     )
 
@@ -244,6 +275,7 @@ def _stage_changed(dto, stage):
         f"Stage changed: {applicant} ({dto.job_title})",
         f"<p>{actor} moved {applicant}'s application for {dto.job_title} to "
         f"the {stage_label(stage, dto.job_kind)} stage.</p>"
+        f"{_candidate_line(dto)}"
         "<p>Open the Applications Board in Purrf to see it.</p>",
     )
 
@@ -255,6 +287,7 @@ def _round_advanced(dto, stage):
         f"Round advanced: {applicant} ({dto.job_title})",
         f"<p>{actor} advanced {applicant}'s {stage_label(stage, dto.job_kind)} "
         f"round for {dto.job_title} to round {dto.round}.</p>"
+        f"{_candidate_line(dto)}"
         "<p>Open the Applications Board in Purrf to see it.</p>",
     )
 
@@ -266,6 +299,7 @@ def _sub_status_changed(dto, stage):
         f"Status changed: {applicant} ({dto.job_title})",
         f"<p>{actor} moved {applicant}'s {stage_label(stage, dto.job_kind)} "
         f"status for {dto.job_title} to {_humanize(dto.to_sub_status)}.</p>"
+        f"{_candidate_line(dto)}"
         "<p>Open the Applications Board in Purrf to see it.</p>",
     )
 
@@ -277,6 +311,7 @@ def _evaluation_confirmed(dto, stage):
         f"Evaluation submitted: {applicant} ({dto.job_title})",
         f"<p>{actor} submitted their evaluation of {applicant} for "
         f"{dto.job_title}.</p>"
+        f"{_candidate_line(dto)}"
         f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
         "<p>Open the Applications Board in Purrf to read it.</p>",
     )
@@ -289,6 +324,7 @@ def _interview_scheduled(dto, stage):
         f"Interview scheduled: {applicant} ({dto.job_title})",
         f"<p>{actor} scheduled an interview with {applicant} for "
         f"{dto.job_title}, on {_format_utc(dto.start_at)}.</p>"
+        f"{_candidate_line(dto)}"
         f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
         "<p>Open the Applications Board in Purrf to see it.</p>",
     )
@@ -301,6 +337,7 @@ def _interview_updated(dto, stage):
         f"Interview rescheduled: {applicant} ({dto.job_title})",
         f"<p>{actor} rescheduled {applicant}'s interview for {dto.job_title} "
         f"to {_format_utc(dto.start_at)}.</p>"
+        f"{_candidate_line(dto)}"
         f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
         "<p>Open the Applications Board in Purrf to see it.</p>",
     )
@@ -313,6 +350,7 @@ def _interview_cancelled(dto, stage):
         f"Interview cancelled: {applicant} ({dto.job_title})",
         f"<p>{actor} cancelled {applicant}'s interview for {dto.job_title}, "
         f"which was set for {_format_utc(dto.start_at)}.</p>"
+        f"{_candidate_line(dto)}"
         f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
         "<p>Open the Applications Board in Purrf to see it.</p>",
     )

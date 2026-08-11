@@ -99,22 +99,20 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
         await self.insert_entities([candidate])
         job = await self._make_job()
         application = await self._make_application(job.job_id, candidate)
-        await self.insert_entities(
-            [
-                UserEmailsEntity(
-                    user_id=candidate.user_id,
-                    email="old@example.com",
-                    otp_confirmed=True,
-                    is_primary=False,
-                ),
-                UserEmailsEntity(
-                    user_id=candidate.user_id,
-                    email="ada@example.com",
-                    otp_confirmed=True,
-                    is_primary=True,
-                ),
-            ]
-        )
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=candidate.user_id,
+                email="old@example.com",
+                otp_confirmed=True,
+                is_primary=False,
+            ),
+            UserEmailsEntity(
+                user_id=candidate.user_id,
+                email="ada@example.com",
+                otp_confirmed=True,
+                is_primary=True,
+            ),
+        ])
         event = await self._make_event(
             "recruiting.application_submitted",
             "application",
@@ -126,6 +124,11 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
         dto = await notification_renderers._base_dto(self.session, event)
 
         self.assertEqual(dto.applicant_email, "ada@example.com")
+
+        # And it reaches the body: the copy tests prove the line's shape from
+        # a hand-built dto, which cannot catch the renderer failing to feed it.
+        _, body = await render_registry.render(self.session, event)
+        self.assertIn("Candidate: Ada Lovelace (ada@example.com)", body)
 
     async def test_base_dto_leaves_the_address_none_when_there_is_none(self):
         """A candidate with no email rows, and a job-scoped event that has no
