@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
+from backend.common.api_endpoints import NOTIFICATION_DELIVER_ENDPOINT
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.identity_type import is_rowless_login
 from backend.common.permissions import (
@@ -16,6 +17,16 @@ from backend.common.permissions import (
 # Maps stored permission_name strings back to Permission members; unknown
 # (stale) names are skipped during resolution.
 _PERMISSION_BY_VALUE = {p.value: p for p in Permission}
+
+# Paths this middleware does not authenticate, matched exactly rather than by
+# prefix so a future sibling route cannot inherit the exemption.
+#
+# The Pub/Sub push endpoint is reached by Google, not by a person: it carries a
+# Google OIDC token and no Auth0 session, so authenticating it here rejects
+# every push with a 400 before the handler runs. Its guard is the Cloudflare
+# Worker that verifies that token, plus the Access Service Auth policy in front
+# of the origin -- the request cannot arrive without passing both.
+_UNAUTHENTICATED_PATHS = frozenset({f"/api{NOTIFICATION_DELIVER_ENDPOINT}"})
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -108,6 +119,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
             Response: The response returned by the next handler, or an error response
                     if authentication fails.
         """
+        if request.url.path in _UNAUTHENTICATED_PATHS:
+            return await call_next(request)
+
         try:
             # authenticate_request is synchronous and may issue a blocking
             # JWKS HTTP fetch on cache miss. Offload to a worker thread so

@@ -49,6 +49,7 @@ py_library(
         "auth_middleware.py",
     ],
     deps = [
+        "//backend/common:api_endpoints",
         "//backend/common:fast_api_response_wrapper",
         "//backend/common:identity_type",
         "//backend/common:permissions",
