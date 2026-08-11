@@ -97,11 +97,15 @@ const PersonalDashboard = () => {
           <h2 className="m-0 text-lg font-medium">Welcome</h2>
         </div>
 
-        <GoogleMeetingControl
-          meetingRoundId={isCurrentRoundActive ? Number(selectedRoundId) : null}
-          onRefresh={refreshMeetings}
-          userTimezone={userTimezone}
-        />
+        {showMentorshipSection && (
+          <GoogleMeetingControl
+            meetingRoundId={
+              isCurrentRoundActive ? Number(selectedRoundId) : null
+            }
+            onRefresh={refreshMeetings}
+            userTimezone={userTimezone}
+          />
+        )}
       </div>
 
       {/* My Applications card */}
