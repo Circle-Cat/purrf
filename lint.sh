@@ -43,8 +43,8 @@ fi
 TARGET_KINDS='".*_(test|binary|library)"'
 
 # Bazel package paths to search for targets.
-# This includes backend, frontend, and test directories.
-TARGET_PATHS='//backend/... + //frontend/... + //tests/...'
+# This includes backend, frontend, test, and worker directories.
+TARGET_PATHS='//backend/... + //frontend/... + //tests/... + //workers/...'
 
 args_without_all=()
 need_all=false
