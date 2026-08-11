@@ -4,7 +4,11 @@
  * presentational HowItWorksDialog component.
  */
 
-/** Author-facing guide for the Postings page. */
+/**
+ * Author-facing lifecycle guide, shown on both the Postings list and a
+ * posting's own page. Wording stays neutral about which of the two the reader
+ * is on, and names the page a control lives on rather than saying "here".
+ */
 export const POSTINGS_GUIDE = {
   title: "How postings work",
   description: "The lifecycle of a job posting, from draft to closed.",
@@ -12,7 +16,7 @@ export const POSTINGS_GUIDE = {
     {
       title: "Create a draft",
       detail:
-        'Use "New posting" to start. It saves as a draft that only you can see.',
+        'Start from "New posting" on the Job Postings page. It saves as a draft that only you can see.',
     },
     {
       title: "Build the posting",
@@ -22,7 +26,7 @@ export const POSTINGS_GUIDE = {
     {
       title: "Submit for review",
       detail:
-        'Pick a reviewer and add an optional message. The posting needs at least one pipeline stage and one owner ("Recruiter") before it can be submitted; once submitted it moves to pending review.',
+        'Open the posting and use "Submit for review" in its Operate row: pick a reviewer and add an optional message. The posting needs at least one pipeline stage and one owner ("Recruiter") before it can be submitted; once submitted it moves to pending review, and the Operate row stays empty until the reviewer decides.',
     },
     {
       title: "Get a decision",

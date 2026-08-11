@@ -69,6 +69,19 @@ describe("PostingDetailPage", () => {
     api.listMyReviews.mockResolvedValue({ data: [] });
   });
 
+  // The lifecycle guide belongs wherever the lifecycle actions are, and every
+  // one of them lives on this page rather than on the list it links from.
+  it("shows the How it works guide with the posting lifecycle", async () => {
+    renderAt(1);
+    await screen.findByRole("heading", { name: "Backend Engineer" });
+    fireEvent.click(screen.getByRole("button", { name: "How it works" }));
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByRole("heading", { name: "How postings work" }),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText("Submit for review")).toBeInTheDocument();
+  });
+
   it("shows the Operate block for a canWrite viewer", async () => {
     authState.permissions = ["recruiting.job.write"];
     renderAt(1);
