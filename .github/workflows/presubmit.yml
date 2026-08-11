@@ -17,6 +17,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      workers: ${{ steps.filter.outputs.workers }}
       build: ${{ steps.filter.outputs.build }}
     steps:
       - uses: dorny/paths-filter@v3
@@ -34,6 +35,14 @@ jobs:
             frontend:
               - 'frontend/**'
               - 'tests/frontend_test/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'eslint.config.mjs'
+            # The gateway Worker ships through wrangler rather than the bazel
+            # image, but its tests and sources are bazel targets. Without this
+            # filter a worker-only PR matches nothing and skips the whole job.
+            workers:
+              - 'workers/**'
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'eslint.config.mjs'
@@ -56,6 +65,7 @@ jobs:
       (github.event_name == 'push' ||
        needs.changes.outputs.backend == 'true' ||
        needs.changes.outputs.frontend == 'true' ||
+       needs.changes.outputs.workers == 'true' ||
        needs.changes.outputs.build == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -63,6 +73,7 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/testdb
       RUN_BACKEND: ${{ github.event_name == 'push' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.build == 'true' }}
       RUN_FRONTEND: ${{ github.event_name == 'push' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.build == 'true' }}
+      RUN_WORKERS: ${{ github.event_name == 'push' || needs.changes.outputs.workers == 'true' || needs.changes.outputs.build == 'true' }}
     services:
       postgres:
         image: postgres:18.1-alpine
@@ -103,6 +114,16 @@ jobs:
           --discard_analysis_cache --nokeep_state_after_build --notrack_incremental_state
           --test_output=errors
           //tests/frontend_test/...
+
+      # Separate from the frontend step so a one-line Worker change does not
+      # pull in all 10 frontend shards, and vice versa.
+      - name: Worker tests
+        if: env.RUN_WORKERS == 'true'
+        run: >-
+          bazel --max_idle_secs=10 test
+          --discard_analysis_cache --nokeep_state_after_build --notrack_incremental_state
+          --test_output=errors
+          //workers/...
 
   promotion-guard:
     if: >-
