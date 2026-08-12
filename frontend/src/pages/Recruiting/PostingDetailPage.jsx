@@ -29,14 +29,16 @@ import {
   decideReview,
 } from "@/api/recruitingApi";
 import SubmitReviewDialog from "@/pages/Recruiting/components/SubmitReviewDialog";
-import PostingStatusBadges from "@/pages/Recruiting/components/PostingStatusBadges";
+import PostingStatusBadges, {
+  rejectTermId,
+} from "@/pages/Recruiting/components/PostingStatusBadges";
 import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
 import { POSTINGS_GUIDE } from "@/pages/Recruiting/components/guideContent";
-import { rejectKindLabel } from "@/pages/Recruiting/components/rejectKindLabels";
 import PostingConfigSummary from "@/pages/Recruiting/components/PostingConfigSummary";
 import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import PendingNotice from "@/pages/Recruiting/components/PendingNotice";
+import { GLOSSARY } from "@/pages/Recruiting/components/glossary";
 
 /**
  * What the posting is waiting on, per status with no Operate action left.
@@ -381,7 +383,7 @@ const PostingDetailPage = () => {
       {job.lastRejectComment && (
         <div className="space-y-1 rounded border border-red-200 bg-red-50 p-3">
           <p className="text-sm font-medium text-red-800">
-            {rejectKindLabel(job.lastRejectKind)}
+            {GLOSSARY[rejectTermId(job.lastRejectKind)].label}
           </p>
           <p className="text-sm whitespace-pre-line text-red-700">
             {job.lastRejectComment}

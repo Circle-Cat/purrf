@@ -76,7 +76,108 @@ export const GLOSSARY = {
     label: "Draft",
     hint: "Not yet published. A posting keeps its Draft badge while a review is open — that's why you can't edit it right now.",
   },
+  "posting.published": {
+    label: "Published",
+    hint: "Live and accepting applications.",
+  },
+  "posting.closed": {
+    label: "Closed",
+    hint: "Not accepting applications. Reopen it if it was ever published, or delete it if it never was.",
+  },
+  "posting.pending_review": {
+    label: "Pending review",
+    hint: "Waiting on a reviewer's approve or reject decision. Nothing can be edited meanwhile.",
+  },
+  "posting.revision_pending_review": {
+    label: "Revision pending review",
+    hint: "An edit to this live posting is awaiting review. What's live stays live and keeps accepting applications.",
+  },
+  "posting.pending_close": {
+    label: "Pending close",
+    hint: "A close request is awaiting review. The posting stays published until it is approved.",
+  },
+  "posting.pending_reopen": {
+    label: "Pending reopen",
+    hint: "A reopen request is awaiting review. The posting stays closed until it is approved.",
+  },
+  "reject.initial": {
+    label: "Initial submission rejected",
+    hint: "The reviewer sent this back instead of publishing it, and it is a Draft again. Their comment is in the panel below.",
+  },
+  "reject.revision": {
+    label: "Revision rejected",
+    hint: "The reviewer rejected a staged edit. What's live is untouched and the edit is kept, so you can resubmit or discard it.",
+  },
+  "reject.close": {
+    label: "Close request rejected",
+    hint: "The reviewer rejected a close request, so the posting stays published exactly as it was.",
+  },
+  "reject.reopen": {
+    label: "Reopen request rejected",
+    hint: "The reviewer rejected a reopen request, so the posting stays closed exactly as it was.",
+  },
+  "reject.unknown": {
+    label: "Sent back",
+    hint: "A reviewer sent this back. Their comment is in the panel below.",
+  },
+  "tag.cold_freeze": {
+    label: "Cold freeze",
+    hint: "This applicant is reapplying inside the posting's cooldown window. It does not block them — it is here for your judgement.",
+  },
+  "tag.blacklisted": {
+    label: "Blacklisted",
+    hint: "This applicant is currently blocked from every posting. The tag can appear even if nobody was blacklisted from this posting, because blacklisting sweeps every posting the person has applied to.",
+  },
+  "tag.blacklist_lifted": {
+    label: "Blacklist Lifted",
+    hint: "This applicant was blacklisted and has since been unblocked, so they are not blocked now.",
+  },
+  "review.initial": {
+    label: "Initial Request",
+    hint: "First submission of a draft for publication. Rejecting sends it back to Draft.",
+  },
+  "review.revision": {
+    label: "Revision Request",
+    hint: "An edit to an already-published posting. Rejecting leaves it published and keeps the edit, so the author can resubmit or discard it.",
+  },
+  "review.close": {
+    label: "Close Request",
+    hint: "A request to close a published posting. Rejecting just aborts the request.",
+  },
+  "review.reopen": {
+    label: "Reopen Request",
+    hint: "A request to reopen a closed posting. Rejecting just aborts the request.",
+  },
+  "concept.recruiter": {
+    label: "Recruiter",
+    hint: "Staff who can advance applicants through every stage of this posting's pipeline.",
+  },
+  "concept.stage": {
+    label: "Stage",
+    hint: "One step of the interview pipeline, e.g. recruiter screening or tech. Each can require several sessions.",
+  },
+  "concept.screen_rule": {
+    label: "Screening rule",
+    hint: "An automatic condition checked against an applicant's answers or verified email domain the moment they apply. It can reject them, qualify them, or hire them outright with no human review.",
+  },
+  "concept.profile_requirement": {
+    label: "Profile requirement",
+    hint: "Whether education, work experience and resume are Required, Optional or Off for applicants.",
+  },
 };
+
+/**
+ * A term's explanation as a plain string, for the places a `TermHint` cannot
+ * go. The board's applicant card is one clickable `<button>`, so a tooltip
+ * trigger inside it would nest a control in a control and steal the click the
+ * card exists to receive; a `title` attribute is an attribute, not an element,
+ * and does neither. Same copy, weaker affordance, used only where structure
+ * rules the component out.
+ *
+ * @param {string} id A glossary id.
+ * @returns {string|undefined} The hint, or undefined for an unknown id.
+ */
+export const termHint = (id) => GLOSSARY[id]?.hint;
 
 /**
  * Lock reasons, mirroring `ApplicationLockReason` in
