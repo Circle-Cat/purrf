@@ -70,6 +70,17 @@ resource "kubernetes_secret" "purrf_app" {
     GMAIL_REFRESH_TOKEN       = var.gmail_refresh_token
     GMAIL_SENDER_RECRUITING   = var.gmail_sender_recruiting
     GMAIL_SENDER_NOTIFICATION = var.gmail_sender_notification
+
+    # Where notification messages are published. The full
+    # projects/<project>/topics/<topic> path, not the bare name, because that
+    # is what the publisher takes. The backend refuses to start without it, so
+    # this apply has to land before the image that reads it rolls out.
+    NOTIFICATION_TOPIC = google_pubsub_topic.notifications.id
+
+    # The service accounts whose tokens the delivery route accepts.
+    NOTIFICATION_PUSHER_SUBS = google_service_account.notification_pusher.unique_id
+
+    GOOGLE_SERVICE_ACCOUNT_SUBS = data.google_service_account.purrf_service.unique_id
   }
 }
 
@@ -79,6 +90,10 @@ resource "kubernetes_secret" "purrf_app" {
 resource "random_password" "email_otp_state_secret" {
   length  = 64
   special = false
+}
+
+data "google_service_account" "purrf_service" {
+  account_id = "projects/purrf-452300/serviceAccounts/purrf-service@purrf-452300.iam.gserviceaccount.com"
 }
 
 resource "google_service_account_iam_member" "purrf_service_wi" {

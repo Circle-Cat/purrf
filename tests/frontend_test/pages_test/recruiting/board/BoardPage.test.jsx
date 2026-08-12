@@ -454,7 +454,7 @@ describe("BoardPage", () => {
     );
   });
 
-  it("splits a multi-round stage into one lane per round, buckets cards by round, and badges each round lane with its own count (not the whole-stage total)", async () => {
+  it("splits a multi-session stage into one lane per session, buckets cards by round, and badges each session lane with its own count (not the whole-stage total)", async () => {
     const jobC = {
       id: 3,
       title: "Staff Engineer",
@@ -516,9 +516,9 @@ describe("BoardPage", () => {
     renderPage();
 
     await waitFor(() =>
-      expect(screen.getByText("Tech — Round 1")).toBeInTheDocument(),
+      expect(screen.getByText("Tech — Session 1")).toBeInTheDocument(),
     );
-    expect(screen.getByText("Tech — Round 2")).toBeInTheDocument();
+    expect(screen.getByText("Tech — Session 2")).toBeInTheDocument();
 
     const round1Lane = screen.getByTestId("lane-tech:1");
     expect(
@@ -527,7 +527,7 @@ describe("BoardPage", () => {
     expect(
       within(round1Lane).queryByText("Round Two Person"),
     ).not.toBeInTheDocument();
-    // Each round lane badges its own 1-card round bucket, not the
+    // Each session lane badges its own 1-card session bucket, not the
     // whole-stage total of 2.
     expect(within(round1Lane).getByText("1")).toBeInTheDocument();
 
@@ -592,9 +592,9 @@ describe("BoardPage", () => {
     renderPage();
 
     await waitFor(() =>
-      expect(screen.getByText("Tech — Round 2")).toBeInTheDocument(),
+      expect(screen.getByText("Tech — Session 2")).toBeInTheDocument(),
     );
-    expect(screen.queryByText("Tech — Round 3")).not.toBeInTheDocument();
+    expect(screen.queryByText("Tech — Session 3")).not.toBeInTheDocument();
 
     const lastLane = screen.getByTestId("lane-tech:2");
     expect(within(lastLane).getByText("Round Two Person")).toBeInTheDocument();

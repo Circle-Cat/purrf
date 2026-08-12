@@ -4,7 +4,11 @@
  * presentational HowItWorksDialog component.
  */
 
-/** Author-facing guide for the Postings page. */
+/**
+ * Author-facing lifecycle guide, shown on both the Postings list and a
+ * posting's own page. Wording stays neutral about which of the two the reader
+ * is on, and names the page a control lives on rather than saying "here".
+ */
 export const POSTINGS_GUIDE = {
   title: "How postings work",
   description: "The lifecycle of a job posting, from draft to closed.",
@@ -12,7 +16,7 @@ export const POSTINGS_GUIDE = {
     {
       title: "Create a draft",
       detail:
-        'Use "New posting" to start. It saves as a draft that only you can see.',
+        'Start from "New posting" on the Job Postings page. It saves as a draft that only you can see.',
     },
     {
       title: "Build the posting",
@@ -22,7 +26,7 @@ export const POSTINGS_GUIDE = {
     {
       title: "Submit for review",
       detail:
-        'Pick a reviewer and add an optional message. The posting needs at least one pipeline stage and one owner ("Managed by") before it can be submitted; once submitted it moves to pending review.',
+        'Open the posting and use "Submit for review" in its Operate row: pick a reviewer and add an optional message. The posting needs at least one pipeline stage and one owner ("Recruiter") before it can be submitted; once submitted it moves to pending review, and the Operate row stays empty until the reviewer decides.',
     },
     {
       title: "Get a decision",
@@ -93,7 +97,7 @@ export const POSTING_EDITOR_GUIDE = {
     {
       title: "Basics",
       detail:
-        "Title, description, kind, optional mentorship role, and a cooldown before a rejected applicant can re-apply. Kind and mentorship role lock once the posting is published.",
+        "Title, description, posting type, optional mentorship role, and a cooldown before a rejected applicant can re-apply. Posting type and mentorship role lock once the posting is published.",
     },
     {
       title: "Application form",
@@ -124,14 +128,14 @@ export const POSTING_EDITOR_GUIDE = {
   statusesTitle: "Key concepts",
   statuses: [
     {
-      name: "Managed by",
+      name: "Recruiter",
       description:
         "Staff who can advance applicants through every stage of this posting's pipeline.",
     },
     {
       name: "Stage",
       description:
-        "One step of the interview pipeline, e.g. recruiter screening or tech; each can require multiple rounds.",
+        "One step of the interview pipeline, e.g. recruiter screening or tech; each can require multiple sessions.",
     },
     {
       name: "Screen rule",
@@ -145,8 +149,8 @@ export const POSTING_EDITOR_GUIDE = {
     },
   ],
   notes: [
-    "Kind and mentorship role can only be changed while the posting is a draft.",
-    'Submitting for review needs at least one pipeline stage and one owner ("Managed by").',
+    "Posting type and mentorship role can only be changed while the posting is a draft.",
+    'Submitting for review needs at least one pipeline stage and one owner ("Recruiter").',
     "The live preview on the right updates as you edit.",
   ],
 };
@@ -215,7 +219,7 @@ export const APPLICATIONS_BOARD_GUIDE = {
     {
       title: "Read the lanes",
       detail:
-        'Each lane is one pipeline stage (multi-round stages split into Round 1, Round 2, ...), followed by the terminal lanes. Employment postings end with Offer, Hired, and Rejected; activity postings have no Offer lane and label the success lane "Admitted" instead of "Hired".',
+        'Each lane is one pipeline stage (multi-session stages split into Session 1, Session 2, ...), followed by the terminal lanes. Employment postings end with Offer, Hired, and Rejected; activity postings have no Offer lane and label the success lane "Admitted" instead of "Hired".',
     },
     {
       title: "Open an applicant",
@@ -243,7 +247,7 @@ export const APPLICATION_OWNER_GUIDE = {
     {
       title: "Advance",
       detail:
-        "Moves the applicant to the next stage (or next round, if the stage has more than one). If the current round has no confirmed evaluation yet, you're asked to confirm before advancing. Interview stages let you pick an assignee, or leave it for later.",
+        "Moves the applicant to the next stage (or next session, if the stage has more than one). If the current session has no confirmed evaluation yet, you're asked to confirm before advancing. Interview stages let you pick an assignee, or leave it for later.",
     },
     {
       title: "Reassign",
@@ -263,7 +267,7 @@ export const APPLICATION_OWNER_GUIDE = {
   ],
   notes: [
     "Scheduling an interview stage requires an assignee first.",
-    'The "Evaluated" sub-status can only be set once a confirmed evaluation exists for the current round.',
+    'The "Evaluated" sub-status can only be set once a confirmed evaluation exists for the current session.',
     "Blacklisting needs the blacklist permission; without it the button is disabled.",
     "read.all viewers see this same panel read-only — they can't act on it.",
   ],

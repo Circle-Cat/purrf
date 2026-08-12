@@ -3,22 +3,48 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.recruiting_enums import (
-    PUBLICLY_VISIBLE_JOB_STATUSES,
     ApplicationStage,
-    NotificationType,
+    PUBLICLY_VISIBLE_JOB_STATUSES,
+    RecruitingEvent,
 )
 from backend.dto.application_dto import (
     ApplicationDto,
     ApplicationEditDto,
     ApplicationSubmitDto,
 )
+from backend.dto.job_config_dto import (
+    LONG_TEXT_MAX_LENGTH,
+    SHORT_TEXT_MAX_LENGTH,
+)
 from backend.dto.user_context_dto import UserContextDto
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
-from backend.entity.notification_entity import NotificationEntity
-from backend.recruiting import cooldown, screen_rules, stage_machine
+from backend.notification_management.event_recorder import record_event
+from backend.recruiting import cooldown, form_visibility, screen_rules, stage_machine
 from backend.recruiting.board_service import INTERVIEW_STAGES
 from backend.recruiting.pipeline_owners import normalized_owner_ids
+
+
+# The fields every candidate must give, whatever the posting asks for: the
+# form marks them with a plain asterisk rather than a configurable one.
+_REQUIRED_PERSONAL = (
+    ("firstName", "a first name"),
+    ("lastName", "a last name"),
+    ("timezone", "a timezone"),
+)
+
+# What makes one row of each list an entry rather than a blank the candidate
+# started and left. Field names are the form's, because the form's shape is
+# what goes on the wire and gets stored verbatim.
+_EDUCATION_FIELDS = (
+    ("institution", "school"),
+    ("degree", "degree"),
+    ("field", "field of study"),
+)
+_EXPERIENCE_FIELDS = (("title", "title"), ("company", "company"))
+
+# Which `profile_config` key gates each list.
+_SECTION_CONFIG_KEY = {"education": "education", "experience": "workExperience"}
 
 
 class ApplicationService:
@@ -32,7 +58,6 @@ class ApplicationService:
         users_repository,
         recruiting_mapper,
         application_assignment_repository,
-        application_activity_repository,
         notification_repository,
         user_emails_repository,
         onboarding_training_service,
@@ -51,17 +76,9 @@ class ApplicationService:
                 Used to materialize a stage's configured default assignee
                 into a real assignment row when an application first lands
                 there (see ``_assign_default_if_configured``).
-            application_activity_repository (ApplicationActivityRepository):
-                Append-only audit log; ``submit`` logs
-                ``"application_submitted"`` or ``"auto_rejected"`` here on
-                every call, attributed to the candidate themselves.
-            notification_repository (NotificationRepository): Writes in-app
-                notification rows inside this transaction. The row is also
-                the email outbox -- NotificationEmailWorker picks it up once
-                it commits -- so nothing here sends mail. ``_assign_default_if_configured``
-                notifies the materialized default assignee here, and
-                ``_notify_owners_of_submission`` notifies the posting's
-                owners.
+            notification_repository (NotificationRepository): Same -- notification
+                rows are written by ``record_event`` from the resolved
+                recipients, not by this service.
             onboarding_training_service (OnboardingTrainingService): Assigns
                 the mentorship onboarding training task when an `auto_hire`
                 screen rule lands the submission directly on HIRED.
@@ -72,7 +89,6 @@ class ApplicationService:
         self.users_repository = users_repository
         self.recruiting_mapper = recruiting_mapper
         self.application_assignment_repository = application_assignment_repository
-        self.application_activity_repository = application_activity_repository
         self.notification_repository = notification_repository
         self.user_emails_repository = user_emails_repository
         self.onboarding_training_service = onboarding_training_service
@@ -83,13 +99,28 @@ class ApplicationService:
         return datetime.now(timezone.utc).date()
 
     @staticmethod
-    def _snapshot(dto) -> dict:
-        """Build the immutable submission snapshot from a submit/edit DTO."""
+    def _snapshot(dto, job) -> dict:
+        """Build the immutable submission snapshot from a submit/edit DTO.
+
+        Stores the job's form schema next to the answers so the answers can
+        always be labeled with the questions the candidate actually saw:
+        ``job.form_schema`` is overwritten in place whenever an owner edits
+        the posting, and no historical copy is kept anywhere else.
+
+        Args:
+            dto (ApplicationSubmitDto | ApplicationEditDto): The payload.
+            job (JobEntity): The posting being applied to, read for its
+                live ``form_schema`` at the moment of this write.
+
+        Returns:
+            dict: The snapshot persisted as ``ApplicationSubmissionEntity.submission``.
+        """
         return {
             "personal": dto.personal,
             "education": dto.education,
             "experience": dto.experience,
             "answers": dto.answers,
+            "formSchema": job.form_schema or {"questions": []},
         }
 
     @staticmethod
@@ -103,25 +134,220 @@ class ApplicationService:
             return len(value) > 0
         return True
 
+    @staticmethod
+    def _text_answer_cap(question) -> int | None:
+        """The character budget a text question actually enforces.
+
+        `short_text` has no length configuration and never will: choosing that
+        type is the author's statement about length. `long_text` takes the
+        author's budget when they set one and the hard ceiling when they did
+        not, so no text question is ever unbounded.
+
+        Args:
+            question (dict): One question out of the form schema, in the
+                camelCase shape the JSONB column stores.
+
+        Returns:
+            int | None: The budget, or None for a question that is not text.
+        """
+        qtype = question.get("type")
+        if qtype == "short_text":
+            return SHORT_TEXT_MAX_LENGTH
+        if qtype == "long_text":
+            authored = question.get("maxLength")
+            return LONG_TEXT_MAX_LENGTH if authored is None else authored
+        return None
+
+    @classmethod
+    def _question_value_error(cls, question, value) -> str | None:
+        """Why an answer does not fit the question that was asked, if it does not.
+
+        The form's own constraints -- an option list, a selection cap, a
+        length budget, a phrase to type back -- were authored and validated
+        but never enforced against a submission. Enforcing them here rather
+        than only in the browser matters twice over: the API accepts any JSON
+        for an answer, and a choice value outside the option list also decides
+        whether the questions that one gates are shown at all, so an
+        unconstrained value could hide a required question instead of
+        answering it.
+
+        Args:
+            question (dict): One question out of the form schema.
+            value: The recorded answer, already known to be non-empty.
+
+        Returns:
+            str | None: A message naming the question, or None when the
+                answer fits.
+        """
+        label = question.get("label") or question.get("id")
+        qtype = question.get("type")
+        options = question.get("options") or []
+
+        if qtype == "single_choice" and value not in options:
+            return f"{label}: pick one of the listed options"
+        if qtype == "multi_choice":
+            if not isinstance(value, list):
+                return f"{label}: pick from the listed options"
+            if any(v not in options for v in value):
+                return f"{label}: pick from the listed options"
+            cap = question.get("maxSelections")
+            if cap is not None and len(value) > cap:
+                return f"{label}: pick at most {cap}"
+        cap = cls._text_answer_cap(question)
+        if cap is not None and len(str(value)) > cap:
+            return f"{label}: keep this under {cap} characters"
+        if qtype == "exact_text":
+            expected = question.get("expectedValue") or ""
+            if str(value).strip() != expected:
+                return f"{label}: type {expected} exactly"
+        return None
+
     def _validate_submission(self, job, dto) -> None:
-        """Enforce résumé-required and required-question answers.
+        """Enforce what the posting asks of a submission.
+
+        ``required`` is enforced only on the questions the form was actually
+        showing: a required question gated behind a showWhen rule is not
+        displayed once the rule stops matching, so demanding an answer for it
+        would leave the candidate unable to submit a form they have filled in
+        completely.
+
+        Messages name a question by its label, not its id. They reach the
+        candidate verbatim, and ``q7`` appears nowhere on the page they are
+        looking at.
 
         Args:
             job (JobEntity): The posting the submission is for.
             dto (ApplicationSubmitDto | ApplicationEditDto): The payload.
 
         Raises:
-            ValueError: If a required résumé/answer is missing.
+            ValueError: If a required résumé, profile section or answer is
+                missing, or an answer does not fit the question asked.
         """
         profile_config = job.profile_config or {}
         if profile_config.get("resume") == "required" and not dto.resume_object_key:
             raise ValueError("this posting requires a résumé")
-        form_schema = job.form_schema or {}
-        for question in form_schema.get("questions", []):
-            if question.get("required") and not self._answered(
-                dto.answers.get(question["id"])
+        # Both sections carry a required marker in the form; nothing held the
+        # submission to it.
+        if profile_config.get("education") == "required" and not dto.education:
+            raise ValueError("this posting requires at least one education entry")
+        if profile_config.get("workExperience") == "required" and not dto.experience:
+            raise ValueError("this posting requires at least one experience entry")
+
+        personal = dto.personal or {}
+        for key, needed in _REQUIRED_PERSONAL:
+            if self._blank(personal.get(key)):
+                raise ValueError(f"your application needs {needed}")
+
+        # Rows are checked wherever they are shown -- an `optional` section
+        # means "you need not add one", not "a half-filled one is fine". A
+        # section switched `off` is skipped: it is not rendered, so a problem
+        # there could never be seen, let alone fixed.
+        #
+        # Deliberately only the presence rules, not the ordering ones the form
+        # also applies (a start date in the future, an end before a start).
+        # Those live in the browser alone, as they always have on the Profile
+        # page; mirroring them here would mean parsing the form's month names
+        # in Python for no protection that matters.
+        for section, rows, fields in (
+            ("education", dto.education, _EDUCATION_FIELDS),
+            ("experience", dto.experience, _EXPERIENCE_FIELDS),
+        ):
+            if profile_config.get(_SECTION_CONFIG_KEY[section]) == "off":
+                continue
+            for index, row in enumerate(rows or [], start=1):
+                problem = self._row_problem(row, fields)
+                if problem is not None:
+                    # Numbered, not keyed: the row's `rpf-9` id appears nowhere
+                    # on the page the candidate is looking at.
+                    raise ValueError(f"{section} entry {index}: {problem}")
+
+        for question in form_visibility.visible_questions(job.form_schema, dto.answers):
+            label = question.get("label") or question.get("id")
+            value = dto.answers.get(question["id"])
+            if not self._answered(value):
+                if question.get("required"):
+                    raise ValueError(f"{label} is required")
+                continue
+            problem = self._question_value_error(question, value)
+            if problem is not None:
+                raise ValueError(problem)
+            # The renderer marks the "Other" free text required whenever that
+            # option is picked, and until now nothing held it to that.
+            if form_visibility.other_selected(question, value) and not self._answered(
+                dto.answers.get(f"{question['id']}{form_visibility.OTHER_SUFFIX}")
             ):
-                raise ValueError(f"question {question['id']} is required")
+                raise ValueError(f"{label}: describe your answer")
+
+    @staticmethod
+    def _blank(value) -> bool:
+        """Missing, or nothing but whitespace."""
+        return not str(value or "").strip()
+
+    @classmethod
+    def _row_problem(cls, row, fields) -> str | None:
+        """What is missing from one education or experience row, if anything.
+
+        Args:
+            row (dict): One row in the form's shape.
+            fields (tuple): (key, human name) pairs that must be filled in.
+
+        Returns:
+            str | None: A phrase naming the first gap, or None when the row is
+                a real entry.
+        """
+        entry = row or {}
+        for key, name in fields:
+            if cls._blank(entry.get(key)):
+                return f"{name} is required"
+        if cls._blank(entry.get("startMonth")) or cls._blank(entry.get("startYear")):
+            return "a start date is required"
+        # A role still held has no end to give; the form hides the field.
+        if entry.get("isCurrentlyWorking"):
+            return None
+        if cls._blank(entry.get("endMonth")) or cls._blank(entry.get("endYear")):
+            return "an end date is required"
+        return None
+
+    @staticmethod
+    def _prune_hidden_answers(job, dto) -> None:
+        """Drop answers the form was not showing at write time.
+
+        Runs before screening and before the snapshot is built, so a rule and
+        a reviewer both see the same answers the candidate last stood behind.
+        Called after ``_validate_submission`` so both resolve visibility
+        against the same submitted answers.
+
+        Args:
+            job (JobEntity): The posting the submission is for.
+            dto (ApplicationSubmitDto | ApplicationEditDto): The payload,
+                mutated in place.
+        """
+        dto.answers = form_visibility.prune_answers(job.form_schema, dto.answers)
+
+    @staticmethod
+    def _strip_uncollected_sections(job, dto) -> None:
+        """Drop profile rows for a section the posting doesn't collect.
+
+        The sibling of ``_strip_uncollected_resume``, for the same reason. A
+        ``profile_config`` section set to ``"off"`` is not rendered at all, so
+        rows still attached to the payload were never on the candidate's
+        screen -- they came from a résumé parse, which autofills regardless, or
+        from an older submission. Keeping them would store data nobody
+        reviewed, and a later profile write-back could push it into the
+        candidate's profile, replacing rows they never saw.
+
+        Stripped rather than rejected, again like the résumé: the candidate did
+        nothing wrong, and there is nothing for them to fix.
+
+        Args:
+            job (JobEntity): The posting the submission is for.
+            dto (ApplicationSubmitDto | ApplicationEditDto): Mutated in place.
+        """
+        profile_config = job.profile_config or {}
+        if profile_config.get(_SECTION_CONFIG_KEY["education"]) == "off":
+            dto.education = []
+        if profile_config.get(_SECTION_CONFIG_KEY["experience"]) == "off":
+            dto.experience = []
 
     @staticmethod
     def _strip_uncollected_resume(job, dto) -> None:
@@ -252,7 +478,9 @@ class ApplicationService:
         if job is None or job.status not in PUBLICLY_VISIBLE_JOB_STATUSES:
             raise ValueError(f"Published job {dto.job_id} not found")
         self._validate_submission(job, dto)
+        self._prune_hidden_answers(job, dto)
         self._strip_uncollected_resume(job, dto)
+        self._strip_uncollected_sections(job, dto)
 
         user = await self.users_repository.get_user_by_user_id(
             session, current_user.user_id
@@ -320,15 +548,11 @@ class ApplicationService:
             ),
         )
         current_sub = await self._write_version(
-            session, application.application_id, 1, None, dto
+            session, application.application_id, 1, None, dto, job
         )
 
         await self._assign_default_if_configured(
             session, application, job, current_user
-        )
-
-        await self._notify_owners_of_submission(
-            session, application, job, blocked, screen_action
         )
 
         if stage == ApplicationStage.HIRED:
@@ -339,19 +563,26 @@ class ApplicationService:
             )
 
         if blocked:
-            await self.application_activity_repository.create(
+            # actor_id is None because the rules did this, not a person. The
+            # request that triggered it comes from the *candidate*, so passing
+            # current_user here would tell our own staff that the applicant
+            # rejected the applicant. The copy also selects its "happened
+            # automatically" wording on actor_name being None.
+            await record_event(
                 session,
-                application.application_id,
-                current_user.user_id,
-                "auto_rejected",
+                subject_type="application",
+                subject_id=application.application_id,
+                actor_id=None,
+                event_type=RecruitingEvent.AUTO_REJECTED,
                 details={"reason": "blocked"},
             )
         elif screen_action == "reject":
-            await self.application_activity_repository.create(
+            await record_event(
                 session,
-                application.application_id,
-                current_user.user_id,
-                "auto_rejected",
+                subject_type="application",
+                subject_id=application.application_id,
+                actor_id=None,
+                event_type=RecruitingEvent.AUTO_REJECTED,
                 details={"reason": "screen_rule", "ruleId": screen_rule_id},
             )
         else:
@@ -360,11 +591,12 @@ class ApplicationService:
                 details["screenQualifyRuleId"] = screen_rule_id
             elif screen_action == "auto_hire":
                 details["screenAutoHireRuleId"] = screen_rule_id
-            await self.application_activity_repository.create(
+            await record_event(
                 session,
-                application.application_id,
-                current_user.user_id,
-                "application_submitted",
+                subject_type="application",
+                subject_id=application.application_id,
+                actor_id=current_user.user_id,
+                event_type=RecruitingEvent.APPLICATION_SUBMITTED,
                 details=details,
             )
 
@@ -373,6 +605,85 @@ class ApplicationService:
         return self.recruiting_mapper.to_application_dto(
             application, current_sub, editable=editable
         )
+
+    async def _rescreen_after_edit(
+        self, session, current_user, application, job, dto
+    ) -> None:
+        """Re-run machine screening against the answers an edit just stored.
+
+        An edit is not a draft: the candidate has no save that is not a
+        submission, so the answers this writes are the answers the posting is
+        being applied to. Screening them only the first time left a rule the
+        edit now matches unfired -- answer "yes" to the question that
+        auto-rejects, submit, then edit it to "no", and the application stayed
+        in the pipeline reading "no" with nothing having looked at it.
+
+        All three outcomes apply, the same as on submit, so the result is a
+        function of the recorded answers and not of which write recorded them.
+
+        The blacklist is deliberately not re-checked here: it is swept
+        separately across every application (see ``BlacklistService``), and
+        that sweep, not an applicant's own edit, is what should act on it.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated applicant.
+            application (ApplicationEntity): The row being edited, already
+                locked by ``edit``.
+            job (JobEntity): The posting applied to.
+            dto (ApplicationEditDto): The edit payload, post-validation.
+        """
+        applicant_email_rows = await self.user_emails_repository.list_by_user_id(
+            session, current_user.user_id
+        )
+        applicant_emails = [
+            row.email for row in applicant_email_rows if row.otp_confirmed
+        ]
+        result = screen_rules.evaluate(job.screen_rules, applicant_emails, dto.answers)
+        action, rule_id = result["action"], result["rule_id"]
+        if action is None or action == "qualify":
+            # "qualify" lands on the first stage on submit, which is where an
+            # editable application already sits. Nothing to move.
+            return
+
+        if action == "reject":
+            application.stage = ApplicationStage.REJECTED
+            application.stage_entered_at = datetime.now(timezone.utc)
+            application.sub_status = self._screened_sub_status(
+                ApplicationStage.REJECTED
+            )
+            application.tags = {"auto_reject": "screen_rule", "rule_id": rule_id}
+            await self.application_repository.update(session, application)
+            await record_event(
+                session,
+                subject_type="application",
+                subject_id=application.application_id,
+                actor_id=None,
+                event_type=RecruitingEvent.AUTO_REJECTED,
+                details={"reason": "screen_rule", "ruleId": rule_id, "onEdit": True},
+            )
+        else:  # auto_hire
+            application.stage = ApplicationStage.HIRED
+            application.stage_entered_at = datetime.now(timezone.utc)
+            application.sub_status = self._screened_sub_status(ApplicationStage.HIRED)
+            await self.application_repository.update(session, application)
+            await record_event(
+                session,
+                subject_type="application",
+                subject_id=application.application_id,
+                actor_id=current_user.user_id,
+                event_type=RecruitingEvent.APPLICATION_SUBMITTED,
+                details={
+                    "stage": ApplicationStage.HIRED.value,
+                    "screenAutoHireRuleId": rule_id,
+                    "onEdit": True,
+                },
+            )
+            await self.onboarding_training_service.ensure_for_admitted(
+                session=session,
+                user_id=current_user.user_id,
+                job=job,
+            )
 
     async def _assign_default_if_configured(
         self, session, application, job, current_user
@@ -427,72 +738,21 @@ class ApplicationService:
             default_id,
             owner_ids[0],
         )
-        await self.application_activity_repository.create(
+        # actor_id is None for the same reason as the automatic rejections
+        # above: the pipeline's default-assignee rule did this, and the
+        # request behind it is the candidate's.
+        await record_event(
             session,
-            application.application_id,
-            current_user.user_id,
-            "auto_assigned",
-            details={"stage": application.stage.value, "assigneeId": default_id},
+            subject_type="application",
+            subject_id=application.application_id,
+            actor_id=None,
+            event_type=RecruitingEvent.AUTO_ASSIGNED,
+            details={
+                "stage": application.stage.value,
+                "assigneeId": default_id,
+                "round": application.current_round,
+            },
         )
-        await self.notification_repository.create(
-            session,
-            NotificationEntity(
-                user_id=default_id,
-                type=NotificationType.ASSIGNED_TO_EVALUATE,
-                application_id=application.application_id,
-                round=application.current_round,
-                actor_user_id=None,
-            ),
-        )
-
-    async def _notify_owners_of_submission(
-        self, session, application, job, blocked, screen_action
-    ):
-        """Tell every owner of the posting that an application landed.
-
-        Owners (``pipeline_config.ownerIds``) are the posting's accountable
-        humans, and before this nothing told them a candidate had applied:
-        the only submit-time notification went to a stage's configured
-        default assignee, and none was written at all when the blacklist or
-        a screen rule disposed of the application without human review.
-
-        The outcome is read from ``blocked``/``screen_action`` rather than
-        from the landed stage, because a stage can be reached by more than
-        one path and the caller already knows exactly which one this was.
-        The three types carry different copy: an auto-rejected or auto-hired
-        application is already decided (informational, overturn it if you
-        disagree), while a plain submission is work waiting on the board.
-
-        Skips the applicant themselves -- an internal member applying to an
-        activity posting they own must not be notified about their own
-        application. Writes nothing when the posting has no owner, mirroring
-        ``_assign_default_if_configured``'s no-owner no-op.
-
-        Args:
-            session (AsyncSession): Active database async session.
-            application (ApplicationEntity): The just-landed application.
-            job (JobEntity): Its posting, for the owner list.
-            blocked (bool): Whether the applicant is blacklisted.
-            screen_action (str | None): The matched screen rule's action, if any.
-        """
-        if blocked or screen_action == "reject":
-            notification_type = NotificationType.APPLICATION_AUTO_REJECTED
-        elif screen_action == "auto_hire":
-            notification_type = NotificationType.APPLICATION_AUTO_HIRED
-        else:
-            notification_type = NotificationType.APPLICATION_SUBMITTED
-        for owner_id in normalized_owner_ids(job.pipeline_config):
-            if owner_id == application.user_id:
-                continue
-            await self.notification_repository.create(
-                session,
-                NotificationEntity(
-                    user_id=owner_id,
-                    type=notification_type,
-                    application_id=application.application_id,
-                    actor_user_id=application.user_id,
-                ),
-            )
 
     async def edit(
         self,
@@ -534,16 +794,49 @@ class ApplicationService:
         if not self._is_editable(application, job, current_sub):
             raise ValueError("application is locked once processing has started")
         self._validate_submission(job, dto)
+        self._prune_hidden_answers(job, dto)
         self._strip_uncollected_resume(job, dto)
+        self._strip_uncollected_sections(job, dto)
         version = current_sub.version if current_sub is not None else 1
         current_sub = await self._write_version(
-            session, application_id, version, current_sub, dto
+            session, application_id, version, current_sub, dto, job
         )
+        await self._rescreen_after_edit(session, current_user, application, job, dto)
         await session.commit()
         editable = self._is_editable(application, job, current_sub)
         return self.recruiting_mapper.to_application_dto(
             application, current_sub, editable=editable
         )
+
+    async def get_my_latest_profile(self, session, current_user: UserContextDto):
+        """The profile blocks of this candidate's most recent submission.
+
+        What the application form falls back to when the candidate's profile
+        has nothing for a block: someone who applied once without saving to
+        their profile should not have to retype it for the next posting.
+
+        Only the profile blocks. Answers belong to the job they were asked
+        for -- prefilling another posting's answers would be wrong, whatever
+        the questions happened to be.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            current_user (UserContextDto): The caller, who can only ever read
+                their own submissions here.
+
+        Returns:
+            dict: `personal`, `education` and `experience`, empty when the
+                candidate has never submitted anything.
+        """
+        latest = await self.application_submission_repository.get_latest_by_user(
+            session, current_user.user_id
+        )
+        submission = (latest.submission if latest is not None else None) or {}
+        return {
+            "personal": submission.get("personal") or {},
+            "education": submission.get("education") or [],
+            "experience": submission.get("experience") or [],
+        }
 
     async def get_mine(
         self, session: AsyncSession, current_user: UserContextDto, job_id: int
@@ -639,7 +932,9 @@ class ApplicationService:
             raise ValueError(f"application {application_id} not found")
         return application
 
-    async def _write_version(self, session, application_id, version, current_sub, dto):
+    async def _write_version(
+        self, session, application_id, version, current_sub, dto, job
+    ):
         """Overwrite the current version in place, or create version 1.
 
         Args:
@@ -649,11 +944,13 @@ class ApplicationService:
             current_sub (ApplicationSubmissionEntity | None): The existing
                 current version, or None to create version 1.
             dto (ApplicationSubmitDto | ApplicationEditDto): The payload.
+            job (JobEntity): The posting being applied to, read for its
+                live ``form_schema`` to snapshot.
 
         Returns:
             ApplicationSubmissionEntity: The persisted submission version.
         """
-        snapshot = self._snapshot(dto)
+        snapshot = self._snapshot(dto, job)
         if current_sub is None:
             return await self.application_submission_repository.create(
                 session,

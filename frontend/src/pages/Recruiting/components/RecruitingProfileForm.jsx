@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import ResumeUpload from "@/components/common/ResumeUpload";
+import FieldError from "@/components/common/FieldError";
 import ProfileSection from "@/pages/Profile/components/ProfileSection";
 import { resumeUrl, uploadResume } from "@/api/recruitingApi";
 import {
@@ -93,6 +94,8 @@ const RecruitingProfileForm = ({
   contactEmail,
   onResumeStored,
   existingResume,
+  errors = {},
+  onUploadingChange,
 }) => {
   const [internal, setInternal] = useState({
     personal: {},
@@ -145,12 +148,23 @@ const RecruitingProfileForm = ({
    */
   const handleResumeFile = async (file) => {
     if (!onResumeStored || resumeLevel === "off") return;
+    // Point at nothing for the duration. The preview already shows the new
+    // file, so leaving the previous key in place would submit the *old*
+    // résumé under the new file's apparent identity.
+    onResumeStored({ sha256: undefined, objectKey: undefined });
+    onUploadingChange?.(true);
     try {
       const res = await uploadResume(file);
       const stored = res?.data ?? res;
       onResumeStored({ sha256: stored?.sha256, objectKey: stored?.objectKey });
     } catch {
-      toast.error("Couldn't upload your resume file. You can still submit.");
+      toast.error(
+        resumeLevel === "required"
+          ? "Couldn't upload your resume file. This posting requires one, so please try again."
+          : "Couldn't upload your resume file. You can still submit.",
+      );
+    } finally {
+      onUploadingChange?.(false);
     }
   };
 
@@ -183,6 +197,7 @@ const RecruitingProfileForm = ({
             ? " This posting doesn't collect a resume; uploading only saves you time and the file itself isn't saved."
             : " The file you upload is saved with your application."}
         </p>
+        <FieldError errors={errors} errorKey="profile:resume" />
         {existingResume && (
           <div className="rounded-md border border-muted-foreground/30 p-2 text-sm">
             <div className="flex items-center justify-between">
@@ -225,7 +240,8 @@ const RecruitingProfileForm = ({
         value={value}
         onChange={setValue}
         requirements={requirements}
-        errors={{}}
+        errors={errors}
+        note="From your profile. When you submit, you can save any changes back to it."
       />
     </div>
   );

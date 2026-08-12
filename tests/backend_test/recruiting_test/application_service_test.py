@@ -1,13 +1,17 @@
 import unittest
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, create_autospec
+from unittest.mock import AsyncMock, MagicMock, create_autospec, patch
 from backend.common.mentorship_enums import ParticipantRole
 from backend.mentorship.onboarding_training_service import OnboardingTrainingService
 from backend.recruiting.application_service import ApplicationService
 from backend.repository.notification_repository import NotificationRepository
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.application_dto import ApplicationSubmitDto, ApplicationEditDto
+from backend.dto.job_config_dto import (
+    LONG_TEXT_MAX_LENGTH,
+    SHORT_TEXT_MAX_LENGTH,
+)
 from backend.dto.user_context_dto import UserContextDto
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
@@ -17,14 +21,38 @@ from backend.common.recruiting_enums import (
     ApplicationStage,
     JobKind,
     JobStatus,
-    NotificationType,
 )
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
 )
-from backend.repository.application_activity_repository import (
-    ApplicationActivityRepository,
-)
+
+
+# The three fields every submission must carry, and one complete row of each
+# list, in the shape the candidate form puts on the wire.
+REQUIRED_PERSONAL = {
+    "firstName": "Cand",
+    "lastName": "Idate",
+    "timezone": "Asia/Taipei",
+}
+COMPLETE_EDUCATION = {
+    "id": "rpf-1",
+    "institution": "Tsinghua University",
+    "degree": "BSc",
+    "field": "Computer Science",
+    "startMonth": "September",
+    "startYear": "2018",
+    "endMonth": "June",
+    "endYear": "2022",
+}
+COMPLETE_EXPERIENCE = {
+    "id": "rpf-2",
+    "title": "Backend Engineer",
+    "company": "Circle Cat",
+    "startMonth": "July",
+    "startYear": "2022",
+    "endMonth": "March",
+    "endYear": "2024",
+}
 
 
 class TestApplicationService(unittest.IsolatedAsyncioTestCase):
@@ -53,10 +81,13 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assignment_repo = create_autospec(
             ApplicationAssignmentRepository, instance=True
         )
-        self.activity_repo = create_autospec(
-            ApplicationActivityRepository, instance=True
-        )
         self.session = AsyncMock()
+        recorder = patch(
+            "backend.recruiting.application_service.record_event",
+            new_callable=AsyncMock,
+        )
+        self.record_event = recorder.start()
+        self.addCleanup(recorder.stop)
         self.notification_repo = self._notification_repository_double()
         # The applicant's screen-rule emails come from user_emails; submit
         # matches against every confirmed claim, not one contact address.
@@ -74,7 +105,6 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self.users_repo,
             RecruitingMapper(),
             self.assignment_repo,
-            self.activity_repo,
             self.notification_repo,
             self.user_emails_repo,
             self.onboarding_training_svc,
@@ -141,7 +171,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
     async def test_submit_lands_first_stage_with_version_one(self):
         dto = ApplicationSubmitDto.model_validate({
             "jobId": 1,
-            "personal": {"firstName": "A"},
+            "personal": {**REQUIRED_PERSONAL, "firstName": "A"},
         })
         result = await self.service.submit(self.session, self._ctx(), dto)
         self.assertEqual(result.stage, ApplicationStage.RECRUITER_SCREENING)
@@ -152,6 +182,203 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(created_sub.version, 1)
         self.assertEqual(created_sub.submission["personal"]["firstName"], "A")
         self.session.commit.assert_awaited()
+
+    async def test_submit_snapshots_the_job_form_schema(self):
+        """A version-1 snapshot carries the questions the candidate saw."""
+        schema = {"questions": [{"id": "q1", "type": "short_text", "label": "Why us?"}]}
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = schema
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        dto = ApplicationSubmitDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
+            "jobId": 1,
+            "answers": {"q1": "Because"},
+        })
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["formSchema"], schema)
+
+    async def test_submit_snapshots_empty_schema_when_job_has_none(self):
+        """A job with no form still produces a well-formed snapshot key."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = None
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["formSchema"], {"questions": []})
+
+    def _gated_form_job(self):
+        """A posting whose q2 is required but only shown when q1 is "Yes"."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = {
+            "questions": [
+                {
+                    "id": "q1",
+                    "type": "single_choice",
+                    "label": "Need sponsorship?",
+                    "options": ["Yes", "No"],
+                },
+                {
+                    "id": "q2",
+                    "type": "short_text",
+                    "label": "Visa type?",
+                    "required": True,
+                    "showWhen": {"questionId": "q1", "equals": "Yes"},
+                },
+            ]
+        }
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        return job
+
+    async def test_submit_does_not_require_a_hidden_question(self):
+        """A required question the form never showed cannot block submission."""
+        self._gated_form_job()
+        dto = ApplicationSubmitDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
+            "jobId": 1,
+            "answers": {"q1": "No"},
+        })
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["answers"], {"q1": "No"})
+
+    async def test_submit_does_not_require_a_transitively_hidden_question(self):
+        """The required check has to follow the chain, not just the last rule.
+
+        q3's own rule reads q2's answer and is satisfied by it. Only resolving
+        q2 as well shows that the candidate was never asked either question,
+        so demanding q3 would block a submission over a field the form did not
+        put on screen.
+        """
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = {
+            "questions": [
+                {
+                    "id": "q1",
+                    "type": "single_choice",
+                    "label": "Need sponsorship?",
+                    "options": ["Yes", "No"],
+                },
+                {
+                    "id": "q2",
+                    "type": "single_choice",
+                    "label": "Currently on a visa?",
+                    "options": ["Yes", "No"],
+                    "showWhen": {"questionId": "q1", "equals": "Yes"},
+                },
+                {
+                    "id": "q3",
+                    "type": "short_text",
+                    "label": "Which visa?",
+                    "required": True,
+                    "showWhen": {"questionId": "q2", "equals": "Yes"},
+                },
+            ]
+        }
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        dto = ApplicationSubmitDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
+            "jobId": 1,
+            "answers": {"q1": "No", "q2": "Yes"},
+        })
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["answers"], {"q1": "No"})
+
+    async def test_submit_still_requires_a_visible_question(self):
+        self._gated_form_job()
+        dto = ApplicationSubmitDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
+            "jobId": 1,
+            "answers": {"q1": "Yes"},
+        })
+
+        with self.assertRaises(ValueError):
+            await self.service.submit(self.session, self._ctx(), dto)
+        self.sub_repo.create.assert_not_awaited()
+
+    async def test_submit_drops_an_answer_the_form_did_not_show(self):
+        """Only the state the candidate last stood behind is recorded."""
+        self._gated_form_job()
+        dto = ApplicationSubmitDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
+            "jobId": 1,
+            "answers": {"q1": "No", "q2": "F-1 OPT", "q9": "retired question"},
+        })
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["answers"], {"q1": "No"})
+
+    async def test_submit_keeps_other_free_text_through_the_write(self):
+        """The `__other` sibling is not a question, so nothing in the schema
+        loop keeps it -- only the explicit Other branch does."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = {
+            "questions": [
+                {
+                    "id": "q3",
+                    "type": "multi_choice",
+                    "label": "Teams?",
+                    "options": ["Backend", "Other"],
+                    "otherOption": "Other",
+                }
+            ]
+        }
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        dto = ApplicationSubmitDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
+            "jobId": 1,
+            "answers": {"q3": ["Backend", "Other"], "q3__other": "Infrastructure"},
+        })
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(
+            created_sub.submission["answers"],
+            {"q3": ["Backend", "Other"], "q3__other": "Infrastructure"},
+        )
+
+    async def test_screening_sees_the_pruned_answers(self):
+        """A rule must not fire on an answer the form had stopped showing."""
+        job = self._gated_form_job()
+        job.screen_rules = {
+            "rules": [
+                {
+                    "id": "r1",
+                    "condition": {
+                        "source": "answer",
+                        "operator": "equals",
+                        "value": "F-1 OPT",
+                        "questionId": "q2",
+                    },
+                    "action": "reject",
+                }
+            ]
+        }
+        dto = ApplicationSubmitDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
+            "jobId": 1,
+            "answers": {"q1": "No", "q2": "F-1 OPT"},
+        })
+
+        result = await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(result.stage, ApplicationStage.RECRUITER_SCREENING)
 
     async def test_submit_creates_default_assignment_when_stage_has_default(self):
         """A stage's configured defaultAssigneeId is only a board display
@@ -165,7 +392,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         await self.service.submit(self.session, self._ctx(), dto)
         self.assignment_repo.upsert.assert_awaited_once_with(
             self.session, 100, ApplicationStage.RECRUITER_SCREENING, 1, 5, 9
@@ -181,18 +411,29 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         await self.service.submit(self.session, self._ctx(), dto)
-        self.activity_repo.create.assert_any_await(
+        self.record_event.assert_any_await(
             self.session,
-            100,
-            2,
-            "auto_assigned",
-            details={"stage": "recruiter_screening", "assigneeId": 5},
+            subject_type="application",
+            subject_id=100,
+            actor_id=None,
+            event_type="recruiting.auto_assigned",
+            details={
+                "stage": "recruiter_screening",
+                "assigneeId": 5,
+                "round": 1,
+            },
         )
 
     async def test_submit_skips_assignment_when_no_default_configured(self):
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         await self.service.submit(self.session, self._ctx(), dto)
         self.assignment_repo.upsert.assert_not_awaited()
 
@@ -207,7 +448,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         await self.service.submit(self.session, self._ctx(), dto)
         self.assignment_repo.upsert.assert_not_awaited()
 
@@ -221,18 +465,25 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         await self.service.submit(self.session, self._ctx(), dto)
         self.assignment_repo.upsert.assert_not_awaited()
 
     async def test_submit_logs_application_submitted_activity(self):
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         await self.service.submit(self.session, self._ctx(), dto)
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            100,
-            2,
-            "application_submitted",
+            subject_type="application",
+            subject_id=100,
+            actor_id=2,
+            event_type="recruiting.application_submitted",
             details={"stage": "recruiter_screening"},
         )
 
@@ -254,15 +505,19 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         current.submission_id = 5
         current.is_frozen = False
         self.sub_repo.get_current = AsyncMock(return_value=current)
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            100,
-            2,
-            "application_submitted",
+            subject_type="application",
+            subject_id=100,
+            actor_id=2,
+            event_type="recruiting.application_submitted",
             details={"stage": "recruiter_screening"},
         )
 
@@ -270,7 +525,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.users_repo.get_user_by_user_id = AsyncMock(
             return_value=self._user(is_blocked=True)
         )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         result = await self.service.submit(self.session, self._ctx(), dto)
         self.assertEqual(result.stage, ApplicationStage.REJECTED)
         self.assertFalse(result.editable)
@@ -279,15 +537,19 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.users_repo.get_user_by_user_id = AsyncMock(
             return_value=self._user(is_blocked=True)
         )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            100,
-            2,
-            "auto_rejected",
+            subject_type="application",
+            subject_id=100,
+            actor_id=None,
+            event_type="recruiting.auto_rejected",
             details={"reason": "blocked"},
         )
 
@@ -310,7 +572,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         app.application_id = 100
         self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         with self.assertRaises(ValueError):
             await self.service.submit(self.session, self._ctx(), dto)
         self.app_repo.create.assert_not_awaited()
@@ -332,12 +597,751 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         current.submission_id = 5
         current.is_frozen = False
         self.sub_repo.get_current = AsyncMock(return_value=current)
-        dto = ApplicationEditDto.model_validate({"answers": {"q1": "z"}})
+        dto = ApplicationEditDto.model_validate({
+            "answers": {"q1": "z"},
+            "personal": REQUIRED_PERSONAL,
+        })
         result = await self.service.edit(self.session, self._ctx(), 100, dto)
         self.sub_repo.update.assert_awaited_once()
         self.sub_repo.create.assert_not_awaited()
         self.session.commit.assert_awaited()
         self.assertTrue(result.editable)
+
+    async def test_edit_resnapshots_the_current_form_schema(self):
+        """Editing re-snapshots against the schema live at edit time."""
+        schema = {
+            "questions": [{"id": "q1", "type": "short_text", "label": "Revised?"}]
+        }
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = schema
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        app = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+            sub_status="pending",
+            current_round=1,
+        )
+        app.application_id = 100
+        self.app_repo.get_by_id = AsyncMock(return_value=app)
+        current = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission={"personal": {}}
+        )
+        current.submission_id = 5
+        current.is_frozen = False
+        self.sub_repo.get_current = AsyncMock(return_value=current)
+        dto = ApplicationEditDto.model_validate({
+            "answers": {"q1": "Yes"},
+            "personal": REQUIRED_PERSONAL,
+        })
+
+        await self.service.edit(self.session, self._ctx(), 100, dto)
+
+        written_sub = self.sub_repo.update.call_args.args[1]
+        self.assertEqual(written_sub.submission["formSchema"], schema)
+
+    async def test_edit_drops_answers_the_revised_form_no_longer_shows(self):
+        """The candidate's client re-sends the whole prior answer bag, so an
+        answer stranded by their own change — or by an owner deleting the
+        question — arrives with the edit. Only the current state is kept."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = {
+            "questions": [
+                {
+                    "id": "q1",
+                    "type": "single_choice",
+                    "label": "Need sponsorship?",
+                    "options": ["Yes", "No"],
+                },
+                {
+                    "id": "q2",
+                    "type": "short_text",
+                    "label": "Visa type?",
+                    "showWhen": {"questionId": "q1", "equals": "Yes"},
+                },
+            ]
+        }
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        app = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+            sub_status="pending",
+            current_round=1,
+        )
+        app.application_id = 100
+        self.app_repo.get_by_id = AsyncMock(return_value=app)
+        current = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission={"personal": {}}
+        )
+        current.submission_id = 5
+        current.is_frozen = False
+        self.sub_repo.get_current = AsyncMock(return_value=current)
+        dto = ApplicationEditDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
+            "answers": {"q1": "No", "q2": "F-1 OPT", "q5": "WeChat"},
+        })
+
+        await self.service.edit(self.session, self._ctx(), 100, dto)
+
+        written_sub = self.sub_repo.update.call_args.args[1]
+        self.assertEqual(written_sub.submission["answers"], {"q1": "No"})
+
+    async def test_edit_does_not_require_a_hidden_question(self):
+        """`required` is relaxed on the edit path too, not only on submit."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = {
+            "questions": [
+                {
+                    "id": "q1",
+                    "type": "single_choice",
+                    "label": "Need sponsorship?",
+                    "options": ["Yes", "No"],
+                },
+                {
+                    "id": "q2",
+                    "type": "short_text",
+                    "label": "Visa type?",
+                    "required": True,
+                    "showWhen": {"questionId": "q1", "equals": "Yes"},
+                },
+            ]
+        }
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        app = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+            sub_status="pending",
+            current_round=1,
+        )
+        app.application_id = 100
+        self.app_repo.get_by_id = AsyncMock(return_value=app)
+        current = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission={"personal": {}}
+        )
+        current.submission_id = 5
+        current.is_frozen = False
+        self.sub_repo.get_current = AsyncMock(return_value=current)
+        dto = ApplicationEditDto.model_validate({
+            "answers": {"q1": "No"},
+            "personal": REQUIRED_PERSONAL,
+        })
+
+        await self.service.edit(self.session, self._ctx(), 100, dto)
+
+        written_sub = self.sub_repo.update.call_args.args[1]
+        self.assertEqual(written_sub.submission["answers"], {"q1": "No"})
+
+    async def test_pruning_leaves_the_other_snapshot_sections_alone(self):
+        """Only `answers` is narrowed -- profile sections are separate keys."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = {"questions": []}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        app = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+            sub_status="pending",
+            current_round=1,
+        )
+        app.application_id = 100
+        self.app_repo.get_by_id = AsyncMock(return_value=app)
+        current = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission={"personal": {}}
+        )
+        current.submission_id = 5
+        current.is_frozen = False
+        self.sub_repo.get_current = AsyncMock(return_value=current)
+        personal = {**REQUIRED_PERSONAL, "firstName": "A"}
+        # Rows in the form's shape, which is what actually goes on the wire and
+        # gets stored verbatim -- the placeholders here used to be in the
+        # profile PATCH shape, which the candidate form never sends.
+        dto = ApplicationEditDto.model_validate({
+            "personal": personal,
+            "education": [COMPLETE_EDUCATION],
+            "experience": [COMPLETE_EXPERIENCE],
+            "answers": {"q1": "dropped"},
+        })
+
+        await self.service.edit(self.session, self._ctx(), 100, dto)
+
+        written = self.sub_repo.update.call_args.args[1].submission
+        self.assertEqual(written["answers"], {})
+        self.assertEqual(written["personal"], personal)
+        self.assertEqual(written["education"], [COMPLETE_EDUCATION])
+        self.assertEqual(written["experience"], [COMPLETE_EXPERIENCE])
+
+    def _editable_app(self):
+        """An application in the window where the candidate may still edit."""
+        app = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+            sub_status="pending",
+            current_round=1,
+        )
+        app.application_id = 100
+        self.app_repo.get_by_id = AsyncMock(return_value=app)
+        current = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission={"personal": {}}
+        )
+        current.submission_id = 5
+        current.is_frozen = False
+        self.sub_repo.get_current = AsyncMock(return_value=current)
+        return app
+
+    def _answer_rule(self, action):
+        """A posting that screens on q1 == "Yes"."""
+        job = self._job(
+            status=JobStatus.PUBLISHED,
+            screen_rules={
+                "rules": [
+                    {
+                        "id": "r1",
+                        "condition": {
+                            "source": "answer",
+                            "operator": "equals",
+                            "questionId": "q1",
+                            "value": "Yes",
+                        },
+                        "action": action,
+                    }
+                ]
+            },
+        )
+        job.form_schema = {
+            "questions": [
+                {
+                    "id": "q1",
+                    "type": "single_choice",
+                    "label": "Blocked?",
+                    "options": ["Yes", "No"],
+                }
+            ]
+        }
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        return job
+
+    async def test_edit_into_a_reject_rule_rejects(self):
+        """An edit is a submission -- there is no save that is not one.
+
+        Submitting "No" past a reject rule and then editing to "Yes" used to
+        leave the application in the pipeline reading "Yes", with the rule
+        that exists to catch exactly that never having run.
+        """
+        self._answer_rule("reject")
+        app = self._editable_app()
+        dto = ApplicationEditDto.model_validate({
+            "answers": {"q1": "Yes"},
+            "personal": REQUIRED_PERSONAL,
+        })
+
+        result = await self.service.edit(self.session, self._ctx(), 100, dto)
+
+        self.assertEqual(app.stage, ApplicationStage.REJECTED)
+        self.assertEqual(app.tags, {"auto_reject": "screen_rule", "rule_id": "r1"})
+        self.assertFalse(result.editable)
+        self.record_event.assert_awaited_once_with(
+            self.session,
+            subject_type="application",
+            subject_id=100,
+            actor_id=None,
+            event_type="recruiting.auto_rejected",
+            details={"reason": "screen_rule", "ruleId": "r1", "onEdit": True},
+        )
+
+    async def test_edit_that_matches_nothing_leaves_the_stage_alone(self):
+        self._answer_rule("reject")
+        app = self._editable_app()
+        dto = ApplicationEditDto.model_validate({
+            "answers": {"q1": "No"},
+            "personal": REQUIRED_PERSONAL,
+        })
+
+        result = await self.service.edit(self.session, self._ctx(), 100, dto)
+
+        self.assertEqual(app.stage, ApplicationStage.RECRUITER_SCREENING)
+        self.assertIsNone(app.tags)
+        self.assertTrue(result.editable)
+        self.record_event.assert_not_awaited()
+
+    async def test_edit_into_a_qualify_rule_stays_put(self):
+        """qualify lands on the first stage, which is where an editable
+        application already is."""
+        self._answer_rule("qualify")
+        app = self._editable_app()
+        dto = ApplicationEditDto.model_validate({
+            "answers": {"q1": "Yes"},
+            "personal": REQUIRED_PERSONAL,
+        })
+
+        await self.service.edit(self.session, self._ctx(), 100, dto)
+
+        self.assertEqual(app.stage, ApplicationStage.RECRUITER_SCREENING)
+        self.assertIsNone(app.tags)
+
+    async def test_edit_into_an_auto_hire_rule_hires(self):
+        self._answer_rule("auto_hire")
+        app = self._editable_app()
+        dto = ApplicationEditDto.model_validate({
+            "answers": {"q1": "Yes"},
+            "personal": REQUIRED_PERSONAL,
+        })
+
+        await self.service.edit(self.session, self._ctx(), 100, dto)
+
+        self.assertEqual(app.stage, ApplicationStage.HIRED)
+        self.onboarding_training_svc.ensure_for_admitted.assert_awaited_once()
+
+    async def test_edit_screens_the_answers_it_just_stored(self):
+        """The rule reads the edit's answers, not the ones already on file."""
+        self._answer_rule("reject")
+        app = self._editable_app()
+        app_sub = self.sub_repo.get_current.return_value
+        app_sub.submission = {"answers": {"q1": "No"}}
+        dto = ApplicationEditDto.model_validate({
+            "answers": {"q1": "Yes"},
+            "personal": REQUIRED_PERSONAL,
+        })
+
+        await self.service.edit(self.session, self._ctx(), 100, dto)
+
+        self.assertEqual(app.stage, ApplicationStage.REJECTED)
+
+    def _typed_job(self, question):
+        """A published posting whose only question is the one given."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = {"questions": [question]}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        return job
+
+    async def _submit_answers(self, answers, **overrides):
+        """Submit `answers` with a personal block that satisfies the required
+        fields, so a test about answers is not also a test about the name."""
+        body = {
+            "jobId": 1,
+            "answers": answers,
+            "personal": REQUIRED_PERSONAL,
+            **overrides,
+        }
+        dto = ApplicationSubmitDto.model_validate(body)
+        return await self.service.submit(self.session, self._ctx(), dto)
+
+    async def test_required_message_names_the_question_not_its_id(self):
+        """The message reaches the candidate verbatim, and `q1` is nowhere on
+        the page they are looking at."""
+        self._typed_job({
+            "id": "q1",
+            "type": "short_text",
+            "label": "Where are you based?",
+            "required": True,
+        })
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({})
+
+        self.assertEqual(str(ctx.exception), "Where are you based? is required")
+
+    async def test_a_choice_answer_must_be_one_of_the_options(self):
+        """Also closes a required-bypass: an off-list value counts as answered
+        for the gate, so the question it gates is never shown and its own
+        `required` is never checked."""
+        self._typed_job({
+            "id": "q1",
+            "type": "single_choice",
+            "label": "Need sponsorship?",
+            "options": ["Yes", "No"],
+        })
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({"q1": "maybe"})
+
+        self.assertIn("pick one of the listed options", str(ctx.exception))
+        self.sub_repo.create.assert_not_awaited()
+
+    async def test_multi_choice_rejects_more_than_the_cap(self):
+        self._typed_job({
+            "id": "q1",
+            "type": "multi_choice",
+            "label": "Teams?",
+            "options": ["A", "B", "C"],
+            "maxSelections": 2,
+        })
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({"q1": ["A", "B", "C"]})
+
+        self.assertIn("pick at most 2", str(ctx.exception))
+
+    async def test_multi_choice_accepts_the_cap_exactly(self):
+        self._typed_job({
+            "id": "q1",
+            "type": "multi_choice",
+            "label": "Teams?",
+            "options": ["A", "B", "C"],
+            "maxSelections": 2,
+        })
+
+        await self._submit_answers({"q1": ["A", "B"]})
+
+        self.sub_repo.create.assert_awaited_once()
+
+    async def test_long_text_rejects_more_than_the_character_budget(self):
+        self._typed_job({
+            "id": "q1",
+            "type": "long_text",
+            "label": "Why?",
+            "maxLength": 10,
+        })
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({"q1": "x" * 11})
+
+        self.assertIn("under 10 characters", str(ctx.exception))
+
+    async def test_short_text_rejects_more_than_the_hard_ceiling(self):
+        self._typed_job({
+            "id": "q1",
+            "type": "short_text",
+            "label": "City",
+        })
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({"q1": "x" * (SHORT_TEXT_MAX_LENGTH + 1)})
+
+        self.assertIn(f"under {SHORT_TEXT_MAX_LENGTH} characters", str(ctx.exception))
+
+    async def test_short_text_accepts_exactly_the_hard_ceiling(self):
+        self._typed_job({
+            "id": "q1",
+            "type": "short_text",
+            "label": "City",
+        })
+
+        await self._submit_answers({"q1": "x" * SHORT_TEXT_MAX_LENGTH})
+        self.sub_repo.create.assert_awaited_once()
+
+    async def test_long_text_without_a_budget_falls_back_to_the_ceiling(self):
+        self._typed_job({
+            "id": "q1",
+            "type": "long_text",
+            "label": "Why",
+        })
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({"q1": "x" * (LONG_TEXT_MAX_LENGTH + 1)})
+
+        self.assertIn(f"under {LONG_TEXT_MAX_LENGTH} characters", str(ctx.exception))
+
+    async def test_exact_text_must_match_after_trimming(self):
+        self._typed_job({
+            "id": "q1",
+            "type": "exact_text",
+            "label": "Confirm",
+            "expectedValue": "I AGREE",
+        })
+
+        await self._submit_answers({"q1": "  I AGREE  "})
+        self.sub_repo.create.assert_awaited_once()
+
+        with self.assertRaises(ValueError):
+            await self._submit_answers({"q1": "i agree"})
+
+    async def test_other_free_text_is_required_once_other_is_picked(self):
+        """The renderer marks it required; nothing used to hold it to that."""
+        self._typed_job({
+            "id": "q1",
+            "type": "single_choice",
+            "label": "How did you hear?",
+            "options": ["Friend", "Other"],
+            "otherOption": "Other",
+        })
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({"q1": "Other", "q1__other": "  "})
+
+        self.assertIn("describe your answer", str(ctx.exception))
+
+    async def test_other_free_text_is_not_required_when_other_is_not_picked(self):
+        self._typed_job({
+            "id": "q1",
+            "type": "single_choice",
+            "label": "How did you hear?",
+            "options": ["Friend", "Other"],
+            "otherOption": "Other",
+        })
+
+        await self._submit_answers({"q1": "Friend"})
+
+        self.sub_repo.create.assert_awaited_once()
+
+    async def test_a_hidden_question_is_not_value_checked(self):
+        """A stale answer under a question the form stopped showing is pruned,
+        not rejected -- otherwise changing your mind would wedge the form."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.form_schema = {
+            "questions": [
+                {
+                    "id": "q1",
+                    "type": "single_choice",
+                    "label": "Need sponsorship?",
+                    "options": ["Yes", "No"],
+                },
+                {
+                    "id": "q2",
+                    "type": "exact_text",
+                    "label": "Confirm",
+                    "expectedValue": "I AGREE",
+                    "showWhen": {"questionId": "q1", "equals": "Yes"},
+                },
+            ]
+        }
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self._submit_answers({"q1": "No", "q2": "nonsense"})
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["answers"], {"q1": "No"})
+
+    async def test_a_required_profile_section_must_have_an_entry(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "required", "workExperience": "off"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({})
+
+        self.assertIn("education entry", str(ctx.exception))
+
+    async def test_a_submission_needs_a_first_name(self):
+        """The form marks it required; nothing used to hold the API to that."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers(
+                {}, personal={**REQUIRED_PERSONAL, "firstName": "  "}
+            )
+
+        self.assertIn("first name", str(ctx.exception).lower())
+
+    async def test_a_submission_needs_a_last_name_and_a_timezone(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        for field, needle in (("lastName", "last name"), ("timezone", "timezone")):
+            with self.subTest(field=field):
+                self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+                with self.assertRaises(ValueError) as ctx:
+                    await self._submit_answers(
+                        {}, personal={**REQUIRED_PERSONAL, field: ""}
+                    )
+                self.assertIn(needle, str(ctx.exception).lower())
+
+    async def test_a_personal_block_is_required_whatever_the_profile_config(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "off", "workExperience": "off"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({}, personal={})
+
+        self.assertIn("first name", str(ctx.exception).lower())
+
+    async def test_an_education_row_must_be_filled_in(self):
+        """A row the candidate started counts; an empty one is not an entry."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "optional", "workExperience": "off"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers({}, education=[{"id": "rpf-9"}])
+
+        message = str(ctx.exception).lower()
+        self.assertIn("education", message)
+        self.assertIn("school", message)
+
+    async def test_a_complete_education_row_is_accepted(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "required", "workExperience": "off"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self._submit_answers({}, education=[COMPLETE_EDUCATION])
+
+        self.sub_repo.create.assert_awaited()
+
+    async def test_an_experience_row_must_be_filled_in(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "off", "workExperience": "optional"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers(
+                {}, experience=[{**COMPLETE_EXPERIENCE, "company": " "}]
+            )
+
+        self.assertIn("company", str(ctx.exception).lower())
+
+    async def test_an_ongoing_role_needs_no_end_date(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "off", "workExperience": "optional"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self._submit_answers(
+            {},
+            experience=[
+                {
+                    **COMPLETE_EXPERIENCE,
+                    "isCurrentlyWorking": True,
+                    "endMonth": "",
+                    "endYear": "",
+                }
+            ],
+        )
+
+        self.sub_repo.create.assert_awaited()
+
+    async def test_a_finished_role_needs_an_end_date(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "off", "workExperience": "optional"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers(
+                {},
+                experience=[{**COMPLETE_EXPERIENCE, "endMonth": "", "endYear": ""}],
+            )
+
+        self.assertIn("end date", str(ctx.exception).lower())
+
+    async def test_a_switched_off_section_has_its_rows_ignored(self):
+        """The section is not on screen, so an error there is unfixable."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "off", "workExperience": "off"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self._submit_answers({}, education=[{"id": "rpf-9"}])
+
+        self.sub_repo.create.assert_awaited()
+
+    async def test_a_row_problem_names_which_entry_it_is(self):
+        """`rpf-9` appears nowhere on the candidate's screen; "entry 2" does."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "optional", "workExperience": "off"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        with self.assertRaises(ValueError) as ctx:
+            await self._submit_answers(
+                {}, education=[COMPLETE_EDUCATION, {"id": "rpf-9"}]
+            )
+
+        message = str(ctx.exception)
+        self.assertIn("2", message)
+        self.assertNotIn("rpf-9", message)
+
+    async def test_an_off_education_section_is_not_stored(self):
+        """A posting that collects no education must not keep any.
+
+        The candidate never saw the section -- it is not rendered -- so rows
+        reaching here came from a résumé parse or an older submission, and
+        storing them would put data on the application that nobody reviewed
+        and that a later write-back could push into the profile.
+        """
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "off", "workExperience": "optional"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self._submit_answers({}, education=[COMPLETE_EDUCATION])
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["education"], [])
+
+    async def test_an_off_experience_section_is_not_stored(self):
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "optional", "workExperience": "off"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self._submit_answers({}, experience=[COMPLETE_EXPERIENCE])
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["experience"], [])
+
+    async def test_a_collected_section_is_still_stored(self):
+        """The strip is scoped to `off`; anything else passes through."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {"education": "optional", "workExperience": "required"}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self._submit_answers(
+            {}, education=[COMPLETE_EDUCATION], experience=[COMPLETE_EXPERIENCE]
+        )
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["education"], [COMPLETE_EDUCATION])
+        self.assertEqual(created_sub.submission["experience"], [COMPLETE_EXPERIENCE])
+
+    async def test_a_section_with_no_config_at_all_is_stored(self):
+        """`off` is opt-in; a posting saying nothing collects both."""
+        job = self._job(status=JobStatus.PUBLISHED)
+        job.profile_config = {}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        await self._submit_answers({}, education=[COMPLETE_EDUCATION])
+
+        created_sub = self.sub_repo.create.call_args.args[1]
+        self.assertEqual(created_sub.submission["education"], [COMPLETE_EDUCATION])
+
+    async def test_latest_profile_returns_the_blocks_of_the_newest_submission(self):
+        """The application form falls back to this when the profile is empty.
+
+        Only the profile blocks: answers belong to the job they were asked
+        for, and prefilling another posting's answers would be wrong.
+        """
+        sub = ApplicationSubmissionEntity(
+            application_id=100,
+            version=1,
+            submission={
+                "personal": REQUIRED_PERSONAL,
+                "education": [COMPLETE_EDUCATION],
+                "experience": [COMPLETE_EXPERIENCE],
+                "answers": {"q1": "for another job"},
+            },
+        )
+        self.sub_repo.get_latest_by_user = AsyncMock(return_value=sub)
+
+        result = await self.service.get_my_latest_profile(self.session, self._ctx())
+
+        self.sub_repo.get_latest_by_user.assert_awaited_once_with(self.session, 2)
+        self.assertEqual(result["personal"], REQUIRED_PERSONAL)
+        self.assertEqual(result["education"], [COMPLETE_EDUCATION])
+        self.assertEqual(result["experience"], [COMPLETE_EXPERIENCE])
+        self.assertNotIn("answers", result)
+
+    async def test_latest_profile_is_empty_for_a_first_time_applicant(self):
+        self.sub_repo.get_latest_by_user = AsyncMock(return_value=None)
+
+        result = await self.service.get_my_latest_profile(self.session, self._ctx())
+
+        self.assertEqual(result, {"personal": {}, "education": [], "experience": []})
+
+    async def test_latest_profile_survives_a_submission_with_no_body(self):
+        """`submission` is a nullable JSONB column."""
+        sub = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission=None
+        )
+        self.sub_repo.get_latest_by_user = AsyncMock(return_value=sub)
+
+        result = await self.service.get_my_latest_profile(self.session, self._ctx())
+
+        self.assertEqual(result, {"personal": {}, "education": [], "experience": []})
+
+    async def test_latest_profile_is_a_read(self):
+        self.sub_repo.get_latest_by_user = AsyncMock(return_value=None)
+
+        await self.service.get_my_latest_profile(self.session, self._ctx())
+
+        self.session.commit.assert_not_awaited()
 
     async def test_get_mine_does_not_commit(self):
         result = await self.service.get_mine(self.session, self._ctx(), 1)
@@ -358,7 +1362,12 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         app.application_id = 100
         self.app_repo.get_by_id = AsyncMock(return_value=app)
-        await self.service.edit(self.session, self._ctx(), 100, ApplicationEditDto())
+        await self.service.edit(
+            self.session,
+            self._ctx(),
+            100,
+            ApplicationEditDto(personal=REQUIRED_PERSONAL),
+        )
         self.app_repo.get_by_id.assert_awaited_once_with(
             self.session, 100, for_update=True
         )
@@ -391,7 +1400,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_by_id = AsyncMock(return_value=app)
         with self.assertRaises(ValueError):
             await self.service.edit(
-                self.session, self._ctx(), 100, ApplicationEditDto()
+                self.session,
+                self._ctx(),
+                100,
+                ApplicationEditDto(personal=REQUIRED_PERSONAL),
             )
 
     async def test_edit_blocked_when_sub_status_not_pending(self):
@@ -406,7 +1418,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_by_id = AsyncMock(return_value=app)
         with self.assertRaises(ValueError):
             await self.service.edit(
-                self.session, self._ctx(), 100, ApplicationEditDto()
+                self.session,
+                self._ctx(),
+                100,
+                ApplicationEditDto(personal=REQUIRED_PERSONAL),
             )
 
     async def test_edit_blocked_when_current_submission_frozen(self):
@@ -427,7 +1442,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.sub_repo.get_current = AsyncMock(return_value=current)
         with self.assertRaises(ValueError):
             await self.service.edit(
-                self.session, self._ctx(), 100, ApplicationEditDto()
+                self.session,
+                self._ctx(),
+                100,
+                ApplicationEditDto(personal=REQUIRED_PERSONAL),
             )
 
     async def test_get_mine_editable_true_when_first_stage_pending_unfrozen(self):
@@ -471,7 +1489,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(
             return_value=self._job(status=JobStatus.PUBLISHED_PENDING_REVISION)
         )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -482,7 +1503,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(
             return_value=self._job(status=JobStatus.PENDING_CLOSE)
         )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -504,7 +1528,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
                     await self.service.submit(
                         self.session,
                         self._ctx(),
-                        ApplicationSubmitDto.model_validate({"jobId": 1}),
+                        ApplicationSubmitDto.model_validate({
+                            "jobId": 1,
+                            "personal": REQUIRED_PERSONAL,
+                        }),
                     )
 
     async def test_submit_requires_resume_when_config_requires(self):
@@ -515,7 +1542,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             await self.service.submit(
                 self.session,
                 self._ctx(),
-                ApplicationSubmitDto.model_validate({"jobId": 1}),
+                ApplicationSubmitDto.model_validate({
+                    "jobId": 1,
+                    "personal": REQUIRED_PERSONAL,
+                }),
             )
 
     async def test_submit_drops_resume_when_posting_collects_none(self):
@@ -523,6 +1553,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         job.profile_config = {"resume": "off"}
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         dto = ApplicationSubmitDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
             "jobId": 1,
             "resumeObjectKey": "resumes/abc.pdf",
             "resumeSha256": "abc",
@@ -552,6 +1583,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         current.is_frozen = False
         self.sub_repo.get_current = AsyncMock(return_value=current)
         dto = ApplicationEditDto.model_validate({
+            "personal": REQUIRED_PERSONAL,
             "resumeObjectKey": "resumes/abc.pdf",
             "resumeSha256": "abc",
         })
@@ -572,7 +1604,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             await self.service.submit(
                 self.session,
                 self._ctx(),
-                ApplicationSubmitDto.model_validate({"jobId": 1}),
+                ApplicationSubmitDto.model_validate({
+                    "jobId": 1,
+                    "personal": REQUIRED_PERSONAL,
+                }),
             )
 
     async def test_reapply_creates_new_application_row(self):
@@ -594,7 +1629,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
         dto = ApplicationSubmitDto.model_validate({
             "jobId": 1,
-            "personal": {"firstName": "New"},
+            "personal": {**REQUIRED_PERSONAL, "firstName": "New"},
         })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
@@ -624,7 +1659,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
         dto = ApplicationSubmitDto.model_validate({
             "jobId": 1,
-            "personal": {"firstName": "New"},
+            "personal": {**REQUIRED_PERSONAL, "firstName": "New"},
         })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
@@ -651,7 +1686,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
         dto = ApplicationSubmitDto.model_validate({
             "jobId": 1,
-            "personal": {"firstName": "New"},
+            "personal": {**REQUIRED_PERSONAL, "firstName": "New"},
         })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
@@ -677,7 +1712,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             return_value=rejected_application
         )
         self.service._today = lambda: date(2026, 2, 1)
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
@@ -699,7 +1737,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
         app.application_id = 100
         self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         with self.assertRaises(ValueError):
             await self.service.submit(self.session, self._ctx(), dto)
@@ -723,7 +1764,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_latest_by_job_and_user = AsyncMock(
             return_value=rejected_application
         )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -731,11 +1775,12 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.stage, ApplicationStage.REJECTED)
         self.assertEqual(result.tags, {"auto_reject": "blocked"})
         self.app_repo.update.assert_not_awaited()
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            result.id,
-            2,
-            "auto_rejected",
+            subject_type="application",
+            subject_id=result.id,
+            actor_id=None,
+            event_type="recruiting.auto_rejected",
             details={"reason": "blocked"},
         )
 
@@ -761,7 +1806,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             return_value=rejected_application
         )
         self.service._today = lambda: date(2026, 5, 1)  # outside cooldown
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         result = await self.service.submit(self.session, self._ctx(), dto)
         self.assignment_repo.upsert.assert_awaited_once_with(
             self.session, result.id, ApplicationStage.RECRUITER_SCREENING, 1, 5, 9
@@ -793,7 +1841,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.service._today = lambda: date(2026, 4, 1)  # inside 90-day window
         dto = ApplicationSubmitDto.model_validate({
             "jobId": 1,
-            "personal": {"firstName": "New"},
+            "personal": {**REQUIRED_PERSONAL, "firstName": "New"},
         })
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -824,17 +1872,21 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.user_emails_repo.list_by_user_id.return_value = [
             self._email_row("a@spam.com")
         ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
         self.assertEqual(result.stage, ApplicationStage.REJECTED)
         self.assertEqual(result.tags, {"auto_reject": "screen_rule", "rule_id": "r1"})
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            100,
-            2,
-            "auto_rejected",
+            subject_type="application",
+            subject_id=100,
+            actor_id=None,
+            event_type="recruiting.auto_rejected",
             details={"reason": "screen_rule", "ruleId": "r1"},
         )
 
@@ -860,18 +1912,22 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.user_emails_repo.list_by_user_id.return_value = [
             self._email_row("a@google.com")
         ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
         self.assertEqual(result.stage, ApplicationStage.RECRUITER_SCREENING)
         self.assertEqual(result.sub_status, "pending")
         self.assertIsNone(result.tags)
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            100,
-            2,
-            "application_submitted",
+            subject_type="application",
+            subject_id=100,
+            actor_id=2,
+            event_type="recruiting.application_submitted",
             details={
                 "stage": "recruiter_screening",
                 "screenQualifyRuleId": "r1",
@@ -898,18 +1954,22 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.user_emails_repo.list_by_user_id.return_value = [
             self._email_row("a@circlecat.org")
         ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
         self.assertEqual(result.stage, ApplicationStage.HIRED)
         self.assertIsNone(result.sub_status)
         self.assertIsNone(result.tags)
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            100,
-            2,
-            "application_submitted",
+            subject_type="application",
+            subject_id=100,
+            actor_id=2,
+            event_type="recruiting.application_submitted",
             details={"stage": "hired", "screenAutoHireRuleId": "r1"},
         )
 
@@ -938,7 +1998,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.user_emails_repo.list_by_user_id.return_value = [
             self._email_row("a@circlecat.org")
         ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
@@ -949,7 +2012,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_submit_without_auto_hire_does_not_assign_onboarding_training(self):
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -990,7 +2056,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.user_emails_repo.list_by_user_id.return_value = [
             self._email_row("a@circlecat.org")
         ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
         hired_result = await self.service.submit(self.session, self._ctx(), dto)
         self.assertEqual(hired_result.stage, ApplicationStage.HIRED)
 
@@ -1033,7 +2102,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self._email_row("a@gmail.com"),
             self._email_row("a@circlecat.org"),
         ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1062,7 +2134,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self._email_row("a@gmail.com"),
             self._email_row("a@circlecat.org", otp_confirmed=False),
         ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1095,7 +2170,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.user_emails_repo.list_by_user_id.return_value = [
             self._email_row("a@circlecat.org")
         ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1123,7 +2201,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.users_repo.get_user_by_user_id = AsyncMock(
             return_value=self._user(is_blocked=True, email="a@circlecat.org")
         )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1163,7 +2244,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         prior.submitted_at = datetime(2026, 1, 20, tzinfo=timezone.utc)
         self.sub_repo.get_current = AsyncMock(return_value=prior)
         self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1204,7 +2288,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         prior.submitted_at = datetime(2026, 1, 20, tzinfo=timezone.utc)
         self.sub_repo.get_current = AsyncMock(return_value=prior)
         self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         result = await self.service.submit(self.session, self._ctx(), dto)
 
@@ -1226,7 +2313,12 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.sub_repo.get_current = AsyncMock(return_value=prior)
         self.service._today = lambda: date(2026, 5, 1)  # past thaw (>= 2026-01-10)
         result = await self.service.submit(
-            self.session, self._ctx(), ApplicationSubmitDto.model_validate({"jobId": 1})
+            self.session,
+            self._ctx(),
+            ApplicationSubmitDto.model_validate({
+                "jobId": 1,
+                "personal": REQUIRED_PERSONAL,
+            }),
         )
         self.assertNotIn("cold_freeze", result.tags or {})
 
@@ -1270,33 +2362,6 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, [])
 
-    async def test_assign_default_if_configured_notifies_default_assignee(self):
-        job = self._job(status=JobStatus.PUBLISHED)
-        job.pipeline_config = {
-            "ownerIds": [9],
-            "stages": [
-                {"stage": "recruiter_screening", "defaultAssigneeId": 5},
-            ],
-        }
-        application = ApplicationEntity(
-            job_id=job.job_id,
-            user_id=3,
-            stage=ApplicationStage.RECRUITER_SCREENING,
-            current_round=1,
-        )
-        application.application_id = 10
-
-        await self.service._assign_default_if_configured(
-            self.session, application, job, self._ctx(user_id=3)
-        )
-
-        self.notification_repo.create.assert_awaited_once()
-        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
-        self.assertEqual(entity_arg.user_id, 5)
-        self.assertEqual(entity_arg.type, NotificationType.ASSIGNED_TO_EVALUATE)
-        self.assertEqual(entity_arg.application_id, 10)
-        self.assertIsNone(entity_arg.actor_user_id)
-
     def _owner_types(self):
         """The (user_id, type) pairs of every notification submit wrote."""
         return [
@@ -1304,325 +2369,12 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             for call in self.notification_repo.create.await_args_list
         ]
 
-    async def test_submit_notifies_every_owner_of_a_new_application(self):
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerIds": [5, 6],
-                    "stages": [{"stage": "recruiter_screening"}],
-                }
-            )
-        )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
-
-        await self.service.submit(self.session, self._ctx(), dto)
-
-        self.assertEqual(
-            self._owner_types(),
-            [
-                (5, NotificationType.APPLICATION_SUBMITTED),
-                (6, NotificationType.APPLICATION_SUBMITTED),
-            ],
-        )
-        entity = self.notification_repo.create.await_args_list[0].args[1]
-        self.assertEqual(entity.application_id, 100)
-        self.assertEqual(entity.actor_user_id, 2)
-
-    async def test_submit_skips_an_owner_who_is_the_applicant(self):
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerIds": [2, 5],
-                    "stages": [{"stage": "recruiter_screening"}],
-                }
-            )
-        )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
-
-        await self.service.submit(self.session, self._ctx(user_id=2), dto)
-
-        self.assertEqual(
-            self._owner_types(), [(5, NotificationType.APPLICATION_SUBMITTED)]
-        )
-
     async def test_submit_writes_no_owner_notification_without_an_owner(self):
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
         self.notification_repo.create.assert_not_awaited()
-
-    async def test_submit_tells_owners_a_blocked_application_was_auto_rejected(self):
-        self.users_repo.get_user_by_user_id = AsyncMock(
-            return_value=self._user(is_blocked=True)
-        )
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerIds": [5],
-                    "stages": [{"stage": "recruiter_screening"}],
-                }
-            )
-        )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
-
-        await self.service.submit(self.session, self._ctx(), dto)
-
-        self.assertEqual(
-            self._owner_types(), [(5, NotificationType.APPLICATION_AUTO_REJECTED)]
-        )
-
-    async def test_submit_tells_owners_a_screen_rejected_application_was_auto_rejected(
-        self,
-    ):
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerIds": [5],
-                    "stages": [{"stage": "recruiter_screening"}],
-                },
-                screen_rules={
-                    "rules": [
-                        {
-                            "id": "r1",
-                            "condition": {
-                                "source": "email_domain",
-                                "operator": "equals",
-                                "value": "spam.com",
-                            },
-                            "action": "reject",
-                        }
-                    ]
-                },
-            )
-        )
-        self.user_emails_repo.list_by_user_id.return_value = [
-            self._email_row("a@spam.com")
-        ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
-
-        await self.service.submit(self.session, self._ctx(), dto)
-
-        self.assertEqual(
-            self._owner_types(), [(5, NotificationType.APPLICATION_AUTO_REJECTED)]
-        )
-
-    async def test_submit_tells_owners_an_auto_hired_application_was_auto_hired(self):
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerIds": [5],
-                    "stages": [{"stage": "recruiter_screening"}],
-                },
-                screen_rules={
-                    "rules": [
-                        {
-                            "id": "r1",
-                            "condition": {
-                                "source": "email_domain",
-                                "operator": "equals",
-                                "value": "circlecat.org",
-                            },
-                            "action": "auto_hire",
-                        }
-                    ]
-                },
-            )
-        )
-        self.user_emails_repo.list_by_user_id.return_value = [
-            self._email_row("a@circlecat.org")
-        ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
-
-        await self.service.submit(self.session, self._ctx(), dto)
-
-        self.assertEqual(
-            self._owner_types(), [(5, NotificationType.APPLICATION_AUTO_HIRED)]
-        )
-
-    async def test_submit_treats_a_qualify_match_as_an_ordinary_submission(self):
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerIds": [5],
-                    "stages": [{"stage": "recruiter_screening"}],
-                },
-                screen_rules={
-                    "rules": [
-                        {
-                            "id": "r1",
-                            "condition": {
-                                "source": "email_domain",
-                                "operator": "equals",
-                                "value": "circlecat.org",
-                            },
-                            "action": "qualify",
-                        }
-                    ]
-                },
-            )
-        )
-        self.user_emails_repo.list_by_user_id.return_value = [
-            self._email_row("a@circlecat.org")
-        ]
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
-
-        await self.service.submit(self.session, self._ctx(), dto)
-
-        self.assertEqual(
-            self._owner_types(), [(5, NotificationType.APPLICATION_SUBMITTED)]
-        )
-
-    async def test_submit_notifies_default_assignee_owner_twice_and_other_owner_once(
-        self,
-    ):
-        """The default assignee and the owner list are different facts about
-        the same person when they overlap: user 5 is both the stage's
-        defaultAssigneeId and one of two owners, so they must get both an
-        ASSIGNED_TO_EVALUATE row and their own APPLICATION_SUBMITTED owner
-        row, while user 8 (owner only) gets just the latter. The applicant
-        (user 2, from the default _ctx()) is neither owner, so nothing here
-        is suppressed by the applicant-skip logic either."""
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerIds": [5, 8],
-                    "stages": [
-                        {"stage": "recruiter_screening", "defaultAssigneeId": 5}
-                    ],
-                }
-            )
-        )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
-
-        await self.service.submit(self.session, self._ctx(), dto)
-
-        self.assertEqual(
-            self._owner_types(),
-            [
-                (5, NotificationType.ASSIGNED_TO_EVALUATE),
-                (5, NotificationType.APPLICATION_SUBMITTED),
-                (8, NotificationType.APPLICATION_SUBMITTED),
-            ],
-        )
-
-    async def test_submit_notifies_owners_before_committing(self):
-        """An AsyncMock session doesn't pin write order: if the
-        `_notify_owners_of_submission` call in `submit` were moved below
-        `await session.commit()`, every other test here would still pass,
-        even though writing the notification rows after the commit would
-        no longer be atomic with the application row. Record the real
-        interleaving of events instead of asserting on call arity."""
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerIds": [5, 6],
-                    "stages": [{"stage": "recruiter_screening"}],
-                }
-            )
-        )
-        events = []
-        self.session.commit = AsyncMock(side_effect=lambda: events.append("commit"))
-        self.notification_repo.create = AsyncMock(
-            side_effect=lambda *args, **kwargs: events.append("notify")
-        )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
-
-        await self.service.submit(self.session, self._ctx(), dto)
-
-        self.assertIn("commit", events)
-        notify_indices = [i for i, e in enumerate(events) if e == "notify"]
-        commit_index = events.index("commit")
-        self.assertTrue(notify_indices, "expected at least one notify event")
-        self.assertTrue(
-            all(i < commit_index for i in notify_indices),
-            f"expected every notify event before commit, got {events}",
-        )
-
-    async def test_submit_notifies_owner_from_legacy_scalar_owner_id(self):
-        """normalized_owner_ids tolerates configs saved before multi-owner
-        support, which carry a scalar `{"ownerId": 5}` instead of
-        `{"ownerIds": [5]}` -- the owner fan-out in submit must resolve
-        that legacy shape too, not just the current one."""
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerId": 5,
-                    "stages": [{"stage": "recruiter_screening"}],
-                }
-            )
-        )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
-
-        await self.service.submit(self.session, self._ctx(), dto)
-
-        self.assertEqual(
-            self._owner_types(), [(5, NotificationType.APPLICATION_SUBMITTED)]
-        )
-
-    async def test_reapply_inside_cooldown_notifies_owners(self):
-        """The re-apply-after-rejection path -- a brand-new application row,
-        plus a cold_freeze tag inside the posting's cooldown window -- is
-        the path with the most moving parts; owner notifications must still
-        fire through it exactly as they do for a fresh submission."""
-        job = self._job(
-            cooldown_days=90,
-            status=JobStatus.PUBLISHED,
-            pipeline_config={
-                "ownerIds": [5, 6],
-                "stages": [{"stage": "recruiter_screening"}],
-            },
-        )
-        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        rejected_application = ApplicationEntity(
-            job_id=1, user_id=2, stage=ApplicationStage.REJECTED, current_round=1
-        )
-        rejected_application.application_id = 55
-        rejected_application.created_datetime = datetime(
-            2026, 1, 10, tzinfo=timezone.utc
-        )
-        self.app_repo.get_latest_by_job_and_user = AsyncMock(
-            return_value=rejected_application
-        )
-        self.service._today = lambda: date(2026, 2, 1)  # inside the 90-day window
-        dto = ApplicationSubmitDto.model_validate({
-            "jobId": 1,
-            "personal": {"firstName": "New"},
-        })
-
-        result = await self.service.submit(self.session, self._ctx(), dto)
-
-        self.assertIn("cold_freeze", result.tags or {})
-        self.assertEqual(
-            self._owner_types(),
-            [
-                (5, NotificationType.APPLICATION_SUBMITTED),
-                (6, NotificationType.APPLICATION_SUBMITTED),
-            ],
-        )
-        entity = self.notification_repo.create.await_args_list[0].args[1]
-        self.assertEqual(entity.application_id, result.id)
-        self.assertEqual(entity.actor_user_id, 2)
-
-    async def test_submit_records_the_notification_inside_the_transaction(self):
-        self.job_repo.get_by_job_id = AsyncMock(
-            return_value=self._job(
-                pipeline_config={
-                    "ownerIds": [5],
-                    "stages": [{"stage": "recruiter_screening"}],
-                }
-            )
-        )
-        dto = ApplicationSubmitDto.model_validate({"jobId": 1})
-
-        await self.service.submit(self.session, self._ctx(), dto)
-
-        self.notification_repo.create.assert_awaited_once()
-        # Order, not just occurrence: writing the row after the commit would
-        # let a rollback drop the notification while the application it
-        # announces survived.
-        self.assertEqual(self.call_order, ["record", "commit"])
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -51,10 +51,10 @@ describe("Postings", () => {
     return render(<RouterProvider router={router} />);
   };
 
-  it("renders the Managed by cue from listJobOwners", async () => {
+  it("renders the Recruiter cue from listJobOwners", async () => {
     renderPage();
     await waitFor(() =>
-      expect(screen.getByText("Managed by: Alice")).toBeInTheDocument(),
+      expect(screen.getByText("Recruiter: Alice")).toBeInTheDocument(),
     );
   });
 
@@ -67,13 +67,17 @@ describe("Postings", () => {
     );
   });
 
-  it("filters to only the current user's managed postings when toggled", async () => {
+  it("filters to only the current user's own postings when toggled", async () => {
     renderPage();
     await waitFor(() => screen.getByText("Backend Engineer"));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Managed by me" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "I'm the recruiter" }),
+    );
     expect(screen.getByText("Backend Engineer")).toBeInTheDocument(); // user 5 is an owner
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "Managed by me" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "I'm the recruiter" }),
+    );
   });
 
   it("New posting button navigates to the new-posting route", async () => {
@@ -95,6 +99,18 @@ describe("Postings", () => {
     );
   });
 
+  // Starting a new posting has nothing to do with the list, so it stays
+  // reachable without scrolling past however many postings there are.
+  it("renders New posting in the header, above the postings list", async () => {
+    renderPage();
+    const row = await waitFor(() => screen.getByText("Backend Engineer"));
+    const newPosting = screen.getByRole("button", { name: "New posting" });
+    expect(
+      row.compareDocumentPosition(newPosting) &
+        Node.DOCUMENT_POSITION_PRECEDING,
+    ).toBeTruthy();
+  });
+
   it("disables New posting when the user lacks recruiting.job.write", async () => {
     mockUseAuth.mockReturnValue({ user: { userId: 5 }, permissions: [] });
     renderPage();
@@ -102,7 +118,7 @@ describe("Postings", () => {
     expect(screen.getByRole("button", { name: "New posting" })).toBeDisabled();
   });
 
-  it("does not show the Backend Engineer posting when Managed by me excludes the current user", async () => {
+  it("does not show the Backend Engineer posting when I'm the recruiter excludes the current user", async () => {
     api.listJobs.mockResolvedValue({
       data: [
         {
@@ -116,7 +132,9 @@ describe("Postings", () => {
     });
     renderPage();
     await waitFor(() => screen.getByText("Backend Engineer"));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Managed by me" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "I'm the recruiter" }),
+    );
     await waitFor(() =>
       expect(screen.queryByText("Backend Engineer")).not.toBeInTheDocument(),
     );

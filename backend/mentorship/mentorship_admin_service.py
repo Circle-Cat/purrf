@@ -632,7 +632,8 @@ class MentorshipAdminService:
         Raises ValueError if note combines mutually exclusive tags.
 
         At most one absent tag; unknown_late cannot combine with a specific
-        late tag; mentor_late and mentee_late may coexist.
+        late tag; mentor_late and mentee_late may coexist. The same role
+        cannot be marked as both absent and late.
         """
         if note is None:
             return
@@ -642,6 +643,41 @@ class MentorshipAdminService:
         if MeetingNoteTag.UNKNOWN_LATE in tags and tags & self._SPECIFIC_LATE_TAGS:
             raise ValueError(
                 f"note cannot combine unknown_late with a specific late tag: {note}"
+            )
+        if (
+            MeetingNoteTag.MENTOR_ABSENT in tags and MeetingNoteTag.MENTOR_LATE in tags
+        ) or (
+            MeetingNoteTag.MENTEE_ABSENT in tags and MeetingNoteTag.MENTEE_LATE in tags
+        ):
+            raise ValueError(
+                f"note cannot mark the same role both absent and late: {note}"
+            )
+
+    def _validate_no_absent_if_completed(
+        self, meeting: MentorshipMeetingEntity
+    ) -> None:
+        """
+        Prevent `is_completed` and absent note tags from coexisting.
+
+        Must be called after `is_completed` and `note` have been merged
+        into `meeting`; otherwise it may validate against stale or
+        partial state.
+
+        Args:
+            meeting (MentorshipMeetingEntity): The meeting row with
+                `is_completed` and absent tag fields already resolved to
+                their final values for this update.
+
+        Raises:
+            ValueError: If `is_completed` is true and an absent tag
+                (unknown, mentor, or mentee) is set.
+        """
+        if meeting.is_completed and (
+            meeting.has_unknown_absent or meeting.absent_user_id is not None
+        ):
+            raise ValueError(
+                f"Cannot mark meeting {meeting.meeting_id} completed while a "
+                "participant is marked absent."
             )
 
     def _apply_note_tags(
@@ -755,6 +791,8 @@ class MentorshipAdminService:
                 self._apply_note_tags(
                     meeting, item.note, pair.mentor_id, pair.mentee_id
                 )
+            if item.is_completed is not None or item.note is not None:
+                self._validate_no_absent_if_completed(meeting)
 
         # Assigned directly rather than left for the ORM to refresh -- same
         # rationale as MeetingService.upsert_meetings: the UPDATE issued here

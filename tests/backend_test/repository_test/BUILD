@@ -4,6 +4,7 @@ py_library(
     name = "base_repository_test_lib",
     testonly = True,
     srcs = ["base_repository_test_lib.py"],
+    visibility = ["//visibility:public"],
     deps = [
         "//backend/common:database",
         "//backend/common:mentorship_enums",
@@ -146,31 +147,6 @@ py_test(
     deps = [
         ":base_repository_test_lib",
         "//backend/common:mentorship_enums",
-        "//backend/common:recruiting_enums",
-        "//backend/entity:entities",
-        "//backend/repository:repositories",
-    ],
-)
-
-py_test(
-    name = "application_activity_repository_test",
-    srcs = ["application_activity_repository_test.py"],
-    env_inherit = ["DATABASE_URL"],
-    deps = [
-        ":base_repository_test_lib",
-        "//backend/common:mentorship_enums",
-        "//backend/common:recruiting_enums",
-        "//backend/entity:entities",
-        "//backend/repository:repositories",
-    ],
-)
-
-py_test(
-    name = "job_activity_repository_test",
-    srcs = ["job_activity_repository_test.py"],
-    env_inherit = ["DATABASE_URL"],
-    deps = [
-        ":base_repository_test_lib",
         "//backend/common:recruiting_enums",
         "//backend/entity:entities",
         "//backend/repository:repositories",

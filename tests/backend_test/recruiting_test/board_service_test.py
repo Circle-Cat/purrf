@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, call, create_autospec
+from unittest.mock import AsyncMock, MagicMock, call, create_autospec, patch
 
 from backend.recruiting.application_access import ApplicationAccess
 from backend.recruiting.board_service import (
@@ -41,16 +41,12 @@ from backend.common.recruiting_enums import (
     ApplicationStage,
     JobKind,
     JobStatus,
-    NotificationType,
 )
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
 )
 from backend.repository.application_interview_repository import (
     ApplicationInterviewRepository,
-)
-from backend.repository.application_activity_repository import (
-    ApplicationActivityRepository,
 )
 from backend.repository.application_comment_repository import (
     ApplicationCommentRepository,
@@ -81,12 +77,10 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         # unless a test seeds an existing assignment via .get.return_value.
         self.assignment_repo.get.return_value = None
         self.user_permissions_repo = MagicMock()
-        self.activity_repo = create_autospec(
-            ApplicationActivityRepository, instance=True
-        )
-        # Default: no activity/comment rows, so get_other_applications'
+        self.event_repo = MagicMock()
+        # Default: no event/comment rows, so get_other_applications'
         # embedded-history fetches map to empty lists unless a test seeds rows.
-        self.activity_repo.list_by_application.return_value = []
+        self.event_repo.list_by_subject = AsyncMock(return_value=[])
         self.comment_repo = create_autospec(ApplicationCommentRepository, instance=True)
         self.comment_repo.list_by_application.return_value = []
         self.comment_mention_repo = create_autospec(
@@ -104,6 +98,18 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.interview_repo.get.return_value = None
         self.interview_repo.list_by_application_ids.return_value = []
         self.session = AsyncMock()
+
+        async def _record(session, **kwargs):
+            self.call_order.append("record")
+            return None
+
+        recorder = patch(
+            "backend.recruiting.board_service.record_event",
+            new_callable=AsyncMock,
+            side_effect=_record,
+        )
+        self.record_event = recorder.start()
+        self.addCleanup(recorder.stop)
         # Applicant emails come from user_emails, not the legacy column.
         self.user_emails_repo = MagicMock()
         self.user_emails_repo.get_contact_emails_by_user_ids = AsyncMock(
@@ -152,7 +158,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.resume_storage,
             self.assignment_repo,
             self.user_permissions_repo,
-            self.activity_repo,
+            self.event_repo,
             self.comment_repo,
             self.comment_mention_repo,
             self.evaluation_repo,
@@ -188,12 +194,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         """
         self.call_order = []
         repository = create_autospec(NotificationRepository, instance=True)
-
-        async def _create(session, entity):
-            self.call_order.append("record")
-            return entity
-
-        repository.create = AsyncMock(side_effect=_create)
         self.session.commit = AsyncMock(
             side_effect=lambda: self.call_order.append("commit")
         )
@@ -635,12 +635,11 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         await self.service.send_application_email(
             self.session, self._ctx(user_id=2), 7, dto
         )
-        self.activity_repo.create.assert_awaited_once()
-        args, kwargs = self.activity_repo.create.await_args
-        # positional: (session, application_id, actor_id, event_type)
-        self.assertEqual(args[1], 7)
-        self.assertEqual(args[2], 2)  # actor = the sending recruiter
-        self.assertEqual(args[3], "email_sent")
+        self.record_event.assert_awaited_once()
+        _args, kwargs = self.record_event.await_args
+        self.assertEqual(kwargs["subject_id"], 7)
+        self.assertEqual(kwargs["actor_id"], 2)  # the sending recruiter
+        self.assertEqual(kwargs["event_type"], "recruiting.email_sent")
         self.assertEqual(kwargs["details"]["subject"], "Hello")
         self.assertEqual(kwargs["details"]["to"], ["c@x"])
         self.assertEqual(kwargs["details"]["cc"], ["boss@x"])
@@ -659,7 +658,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.session.commit.assert_awaited_once()
         # The timeline write moved to EmailSyncService; board_service must not
         # write activities on the refresh path any more.
-        self.activity_repo.create.assert_not_awaited()
+        self.record_event.assert_not_awaited()
 
     def _assignment(self, application_id, stage, round, assignee_id, assigned_by=2):
         return ApplicationAssignmentEntity(
@@ -2105,14 +2104,14 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = StageChangeDto(to_stage=ApplicationStage.TECH, assignee_id=5)
         await self.service.change_stage(self.session, self._ctx(user_id=9), 10, dto)
 
-        self.notification_repo.create.assert_awaited_once()
-        (session_arg, entity_arg), _ = self.notification_repo.create.call_args
-        self.assertEqual(session_arg, self.session)
-        self.assertEqual(entity_arg.user_id, 5)
-        self.assertEqual(entity_arg.type, NotificationType.ASSIGNED_TO_EVALUATE)
-        self.assertEqual(entity_arg.application_id, 10)
-        self.assertEqual(entity_arg.round, 1)
-        self.assertEqual(entity_arg.actor_user_id, 9)
+        self.record_event.assert_any_await(
+            self.session,
+            subject_type="application",
+            subject_id=10,
+            actor_id=9,
+            event_type="recruiting.reassigned",
+            details={"stage": "tech", "assigneeId": 5, "round": 1},
+        )
 
     async def test_change_stage_records_the_notification_inside_the_transaction(self):
         # Same setup as test_change_stage_notifies_new_interview_assignee.
@@ -2131,8 +2130,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = StageChangeDto(to_stage=ApplicationStage.TECH, assignee_id=5)
         await self.service.change_stage(self.session, self._ctx(user_id=9), 10, dto)
 
-        self.notification_repo.create.assert_awaited_once()
-        self.assertEqual(self.call_order, ["record", "commit"])
+        self.record_event.assert_awaited()
+        self.assertEqual(self.call_order[-1], "commit")
+        self.assertIn("record", self.call_order[:-1])
 
     async def test_change_stage_does_not_notify_when_reassigning_same_person(self):
         job = self._job(job_id=1, owner_ids=(9,))
@@ -2196,11 +2196,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.evaluation_repo.has_confirmed.assert_awaited_once_with(
             self.session, 10, ApplicationStage.RECRUITER_SCREENING, 2
         )
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_any_await(
             self.session,
-            10,
-            2,
-            "stage_changed",
+            subject_type="application",
+            subject_id=10,
+            actor_id=2,
+            event_type="recruiting.stage_changed",
             details={
                 "fromStage": "recruiter_screening",
                 "toStage": "tech",
@@ -2223,11 +2224,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = StageChangeDto(to_stage=ApplicationStage.TECH)
         await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_any_await(
             self.session,
-            10,
-            2,
-            "stage_changed",
+            subject_type="application",
+            subject_id=10,
+            actor_id=2,
+            event_type="recruiting.stage_changed",
             details={"fromStage": "recruiter_screening", "toStage": "tech"},
         )
 
@@ -2247,11 +2249,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = StageChangeDto(to_stage=ApplicationStage.HIRED)
         await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_any_await(
             self.session,
-            10,
-            2,
-            "stage_changed",
+            subject_type="application",
+            subject_id=10,
+            actor_id=2,
+            event_type="recruiting.stage_changed",
             details={
                 "fromStage": "tech",
                 "toStage": "hired",
@@ -2277,7 +2280,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
 
         self.evaluation_repo.has_confirmed.assert_not_awaited()
-        details = self.activity_repo.create.await_args.kwargs["details"]
+        details = self.record_event.await_args.kwargs["details"]
         self.assertNotIn("advancedWithoutEvaluation", details)
 
     async def test_change_stage_offer_to_hired_never_checks_evaluations(self):
@@ -2298,7 +2301,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
 
         self.evaluation_repo.has_confirmed.assert_not_awaited()
-        details = self.activity_repo.create.await_args.kwargs["details"]
+        details = self.record_event.await_args.kwargs["details"]
         self.assertNotIn("advancedWithoutEvaluation", details)
 
     async def test_change_stage_sets_stage_entered_at(self):
@@ -2619,12 +2622,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = ReassignDto(assignee_id=6)
         await self.service.reassign(self.session, self._ctx(user_id=9), 10, dto)
 
-        self.notification_repo.create.assert_awaited_once()
-        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
-        self.assertEqual(entity_arg.user_id, 6)
-        self.assertEqual(entity_arg.type, NotificationType.ASSIGNED_TO_EVALUATE)
-        self.assertEqual(entity_arg.application_id, 10)
-        self.assertEqual(entity_arg.actor_user_id, 9)
+        self.record_event.assert_awaited_once()
+        kwargs = self.record_event.await_args.kwargs
+        self.assertEqual(kwargs["event_type"], "recruiting.reassigned")
+        self.assertEqual(kwargs["subject_id"], 10)
+        self.assertEqual(kwargs["actor_id"], 9)
+        self.assertEqual(kwargs["details"]["assigneeId"], 6)
 
     async def test_reassign_records_the_notification_inside_the_transaction(self):
         # Same setup as test_reassign_notifies_new_assignee.
@@ -2646,8 +2649,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = ReassignDto(assignee_id=6)
         await self.service.reassign(self.session, self._ctx(user_id=9), 10, dto)
 
-        self.notification_repo.create.assert_awaited_once()
-        self.assertEqual(self.call_order, ["record", "commit"])
+        self.record_event.assert_awaited()
+        self.assertEqual(self.call_order[-1], "commit")
+        self.assertIn("record", self.call_order[:-1])
 
     async def test_reassign_to_same_person_does_not_notify(self):
         application = self._application(
@@ -2707,11 +2711,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = SubStatusChangeDto(sub_status="in_progress")
         await self.service.set_sub_status(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            10,
-            2,
-            "sub_status_changed",
+            subject_type="application",
+            subject_id=10,
+            actor_id=2,
+            event_type="recruiting.sub_status_changed",
             details={
                 "stage": ApplicationStage.RECRUITER_SCREENING.value,
                 "fromSubStatus": "pending",
@@ -2832,7 +2837,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             str(ctx.exception),
-            "sub-status evaluated requires a confirmed evaluation for the current round",
+            "sub-status evaluated requires a confirmed evaluation for the current session",
         )
         self.evaluation_repo.has_confirmed.assert_awaited_once_with(
             self.session, 10, ApplicationStage.RECRUITER_SCREENING, 2
@@ -2944,11 +2949,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
         await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
 
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            10,
-            99,
-            "blacklisted",
+            subject_type="application",
+            subject_id=10,
+            actor_id=99,
+            event_type="recruiting.blacklisted",
             details={
                 "fromStage": ApplicationStage.TECH.value,
                 "reason": "Fabricated credentials",
@@ -3083,15 +3089,17 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fourth.current_round, 4)
         self.app_repo.list_by_user.assert_awaited_once_with(self.session, 3)
         # trigger (10) + second (11) + third (12) + fourth (13).
-        self.assertEqual(self.activity_repo.create.call_count, 4)
+        self.assertEqual(self.record_event.call_count, 4)
         by_app = {
-            call.args[1]: call for call in self.activity_repo.create.call_args_list
+            call.kwargs["subject_id"]: call for call in self.record_event.call_args_list
         }
-        self.assertEqual(by_app[12].args, (self.session, 12, 99, "blacklisted"))
+        self.assertEqual(by_app[12].kwargs["actor_id"], 99)
+        self.assertEqual(by_app[12].kwargs["event_type"], "recruiting.blacklisted")
         self.assertEqual(
             by_app[12].kwargs["details"]["fromStage"], ApplicationStage.HIRED.value
         )
-        self.assertEqual(by_app[13].args, (self.session, 13, 99, "blacklisted"))
+        self.assertEqual(by_app[13].kwargs["actor_id"], 99)
+        self.assertEqual(by_app[13].kwargs["event_type"], "recruiting.blacklisted")
         self.assertEqual(
             by_app[13].kwargs["details"]["fromStage"], ApplicationStage.REJECTED.value
         )
@@ -3130,8 +3138,8 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(prior.current_round, 5)
         # Only the triggering application (10) is logged; the already-tagged
         # rejected row logs nothing.
-        self.assertEqual(self.activity_repo.create.call_count, 1)
-        self.assertEqual(self.activity_repo.create.call_args_list[0].args[1], 10)
+        self.assertEqual(self.record_event.call_count, 1)
+        self.assertEqual(self.record_event.call_args_list[0].kwargs["subject_id"], 10)
 
     # -- set_round --
 
@@ -3687,11 +3695,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = StageChangeDto(to_stage=ApplicationStage.TECH, assignee_id=42)
         await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_any_await(
             self.session,
-            10,
-            2,
-            "stage_changed",
+            subject_type="application",
+            subject_id=10,
+            actor_id=2,
+            event_type="recruiting.stage_changed",
             details={
                 "fromStage": "recruiter_screening",
                 "toStage": "tech",
@@ -3715,11 +3724,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
         await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_any_await(
             self.session,
-            10,
-            2,
-            "stage_changed",
+            subject_type="application",
+            subject_id=10,
+            actor_id=2,
+            event_type="recruiting.stage_changed",
             details={
                 "fromStage": "tech",
                 "toStage": "rejected",
@@ -3752,16 +3762,18 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = ReassignDto(assignee_id=42)
         await self.service.reassign(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            10,
-            2,
-            "reassigned",
+            subject_type="application",
+            subject_id=10,
+            actor_id=2,
+            event_type="recruiting.reassigned",
             details={
                 "stage": "tech",
                 "round": 1,
                 "fromAssigneeId": 7,
                 "toAssigneeId": 42,
+                "assigneeId": 42,
             },
         )
 
@@ -3782,16 +3794,18 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = ReassignDto(assignee_id=42)
         await self.service.reassign(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            10,
-            2,
-            "reassigned",
+            subject_type="application",
+            subject_id=10,
+            actor_id=2,
+            event_type="recruiting.reassigned",
             details={
                 "stage": "tech",
                 "round": 1,
                 "fromAssigneeId": None,
                 "toAssigneeId": 42,
+                "assigneeId": 42,
             },
         )
 
@@ -3810,11 +3824,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = RoundChangeDto(round=2, assignee_id=42)
         await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            10,
-            2,
-            "round_advanced",
+            subject_type="application",
+            subject_id=10,
+            actor_id=2,
+            event_type="recruiting.round_advanced",
             details={
                 "stage": "tech",
                 "fromRound": 1,
@@ -3842,11 +3857,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.evaluation_repo.has_confirmed.assert_awaited_once_with(
             self.session, 10, ApplicationStage.TECH, 1
         )
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            10,
-            2,
-            "round_advanced",
+            subject_type="application",
+            subject_id=10,
+            actor_id=2,
+            event_type="recruiting.round_advanced",
             details={
                 "stage": "tech",
                 "fromRound": 1,
@@ -3868,11 +3884,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = RoundChangeDto(round=2)
         await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.activity_repo.create.assert_awaited_once_with(
+        self.record_event.assert_awaited_once_with(
             self.session,
-            10,
-            2,
-            "round_advanced",
+            subject_type="application",
+            subject_id=10,
+            actor_id=2,
+            event_type="recruiting.round_advanced",
             details={"stage": "tech", "fromRound": 1, "toRound": 2},
         )
 
@@ -3891,7 +3908,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         await self.service.set_round(self.session, self._ctx(user_id=2), 10, dto)
 
         self.evaluation_repo.has_confirmed.assert_not_awaited()
-        details = self.activity_repo.create.await_args.kwargs["details"]
+        details = self.record_event.await_args.kwargs["details"]
         self.assertNotIn("advancedWithoutEvaluation", details)
 
     # -- get_application_activity --
@@ -3904,14 +3921,15 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         row = SimpleNamespace(
-            activity_id=1,
-            application_id=10,
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
             actor_id=42,
-            event_type="stage_changed",
+            event_type="recruiting.stage_changed",
             details={"toStage": "tech"},
             created_at=datetime(2026, 7, 4, 12, 0, 0),
         )
-        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
         self.users_repo.get_all_by_ids = AsyncMock(
             return_value=[self._user(user_id=42, first="Ivan", last="Interviewer")]
         )
@@ -3922,7 +3940,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].id, 1)
-        self.assertEqual(result[0].event_type, "stage_changed")
+        self.assertEqual(result[0].event_type, "recruiting.stage_changed")
         self.assertEqual(result[0].details, {"toStage": "tech"})
         self.assertEqual(result[0].actor_id, 42)
         self.assertEqual(result[0].actor_name, "Ivan Interviewer")
@@ -3935,14 +3953,15 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         row = SimpleNamespace(
-            activity_id=1,
-            application_id=10,
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
             actor_id=99,
-            event_type="stage_changed",
+            event_type="recruiting.stage_changed",
             details={},
             created_at=datetime(2026, 7, 4, 12, 0, 0),
         )
-        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
         self.users_repo.get_all_by_ids = AsyncMock(return_value=[])
 
         result = await self.service.get_application_activity(
@@ -3959,10 +3978,11 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         row = SimpleNamespace(
-            activity_id=1,
-            application_id=10,
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
             actor_id=2,
-            event_type="stage_changed",
+            event_type="recruiting.stage_changed",
             details={
                 "fromStage": "recruiter_screening",
                 "toStage": "tech",
@@ -3970,7 +3990,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             },
             created_at=datetime(2026, 7, 4, 12, 0, 0),
         )
-        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
         self.users_repo.get_all_by_ids = AsyncMock(
             return_value=[
                 self._user(user_id=2, first="Owen", last="Owner"),
@@ -3992,14 +4012,15 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         row = SimpleNamespace(
-            activity_id=1,
-            application_id=10,
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
             actor_id=2,
-            event_type="round_advanced",
+            event_type="recruiting.round_advanced",
             details={"stage": "tech", "fromRound": 1, "toRound": 2, "assigneeId": 42},
             created_at=datetime(2026, 7, 4, 12, 0, 0),
         )
-        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
         self.users_repo.get_all_by_ids = AsyncMock(
             return_value=[
                 self._user(user_id=2, first="Owen", last="Owner"),
@@ -4021,14 +4042,15 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         row = SimpleNamespace(
-            activity_id=1,
-            application_id=10,
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
             actor_id=3,
-            event_type="auto_assigned",
+            event_type="recruiting.auto_assigned",
             details={"stage": "recruiter_screening", "assigneeId": 42},
             created_at=datetime(2026, 7, 4, 12, 0, 0),
         )
-        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
         self.users_repo.get_all_by_ids = AsyncMock(
             return_value=[
                 self._user(user_id=3, first="Alice", last="Smith"),
@@ -4049,19 +4071,21 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         row = SimpleNamespace(
-            activity_id=1,
-            application_id=10,
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
             actor_id=2,
-            event_type="reassigned",
+            event_type="recruiting.reassigned",
             details={
                 "stage": "tech",
                 "round": 1,
                 "fromAssigneeId": 7,
                 "toAssigneeId": 42,
+                "assigneeId": 42,
             },
             created_at=datetime(2026, 7, 4, 12, 0, 0),
         )
-        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
         self.users_repo.get_all_by_ids = AsyncMock(
             return_value=[
                 self._user(user_id=2, first="Owen", last="Owner"),
@@ -4085,10 +4109,11 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         row = SimpleNamespace(
-            activity_id=1,
-            application_id=10,
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
             actor_id=2,
-            event_type="interview_scheduled",
+            event_type="recruiting.interview_scheduled",
             details={
                 "stage": "behavioral",
                 "round": 1,
@@ -4100,7 +4125,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             },
             created_at=datetime(2026, 8, 5, 20, 0, 0),
         )
-        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
         self.users_repo.get_all_by_ids = AsyncMock(
             return_value=[
                 self._user(user_id=2, first="Owen", last="Owner"),
@@ -4122,10 +4147,11 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         row = SimpleNamespace(
-            activity_id=1,
-            application_id=10,
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
             actor_id=2,
-            event_type="interview_cancelled",
+            event_type="recruiting.interview_cancelled",
             details={
                 "stage": "behavioral",
                 "round": 1,
@@ -4137,7 +4163,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             },
             created_at=datetime(2026, 8, 5, 20, 0, 0),
         )
-        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
         self.users_repo.get_all_by_ids = AsyncMock(
             return_value=[
                 self._user(user_id=2, first="Owen", last="Owner"),
@@ -4159,10 +4185,11 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         row = SimpleNamespace(
-            activity_id=1,
-            application_id=10,
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
             actor_id=2,
-            event_type="interview_updated",
+            event_type="recruiting.interview_updated",
             details={
                 "stage": "behavioral",
                 "round": 1,
@@ -4177,7 +4204,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             },
             created_at=datetime(2026, 8, 6, 21, 0, 0),
         )
-        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
         self.users_repo.get_all_by_ids = AsyncMock(
             return_value=[
                 self._user(user_id=2, first="Owen", last="Owner"),
@@ -4201,10 +4228,11 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         row = SimpleNamespace(
-            activity_id=1,
-            application_id=10,
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
             actor_id=2,
-            event_type="interview_updated",
+            event_type="recruiting.interview_updated",
             details={
                 "stage": "behavioral",
                 "round": 1,
@@ -4219,7 +4247,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             },
             created_at=datetime(2026, 8, 6, 21, 0, 0),
         )
-        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
         self.users_repo.get_all_by_ids = AsyncMock(
             return_value=[
                 self._user(user_id=2, first="Owen", last="Owner"),
@@ -4242,19 +4270,21 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         row = SimpleNamespace(
-            activity_id=1,
-            application_id=10,
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
             actor_id=2,
-            event_type="reassigned",
+            event_type="recruiting.reassigned",
             details={
                 "stage": "tech",
                 "round": 1,
                 "fromAssigneeId": None,
                 "toAssigneeId": 42,
+                "assigneeId": 42,
             },
             created_at=datetime(2026, 7, 4, 12, 0, 0),
         )
-        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
         self.users_repo.get_all_by_ids = AsyncMock(
             return_value=[
                 self._user(user_id=2, first="Owen", last="Owner"),
@@ -4277,14 +4307,15 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         row = SimpleNamespace(
-            activity_id=1,
-            application_id=10,
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
             actor_id=2,
-            event_type="stage_changed",
+            event_type="recruiting.stage_changed",
             details={"fromStage": "tech", "toStage": "offer", "assigneeId": 999},
             created_at=datetime(2026, 7, 4, 12, 0, 0),
         )
-        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
         self.users_repo.get_all_by_ids = AsyncMock(
             return_value=[self._user(user_id=2, first="Owen", last="Owner")]
         )
@@ -4306,14 +4337,15 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             "assigneeId": 42,
         }
         row = SimpleNamespace(
-            activity_id=1,
-            application_id=10,
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
             actor_id=2,
-            event_type="stage_changed",
+            event_type="recruiting.stage_changed",
             details=original_details,
             created_at=datetime(2026, 7, 4, 12, 0, 0),
         )
-        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
         self.users_repo.get_all_by_ids = AsyncMock(
             return_value=[
                 self._user(user_id=2, first="Owen", last="Owner"),
@@ -4354,14 +4386,15 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         row = SimpleNamespace(
-            activity_id=1,
-            application_id=10,
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
             actor_id=2,
-            event_type="auto_rejected",
+            event_type="recruiting.auto_rejected",
             details={"reason": "screen_rule", "ruleId": "r1"},
             created_at=datetime(2026, 7, 4, 12, 0, 0),
         )
-        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
         self.users_repo.get_all_by_ids = AsyncMock(
             return_value=[self._user(user_id=2, first="Owen", last="Owner")]
         )
@@ -4381,14 +4414,15 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         row = SimpleNamespace(
-            activity_id=1,
-            application_id=10,
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
             actor_id=2,
-            event_type="auto_rejected",
+            event_type="recruiting.auto_rejected",
             details={"reason": "screen_rule", "ruleId": "r9"},
             created_at=datetime(2026, 7, 4, 12, 0, 0),
         )
-        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
         self.users_repo.get_all_by_ids = AsyncMock(
             return_value=[self._user(user_id=2, first="Owen", last="Owner")]
         )
@@ -4400,6 +4434,139 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             result[0].details["ruleLabel"], "rule r9 (no longer configured)"
         )
+
+    async def test_activity_screen_rule_label_uses_question_text(self):
+        """An answer rule names its question by text, not by internal id."""
+        job = self._job(job_id=1, owner_ids=(2,))
+        job.form_schema = {
+            "questions": [
+                {
+                    "id": "q1",
+                    "label": "Are you legally authorized to work in the US?",
+                }
+            ]
+        }
+        job.screen_rules = {
+            "rules": [
+                {
+                    "id": "r1",
+                    "condition": {
+                        "source": "answer",
+                        "questionId": "q1",
+                        "operator": "equals",
+                        "value": "No",
+                    },
+                    "action": "reject",
+                }
+            ]
+        }
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
+            actor_id=2,
+            event_type="recruiting.auto_rejected",
+            details={"reason": "screen_rule", "ruleId": "r1"},
+            created_at=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=2, first="Owen", last="Owner")]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(
+            result[0].details["ruleLabel"],
+            "answer to 'Are you legally authorized to work in the US?' equals No",
+        )
+
+    async def test_activity_screen_rule_label_falls_back_when_question_removed(self):
+        """A question dropped by a later revision degrades to its raw id."""
+        job = self._job(job_id=1, owner_ids=(2,))
+        job.form_schema = {"questions": []}
+        job.screen_rules = {
+            "rules": [
+                {
+                    "id": "r1",
+                    "condition": {
+                        "source": "answer",
+                        "questionId": "q_gone",
+                        "operator": "equals",
+                        "value": "No",
+                    },
+                    "action": "reject",
+                }
+            ]
+        }
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
+            actor_id=2,
+            event_type="recruiting.auto_rejected",
+            details={"reason": "screen_rule", "ruleId": "r1"},
+            created_at=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=2, first="Owen", last="Owner")]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result[0].details["ruleLabel"], "answer to 'q_gone' equals No")
+
+    async def test_activity_screen_rule_label_survives_missing_form_schema(self):
+        """A job with no form_schema at all must not raise."""
+        job = self._job(job_id=1, owner_ids=(2,))
+        job.form_schema = None
+        job.screen_rules = {
+            "rules": [
+                {
+                    "id": "r1",
+                    "condition": {
+                        "source": "answer",
+                        "questionId": "q1",
+                        "operator": "equals",
+                        "value": "No",
+                    },
+                    "action": "reject",
+                }
+            ]
+        }
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        row = SimpleNamespace(
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
+            actor_id=2,
+            event_type="recruiting.auto_rejected",
+            details={"reason": "screen_rule", "ruleId": "r1"},
+            created_at=datetime(2026, 7, 4, 12, 0, 0),
+        )
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=2, first="Owen", last="Owner")]
+        )
+
+        result = await self.service.get_application_activity(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result[0].details["ruleLabel"], "answer to 'q1' equals No")
 
     async def test_activity_resolves_qualify_and_auto_hire_labels(self):
         job = self._job(job_id=1, owner_ids=(2,))
@@ -4421,17 +4588,18 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         row = SimpleNamespace(
-            activity_id=1,
-            application_id=10,
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
             actor_id=2,
-            event_type="application_submitted",
+            event_type="recruiting.application_submitted",
             details={
                 "stage": "recruiter_screening",
                 "screenQualifyRuleId": "r1",
             },
             created_at=datetime(2026, 7, 4, 12, 0, 0),
         )
-        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
         self.users_repo.get_all_by_ids = AsyncMock(
             return_value=[self._user(user_id=2, first="Owen", last="Owner")]
         )
@@ -4442,7 +4610,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             result[0].details["screenQualifyRuleLabel"],
-            "answer to q_role equals mentor",
+            "answer to 'q_role' equals mentor",
         )
 
     async def test_activity_resolves_auto_hire_label(self):
@@ -4465,17 +4633,18 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         row = SimpleNamespace(
-            activity_id=1,
-            application_id=10,
+            event_id=1,
+            subject_type="application",
+            subject_id=10,
             actor_id=2,
-            event_type="application_submitted",
+            event_type="recruiting.application_submitted",
             details={
                 "stage": "hired",
                 "screenAutoHireRuleId": "r2",
             },
             created_at=datetime(2026, 7, 4, 12, 0, 0),
         )
-        self.activity_repo.list_by_application = AsyncMock(return_value=[row])
+        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
         self.users_repo.get_all_by_ids = AsyncMock(
             return_value=[self._user(user_id=2, first="Owen", last="Owner")]
         )
@@ -4486,7 +4655,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             result[0].details["screenAutoHireRuleLabel"],
-            "answer to q_experience equals senior",
+            "answer to 'q_experience' equals senior",
         )
 
     async def test_get_application_activity_non_owner_gets_collapsed_not_found_message(
@@ -4502,7 +4671,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
                 self.session, self._ctx(user_id=99), 10
             )
 
-        self.activity_repo.list_by_application.assert_not_awaited()
+        self.event_repo.list_by_subject.assert_not_awaited()
 
     async def test_get_application_activity_assignee_who_is_not_owner_still_raises(
         self,
@@ -4845,13 +5014,13 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = CommentCreateDto(body="hi @[7]")
         await self.service.add_comment(self.session, self._ctx(user_id=9), 10, dto)
 
-        self.notification_repo.create.assert_awaited_once()
-        (_session_arg, entity_arg), _ = self.notification_repo.create.call_args
-        self.assertEqual(entity_arg.user_id, 7)
-        self.assertEqual(entity_arg.type, NotificationType.MENTIONED)
-        self.assertEqual(entity_arg.application_id, 10)
-        self.assertEqual(entity_arg.comment_id, 100)
-        self.assertEqual(entity_arg.actor_user_id, 9)
+        self.record_event.assert_awaited_once()
+        kwargs = self.record_event.await_args.kwargs
+        self.assertEqual(kwargs["event_type"], "recruiting.mentioned")
+        self.assertEqual(kwargs["subject_id"], 10)
+        self.assertEqual(kwargs["actor_id"], 9)
+        self.assertEqual(kwargs["details"]["mentionedIds"], [7])
+        self.assertEqual(kwargs["details"]["commentId"], 100)
 
     async def test_add_comment_records_the_notification_inside_the_transaction(self):
         # Same setup as test_add_comment_notifies_each_mentioned_user.
@@ -4877,8 +5046,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = CommentCreateDto(body="hi @[7]")
         await self.service.add_comment(self.session, self._ctx(user_id=9), 10, dto)
 
-        self.notification_repo.create.assert_awaited_once()
-        self.assertEqual(self.call_order, ["record", "commit"])
+        self.record_event.assert_awaited()
+        self.assertEqual(self.call_order[-1], "commit")
+        self.assertIn("record", self.call_order[:-1])
 
     async def test_add_comment_skips_self_mention(self):
         job = self._job(job_id=1, owner_ids=(9,))
@@ -5068,7 +5238,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_by_id = AsyncMock(return_value=application)
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.users_repo.get_all_by_ids = AsyncMock(return_value=[])
-        self.activity_repo.list_by_application.return_value = []
+        self.event_repo.list_by_subject.return_value = []
         ctx = UserContextDto(
             sub="s",
             primary_email="hr@b.com",
@@ -5079,8 +5249,8 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.get_application_activity(self.session, ctx, 10)
 
         self.assertEqual(result, [])
-        self.activity_repo.list_by_application.assert_awaited_once_with(
-            self.session, 10
+        self.event_repo.list_by_subject.assert_awaited_once_with(
+            self.session, "application", 10
         )
 
     # -- get_other_applications --
@@ -5116,6 +5286,42 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.other_jobs[0].application.id, 11)
         self.assertEqual(result.other_jobs[0].job_title, "Job 2")
         self.app_repo.list_by_user.assert_awaited_once_with(self.session, 3)
+
+    async def test_other_application_carries_its_own_job_form_schema(self):
+        """Another application's answers can be labeled with its own job's
+        form -- it belongs to a job the detail page's own form_schema knows
+        nothing about."""
+        entry_job = self._job(job_id=1, owner_ids=(2,))
+        other_job = self._job(job_id=2, owner_ids=(9,))
+        schema = {
+            "questions": [{"id": "q9", "type": "short_text", "label": "Availability?"}]
+        }
+        other_job.form_schema = schema
+        entry_app = self._application(
+            application_id=10,
+            job_id=1,
+            user_id=3,
+        )
+        other_app = self._application(
+            application_id=11,
+            job_id=2,
+            user_id=3,
+            stage=ApplicationStage.TECH,
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=entry_app)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=entry_job)
+        self.assignment_repo.get.return_value = None
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[(entry_app, entry_job), (other_app, other_job)]
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.list_by_application.return_value = []
+
+        result = await self.service.get_other_applications(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual(result.other_jobs[0].form_schema, schema)
 
     async def test_get_other_applications_routes_same_job_prior_attempt_to_history(
         self,
@@ -5338,12 +5544,13 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             return_value=[(entry_app, entry_job), (other_app, other_job)]
         )
         self.sub_repo.get_current = AsyncMock(return_value=None)
-        self.activity_repo.list_by_application.return_value = [
+        self.event_repo.list_by_subject.return_value = [
             SimpleNamespace(
-                activity_id=2,
-                application_id=11,
+                event_id=2,
+                subject_type="application",
+                subject_id=11,
                 actor_id=9,
-                event_type="stage_changed",
+                event_type="recruiting.stage_changed",
                 details={
                     "fromStage": "tech",
                     "toStage": "rejected",
@@ -5353,10 +5560,11 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
                 created_at=datetime(2026, 7, 5, 12, 0, 0),
             ),
             SimpleNamespace(
-                activity_id=1,
-                application_id=11,
+                event_id=1,
+                subject_type="application",
+                subject_id=11,
                 actor_id=9,
-                event_type="auto_rejected",
+                event_type="recruiting.auto_rejected",
                 details={"reason": "screen_rule", "ruleId": "r1"},
                 created_at=datetime(2026, 7, 4, 12, 0, 0),
             ),
@@ -5391,8 +5599,8 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(entry.comments), 1)
         self.assertEqual(entry.comments[0].body, "Discussed with the panel.")
         self.assertEqual(entry.comments[0].author_name, "Olga Owner")
-        self.activity_repo.list_by_application.assert_awaited_once_with(
-            self.session, 11
+        self.event_repo.list_by_subject.assert_awaited_once_with(
+            self.session, "application", 11
         )
         self.comment_repo.list_by_application.assert_awaited_once_with(self.session, 11)
 
@@ -5427,7 +5635,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.other_jobs[0].activity, [])
         self.assertEqual(result.other_jobs[0].comments, [])
-        self.activity_repo.list_by_application.assert_not_called()
+        self.event_repo.list_by_subject.assert_not_called()
         self.comment_repo.list_by_application.assert_not_called()
 
     async def test_get_other_applications_read_all_caller_gets_history(self):
@@ -5450,12 +5658,13 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             return_value=[(entry_app, entry_job), (other_app, other_job)]
         )
         self.sub_repo.get_current = AsyncMock(return_value=None)
-        self.activity_repo.list_by_application.return_value = [
+        self.event_repo.list_by_subject.return_value = [
             SimpleNamespace(
-                activity_id=1,
-                application_id=11,
+                event_id=1,
+                subject_type="application",
+                subject_id=11,
                 actor_id=9,
-                event_type="application_submitted",
+                event_type="recruiting.application_submitted",
                 details={"stage": "recruiter_screening"},
                 created_at=datetime(2026, 7, 4, 12, 0, 0),
             )

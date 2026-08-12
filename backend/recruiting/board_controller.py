@@ -449,7 +449,7 @@ class BoardController:
             result = await self.board_service.set_round(
                 session, current_user, application_id, round_data
             )
-        return api_response(message="Application round updated.", data=result)
+        return api_response(message="Application session updated.", data=result)
 
     async def blacklist(
         self,

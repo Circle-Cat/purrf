@@ -57,3 +57,37 @@ describe("EducationFormItem", () => {
     expect(onDelete).toHaveBeenCalledWith(1);
   });
 });
+
+describe("EducationFormItem error keys", () => {
+  it("reads errors keyed `${id}-${field}` when no key builder is given", () => {
+    // The Profile edit modals key errors this way and must keep working.
+    const { container } = render(
+      <EducationFormItem
+        item={item}
+        errors={{ "1-institution": "School is required" }}
+        onChange={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("School is required")).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-error-key="1-institution"]'),
+    ).toBeInTheDocument();
+  });
+
+  it("reads errors under whatever key the caller builds", () => {
+    const { container } = render(
+      <EducationFormItem
+        item={item}
+        errors={{ "education:1:degree": "Degree is required" }}
+        errorKeyFor={(field) => `education:${item.id}:${field}`}
+        onChange={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Degree is required")).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-error-key="education:1:degree"]'),
+    ).toBeInTheDocument();
+  });
+});

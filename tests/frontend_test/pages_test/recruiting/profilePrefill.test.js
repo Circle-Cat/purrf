@@ -139,3 +139,46 @@ describe("profileToApplicationForm", () => {
     expect(profileToApplicationForm({})).toEqual(emptyResult);
   });
 });
+
+describe("profileToApplicationForm keeps each row's profile id", () => {
+  // Without it, saving a changed list recreates every row in it, including
+  // the ones the candidate never touched.
+  it("carries the profile row id alongside the form's own local id", () => {
+    const value = profileToApplicationForm({
+      user: {},
+      education: [
+        {
+          id: 41,
+          school: "Tsinghua University",
+          degree: "BSc",
+          fieldOfStudy: "Computer Science",
+          startDate: "2018-09-01",
+          endDate: "2022-06-01",
+        },
+      ],
+      workHistory: [
+        {
+          id: 42,
+          title: "Backend Engineer",
+          companyOrOrganization: "Circle Cat",
+          startDate: "2022-07-01",
+          endDate: "2024-03-01",
+        },
+      ],
+    });
+
+    expect(value.education[0].profileRowId).toBe(41);
+    expect(value.experience[0].profileRowId).toBe(42);
+    // The local id is still the form's own, not the profile's.
+    expect(value.education[0].id).not.toBe(41);
+  });
+
+  it("leaves the profile id undefined when the profile row has none", () => {
+    const value = profileToApplicationForm({
+      user: {},
+      education: [{ school: "Tsinghua University" }],
+      workHistory: [],
+    });
+    expect(value.education[0].profileRowId).toBeUndefined();
+  });
+});

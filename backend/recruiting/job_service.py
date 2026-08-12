@@ -2,8 +2,7 @@ from datetime import datetime, timezone
 
 from backend.entity.job_entity import JobEntity
 from backend.entity.job_review_entity import JobReviewEntity
-from backend.entity.notification_entity import NotificationEntity
-from backend.repository.job_activity_repository import JobActivityRepository
+from backend.notification_management.event_recorder import record_event
 from backend.repository.job_repository import JobRepository
 from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.user_permissions_repository import UserPermissionsRepository
@@ -11,15 +10,16 @@ from backend.repository.users_repository import UsersRepository
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.job_activity_dto import JobActivityDto
+from backend.dto.job_config_dto import question_seq_floor
 from backend.dto.job_dto import JobCreateDto, JobDto, PublicJobDto, PublicJobSummaryDto
 from backend.dto.job_review_dto import ApproverDto, JobReviewDto
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import (
-    PUBLICLY_VISIBLE_JOB_STATUSES,
     JobReviewKind,
     JobReviewStatus,
     JobStatus,
-    NotificationType,
+    PUBLICLY_VISIBLE_JOB_STATUSES,
+    RecruitingEvent,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,8 +35,8 @@ class JobService:
         job_review_repository: JobReviewRepository,
         notification_repository,
         users_repository: UsersRepository,
-        job_activity_repository: JobActivityRepository,
         user_emails_repository,
+        event_repository,
     ):
         """
         Initialise the service with its repositories and mapper.
@@ -48,16 +48,14 @@ class JobService:
                 resolve who may approve postings.
             job_review_repository (JobReviewRepository): Data-access layer for
                 JobReviewEntity (the review gate).
-            notification_repository (NotificationRepository): Writes in-app
-                notification rows inside this transaction. The row is also
-                the email outbox -- NotificationEmailWorker picks it up once
-                it commits -- so nothing here sends mail. Used by
-                ``_open_review`` (reviewer notified) and ``approve``/
-                ``reject`` (submitter notified of the decision).
+            notification_repository (NotificationRepository): Retained until
+                the legacy notification rows are dropped; what happens here is
+                recorded through ``record_event``, which writes the event and
+                the notification rows for whoever its resolver returns.
             users_repository (UsersRepository): Actor-name resolution for the
                 audit timeline.
-            job_activity_repository (JobActivityRepository): Data-access layer
-                for the append-only audit timeline.
+            event_repository (EventRepository): Reads the event log behind
+                the posting's history panel.
             user_emails_repository (UserEmailsRepository): Contact-email
                 resolution for approver/evaluator/owner pickers.
         """
@@ -67,8 +65,8 @@ class JobService:
         self.job_review_repository = job_review_repository
         self.notification_repository = notification_repository
         self.users_repository = users_repository
-        self.job_activity_repository = job_activity_repository
         self.user_emails_repository = user_emails_repository
+        self.event_repository = event_repository
 
     async def _to_approver_dtos(
         self, session: AsyncSession, users: list
@@ -151,6 +149,46 @@ class JobService:
         return model.model_dump(mode="json", by_alias=True, exclude_none=True)
 
     @staticmethod
+    def _with_monotonic_next_seq(
+        new_form: dict | None, stored_form: dict | None
+    ) -> dict | None:
+        """Resolve a form schema's question counter so it can only move forward.
+
+        ``nextSeq`` is what stops a delete-then-add from handing a recycled id
+        to a new question. ``_serialize`` drops it when the request omits it
+        (``exclude_none=True``), and a request can omit it for real: a browser
+        still running a pre-counter bundle rebuilds ``formSchema`` as
+        ``{questions}`` alone. Writing that through would erase the stored
+        counter, after which floor derivation resumes recycling ids on the
+        next delete-then-add. ``FormSchemaDto`` only rejects a value *below*
+        the floor; it cannot see an absent one, nor the stored value.
+
+        So the effective counter is the highest of the incoming value, the
+        value already on the posting, and the floor derived from the ids in
+        the incoming form.
+
+        Args:
+            new_form (dict | None): The incoming camelCase form schema, or
+                None when the request did not send one.
+            stored_form (dict | None): The posting's current form schema, or
+                None on create / a posting that never had one.
+
+        Returns:
+            dict | None: ``new_form`` carrying a non-recycling ``nextSeq``, or
+            None when ``new_form`` is None (the caller then falls back to the
+            stored schema, counter included).
+        """
+        if new_form is None:
+            return None
+        questions = new_form.get("questions") or []
+        floor = question_seq_floor(
+            q.get("id") for q in questions if isinstance(q, dict)
+        )
+        incoming = new_form.get("nextSeq") or 0
+        stored = (stored_form or {}).get("nextSeq") or 0
+        return {**new_form, "nextSeq": max(incoming, stored, floor)}
+
+    @staticmethod
     def _build_pending_payload(job: "JobEntity", dto: JobCreateDto) -> dict:
         """Merge an edit dto onto a posting's current live values.
 
@@ -170,7 +208,9 @@ class JobService:
             dict: A complete camelCase draft snapshot of all seven editable
             fields, ready to store as pending_payload and later apply verbatim.
         """
-        new_form = JobService._serialize(dto.form_schema)
+        new_form = JobService._with_monotonic_next_seq(
+            JobService._serialize(dto.form_schema), job.form_schema
+        )
         new_pipeline = JobService._serialize(dto.pipeline_config)
         new_screen = JobService._serialize(dto.screen_rules)
         new_profile = JobService._serialize(dto.profile_config)
@@ -291,7 +331,7 @@ class JobService:
             )
         if not normalized_owner_ids(cfg):
             raise ValueError(
-                "the posting needs at least one manager (Managed by) before submission"
+                "the posting needs at least one recruiter before submission"
             )
         assignee_ids = {
             s.get("defaultAssigneeId")
@@ -343,15 +383,21 @@ class JobService:
             status=JobStatus.DRAFT,
             title=dto.title,
             description=dto.description,
-            form_schema=self._serialize(dto.form_schema),
+            form_schema=self._with_monotonic_next_seq(
+                self._serialize(dto.form_schema), None
+            ),
             pipeline_config=self._serialize(dto.pipeline_config),
             screen_rules=self._serialize(dto.screen_rules),
             profile_config=self._serialize(dto.profile_config),
             cooldown_days=dto.cooldown_days,
         )
         job = await self.job_repository.create_job(session, job)
-        await self.job_activity_repository.create(
-            session, job.job_id, created_by, "job_created"
+        await record_event(
+            session,
+            subject_type="job",
+            subject_id=job.job_id,
+            actor_id=created_by,
+            event_type=RecruitingEvent.JOB_CREATED,
         )
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
@@ -402,7 +448,9 @@ class JobService:
         """
         job = await self._require_job(session, job_id)
         await self._validate_assignees_and_owner(session, dto)
-        new_form = self._serialize(dto.form_schema)
+        new_form = self._with_monotonic_next_seq(
+            self._serialize(dto.form_schema), job.form_schema
+        )
         new_pipeline = self._serialize(dto.pipeline_config)
         new_screen = self._serialize(dto.screen_rules)
         new_profile = self._serialize(dto.profile_config)
@@ -466,8 +514,12 @@ class JobService:
             raise ValueError(f"Job {job_id} has nothing staged to discard")
         job.pending_payload = None
         job = await self.job_repository.update_job(session, job)
-        await self.job_activity_repository.create(
-            session, job.job_id, acting_user_id, "pending_edit_discarded", {}
+        await record_event(
+            session,
+            subject_type="job",
+            subject_id=job.job_id,
+            actor_id=acting_user_id,
+            event_type=RecruitingEvent.PENDING_EDIT_DISCARDED,
         )
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
@@ -566,27 +618,24 @@ class JobService:
                 submit_message=message,
             ),
         )
-        await self.job_activity_repository.create(
-            session,
-            job.job_id,
-            submitted_by,
-            "review_opened",
-            {"kind": kind.value, "reviewerId": reviewer_id, "message": message},
-        )
-        if reviewer_id != submitted_by:
-            await self.notification_repository.create(
-                session,
-                NotificationEntity(
-                    user_id=reviewer_id,
-                    type=NotificationType.JOB_REVIEW_REQUESTED,
-                    job_id=job.job_id,
-                    job_review_id=review.review_id,
-                    actor_user_id=submitted_by,
-                ),
-            )
         if pending_status is not None:
             job.status = pending_status
             job = await self.job_repository.update_job(session, job)
+        # After the status write, per record_event's contract. The review id
+        # is what the resolver reads the reviewer off, so the event names the
+        # review rather than repeating who it went to.
+        await record_event(
+            session,
+            subject_type="job",
+            subject_id=job.job_id,
+            actor_id=submitted_by,
+            event_type=RecruitingEvent.REVIEW_OPENED,
+            details={
+                "kind": kind.value,
+                "reviewId": review.review_id,
+                "message": message,
+            },
+        )
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job, reviewer_id=reviewer_id)
 
@@ -764,13 +813,6 @@ class JobService:
         review.decided_at = datetime.now(timezone.utc)
 
         job = await self._require_job(session, review.job_id)
-        await self.job_activity_repository.create(
-            session,
-            job.job_id,
-            acting_user_id,
-            "review_decided",
-            {"kind": review.kind.value, "decision": "approved", "comment": None},
-        )
         if review.kind == JobReviewKind.CLOSE:
             job.status = JobStatus.CLOSED
         elif review.kind == JobReviewKind.REOPEN:
@@ -788,17 +830,19 @@ class JobService:
             job.status = JobStatus.PUBLISHED
             job.was_published = True
         job = await self.job_repository.update_job(session, job)
-        if review.submitted_by != acting_user_id:
-            await self.notification_repository.create(
-                session,
-                NotificationEntity(
-                    user_id=review.submitted_by,
-                    type=NotificationType.JOB_REVIEW_APPROVED,
-                    job_id=job.job_id,
-                    job_review_id=review.review_id,
-                    actor_user_id=acting_user_id,
-                ),
-            )
+        await record_event(
+            session,
+            subject_type="job",
+            subject_id=job.job_id,
+            actor_id=acting_user_id,
+            event_type=RecruitingEvent.REVIEW_DECIDED,
+            details={
+                "kind": review.kind.value,
+                "reviewId": review.review_id,
+                "decision": "approved",
+                "comment": None,
+            },
+        )
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
 
@@ -840,13 +884,6 @@ class JobService:
         review.decided_at = datetime.now(timezone.utc)
 
         job = await self._require_job(session, review.job_id)
-        await self.job_activity_repository.create(
-            session,
-            job.job_id,
-            acting_user_id,
-            "review_decided",
-            {"kind": review.kind.value, "decision": "rejected", "comment": comment},
-        )
         if review.kind == JobReviewKind.REVISION:
             job.status = JobStatus.PUBLISHED
         elif review.kind == JobReviewKind.CLOSE:
@@ -859,17 +896,19 @@ class JobService:
             # INITIAL rejection sends the posting back to DRAFT.
             job.status = JobStatus.DRAFT
         job = await self.job_repository.update_job(session, job)
-        if review.submitted_by != acting_user_id:
-            await self.notification_repository.create(
-                session,
-                NotificationEntity(
-                    user_id=review.submitted_by,
-                    type=NotificationType.JOB_REVIEW_REJECTED,
-                    job_id=job.job_id,
-                    job_review_id=review.review_id,
-                    actor_user_id=acting_user_id,
-                ),
-            )
+        await record_event(
+            session,
+            subject_type="job",
+            subject_id=job.job_id,
+            actor_id=acting_user_id,
+            event_type=RecruitingEvent.REVIEW_DECIDED,
+            details={
+                "kind": review.kind.value,
+                "reviewId": review.review_id,
+                "decision": "rejected",
+                "comment": comment,
+            },
+        )
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
 
@@ -1088,19 +1127,23 @@ class JobService:
                 resolved display name. An actor no longer resolvable falls
                 back to ``f"User {id}"``.
         """
-        rows = await self.job_activity_repository.list_by_job(session, job_id)
-        actor_ids = {row.actor_id for row in rows}
+        rows = await self.event_repository.list_by_subject(session, "job", job_id)
+        actor_ids = {row.actor_id for row in rows if row.actor_id is not None}
         users = await self.users_repository.get_all_by_ids(session, list(actor_ids))
         names_by_id = {
             u.user_id: f"{u.first_name} {u.last_name}".strip() for u in users
         }
         return [
             JobActivityDto(
-                id=row.activity_id,
+                id=row.event_id,
                 event_type=row.event_type,
                 details=row.details,
                 actor_id=row.actor_id,
-                actor_name=names_by_id.get(row.actor_id, f"User {row.actor_id}"),
+                actor_name=(
+                    None
+                    if row.actor_id is None
+                    else names_by_id.get(row.actor_id, f"User {row.actor_id}")
+                ),
                 created_at=row.created_at,
             )
             for row in rows

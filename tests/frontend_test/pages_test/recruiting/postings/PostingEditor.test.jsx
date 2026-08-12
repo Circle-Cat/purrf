@@ -68,7 +68,52 @@ describe("PostingEditor", () => {
     expect(
       within(dialog).getByRole("heading", { name: "How posting setup works" }),
     ).toBeInTheDocument();
-    expect(within(dialog).getByText("Managed by")).toBeInTheDocument();
+    expect(within(dialog).getByText("Recruiter")).toBeInTheDocument();
+  });
+
+  // The form is long; from the top of the page, saving means scrolling back up
+  // past everything just edited.
+  it("renders Cancel and Save after the form", () => {
+    renderAt("/postings/new");
+    const preview = screen.getByText("Preview");
+    for (const name of ["Cancel", "Save"]) {
+      expect(
+        preview.compareDocumentPosition(screen.getByRole("button", { name })) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+
+  it("does not send a draft that fails validation", async () => {
+    // The API answers a bad draft with one sentence naming an internal
+    // question id; catching it here is what lets the page point at the field.
+    renderAt("/postings/new");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(screen.getByText("Title is required")).toBeInTheDocument(),
+    );
+    expect(api.createJob).not.toHaveBeenCalled();
+  });
+
+  it("clears an error as soon as its field is fixed", async () => {
+    renderAt("/postings/new");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(screen.getByText("Title is required")).toBeInTheDocument(),
+    );
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "SWE" },
+    });
+    await waitFor(() =>
+      expect(screen.queryByText("Title is required")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("does not turn the page red before the author tries to save", () => {
+    // Errors are only ever cleared while typing, never added, so a
+    // half-finished question does not light up mid-keystroke.
+    renderAt("/postings/new");
+    expect(screen.queryByText("Title is required")).not.toBeInTheDocument();
   });
 
   it("creates a new posting from the typed draft", async () => {
@@ -86,9 +131,11 @@ describe("PostingEditor", () => {
       formSchema: { questions: [] },
     });
     expect(toast.success).toHaveBeenCalled();
+    // Straight to the new posting's page: Submit for review lives there, and
+    // the author has nothing left to do on the list they came from.
     await waitFor(() =>
       expect(router.state.location.pathname).toBe(
-        ROUTE_PATHS.RECRUITING_POSTINGS,
+        ROUTE_PATHS.RECRUITING_POSTING_DETAIL(1),
       ),
     );
   });
@@ -272,7 +319,7 @@ describe("PostingEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(api.createJob).toHaveBeenCalled());
     expect(api.createJob.mock.calls[0][0].pipelineConfig.stages).toEqual([
-      { stage: "tech", rounds: 1, referralSkippable: false },
+      { stage: "tech", rounds: 1 },
     ]);
   });
 
@@ -295,7 +342,7 @@ describe("PostingEditor", () => {
     resolveCreate({ data: { id: 1 } });
     await waitFor(() =>
       expect(router.state.location.pathname).toBe(
-        ROUTE_PATHS.RECRUITING_POSTINGS,
+        ROUTE_PATHS.RECRUITING_POSTING_DETAIL(1),
       ),
     );
   });
@@ -308,7 +355,7 @@ describe("PostingEditor", () => {
     expect(screen.getByRole("heading", { name: "SWE" })).toBeInTheDocument();
   });
 
-  it("locks Kind once a loaded posting is no longer a draft", async () => {
+  it("locks Posting type once a loaded posting is no longer a draft", async () => {
     api.getJob.mockResolvedValue({
       data: {
         id: 5,
@@ -329,10 +376,12 @@ describe("PostingEditor", () => {
     );
     render(<RouterProvider router={router} />);
     expect(await screen.findByDisplayValue("Loaded")).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Kind" })).toBeDisabled();
+    expect(
+      screen.getByRole("combobox", { name: "Posting type" }),
+    ).toBeDisabled();
   });
 
-  it("leaves Kind editable for a draft posting", async () => {
+  it("leaves Posting type editable for a draft posting", async () => {
     api.getJob.mockResolvedValue({
       data: {
         id: 5,
@@ -353,12 +402,16 @@ describe("PostingEditor", () => {
     );
     render(<RouterProvider router={router} />);
     expect(await screen.findByDisplayValue("Loaded")).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Kind" })).not.toBeDisabled();
+    expect(
+      screen.getByRole("combobox", { name: "Posting type" }),
+    ).not.toBeDisabled();
   });
 
-  it("leaves Kind editable for a brand-new posting", () => {
+  it("leaves Posting type editable for a brand-new posting", () => {
     renderAt("/postings/new");
-    expect(screen.getByRole("combobox", { name: "Kind" })).not.toBeDisabled();
+    expect(
+      screen.getByRole("combobox", { name: "Posting type" }),
+    ).not.toBeDisabled();
   });
 
   it("defaults the Cooldown days field to 0 on a new posting", () => {

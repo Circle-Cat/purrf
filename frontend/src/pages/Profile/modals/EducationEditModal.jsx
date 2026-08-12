@@ -1,11 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  months,
-  formatDateFromParts,
-  getDateScore,
-} from "@/pages/Profile/utils";
+import { formatDateFromParts } from "@/pages/Profile/utils";
+import { validateEducationRow } from "@/pages/Profile/profileValidation";
 import EducationFormItem from "@/pages/Profile/components/EducationFormItem";
 
 /**
@@ -85,38 +82,15 @@ const EducationEditModal = ({ isOpen, onClose, initialData, onSave }) => {
 
   const validate = () => {
     const newErrors = {};
+    // One `now` for the whole list, so a validate spanning a month boundary
+    // cannot judge two rows against different months.
     const now = new Date();
-    const currentScore = getDateScore(
-      now.getFullYear(),
-      months[now.getMonth()],
-    );
     list.forEach((item) => {
-      const startScore = getDateScore(item.startYear, item.startMonth);
-      if (!item.institution?.trim())
-        newErrors[`${item.id}-institution`] = "School is required";
-      if (!item.degree?.trim())
-        newErrors[`${item.id}-degree`] = "Degree is required";
-      if (!item.field?.trim())
-        newErrors[`${item.id}-field`] = "Field of study is required";
-
-      if (!item.startMonth || !item.startYear) {
-        newErrors[`${item.id}-startDate`] = "Start date is required";
-      } else {
-        if (startScore > currentScore) {
-          newErrors[`${item.id}-startDate`] =
-            "Start date cannot be in the future";
-        }
-      }
-
-      if (!item.endMonth || !item.endYear) {
-        newErrors[`${item.id}-endDate`] = "End date is required";
-      } else {
-        const endScore = getDateScore(item.endYear, item.endMonth);
-        if (endScore < startScore) {
-          newErrors[`${item.id}-endDate`] =
-            "End date cannot be earlier than start date";
-        }
-      }
+      Object.entries(validateEducationRow(item, now)).forEach(
+        ([field, message]) => {
+          newErrors[`${item.id}-${field}`] = message;
+        },
+      );
     });
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;

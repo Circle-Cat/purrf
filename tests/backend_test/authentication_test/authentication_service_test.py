@@ -35,6 +35,10 @@ class TestAuthenticationService(unittest.TestCase):
             CF_TEAM_DOMAIN="test.cloudflareaccess.com",
             CF_AUD_TAG="valid_cf_aud",
             GOOGLE_AUDIENCE="valid_google_aud",
+            # Two ids so the multi-caller case is exercised: the allowlist is a
+            # set from day one, and a test suite holding only one value would
+            # not notice it collapsing to an equality check.
+            GOOGLE_SERVICE_ACCOUNT_SUBS=frozenset({"123", "456"}),
             create=True,
         )
         self.patcher_constants.start()
@@ -174,6 +178,26 @@ class TestAuthenticationService(unittest.TestCase):
         mock_verify_google.assert_called_with("google_token")
 
     @patch("google.oauth2.id_token.verify_token")
+    def test_verify_google_token_returns_the_claims(self, mock_verify):
+        """Callers that assert on the claims rather than acting as a user."""
+        mock_verify.return_value = {"sub": "111-pusher", "aud": "valid_google_aud"}
+
+        claims = self.auth_service.verify_google_token("g_token")
+
+        self.assertEqual(claims["sub"], "111-pusher")
+        mock_verify.assert_called_with(
+            "g_token", self.auth_service.google_request, audience="valid_google_aud"
+        )
+
+    @patch("google.oauth2.id_token.verify_token")
+    def test_verify_google_token_raises_value_error_when_invalid(self, mock_verify):
+        """A rejected token must not reach the caller as a falsy payload."""
+        mock_verify.side_effect = ValueError("Token expired")
+
+        with self.assertRaises(ValueError):
+            self.auth_service.verify_google_token("g_token")
+
+    @patch("google.oauth2.id_token.verify_token")
     def test_verify_google_valid(self, mock_verify):
         """
         Test: Valid Google ID token.
@@ -194,6 +218,55 @@ class TestAuthenticationService(unittest.TestCase):
         mock_verify.assert_called_with(
             token, self.auth_service.google_request, audience="valid_google_aud"
         )
+
+    @patch("google.oauth2.id_token.verify_token")
+    def test_verify_google_accepts_a_second_allowlisted_sub(self, mock_verify):
+        """A check collapsed to equality on one id would pass every other test."""
+        mock_verify.return_value = {"email": "cron@test.com", "sub": "456"}
+
+        context = self.auth_service._verify_google("g_token")
+
+        self.assertTrue(context.is_service_account)
+
+    @patch("google.oauth2.id_token.verify_token")
+    def test_verify_google_rejects_a_non_allowlisted_sub(self, mock_verify):
+        """The hole being closed: such a token was accepted before."""
+        mock_verify.return_value = {
+            "email": "attacker@evil-project.iam.gserviceaccount.com",
+            "sub": "999",
+            "aud": "valid_google_aud",
+        }
+
+        with self.assertRaises(ValueError) as ctx:
+            self.auth_service._verify_google("g_token")
+
+        # The message must not echo the presented sub, or a caller probing the
+        # endpoint learns what value to forge.
+        self.assertNotIn("999", str(ctx.exception))
+        self.mock_logger.warning.assert_called_once()
+
+    @patch("google.oauth2.id_token.verify_token")
+    def test_verify_google_rejects_a_token_with_no_sub_claim(self, mock_verify):
+        """A missing claim reads as "not allowlisted", not a KeyError."""
+        mock_verify.return_value = {"aud": "valid_google_aud"}
+
+        with self.assertRaises(ValueError):
+            self.auth_service._verify_google("g_token")
+
+    @patch("google.oauth2.id_token.verify_token")
+    def test_verify_google_rejects_every_token_when_the_allowlist_is_empty(
+        self, mock_verify
+    ):
+        """Fails closed: a missed apply refuses callers rather than admitting all."""
+        mock_verify.return_value = {"email": "cron@test.com", "sub": "123"}
+
+        with patch.multiple(
+            "backend.authentication.authentication_service",
+            GOOGLE_SERVICE_ACCOUNT_SUBS=frozenset(),
+            create=True,
+        ):
+            with self.assertRaises(ValueError):
+                self.auth_service._verify_google("g_token")
 
     @patch("jwt.get_unverified_header")
     @patch("jwt.algorithms.RSAAlgorithm.from_jwk")

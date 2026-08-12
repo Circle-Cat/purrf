@@ -1,6 +1,4 @@
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -8,6 +6,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import FieldError from "@/components/common/FieldError";
+import { errorBorder } from "@/components/common/fieldErrors";
+import DomainsInput from "@/pages/Recruiting/postings/DomainsInput";
+import { ruleKey } from "@/pages/Recruiting/postings/postingValidation";
 
 const ACTIONS = ["reject", "qualify", "auto_hire"];
 const EMAIL_MODES = [
@@ -24,23 +26,30 @@ const nextRuleId = (rules) => {
   return `r${(nums.length ? Math.max(...nums) : 0) + 1}`;
 };
 
-/** Parse the domains text field into the condition's operator+value. */
-const domainsToCondition = (text, mode) => {
-  const parts = text
-    .split(",")
-    .map((d) => d.trim())
-    .filter(Boolean);
-  if (mode === "exclude") {
-    return { source: "email_domain", operator: "not_in", value: parts };
-  }
-  return parts.length <= 1
-    ? { source: "email_domain", operator: "equals", value: parts[0] ?? "" }
-    : { source: "email_domain", operator: "in", value: parts };
-};
+/**
+ * Build an email_domain condition from the field's domain tags.
+ *
+ * A single domain is still emitted as a one-element `in` list rather than the
+ * `equals` + string the editor used to produce: `screen_rules._email_domain_
+ * matches` treats them identically, and one shape means the tag field's array
+ * is the condition's value with no branch in between.
+ */
+const domainsToCondition = (domains, mode) => ({
+  source: "email_domain",
+  operator: mode === "exclude" ? "not_in" : "in",
+  value: domains,
+});
 
-/** Render a condition's domain(s) back into the text field. */
+/**
+ * A condition's domains as a list.
+ *
+ * Still reads the `equals` + string shape the editor no longer writes. The
+ * backend contract is unchanged — `ScreenRuleConditionDto` accepts it and the
+ * seed script produces it — so a rule in that shape must load as a tag rather
+ * than render blank and be wiped by the next save.
+ */
 const conditionToDomains = (cond) =>
-  Array.isArray(cond.value) ? cond.value.join(", ") : (cond.value ?? "");
+  Array.isArray(cond.value) ? cond.value : cond.value ? [cond.value] : [];
 
 /** Whether a condition's operator represents "include" or "exclude". */
 const conditionMode = (cond) =>
@@ -72,6 +81,7 @@ const ScreenRulesEditor = ({
   value = { rules: [] },
   onChange,
   questions = [],
+  errors = {},
 }) => {
   // Fully controlled: derive from `value` so the editor always reflects the
   // loaded posting. (Holding a local copy in useState went stale when the
@@ -89,7 +99,7 @@ const ScreenRulesEditor = ({
       ...rules,
       {
         id: nextRuleId(rules),
-        condition: { source: "email_domain", operator: "equals", value: "" },
+        condition: { source: "email_domain", operator: "in", value: [] },
         action: "qualify",
       },
     ]);
@@ -146,23 +156,23 @@ const ScreenRulesEditor = ({
                 ))}
               </SelectContent>
             </Select>
-            <Label className="flex items-center gap-2 text-sm">
-              Domains
-              <Input
-                aria-label="Email domains"
-                className="w-64"
-                placeholder="google.com, circlecat.org"
+            <div className="flex items-start gap-2 text-sm">
+              {/* Not a <Label>: the field is a tag list wrapping its own input,
+                  which already carries the accessible name. */}
+              <span className="pt-2">Domains</span>
+              <DomainsInput
                 value={conditionToDomains(rule.condition)}
-                onChange={(e) =>
+                invalid={Boolean(errors?.[ruleKey(rule.id, "value")])}
+                onChange={(domains) =>
                   patchEmailRule(rule, {
                     condition: domainsToCondition(
-                      e.target.value,
+                      domains,
                       conditionMode(rule.condition),
                     ),
                   })
                 }
               />
-            </Label>
+            </div>
             <ActionSelect
               label="Email domain action"
               value={rule.action}
@@ -177,6 +187,14 @@ const ScreenRulesEditor = ({
             >
               Remove
             </Button>
+            {/* w-full so flex-wrap drops the message onto its own line under
+                the controls rather than squeezing it in beside them. */}
+            <div className="w-full">
+              <FieldError
+                errors={errors}
+                errorKey={ruleKey(rule.id, "value")}
+              />
+            </div>
           </div>
         ))}
         <Button
@@ -213,7 +231,7 @@ const ScreenRulesEditor = ({
               >
                 <SelectTrigger
                   aria-label="Answer rule question"
-                  className="max-w-xs"
+                  className={`max-w-xs${errorBorder(errors, ruleKey(rule.id, "questionId"))}`}
                 >
                   <SelectValue placeholder="Question" />
                 </SelectTrigger>
@@ -235,7 +253,7 @@ const ScreenRulesEditor = ({
               >
                 <SelectTrigger
                   aria-label="Answer rule value"
-                  className="max-w-xs"
+                  className={`max-w-xs${errorBorder(errors, ruleKey(rule.id, "value"))}`}
                 >
                   <SelectValue placeholder="Value" />
                 </SelectTrigger>
@@ -261,6 +279,16 @@ const ScreenRulesEditor = ({
               >
                 Remove
               </Button>
+              <div className="w-full">
+                <FieldError
+                  errors={errors}
+                  errorKey={ruleKey(rule.id, "questionId")}
+                />
+                <FieldError
+                  errors={errors}
+                  errorKey={ruleKey(rule.id, "value")}
+                />
+              </div>
             </div>
           );
         })}

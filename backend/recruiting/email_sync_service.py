@@ -23,6 +23,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from backend.common.communication_enums import ContextType, EmailDirection
+from backend.notification_management.event_recorder import record_event
 
 # A terminal application keeps getting swept for this long, so a reply that
 # lands just after a rejection is still captured. Past that it is left to
@@ -43,7 +44,6 @@ class EmailSyncService:
         self,
         gmail_client,
         email_conversation_service,
-        application_activity_repository,
         application_repository,
         logger,
     ):
@@ -55,8 +55,6 @@ class EmailSyncService:
                 shared conversation service.
             email_conversation_service (EmailConversationService): Shared,
                 domain-agnostic Gmail sync.
-            application_activity_repository (ApplicationActivityRepository):
-                Timeline event writes.
             application_repository (ApplicationRepository): Supplies the
                 eligibility query.
             logger: Application logger. A sweep's outcome is only visible
@@ -64,7 +62,6 @@ class EmailSyncService:
         """
         self._gmail = gmail_client
         self._conversation_service = email_conversation_service
-        self._activity_repo = application_activity_repository
         self._application_repo = application_repository
         self._logger = logger
 
@@ -125,11 +122,12 @@ class EmailSyncService:
         for message in new_messages:
             if message.direction != EmailDirection.INBOUND:
                 continue
-            await self._activity_repo.create(
+            await record_event(
                 session,
-                application_id,
-                user_id,
-                "email_received",
+                subject_type="application",
+                subject_id=application_id,
+                actor_id=user_id,
+                event_type="recruiting.email_received",
                 details={
                     "subject": message.subject,
                     "from": message.from_address,

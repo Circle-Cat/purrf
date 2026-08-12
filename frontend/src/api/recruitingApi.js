@@ -74,6 +74,11 @@ export const uploadResume = (file) => {
   form.append("file", file);
   return request.post(API_ENDPOINTS.RECRUITING_RESUMES, form, {
     headers: { "Content-Type": "multipart/form-data" },
+    // The shared instance allows 10s, which is a request/response round trip
+    // budget, not an upload one: a few-megabyte PDF on a slow uplink aborts
+    // partway and the candidate is told their résumé failed for no reason
+    // they can act on.
+    timeout: 120000,
   });
 };
 
@@ -94,6 +99,17 @@ export const getMyApplication = (jobId) =>
 /** Fetch every application the current user has ever submitted, any job kind. */
 export const listMyApplications = () =>
   request.get(API_ENDPOINTS.RECRUITING_MY_APPLICATIONS);
+
+/**
+ * The profile blocks of the caller's most recent submission, across every job.
+ *
+ * What the application form falls back to for a block the caller's profile has
+ * nothing for -- someone who applied once without saving to their profile
+ * should not have to retype it. Answers are deliberately not included: they
+ * belong to the job they were asked for.
+ */
+export const getMyLatestProfile = () =>
+  request.get(API_ENDPOINTS.RECRUITING_MY_LATEST_PROFILE);
 
 /**
  * List all jobs accessible to the current recruiter on the board (job switcher).

@@ -37,10 +37,10 @@ from backend.dto.interview_dto import InterviewDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.common.communication_enums import ContextType
 from backend.common.permissions import Permission
-from backend.common.recruiting_enums import ApplicationStage, NotificationType
+from backend.common.recruiting_enums import ApplicationStage, RecruitingEvent
+from backend.notification_management.event_recorder import record_event
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.job_entity import JobEntity
-from backend.entity.notification_entity import NotificationEntity
 from backend.recruiting import stage_machine
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 
@@ -69,16 +69,16 @@ SEARCH_RESULT_LIMIT = 20
 # name field to add). get_application_activity uses this to know which
 # fields to look up and inject, without hardcoding each event type inline.
 _ASSIGNEE_NAME_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
-    "stage_changed": (("assigneeId", "assigneeName"),),
-    "round_advanced": (("assigneeId", "assigneeName"),),
-    "auto_assigned": (("assigneeId", "assigneeName"),),
-    "reassigned": (
+    "recruiting.stage_changed": (("assigneeId", "assigneeName"),),
+    "recruiting.round_advanced": (("assigneeId", "assigneeName"),),
+    "recruiting.auto_assigned": (("assigneeId", "assigneeName"),),
+    "recruiting.reassigned": (
         ("fromAssigneeId", "fromAssigneeName"),
         ("toAssigneeId", "toAssigneeName"),
     ),
-    "interview_scheduled": (("assigneeId", "assigneeName"),),
-    "interview_cancelled": (("assigneeId", "assigneeName"),),
-    "interview_updated": (
+    "recruiting.interview_scheduled": (("assigneeId", "assigneeName"),),
+    "recruiting.interview_cancelled": (("assigneeId", "assigneeName"),),
+    "recruiting.interview_updated": (
         ("assigneeId", "assigneeName"),
         ("fromAssigneeId", "fromAssigneeName"),
     ),
@@ -89,25 +89,30 @@ _ASSIGNEE_NAME_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
 # WHICH configured screening rule produced an automated outcome, read-time
 # only — the stored row keeps just the id.
 _SCREEN_RULE_ID_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
-    "auto_rejected": (("ruleId", "ruleLabel"),),
-    "application_submitted": (
+    "recruiting.auto_rejected": (("ruleId", "ruleLabel"),),
+    "recruiting.application_submitted": (
         ("screenQualifyRuleId", "screenQualifyRuleLabel"),
         ("screenAutoHireRuleId", "screenAutoHireRuleLabel"),
     ),
 }
 
 
-def _screen_rule_label(rule: dict) -> str:
+def _screen_rule_label(rule: dict, question_labels: dict) -> str:
     """A human-readable one-line label for a configured screening rule.
 
     Rules have no name field (frontend ids are just ``r1, r2, ...``), so the
     label is synthesized from the condition: e.g.
-    ``"email domain not in google.com"`` or ``"answer to q_role equals
-    mentor"``.
+    ``"email domain not in google.com"`` or ``"answer to 'Are you fluent in
+    Mandarin?' equals No"``. The question is named by its text rather than by
+    its internal id so the timeline is readable without opening the job's form
+    configuration.
 
     Args:
         rule (dict): One entry of the job's ``screen_rules["rules"]``
             (camelCase keys, per ``ScreenRuleDto``'s serialization).
+        question_labels (dict): Map of question id to question label, built
+            from the job's current ``form_schema``. A question the schema no
+            longer carries degrades to its raw id.
 
     Returns:
         str: The synthesized label.
@@ -119,7 +124,8 @@ def _screen_rule_label(rule: dict) -> str:
     if condition.get("source") == "email_domain":
         subject = "email domain"
     elif condition.get("source") == "answer":
-        subject = f"answer to {condition.get('questionId')}"
+        question_id = condition.get("questionId")
+        subject = f"answer to '{question_labels.get(question_id) or question_id}'"
     else:
         subject = "condition"
     return f"{subject} {operator} {values}".strip()
@@ -170,7 +176,7 @@ class BoardService:
         resume_storage,
         application_assignment_repository,
         user_permissions_repository,
-        application_activity_repository,
+        event_repository,
         application_comment_repository,
         application_comment_mention_repository,
         evaluation_repository,
@@ -201,14 +207,13 @@ class BoardService:
             user_permissions_repository (UserPermissionsRepository): Used to
                 verify a proposed assignee actively holds
                 ``Permission.RECRUITING_INTERVIEW_EVALUATE``.
-            application_activity_repository (ApplicationActivityRepository):
-                Append-only audit log, written by ``change_stage``/
-                ``reassign``/``set_round``/``set_sub_status``/``blacklist``
-                and read by ``get_application_activity``.
+            event_repository (EventRepository): Reads the event log behind
+                ``get_application_activity`` and the history embedded in
+                ``get_other_applications``.
             application_comment_repository (ApplicationCommentRepository):
                 Append-only free-text discussion thread, written by
                 ``add_comment`` and read by ``list_comments`` -- independent
-                of ``application_activity_repository``.
+                of the event log.
             application_comment_mention_repository
                 (ApplicationCommentMentionRepository): Append-only
                 @-mention rows, written by ``add_comment`` and read by
@@ -218,8 +223,11 @@ class BoardService:
                 applications' evaluations in the aggregation view.
             notification_repository (NotificationRepository): Writes in-app
                 notification rows inside this transaction. The row is also
-                the email outbox -- NotificationEmailWorker picks it up once
-                it commits -- so nothing here sends mail. Used by ``change_stage``/
+                meant to double as an email outbox, but nothing drains it for
+                these legacy-model rows -- NotificationEmailWorker, which
+                used to, was retired with no replacement for this write path
+                (see NotificationEntity's docstring). So nothing here sends
+                mail. Used by ``change_stage``/
                 ``reassign`` (assignee notified) and ``add_comment``
                 (mentioned users notified) -- independent, explicit calls,
                 not merged with the activity log (see the notification-system
@@ -255,7 +263,7 @@ class BoardService:
         self.resume_storage = resume_storage
         self.application_assignment_repository = application_assignment_repository
         self.user_permissions_repository = user_permissions_repository
-        self.application_activity_repository = application_activity_repository
+        self.event_repository = event_repository
         self.application_comment_repository = application_comment_repository
         self.application_comment_mention_repository = (
             application_comment_mention_repository
@@ -516,11 +524,12 @@ class BoardService:
             sender_user_id=current_user.user_id,
             thread_id=dto.thread_id,
         )
-        await self.application_activity_repository.create(
+        await record_event(
             session,
-            application_id,
-            current_user.user_id,
-            "email_sent",
+            subject_type="application",
+            subject_id=application_id,
+            actor_id=current_user.user_id,
+            event_type=RecruitingEvent.EMAIL_SENT,
             details={
                 "subject": dto.subject,
                 "to": recipients,
@@ -1236,8 +1245,8 @@ class BoardService:
         _application, job = await self._load_owned_application(
             session, current_user, application_id, allow_read_all=True
         )
-        rows = await self.application_activity_repository.list_by_application(
-            session, application_id
+        rows = await self.event_repository.list_by_subject(
+            session, "application", application_id
         )
         return await self._activity_dtos(session, rows, job)
 
@@ -1251,15 +1260,18 @@ class BoardService:
         other application's timeline in its aggregate entry). Actor and
         assignee names are resolved via one combined batched lookup;
         screening-rule ids are resolved against ``job``'s *current*
-        ``screen_rules`` — pass each row set's OWN job, since rule configs
-        differ per job. Nothing is ever persisted back to the stored rows.
+        ``screen_rules``, and the question a rule tests is named from
+        ``job``'s *current* ``form_schema`` — pass each row set's OWN job,
+        since both configs differ per job. A label therefore reflects the
+        posting as it stands today, not as it stood when the rule fired.
+        Nothing is ever persisted back to the stored rows.
 
         Args:
             session (AsyncSession): Active database async session.
             rows: Activity rows for ONE application, as returned by
-                ``ApplicationActivityRepository.list_by_application``.
+                ``EventRepository.list_by_subject``.
             job (JobEntity): The job those rows' application belongs to,
-                for screen-rule label resolution.
+                for screen-rule and question-label resolution.
 
         Returns:
             list[ApplicationActivityDto]: Same order as ``rows``, each with
@@ -1272,7 +1284,12 @@ class BoardService:
             for rule in ((job.screen_rules or {}).get("rules") or [])
             if isinstance(rule, dict)
         }
-        ids_to_resolve = {row.actor_id for row in rows}
+        question_labels = {
+            question.get("id"): question.get("label")
+            for question in ((job.form_schema or {}).get("questions") or [])
+            if isinstance(question, dict)
+        }
+        ids_to_resolve = {row.actor_id for row in rows if row.actor_id is not None}
         for row in rows:
             for raw_field, _ in _ASSIGNEE_NAME_FIELDS.get(row.event_type, ()):
                 raw_id = row.details.get(raw_field)
@@ -1298,17 +1315,21 @@ class BoardService:
                     continue
                 rule = rules_by_id.get(rule_id)
                 details[label_field] = (
-                    _screen_rule_label(rule)
+                    _screen_rule_label(rule, question_labels)
                     if rule is not None
                     else f"rule {rule_id} (no longer configured)"
                 )
             result.append(
                 ApplicationActivityDto(
-                    id=row.activity_id,
+                    id=row.event_id,
                     event_type=row.event_type,
                     details=details,
                     actor_id=row.actor_id,
-                    actor_name=names_by_id.get(row.actor_id, f"User {row.actor_id}"),
+                    actor_name=(
+                        None
+                        if row.actor_id is None
+                        else names_by_id.get(row.actor_id, f"User {row.actor_id}")
+                    ),
                     created_at=row.created_at,
                 )
             )
@@ -1355,9 +1376,11 @@ class BoardService:
         Returns:
             ApplicationAggregateDto: ``other_jobs`` (cross-job applications)
                 and ``previous_same_job`` (same-job prior attempts, newest
-                first), each entry carrying its job title, full application
-                snapshot, résumé availability, and every evaluation row
-                submitted for it.
+                first), each entry carrying its job title, its job's kind,
+                its job's live form schema (the label fallback for a
+                submission with no schema snapshot of its own), full
+                application snapshot, résumé availability, and every
+                evaluation row submitted for it.
 
         Raises:
             ValueError: If ``application_id`` is missing, or the caller is
@@ -1388,10 +1411,8 @@ class BoardService:
             activity: list[ApplicationActivityDto] = []
             comments: list[CommentDto] = []
             if include_history:
-                activity_rows = (
-                    await self.application_activity_repository.list_by_application(
-                        session, other_application.application_id
-                    )
+                activity_rows = await self.event_repository.list_by_subject(
+                    session, "application", other_application.application_id
                 )
                 activity = await self._activity_dtos(session, activity_rows, other_job)
                 comment_rows = (
@@ -1406,6 +1427,7 @@ class BoardService:
                 ),
                 job_title=other_job.title,
                 job_kind=other_job.kind,
+                form_schema=other_job.form_schema,
                 resume_available=bool(
                     current_sub is not None and current_sub.resume_object_key
                 ),
@@ -1622,11 +1644,12 @@ class BoardService:
 
         current_sub = await self._freeze_current_submission(session, application_id)
         application = await self.application_repository.update(session, application)
-        await self.application_activity_repository.create(
+        await record_event(
             session,
-            application_id,
-            current_user.user_id,
-            "stage_changed",
+            subject_type="application",
+            subject_id=application_id,
+            actor_id=current_user.user_id,
+            event_type=RecruitingEvent.STAGE_CHANGED,
             details={
                 "fromStage": from_stage.value,
                 "toStage": dto.to_stage.value,
@@ -1656,19 +1679,21 @@ class BoardService:
                 user_id=application.user_id,
                 job=job,
             )
-        if (
-            new_interview_assignee is not None
-            and new_interview_assignee != current_user.user_id
-        ):
-            await self.notification_repository.create(
+        if new_interview_assignee is not None:
+            # A stage move that lands on an interview stage also hands someone
+            # the evaluation. That reads as its own thing to the person picking
+            # it up, so it is its own event rather than a detail of the move.
+            await record_event(
                 session,
-                NotificationEntity(
-                    user_id=new_interview_assignee,
-                    type=NotificationType.ASSIGNED_TO_EVALUATE,
-                    application_id=application_id,
-                    round=1,
-                    actor_user_id=current_user.user_id,
-                ),
+                subject_type="application",
+                subject_id=application_id,
+                actor_id=current_user.user_id,
+                event_type=RecruitingEvent.REASSIGNED,
+                details={
+                    "stage": dto.to_stage.value,
+                    "assigneeId": new_interview_assignee,
+                    "round": 1,
+                },
             )
         await session.commit()
         # `editable` encodes the CANDIDATE's edit window (see
@@ -1758,32 +1783,20 @@ class BoardService:
         previous_assignee_id = (
             previous_assignment.assignee_id if previous_assignment is not None else None
         )
-        await self.application_activity_repository.create(
+        await record_event(
             session,
-            application_id,
-            current_user.user_id,
-            "reassigned",
+            subject_type="application",
+            subject_id=application_id,
+            actor_id=current_user.user_id,
+            event_type=RecruitingEvent.REASSIGNED,
             details={
                 "stage": application.stage.value,
                 "round": application.current_round,
                 "fromAssigneeId": previous_assignee_id,
                 "toAssigneeId": dto.assignee_id,
+                "assigneeId": dto.assignee_id,
             },
         )
-        if (
-            dto.assignee_id != previous_assignee_id
-            and dto.assignee_id != current_user.user_id
-        ):
-            await self.notification_repository.create(
-                session,
-                NotificationEntity(
-                    user_id=dto.assignee_id,
-                    type=NotificationType.ASSIGNED_TO_EVALUATE,
-                    application_id=application_id,
-                    round=application.current_round,
-                    actor_user_id=current_user.user_id,
-                ),
-            )
         await session.commit()
         current_sub = await self.application_submission_repository.get_current(
             session, application_id
@@ -1842,7 +1855,7 @@ class BoardService:
         ):
             raise ValueError(
                 "sub-status evaluated requires a confirmed evaluation "
-                "for the current round"
+                "for the current session"
             )
 
         current_value = application.sub_status or "pending"
@@ -1855,11 +1868,12 @@ class BoardService:
         application.sub_status = dto.sub_status
 
         application = await self.application_repository.update(session, application)
-        await self.application_activity_repository.create(
+        await record_event(
             session,
-            application_id,
-            current_user.user_id,
-            "sub_status_changed",
+            subject_type="application",
+            subject_id=application_id,
+            actor_id=current_user.user_id,
+            event_type=RecruitingEvent.SUB_STATUS_CHANGED,
             details={
                 "stage": application.stage.value,
                 "fromSubStatus": current_value,
@@ -1931,8 +1945,8 @@ class BoardService:
         )
         if not (1 <= dto.round <= max_round):
             raise ValueError(
-                f"round {dto.round} is out of range for stage "
-                f"{application.stage!s} (configured rounds: {max_round})"
+                f"session {dto.round} is out of range for stage "
+                f"{application.stage!s} (configured sessions: {max_round})"
             )
         if application.stage in INTERVIEW_STAGES and dto.assignee_id is not None:
             await self._validate_interview_assignee(session, dto.assignee_id)
@@ -1972,11 +1986,12 @@ class BoardService:
             session, application_id
         )
         application = await self.application_repository.update(session, application)
-        await self.application_activity_repository.create(
+        await record_event(
             session,
-            application_id,
-            current_user.user_id,
-            "round_advanced",
+            subject_type="application",
+            subject_id=application_id,
+            actor_id=current_user.user_id,
+            event_type=RecruitingEvent.ROUND_ADVANCED,
             details={
                 "stage": application.stage.value,
                 "fromRound": from_round,
@@ -2065,11 +2080,12 @@ class BoardService:
 
         current_sub = await self._freeze_current_submission(session, dto.application_id)
         application = await self.application_repository.update(session, application)
-        await self.application_activity_repository.create(
+        await record_event(
             session,
-            dto.application_id,
-            current_user.user_id,
-            "blacklisted",
+            subject_type="application",
+            subject_id=dto.application_id,
+            actor_id=current_user.user_id,
+            event_type=RecruitingEvent.BLACKLISTED,
             details={"fromStage": from_stage.value, "reason": dto.reason},
         )
 
@@ -2103,11 +2119,12 @@ class BoardService:
                 locked.current_round = 1
                 await self._freeze_current_submission(session, locked.application_id)
             await self.application_repository.update(session, locked)
-            await self.application_activity_repository.create(
+            await record_event(
                 session,
-                locked.application_id,
-                current_user.user_id,
-                "blacklisted",
+                subject_type="application",
+                subject_id=locked.application_id,
+                actor_id=current_user.user_id,
+                event_type=RecruitingEvent.BLACKLISTED,
                 details={"fromStage": other_from_stage.value, "reason": dto.reason},
             )
             swept_application_ids.append(locked.application_id)
@@ -2449,19 +2466,21 @@ class BoardService:
             await self.application_comment_mention_repository.create_mentions(
                 session, row.comment_id, mentioned_ids
             )
-            for mentioned_id in mentioned_ids:
-                if mentioned_id == current_user.user_id:
-                    continue
-                await self.notification_repository.create(
-                    session,
-                    NotificationEntity(
-                        user_id=mentioned_id,
-                        type=NotificationType.MENTIONED,
-                        application_id=application_id,
-                        comment_id=row.comment_id,
-                        actor_user_id=current_user.user_id,
-                    ),
-                )
+            # mentionedIds is what decides who hears about this: who was
+            # mentioned is a property of the comment, not something derivable
+            # from the application afterwards, so it travels on the event. A
+            # different spelling resolves to nobody without erroring.
+            await record_event(
+                session,
+                subject_type="application",
+                subject_id=application_id,
+                actor_id=current_user.user_id,
+                event_type=RecruitingEvent.MENTIONED,
+                details={
+                    "mentionedIds": mentioned_ids,
+                    "commentId": row.comment_id,
+                },
+            )
         await session.commit()
         author = await self.users_repository.get_user_by_user_id(
             session, current_user.user_id

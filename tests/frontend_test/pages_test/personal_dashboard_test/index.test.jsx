@@ -305,6 +305,22 @@ describe("PersonalDashboard", () => {
       const btn = screen.getByTestId("mock-manage-meetings-btn");
       expect(btn.innerHTML).toContain("Round: null");
     });
+
+    it("hides the button when there is no hired mentorship role", () => {
+      useMyApplications.mockReturnValue({
+        applications: [],
+        isLoading: false,
+        loadError: false,
+        load: vi.fn(),
+        hiredMentorshipRole: null,
+      });
+
+      render(<PersonalDashboard />);
+
+      expect(
+        screen.queryByTestId("mock-manage-meetings-btn"),
+      ).not.toBeInTheDocument();
+    });
   });
 
   it("always renders the My Applications card", () => {

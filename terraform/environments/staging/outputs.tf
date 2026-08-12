@@ -70,3 +70,10 @@ output "microsoft_chat_lifecycle_notification_url" {
 output "auth0_custom_domain_cname" {
   value = module.purrf_instance.auth0_custom_domain_cname
 }
+
+# The push service account's numeric id, which the gateway Worker checks every
+# caller against. A module output is not a root output, so without this the
+# value cannot be read back out of the state at all.
+output "notification_pusher_sub" {
+  value = module.purrf_instance.notification_pusher_sub
+}

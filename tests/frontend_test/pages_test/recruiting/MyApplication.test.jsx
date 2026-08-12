@@ -119,6 +119,86 @@ describe("MyApplication", () => {
     expect(screen.getByText(/Ann/)).toBeInTheDocument();
   });
 
+  it("renders the submitted answers under the questions the candidate answered", async () => {
+    api.getMyApplication.mockResolvedValue({
+      data: {
+        id: 9,
+        stage: "recruiter_screening",
+        editable: false,
+        current: {
+          submission: {
+            personal: { firstName: "Ann", lastName: "Lee" },
+            education: [],
+            experience: [],
+            answers: { q1: "Yes", q2: ["Remote", "Hybrid"] },
+            formSchema: {
+              questions: [
+                { id: "q1", type: "short_text", label: "Authorized to work?" },
+                {
+                  id: "q2",
+                  type: "multi_choice",
+                  label: "Work mode",
+                  options: ["Remote", "Hybrid", "On-site"],
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+    renderAt(5);
+
+    await waitFor(() =>
+      expect(screen.getByText("Authorized to work?")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Yes")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Remote" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "On-site" })).not.toBeChecked();
+    // The snapshot labelled these, so no fallback caveat.
+    expect(screen.queryByText(/current form/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the reviewer-facing notices out of the candidate's own view", async () => {
+    // A pre-snapshot submission: labels come from the job's live form, and
+    // one recorded answer has no question left at all.
+    api.getPublicJob.mockResolvedValue({
+      data: {
+        ...JOB,
+        formSchema: {
+          questions: [
+            { id: "q1", type: "short_text", label: "Authorized to work?" },
+          ],
+        },
+      },
+    });
+    api.getMyApplication.mockResolvedValue({
+      data: {
+        id: 9,
+        stage: "recruiter_screening",
+        editable: false,
+        current: {
+          submission: {
+            personal: { firstName: "Ann", lastName: "Lee" },
+            education: [],
+            experience: [],
+            answers: { q1: "Yes", q7: "Orphaned value" },
+          },
+        },
+      },
+    });
+    renderAt(5);
+
+    await waitFor(() =>
+      expect(screen.getByText("Authorized to work?")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/current form/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/removed from the form/)).not.toBeInTheDocument();
+    // The answers themselves are never hidden, only the caveats about them.
+    expect(screen.getByText("Other recorded answers")).toBeInTheDocument();
+    expect(screen.getByText("q7")).toBeInTheDocument();
+    expect(screen.getByText("Orphaned value")).toBeInTheDocument();
+  });
+
   it("shows a Reapply button for a rejected application, and clicking it renders a seeded ApplicationForm", async () => {
     api.getMyApplication.mockResolvedValue({
       data: {

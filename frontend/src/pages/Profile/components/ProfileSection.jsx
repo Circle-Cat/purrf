@@ -1,3 +1,5 @@
+import FieldError from "@/components/common/FieldError";
+import { errorBorder } from "@/components/common/fieldErrors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +30,14 @@ const emptyExperience = () => ({
   endMonth: "",
   endYear: "",
 });
+
+/**
+ * Always-required marker for a single field's label, matching the one
+ * `FormRenderer` puts on required questions in the same applicant form.
+ */
+function RequiredMark() {
+  return <span className="ml-1 text-red-500">*</span>;
+}
 
 /** Required-marker shown after an optional/required section heading. */
 function ReqMark({ level }) {
@@ -60,6 +70,7 @@ export default function ProfileSection({
   onChange,
   requirements = { education: "optional", experience: "optional" },
   errors = {},
+  note,
 }) {
   const { personal, education, experience } = value;
 
@@ -104,22 +115,33 @@ export default function ProfileSection({
       {/* Personal */}
       <section className="space-y-4">
         <h3 className="text-base font-semibold">Personal</h3>
+        {note && <p className="text-sm text-muted-foreground">{note}</p>}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label htmlFor="ps-firstName">First name</Label>
+            <Label htmlFor="ps-firstName">
+              First name
+              <RequiredMark />
+            </Label>
             <Input
               id="ps-firstName"
+              className={errorBorder(errors, "profile:firstName").trim()}
               value={personal.firstName || ""}
               onChange={(e) => setPersonal("firstName", e.target.value)}
             />
+            <FieldError errors={errors} errorKey="profile:firstName" />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="ps-lastName">Last name</Label>
+            <Label htmlFor="ps-lastName">
+              Last name
+              <RequiredMark />
+            </Label>
             <Input
               id="ps-lastName"
+              className={errorBorder(errors, "profile:lastName").trim()}
               value={personal.lastName || ""}
               onChange={(e) => setPersonal("lastName", e.target.value)}
             />
+            <FieldError errors={errors} errorKey="profile:lastName" />
           </div>
         </div>
         <div className="space-y-1.5">
@@ -131,11 +153,15 @@ export default function ProfileSection({
           />
         </div>
         <div className="space-y-1.5">
-          <Label>Timezone</Label>
+          <Label>
+            Timezone
+            <RequiredMark />
+          </Label>
           <TimezoneSelector
             value={personal.timezone || ""}
             onChange={(opt) => setPersonal("timezone", opt?.value ?? "")}
           />
+          <FieldError errors={errors} errorKey="profile:timezone" />
         </div>
       </section>
 
@@ -156,11 +182,13 @@ export default function ProfileSection({
               +
             </Button>
           </div>
+          <FieldError errors={errors} errorKey="profile:education" />
           {education.map((item) => (
             <EducationFormItem
               key={item.id}
               item={item}
               errors={errors}
+              errorKeyFor={(field) => `education:${item.id}:${field}`}
               onChange={changeEducation}
               onDelete={deleteEducation}
             />
@@ -185,11 +213,13 @@ export default function ProfileSection({
               +
             </Button>
           </div>
+          <FieldError errors={errors} errorKey="profile:experience" />
           {experience.map((item) => (
             <ExperienceFormItem
               key={item.id}
               item={item}
               errors={errors}
+              errorKeyFor={(field) => `experience:${item.id}:${field}`}
               onChange={changeExperience}
               onDelete={deleteExperience}
             />

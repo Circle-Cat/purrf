@@ -11,7 +11,7 @@ describe("PostingsList", () => {
     pipelineConfig: { ownerIds: [2, 3] },
   };
 
-  it("renders status badge, Managed by line, and no action buttons", () => {
+  it("renders status badge, Recruiter line, and no action buttons", () => {
     render(
       <PostingsList
         jobs={[job]}
@@ -21,13 +21,13 @@ describe("PostingsList", () => {
     );
 
     expect(screen.getByText("Draft")).toBeInTheDocument();
-    expect(screen.getByText("Managed by: Alice, Bob")).toBeInTheDocument();
+    expect(screen.getByText("Recruiter: Alice, Bob")).toBeInTheDocument();
     // The row itself is a <button> (for click-through navigation), so
     // assert there are no *extra* action buttons beyond that single row.
     expect(screen.getAllByRole("button")).toHaveLength(1);
   });
 
-  it("omits the Managed by line when no owners are configured", () => {
+  it("omits the Recruiter line when no owners are configured", () => {
     render(
       <PostingsList
         jobs={[{ ...job, pipelineConfig: null }]}
@@ -36,7 +36,7 @@ describe("PostingsList", () => {
       />,
     );
 
-    expect(screen.queryByText(/Managed by/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Recruiter/)).not.toBeInTheDocument();
   });
 
   it("shows an unresolved owner in red with a 'no permission, remove' suffix, alongside a resolved one", () => {
@@ -63,19 +63,26 @@ describe("PostingsList", () => {
     expect(onRowClick).toHaveBeenCalledWith(job);
   });
 
-  it("does not call onRowClick when the Sent back popover trigger is clicked", () => {
+  it("calls onRowClick when the reject badge itself is clicked", () => {
     const onRowClick = vi.fn();
+    const rejected = {
+      ...job,
+      lastRejectComment: "Please fix the salary range.",
+      lastRejectKind: "initial",
+    };
     render(
       <PostingsList
-        jobs={[{ ...job, lastRejectComment: "Please fix the salary range." }]}
+        jobs={[rejected]}
         ownersById={{}}
         onRowClick={onRowClick}
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Sent back" }));
+    // The badge is plain text now, so a click on it falls through to the row
+    // instead of being swallowed by a popover trigger.
+    fireEvent.click(screen.getByText("Initial submission rejected"));
 
-    expect(onRowClick).not.toHaveBeenCalled();
+    expect(onRowClick).toHaveBeenCalledWith(rejected);
   });
 
   it("shows the status badge alongside the reject-reason badge, not instead of it", () => {
@@ -94,12 +101,12 @@ describe("PostingsList", () => {
     );
 
     expect(screen.getByText("Draft")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Initial submission rejected" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Initial submission rejected")).toBeInTheDocument();
+    // Still just the row button -- the badge is not interactive.
+    expect(screen.getAllByRole("button")).toHaveLength(1);
   });
 
-  it("shows a close-request-rejected badge and popover title for a published, close-rejected job", () => {
+  it("shows a close-request-rejected badge for a published, close-rejected job", () => {
     render(
       <PostingsList
         jobs={[
@@ -115,16 +122,32 @@ describe("PostingsList", () => {
       />,
     );
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Close request rejected" }),
-    );
-
     expect(screen.getByText("Published")).toBeInTheDocument();
-    // The badge and the popover title now share the same reject-kind label.
-    expect(screen.getAllByText("Close request rejected")).toHaveLength(2);
+    expect(screen.getByText("Close request rejected")).toBeInTheDocument();
   });
 
-  it("falls back to the raw Rejected label in the popover for an unknown reject kind", () => {
+  it("never shows the reject comment itself, only the kind badge", () => {
+    render(
+      <PostingsList
+        jobs={[
+          {
+            ...job,
+            lastRejectComment: "Please fix the salary range.",
+            lastRejectKind: "initial",
+          },
+        ]}
+        ownersById={{}}
+        onRowClick={vi.fn()}
+      />,
+    );
+
+    // The comment text lives only on the posting detail page.
+    expect(
+      screen.queryByText("Please fix the salary range."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("falls back to a 'Sent back' badge for an unknown reject kind", () => {
     render(
       <PostingsList
         jobs={[
@@ -139,9 +162,7 @@ describe("PostingsList", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Sent back" }));
-
-    expect(screen.getByText("Rejected")).toBeInTheDocument();
+    expect(screen.getByText("Sent back")).toBeInTheDocument();
   });
 
   it("shows 'Revision pending review' badge for published_pending_revision with reviewerId: 9", () => {

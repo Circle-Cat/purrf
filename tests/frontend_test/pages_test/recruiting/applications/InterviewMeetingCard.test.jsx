@@ -115,7 +115,7 @@ describe("InterviewMeetingCard", () => {
         timezone={VIEWER_TZ}
       />,
     );
-    expect(screen.getByText("Round 2")).toBeInTheDocument();
+    expect(screen.getByText("Session 2")).toBeInTheDocument();
   });
 
   it("warns and drops Edit when the application is terminal", () => {

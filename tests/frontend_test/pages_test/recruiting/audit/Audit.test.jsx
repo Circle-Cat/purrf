@@ -69,9 +69,13 @@ describe("Audit", () => {
 
   it("lists every job in the selector regardless of status, checked state matching defaults", async () => {
     render(<Audit />);
-    await waitFor(() => expect(api.getAuditOverview).toHaveBeenCalled());
+    // The selector does not exist until the response lands and the component
+    // re-renders out of its loading state. Waiting on the call alone races
+    // that: the call is made synchronously inside the mount effect, so the
+    // condition is already true on the first check, before the mocked
+    // promise has resolved. findByRole polls until the selector is there.
     expect(
-      screen.getByRole("checkbox", { name: "Backend Engineer" }),
+      await screen.findByRole("checkbox", { name: "Backend Engineer" }),
     ).toBeChecked();
     expect(
       screen.getByRole("checkbox", { name: "Frontend Engineer" }),
@@ -84,9 +88,11 @@ describe("Audit", () => {
   it("re-fetches with the updated job selection when a checkbox is toggled", async () => {
     const user = userEvent.setup();
     render(<Audit />);
-    await waitFor(() => expect(api.getAuditOverview).toHaveBeenCalledTimes(1));
-
-    await user.click(screen.getByRole("checkbox", { name: "Old Posting" }));
+    // Same race: the checkbox to click only exists once the first response
+    // has landed, which the call count does not tell us.
+    await user.click(
+      await screen.findByRole("checkbox", { name: "Old Posting" }),
+    );
 
     await waitFor(() => expect(api.getAuditOverview).toHaveBeenCalledTimes(2));
     const lastCall =
@@ -98,10 +104,10 @@ describe("Audit", () => {
 
   it("renders separate employment and activity job x stage tables with exact counts", async () => {
     render(<Audit />);
-    // Waiting only for the API call to have fired (as the sibling tests do)
-    // races the mocked response's resolution -- the tables themselves don't
-    // exist until the response lands and the component re-renders out of
-    // its loading state. findAllByRole polls until they actually appear.
+    // Waiting only for the API call to have fired races the mocked
+    // response's resolution -- the tables themselves don't exist until the
+    // response lands and the component re-renders out of its loading state.
+    // findAllByRole polls until they actually appear.
     const [employmentTable, activityTable] =
       await screen.findAllByRole("table");
 
@@ -131,11 +137,11 @@ describe("Audit", () => {
 
   it("renders one stage breakdown chart per posting kind", async () => {
     render(<Audit />);
-    // Waiting only for the API call to have fired (as some sibling tests do)
-    // races the mocked response's resolution -- the charts themselves don't
-    // exist until the response lands and the component re-renders out of
-    // its loading state (same class of race already fixed for the table
-    // assertion above). findByRole polls until each chart actually appears.
+    // Waiting only for the API call to have fired races the mocked
+    // response's resolution -- the charts themselves don't exist until the
+    // response lands and the component re-renders out of its loading state
+    // (same class of race as the table assertion above). findByRole polls
+    // until each chart actually appears.
     //
     // Recharts renders SVG <rect> elements per bar segment inside the
     // chart's data-slot="chart" container — assert the containers render

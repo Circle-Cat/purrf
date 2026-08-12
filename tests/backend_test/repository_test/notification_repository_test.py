@@ -6,16 +6,10 @@ from backend.common.recruiting_enums import (
     ApplicationStage,
     JobKind,
     JobStatus,
-    NotificationType,
-)
-from backend.entity.application_comment_entity import (  # noqa: F401 (registers table for NotificationEntity's FK)
-    ApplicationCommentEntity,
 )
 from backend.entity.application_entity import ApplicationEntity
+from backend.entity.event_entity import EventEntity
 from backend.entity.job_entity import JobEntity
-from backend.entity.job_review_entity import (  # noqa: F401 (registers table for NotificationEntity's FK)
-    JobReviewEntity,
-)
 from backend.entity.notification_entity import NotificationEntity
 from backend.entity.users_entity import UsersEntity
 from backend.repository.notification_repository import NotificationRepository
@@ -42,7 +36,8 @@ class TestNotificationRepository(BaseRepositoryTestLib):
 
         Returns:
             tuple[ApplicationEntity, UsersEntity]: The application and the
-                notification recipient.
+                notification recipient. The event every notification here
+                points at is created alongside them as ``self.event``.
         """
         job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.PUBLISHED)
         recipient = _make_user()
@@ -53,19 +48,25 @@ class TestNotificationRepository(BaseRepositoryTestLib):
             stage=ApplicationStage.RECRUITER_SCREENING,
         )
         await self.insert_entities([app])
+        self.event = EventEntity(
+            subject_type="application",
+            subject_id=app.application_id,
+            actor_id=recipient.user_id,
+            event_type="recruiting.mentioned",
+            details={},
+        )
+        await self.insert_entities([self.event])
         return app, recipient
 
     async def test_create_and_list_by_user(self):
-        app, recipient = await self._seed()
+        _app, recipient = await self._seed()
         repo = NotificationRepository()
 
         created = await repo.create(
             self.session,
             NotificationEntity(
                 user_id=recipient.user_id,
-                type=NotificationType.ASSIGNED_TO_EVALUATE,
-                application_id=app.application_id,
-                round=1,
+                event_id=self.event.event_id,
             ),
         )
         result = await repo.list_by_user(self.session, recipient.user_id)
@@ -75,22 +76,20 @@ class TestNotificationRepository(BaseRepositoryTestLib):
         self.assertEqual(result[0].notification_id, created.notification_id)
 
     async def test_list_by_user_orders_newest_first(self):
-        app, recipient = await self._seed()
+        _app, recipient = await self._seed()
         repo = NotificationRepository()
         first = await repo.create(
             self.session,
             NotificationEntity(
                 user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
+                event_id=self.event.event_id,
             ),
         )
         second = await repo.create(
             self.session,
             NotificationEntity(
                 user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
+                event_id=self.event.event_id,
             ),
         )
 
@@ -102,7 +101,7 @@ class TestNotificationRepository(BaseRepositoryTestLib):
         )
 
     async def test_count_by_user_only_counts_that_user(self):
-        app, recipient = await self._seed()
+        _app, recipient = await self._seed()
         other = _make_user()
         await self.insert_entities([other])
         repo = NotificationRepository()
@@ -110,16 +109,14 @@ class TestNotificationRepository(BaseRepositoryTestLib):
             self.session,
             NotificationEntity(
                 user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
+                event_id=self.event.event_id,
             ),
         )
         await repo.create(
             self.session,
             NotificationEntity(
                 user_id=other.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
+                event_id=self.event.event_id,
             ),
         )
 
@@ -127,27 +124,35 @@ class TestNotificationRepository(BaseRepositoryTestLib):
 
         self.assertEqual(count, 1)
 
-    async def test_delete_by_id_removes_the_row_and_returns_true(self):
-        app, recipient = await self._seed()
+    async def test_dismiss_by_id_marks_the_row_and_keeps_it(self):
+        """Dismissing hides a notification; it must not destroy it.
+
+        The row carries the email state machine, so deleting it on dismiss
+        would drop an email that had not gone out yet -- and would erase the
+        record of one that had.
+        """
+        _app, recipient = await self._seed()
         repo = NotificationRepository()
         created = await repo.create(
             self.session,
             NotificationEntity(
                 user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
+                event_id=self.event.event_id,
             ),
         )
 
-        deleted = await repo.delete_by_id(
+        dismissed = await repo.dismiss_by_id(
             self.session, created.notification_id, recipient.user_id
         )
 
-        self.assertTrue(deleted)
+        self.assertTrue(dismissed)
+        await self.session.refresh(created)
+        self.assertIsNotNone(created.dismissed_at)
         self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 0)
+        self.assertEqual(await repo.list_by_user(self.session, recipient.user_id), [])
 
-    async def test_delete_by_id_wrong_user_is_a_no_op(self):
-        app, recipient = await self._seed()
+    async def test_dismiss_by_id_wrong_user_is_a_no_op(self):
+        _app, recipient = await self._seed()
         other = _make_user()
         await self.insert_entities([other])
         repo = NotificationRepository()
@@ -155,159 +160,39 @@ class TestNotificationRepository(BaseRepositoryTestLib):
             self.session,
             NotificationEntity(
                 user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
+                event_id=self.event.event_id,
             ),
         )
 
-        result = await repo.delete_by_id(
+        result = await repo.dismiss_by_id(
             self.session, created.notification_id, other.user_id
         )
 
         self.assertFalse(result)
+        await self.session.refresh(created)
+        self.assertIsNone(created.dismissed_at)
         self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 1)
 
-    async def test_delete_all_by_user_removes_every_row_for_that_user(self):
-        app, recipient = await self._seed()
+    async def test_dismiss_all_by_user_marks_every_row_and_keeps_them(self):
+        _app, recipient = await self._seed()
         repo = NotificationRepository()
-        await repo.create(
-            self.session,
-            NotificationEntity(
-                user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
-            ),
-        )
-        await repo.create(
-            self.session,
-            NotificationEntity(
-                user_id=recipient.user_id,
-                type=NotificationType.ASSIGNED_TO_EVALUATE,
-                application_id=app.application_id,
-            ),
-        )
-
-        await repo.delete_all_by_user(self.session, recipient.user_id)
-
-        self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 0)
-
-    async def test_claim_unemailed_returns_only_unstamped_rows(self):
-        app, recipient = await self._seed()
-        repo = NotificationRepository()
-        unsent = await repo.create(
-            self.session,
-            NotificationEntity(
-                user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
-            ),
-        )
-        already_sent = await repo.create(
-            self.session,
-            NotificationEntity(
-                user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
-                email_sent_at=datetime.now(timezone.utc),
-            ),
-        )
-
-        claimed = await repo.claim_unemailed(self.session, 10)
-
-        ids = [row.notification_id for row in claimed]
-        self.assertIn(unsent.notification_id, ids)
-        self.assertNotIn(already_sent.notification_id, ids)
-
-    async def test_claim_unemailed_returns_oldest_first(self):
-        app, recipient = await self._seed()
-        repo = NotificationRepository()
-        first = await repo.create(
-            self.session,
-            NotificationEntity(
-                user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
-                created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-            ),
-        )
-        second = await repo.create(
-            self.session,
-            NotificationEntity(
-                user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
-                created_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
-            ),
-        )
-
-        claimed = await repo.claim_unemailed(self.session, 10)
-
-        self.assertEqual(
-            [row.notification_id for row in claimed],
-            [first.notification_id, second.notification_id],
-        )
-
-    async def test_claim_unemailed_honours_the_limit(self):
-        app, recipient = await self._seed()
-        repo = NotificationRepository()
-        for _ in range(3):
+        rows = [
             await repo.create(
                 self.session,
                 NotificationEntity(
                     user_id=recipient.user_id,
-                    type=NotificationType.MENTIONED,
-                    application_id=app.application_id,
+                    event_id=self.event.event_id,
                 ),
             )
-
-        claimed = await repo.claim_unemailed(self.session, 2)
-
-        self.assertEqual(len(claimed), 2)
-
-    async def test_mark_emailed_stamps_the_named_rows_only(self):
-        app, recipient = await self._seed()
-        repo = NotificationRepository()
-        stamped = await repo.create(
-            self.session,
-            NotificationEntity(
-                user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
-            ),
-        )
-        untouched = await repo.create(
-            self.session,
-            NotificationEntity(
-                user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
-            ),
-        )
-        sent_at = datetime.now(timezone.utc)
-
-        await repo.mark_emailed(self.session, [stamped.notification_id], sent_at)
-
-        remaining = [
-            row.notification_id for row in await repo.claim_unemailed(self.session, 10)
+            for _ in range(2)
         ]
-        self.assertNotIn(stamped.notification_id, remaining)
-        self.assertIn(untouched.notification_id, remaining)
 
-    async def test_mark_emailed_is_a_no_op_for_an_empty_id_list(self):
-        app, recipient = await self._seed()
-        repo = NotificationRepository()
-        await repo.create(
-            self.session,
-            NotificationEntity(
-                user_id=recipient.user_id,
-                type=NotificationType.MENTIONED,
-                application_id=app.application_id,
-            ),
-        )
+        await repo.dismiss_all_by_user(self.session, recipient.user_id)
 
-        await repo.mark_emailed(self.session, [], datetime.now(timezone.utc))
-
-        self.assertEqual(len(await repo.claim_unemailed(self.session, 10)), 1)
+        self.assertEqual(await repo.count_by_user(self.session, recipient.user_id), 0)
+        for row in rows:
+            await self.session.refresh(row)
+            self.assertIsNotNone(row.dismissed_at)
 
 
 if __name__ == "__main__":

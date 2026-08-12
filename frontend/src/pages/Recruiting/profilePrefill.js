@@ -1,4 +1,5 @@
 import { parseDateParts } from "@/pages/Profile/utils";
+import { browserTimezone } from "@/components/common/timezoneDefault";
 
 let uid = 0;
 /**
@@ -49,13 +50,19 @@ export function profileToApplicationForm(fetchedProfile) {
       firstName: user.firstName ?? EMPTY_PERSONAL.firstName,
       lastName: user.lastName ?? EMPTY_PERSONAL.lastName,
       linkedin: user.linkedinLink ?? EMPTY_PERSONAL.linkedin,
-      timezone: user.timezone ?? EMPTY_PERSONAL.timezone,
+      // `||`, not `??`: a stored blank is as unset as a missing key, and
+      // the browser already knows the answer.
+      timezone: user.timezone || browserTimezone(),
     },
     education: education.map((row) => {
       const start = parseDateParts(row.startDate);
       const end = parseDateParts(row.endDate);
       return {
         id: nextId(),
+        // The profile's own row id, kept so a save updates this row rather
+        // than replacing it with a copy. The `id` above is this form's, and
+        // means nothing to the profile.
+        profileRowId: row.id,
         institution: row.school ?? "",
         degree: row.degree ?? "",
         field: row.fieldOfStudy ?? "",
@@ -77,6 +84,8 @@ export function profileToApplicationForm(fetchedProfile) {
         : parseDateParts(row.endDate);
       return {
         id: nextId(),
+        // See the education rows above: the profile's id, kept for saving.
+        profileRowId: row.id,
         title: row.title ?? "",
         company: row.companyOrOrganization ?? "",
         isCurrentlyWorking,

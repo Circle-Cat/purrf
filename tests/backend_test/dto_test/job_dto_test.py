@@ -95,14 +95,27 @@ class TestJobCreateDtoCrossValidation(unittest.TestCase):
                     {
                         "stage": "recruiter_screening",
                         "rounds": 1,
-                        "referralSkippable": True,
                         "defaultAssigneeId": 7,
                     },
                 ],
             },
         )
         self.assertEqual(dto.pipeline_config.owner_ids, [5])
-        self.assertTrue(dto.pipeline_config.stages[0].referral_skippable)
+        self.assertEqual(dto.pipeline_config.stages[0].default_assignee_id, 7)
+
+    def test_title_must_be_nonempty(self):
+        """A posting with no title is unusable everywhere it is listed."""
+        for title in ("", "   "):
+            with self.subTest(title=title), self.assertRaises(ValidationError):
+                JobCreateDto(title=title)
+
+    def test_cooldown_days_must_not_be_negative(self):
+        with self.assertRaises(ValidationError):
+            JobCreateDto(title="T", cooldownDays=-1)
+
+    def test_cooldown_days_accepts_zero_and_absent(self):
+        self.assertEqual(JobCreateDto(title="T", cooldownDays=0).cooldown_days, 0)
+        self.assertIsNone(JobCreateDto(title="T").cooldown_days)
 
 
 if __name__ == "__main__":

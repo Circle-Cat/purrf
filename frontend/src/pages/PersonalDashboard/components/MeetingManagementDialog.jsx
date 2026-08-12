@@ -30,7 +30,13 @@ import { cn } from "@/lib/utils";
 
 import TimezoneSelector from "@/components/common/TimezoneSelector";
 import { useMeetingManagement } from "@/pages/PersonalDashboard/hooks/useMeetingManagement";
-import { formatLocalYmd, todayInTz, formatInTz } from "@/utils/dateTime";
+import {
+  formatLocalYmd,
+  todayInTz,
+  formatInTz,
+  nowInTz,
+  localToUtcIso,
+} from "@/utils/dateTime";
 
 const DURATION_OPTIONS = [
   { value: "30", label: "30 minutes" },
@@ -72,7 +78,7 @@ export default function MeetingManagementDialog({
   const [activeTab, setActiveTab] = useState("schedule");
 
   const [selectedDate, setSelectedDate] = useState(null);
-  const [selectedTime, setSelectedTime] = useState("09:00");
+  const [selectedTime, setSelectedTime] = useState("");
   const [calendarOpen, setCalendarOpen] = useState(false);
 
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -165,6 +171,23 @@ export default function MeetingManagementDialog({
     }
   }, [formData.timezone]);
 
+  const tzNow = nowInTz(formData.timezone);
+  const isPastDate =
+    !!selectedDate &&
+    format(selectedDate, "yyyy-MM-dd") <
+      format(disableBeforeDate, "yyyy-MM-dd");
+  const isTodayInTz =
+    !!selectedDate &&
+    format(selectedDate, "yyyy-MM-dd") === format(tzNow, "yyyy-MM-dd");
+  const currentMinutesInTz = tzNow.getHours() * 60 + tzNow.getMinutes();
+
+  const isPastTime = (timeStr) => {
+    if (isPastDate) return true;
+    if (!isTodayInTz) return false;
+    const [h, m] = timeStr.split(":").map(Number);
+    return h * 60 + m < currentMinutesInTz;
+  };
+
   const handleTimezoneChange = (timezoneOption) => {
     const tzValue =
       typeof timezoneOption === "string"
@@ -182,7 +205,7 @@ export default function MeetingManagementDialog({
     setTimeout(() => {
       setFormData(initialFormState);
       setSelectedDate(null);
-      setSelectedTime("09:00");
+      setSelectedTime("");
       setActiveTab("schedule");
       setCalendarOpen(false);
     }, 200);
@@ -210,6 +233,16 @@ export default function MeetingManagementDialog({
     }
 
     try {
+      const startInstant = localToUtcIso(
+        selectedDate,
+        selectedTime,
+        formData.timezone,
+      );
+      if (new Date(startInstant) < new Date()) {
+        toast.error("Start time must be now or in the future.");
+        return;
+      }
+
       const cleanedPayload = {
         round_id: Number(roundId),
         partner_id: Number(formData.partnerId),
@@ -387,11 +420,18 @@ export default function MeetingManagementDialog({
                     <div className="w-full min-w-0 relative">
                       <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 z-10 pointer-events-none" />
                       <Select
+                        aria-label="Start Time"
                         options={TIME_SLOTS}
-                        value={TIME_SLOTS.find(
-                          (opt) => opt.value === selectedTime,
-                        )}
+                        value={
+                          selectedTime && !isPastTime(selectedTime)
+                            ? TIME_SLOTS.find(
+                                (opt) => opt.value === selectedTime,
+                              )
+                            : null
+                        }
                         onChange={(opt) => setSelectedTime(opt.value)}
+                        isOptionDisabled={(opt) => isPastTime(opt.value)}
+                        placeholder="Pick a start time"
                         menuPlacement="auto"
                         styles={{
                           control: (provided) => ({

@@ -24,7 +24,8 @@ class JiraHistorySyncService:
 
         Args:
             logger: The logger instance for logging messages.
-            jira_client: Jira client instance
+            jira_client: JiraClient providing the Jira connection, which is
+                opened on the first call that needs it
             redis_client: Redis client instance
             jira_search_service: JiraSearchService instance
             date_time_util: A DateTimeUtil for date and time operations.
@@ -57,7 +58,7 @@ class JiraHistorySyncService:
         Returns:
             int: Total number of projects processed
         """
-        projects = self.jira_client.projects()
+        projects = self.jira_client.get_jira_client().projects()
         project_dict = {project.id: project.name for project in projects}
 
         if not project_dict:

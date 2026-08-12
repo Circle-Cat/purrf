@@ -8,17 +8,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import FieldError from "@/components/common/FieldError";
+import { errorBorder } from "@/components/common/fieldErrors";
+import { basicsKey } from "@/pages/Recruiting/postings/postingValidation";
 
 /**
- * Title / description / kind fields for a posting.
+ * What each posting type means, shown under the picker. "Kind" is the stored
+ * field name; the form calls it "Posting type" because the bare enum word
+ * says nothing about which of the two an author wants.
+ */
+const KIND_HINTS = {
+  activity: "An open program people apply to join.",
+  employment: "Hiring a team member.",
+};
+
+/**
+ * Title / description / posting-type fields for a posting.
  *
- * `kindLocked`, when true, disables the Kind and Mentorship role selects —
+ * `kindLocked`, when true, disables the Posting type and Mentorship role selects —
  * both are only editable while a posting is still a draft; the caller
  * decides when that applies (see `PostingEditor`).
  *
  * @param {{title: string, description: string, kind: string, cooldownDays: (number|null|undefined),
  *          mentorshipRole: (string|null|undefined), kindLocked?: boolean,
- *          onChange: (patch: object) => void}} props
+ *          onChange: (patch: object) => void,
+ *          errors?: Record<string, string>}} props
  */
 const JobBasicsSection = ({
   title,
@@ -28,6 +42,7 @@ const JobBasicsSection = ({
   mentorshipRole,
   kindLocked = false,
   onChange,
+  errors = {},
 }) => (
   <div className="space-y-3">
     <div className="space-y-1">
@@ -35,9 +50,11 @@ const JobBasicsSection = ({
       <Input
         id="posting-title"
         aria-label="Title"
+        className={errorBorder(errors, basicsKey("title")).trim()}
         value={title ?? ""}
         onChange={(e) => onChange({ title: e.target.value })}
       />
+      <FieldError errors={errors} errorKey={basicsKey("title")} />
     </div>
     <div className="space-y-1">
       <Label htmlFor="posting-desc">Description</Label>
@@ -49,15 +66,22 @@ const JobBasicsSection = ({
       />
     </div>
     <div className="space-y-1">
-      <Label htmlFor="posting-kind">Kind</Label>
+      <Label htmlFor="posting-kind">Posting type</Label>
       <Select
         value={kind}
-        onValueChange={(v) => onChange({ kind: v })}
+        // Mentorship role only exists for an activity, and its select stops
+        // rendering below the moment this changes. Left in place it would ride
+        // along into the saved posting as a value nobody can see or reach.
+        onValueChange={(v) =>
+          onChange(
+            v === "activity" ? { kind: v } : { kind: v, mentorshipRole: null },
+          )
+        }
         disabled={kindLocked}
       >
         <SelectTrigger
           id="posting-kind"
-          aria-label="Kind"
+          aria-label="Posting type"
           className="w-full max-w-xs"
         >
           <SelectValue />
@@ -67,6 +91,9 @@ const JobBasicsSection = ({
           <SelectItem value="employment">Employment</SelectItem>
         </SelectContent>
       </Select>
+      {KIND_HINTS[kind] && (
+        <p className="text-sm text-slate-500">{KIND_HINTS[kind]}</p>
+      )}
     </div>
     {kind === "activity" && (
       <div className="space-y-1">
@@ -100,7 +127,7 @@ const JobBasicsSection = ({
         type="number"
         min={0}
         aria-label="Cooldown days"
-        className="w-full max-w-xs"
+        className={`w-full max-w-xs${errorBorder(errors, basicsKey("cooldownDays"))}`}
         value={cooldownDays ?? ""}
         onChange={(e) =>
           onChange({
@@ -108,6 +135,7 @@ const JobBasicsSection = ({
           })
         }
       />
+      <FieldError errors={errors} errorKey={basicsKey("cooldownDays")} />
     </div>
   </div>
 );

@@ -1,3 +1,4 @@
+import re
 from typing import Literal
 
 from pydantic import field_validator, model_validator
@@ -11,19 +12,60 @@ QuestionType = Literal[
 # Which optional fields each question type is allowed to carry.
 _ALLOWED_FIELDS: dict[str, set[str]] = {
     "short_text": set(),
-    "long_text": {"max_length", "max_words"},
+    "long_text": {"max_length"},
     "single_choice": {"options", "other_option"},
     "multi_choice": {"options", "max_selections", "other_option"},
     "exact_text": {"expected_value"},
 }
 
+# The character ceiling a text answer can never exceed, whatever the posting
+# says. `short_text` carries no length configuration at all -- picking that
+# type is the author's answer to "how long" -- so 255 is simply what a short
+# text is: the VARCHAR(255) default that holds a name, a job title, a company,
+# a city, a URL or a one-line answer.
+SHORT_TEXT_MAX_LENGTH = 255
+
+# The fallback for a `long_text` question whose author set no budget, and the
+# upper bound on the budget they may set. Not an expected value -- an author
+# who wants a smaller one says so.
+LONG_TEXT_MAX_LENGTH = 5000
+
+
+def question_seq_floor(question_ids) -> int:
+    """Lowest next_seq value that cannot recycle a question id already in use.
+
+    Answers are keyed by question id and every prior application's schema
+    snapshot still refers to a retired one, so an id must never be handed out
+    twice. Shared by ``FormSchemaDto``'s validator and the service layer's
+    counter resolution so the two cannot drift apart.
+
+    Args:
+        question_ids (Iterable[str]): Ids of the questions currently on the
+            form. Non-string and non-``q<digits>`` ids are ignored — they were
+            hand-authored and never came from the counter.
+
+    Returns:
+        int: One past the highest ``q<digits>`` suffix present, or 1 when the
+        form carries no numbered ids at all (including an empty form).
+    """
+    used = [
+        int(m.group(1))
+        for qid in question_ids
+        if isinstance(qid, str) and (m := re.fullmatch(r"q(\d+)", qid))
+    ]
+    return max(used) + 1 if used else 1
+
 
 class ShowWhenDto(BaseRequestDto):
-    """Single-layer conditional-visibility rule on a question.
+    """Conditional-visibility rule on a question.
 
     Renders the owning question only when the referenced question's answer
     matches ``equals`` (exact match for scalar answers; membership for
-    multi_choice). Enforcement of visibility at submit time is flow-two.
+    multi_choice) *and* the referenced question is itself rendered -- rules
+    may chain, and ``backend/recruiting/form_visibility.py`` resolves the
+    chain through to its root. That module also enforces the rule at submit
+    time: answers to questions the form was not showing are dropped, and
+    ``required`` is checked only against the ones it was.
     """
 
     question_id: str
@@ -44,8 +86,10 @@ class QuestionDto(BaseRequestDto):
     show_when: ShowWhenDto | None = None
     options: list[str] | None = None
     max_selections: int | None = None
+    # Characters, not words: a word count splits on whitespace and so means
+    # nothing for an answer written in Chinese, where one limit would bind
+    # for some candidates and never for others.
     max_length: int | None = None
-    max_words: int | None = None
     expected_value: str | None = None
     other_option: str | None = None
 
@@ -85,7 +129,6 @@ class QuestionDto(BaseRequestDto):
                 "options",
                 "max_selections",
                 "max_length",
-                "max_words",
                 "expected_value",
                 "other_option",
             )
@@ -100,14 +143,20 @@ class QuestionDto(BaseRequestDto):
                 raise ValueError(f"{self.type} requires a non-empty options list")
             if any(not opt or not opt.strip() for opt in self.options):
                 raise ValueError("options entries must be non-empty")
+            # Options are referenced by their text -- a showWhen rule stores it
+            # in ``equals`` and ``other_option`` names one outright -- so two
+            # options reading the same are one option wearing two rows:
+            # whichever the candidate picks, every rule on either fires.
+            if len(self.options) != len(set(self.options)):
+                raise ValueError("options entries must be unique")
         if self.type == "multi_choice" and self.max_selections is not None:
             if not (1 <= self.max_selections <= len(self.options)):
                 raise ValueError("max_selections must be within [1, len(options)]")
-        if self.type == "long_text":
-            if self.max_length is not None and self.max_length <= 0:
-                raise ValueError("max_length must be > 0")
-            if self.max_words is not None and self.max_words <= 0:
-                raise ValueError("max_words must be > 0")
+        if self.type == "long_text" and self.max_length is not None:
+            if not (1 <= self.max_length <= LONG_TEXT_MAX_LENGTH):
+                raise ValueError(
+                    f"max_length must be within [1, {LONG_TEXT_MAX_LENGTH}]"
+                )
         if self.type == "exact_text":
             if not self.expected_value or not self.expected_value.strip():
                 raise ValueError("exact_text requires a non-empty expected_value")
@@ -122,31 +171,61 @@ class FormSchemaDto(BaseRequestDto):
     """A posting's submission form: an ordered list of questions."""
 
     questions: list[QuestionDto] = []
+    # One past the highest question number ever used on this form. Persisted
+    # so a delete cannot hand a recycled id to the next question added:
+    # answers are keyed by question id and every prior application's snapshot
+    # still refers to the retired one. None on forms authored before this
+    # field existed; the client derives a starting value from the live ids.
+    next_seq: int | None = None
 
     @model_validator(mode="after")
     def validate_schema(self) -> "FormSchemaDto":
-        """Enforce unique ids and valid single-layer showWhen references.
+        """Enforce unique ids, resolvable showWhen references, and a
+        non-recycling next_seq.
 
         Returns:
             FormSchemaDto: self, when valid.
 
         Raises:
-            ValueError: On duplicate ids, or a showWhen referencing a missing
-                question or itself.
+            ValueError: On duplicate ids, a showWhen referencing a missing
+                question or itself, or a next_seq low enough to recycle a
+                question id already in use.
         """
         ids = [q.id for q in self.questions]
         if len(ids) != len(set(ids)):
             raise ValueError("question ids must be unique within a form")
-        id_set = set(ids)
+        by_id = {q.id: q for q in self.questions}
         for q in self.questions:
             if q.show_when is None:
                 continue
             target = q.show_when.question_id
             if target == q.id:
                 raise ValueError(f"question {q.id} showWhen cannot reference itself")
-            if target not in id_set:
+            if target not in by_id:
                 raise ValueError(
                     f"question {q.id} showWhen references unknown question {target}"
+                )
+            # A rule is matched against a recorded answer, so on a choice
+            # question the only values that can ever match are its options. One
+            # that cannot hides the question from every candidate, for good and
+            # without a word -- and since submit now drops the answers to
+            # whatever the form did not show, a returning candidate's earlier
+            # answer to it goes too. The screen-rule side of this cross-check
+            # already exists in JobCreateDto.
+            gate = by_id[target]
+            if gate.type in (
+                "single_choice",
+                "multi_choice",
+            ) and q.show_when.equals not in (gate.options or []):
+                raise ValueError(
+                    f"question {q.id} showWhen value {q.show_when.equals!r} "
+                    f"not in options of {target}"
+                )
+        if self.next_seq is not None:
+            floor = question_seq_floor(q.id for q in self.questions)
+            if self.next_seq < floor:
+                raise ValueError(
+                    f"nextSeq must be at least {floor} so ids are never recycled"
                 )
         return self
 
@@ -160,7 +239,6 @@ class PipelineStageDto(BaseRequestDto):
 
     stage: PipelineStage
     rounds: int
-    referral_skippable: bool = False
     default_assignee_id: int | None = None
 
     @field_validator("rounds")
@@ -285,6 +363,13 @@ class ScreenRuleConditionDto(BaseRequestDto):
         else:  # answer
             if not self.question_id:
                 raise ValueError("answer condition requires question_id")
+            # Same footgun as the email_domain branch above, plus a sharper
+            # one: ``screen_rules`` reads ``value[0]`` for the equals
+            # operator, so an empty list raises IndexError inside submit and
+            # every application to the posting fails with a 500.
+            values = self.value if isinstance(self.value, list) else [self.value]
+            if not any(str(v).strip() for v in values):
+                raise ValueError("answer condition requires a non-empty value")
         return self
 
 

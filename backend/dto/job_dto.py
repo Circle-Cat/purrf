@@ -1,4 +1,4 @@
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 
 from backend.dto.base_dto import BaseDto
 from backend.dto.base_request_dto import BaseRequestDto
@@ -24,6 +24,46 @@ class JobCreateDto(BaseRequestDto):
     screen_rules: ScreenRulesDto | None = None
     profile_config: ProfileConfigDto | None = None
     cooldown_days: int | None = None
+
+    @field_validator("title")
+    @classmethod
+    def title_nonempty(cls, v: str) -> str:
+        """Reject a blank title (whitespace already stripped by BaseRequestDto).
+
+        Args:
+            v (str): The candidate title.
+
+        Returns:
+            str: The validated, non-empty title.
+
+        Raises:
+            ValueError: If the title is empty.
+        """
+        if not v:
+            raise ValueError("Posting title must be non-empty")
+        return v
+
+    @field_validator("cooldown_days")
+    @classmethod
+    def cooldown_not_negative(cls, v: int | None) -> int | None:
+        """Reject a negative cooldown.
+
+        A cooldown is a wait before re-applying; a negative one is not a
+        shorter wait but a nonsensical date the cooldown arithmetic would
+        carry into the future.
+
+        Args:
+            v (int | None): The candidate cooldown in days.
+
+        Returns:
+            int | None: The validated cooldown.
+
+        Raises:
+            ValueError: If the cooldown is negative.
+        """
+        if v is not None and v < 0:
+            raise ValueError("cooldownDays must not be negative")
+        return v
 
     @model_validator(mode="after")
     def validate_answer_rules_against_form(self) -> "JobCreateDto":

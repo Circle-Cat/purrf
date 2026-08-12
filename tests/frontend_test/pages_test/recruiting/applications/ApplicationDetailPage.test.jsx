@@ -88,7 +88,7 @@ const SUBMISSION = {
       isCurrentlyWorking: true,
     },
   ],
-  answers: { q1: "Yes", q2: "Remote" },
+  answers: { q1: "Yes", q2: "Remote", q3: "First line.\nSecond line." },
 };
 
 /** A second job's snapshot, for another-application aggregation fixtures. */
@@ -127,6 +127,9 @@ const makeOtherApplication = ({
   evaluations,
   activity,
   comments,
+  formSchema: {
+    questions: [{ id: "q9", type: "short_text", label: "Availability?" }],
+  },
 });
 
 /** Build an ApplicationDetailDto-shaped payload for a given role/stage. */
@@ -155,7 +158,10 @@ const makeDetail = ({
   applicantEmail: "alice@example.com",
   resumeAvailable,
   formSchema: {
-    questions: [{ id: "q1", label: "Are you authorized to work?" }],
+    questions: [
+      { id: "q1", type: "short_text", label: "Are you authorized to work?" },
+      { id: "q3", type: "long_text", label: "Anything else?" },
+    ],
   },
   isOwner,
   canView,
@@ -342,11 +348,17 @@ describe("ApplicationDetailPage — loading & snapshot", () => {
     expect(screen.getByText(/America\/New_York/)).toBeInTheDocument();
     expect(screen.getByText(/State University/)).toBeInTheDocument();
     expect(screen.getByText(/Acme Corp/)).toBeInTheDocument();
-    // Known question uses its label; removed question falls back to raw id.
+    // A question still on the live form uses its label.
     expect(
       screen.getByText(/Are you authorized to work\?/),
     ).toBeInTheDocument();
-    expect(screen.getByText(/q2/)).toBeInTheDocument();
+    // An answer whose question was removed is kept, not dropped.
+    expect(screen.getByText("Other recorded answers")).toBeInTheDocument();
+    expect(screen.getByText("q2")).toBeInTheDocument();
+    // A long answer keeps its line breaks.
+    expect(screen.getByText(/First line\./).textContent).toBe(
+      "First line.\nSecond line.",
+    );
   });
 
   it("shows the current stage next to the applicant's name", async () => {
@@ -1051,7 +1063,7 @@ describe("ApplicationDetailPage — operate row", () => {
     await waitLoaded();
 
     expect(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Advance to Behavioral" }),
@@ -1155,7 +1167,7 @@ describe("ApplicationDetailPage — advance round", () => {
     await waitLoaded();
 
     expect(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     ).toBeInTheDocument();
   });
 
@@ -1169,7 +1181,7 @@ describe("ApplicationDetailPage — advance round", () => {
     await waitLoaded();
 
     expect(
-      screen.queryByRole("button", { name: /Advance to Round/ }),
+      screen.queryByRole("button", { name: /Advance to Session/ }),
     ).not.toBeInTheDocument();
   });
 
@@ -1183,7 +1195,7 @@ describe("ApplicationDetailPage — advance round", () => {
     await waitLoaded();
 
     expect(
-      screen.queryByRole("button", { name: /Advance to Round/ }),
+      screen.queryByRole("button", { name: /Advance to Session/ }),
     ).not.toBeInTheDocument();
   });
 
@@ -1198,7 +1210,7 @@ describe("ApplicationDetailPage — advance round", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     );
 
     // Tech is card-managed (ASSIGNEE_VIA_CARD_STAGES): the round-advance
@@ -1207,7 +1219,7 @@ describe("ApplicationDetailPage — advance round", () => {
       screen.queryByRole("radio", { name: /decide later/i }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Confirm advance round" }),
+      screen.getByRole("button", { name: "Confirm advance session" }),
     ).not.toBeDisabled();
     expect(api.setApplicationRound).not.toHaveBeenCalled();
   });
@@ -1235,12 +1247,12 @@ describe("ApplicationDetailPage — advance round", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     );
 
     expect(screen.getByRole("radio", { name: /decide later/i })).toBeChecked();
     expect(
-      screen.getByRole("button", { name: "Confirm advance round" }),
+      screen.getByRole("button", { name: "Confirm advance session" }),
     ).not.toBeDisabled();
     expect(api.setApplicationRound).not.toHaveBeenCalled();
   });
@@ -1257,10 +1269,10 @@ describe("ApplicationDetailPage — advance round", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     );
     await user.click(
-      screen.getByRole("button", { name: "Confirm advance round" }),
+      screen.getByRole("button", { name: "Confirm advance session" }),
     );
 
     await waitFor(() =>
@@ -1296,11 +1308,11 @@ describe("ApplicationDetailPage — advance round", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     );
     await user.click(screen.getByRole("radio", { name: /ivan interviewer/i }));
     const confirmButton = screen.getByRole("button", {
-      name: "Confirm advance round",
+      name: "Confirm advance session",
     });
     expect(confirmButton).not.toBeDisabled();
     await user.click(confirmButton);
@@ -1315,7 +1327,7 @@ describe("ApplicationDetailPage — advance round", () => {
     );
     // Local state patched in place: the button now reflects round 2 -> 3.
     expect(
-      await screen.findByRole("button", { name: "Advance to Round 3" }),
+      await screen.findByRole("button", { name: "Advance to Session 3" }),
     ).toBeInTheDocument();
   });
 
@@ -1330,15 +1342,15 @@ describe("ApplicationDetailPage — advance round", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     );
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(
-      screen.queryByRole("button", { name: "Confirm advance round" }),
+      screen.queryByRole("button", { name: "Confirm advance session" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     ).toBeInTheDocument();
     expect(api.setApplicationRound).not.toHaveBeenCalled();
   });
@@ -1366,11 +1378,11 @@ describe("ApplicationDetailPage — advance round", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     );
     await user.click(screen.getByRole("radio", { name: /ivan interviewer/i }));
     await user.click(
-      screen.getByRole("button", { name: "Confirm advance round" }),
+      screen.getByRole("button", { name: "Confirm advance session" }),
     );
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("Round update failed"),
@@ -1388,7 +1400,7 @@ describe("ApplicationDetailPage — activity timeline", () => {
       data: [
         {
           id: 1,
-          eventType: "stage_changed",
+          eventType: "recruiting.stage_changed",
           details: { fromStage: "recruiter_screening", toStage: "tech" },
           actorId: OWNER_ID,
           actorName: "Owen Owner",
@@ -1413,7 +1425,7 @@ describe("ApplicationDetailPage — activity timeline", () => {
       data: [
         {
           id: 1,
-          eventType: "stage_changed",
+          eventType: "recruiting.stage_changed",
           details: { fromStage: "recruiter_screening", toStage: "tech" },
           actorId: OWNER_ID,
           actorName: "Owen Owner",
@@ -1421,7 +1433,7 @@ describe("ApplicationDetailPage — activity timeline", () => {
         },
         {
           id: 2,
-          eventType: "reassigned",
+          eventType: "recruiting.reassigned",
           details: {
             stage: "tech",
             fromAssigneeId: null,
@@ -1459,7 +1471,7 @@ describe("ApplicationDetailPage — activity timeline", () => {
       data: [
         {
           id: 1,
-          eventType: "email_sent",
+          eventType: "recruiting.email_sent",
           details: {
             subject: "Interview Availability",
             to: ["cand@x.com"],
@@ -1472,7 +1484,7 @@ describe("ApplicationDetailPage — activity timeline", () => {
         },
         {
           id: 2,
-          eventType: "email_received",
+          eventType: "recruiting.email_received",
           details: {
             subject: "Re: Interview Availability",
             from: "cand@x.com",
@@ -1511,7 +1523,7 @@ describe("ApplicationDetailPage — activity timeline", () => {
       data: [
         {
           id: 1,
-          eventType: "stage_changed",
+          eventType: "recruiting.stage_changed",
           details: {
             fromStage: "tech",
             toStage: "rejected",
@@ -1583,7 +1595,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
   it("shows the assignee name when advancing into a stage with one picked", async () => {
     await renderTimelineWith({
       id: 1,
-      eventType: "stage_changed",
+      eventType: "recruiting.stage_changed",
       details: {
         fromStage: "recruiter_screening",
         toStage: "tech",
@@ -1605,7 +1617,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
   it("shows the assignee name when round-advancing with one picked", async () => {
     await renderTimelineWith({
       id: 1,
-      eventType: "round_advanced",
+      eventType: "recruiting.round_advanced",
       details: {
         stage: "tech",
         fromRound: 1,
@@ -1620,7 +1632,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
 
     expect(
       screen.getByText(
-        /Advanced to round 2 of Tech, assigned to Ivan Interviewer, by Owen Owner/,
+        /Advanced to session 2 of Tech, assigned to Ivan Interviewer, by Owen Owner/,
       ),
     ).toBeInTheDocument();
   });
@@ -1628,7 +1640,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
   it("shows both names when reassigning from a previous assignee", async () => {
     await renderTimelineWith({
       id: 1,
-      eventType: "reassigned",
+      eventType: "recruiting.reassigned",
       details: {
         stage: "tech",
         fromAssigneeId: 7,
@@ -1651,7 +1663,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
   it("shows the auto_assigned event with the assignee name and the candidate as actor", async () => {
     await renderTimelineWith({
       id: 1,
-      eventType: "auto_assigned",
+      eventType: "recruiting.auto_assigned",
       details: {
         stage: "recruiter_screening",
         assigneeId: 11,
@@ -1672,7 +1684,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
   it("applies the shared by-actor suffix to an event type with no assignee concept", async () => {
     await renderTimelineWith({
       id: 1,
-      eventType: "sub_status_changed",
+      eventType: "recruiting.sub_status_changed",
       details: {
         stage: "tech",
         fromSubStatus: "pending",
@@ -1693,7 +1705,7 @@ describe("ApplicationDetailPage — activity timeline assignee names", () => {
   it("omits the assignee clause when advancing with no assignee picked", async () => {
     await renderTimelineWith({
       id: 1,
-      eventType: "stage_changed",
+      eventType: "recruiting.stage_changed",
       details: { fromStage: "recruiter_screening", toStage: "tech" },
       actorId: OWNER_ID,
       actorName: "Owen Owner",
@@ -2318,6 +2330,22 @@ describe("ApplicationDetailPage — candidate aggregation", () => {
     expect(router.state.location.pathname).toBe("/recruiting/applications/101");
   });
 
+  it("labels an expanded other application's answers with its own job's form", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true }),
+    });
+    api.getOtherApplications.mockResolvedValue({
+      data: { otherJobs: [makeOtherApplication({})], previousSameJob: [] },
+    });
+    renderPage();
+    await waitLoaded();
+
+    await userEvent.click(screen.getByRole("button", { name: /View/ }));
+
+    expect(screen.getByText("Availability?")).toBeInTheDocument();
+  });
+
   it("shows previous applications for the same posting", async () => {
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({
@@ -2402,7 +2430,7 @@ describe("ApplicationDetailPage — history row timeline and comments", () => {
         activity: [
           {
             id: 2,
-            eventType: "stage_changed",
+            eventType: "recruiting.stage_changed",
             details: {
               fromStage: "tech",
               toStage: "rejected",
@@ -2438,7 +2466,7 @@ describe("ApplicationDetailPage — history row timeline and comments", () => {
         activity: [
           {
             id: 3,
-            eventType: "stage_changed",
+            eventType: "recruiting.stage_changed",
             details: { fromStage: "tech", toStage: "hired" },
             actorId: OWNER_ID,
             actorName: "Olga Owner",
@@ -2496,7 +2524,7 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
       data: [
         {
           id: 1,
-          eventType: "auto_rejected",
+          eventType: "recruiting.auto_rejected",
           details: { reason: "screen_rule", ruleId: "r1" },
           actorId: OWNER_ID,
           actorName: "Casey Candidate",
@@ -2527,7 +2555,7 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
       data: [
         {
           id: 1,
-          eventType: "application_submitted",
+          eventType: "recruiting.application_submitted",
           details: {
             stage: "recruiter_screening",
             screenQualifyRuleId: "r1",
@@ -2560,7 +2588,7 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
       data: [
         {
           id: 1,
-          eventType: "application_submitted",
+          eventType: "recruiting.application_submitted",
           details: {
             stage: "recruiter_screening",
             screenQualifyRuleId: "r2",
@@ -2594,7 +2622,7 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
       data: [
         {
           id: 1,
-          eventType: "application_submitted",
+          eventType: "recruiting.application_submitted",
           details: { stage: "hired", screenAutoHireRuleId: "r1" },
           actorId: OWNER_ID,
           actorName: "Casey Candidate",
@@ -2624,7 +2652,7 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
       data: [
         {
           id: 1,
-          eventType: "application_submitted",
+          eventType: "recruiting.application_submitted",
           details: {
             stage: "hired",
             screenAutoHireRuleId: "r1",
@@ -2658,7 +2686,7 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
       data: [
         {
           id: 1,
-          eventType: "auto_rejected",
+          eventType: "recruiting.auto_rejected",
           details: {
             reason: "screen_rule",
             ruleId: "r1",
@@ -2692,7 +2720,7 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
       data: [
         {
           id: 1,
-          eventType: "auto_rejected",
+          eventType: "recruiting.auto_rejected",
           details: { reason: "screen_rule", ruleId: "r1" },
           actorId: OWNER_ID,
           actorName: "Casey Candidate",
@@ -2731,7 +2759,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
 
     expect(
       screen.getByText(
-        "This round has no confirmed evaluation yet. Advance anyway?",
+        "This session has no confirmed evaluation yet. Advance anyway?",
       ),
     ).toBeInTheDocument();
     expect(
@@ -2775,7 +2803,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
 
     expect(
       screen.queryByText(
-        "This round has no confirmed evaluation yet. Advance anyway?",
+        "This session has no confirmed evaluation yet. Advance anyway?",
       ),
     ).not.toBeInTheDocument();
     expect(
@@ -2784,7 +2812,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
     expect(api.changeApplicationStage).not.toHaveBeenCalled();
   });
 
-  it("a confirmed evaluation for the current round skips the reminder", async () => {
+  it("a confirmed evaluation for the current session skips the reminder", async () => {
     const user = userEvent.setup();
     api.getEvaluationsForApplication.mockResolvedValue({
       data: [confirmedEval("recruiter_screening")],
@@ -2799,7 +2827,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
 
     expect(
       screen.queryByText(
-        "This round has no confirmed evaluation yet. Advance anyway?",
+        "This session has no confirmed evaluation yet. Advance anyway?",
       ),
     ).not.toBeInTheDocument();
     // No reminder AND no assignee dialog for a behavioral target -- the
@@ -2826,7 +2854,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
 
     expect(
       screen.getByText(
-        "This round has no confirmed evaluation yet. Advance anyway?",
+        "This session has no confirmed evaluation yet. Advance anyway?",
       ),
     ).toBeInTheDocument();
   });
@@ -2869,22 +2897,22 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     );
     expect(
       screen.getByText(
-        "This round has no confirmed evaluation yet. Advance anyway?",
+        "This session has no confirmed evaluation yet. Advance anyway?",
       ),
     ).toBeInTheDocument();
     expect(api.setApplicationRound).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Advance anyway" }));
     expect(
-      screen.getByRole("button", { name: "Confirm advance round" }),
+      screen.getByRole("button", { name: "Confirm advance session" }),
     ).toBeInTheDocument();
   });
 
-  it("disables the Evaluated status button while the current round has no confirmed evaluation", async () => {
+  it("disables the Evaluated status button while the current session has no confirmed evaluation", async () => {
     renderOwner({ stage: "recruiter_screening" });
     await waitLoaded();
 
@@ -2894,7 +2922,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
     ).not.toBeDisabled();
   });
 
-  it("enables the Evaluated status button once the current round has a confirmed evaluation", async () => {
+  it("enables the Evaluated status button once the current session has a confirmed evaluation", async () => {
     api.getEvaluationsForApplication.mockResolvedValue({
       data: [confirmedEval("recruiter_screening")],
     });
@@ -2912,7 +2940,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
       data: [
         {
           id: 1,
-          eventType: "stage_changed",
+          eventType: "recruiting.stage_changed",
           details: {
             fromStage: "recruiter_screening",
             toStage: "tech",
@@ -2924,7 +2952,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
         },
         {
           id: 2,
-          eventType: "round_advanced",
+          eventType: "recruiting.round_advanced",
           details: {
             stage: "tech",
             fromRound: 1,
@@ -2949,7 +2977,7 @@ describe("ApplicationDetailPage — advance-without-evaluation soft reminder", (
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        /Advanced to round 2 of Tech \(no evaluation recorded\), by Owen Owner/,
+        /Advanced to session 2 of Tech \(no evaluation recorded\), by Owen Owner/,
       ),
     ).toBeInTheDocument();
   });
@@ -4342,7 +4370,7 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
   it("describes interview_scheduled with the resolved zone, time and interviewer", async () => {
     await renderTimelineWith({
       id: 1,
-      eventType: "interview_scheduled",
+      eventType: "recruiting.interview_scheduled",
       details: {
         stage: "behavioral",
         round: 1,
@@ -4369,7 +4397,7 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
   it("describes interview_cancelled with what was cancelled and when", async () => {
     await renderTimelineWith({
       id: 3,
-      eventType: "interview_cancelled",
+      eventType: "recruiting.interview_cancelled",
       details: {
         stage: "behavioral",
         round: 1,
@@ -4394,7 +4422,7 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
   it("describes interview_updated as a reschedule when only the time moved", async () => {
     await renderTimelineWith({
       id: 2,
-      eventType: "interview_updated",
+      eventType: "recruiting.interview_updated",
       details: {
         stage: "behavioral",
         round: 1,
@@ -4422,7 +4450,7 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
   it("describes interview_updated as a reassignment when only the interviewer swapped", async () => {
     await renderTimelineWith({
       id: 2,
-      eventType: "interview_updated",
+      eventType: "recruiting.interview_updated",
       details: {
         stage: "behavioral",
         round: 1,
@@ -4451,7 +4479,7 @@ describe("ApplicationDetailPage — interview meeting card & scheduling", () => 
   it("describes interview_updated as both when the time and the interviewer both changed", async () => {
     await renderTimelineWith({
       id: 2,
-      eventType: "interview_updated",
+      eventType: "recruiting.interview_updated",
       details: {
         stage: "behavioral",
         round: 1,
@@ -4647,11 +4675,11 @@ describe("ApplicationDetailPage — ghost meeting cleanup", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     );
     expect(screen.getByRole("checkbox", { name: CANCEL_BOX })).toBeChecked();
     await user.click(
-      screen.getByRole("button", { name: "Confirm advance round" }),
+      screen.getByRole("button", { name: "Confirm advance session" }),
     );
 
     await waitFor(() =>
@@ -4672,11 +4700,11 @@ describe("ApplicationDetailPage — ghost meeting cleanup", () => {
     await waitLoaded();
 
     await user.click(
-      screen.getByRole("button", { name: "Advance to Round 2" }),
+      screen.getByRole("button", { name: "Advance to Session 2" }),
     );
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
     await user.click(
-      screen.getByRole("button", { name: "Confirm advance round" }),
+      screen.getByRole("button", { name: "Confirm advance session" }),
     );
 
     await waitFor(() =>
@@ -4786,14 +4814,14 @@ describe("ApplicationDetailPage — blacklist cancels the upcoming interviews", 
 
     expect(
       await screen.findByText(
-        /Mentor — Behavioral round 1 — 2099-08-05 14:00 America\/Los_Angeles/,
+        /Mentor — Behavioral session 1 — 2099-08-05 14:00 America\/Los_Angeles/,
       ),
     ).toBeInTheDocument();
     expect(
       // Rendered in the READER's zone (pinned to Los Angeles by makeDetail),
       // not in whatever zone each meeting was booked in: 22:00Z is 15:00 there.
       screen.getByText(
-        /Backend Engineer — Tech round 2 — 2099-08-06 15:00 America\/Los_Angeles/,
+        /Backend Engineer — Tech session 2 — 2099-08-06 15:00 America\/Los_Angeles/,
       ),
     ).toBeInTheDocument();
     // Scoped to the candidate, not the application being viewed: a block is

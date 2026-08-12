@@ -39,6 +39,7 @@ py_test(
     name = "fast_app_factory_test",
     srcs = ["fast_app_factory_test.py"],
     deps = [
+        "//backend/notification_management:delivery_controller",
         "//backend/recruiting",
         "//backend/utils:fast_app_factory",
         "@pypi//httpx",
@@ -57,6 +58,7 @@ py_test(
     name = "auth_middleware_test",
     srcs = ["auth_middleware_test.py"],
     deps = [
+        "//backend/common:api_endpoints",
         "//backend/common:identity_type",
         "//backend/common:permissions",
         "//backend/utils:auth_middleware",

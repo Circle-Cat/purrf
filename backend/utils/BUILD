@@ -49,6 +49,7 @@ py_library(
         "auth_middleware.py",
     ],
     deps = [
+        "//backend/common:api_endpoints",
         "//backend/common:fast_api_response_wrapper",
         "//backend/common:identity_type",
         "//backend/common:permissions",
@@ -78,6 +79,8 @@ py_library(
     deps = [
         ":auth_middleware",
         "//backend/common:fast_api_error_handler",
+        "//backend/notification_management:publish_on_commit",
+        "//backend/recruiting",
         "@pypi//fastapi",
     ],
 )
@@ -136,9 +139,12 @@ py_library(
         "//backend/internal_activity_service:microsoft_meeting_chat_topic_cache_service",
         "//backend/internal_activity_service:summary_service",
         "//backend/mentorship",
+        "//backend/notification_management:delivery_controller",
+        "//backend/notification_management:delivery_service",
         "//backend/notification_management:google_chat_subscription_service",
         "//backend/notification_management:microsoft_chat_subscription_service",
         "//backend/notification_management:notification_controller",
+        "//backend/notification_management:notification_event_email_service",
         "//backend/profile",
         "//backend/recruiting",
         "//backend/repository:repositories",

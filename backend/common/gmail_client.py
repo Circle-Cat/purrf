@@ -33,8 +33,8 @@ returns each message's raw ``from_address``; turning that into a direction
 belongs to the domain layer, which asks ``owns_address`` and maps the answer.
 
 An ``access_token`` is obtained and refreshed automatically by ``google-auth``
-from the stored refresh token; the built Gmail service is cached on the
-instance and reused across calls. Gmail API failures are translated into the
+from the stored refresh token; the built Gmail service is cached per thread and
+reused across that thread's calls. Gmail API failures are translated into the
 shared domain exceptions (429 -> ``RateLimitedError``; anything else ->
 ``RuntimeError``) so a failed send never looks like a success to the caller.
 """
@@ -42,6 +42,7 @@ shared domain exceptions (429 -> ``RateLimitedError``; anything else ->
 import base64
 import os
 import re
+import threading
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import make_msgid, parseaddr
@@ -81,8 +82,8 @@ class GmailClient:
         """
         Read the Gmail credentials from the environment.
 
-        No network call is made here; the Gmail service is built lazily on first
-        use and cached.
+        No network call is made here; the Gmail service is built lazily on each
+        thread's first use and cached there.
 
         Args:
             logger: Application logger.
@@ -108,7 +109,7 @@ class GmailClient:
         }
         self._logger = logger
         self._retry_utils = retry_utils
-        self._service = None
+        self._local = threading.local()
 
         if not self._client_id:
             raise ValueError("Missing environment variable: GMAIL_CLIENT_ID")
@@ -319,8 +320,26 @@ class GmailClient:
                 return thread_ids
 
     def _get_service(self):
-        """Build the Gmail service once (lazily) and cache it on the instance."""
-        if self._service is None:
+        """Build the Gmail service lazily and cache it on the calling thread.
+
+        A service owns a single ``httplib2`` connection, and httplib2 requires
+        one instance per thread: threads sharing a service write into the same
+        socket and read each other's replies. Sends run concurrently — callers
+        wrap them in ``asyncio.to_thread`` — so each thread resolves its own
+        service, and its own credentials with it, since a ``Credentials``
+        object holds a mutable access token and expiry that concurrent
+        refreshes would race on.
+
+        Building costs about a millisecond and no network call, because the
+        discovery document ships with the library. The number of live
+        connections is therefore bounded by the executor's thread count, and a
+        thread reuses its own connection across calls.
+
+        Returns:
+            googleapiclient.discovery.Resource: The calling thread's service.
+        """
+        service = getattr(self._local, "service", None)
+        if service is None:
             # No scopes are passed: on a refresh-token grant google-auth would
             # send them as the `scope` param, and Google rejects any value that
             # is not a subset of what the token was actually granted
@@ -341,10 +360,11 @@ class GmailClient:
                 client_secret=self._client_secret,
                 token_uri=_TOKEN_URI,
             )
-            self._service = build(
+            service = build(
                 "gmail", "v1", credentials=credentials, cache_discovery=False
             )
-        return self._service
+            self._local.service = service
+        return service
 
     def _execute(self, request, operation):
         """Run a Gmail request with retry, translating errors to domain types."""

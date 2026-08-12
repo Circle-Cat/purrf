@@ -30,9 +30,7 @@ case falls back to ``_MISSING_ACTOR``. A real string names them.
 from backend.common.recruiting_enums import (
     ApplicationStage,
     JobKind,
-    NotificationType,
 )
-from backend.dto.notification_dto import NotificationDto
 
 _FOOTER = (
     "<p>This is an automated message from Purrf. Replies to this address "
@@ -72,10 +70,35 @@ def stage_label(stage: ApplicationStage | None, kind: JobKind | None) -> str:
 
 
 def _round_suffix(round_number: int | None) -> str:
-    """ ", round N" past the first round, "" otherwise (round 1 is noise)."""
+    """ ", session N" past the first session, "" otherwise (session 1 is noise)."""
     if round_number is None or round_number <= 1:
         return ""
-    return f", round {round_number}"
+    return f", session {round_number}"
+
+
+def _candidate_line(dto) -> str:
+    """The "Candidate: ..." paragraph, or "" when there is no address.
+
+    A display name is mutable and not unique, so naming the candidate's
+    address gives the reader a handle that survives a rename and can be
+    pasted into the board's search. It is its own paragraph rather than
+    inlined because every body names the candidate possessively
+    ("{applicant}'s interview"), where an inlined address would read
+    "Ada Lovelace (ada@example.com)'s interview".
+
+    Args:
+        dto: The display fields, carrying applicant_name and applicant_email.
+
+    Returns:
+        str: "<p>Candidate: Name (address)</p>", "<p>Candidate: address</p>"
+            when the name resolved to nothing, or "" when no address is on
+            file -- a name-only line would only repeat the body.
+    """
+    if not dto.applicant_email:
+        return ""
+    if not dto.applicant_name:
+        return f"<p>Candidate: {dto.applicant_email}</p>"
+    return f"<p>Candidate: {dto.applicant_name} ({dto.applicant_email})</p>"
 
 
 def _assigned_to_evaluate(dto, stage):
@@ -97,6 +120,7 @@ def _assigned_to_evaluate(dto, stage):
     return (
         f"Evaluation assigned: {applicant} ({dto.job_title})",
         f"<p>{opening}</p>"
+        f"{_candidate_line(dto)}"
         f"<p>Stage: {stage_label(stage, dto.job_kind)}"
         f"{_round_suffix(dto.round)}.</p>"
         "<p>Open My Interview Evaluations in Purrf to submit your "
@@ -111,6 +135,7 @@ def _mentioned(dto, stage):
         f"{actor} mentioned you: {applicant} ({dto.job_title})",
         f"<p>{actor} mentioned you in a comment on {applicant}'s "
         f"application for {dto.job_title}.</p>"
+        f"{_candidate_line(dto)}"
         "<p>Open the application in Purrf and go to its Comments tab to "
         "read the thread and reply.</p>",
     )
@@ -154,6 +179,7 @@ def _application_submitted(dto, stage):
         f"<p>{applicant} applied to {dto.job_title}. The application is "
         f"waiting for review at the {stage_label(stage, dto.job_kind)} "
         "stage.</p>"
+        f"{_candidate_line(dto)}"
         "<p>You're receiving this because you own this posting. Open the "
         "Applications Board in Purrf to review it.</p>",
     )
@@ -165,6 +191,7 @@ def _application_auto_rejected(dto, stage):
         f"Application auto-rejected: {applicant} ({dto.job_title})",
         f"<p>{applicant} applied to {dto.job_title} and was rejected "
         "automatically, with no human review.</p>"
+        f"{_candidate_line(dto)}"
         "<p>The reason is recorded on the application's timeline in Purrf. "
         "No action is needed unless you want to overturn it.</p>",
     )
@@ -179,42 +206,151 @@ def _application_auto_hired(dto, stage):
         f"Application auto-{verb}: {applicant} ({dto.job_title})",
         f"<p>{applicant} applied to {dto.job_title} and was {verb} "
         "automatically, with no human review.</p>"
+        f"{_candidate_line(dto)}"
         "<p>The matching screening rule is recorded on the application's "
         "timeline in Purrf.</p>",
     )
 
 
-TEMPLATES = {
-    NotificationType.ASSIGNED_TO_EVALUATE: _assigned_to_evaluate,
-    NotificationType.MENTIONED: _mentioned,
-    NotificationType.JOB_REVIEW_REQUESTED: _job_review_requested,
-    NotificationType.JOB_REVIEW_APPROVED: _job_review_approved,
-    NotificationType.JOB_REVIEW_REJECTED: _job_review_rejected,
-    NotificationType.APPLICATION_SUBMITTED: _application_submitted,
-    NotificationType.APPLICATION_AUTO_REJECTED: _application_auto_rejected,
-    NotificationType.APPLICATION_AUTO_HIRED: _application_auto_hired,
-}
+# ---------------------------------------------------------------------------
+# Templates are dispatched by event_type, not from this file -- see
+# backend/recruiting/notification_renderers.py, which builds the ``dto`` each
+# of these takes from EventEntity.details.
+#
+# The 7 existing functions above cover the other 7 notifying event types
+# verbatim (reassigned/auto_assigned share _assigned_to_evaluate;
+# review_decided picks _job_review_approved/_job_review_rejected by
+# ``details["decision"]``) -- untouched, per the standing rule that shipped
+# template English does not change once live.
+# ---------------------------------------------------------------------------
 
 
-def render(dto: NotificationDto, stage: ApplicationStage | None) -> tuple[str, str]:
-    """Render one notification as (subject, HTML body).
+def _humanize(value: str) -> str:
+    """ "in_progress" -> "In progress". Mirrors frontend/.../stageFormat.js's ``humanize``.
+
+    Used for sub-status values, which (like stages) are snake_case and have
+    no friendlier rename table of their own.
+    """
+    spaced = value.replace("_", " ")
+    return spaced[:1].upper() + spaced[1:]
+
+
+def _format_utc(instant) -> str:
+    """ "2026-08-12 15:00 UTC" -- a meeting instant, always in UTC.
+
+    Interview times have no stored booking timezone the way an email
+    renderer could safely reuse (see ``ApplicationInterviewEntity``'s own
+    docstring on why): the wall clock a recruiter typed is not necessarily
+    the zone of every owner/assignee this email goes to. UTC is the one
+    reading that is never wrong, at the cost of not being the reader's own
+    time -- the same trade every other surface in this codebase resolves the
+    other way only because it knows who the *viewer* is; a static email body
+    does not.
 
     Args:
-        dto (NotificationDto): The resolved notification, whose display
-            fields (job_title/applicant_name/actor_name/job_kind) are
-            already looked up.
-        stage (ApplicationStage | None): The application's stage at the
-            moment of the event. None for notifications that are not
-            application-scoped; only the two types that mention a stage
-            read it.
+        instant (datetime): A timezone-aware instant (UTC).
 
     Returns:
-        tuple[str, str]: Subject line and HTML body, footer included.
-
-    Raises:
-        KeyError: If dto.type has no template. Deliberately not a silent
-            fallback -- a blank email is worse than a loud failure, and the
-            exhaustiveness test makes this unreachable.
+        str: The formatted instant.
     """
-    subject, body = TEMPLATES[dto.type](dto, stage)
-    return subject, body + _FOOTER
+    return instant.strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _blacklisted(dto, stage):
+    actor = dto.actor_name or _MISSING_ACTOR
+    applicant = dto.applicant_name or _MISSING_APPLICANT
+    return (
+        f"Application blacklisted: {applicant} ({dto.job_title})",
+        f"<p>{actor} blacklisted {applicant} and rejected their application "
+        f'for {dto.job_title}, with the reason: "{dto.reason}".</p>'
+        f"{_candidate_line(dto)}"
+        "<p>Open the Blacklist page in Purrf to review the block.</p>",
+    )
+
+
+def _stage_changed(dto, stage):
+    actor = dto.actor_name or _MISSING_ACTOR
+    applicant = dto.applicant_name or _MISSING_APPLICANT
+    return (
+        f"Stage changed: {applicant} ({dto.job_title})",
+        f"<p>{actor} moved {applicant}'s application for {dto.job_title} to "
+        f"the {stage_label(stage, dto.job_kind)} stage.</p>"
+        f"{_candidate_line(dto)}"
+        "<p>Open the Applications Board in Purrf to see it.</p>",
+    )
+
+
+def _round_advanced(dto, stage):
+    actor = dto.actor_name or _MISSING_ACTOR
+    applicant = dto.applicant_name or _MISSING_APPLICANT
+    return (
+        f"Round advanced: {applicant} ({dto.job_title})",
+        f"<p>{actor} advanced {applicant}'s {stage_label(stage, dto.job_kind)} "
+        f"round for {dto.job_title} to round {dto.round}.</p>"
+        f"{_candidate_line(dto)}"
+        "<p>Open the Applications Board in Purrf to see it.</p>",
+    )
+
+
+def _sub_status_changed(dto, stage):
+    actor = dto.actor_name or _MISSING_ACTOR
+    applicant = dto.applicant_name or _MISSING_APPLICANT
+    return (
+        f"Status changed: {applicant} ({dto.job_title})",
+        f"<p>{actor} moved {applicant}'s {stage_label(stage, dto.job_kind)} "
+        f"status for {dto.job_title} to {_humanize(dto.to_sub_status)}.</p>"
+        f"{_candidate_line(dto)}"
+        "<p>Open the Applications Board in Purrf to see it.</p>",
+    )
+
+
+def _evaluation_confirmed(dto, stage):
+    actor = dto.actor_name or _MISSING_ACTOR
+    applicant = dto.applicant_name or _MISSING_APPLICANT
+    return (
+        f"Evaluation submitted: {applicant} ({dto.job_title})",
+        f"<p>{actor} submitted their evaluation of {applicant} for "
+        f"{dto.job_title}.</p>"
+        f"{_candidate_line(dto)}"
+        f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
+        "<p>Open the Applications Board in Purrf to read it.</p>",
+    )
+
+
+def _interview_scheduled(dto, stage):
+    actor = dto.actor_name or _MISSING_ACTOR
+    applicant = dto.applicant_name or _MISSING_APPLICANT
+    return (
+        f"Interview scheduled: {applicant} ({dto.job_title})",
+        f"<p>{actor} scheduled an interview with {applicant} for "
+        f"{dto.job_title}, on {_format_utc(dto.start_at)}.</p>"
+        f"{_candidate_line(dto)}"
+        f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
+        "<p>Open the Applications Board in Purrf to see it.</p>",
+    )
+
+
+def _interview_updated(dto, stage):
+    actor = dto.actor_name or _MISSING_ACTOR
+    applicant = dto.applicant_name or _MISSING_APPLICANT
+    return (
+        f"Interview rescheduled: {applicant} ({dto.job_title})",
+        f"<p>{actor} rescheduled {applicant}'s interview for {dto.job_title} "
+        f"to {_format_utc(dto.start_at)}.</p>"
+        f"{_candidate_line(dto)}"
+        f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
+        "<p>Open the Applications Board in Purrf to see it.</p>",
+    )
+
+
+def _interview_cancelled(dto, stage):
+    actor = dto.actor_name or _MISSING_ACTOR
+    applicant = dto.applicant_name or _MISSING_APPLICANT
+    return (
+        f"Interview cancelled: {applicant} ({dto.job_title})",
+        f"<p>{actor} cancelled {applicant}'s interview for {dto.job_title}, "
+        f"which was set for {_format_utc(dto.start_at)}.</p>"
+        f"{_candidate_line(dto)}"
+        f"<p>Stage: {stage_label(stage, dto.job_kind)}{_round_suffix(dto.round)}.</p>"
+        "<p>Open the Applications Board in Purrf to see it.</p>",
+    )

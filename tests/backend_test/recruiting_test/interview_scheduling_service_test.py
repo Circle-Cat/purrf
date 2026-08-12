@@ -1,7 +1,7 @@
 import unittest
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, create_autospec
+from unittest.mock import AsyncMock, MagicMock, create_autospec, patch
 
 from backend.common.exceptions import MeetingGoneError
 from backend.common.recruiting_enums import ApplicationStage
@@ -11,9 +11,6 @@ from backend.entity.application_entity import ApplicationEntity
 from backend.recruiting.application_access import ApplicationAccess
 from backend.recruiting.interview_scheduling_service import InterviewSchedulingService
 from backend.recruiting.recruiting_mapper import RecruitingMapper
-from backend.repository.application_activity_repository import (
-    ApplicationActivityRepository,
-)
 from backend.repository.application_assignment_repository import (
     ApplicationAssignmentRepository,
 )
@@ -31,6 +28,12 @@ JOB_ID = 1
 class _BaseTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.session = AsyncMock()
+        recorder = patch(
+            "backend.recruiting.interview_scheduling_service.record_event",
+            new_callable=AsyncMock,
+        )
+        self.record_event = recorder.start()
+        self.addCleanup(recorder.stop)
 
         # autospec (not a bare MagicMock) so a caller/repo signature drift
         # (e.g. a new required param) fails the test instead of silently
@@ -41,9 +44,6 @@ class _BaseTest(unittest.IsolatedAsyncioTestCase):
         )
         self.interview_repo = create_autospec(
             ApplicationInterviewRepository, instance=True
-        )
-        self.activity_repo = create_autospec(
-            ApplicationActivityRepository, instance=True
         )
         self.application_repo = MagicMock()
         self.application_repo.update = AsyncMock(
@@ -89,7 +89,6 @@ class _BaseTest(unittest.IsolatedAsyncioTestCase):
             self.application_repo,
             self.assignment_repo,
             self.interview_repo,
-            self.activity_repo,
             self.users_repo,
             self.user_emails_repo,
             self.meeting_svc,
@@ -294,10 +293,12 @@ class ScheduleTest(_BaseTest):
         await self.service.schedule(
             self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID, self._dto()
         )
-        self.activity_repo.create.assert_awaited_once()
-        args, kwargs = self.activity_repo.create.call_args
-        self.assertEqual(args[:3], (self.session, APPLICATION_ID, OWNER_ID))
-        self.assertEqual(args[3], "interview_scheduled")
+        self.record_event.assert_awaited_once()
+        args, kwargs = self.record_event.call_args
+        self.assertEqual(args[0], self.session)
+        self.assertEqual(kwargs["subject_id"], APPLICATION_ID)
+        self.assertEqual(kwargs["actor_id"], OWNER_ID)
+        self.assertEqual(kwargs["event_type"], "recruiting.interview_scheduled")
         self.assertEqual(kwargs["details"]["assigneeId"], ASSIGNEE_ID)
 
     async def test_interview_scheduled_activity_carries_the_full_detail_set(self):
@@ -309,7 +310,7 @@ class ScheduleTest(_BaseTest):
         await self.service.schedule(
             self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID, self._dto()
         )
-        _args, kwargs = self.activity_repo.create.call_args
+        _args, kwargs = self.record_event.call_args
         self.assertEqual(
             kwargs["details"],
             {
@@ -526,9 +527,9 @@ class UpdateTest(_BaseTest):
         await self.service.update(
             self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID, self._dto()
         )
-        self.activity_repo.create.assert_awaited_once()
-        args, _kwargs = self.activity_repo.create.call_args
-        self.assertEqual(args[3], "interview_updated")
+        self.record_event.assert_awaited_once()
+        _args, kwargs = self.record_event.call_args
+        self.assertEqual(kwargs["event_type"], "recruiting.interview_updated")
 
     async def test_interview_updated_activity_carries_the_full_detail_set_incl_from_fields(
         self,
@@ -550,7 +551,7 @@ class UpdateTest(_BaseTest):
         await self.service.update(
             self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID, dto
         )
-        _args, kwargs = self.activity_repo.create.call_args
+        _args, kwargs = self.record_event.call_args
         self.assertEqual(
             kwargs["details"],
             {
@@ -574,7 +575,7 @@ class UpdateTest(_BaseTest):
         await self.service.update(
             self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID, self._dto()
         )
-        _args, kwargs = self.activity_repo.create.call_args
+        _args, kwargs = self.record_event.call_args
         self.assertIsNone(kwargs["details"]["fromAssigneeId"])
 
     async def test_no_booking_yet_is_rejected(self):
@@ -610,9 +611,9 @@ class CancelTest(_BaseTest):
             self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID
         )
         self.interview_repo.delete.assert_awaited_once_with(self.session, self.existing)
-        self.activity_repo.create.assert_awaited_once()
-        args, _kwargs = self.activity_repo.create.call_args
-        self.assertEqual(args[3], "interview_cancelled")
+        self.record_event.assert_awaited_once()
+        _args, kwargs = self.record_event.call_args
+        self.assertEqual(kwargs["event_type"], "recruiting.interview_cancelled")
         self.meeting_svc.cancel.assert_awaited_once_with(
             ["evt-1"], calendar_id="cal-interview"
         )
@@ -632,7 +633,7 @@ class CancelTest(_BaseTest):
         await self.service.cancel(
             self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID
         )
-        _args, kwargs = self.activity_repo.create.call_args
+        _args, kwargs = self.record_event.call_args
         self.assertEqual(
             kwargs["details"],
             {
@@ -652,7 +653,7 @@ class CancelTest(_BaseTest):
         await self.service.cancel(
             self.session, self._ctx(user_id=OWNER_ID), APPLICATION_ID
         )
-        _args, kwargs = self.activity_repo.create.call_args
+        _args, kwargs = self.record_event.call_args
         self.assertIsNone(kwargs["details"]["assigneeId"])
 
     async def test_scheduled_sub_status_falls_back_to_scheduling(self):
@@ -756,8 +757,8 @@ class CancelForRoundTest(_BaseTest):
     async def test_writes_an_interview_cancelled_activity_naming_its_source(self):
         await self._cancel_for_round(via="round_advanced")
 
-        args, kwargs = self.activity_repo.create.call_args
-        self.assertEqual(args[3], "interview_cancelled")
+        _args, kwargs = self.record_event.call_args
+        self.assertEqual(kwargs["event_type"], "recruiting.interview_cancelled")
         self.assertEqual(
             kwargs["details"],
             {
@@ -782,8 +783,8 @@ class CancelForRoundTest(_BaseTest):
             77,
             via="rejected",
         )
-        args, _kwargs = self.activity_repo.create.call_args
-        self.assertEqual(args[2], 77)
+        _args, kwargs = self.record_event.call_args
+        self.assertEqual(kwargs["actor_id"], 77)
 
     async def test_a_past_meeting_is_left_alone(self):
         # A finished interview is history, not a ghost: deleting its event
@@ -799,7 +800,7 @@ class CancelForRoundTest(_BaseTest):
         self.assertFalse(cancelled)
         self.meeting_svc.cancel.assert_not_awaited()
         self.interview_repo.delete.assert_not_awaited()
-        self.activity_repo.create.assert_not_awaited()
+        self.record_event.assert_not_awaited()
 
     async def test_no_meeting_booked_is_a_silent_no_op(self):
         self.interview_repo.get = AsyncMock(return_value=None)
@@ -809,7 +810,7 @@ class CancelForRoundTest(_BaseTest):
         self.assertFalse(cancelled)
         self.meeting_svc.cancel.assert_not_awaited()
         self.interview_repo.delete.assert_not_awaited()
-        self.activity_repo.create.assert_not_awaited()
+        self.record_event.assert_not_awaited()
 
     async def test_never_commits(self):
         # It runs inside change_stage/set_round's transaction; committing here
@@ -848,7 +849,7 @@ class CancelForRoundTest(_BaseTest):
     async def test_the_assignee_comes_from_the_rounds_assignment_row(self):
         self.assignment_repo.get = AsyncMock(return_value=None)
         await self._cancel_for_round()
-        _args, kwargs = self.activity_repo.create.call_args
+        _args, kwargs = self.record_event.call_args
         self.assertIsNone(kwargs["details"]["assigneeId"])
 
 

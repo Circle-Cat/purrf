@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from backend.dto.base_request_dto import BaseRequestDto
 from pydantic import field_validator, model_validator
 
@@ -21,4 +21,10 @@ class MeetingCreateDto(BaseRequestDto):
             raise ValueError(
                 f"End time ({self.end_datetime}) must be later than start time ({self.start_datetime})."
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_not_future_if_completed(self) -> "MeetingCreateDto":
+        if self.is_completed and self.end_datetime > datetime.now(timezone.utc):
+            raise ValueError("Cannot mark a meeting completed before it has ended")
         return self

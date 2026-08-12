@@ -1,4 +1,4 @@
-from enum import StrEnum
+from enum import Enum, StrEnum
 
 
 class UserType(StrEnum):
@@ -89,12 +89,53 @@ class ApplicationStage(StrEnum):
 MENTOR_ALLOWED_EMAIL_DOMAINS: frozenset[str] = frozenset({"google.com"})
 
 
-class NotificationType(StrEnum):
-    ASSIGNED_TO_EVALUATE = "assigned_to_evaluate"
-    MENTIONED = "mentioned"
-    JOB_REVIEW_REQUESTED = "job_review_requested"
-    JOB_REVIEW_APPROVED = "job_review_approved"
-    JOB_REVIEW_REJECTED = "job_review_rejected"
-    APPLICATION_SUBMITTED = "application_submitted"
-    APPLICATION_AUTO_REJECTED = "application_auto_rejected"
-    APPLICATION_AUTO_HIRED = "application_auto_hired"
+class RecruitingEvent(StrEnum):
+    """Every recruiting event type that may be recorded on the event log.
+
+    The catalogue exists so a type cannot be misspelled: a write site naming
+    a member that does not exist fails at import, where a bare string would
+    record the event and then resolve to nobody -- indistinguishable from a
+    type that deliberately notifies no one.
+
+    Membership here says nothing about notifications. Which types have
+    recipients is decided by what registers a resolver in
+    ``recipient_registry``; the four below that no resolver claims belong on
+    the timeline and notify nobody, by design rather than by omission.
+    """
+
+    APPLICATION_SUBMITTED = "recruiting.application_submitted"
+    AUTO_REJECTED = "recruiting.auto_rejected"
+    BLACKLISTED = "recruiting.blacklisted"
+    STAGE_CHANGED = "recruiting.stage_changed"
+    ROUND_ADVANCED = "recruiting.round_advanced"
+    REASSIGNED = "recruiting.reassigned"
+    AUTO_ASSIGNED = "recruiting.auto_assigned"
+    SUB_STATUS_CHANGED = "recruiting.sub_status_changed"
+    EVALUATION_CONFIRMED = "recruiting.evaluation_confirmed"
+    INTERVIEW_SCHEDULED = "recruiting.interview_scheduled"
+    INTERVIEW_UPDATED = "recruiting.interview_updated"
+    INTERVIEW_CANCELLED = "recruiting.interview_cancelled"
+    REVIEW_OPENED = "recruiting.review_opened"
+    REVIEW_DECIDED = "recruiting.review_decided"
+    MENTIONED = "recruiting.mentioned"
+
+    EMAIL_SENT = "recruiting.email_sent"
+    EMAIL_RECEIVED = "recruiting.email_received"
+    JOB_CREATED = "recruiting.job_created"
+    PENDING_EDIT_DISCARDED = "recruiting.pending_edit_discarded"
+
+
+class NotificationStatus(str, Enum):
+    """Where a notification's email is in its delivery lifecycle.
+
+    ``FAILED`` and ``EXPIRED`` are deliberately distinct: FAILED means this
+    row can never succeed (no address on file, template blew up), EXPIRED
+    means it could still succeed but no longer matters. Collapsing them
+    loses the answer to "why did this never arrive".
+    """
+
+    PENDING = "pending"
+    SENDING = "sending"
+    SENT = "sent"
+    FAILED = "failed"
+    EXPIRED = "expired"

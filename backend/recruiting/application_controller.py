@@ -11,6 +11,7 @@ from backend.common.api_endpoints import (
     RECRUITING_APPLICATION_ENDPOINT,
     RECRUITING_APPLICATIONS_MINE_ENDPOINT,
     RECRUITING_MY_APPLICATIONS_ENDPOINT,
+    RECRUITING_MY_LATEST_PROFILE_ENDPOINT,
 )
 
 
@@ -40,6 +41,12 @@ class ApplicationController:
         self.router.add_api_route(
             RECRUITING_MY_APPLICATIONS_ENDPOINT,
             endpoint=authenticate()(self.list_my_applications),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_MY_LATEST_PROFILE_ENDPOINT,
+            endpoint=authenticate()(self.get_my_latest_profile),
             methods=["GET"],
             response_model=None,
         )
@@ -126,6 +133,19 @@ class ApplicationController:
                 session, current_user, job_id
             )
         return api_response(message="Application fetched.", data=result)
+
+    async def get_my_latest_profile(self, current_user: UserContextDto):
+        """Return the profile blocks of the caller's most recent submission.
+
+        The application form's fallback when the caller's profile has nothing
+        for a block. Scoped to the caller by construction -- there is no id to
+        pass, so no application but their own can be reached.
+        """
+        async with self.database.session() as session:
+            result = await self.application_service.get_my_latest_profile(
+                session, current_user
+            )
+        return api_response(message="Latest profile fetched.", data=result)
 
     async def list_my_applications(self, current_user: UserContextDto):
         """Return every application the caller has ever submitted, any job kind."""

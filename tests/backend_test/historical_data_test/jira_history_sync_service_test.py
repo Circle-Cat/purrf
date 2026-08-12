@@ -17,6 +17,7 @@ class TestJiraHistorySyncService(TestCase):
         """Set up the test environment before each test."""
         self.mock_logger = MagicMock()
         self.mock_jira_client = MagicMock()
+        self.mock_jira = self.mock_jira_client.get_jira_client.return_value
         self.mock_redis_client = MagicMock()
         self.mock_jira_search_service = MagicMock()
         self.mock_date_time_util = MagicMock()
@@ -106,6 +107,15 @@ class TestJiraHistorySyncService(TestCase):
             "ldap": self.mock_issue_2_assignee_name,
         }
 
+    def test_connection_is_opened_only_when_a_sync_needs_it(self):
+        """Test that the service asks for the connection when it syncs, not when it is built."""
+        self.mock_jira.projects.return_value = []
+        self.mock_jira_client.get_jira_client.assert_not_called()
+
+        self.service.sync_jira_projects_id_and_name_mapping()
+
+        self.mock_jira_client.get_jira_client.assert_called_once()
+
     def test_sync_success(self):
         """Should fetch projects and store them in Redis successfully."""
         mock_project1 = MagicMock()
@@ -116,7 +126,7 @@ class TestJiraHistorySyncService(TestCase):
         mock_project2.id = "10002"
         mock_project2.name = "Project Beta"
 
-        self.mock_jira_client.projects.return_value = [mock_project1, mock_project2]
+        self.mock_jira.projects.return_value = [mock_project1, mock_project2]
 
         with patch(
             "backend.historical_data.jira_history_sync_service.JIRA_PROJECTS_KEY",
@@ -127,7 +137,7 @@ class TestJiraHistorySyncService(TestCase):
         expected = {"10001": "Project Alpha", "10002": "Project Beta"}
         self.assertEqual(result, 2)
 
-        self.mock_jira_client.projects.assert_called_once()
+        self.mock_jira.projects.assert_called_once()
         self.mock_redis_client.delete.assert_called_once_with("mock:project:key")
         self.mock_redis_client.hset.assert_called_once_with(
             "mock:project:key", mapping=expected
@@ -135,7 +145,7 @@ class TestJiraHistorySyncService(TestCase):
 
     def test_sync_no_projects_error(self):
         """Should raise RuntimeError when no projects are returned."""
-        self.mock_jira_client.projects.return_value = []
+        self.mock_jira.projects.return_value = []
 
         with patch(
             "backend.historical_data.jira_history_sync_service.JIRA_PROJECTS_KEY",

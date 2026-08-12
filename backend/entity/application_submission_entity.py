@@ -25,7 +25,10 @@ class ApplicationSubmissionEntity(Base):
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     is_frozen: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    # Snapshot: {"personal": {...}, "education": [...], "experience": [...], "answers": {...}}
+    # Snapshot: {"personal": {...}, "education": [...], "experience": [...],
+    #            "answers": {...}, "formSchema": {...}}
+    # formSchema is the job's form as it stood when these answers were written,
+    # so a reviewer reads them against the questions that were actually asked.
     submission: Mapped[dict | None] = mapped_column(JSONB)
     resume_object_key: Mapped[str | None] = mapped_column(String)
     resume_sha256: Mapped[str | None] = mapped_column(String)

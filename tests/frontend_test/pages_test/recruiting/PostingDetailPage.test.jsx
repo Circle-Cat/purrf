@@ -69,6 +69,19 @@ describe("PostingDetailPage", () => {
     api.listMyReviews.mockResolvedValue({ data: [] });
   });
 
+  // The lifecycle guide belongs wherever the lifecycle actions are, and every
+  // one of them lives on this page rather than on the list it links from.
+  it("shows the How it works guide with the posting lifecycle", async () => {
+    renderAt(1);
+    await screen.findByRole("heading", { name: "Backend Engineer" });
+    fireEvent.click(screen.getByRole("button", { name: "How it works" }));
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByRole("heading", { name: "How postings work" }),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText("Submit for review")).toBeInTheDocument();
+  });
+
   it("shows the Operate block for a canWrite viewer", async () => {
     authState.permissions = ["recruiting.job.write"];
     renderAt(1);
@@ -198,7 +211,7 @@ describe("PostingDetailPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows the status badge alongside a reject-kind badge with the reject kind in the popover", async () => {
+  it("shows the reject comment in a panel with no click needed, alongside the badges", async () => {
     api.getJob.mockResolvedValue({
       data: {
         id: 1,
@@ -217,14 +230,50 @@ describe("PostingDetailPage", () => {
     renderAt(1);
 
     await waitFor(() => expect(screen.getByText("Draft")).toBeInTheDocument());
-    fireEvent.click(
-      screen.getByRole("button", { name: "Initial submission rejected" }),
-    );
-    // The badge and the popover title now share the same reject-kind label.
+    // The comment is visible on load -- no popover trigger to click.
+    expect(
+      screen.getByText("Please tighten the screening rules."),
+    ).toBeInTheDocument();
+    // The badge and the panel title share the same reject-kind label.
     expect(screen.getAllByText("Initial submission rejected")).toHaveLength(2);
   });
 
-  it("falls back to the raw Rejected label in the popover for an unknown reject kind", async () => {
+  it("shows the reject panel to a read-only viewer too", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: "Please tighten the screening rules.",
+        lastRejectKind: "initial",
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.read"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Please tighten the screening rules."),
+      ).toBeInTheDocument(),
+    );
+    // ...even though the Operate block is hidden from them.
+    expect(screen.queryByText("Operate:")).not.toBeInTheDocument();
+  });
+
+  it("renders no reject panel when the latest review was not a rejection", async () => {
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() => expect(screen.getByText("Draft")).toBeInTheDocument());
+    expect(screen.queryByText(/rejected|Sent back/)).not.toBeInTheDocument();
+  });
+
+  it("falls back to the 'Sent back' label in the panel for an unknown reject kind", async () => {
     api.getJob.mockResolvedValue({
       data: {
         id: 1,
@@ -243,8 +292,10 @@ describe("PostingDetailPage", () => {
     renderAt(1);
 
     await waitFor(() => expect(screen.getByText("Draft")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "Sent back" }));
-    expect(screen.getByText("Rejected")).toBeInTheDocument();
+    expect(screen.getAllByText("Sent back")).toHaveLength(2);
+    expect(
+      screen.getByText("Please tighten the screening rules."),
+    ).toBeInTheDocument();
   });
 
   it("shows Approve/Reject only for the assigned reviewer", async () => {
@@ -363,7 +414,7 @@ describe("PostingDetailPage", () => {
       data: [
         {
           id: 1,
-          eventType: "job_created",
+          eventType: "recruiting.job_created",
           details: {},
           actorId: 3,
           actorName: "Yuanyuan Huang",
@@ -371,15 +422,15 @@ describe("PostingDetailPage", () => {
         },
         {
           id: 2,
-          eventType: "review_opened",
-          details: { kind: "initial", reviewerId: 9, message: null },
+          eventType: "recruiting.review_opened",
+          details: { kind: "initial", reviewerIds: [9], message: null },
           actorId: 3,
           actorName: "Yuanyuan Huang",
           createdAt: "2026-07-11T09:20:00Z",
         },
         {
           id: 3,
-          eventType: "review_decided",
+          eventType: "recruiting.review_decided",
           details: {
             kind: "initial",
             decision: "rejected",
@@ -477,7 +528,7 @@ describe("PostingDetailPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("disables Submit for review with a hint when the draft has no manager", async () => {
+  it("disables Submit for review with a hint when the draft has no recruiter", async () => {
     api.getJob.mockResolvedValue({
       data: {
         id: 1,
@@ -504,12 +555,12 @@ describe("PostingDetailPage", () => {
     );
     expect(
       screen.getByText(
-        "Add at least one manager (Managed by) before submitting for review.",
+        "Add at least one recruiter before submitting for review.",
       ),
     ).toBeInTheDocument();
   });
 
-  it("enables Submit for review when the draft has a stage and a manager", async () => {
+  it("enables Submit for review when the draft has a stage and a recruiter", async () => {
     api.getJob.mockResolvedValue({
       data: {
         id: 1,
@@ -785,7 +836,7 @@ describe("PostingDetailPage", () => {
           id: 1,
           createdAt: "2026-07-14T00:00:00Z",
           actorName: "Alex",
-          eventType: "review_decided",
+          eventType: "recruiting.review_decided",
           details: {
             kind: "revision",
             decision: "rejected",
@@ -819,7 +870,7 @@ describe("PostingDetailPage", () => {
           id: 1,
           createdAt: "2026-07-14T00:00:00Z",
           actorName: "Alex",
-          eventType: "pending_edit_discarded",
+          eventType: "recruiting.pending_edit_discarded",
           details: {},
         },
       ],

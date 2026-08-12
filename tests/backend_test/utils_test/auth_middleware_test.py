@@ -10,6 +10,7 @@ from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
+from backend.common.api_endpoints import NOTIFICATION_DELIVER_ENDPOINT
 from backend.utils.auth_middleware import AuthMiddleware
 
 
@@ -105,7 +106,17 @@ class TestAuthMiddleware(unittest.TestCase):
         async def health_check(request):
             return PlainTextResponse("OK")
 
-        routes = [Route("/protected", protected_endpoint)]
+        async def deliver_endpoint(request):
+            return PlainTextResponse("delivered")
+
+        routes = [
+            Route("/protected", protected_endpoint),
+            Route(
+                f"/api{NOTIFICATION_DELIVER_ENDPOINT}",
+                deliver_endpoint,
+                methods=["POST"],
+            ),
+        ]
 
         self.app = Starlette(routes=routes)
         self.client = TestClient(self.app)
@@ -453,6 +464,56 @@ class TestAuthMiddleware(unittest.TestCase):
             self.mock_user_identity_service.create_or_swap_user.await_count, 2
         )
         self.mock_user_identity_service.find_user_by_sub.assert_not_called()
+
+    def test_pubsub_delivery_path_skips_authentication(self):
+        """The Pub/Sub push endpoint carries no Auth0 session, so the
+        middleware must let it through untouched.
+
+        Its guard is the Cloudflare Worker (which verifies the Google OIDC
+        token) plus the Access Service Auth policy in front of the origin.
+        Authenticating it here rejects every push with a 400 before the
+        handler runs, since a push has neither a Cloudflare assertion for a
+        human nor an Auth0 cookie.
+
+        The stub raises what the real service raises for a credential-less
+        request, so an unexempted path returns exactly the 400 seen in test.
+        """
+        self.mock_auth_service.authenticate_request.side_effect = ValueError(
+            "Missing authentication credentials"
+        )
+
+        client = self._add_middleware()
+
+        response = client.post(f"/api{NOTIFICATION_DELIVER_ENDPOINT}", json={})
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.text, "delivered")
+        self.mock_auth_service.authenticate_request.assert_not_called()
+        self.mock_database.session.assert_not_called()
+
+    def test_only_the_exact_delivery_path_is_exempt(self):
+        """The exemption is an exact match, not a prefix.
+
+        A path that merely starts with the delivery route's must still
+        authenticate -- otherwise adding a sibling route under it would
+        silently inherit the exemption.
+        """
+        self.mock_auth_service.authenticate_request.side_effect = ValueError(
+            "Missing authentication credentials"
+        )
+        self.app.router.routes.append(
+            Route(
+                f"/api{NOTIFICATION_DELIVER_ENDPOINT}/extra",
+                lambda request: PlainTextResponse("nope"),
+                methods=["POST"],
+            )
+        )
+
+        client = self._add_middleware()
+        response = client.post(f"/api{NOTIFICATION_DELIVER_ENDPOINT}/extra", json={})
+
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+        self.mock_auth_service.authenticate_request.assert_called_once()
 
 
 if __name__ == "__main__":

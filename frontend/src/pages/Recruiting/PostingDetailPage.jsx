@@ -30,6 +30,9 @@ import {
 } from "@/api/recruitingApi";
 import SubmitReviewDialog from "@/pages/Recruiting/components/SubmitReviewDialog";
 import PostingStatusBadges from "@/pages/Recruiting/components/PostingStatusBadges";
+import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
+import { POSTINGS_GUIDE } from "@/pages/Recruiting/components/guideContent";
+import { rejectKindLabel } from "@/pages/Recruiting/components/rejectKindLabels";
 import PostingConfigSummary from "@/pages/Recruiting/components/PostingConfigSummary";
 import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
@@ -67,6 +70,11 @@ const REVIEW_ACTION = {
  * CLOSED — not PUBLISHED_PENDING_REVISION, which already has a staged
  * edit awaiting its own review). Approve/Reject only for the review's
  * actual assigned reviewer.
+ * When the posting's most recent review was a rejection, the reviewer's
+ * comment gets its own panel under the header -- this page is the only place
+ * that shows the comment text, since the status badge is plain, unclickable
+ * text everywhere. It's shown to every viewer of this page, exactly like the
+ * badge and the Review history tab already are.
  */
 const PostingDetailPage = () => {
   const { id } = useParams();
@@ -181,7 +189,7 @@ const PostingDetailPage = () => {
     : null;
   // Mirrors JobService._revalidate_job_config's publish gate: whatever
   // approval would put live (the staged pipeline when an edit is staged,
-  // else the live one) needs >=1 stage and >=1 Managed by owner, or every
+  // else the live one) needs >=1 stage and >=1 Recruiter owner, or every
   // application would land outside all board lanes with no one to see it.
   const effectivePipeline =
     (job.pendingPayload
@@ -193,18 +201,21 @@ const PostingDetailPage = () => {
   const submitBlocker = !effectivePipeline.stages?.length
     ? "Add at least one pipeline stage before submitting for review."
     : effectiveOwnerIds.length === 0
-      ? "Add at least one manager (Managed by) before submitting for review."
+      ? "Add at least one recruiter before submitting for review."
       : null;
 
   const formatActivity = (entry) => {
     const { eventType, actorName, details = {} } = entry;
-    const reviewerName = details.reviewerId
-      ? (approversById[details.reviewerId] ?? `Reviewer #${details.reviewerId}`)
+    // Null actorName means the rules did it, not a person.
+    const who = actorName ?? "Automatically";
+    const reviewerId = details.reviewerIds?.[0];
+    const reviewerName = reviewerId
+      ? (approversById[reviewerId] ?? `Reviewer #${reviewerId}`)
       : null;
-    if (eventType === "job_created") {
-      return `${actorName} created this posting as a draft`;
+    if (eventType === "recruiting.job_created") {
+      return `${who} created this posting as a draft`;
     }
-    if (eventType === "review_opened") {
+    if (eventType === "recruiting.review_opened") {
       const verb =
         {
           initial: "submitted for review",
@@ -213,37 +224,37 @@ const PostingDetailPage = () => {
           reopen: "requested to reopen",
         }[details.kind] ?? "submitted for review";
       return reviewerName
-        ? `${actorName} ${verb}, assigned to ${reviewerName}`
-        : `${actorName} ${verb}`;
+        ? `${who} ${verb}, assigned to ${reviewerName}`
+        : `${who} ${verb}`;
     }
-    if (eventType === "review_decided") {
+    if (eventType === "recruiting.review_decided") {
       const templates = {
         initial: {
-          approved: `${actorName} approved the review — posting published`,
-          rejected: `${actorName} rejected the review: "${details.comment}" — sent back to draft`,
+          approved: `${who} approved the review — posting published`,
+          rejected: `${who} rejected the review: "${details.comment}" — sent back to draft`,
         },
         revision: {
-          approved: `${actorName} approved the revision — changes published`,
-          rejected: `${actorName} rejected the revision: "${details.comment}" — posting stays published`,
+          approved: `${who} approved the revision — changes published`,
+          rejected: `${who} rejected the revision: "${details.comment}" — posting stays published`,
         },
         close: {
-          approved: `${actorName} approved the close request — posting closed`,
-          rejected: `${actorName} rejected the close request: "${details.comment}" — posting stays published`,
+          approved: `${who} approved the close request — posting closed`,
+          rejected: `${who} rejected the close request: "${details.comment}" — posting stays published`,
         },
         reopen: {
-          approved: `${actorName} approved the reopen request — posting republished`,
-          rejected: `${actorName} rejected the reopen request: "${details.comment}" — posting stays closed`,
+          approved: `${who} approved the reopen request — posting republished`,
+          rejected: `${who} rejected the reopen request: "${details.comment}" — posting stays closed`,
         },
       };
       return (
         templates[details.kind]?.[details.decision] ??
-        `${actorName} ${eventType}`
+        `${who} ${eventType.replace(/^[^.]+\./, "")}`
       );
     }
-    if (eventType === "pending_edit_discarded") {
-      return `${actorName} discarded a staged edit`;
+    if (eventType === "recruiting.pending_edit_discarded") {
+      return `${who} discarded a staged edit`;
     }
-    return `${actorName} ${eventType}`;
+    return `${who} ${eventType.replace(/^[^.]+\./, "")}`;
   };
 
   const openReview = async (kind) => {
@@ -337,11 +348,14 @@ const PostingDetailPage = () => {
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold text-slate-900">{job.title}</h1>
           <PostingStatusBadges job={job} />
+          <div className="ml-auto">
+            <HowItWorksDialog {...POSTINGS_GUIDE} />
+          </div>
         </div>
         <p className="text-sm text-slate-600">{job.description}</p>
         {ownerIds.length > 0 && (
           <p className="text-sm text-slate-500">
-            Managed by:
+            Recruiter:
             {ownerIds.map((oid, i) => (
               <Fragment key={oid}>
                 {i === 0 ? " " : ", "}
@@ -362,6 +376,17 @@ const PostingDetailPage = () => {
           </p>
         )}
       </div>
+
+      {job.lastRejectComment && (
+        <div className="space-y-1 rounded border border-red-200 bg-red-50 p-3">
+          <p className="text-sm font-medium text-red-800">
+            {rejectKindLabel(job.lastRejectKind)}
+          </p>
+          <p className="text-sm whitespace-pre-line text-red-700">
+            {job.lastRejectComment}
+          </p>
+        </div>
+      )}
 
       {canWrite && hasOperateAction && (
         <div className="flex flex-wrap items-center gap-2">

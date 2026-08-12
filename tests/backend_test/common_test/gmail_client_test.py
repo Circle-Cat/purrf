@@ -1,6 +1,9 @@
 import base64
 import email
 import os
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from unittest import TestCase, main
 from unittest.mock import Mock, patch
 
@@ -33,6 +36,47 @@ def _http_error(status: int) -> HttpError:
 def _b64(text: str) -> str:
     """URL-safe base64 encode a body part the way the Gmail API returns it."""
     return base64.urlsafe_b64encode(text.encode("utf-8")).decode("ascii")
+
+
+class _ConcurrencyProbeService:
+    """A fake Gmail service that reports being used by two threads at once.
+
+    A real service owns one ``httplib2`` connection, which two threads cannot
+    share: they write into the same socket and read each other's replies. This
+    stands in for that connection — it records a conflict whenever a second
+    thread enters ``execute`` while another is still inside, and holds each
+    call long enough for an overlap to be observable.
+
+    Each instance represents one service, so a caller that hands the same
+    instance to several threads records conflicts and one that gives each
+    thread its own records none.
+    """
+
+    def __init__(self, conflicts, hold_seconds=0.05):
+        self._conflicts = conflicts
+        self._hold_seconds = hold_seconds
+        self._in_flight = 0
+        self._lock = threading.Lock()
+
+    def users(self):
+        return self
+
+    def messages(self):
+        return self
+
+    def send(self, **_kwargs):
+        return self
+
+    def execute(self):
+        with self._lock:
+            self._in_flight += 1
+            overlapping = self._in_flight
+        if overlapping > 1:
+            self._conflicts.append(overlapping)
+        time.sleep(self._hold_seconds)
+        with self._lock:
+            self._in_flight -= 1
+        return {"id": "m1", "threadId": "t1"}
 
 
 class TestGmailClient(TestCase):
@@ -350,6 +394,70 @@ class TestGmailClient(TestCase):
             sender=TEST_SENDER,
         )
         self.assertEqual(self.mock_build.call_count, 1)
+
+    # ---- concurrency ---------------------------------------------------
+
+    _THREAD_COUNT = 10
+
+    def _send_from_threads(self, conflicts):
+        """Warm the client, then send from several threads at once.
+
+        The warm-up send happens first and on this thread, so the client has
+        already resolved a service by the time the threads start — production
+        sends through a client that has been alive for a while, not a cold one.
+
+        Every thread waits on a barrier before sending, so the sends genuinely
+        overlap rather than trickling through a pool that never grows.
+
+        Args:
+            conflicts (list): Collects one entry per overlapping ``execute``.
+
+        Returns:
+            list[dict]: Each thread's ``send_message`` result.
+        """
+        self.mock_build.side_effect = lambda *_args, **_kwargs: (
+            _ConcurrencyProbeService(conflicts)
+        )
+        self._send("warm up")
+
+        barrier = threading.Barrier(self._THREAD_COUNT)
+
+        def send(index):
+            barrier.wait(timeout=10)
+            return self._send(f"Hi {index}")
+
+        with ThreadPoolExecutor(max_workers=self._THREAD_COUNT) as pool:
+            return list(pool.map(send, range(self._THREAD_COUNT)))
+
+    def _send(self, subject):
+        return self.client.send_message(
+            to=["a@example.com"],
+            cc=[],
+            subject=subject,
+            body="<p>x</p>",
+            sender=TEST_SENDER,
+        )
+
+    def test_concurrent_sends_never_enter_one_service_together(self):
+        conflicts = []
+
+        results = self._send_from_threads(conflicts)
+
+        self.assertEqual(conflicts, [])
+        self.assertEqual(len(results), self._THREAD_COUNT)
+
+    def test_each_sending_thread_builds_its_own_service(self):
+        self._send_from_threads([])
+
+        # One per sending thread, plus the warm-up on this thread.
+        self.assertEqual(self.mock_build.call_count, self._THREAD_COUNT + 1)
+
+    def test_each_sending_thread_builds_its_own_credentials(self):
+        self._send_from_threads([])
+
+        # A Credentials object holds a mutable access token and expiry, so
+        # threads refreshing one shared instance race.
+        self.assertEqual(self.mock_credentials.call_count, self._THREAD_COUNT + 1)
 
     def test_credentials_built_from_refresh_token(self):
         self._stub_send_result()

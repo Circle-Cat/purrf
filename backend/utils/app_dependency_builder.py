@@ -75,6 +75,8 @@ from backend.common.environment_constants import (
     JIRA_USER,
     MENTORSHIP_CALENDAR_ID,
     INTERVIEW_CALENDAR_ID,
+    NOTIFICATION_PUSHER_SUBS,
+    NOTIFICATION_TOPIC,
     USER_EMAIL,
 )
 from backend.historical_data.google_chat_history_sync_service import (
@@ -91,8 +93,8 @@ from backend.authentication.email_management_controller import (
 from backend.admin.permission_admin_service import PermissionAdminService
 from backend.admin.permission_admin_controller import PermissionAdminController
 from backend.repository.job_repository import JobRepository
-from backend.repository.job_activity_repository import JobActivityRepository
 from backend.repository.job_review_repository import JobReviewRepository
+from backend.repository.event_repository import EventRepository
 from backend.repository.notification_repository import NotificationRepository
 from backend.repository.application_repository import ApplicationRepository
 from backend.repository.application_assignment_repository import (
@@ -100,9 +102,6 @@ from backend.repository.application_assignment_repository import (
 )
 from backend.repository.application_interview_repository import (
     ApplicationInterviewRepository,
-)
-from backend.repository.application_activity_repository import (
-    ApplicationActivityRepository,
 )
 from backend.repository.application_comment_repository import (
     ApplicationCommentRepository,
@@ -133,8 +132,14 @@ from backend.recruiting.audit_service import AuditService
 from backend.recruiting.audit_controller import AuditController
 from backend.recruiting.notification_service import RecruitingNotificationService
 from backend.recruiting.notification_controller import RecruitingNotificationController
-from backend.recruiting.notification_email_worker import NotificationEmailWorker
 from backend.communication.notification_email_service import NotificationEmailService
+from backend.notification_management.notification_event_email_service import (
+    NotificationEventEmailService,
+)
+from backend.notification_management.delivery_service import DeliveryService
+from backend.notification_management.delivery_controller import (
+    NotificationDeliveryController,
+)
 from backend.common.environment_constants import RESUME_BUCKET
 from backend.common.auth0_client import Auth0Client
 from backend.repository.users_repository import UsersRepository
@@ -210,6 +215,19 @@ class AppDependencyBuilder:
         if not interview_calendar_id:
             raise ValueError(f"Missing environment variable: {INTERVIEW_CALENDAR_ID}")
 
+        # The fully qualified Pub/Sub topic publish_on_commit publishes to.
+        # Missing this must fail at startup, not silently no-op every publish
+        # for the life of the process.
+        notification_topic_path = os.getenv(NOTIFICATION_TOPIC)
+        if not notification_topic_path:
+            raise ValueError(f"Missing environment variable: {NOTIFICATION_TOPIC}")
+
+        notification_pusher_subs = frozenset(
+            sub.strip()
+            for sub in (os.getenv(NOTIFICATION_PUSHER_SUBS) or "").split(",")
+            if sub.strip()
+        )
+
         # No presence check here: GoogleClient already validates USER_EMAIL and
         # raises before this point, so repeating it would just be noise.
         user_email = os.getenv(USER_EMAIL)
@@ -238,14 +256,22 @@ class AppDependencyBuilder:
             self.google_client.create_workspaceevents_client()
         )
         self.subscriber_client = self.google_client.create_subscriber_client()
+        self.notification_publisher_client = (
+            self.google_client.create_publisher_client()
+        )
+        self.notification_topic_path = notification_topic_path
+        self.notification_pusher_subs = notification_pusher_subs
         self.google_chat_client = self.google_client.create_chat_client()
         self.google_people_client = self.google_client.create_people_client()
+        # Constructed, not connected: the services below open the connection on
+        # the first call that needs Jira. Missing configuration still fails
+        # here, at startup.
         self.jira_client = JiraClient(
             jira_server=jira_server,
             jira_user=jira_user,
             logger=self.logger,
             retry_utils=self.retry_utils,
-        ).get_jira_client()
+        )
         self.google_calendar_client = self.google_client.create_calendar_client()
         self.google_reports_client = self.google_client.create_reports_client()
         self.meet_spaces_client = self.google_client.create_meet_spaces_client()
@@ -615,8 +641,8 @@ class AppDependencyBuilder:
             database=self.database,
         )
         self.notification_repository = NotificationRepository()
+        self.event_repository = EventRepository()
         self.job_review_repository = JobReviewRepository()
-        self.job_activity_repository = JobActivityRepository()
         self.recruiting_mapper = RecruitingMapper()
         # Person-anchored email transport, needed by the notification email
         # channel below. GmailClient reads the GMAIL_* credentials from the
@@ -653,13 +679,27 @@ class AppDependencyBuilder:
             logger=self.logger,
             sender_address=self.notification_sender_address,
         )
-        self.notification_email_worker = NotificationEmailWorker(
-            database=self.database,
-            notification_repository=self.notification_repository,
-            notification_service=self.recruiting_notification_service,
+        # The delivery pipeline for the new event-based notification rows:
+        # NotificationEventEmailService renders (by event_type, via
+        # notification_renderers's registrations) and resolves the
+        # recipient's address, then hands off to notification_email_service
+        # above for the actual Gmail send. DeliveryService wraps that in the
+        # claim/settle state machine; NotificationDeliveryController is the
+        # Pub/Sub push endpoint that drives it.
+        self.notification_event_email_service = NotificationEventEmailService(
             user_emails_repository=self.user_emails_repository,
             email_service=self.notification_email_service,
-            logger=self.logger,
+        )
+        self.delivery_service = DeliveryService(
+            email_service=self.notification_event_email_service,
+        )
+        self.notification_delivery_controller = NotificationDeliveryController(
+            delivery_service=self.delivery_service,
+            publisher=self.notification_publisher_client,
+            topic_path=self.notification_topic_path,
+            database=self.database,
+            auth_service=self.authentication_service,
+            pusher_subs=self.notification_pusher_subs,
         )
         self.job_service = JobService(
             self.job_repository,
@@ -668,12 +708,11 @@ class AppDependencyBuilder:
             self.job_review_repository,
             self.notification_repository,
             self.users_repository,
-            self.job_activity_repository,
             self.user_emails_repository,
+            self.event_repository,
         )
         self.application_assignment_repository = ApplicationAssignmentRepository()
         self.application_interview_repository = ApplicationInterviewRepository()
-        self.application_activity_repository = ApplicationActivityRepository()
         self.application_comment_repository = ApplicationCommentRepository()
         self.application_comment_mention_repository = (
             ApplicationCommentMentionRepository()
@@ -688,7 +727,6 @@ class AppDependencyBuilder:
             self.users_repository,
             self.recruiting_mapper,
             self.application_assignment_repository,
-            self.application_activity_repository,
             self.notification_repository,
             self.user_emails_repository,
             self.onboarding_training_service,
@@ -714,7 +752,6 @@ class AppDependencyBuilder:
         self.email_sync_service = EmailSyncService(
             gmail_client=self.gmail_client,
             email_conversation_service=self.email_conversation_service,
-            application_activity_repository=self.application_activity_repository,
             application_repository=self.application_repository,
             logger=self.logger,
         )
@@ -742,7 +779,6 @@ class AppDependencyBuilder:
             self.application_repository,
             self.application_assignment_repository,
             self.application_interview_repository,
-            self.application_activity_repository,
             self.users_repository,
             self.user_emails_repository,
             self.meeting_scheduling_service,
@@ -758,7 +794,7 @@ class AppDependencyBuilder:
             self.resume_storage,
             self.application_assignment_repository,
             self.user_permissions_repository,
-            self.application_activity_repository,
+            self.event_repository,
             self.application_comment_repository,
             self.application_comment_mention_repository,
             self.evaluation_repository,
@@ -789,7 +825,7 @@ class AppDependencyBuilder:
             self.evaluation_repository,
             self.job_repository,
             self.users_repository,
-            self.application_activity_repository,
+            self.application_submission_repository,
         )
         self.evaluation_controller = EvaluationController(
             self.evaluation_service,
@@ -828,7 +864,9 @@ class AppDependencyBuilder:
             evaluation_controller=self.evaluation_controller,
             audit_controller=self.audit_controller,
             recruiting_notification_controller=self.recruiting_notification_controller,
-            notification_email_worker=self.notification_email_worker,
+            notification_delivery_controller=self.notification_delivery_controller,
+            notification_publisher=self.notification_publisher_client,
+            notification_topic_path=self.notification_topic_path,
             launchdarkly_client=self.launchdarkly_client,
             database=self.database,
             logger=self.logger,

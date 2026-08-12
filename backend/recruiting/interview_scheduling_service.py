@@ -12,9 +12,10 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exceptions import MeetingGoneError
-from backend.common.recruiting_enums import ApplicationStage
+from backend.common.recruiting_enums import ApplicationStage, RecruitingEvent
 from backend.dto.interview_dto import InterviewDto, InterviewScheduleRequestDto
 from backend.dto.user_context_dto import UserContextDto
+from backend.notification_management.event_recorder import record_event
 
 # Only these two stages meet the candidate; recruiter screening and board
 # review evaluate on materials alone (their assignees are still evaluators —
@@ -86,7 +87,6 @@ class InterviewSchedulingService:
         application_repository,
         application_assignment_repository,
         application_interview_repository,
-        application_activity_repository,
         users_repository,
         user_emails_repository,
         meeting_scheduling_service,
@@ -106,8 +106,6 @@ class InterviewSchedulingService:
                 access; the meeting's assignee IS the round's assignment.
             application_interview_repository (ApplicationInterviewRepository):
                 Scheduled-meeting row data access.
-            application_activity_repository (ApplicationActivityRepository):
-                Append-only audit log, written on schedule/update/cancel.
             users_repository (UsersRepository): Candidate/interviewer/
                 recruiter name resolution for the meeting title and the
                 response DTO.
@@ -128,7 +126,6 @@ class InterviewSchedulingService:
         self.application_repository = application_repository
         self.application_assignment_repository = application_assignment_repository
         self.application_interview_repository = application_interview_repository
-        self.application_activity_repository = application_activity_repository
         self.users_repository = users_repository
         self.user_emails_repository = user_emails_repository
         self.meeting_scheduling_service = meeting_scheduling_service
@@ -180,7 +177,7 @@ class InterviewSchedulingService:
             session, application_id, application.stage, application.current_round
         )
         if existing is not None:
-            raise ValueError("This round already has an interview meeting scheduled.")
+            raise ValueError("This session already has an interview meeting scheduled.")
         await self.application_access.validate_interview_assignee(
             session, dto.assignee_id
         )
@@ -258,11 +255,12 @@ class InterviewSchedulingService:
         # exactly "scheduled".
         application.sub_status = "scheduled"
         await self.application_repository.update(session, application)
-        await self.application_activity_repository.create(
+        await record_event(
             session,
-            application_id,
-            current_user.user_id,
-            "interview_scheduled",
+            subject_type="application",
+            subject_id=application_id,
+            actor_id=current_user.user_id,
+            event_type=RecruitingEvent.INTERVIEW_SCHEDULED,
             details={
                 "stage": application.stage.value,
                 "round": application.current_round,
@@ -329,7 +327,7 @@ class InterviewSchedulingService:
             session, application_id, application.stage, application.current_round
         )
         if interview is None:
-            raise ValueError("No interview meeting is scheduled for this round.")
+            raise ValueError("No interview meeting is scheduled for this session.")
         await self.application_access.validate_interview_assignee(
             session, dto.assignee_id
         )
@@ -385,11 +383,12 @@ class InterviewSchedulingService:
             dto.assignee_id,
             current_user.user_id,
         )
-        await self.application_activity_repository.create(
+        await record_event(
             session,
-            application_id,
-            current_user.user_id,
-            "interview_updated",
+            subject_type="application",
+            subject_id=application_id,
+            actor_id=current_user.user_id,
+            event_type=RecruitingEvent.INTERVIEW_UPDATED,
             details={
                 "stage": application.stage.value,
                 "round": application.current_round,
@@ -453,7 +452,7 @@ class InterviewSchedulingService:
             session, application_id, application.stage, application.current_round
         )
         if interview is None:
-            raise ValueError("No interview meeting is scheduled for this round.")
+            raise ValueError("No interview meeting is scheduled for this session.")
         await self._delete_meeting(
             session, interview, application_id, current_user.user_id
         )
@@ -586,11 +585,12 @@ class InterviewSchedulingService:
             )
 
         await self.application_interview_repository.delete(session, interview)
-        await self.application_activity_repository.create(
+        await record_event(
             session,
-            application_id,
-            actor_user_id,
-            "interview_cancelled",
+            subject_type="application",
+            subject_id=application_id,
+            actor_id=actor_user_id,
+            event_type=RecruitingEvent.INTERVIEW_CANCELLED,
             details={
                 "stage": interview.stage.value,
                 "round": interview.round,

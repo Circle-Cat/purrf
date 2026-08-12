@@ -121,18 +121,25 @@ class ApplicationDetailDto(BaseDto):
 class ApplicationActivityDto(BaseDto):
     """One entry in an application's owner-facing audit timeline, newest first.
 
-    ``event_type`` is one of ``"application_submitted"``, ``"auto_rejected"``
-    (both written by ``ApplicationService.submit``), or ``"stage_changed"``,
-    ``"reassigned"``, ``"round_advanced"`` (written by the matching
+    ``event_type`` is the recorded event's own type, domain prefix included:
+    ``"recruiting.application_submitted"``, ``"recruiting.auto_rejected"``
+    (both recorded by ``ApplicationService.submit``), or
+    ``"recruiting.stage_changed"``, ``"recruiting.reassigned"``,
+    ``"recruiting.round_advanced"`` (recorded by the matching
     ``BoardService`` methods). ``details`` is a free-form, event-type-specific
     payload — see each writer's call site for its exact shape.
+
+    ``actor_id`` is null when the system did it under its own rules rather
+    than on someone's behalf; ``actor_name`` is null with it, and the reader
+    words those entries impersonally. An actor who no longer resolves falls
+    back to ``"User {id}"``, which is a different thing from nobody.
     """
 
     id: int
     event_type: str
     details: dict
-    actor_id: int
-    actor_name: str
+    actor_id: int | None
+    actor_name: str | None
     created_at: datetime
 
 
@@ -285,6 +292,11 @@ class OtherApplicationDto(BaseDto):
     job_title: str
     job_kind: JobKind
     resume_available: bool
+    # That job's LIVE form_schema — these applications belong to *other*
+    # postings, so the detail page's own schema cannot label their answers.
+    # Only a fallback: submissions written after the snapshot change carry
+    # their own schema inside `application.current.submission`.
+    form_schema: dict | None = None
     evaluations: list[EvaluationDto]
     activity: list[ApplicationActivityDto] = []
     comments: list[CommentDto] = []

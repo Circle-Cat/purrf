@@ -1249,6 +1249,37 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
                 MeetingNoteTag.MENTOR_LATE,
             ])
 
+    def test_validate_note_tags_rejects_same_role_absent_and_late(self):
+        """The same role cannot be marked as both absent and late."""
+        with self.assertRaises(ValueError):
+            self.service._validate_note_tags([
+                MeetingNoteTag.MENTOR_ABSENT,
+                MeetingNoteTag.MENTOR_LATE,
+            ])
+        with self.assertRaises(ValueError):
+            self.service._validate_note_tags([
+                MeetingNoteTag.MENTEE_ABSENT,
+                MeetingNoteTag.MENTEE_LATE,
+            ])
+
+    def test_validate_note_tags_allows_unknown_absent_with_unknown_late(self):
+        """unknown_absent and unknown_late don't pin down the same person."""
+        self.service._validate_note_tags([
+            MeetingNoteTag.UNKNOWN_ABSENT,
+            MeetingNoteTag.UNKNOWN_LATE,
+        ])
+
+    def test_rejects_completed_meeting_with_an_absent_tag(self):
+        """Both `has_unknown_absent` and `absent_user_id` conflict with `is_completed`."""
+        for kwargs in (
+            {"has_unknown_absent": True},
+            {"absent_user_id": 5},
+        ):
+            with self.assertRaises(ValueError):
+                self.service._validate_no_absent_if_completed(
+                    _make_meeting(is_completed=True, **kwargs)
+                )
+
     def test_apply_note_tags_maps_every_tag_and_clears(self):
         """Every MeetingNoteTag maps correctly and clears unrelated attributes
         on the meeting row."""
@@ -1395,6 +1426,59 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.mock_session.commit.assert_awaited_once()
         self.assertEqual(result.round_version, "v2")
 
+    async def test_apply_batch_rejects_partial_update_conflicting_with_existing_row(
+        self,
+    ):
+        """A partial update still catches a conflict via the untouched field."""
+        pair = _make_pair()
+        cases = [
+            _make_meeting(
+                meeting_id="google-1", is_completed=False, has_unknown_absent=True
+            ),
+            _make_meeting(meeting_id="google-1", is_completed=True),
+        ]
+        updates = [
+            V2MeetingUpdateItemDto(meeting_id="google-1", is_completed=True),
+            V2MeetingUpdateItemDto(
+                meeting_id="google-1", note=[MeetingNoteTag.MENTOR_ABSENT]
+            ),
+        ]
+        for meeting, update_item in zip(cases, updates):
+            self.mock_pairs_repo.get_pair_by_id.return_value = pair
+            self.mock_meeting_repo.get_meetings_by_pair.return_value = [meeting]
+
+            with self.assertRaises(ValueError):
+                await self.service.apply_v2_meeting_batch(
+                    self.mock_session,
+                    1,
+                    V2MeetingBatchUpdateDto(updates=[update_item]),
+                )
+            self.mock_session.commit.assert_not_awaited()
+
+    async def test_apply_batch_skips_conflict_check_when_fields_untouched(self):
+        """The conflict check is skipped unless is_completed or note is modified."""
+        pair = _make_pair()
+        meeting = _make_meeting(
+            meeting_id="google-1", is_completed=True, has_unknown_absent=True
+        )
+        self.mock_pairs_repo.get_pair_by_id.return_value = pair
+        self.mock_meeting_repo.get_meetings_by_pair.side_effect = [
+            [meeting],
+            [meeting],
+        ]
+        self.mock_meeting_repo.recalculate_completed_count.return_value = 1
+
+        result = await self.service.apply_v2_meeting_batch(
+            self.mock_session,
+            1,
+            V2MeetingBatchUpdateDto(
+                updates=[V2MeetingUpdateItemDto(meeting_id="google-1")]
+            ),
+        )
+
+        self.mock_session.commit.assert_awaited_once()
+        self.assertEqual(result.round_version, "v2")
+
     async def test_apply_batch_rejects_unknown_meeting_id(self):
         """A meeting_id not present among this pair's rows is a client error."""
         pair = _make_pair()
@@ -1415,7 +1499,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         original_meeting_log = copy.deepcopy(pair.meeting_log)
         m1 = _make_meeting(meeting_id="m1", is_completed=False)
         m2 = _make_meeting(meeting_id="m2", is_completed=True)
-        m3 = _make_meeting(meeting_id="m3", is_completed=True, has_unknown_absent=True)
+        m3 = _make_meeting(meeting_id="m3", is_completed=True)
         self.mock_pairs_repo.get_pair_by_id.return_value = pair
         self.mock_meeting_repo.get_meetings_by_pair.side_effect = [
             [m1, m2, m3],  # fetched inside apply_v2_meeting_batch
@@ -1431,7 +1515,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
                     V2MeetingUpdateItemDto(
                         meeting_id="m1",
                         is_completed=True,
-                        note=[MeetingNoteTag.MENTOR_ABSENT],
+                        note=[MeetingNoteTag.MENTOR_LATE],
                     ),
                     V2MeetingUpdateItemDto(meeting_id="m3"),  # null fields: no-op
                 ],
@@ -1443,7 +1527,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             self.mock_session, 1, ["m2"]
         )
         self.assertTrue(m1.is_completed)
-        self.assertEqual(m1.absent_user_id, pair.mentor_id)
+        self.assertEqual(m1.late_user_ids, [pair.mentor_id])
         self.assertTrue(m3.is_completed)  # unchanged: both update fields were null
         self.assertIsNone(m3.absent_user_id)  # untouched by the no-op update
         self.assertEqual(pair.completed_count, 2)

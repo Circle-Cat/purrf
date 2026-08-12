@@ -26,7 +26,7 @@ describe("PipelineConfigEditor", () => {
     renderEditor({ stages: [] }, onChange);
     await user.click(screen.getByRole("checkbox", { name: "Behavioral" }));
     expect(onChange).toHaveBeenCalledWith({
-      stages: [{ stage: "behavioral", rounds: 1, referralSkippable: false }],
+      stages: [{ stage: "behavioral", rounds: 1 }],
     });
   });
 
@@ -40,29 +40,39 @@ describe("PipelineConfigEditor", () => {
 
   it("edits rounds for an included stage", async () => {
     const onChange = vi.fn();
-    renderEditor(
-      { stages: [{ stage: "tech", rounds: 1, referralSkippable: false }] },
-      onChange,
-    );
-    fireEvent.change(screen.getByLabelText("tech rounds"), {
+    renderEditor({ stages: [{ stage: "tech", rounds: 1 }] }, onChange);
+    fireEvent.change(screen.getByLabelText("tech sessions"), {
       target: { value: "3" },
     });
     expect(onChange).toHaveBeenCalledWith({
-      stages: [{ stage: "tech", rounds: 3, referralSkippable: false }],
+      stages: [{ stage: "tech", rounds: 3 }],
     });
   });
 
   it("clamps rounds to >= 1 when user enters 0 or negative", () => {
     const onChange = vi.fn();
-    renderEditor(
-      { stages: [{ stage: "tech", rounds: 1, referralSkippable: false }] },
-      onChange,
-    );
-    fireEvent.change(screen.getByLabelText("tech rounds"), {
+    renderEditor({ stages: [{ stage: "tech", rounds: 1 }] }, onChange);
+    fireEvent.change(screen.getByLabelText("tech sessions"), {
       target: { value: "0" },
     });
     expect(onChange).toHaveBeenCalledWith({
-      stages: [{ stage: "tech", rounds: 1, referralSkippable: false }],
+      stages: [{ stage: "tech", rounds: 1 }],
+    });
+  });
+
+  it("drops retired stage keys stored by older postings instead of echoing them back", () => {
+    const onChange = vi.fn();
+    renderEditor(
+      { stages: [{ stage: "tech", rounds: 1, referralSkippable: true }] },
+      onChange,
+    );
+    fireEvent.change(screen.getByLabelText("tech sessions"), {
+      target: { value: "2" },
+    });
+    // The request DTO forbids unknown fields, so a stale key round-tripped
+    // out of the stored config would fail the save with a 400.
+    expect(onChange).toHaveBeenCalledWith({
+      stages: [{ stage: "tech", rounds: 2 }],
     });
   });
 
@@ -72,8 +82,8 @@ describe("PipelineConfigEditor", () => {
     renderEditor(
       {
         stages: [
-          { stage: "recruiter_screening", rounds: 1, referralSkippable: false },
-          { stage: "tech", rounds: 1, referralSkippable: false },
+          { stage: "recruiter_screening", rounds: 1 },
+          { stage: "tech", rounds: 1 },
         ],
       },
       onChange,
@@ -93,10 +103,9 @@ describe("PipelineConfigEditor", () => {
         {
           stage: "recruiter_screening",
           rounds: 1,
-          referralSkippable: false,
           defaultAssigneeId: 7,
         },
-        { stage: "tech", rounds: 1, referralSkippable: false },
+        { stage: "tech", rounds: 1 },
       ],
     });
   });
@@ -106,7 +115,7 @@ describe("PipelineConfigEditor", () => {
     const onChange = vi.fn();
     renderEditor({ ownerIds: [42], stages: [] }, onChange);
     expect(screen.getByText("Bo")).toBeInTheDocument();
-    await user.click(screen.getByRole("combobox", { name: "Add manager" }));
+    await user.click(screen.getByRole("combobox", { name: "Add recruiter" }));
     await user.click(screen.getByRole("option", { name: /Cy/ }));
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ ownerIds: [42, 43] }),
@@ -118,7 +127,9 @@ describe("PipelineConfigEditor", () => {
     const onChange = vi.fn();
     renderEditor({ ownerId: 42, stages: [] }, onChange);
     expect(screen.getByText("Bo")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Remove manager Bo" }));
+    await user.click(
+      screen.getByRole("button", { name: "Remove recruiter Bo" }),
+    );
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ ownerIds: [] }),
     );
@@ -128,7 +139,7 @@ describe("PipelineConfigEditor", () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     renderEditor({ ownerIds: [42, 43], stages: [] }, onChange);
-    await user.click(screen.getByRole("combobox", { name: "Add manager" }));
+    await user.click(screen.getByRole("combobox", { name: "Add recruiter" }));
     expect(
       screen.queryByRole("option", { name: /Bo/ }),
     ).not.toBeInTheDocument();

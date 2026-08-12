@@ -44,6 +44,7 @@ import {
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
 import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
+import AnswersSection from "@/pages/Recruiting/components/AnswersSection";
 import ComposeEmailDialog from "@/pages/Recruiting/applications/ComposeEmailDialog";
 import EvaluationRubricForm from "@/pages/Recruiting/applications/EvaluationRubricForm";
 import { rubricFor } from "@/pages/Recruiting/applications/evaluationRubric";
@@ -209,7 +210,7 @@ const SubStatusSelector = ({
             disabled={disabled || (value === "evaluated" && evaluatedDisabled)}
             title={
               value === "evaluated" && evaluatedDisabled
-                ? "Requires a confirmed evaluation for the current round"
+                ? "Requires a confirmed evaluation for the current session"
                 : undefined
             }
             onClick={() => onSelect(value)}
@@ -243,31 +244,6 @@ const PersonalSection = ({ personal }) => (
     </p>
   </div>
 );
-
-/**
- * The submitted answers to the job's form questions, labeled via the detail
- * payload's `formSchema.questions`. Falls back to the raw question id when a
- * question was since removed from the live form schema.
- *
- * @param {{answers: object, questions: {id: string, label: string}[]}} props
- */
-const AnswersSection = ({ answers, questions }) => {
-  const entries = Object.entries(answers ?? {});
-  if (entries.length === 0) return null;
-  const labelById = new Map(questions.map((q) => [q.id, q.label]));
-  return (
-    <div className="space-y-2">
-      <h2 className="text-sm font-medium text-slate-700">Answers</h2>
-      <ul className="space-y-1">
-        {entries.map(([id, value]) => (
-          <li key={id} className="text-sm text-slate-700">
-            {labelById.get(id) ?? id}: {String(value ?? "—")}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-};
 
 /**
  * One field's recorded response inside the read-only evaluation summary:
@@ -338,7 +314,7 @@ const EvaluationSummary = ({ evaluations, interviewPool }) => (
         .map((evaluation) => (
           <div key={evaluation.id} className="space-y-3 rounded border p-3">
             <h3 className="text-sm font-medium text-slate-700">
-              {humanize(evaluation.stage)} — Round {evaluation.round}
+              {humanize(evaluation.stage)} — Session {evaluation.round}
             </h3>
             <p className="text-xs text-slate-500">
               Evaluated by:{" "}
@@ -450,7 +426,7 @@ const CancelUpcomingMeetingField = ({
  */
 const describeActivity = ({ eventType, details }, jobKind, timezone) => {
   switch (eventType) {
-    case "application_submitted": {
+    case "recruiting.application_submitted": {
       if (details.screenAutoHireRuleId) {
         return `Submitted — auto-approved by screening rule${
           details.screenAutoHireRuleLabel
@@ -467,13 +443,13 @@ const describeActivity = ({ eventType, details }, jobKind, timezone) => {
           })`
         : base;
     }
-    case "auto_rejected":
+    case "recruiting.auto_rejected":
       return details.reason === "screen_rule"
         ? `Automatically rejected by screening rule${
             details.ruleLabel ? ` "${details.ruleLabel}"` : ""
           }`
         : "Automatically rejected (blocked applicant)";
-    case "stage_changed":
+    case "recruiting.stage_changed":
       if (details.reason) {
         return `Rejected from ${humanize(details.fromStage)}${
           details.note
@@ -484,29 +460,29 @@ const describeActivity = ({ eventType, details }, jobKind, timezone) => {
       return `Advanced from ${humanize(details.fromStage)} to ${stageLabel(details.toStage, jobKind)}${
         details.assigneeName ? `, assigned to ${details.assigneeName}` : ""
       }${details.advancedWithoutEvaluation ? " (no evaluation recorded)" : ""}`;
-    case "reassigned":
+    case "recruiting.reassigned":
       return `Reassigned on ${humanize(details.stage)}${
         details.fromAssigneeName ? ` from ${details.fromAssigneeName}` : ""
       } to ${details.toAssigneeName}`;
-    case "round_advanced":
-      return `Advanced to round ${details.toRound} of ${humanize(details.stage)}${
+    case "recruiting.round_advanced":
+      return `Advanced to session ${details.toRound} of ${humanize(details.stage)}${
         details.assigneeName ? `, assigned to ${details.assigneeName}` : ""
       }${details.advancedWithoutEvaluation ? " (no evaluation recorded)" : ""}`;
-    case "sub_status_changed":
+    case "recruiting.sub_status_changed":
       return `Status changed from ${humanize(details.fromSubStatus)} to ${humanize(details.toSubStatus)} on ${humanize(details.stage)}`;
-    case "evaluation_confirmed":
-      return `Confirmed evaluation for round ${details.round} of ${humanize(details.stage)}`;
-    case "blacklisted":
+    case "recruiting.evaluation_confirmed":
+      return `Confirmed evaluation for session ${details.round} of ${humanize(details.stage)}`;
+    case "recruiting.blacklisted":
       return `Blacklisted and rejected from ${humanize(details.fromStage)}: ${details.reason}`;
-    case "auto_assigned":
+    case "recruiting.auto_assigned":
       return `Automatically assigned to ${details.assigneeName} on ${humanize(details.stage)}`;
-    case "interview_scheduled": {
+    case "recruiting.interview_scheduled": {
       const when = formatInterviewWhen(details.startAt, timezone);
       return `Scheduled the ${humanize(details.stage)} interview meeting${
         when ? ` for ${when}` : ""
       }${details.assigneeName ? ` with ${details.assigneeName}` : ""}`;
     }
-    case "interview_updated": {
+    case "recruiting.interview_updated": {
       const stageText = humanize(details.stage);
       const newWhen = formatInterviewWhen(details.startAt, timezone);
       const oldWhen = formatInterviewWhen(details.fromStartAt, timezone);
@@ -530,20 +506,20 @@ const describeActivity = ({ eventType, details }, jobKind, timezone) => {
       }
       return `Updated the ${stageText} interview meeting${newWhen ? ` for ${newWhen}` : ""}`;
     }
-    case "interview_cancelled": {
+    case "recruiting.interview_cancelled": {
       const when = formatInterviewWhen(details.startAt, timezone);
       return `Cancelled the ${humanize(details.stage)} interview meeting${
         when ? ` that was set for ${when}` : ""
       }`;
     }
-    case "email_sent":
+    case "recruiting.email_sent":
       return `Sent email "${details.subject}" to ${(details.to ?? []).join(", ")}${
         details.cc?.length ? `, cc ${details.cc.join(", ")}` : ""
       }`;
-    case "email_received":
+    case "recruiting.email_received":
       return `Received reply "${details.subject}" from ${details.from}`;
     default:
-      return humanize(eventType);
+      return humanize(eventType.replace(/^[^.]+\./, ""));
   }
 };
 
@@ -842,6 +818,7 @@ const EmailsPanel = ({
  *
  * @param {{title: string, otherApplications: {application: object,
  *          jobTitle: string, jobKind: string, resumeAvailable: boolean,
+ *          formSchema: {questions: object[]}|null,
  *          evaluations: object[], activity: object[],
  *          comments: object[]}[],
  *          interviewPool: {userId: number, name: string}[],
@@ -898,8 +875,9 @@ const OtherApplicationsSection = ({
                     rows={otherSubmission.experience ?? []}
                   />
                   <AnswersSection
-                    answers={otherSubmission.answers ?? {}}
-                    questions={[]}
+                    submission={otherSubmission}
+                    liveQuestions={other.formSchema?.questions ?? []}
+                    idPrefix={`other-${other.application.id}-`}
                   />
                   {other.resumeAvailable && (
                     <iframe
@@ -1739,8 +1717,8 @@ const ApplicationDetailPage = () => {
           <RowList title="Education" rows={submission.education ?? []} />
           <RowList title="Experience" rows={submission.experience ?? []} />
           <AnswersSection
-            answers={submission.answers ?? {}}
-            questions={detail.formSchema?.questions ?? []}
+            submission={submission}
+            liveQuestions={detail.formSchema?.questions ?? []}
           />
           {detail.resumeAvailable && (
             <iframe
@@ -1837,7 +1815,7 @@ const ApplicationDetailPage = () => {
                       disabled={advancingRound}
                       onClick={handleRoundAdvanceClick}
                     >
-                      Advance to Round{" "}
+                      Advance to Session{" "}
                       {(detail.application.currentRound ?? 1) + 1}
                     </Button>
                   ) : (
@@ -2041,7 +2019,7 @@ const ApplicationDetailPage = () => {
                   <li
                     key={`${entry.applicationId}-${entry.stage}-${entry.round}`}
                   >
-                    {`${entry.jobTitle} — ${humanize(entry.stage)} round ${
+                    {`${entry.jobTitle} — ${humanize(entry.stage)} session ${
                       entry.round
                     } — ${formatInterviewWhen(entry.startAt, viewerTimezone)}`}
                   </li>
@@ -2090,7 +2068,7 @@ const ApplicationDetailPage = () => {
             <DialogTitle>No evaluation recorded</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-slate-700">
-            This round has no confirmed evaluation yet. Advance anyway?
+            This session has no confirmed evaluation yet. Advance anyway?
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEvalReminderFor(null)}>
@@ -2185,7 +2163,7 @@ const ApplicationDetailPage = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              Advance to Round {(detail.application.currentRound ?? 1) + 1}
+              Advance to Session {(detail.application.currentRound ?? 1) + 1}
             </DialogTitle>
           </DialogHeader>
           {roundAdvanceNeedsAssignee && (
@@ -2218,7 +2196,7 @@ const ApplicationDetailPage = () => {
               onClick={handleConfirmAdvanceRound}
               disabled={advancingRound}
             >
-              Confirm advance round
+              Confirm advance session
             </Button>
           </DialogFooter>
         </DialogContent>

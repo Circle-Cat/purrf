@@ -8,9 +8,6 @@ class TestFastAppFactory(unittest.TestCase):
     def setUp(self):
         self.mock_controller = MagicMock()
         self.mock_controller.router = APIRouter()
-        # start() is sync, stop() is awaited from lifespan shutdown.
-        self.mock_email_worker = MagicMock()
-        self.mock_email_worker.stop = AsyncMock()
         self.mock_profile_controller = MagicMock()
         self.mock_profile_controller.router = APIRouter()
         self.mock_service = MagicMock()
@@ -36,7 +33,9 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
-            notification_email_worker=self.mock_email_worker,
+            notification_delivery_controller=self.mock_controller,
+            notification_publisher=MagicMock(),
+            notification_topic_path="projects/p/topics/t",
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -64,6 +63,19 @@ class TestFastAppFactory(unittest.TestCase):
         """Test that create_app returns a FastAPI application instance."""
         app = self.factory.create_app()
         self.assertIsInstance(app, FastAPI)
+
+    @patch("backend.utils.fast_app_factory.install_publish_listener")
+    def test_create_app_installs_the_publish_listener_once(self, mock_install):
+        """create_app() is the app's one-time startup flow (see
+        prod_runner.py / fast_app_dev_runner.py, each calling it exactly
+        once), so this is where install_publish_listener() belongs -- not
+        at each of the many call sites that record a notification.
+        """
+        self.factory.create_app()
+        mock_install.assert_called_once_with(
+            self.factory.notification_publisher,
+            self.factory.notification_topic_path,
+        )
 
     def test_recruiting_routes_are_mounted(self):
         """The recruiting controller's router is mounted under /api."""
@@ -96,7 +108,9 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
-            notification_email_worker=self.mock_email_worker,
+            notification_delivery_controller=self.mock_controller,
+            notification_publisher=MagicMock(),
+            notification_topic_path="projects/p/topics/t",
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -137,7 +151,9 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
-            notification_email_worker=self.mock_email_worker,
+            notification_delivery_controller=self.mock_controller,
+            notification_publisher=MagicMock(),
+            notification_topic_path="projects/p/topics/t",
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -181,7 +197,9 @@ class TestFastAppFactory(unittest.TestCase):
             evaluation_controller=self.mock_controller,
             audit_controller=audit,
             recruiting_notification_controller=self.mock_controller,
-            notification_email_worker=self.mock_email_worker,
+            notification_delivery_controller=self.mock_controller,
+            notification_publisher=MagicMock(),
+            notification_topic_path="projects/p/topics/t",
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -224,7 +242,9 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
-            notification_email_worker=self.mock_email_worker,
+            notification_delivery_controller=self.mock_controller,
+            notification_publisher=MagicMock(),
+            notification_topic_path="projects/p/topics/t",
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -268,7 +288,9 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=blacklist,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
-            notification_email_worker=self.mock_email_worker,
+            notification_delivery_controller=self.mock_controller,
+            notification_publisher=MagicMock(),
+            notification_topic_path="projects/p/topics/t",
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -311,7 +333,9 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=evaluation,
             recruiting_notification_controller=self.mock_controller,
-            notification_email_worker=self.mock_email_worker,
+            notification_delivery_controller=self.mock_controller,
+            notification_publisher=MagicMock(),
+            notification_topic_path="projects/p/topics/t",
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -323,6 +347,62 @@ class TestFastAppFactory(unittest.TestCase):
             "/api/recruiting/evaluations/ping",
             {route.path for route in app.routes},
         )
+
+    def test_notification_delivery_routes_are_mounted_unauthenticated(self):
+        """The Pub/Sub push endpoint is mounted under /api and carries no
+        auth dependency -- it has no Auth0 session; its guard is the
+        Cloudflare Worker + Access Service Auth in front of it.
+        """
+        from backend.notification_management.delivery_controller import (
+            NotificationDeliveryController,
+        )
+
+        delivery_controller = NotificationDeliveryController(
+            delivery_service=MagicMock(),
+            publisher=MagicMock(),
+            topic_path="projects/p/topics/t",
+            database=MagicMock(),
+            auth_service=MagicMock(),
+            pusher_subs=frozenset({"111-pusher"}),
+        )
+        factory = FastAppFactory(
+            authentication_controller=self.mock_controller,
+            authentication_service=self.mock_service,
+            user_identity_service=MagicMock(),
+            user_permissions_repository=MagicMock(),
+            notification_controller=self.mock_controller,
+            historical_controller=self.mock_controller,
+            consumer_controller=self.mock_controller,
+            internal_activity_controller=self.mock_controller,
+            profile_controller=self.mock_profile_controller,
+            mentorship_controller=self.mock_controller,
+            mentorship_admin_controller=self.mock_controller,
+            email_management_controller=self.mock_controller,
+            permission_admin_controller=self.mock_controller,
+            recruiting_controller=self.mock_controller,
+            application_controller=self.mock_controller,
+            board_controller=self.mock_controller,
+            audit_controller=self.mock_controller,
+            blacklist_controller=self.mock_controller,
+            evaluation_controller=self.mock_controller,
+            recruiting_notification_controller=self.mock_controller,
+            notification_delivery_controller=delivery_controller,
+            notification_publisher=MagicMock(),
+            notification_topic_path="projects/p/topics/t",
+            launchdarkly_client=MagicMock(),
+            database=MagicMock(),
+            logger=MagicMock(),
+        )
+
+        app = factory.create_app()
+
+        route = next(r for r in app.routes if r.path == "/api/notifications/deliver")
+        # authenticate() wraps its target with functools.wraps, which stamps
+        # __wrapped__ onto the wrapper. Its absence here is the signal that
+        # this route's endpoint is the controller's bare deliver() method --
+        # not the current_user/permission-gated wrapper every other route in
+        # this app goes through.
+        self.assertFalse(hasattr(route.endpoint, "__wrapped__"))
 
     def test_applications_mine_resolves_before_board_detail_route(self):
         """GET /recruiting/applications/mine must not be shadowed by the board.
@@ -361,7 +441,9 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
-            notification_email_worker=self.mock_email_worker,
+            notification_delivery_controller=self.mock_controller,
+            notification_publisher=MagicMock(),
+            notification_topic_path="projects/p/topics/t",
             launchdarkly_client=MagicMock(),
             database=MagicMock(),
             logger=MagicMock(),
@@ -408,9 +490,6 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.mock_controller = MagicMock()
         self.mock_controller.router = APIRouter()
-        # start() is sync, stop() is awaited from lifespan shutdown.
-        self.mock_email_worker = MagicMock()
-        self.mock_email_worker.stop = AsyncMock()
         self.mock_profile_controller = MagicMock()
         self.mock_profile_controller.router = APIRouter()
         self.mock_service = MagicMock()
@@ -440,7 +519,9 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
-            notification_email_worker=self.mock_email_worker,
+            notification_delivery_controller=self.mock_controller,
+            notification_publisher=MagicMock(),
+            notification_topic_path="projects/p/topics/t",
             launchdarkly_client=self.mock_launchdarkly_client,
             database=self.mock_database,
             logger=MagicMock(),
@@ -454,21 +535,6 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
             pass
 
         self.mock_database.close.assert_awaited_once()
-
-    async def test_lifespan_does_not_run_the_email_worker(self):
-        """The sweep is off: neither startup nor shutdown may touch the worker.
-
-        Asserting the negative is the point -- the worker is still constructed
-        and injected, so only this test distinguishes "deliberately not
-        started" from an accidental regression that revives the polling loop.
-        """
-        app = self.factory.create_app()
-
-        async with app.router.lifespan_context(app):
-            self.mock_email_worker.start.assert_not_called()
-
-        self.mock_email_worker.start.assert_not_called()
-        self.mock_email_worker.stop.assert_not_awaited()
 
 
 if __name__ == "__main__":

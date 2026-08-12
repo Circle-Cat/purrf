@@ -43,6 +43,15 @@ CF_TEAM_DOMAIN = os.getenv("CF_TEAM_DOMAIN")
 CF_AUD_TAG = os.getenv("CF_AUD_TAG")
 GOOGLE_AUDIENCE = os.getenv("GOOGLE_AUDIENCE")
 
+# Comma-separated `unique_id`s of the service accounts allowed to authenticate
+# with a Google identity token. Unset or empty parses to an empty set, which
+# _verify_google refuses rather than falling back to the audience-only check.
+GOOGLE_SERVICE_ACCOUNT_SUBS = frozenset(
+    s.strip()
+    for s in (os.getenv("GOOGLE_SERVICE_ACCOUNT_SUBS") or "").split(",")
+    if s.strip()
+)
+
 TAILSCALE_PROXY = "TAILSCALE_PROXY"
 
 MENTORSHIP_MENTOR_ONBOARDING_LINK = "MENTORSHIP_MENTOR_ONBOARDING_LINK"
@@ -104,3 +113,19 @@ GMAIL_SENDER_RECRUITING = "GMAIL_SENDER_RECRUITING"
 # distinguishable in a recipient's inbox, and each environment sends from its
 # own alias so a non-prod message can never look like a prod one.
 GMAIL_SENDER_NOTIFICATION = "GMAIL_SENDER_NOTIFICATION"
+
+# Fully qualified Pub/Sub topic (``projects/<p>/topics/<t>``) that
+# publish_on_commit.install_publish_listener() publishes to once a
+# notification-creating transaction commits. Holds the whole path, not just
+# a bare topic id, so the app never has to know which project it is in --
+# matching how GOOGLE_CHAT_SUBSCRIPTION_ID/GERRIT_SUBSCRIPTION_ID are ids
+# combined with PUBSUB_PROJECT_ID elsewhere, this is its own env var instead
+# because it is a topic, not a subscription, and is consumed as a complete
+# path by a single call site rather than built up per-client.
+NOTIFICATION_TOPIC = "NOTIFICATION_TOPIC"
+
+# Comma-separated `sub` claims of the service accounts allowed to POST the
+# notification delivery route. Absent does not raise at startup the way
+# NOTIFICATION_TOPIC does: the route refuses every request instead, rather than
+# crash-looping the whole API over one variable.
+NOTIFICATION_PUSHER_SUBS = "NOTIFICATION_PUSHER_SUBS"

@@ -12,12 +12,10 @@ describe("PipelineSummary", () => {
             {
               stage: "recruiter_screening",
               rounds: 1,
-              referralSkippable: true,
             },
             {
               stage: "tech",
               rounds: 2,
-              referralSkippable: false,
               defaultAssigneeId: 7,
             },
           ],
@@ -25,19 +23,18 @@ describe("PipelineSummary", () => {
       />,
     );
     expect(
-      screen.getByText("1. Recruiter screening — 1 round(s)"),
+      screen.getByText("1. Recruiter screening — 1 session"),
     ).toBeInTheDocument();
-    expect(screen.getByText("2. Tech — 2 round(s)")).toBeInTheDocument();
-    expect(screen.getByText("Referral-skippable")).toBeInTheDocument();
+    expect(screen.getByText("2. Tech — 2 sessions")).toBeInTheDocument();
     expect(
       screen.getByText("Assignee #7 — no permission, remove"),
     ).toBeInTheDocument();
-    // The "Managed by:" prefix and this id's flagged text are separate DOM
+    // The "Recruiter:" prefix and this id's flagged text are separate DOM
     // nodes (the id is wrapped in its own <span> for red styling), so
     // Testing Library's default text matcher — which only concatenates an
     // element's direct text-node children — can't match the two together
     // as one string. Assert on the flagged span's own text instead; the
-    // "Managed by: Name (#id)" full-prefix case is covered by the other
+    // "Recruiter: Name (#id)" full-prefix case is covered by the other
     // tests below, where the resolved label is a plain sibling text node.
     expect(screen.getByText("#42 — no permission, remove")).toBeInTheDocument();
   });
@@ -58,7 +55,7 @@ describe("PipelineSummary", () => {
         interviewPool={[{ userId: 7, name: "Ann", email: "ann@x.com" }]}
       />,
     );
-    expect(screen.getByText("Managed by: Bo (#42)")).toBeInTheDocument();
+    expect(screen.getByText("Recruiter: Bo (#42)")).toBeInTheDocument();
     expect(screen.getByText("Assignee Ann (#7)")).toBeInTheDocument();
   });
 
@@ -76,7 +73,7 @@ describe("PipelineSummary", () => {
       />,
     );
     expect(
-      screen.getByText("Managed by: Bo (#42), Cy (#43)"),
+      screen.getByText("Recruiter: Bo (#42), Cy (#43)"),
     ).toBeInTheDocument();
   });
 });

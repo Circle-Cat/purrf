@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from unittest import TestCase, main
 from unittest.mock import patch, Mock
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
@@ -6,6 +7,8 @@ from google.cloud.pubsub_v1 import SubscriberClient, PublisherClient
 from backend.common.google_client import GoogleClient
 from backend.common.constants import GOOGLE_USER_SCOPES_LIST, GOOGLE_ADMIN_SCOPES_LIST
 import os
+import threading
+import time
 
 TEST_PROJECT_NAME = "test-project"
 TEST_USER_EMAIL = "test@example.com"
@@ -33,6 +36,41 @@ class MockRetryUtils:
         We'll use a SideEffect in specific retry tests.
         """
         return func()
+
+
+class ConcurrencyProbeService:
+    """A fake API resource that reports being used by two threads at once.
+
+    It stands in for one ``googleapiclient`` service, which owns a single
+    ``httplib2`` connection. Every call is held open briefly so that threads
+    sharing one instance overlap inside it.
+    """
+
+    def __init__(self, conflicts, hold_seconds=0.05):
+        self._conflicts = conflicts
+        self._hold_seconds = hold_seconds
+        self._in_flight = 0
+        self._lock = threading.Lock()
+
+    def events(self):
+        return self
+
+    def list(self, **_kwargs):
+        return self
+
+    def execute(self):
+        with self._lock:
+            self._in_flight += 1
+            overlapping = self._in_flight
+        if overlapping > 1:
+            self._conflicts.append(overlapping)
+        time.sleep(self._hold_seconds)
+        with self._lock:
+            self._in_flight -= 1
+        return {"items": []}
+
+
+THREAD_COUNT = 10
 
 
 class TestGoogleClient(TestCase):
@@ -115,7 +153,7 @@ class TestGoogleClient(TestCase):
             subject=TEST_USER_EMAIL,
         )
         self.assertIs(creds1, self.mock_impersonated_credentials)
-        self.assertIn(TEST_USER_EMAIL, self.client._credentials)
+        self.assertEqual(len(self.client._credentials), 1)
 
         creds2 = self.client._get_impersonate_credentials(user_email=TEST_USER_EMAIL)
 
@@ -152,6 +190,98 @@ class TestGoogleClient(TestCase):
         )
         self.mock_logger.error.assert_called()
 
+    @patch("backend.common.google_client.default")
+    @patch("backend.common.google_client.ImpersonatedCredentials")
+    def test_same_email_with_different_scopes_gets_its_own_credentials(
+        self, mock_impersonated_creds, mock_default
+    ):
+        """Scopes decide what a credential may do, so they belong in the key."""
+
+        mock_default.return_value = (self.mock_credentials, TEST_PROJECT_NAME)
+        mock_impersonated_creds.side_effect = lambda **_kwargs: Mock(
+            spec=UserCredentials
+        )
+
+        user_creds = self.client._get_impersonate_credentials(
+            user_email=TEST_USER_EMAIL, scopes=GOOGLE_USER_SCOPES_LIST
+        )
+        admin_creds = self.client._get_impersonate_credentials(
+            user_email=TEST_USER_EMAIL, scopes=GOOGLE_ADMIN_SCOPES_LIST
+        )
+
+        self.assertIsNot(user_creds, admin_creds)
+        self.assertEqual(
+            [
+                call.kwargs["target_scopes"]
+                for call in mock_impersonated_creds.call_args_list
+            ],
+            [GOOGLE_USER_SCOPES_LIST, GOOGLE_ADMIN_SCOPES_LIST],
+        )
+
+    @patch("backend.common.google_client.default")
+    @patch("backend.common.google_client.ImpersonatedCredentials")
+    def test_same_scopes_in_a_different_order_reuse_one_credential(
+        self, mock_impersonated_creds, mock_default
+    ):
+        """Order carries no authority, so a reordered list is the same request."""
+
+        mock_default.return_value = (self.mock_credentials, TEST_PROJECT_NAME)
+        mock_impersonated_creds.side_effect = lambda **_kwargs: Mock(
+            spec=UserCredentials
+        )
+
+        creds1 = self.client._get_impersonate_credentials(
+            user_email=TEST_USER_EMAIL, scopes=GOOGLE_USER_SCOPES_LIST
+        )
+        creds2 = self.client._get_impersonate_credentials(
+            user_email=TEST_USER_EMAIL, scopes=list(reversed(GOOGLE_USER_SCOPES_LIST))
+        )
+
+        self.assertIs(creds1, creds2)
+        mock_impersonated_creds.assert_called_once()
+
+    @patch("backend.common.google_client.default")
+    @patch("backend.common.google_client.ImpersonatedCredentials")
+    def test_omitted_scopes_reuse_the_default_scope_entry(
+        self, mock_impersonated_creds, mock_default
+    ):
+        """Omitting scopes asks for the default set, not for a second entry."""
+
+        mock_default.return_value = (self.mock_credentials, TEST_PROJECT_NAME)
+        mock_impersonated_creds.side_effect = lambda **_kwargs: Mock(
+            spec=UserCredentials
+        )
+
+        creds1 = self.client._get_impersonate_credentials(user_email=TEST_USER_EMAIL)
+        creds2 = self.client._get_impersonate_credentials(
+            user_email=TEST_USER_EMAIL, scopes=GOOGLE_USER_SCOPES_LIST
+        )
+
+        self.assertIs(creds1, creds2)
+        mock_impersonated_creds.assert_called_once()
+
+    @patch("backend.common.google_client.default")
+    @patch("backend.common.google_client.ImpersonatedCredentials")
+    def test_failed_impersonation_caches_nothing(
+        self, mock_impersonated_creds, mock_default
+    ):
+        """A failed exchange must not leave the un-impersonated ADC credentials behind."""
+
+        mock_default.return_value = (self.mock_credentials, TEST_PROJECT_NAME)
+        mock_impersonated_creds.side_effect = [
+            Exception("Auth failed"),
+            self.mock_impersonated_credentials,
+        ]
+
+        with self.assertRaises(ValueError):
+            self.client._get_impersonate_credentials(user_email=TEST_USER_EMAIL)
+
+        self.assertEqual(self.client._credentials, {})
+
+        creds = self.client._get_impersonate_credentials(user_email=TEST_USER_EMAIL)
+
+        self.assertIs(creds, self.mock_impersonated_credentials)
+
     @patch("backend.common.google_client.build")
     @patch.object(GoogleClient, "_get_impersonate_credentials")
     def test_create_client_flow(self, mock_get_creds, mock_build):
@@ -169,7 +299,8 @@ class TestGoogleClient(TestCase):
         mock_build.assert_called_once_with(
             api_name, api_version, credentials=self.mock_impersonated_credentials
         )
-        self.assertIs(client_instance, self.mock_service)
+        # The caller gets a per-thread resource that forwards to the service.
+        self.assertIs(client_instance.events, self.mock_service.events)
 
     def test_api_client_creation_methods(self):
         """Test all googleapiclient wrapper methods."""
@@ -295,6 +426,108 @@ class TestCreateMeetSpacesClient(TestCase):
             self.client.create_meet_spaces_client()
 
         self.assertIn("Credentials are not available", str(cm.exception))
+
+
+class TestGoogleClientThreadSafety(TestCase):
+    """Tests that concurrent callers never share one API service."""
+
+    def setUp(self):
+        env = {
+            "USER_EMAIL": TEST_USER_EMAIL,
+            "SERVICE_ACCOUNT_EMAIL": TEST_SERVICE_ACCOUNT_EMAIL,
+            "ADMIN_EMAIL": TEST_ADMIN_EMAIL,
+        }
+        self.env_patcher = patch.dict(os.environ, env)
+        self.env_patcher.start()
+
+        self.mock_retry_utils = Mock(spec=MockRetryUtils)
+        self.mock_retry_utils.get_retry_on_transient.side_effect = lambda func: func()
+
+        self.client = GoogleClient(
+            logger=Mock(),
+            retry_utils=self.mock_retry_utils,
+        )
+
+    def tearDown(self):
+        self.env_patcher.stop()
+
+    def _call_from_threads(self, api_client):
+        """Have THREAD_COUNT threads call through api_client at the same time."""
+        barrier = threading.Barrier(THREAD_COUNT)
+
+        def call():
+            barrier.wait()
+            return api_client.events().list(calendarId="primary").execute()
+
+        with ThreadPoolExecutor(max_workers=THREAD_COUNT) as pool:
+            return [
+                future.result()
+                for future in [pool.submit(call) for _ in range(THREAD_COUNT)]
+            ]
+
+    @patch("backend.common.google_client.build")
+    @patch.object(GoogleClient, "_get_impersonate_credentials")
+    def test_concurrent_calls_never_enter_one_service_together(
+        self, mock_get_creds, mock_build
+    ):
+        """Threads calling at once must not meet inside a single service."""
+        mock_get_creds.return_value = Mock(spec=UserCredentials)
+        conflicts = []
+        mock_build.side_effect = lambda *_args, **_kwargs: ConcurrencyProbeService(
+            conflicts
+        )
+
+        api_client = self.client.create_calendar_client()
+        self._call_from_threads(api_client)
+
+        self.assertEqual(conflicts, [])
+
+    @patch("backend.common.google_client.build")
+    @patch.object(GoogleClient, "_get_impersonate_credentials")
+    def test_each_calling_thread_builds_its_own_service(
+        self, mock_get_creds, mock_build
+    ):
+        """Every thread resolves its own service, plus one for the creating thread."""
+        mock_get_creds.return_value = Mock(spec=UserCredentials)
+        mock_build.side_effect = lambda *_args, **_kwargs: ConcurrencyProbeService([])
+
+        api_client = self.client.create_calendar_client()
+        self._call_from_threads(api_client)
+
+        self.assertEqual(mock_build.call_count, THREAD_COUNT + 1)
+
+    @patch("backend.common.google_client.build")
+    @patch.object(GoogleClient, "_get_impersonate_credentials")
+    def test_repeated_calls_on_one_thread_reuse_one_service(
+        self, mock_get_creds, mock_build
+    ):
+        """A thread keeps its service across calls instead of rebuilding it."""
+        mock_get_creds.return_value = Mock(spec=UserCredentials)
+        mock_build.side_effect = lambda *_args, **_kwargs: ConcurrencyProbeService([])
+
+        api_client = self.client.create_calendar_client()
+        api_client.events().list(calendarId="primary").execute()
+        api_client.events().list(calendarId="primary").execute()
+
+        self.assertEqual(mock_build.call_count, 1)
+
+    @patch("backend.common.google_client.build")
+    @patch("backend.common.google_client.default")
+    @patch("backend.common.google_client.ImpersonatedCredentials")
+    def test_each_calling_thread_impersonates_its_own_credentials(
+        self, mock_impersonated_creds, mock_default, mock_build
+    ):
+        """Credentials hold a mutable token, so threads must not share one."""
+        mock_default.return_value = (Mock(spec=ServiceAccountCredentials), "project")
+        mock_impersonated_creds.side_effect = lambda **_kwargs: Mock(
+            spec=UserCredentials
+        )
+        mock_build.side_effect = lambda *_args, **_kwargs: ConcurrencyProbeService([])
+
+        api_client = self.client.create_calendar_client()
+        self._call_from_threads(api_client)
+
+        self.assertEqual(mock_impersonated_creds.call_count, THREAD_COUNT + 1)
 
 
 if __name__ == "__main__":
