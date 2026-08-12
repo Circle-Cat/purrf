@@ -22,6 +22,7 @@ import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import {
   getMyMentorshipFeedback,
+  getMyMentorshipPartners,
   postMyMentorshipFeedback,
 } from "@/api/mentorshipApi";
 import { toast } from "sonner";
@@ -29,6 +30,14 @@ import { toast } from "sonner";
 const SESSION_COUNT_OPTIONS = Array.from({ length: 10 }, (_, i) => i + 1);
 
 const RATING_OPTIONS = [1, 2, 3, 4, 5];
+
+const PARTNER_RATING_OPTIONS = [
+  { value: 1, label: "Poor" },
+  { value: 2, label: "Below Average" },
+  { value: 3, label: "Average" },
+  { value: 4, label: "Good" },
+  { value: 5, label: "Excellent" },
+];
 
 function TextArea({ value, onChange, placeholder, maxLength, disabled }) {
   return (
@@ -56,8 +65,13 @@ function TextArea({ value, onChange, placeholder, maxLength, disabled }) {
  * avoid a "Submit Feedback" → "View Feedback" flash on page load.
  *
  * Required fields vary by participant role:
- * - All roles: `programRating`, `mostValuableAspects` (optional), `challenges` (optional)
+ * - All roles: `programRating`, `mostValuableAspects` (optional), `challenges` (optional),
+ *   a rating per partner (`mostValuableAspects`-style feedback text per partner is optional)
  * - Mentee only: `sessionsCompleted`
+ *
+ * Partners are fetched by `roundId` directly (not reused from the participant
+ * card), since the card defaults to the active round while this dialog only
+ * opens for a round in its feedback window -- those are never the same round.
  *
  * Inline field-level errors are shown on submit; each clears as soon as the
  * user interacts with that field.
@@ -84,6 +98,8 @@ export default function MentorshipFeedbackDialog({
   const [mostValuableAspects, setMostValuableAspects] = useState("");
   const [challenges, setChallenges] = useState("");
   const [programRating, setProgramRating] = useState("");
+  const [partners, setPartners] = useState([]);
+  const [partnerFeedback, setPartnerFeedback] = useState({});
 
   const flags = useFeatureFlags();
   // When Google Meetings is enabled, mentee session attendance is captured
@@ -92,12 +108,21 @@ export default function MentorshipFeedbackDialog({
     flags[FEATURE_FLAGS.CREATE_GOOGLE_MEETING];
 
   const isMentee = participantRole === MentorshipParticipantRoles.MENTEE;
+  const partnerRoleLabel = isMentee ? "mentor" : "mentee";
 
   const populateForm = (data) => {
     setSessionsCompleted(data.sessionsCompleted?.toString() ?? "");
     setMostValuableAspects(data.mostValuableAspects ?? "");
     setChallenges(data.challenges ?? "");
     setProgramRating(data.programRating?.toString() ?? "");
+    const partnerMap = {};
+    (data.partnerFeedback ?? []).forEach((entry) => {
+      partnerMap[entry.partnerId] = {
+        rating: entry.rating?.toString() ?? "",
+        feedback: entry.feedback ?? "",
+      };
+    });
+    setPartnerFeedback(partnerMap);
   };
 
   const clearError = (field) => {
@@ -109,6 +134,13 @@ export default function MentorshipFeedbackDialog({
     });
   };
 
+  const updatePartnerField = (partnerId, field, value) => {
+    setPartnerFeedback((prev) => ({
+      ...prev,
+      [partnerId]: { ...prev[partnerId], [field]: value },
+    }));
+  };
+
   useEffect(() => {
     // When feedback isn't available for this round, render a disabled trigger
     // button without hitting the API.
@@ -117,11 +149,15 @@ export default function MentorshipFeedbackDialog({
       return;
     }
     let cancelled = false;
-    getMyMentorshipFeedback(roundId)
-      .then(({ data }) => {
+    Promise.all([
+      getMyMentorshipFeedback(roundId),
+      getMyMentorshipPartners(roundId),
+    ])
+      .then(([{ data }, { data: partnersData }]) => {
         if (cancelled) return;
         setParticipantRole(data.participantRole);
         setHasSubmitted(Boolean(data.hasSubmitted));
+        setPartners(partnersData ?? []);
         if (data.hasSubmitted) populateForm(data);
       })
       .catch((err) => {
@@ -143,6 +179,11 @@ export default function MentorshipFeedbackDialog({
     if (isMentee && !isCreateGoogleMeetingsEnabled && !sessionsCompleted)
       newErrors.sessionsCompleted = "This field is required.";
     if (!programRating) newErrors.programRating = "This field is required.";
+    partners.forEach((partner) => {
+      if (!partnerFeedback[partner.id]?.rating) {
+        newErrors[`partnerRating-${partner.id}`] = "This field is required.";
+      }
+    });
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -158,6 +199,11 @@ export default function MentorshipFeedbackDialog({
         mostValuableAspects: mostValuableAspects || null,
         challenges: challenges || null,
         programRating: programRating ? parseInt(programRating, 10) : null,
+        partnerFeedback: partners.map((partner) => ({
+          partnerId: partner.id,
+          rating: parseInt(partnerFeedback[partner.id]?.rating, 10),
+          feedback: partnerFeedback[partner.id]?.feedback || null,
+        })),
       });
       setHasSubmitted(true);
       setIsOpen(false);
@@ -184,6 +230,7 @@ export default function MentorshipFeedbackDialog({
       setMostValuableAspects("");
       setChallenges("");
       setProgramRating("");
+      setPartnerFeedback({});
       setErrors({});
     }
     setIsOpen(open);
@@ -320,6 +367,66 @@ export default function MentorshipFeedbackDialog({
               <p className="text-xs text-destructive">{errors.programRating}</p>
             )}
           </div>
+
+          {/* Every participant rates and leaves feedback for each of their partners */}
+          {partners.flatMap((partner) => {
+            const entry = partnerFeedback[partner.id] || {};
+            const ratingError = errors[`partnerRating-${partner.id}`];
+            return [
+              <div key={`${partner.id}-rating`} className="space-y-3">
+                <Label className="text-sm font-semibold">
+                  How was your overall experience working with your{" "}
+                  {partnerRoleLabel} {partner.preferredName}?{" "}
+                  <span className="text-destructive">*</span>
+                </Label>
+                <RadioGroup
+                  value={entry.rating || ""}
+                  onValueChange={(val) => {
+                    updatePartnerField(partner.id, "rating", val);
+                    clearError(`partnerRating-${partner.id}`);
+                  }}
+                  className="flex flex-wrap gap-4"
+                >
+                  {PARTNER_RATING_OPTIONS.map((option) => (
+                    <div
+                      key={option.value}
+                      className="flex items-center space-x-1"
+                    >
+                      <RadioGroupItem
+                        value={option.value.toString()}
+                        id={`partner-rating-${partner.id}-${option.value}`}
+                        disabled={hasSubmitted}
+                      />
+                      <Label
+                        htmlFor={`partner-rating-${partner.id}-${option.value}`}
+                        className="font-normal cursor-pointer"
+                      >
+                        {option.label}
+                      </Label>
+                    </div>
+                  ))}
+                </RadioGroup>
+                {ratingError && (
+                  <p className="text-xs text-destructive">{ratingError}</p>
+                )}
+              </div>,
+              <div key={`${partner.id}-feedback`} className="space-y-3">
+                <Label className="text-sm font-semibold">
+                  What feedback would you like to share about your{" "}
+                  {partnerRoleLabel} {partner.preferredName}?
+                </Label>
+                <TextArea
+                  value={entry.feedback || ""}
+                  onChange={(val) =>
+                    updatePartnerField(partner.id, "feedback", val)
+                  }
+                  placeholder={`Share feedback about ${partner.preferredName}...`}
+                  maxLength={300}
+                  disabled={hasSubmitted}
+                />
+              </div>,
+            ];
+          })}
         </div>
 
         <DialogFooter>

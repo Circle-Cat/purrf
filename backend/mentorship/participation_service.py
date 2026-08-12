@@ -333,6 +333,10 @@ class ParticipationService:
         raw = participant.program_feedback
         existing = raw if isinstance(raw, dict) else {}
         has_submitted = isinstance(raw, dict)
+        partner_feedback_raw = participant.pair_feedback
+        partner_feedback = (
+            partner_feedback_raw if isinstance(partner_feedback_raw, list) else []
+        )
         self.logger.debug(
             "[ParticipationService] program_feedback retrieved for user_id=%s, round_id=%s, has_submitted=%s",
             user_context.user_id,
@@ -347,6 +351,7 @@ class ParticipationService:
             most_valuable_aspects=existing.get("most_valuable_aspects"),
             challenges=existing.get("challenges"),
             program_rating=existing.get("program_rating"),
+            partner_feedback=partner_feedback,
         )
 
     async def upsert_program_feedback(
@@ -393,9 +398,13 @@ class ParticipationService:
                 f"No participant record found for user_id={user_context.user_id}, round_id={round_id}."
             )
 
-        participant.program_feedback = feedback_data.model_dump(
+        feedback_dump = feedback_data.model_dump(
             mode="json", by_alias=False, exclude_unset=False
         )
+        partner_feedback = feedback_dump.pop("partner_feedback")
+
+        participant.program_feedback = feedback_dump
+        participant.pair_feedback = partner_feedback
         await self.mentorship_round_participants_repo.upsert_participant(
             session=session, entity=participant
         )
@@ -417,7 +426,8 @@ class ParticipationService:
         return FeedbackDto(
             participant_role=role,
             has_submitted=True,
-            **feedback_data.model_dump(by_alias=False),
+            partner_feedback=partner_feedback,
+            **feedback_dump,
         )
 
     async def _update_round_average_score(
