@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.recruiting_enums import (
+    ApplicationLockReason,
     ApplicationStage,
     PUBLICLY_VISIBLE_JOB_STATUSES,
     RecruitingEvent,
@@ -601,9 +602,12 @@ class ApplicationService:
             )
 
         await session.commit()
-        editable = self._is_editable(application, job, current_sub)
+        lock_reason = self._lock_reason(application, job, current_sub)
         return self.recruiting_mapper.to_application_dto(
-            application, current_sub, editable=editable
+            application,
+            current_sub,
+            editable=lock_reason is None,
+            lock_reason=lock_reason,
         )
 
     async def _rescreen_after_edit(
@@ -767,7 +771,7 @@ class ApplicationService:
         concurrent owner decision (freeze/advance via ``BoardService``)
         can't interleave with this edit — without the lock, an edit could
         silently overwrite the submission a decision was already based on.
-        ``_is_editable`` is evaluated after this locked load, on the
+        ``_lock_reason`` is evaluated after this locked load, on the
         now-current row.
 
         Args:
@@ -791,7 +795,7 @@ class ApplicationService:
         current_sub = await self.application_submission_repository.get_current(
             session, application_id
         )
-        if not self._is_editable(application, job, current_sub):
+        if self._lock_reason(application, job, current_sub) is not None:
             raise ValueError("application is locked once processing has started")
         self._validate_submission(job, dto)
         self._prune_hidden_answers(job, dto)
@@ -803,9 +807,12 @@ class ApplicationService:
         )
         await self._rescreen_after_edit(session, current_user, application, job, dto)
         await session.commit()
-        editable = self._is_editable(application, job, current_sub)
+        lock_reason = self._lock_reason(application, job, current_sub)
         return self.recruiting_mapper.to_application_dto(
-            application, current_sub, editable=editable
+            application,
+            current_sub,
+            editable=lock_reason is None,
+            lock_reason=lock_reason,
         )
 
     async def get_my_latest_profile(self, session, current_user: UserContextDto):
@@ -860,9 +867,12 @@ class ApplicationService:
             session, application.application_id
         )
         job = await self.job_repository.get_by_job_id(session, application.job_id)
-        editable = self._is_editable(application, job, current_sub)
+        lock_reason = self._lock_reason(application, job, current_sub)
         return self.recruiting_mapper.to_application_dto(
-            application, current_sub, editable=editable
+            application,
+            current_sub,
+            editable=lock_reason is None,
+            lock_reason=lock_reason,
         )
 
     async def list_mine(self, session, current_user) -> list:
@@ -884,8 +894,15 @@ class ApplicationService:
             for application, job in rows
         ]
 
-    def _is_editable(self, application, job, current_submission) -> bool:
-        """Whether the candidate may still edit: first-stage, untouched, unfrozen.
+    def _lock_reason(self, application, job, current_submission):
+        """Why the candidate can no longer edit, or None while they still can.
+
+        ``editable`` is derived from this rather than computed beside it, so a
+        client cannot be told it is locked and shown no reason, or the reverse.
+
+        ADVANCED is checked first because it is the more informative answer:
+        naming where the application went tells the reader more than saying
+        someone is working on it.
 
         Args:
             application (ApplicationEntity): The application container.
@@ -894,15 +911,17 @@ class ApplicationService:
                 application's current (highest) submission version.
 
         Returns:
-            bool: True while the application sits at the job's first
-                configured pipeline stage, its sub_status is still
-                ``"pending"``, and the current submission is not frozen.
+            ApplicationLockReason | None: The reason editing is closed, or
+                None while the application sits at the job's first configured
+                stage with a pending sub_status and an unfrozen submission.
         """
-        return (
-            application.stage == stage_machine.first_stage(job.pipeline_config)
-            and (application.sub_status or "pending") == "pending"
-            and not (current_submission is not None and current_submission.is_frozen)
-        )
+        if application.stage != stage_machine.first_stage(job.pipeline_config):
+            return ApplicationLockReason.ADVANCED
+        if (application.sub_status or "pending") != "pending":
+            return ApplicationLockReason.IN_REVIEW
+        if current_submission is not None and current_submission.is_frozen:
+            return ApplicationLockReason.IN_REVIEW
+        return None
 
     async def _load_owned(
         self, session, current_user, application_id, *, for_update: bool = False

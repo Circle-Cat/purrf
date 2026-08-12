@@ -79,6 +79,39 @@ export const GLOSSARY = {
 };
 
 /**
+ * Lock reasons, mirroring `ApplicationLockReason` in
+ * `backend/common/recruiting_enums.py`. Held to that enum by
+ * `tests/shared/application_lock_reasons.json`.
+ */
+export const APPLICATION_LOCK_REASONS = ["advanced", "in_review"];
+
+/**
+ * What to tell a candidate about why their application is closed to edits.
+ *
+ * The wording lives here rather than on the backend because the ADVANCED
+ * sentence names a stage, and stage labels live in this glossary. The
+ * IN_REVIEW sentence deliberately says only that work has begun: the backend
+ * collapses a moved sub-status and a frozen submission into one reason,
+ * because telling them apart would publish internal mechanics that change
+ * nothing the reader can do.
+ *
+ * @param {string|null|undefined} reason An `ApplicationLockReason` value.
+ * @param {string|null|undefined} stageLabel The stage's human label, when known.
+ * @returns {string|null} The sentence to show, or null when nothing is locked.
+ */
+export const lockReasonText = (reason, stageLabel) => {
+  if (reason === "advanced") {
+    return stageLabel
+      ? `It moved to ${stageLabel}, so it can't be edited any more.`
+      : "It moved on, so it can't be edited any more.";
+  }
+  if (reason === "in_review") {
+    return "A recruiter has started reviewing it, so it can't be edited any more.";
+  }
+  return null;
+};
+
+/**
  * Resolves an application stage to its glossary id. Activity postings have no
  * offer step and present a hired applicant as "Admitted".
  *

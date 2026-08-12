@@ -50,7 +50,10 @@ py_test(
 py_test(
     name = "application_stages_vector_test",
     srcs = ["application_stages_vector_test.py"],
-    data = ["//tests/shared:application_stages_vector"],
+    data = [
+        "//tests/shared:application_lock_reasons_vector",
+        "//tests/shared:application_stages_vector",
+    ],
     deps = [
         "//backend/common:recruiting_enums",
     ],

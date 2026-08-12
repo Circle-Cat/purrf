@@ -5,7 +5,9 @@ import { describe, it, expect } from "vitest";
 import {
   GLOSSARY,
   stageTermId,
+  lockReasonText,
   APPLICATION_STAGES,
+  APPLICATION_LOCK_REASONS,
 } from "@/pages/Recruiting/components/glossary";
 
 // Read through node rather than imported, so the fixture stays outside vite's
@@ -14,6 +16,13 @@ import {
 const STAGES = JSON.parse(
   readFileSync(
     path.resolve(process.cwd(), "../shared/application_stages.json"),
+    "utf-8",
+  ),
+);
+
+const LOCK_REASONS = JSON.parse(
+  readFileSync(
+    path.resolve(process.cwd(), "../shared/application_lock_reasons.json"),
     "utf-8",
   ),
 );
@@ -65,5 +74,43 @@ describe("glossary", () => {
   // leaves its status badge inert.
   it("holds the term the interviewer's queue renders", () => {
     expect(GLOSSARY["evaluation.no_longer_assigned"]).toBeDefined();
+  });
+});
+
+describe("lockReasonText", () => {
+  it("mirrors the shared lock-reason vector", () => {
+    expect(APPLICATION_LOCK_REASONS).toEqual(LOCK_REASONS);
+  });
+
+  it("has wording for every reason the backend can send", () => {
+    for (const reason of LOCK_REASONS) {
+      expect(
+        lockReasonText(reason, "Recruiter screening"),
+        `no wording for lock reason "${reason}"`,
+      ).toBeTruthy();
+    }
+  });
+
+  it("names the stage the application moved to", () => {
+    expect(lockReasonText("advanced", "Tech")).toBe(
+      "It moved to Tech, so it can't be edited any more.",
+    );
+  });
+
+  it("still says something when the stage label is unknown", () => {
+    expect(lockReasonText("advanced", null)).toBe(
+      "It moved on, so it can't be edited any more.",
+    );
+  });
+
+  it("does not expose which internal condition started the review", () => {
+    expect(lockReasonText("in_review", "Recruiter screening")).toBe(
+      "A recruiter has started reviewing it, so it can't be edited any more.",
+    );
+  });
+
+  it("returns null for no reason, so an editable application renders nothing", () => {
+    expect(lockReasonText(null, "Tech")).toBeNull();
+    expect(lockReasonText("not_a_reason", "Tech")).toBeNull();
   });
 });
