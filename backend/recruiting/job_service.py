@@ -7,6 +7,7 @@ from backend.repository.job_repository import JobRepository
 from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.repository.users_repository import UsersRepository
+from backend.recruiting.job_blockers import effective_pipeline_config, submit_blockers
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.job_activity_dto import JobActivityDto
@@ -320,19 +321,10 @@ class JobService:
             ValueError: If the effective config has no stage or no owner, or
                 a stored assignee/owner no longer holds its permission.
         """
-        cfg = (
-            job.pending_payload.get("pipelineConfig")
-            if job.pending_payload is not None
-            else job.pipeline_config
-        ) or {}
-        if not cfg.get("stages"):
-            raise ValueError(
-                "the posting needs at least one pipeline stage before submission"
-            )
-        if not normalized_owner_ids(cfg):
-            raise ValueError(
-                "the posting needs at least one recruiter before submission"
-            )
+        blockers = submit_blockers(job)
+        if blockers:
+            raise ValueError(blockers[0])
+        cfg = effective_pipeline_config(job)
         assignee_ids = {
             s.get("defaultAssigneeId")
             for s in cfg.get("stages", [])
