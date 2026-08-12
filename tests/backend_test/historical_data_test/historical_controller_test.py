@@ -35,6 +35,8 @@ class TestHistoricalController(unittest.TestCase):
         # Mock authentication service (middleware dependency)
         self.mock_auth_service = MagicMock()
 
+        self.mock_logger = MagicMock()
+
         # Mock business services
         self.mock_ms_member_service = AsyncMock()
         self.mock_ms_chat_service = AsyncMock()
@@ -43,9 +45,11 @@ class TestHistoricalController(unittest.TestCase):
         self.mock_datetime_utils = MagicMock()
         self.mock_gerrit_service = MagicMock()
         self.mock_google_chat_service = MagicMock()
+        self.mock_employment_sync_service = AsyncMock()
 
         # Initialize controller with mocked services
         self.controller = HistoricalController(
+            logger=self.mock_logger,
             microsoft_member_sync_service=self.mock_ms_member_service,
             microsoft_chat_history_sync_service=self.mock_ms_chat_service,
             jira_history_sync_service=self.mock_jira_service,
@@ -53,6 +57,7 @@ class TestHistoricalController(unittest.TestCase):
             date_time_utils=self.mock_datetime_utils,
             gerrit_sync_service=self.mock_gerrit_service,
             google_chat_history_sync_service=self.mock_google_chat_service,
+            employment_sync_service=self.mock_employment_sync_service,
         )
 
         # Assemble FastAPI app. Instead of the real AuthMiddleware (whose
@@ -92,6 +97,44 @@ class TestHistoricalController(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertTrue(response.json()["success"])
+
+    def test_backfill_microsoft_ldaps_also_refreshes_employment_profiles(self):
+        """The nightly member sync is where leave employment data gets refreshed."""
+        self._set_authenticated_user()
+
+        self.client.post(MICROSOFT_BACKFILL_LDAPS_ENDPOINT, headers=self.headers)
+
+        self.mock_employment_sync_service.sync_employment_profiles_to_redis.assert_awaited_once()
+
+    def test_backfill_microsoft_ldaps_survives_a_failing_employment_sync(self):
+        """The ldap cache must not be taken down by the leave module.
+
+        The swallow is only tolerable because it leaves a trace, so the log call
+        is asserted alongside the request still succeeding.
+        """
+        self._set_authenticated_user()
+        self.mock_employment_sync_service.sync_employment_profiles_to_redis.side_effect = RuntimeError(
+            "Graph rejected the employment field selection"
+        )
+
+        response = self.client.post(
+            MICROSOFT_BACKFILL_LDAPS_ENDPOINT, headers=self.headers
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertTrue(response.json()["success"])
+        self.mock_ms_member_service.sync_microsoft_members_to_redis.assert_awaited_once()
+        self.mock_logger.exception.assert_called_once()
+
+    def test_backfill_microsoft_ldaps_still_fails_when_the_member_sync_fails(self):
+        """Only the leave half is tolerated. The ldap sync itself failing is real."""
+        self._set_authenticated_user()
+        self.mock_ms_member_service.sync_microsoft_members_to_redis.side_effect = (
+            RuntimeError("Graph unreachable")
+        )
+
+        with self.assertRaises(RuntimeError):
+            self.client.post(MICROSOFT_BACKFILL_LDAPS_ENDPOINT, headers=self.headers)
 
     def test_backfill_microsoft_chat_messages_success(self):
         """Test Microsoft chat messages backfill endpoint with path parameter."""

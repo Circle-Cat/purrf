@@ -94,7 +94,24 @@ class MicrosoftAccountStatus(str, Enum):
 
 
 MICROSOFT_USER_INFO_FILTER = "endswith(mail,'circlecat.org')"
-MICROSOFT_USER_INFO_SELECT_FIELDS = ["displayName", "mail", "accountEnabled", "id"]
+MICROSOFT_USER_INFO_SELECT_FIELDS = [
+    "displayName",
+    "mail",
+    "accountEnabled",
+    "id",
+    # Employment fields for the leave system. `employeeHireDate` and
+    # `employeeLeaveDateTime` need `User-LifeCycleInfo.Read.All` on top of
+    # `User.Read.All`.
+    "jobTitle",
+    "officeLocation",
+    "employeeType",
+    "employeeHireDate",
+    "employeeLeaveDateTime",
+]
+
+# Carries each user's approver on the same request instead of one request per
+# user. `manager` is not returnable through $select.
+MICROSOFT_USER_INFO_EXPAND = ["manager($levels=1;$select=id,mail)"]
 MICROSOFT_CONSISTENCY_HEADER = "ConsistencyLevel"
 MICROSOFT_CONSISTENCY_VALUE = "eventual"
 MICROSOFT_TEAMS_MESSAGES_SORTER = ["createdDateTime desc"]
