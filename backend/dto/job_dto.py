@@ -122,6 +122,7 @@ class JobDto(BaseDto):
     was_published: bool = False
     cooldown_days: int | None = None
     reviewer_id: int | None = None
+    submit_blockers: list[str] = []
 
 
 class PublicJobDto(BaseDto):

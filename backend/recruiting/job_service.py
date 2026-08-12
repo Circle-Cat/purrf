@@ -629,7 +629,9 @@ class JobService:
             },
         )
         await session.commit()
-        return self.recruiting_mapper.to_job_dto(job, reviewer_id=reviewer_id)
+        return self.recruiting_mapper.to_job_dto(
+            job, reviewer_id=reviewer_id, submit_blockers=submit_blockers(job)
+        )
 
     async def submit_for_review(
         self,
