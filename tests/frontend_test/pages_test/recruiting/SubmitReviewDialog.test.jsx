@@ -34,6 +34,23 @@ describe("SubmitReviewDialog", () => {
     expect(screen.queryByLabelText("Reviewer")).not.toBeInTheDocument();
   });
 
+  it("says the author is not in the list, even when the list is not empty", () => {
+    render(
+      <SubmitReviewDialog
+        open
+        approvers={approvers}
+        currentUserId={1}
+        onSubmit={() => {}}
+        onOpenChange={() => {}}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "You cannot review your own posting, so you are not in this list.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("keeps the picker when someone else can approve", () => {
     render(
       <SubmitReviewDialog

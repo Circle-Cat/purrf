@@ -17,6 +17,8 @@ import PipelineConfigEditor from "@/pages/Recruiting/postings/PipelineConfigEdit
 import ScreenRulesEditor from "@/pages/Recruiting/postings/ScreenRulesEditor";
 import ProfileConfigEditor from "@/pages/Recruiting/postings/ProfileConfigEditor";
 import { validatePosting } from "@/pages/Recruiting/postings/postingValidation";
+import PendingNotice from "@/pages/Recruiting/components/PendingNotice";
+import { GLOSSARY } from "@/pages/Recruiting/components/glossary";
 
 /** A blank posting draft. */
 const BLANK = {
@@ -70,6 +72,9 @@ const PostingEditor = () => {
   // draft; a brand-new (not-yet-loaded) posting has no status yet and is
   // always editable.
   const kindLocked = Boolean(id) && jobStatus != null && jobStatus !== "draft";
+  // Editing anything that has a live version stages the change rather than
+  // applying it; a draft has nothing live to protect.
+  const isLive = jobStatus != null && jobStatus !== "draft";
 
   useEffect(() => {
     listInterviewPool()
@@ -193,6 +198,14 @@ const PostingEditor = () => {
           {id ? "Edit posting" : "New posting"}
         </h1>
       </div>
+      {/* Most authors expect editing a live posting to change what applicants
+          see immediately. It does not, and nothing on this form said so. */}
+      {isLive && (
+        <PendingNotice
+          headline={GLOSSARY["posting.staged_edit"].label}
+          detail={GLOSSARY["posting.staged_edit"].hint}
+        />
+      )}
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
         <div className="space-y-6">
           <JobBasicsSection

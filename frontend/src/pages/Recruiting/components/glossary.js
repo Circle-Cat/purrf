@@ -150,7 +150,19 @@ export const GLOSSARY = {
   },
   "review.reopen": {
     label: "Reopen Request",
-    hint: "A request to reopen a closed posting. Rejecting just aborts the request.",
+    hint: "A request to reopen a closed posting. Rejecting just aborts the request. If the posting carries a staged edit, approving republishes that proposed version rather than the one that was live before it closed.",
+  },
+  "posting.staged_edit": {
+    label: "Editing a live posting",
+    hint: "Saving stages your change without touching what applicants see. The posting stays published on its current version, you can keep re-editing the staged copy, and it only goes live once a reviewer approves it.",
+  },
+  "posting.undeletable": {
+    label: "Cannot be deleted",
+    hint: "A posting that has ever been published can never be deleted, whatever its current status. Close it instead; only a draft, or a closed posting that was never published, can be deleted.",
+  },
+  "board.lanes": {
+    label: "How the lanes read",
+    hint: "One lane per pipeline stage, with multi-session stages split into Session 1, Session 2 and so on, then the terminal lanes. Employment postings end with Offer, Hired and Rejected; activity postings have no Offer lane and label the success lane Admitted.",
   },
   "editor.basics": {
     label: "Basics",

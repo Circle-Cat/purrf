@@ -280,6 +280,22 @@ describe("BoardPage", () => {
 
   // The board guide's only real content was its three tag explanations, and
   // those now ride on the tags themselves (see ApplicantCard).
+  // Which lanes exist, and why an activity posting has no Offer lane.
+  it("explains how the lanes read", async () => {
+    api.listBoardJobs.mockResolvedValue({ data: [jobA] });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        stages: {
+          recruiter_screening: { items: [], total: 0, has_more: false },
+        },
+      },
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("How the lanes read")).toBeInTheDocument();
+  });
+
   it("shows no How it works button", async () => {
     api.listBoardJobs.mockResolvedValue({ data: [jobA] });
     api.getJobBoard.mockResolvedValue({

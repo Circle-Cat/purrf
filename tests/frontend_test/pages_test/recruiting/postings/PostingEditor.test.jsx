@@ -83,6 +83,45 @@ describe("PostingEditor", () => {
     ).toBeInTheDocument();
   });
 
+  // Authors expect editing a live posting to change what applicants see now.
+  // It does not, and nothing on this form used to say so.
+  it("says that editing a live posting only stages the change", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 5,
+        title: "Loaded",
+        description: "",
+        kind: "activity",
+        status: "published",
+        cooldownDays: null,
+        formSchema: { questions: [] },
+        pipelineConfig: { ownerId: 9, stages: [] },
+      },
+    });
+    const router = createMemoryRouter(
+      [{ path: "/postings/:id/edit", element: <PostingEditor /> }],
+      { initialEntries: ["/postings/5/edit"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(
+      await screen.findByText(/Saving stages your change/),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing about staging on a draft, which has nothing live to protect", async () => {
+    const router = createMemoryRouter(
+      [{ path: "/postings/:id/edit", element: <PostingEditor /> }],
+      { initialEntries: ["/postings/5/edit"] },
+    );
+    render(<RouterProvider router={router} />);
+    await screen.findByDisplayValue("Loaded");
+
+    expect(
+      screen.queryByText(/Saving stages your change/),
+    ).not.toBeInTheDocument();
+  });
+
   // Testers read Save as "publish"; the correction belongs where the click is.
   it("says beside Save that saving does not publish", () => {
     renderAt("/postings/new");

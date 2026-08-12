@@ -466,6 +466,14 @@ const PostingDetailPage = () => {
               Delete
             </Button>
           )}
+          {job.wasPublished && (
+            <span
+              className="text-xs text-slate-500"
+              title={GLOSSARY["posting.undeletable"].hint}
+            >
+              Published postings cannot be deleted
+            </span>
+          )}
           {submitBlockers.length > 0 &&
             (isDraft || (isPublished && job.pendingPayload != null)) &&
             submitBlockers.map((blocker) => (

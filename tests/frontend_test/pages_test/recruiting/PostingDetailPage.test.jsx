@@ -176,6 +176,58 @@ describe("PostingDetailPage", () => {
     ).toBeInTheDocument();
   });
 
+  // Delete simply stops rendering once a posting has been published, which is
+  // another "where did my button go".
+  it("says why a published posting has no Delete", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "closed",
+        wasPublished: true,
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    expect(
+      await screen.findByText("Published postings cannot be deleted"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Delete" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows Delete with no such note on a never-published closed posting", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "closed",
+        wasPublished: false,
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    expect(
+      await screen.findByRole("button", { name: "Delete" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Published postings cannot be deleted"),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows the Operate block for a canWrite viewer", async () => {
     authState.permissions = ["recruiting.job.write"];
     renderAt(1);

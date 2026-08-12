@@ -78,6 +78,23 @@ describe("ReviewQueue", () => {
     ).toBeInTheDocument();
   });
 
+  // Approving a reopen that carries a staged edit publishes the proposed
+  // version, not the one that was live -- irreversible and not guessable.
+  it("warns that approving a reopen may publish a staged edit", async () => {
+    render(
+      <ReviewQueue
+        reviews={[{ reviewId: 1, jobId: 2, jobTitle: "T", kind: "reopen" }]}
+        onOpen={() => {}}
+      />,
+    );
+
+    (await screen.findByText("Reopen Request")).focus();
+
+    expect(
+      await screen.findByText(/approving republishes that proposed version/),
+    ).toBeInTheDocument();
+  });
+
   it("falls back to the raw kind for one the glossary does not know", () => {
     render(
       <ReviewQueue

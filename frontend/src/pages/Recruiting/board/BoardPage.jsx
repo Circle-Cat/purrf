@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import TermHint from "@/pages/Recruiting/components/TermHint";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
@@ -373,72 +374,80 @@ const BoardPage = () => {
           onRetry={() => loadBoard(selectedJobId)}
         />
       ) : (
-        <div ref={lanesRef} className="flex flex-1 gap-4 overflow-x-auto pb-4">
-          {lanes.map((lane) => {
-            const cardsForStage = board[lane.stage]?.items ?? [];
-            // A stage's configured rounds can shrink after applicants are
-            // already staged past the new max (e.g. an owner edits "tech"
-            // from 3 rounds down to 2); the last round lane catches those
-            // stale higher rounds instead of silently hiding the applicant.
-            const cards =
-              lane.round == null
-                ? cardsForStage
-                : cardsForStage.filter((c) =>
-                    lane.isLastRound
-                      ? c.round >= lane.round
-                      : c.round === lane.round,
-                  );
-            const isTerminal = TERMINAL_STAGES.includes(lane.stage);
-            const colors = getStageColors(lane.stage);
-            return (
-              <div
-                key={lane.key}
-                data-testid={`lane-${lane.key}`}
-                className={`flex w-72 shrink-0 flex-col rounded-lg border ${colors.border} ${colors.tint}`}
-              >
+        <>
+          <p className="text-xs text-slate-500">
+            <TermHint id="board.lanes" />
+          </p>
+          <div
+            ref={lanesRef}
+            className="flex flex-1 gap-4 overflow-x-auto pb-4"
+          >
+            {lanes.map((lane) => {
+              const cardsForStage = board[lane.stage]?.items ?? [];
+              // A stage's configured rounds can shrink after applicants are
+              // already staged past the new max (e.g. an owner edits "tech"
+              // from 3 rounds down to 2); the last round lane catches those
+              // stale higher rounds instead of silently hiding the applicant.
+              const cards =
+                lane.round == null
+                  ? cardsForStage
+                  : cardsForStage.filter((c) =>
+                      lane.isLastRound
+                        ? c.round >= lane.round
+                        : c.round === lane.round,
+                    );
+              const isTerminal = TERMINAL_STAGES.includes(lane.stage);
+              const colors = getStageColors(lane.stage);
+              return (
                 <div
-                  className={`flex items-center justify-between rounded-t-lg border-b px-3 py-2 ${colors.header} ${colors.border}`}
+                  key={lane.key}
+                  data-testid={`lane-${lane.key}`}
+                  className={`flex w-72 shrink-0 flex-col rounded-lg border ${colors.border} ${colors.tint}`}
                 >
-                  <h2 className="text-sm font-semibold">{lane.label}</h2>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-semibold ${colors.count}`}
+                  <div
+                    className={`flex items-center justify-between rounded-t-lg border-b px-3 py-2 ${colors.header} ${colors.border}`}
                   >
-                    {isTerminal
-                      ? (board[lane.stage]?.total ?? cards.length)
-                      : cards.length}
-                  </span>
-                </div>
-                <div className="flex flex-col gap-2 p-3">
-                  {cards.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">
-                      No applicants
-                    </p>
-                  ) : (
-                    cards.map((card) => (
-                      <ApplicantCard
-                        key={card.id}
-                        card={card}
-                        showStatus={!isTerminal}
-                        highlighted={card.id === highlightedId}
-                        onOpen={handleOpen}
-                      />
-                    ))
-                  )}
-                  {isTerminal && board[lane.stage]?.has_more && (
-                    <button
-                      type="button"
-                      onClick={() => loadMore(lane.stage)}
-                      disabled={loadingMore.has(lane.stage)}
-                      className="mt-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                    <h2 className="text-sm font-semibold">{lane.label}</h2>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-semibold ${colors.count}`}
                     >
-                      Load more
-                    </button>
-                  )}
+                      {isTerminal
+                        ? (board[lane.stage]?.total ?? cards.length)
+                        : cards.length}
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-2 p-3">
+                    {cards.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        No applicants
+                      </p>
+                    ) : (
+                      cards.map((card) => (
+                        <ApplicantCard
+                          key={card.id}
+                          card={card}
+                          showStatus={!isTerminal}
+                          highlighted={card.id === highlightedId}
+                          onOpen={handleOpen}
+                        />
+                      ))
+                    )}
+                    {isTerminal && board[lane.stage]?.has_more && (
+                      <button
+                        type="button"
+                        onClick={() => loadMore(lane.stage)}
+                        disabled={loadingMore.has(lane.stage)}
+                        className="mt-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Load more
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );
