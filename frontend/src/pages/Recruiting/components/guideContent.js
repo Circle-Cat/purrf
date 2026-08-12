@@ -272,34 +272,3 @@ export const APPLICATION_OWNER_GUIDE = {
     "read.all viewers see this same panel read-only — they can't act on it.",
   ],
 };
-
-/** Evaluator-facing guide for the application detail page's rubric view (?mode=evaluate). */
-export const APPLICATION_EVALUATOR_GUIDE = {
-  title: "How evaluating works",
-  description: "Score this candidate's current interview stage.",
-  steps: [
-    {
-      title: "Fill out the rubric",
-      detail:
-        "Fields are Pass/Fail, a 1-5 score, or a notes-only field for free-form comments (some Pass/Fail and score fields also take notes).",
-    },
-    {
-      title: "Save draft",
-      detail:
-        "Keeps your progress without submitting — you can come back and change it.",
-    },
-    {
-      title: "Confirm & Submit",
-      detail: "Locks your evaluation. It can't be edited after this.",
-    },
-    {
-      title: "Comments",
-      detail:
-        "Discuss the candidate with the owner or other staff — separate from your score.",
-    },
-  ],
-  notes: [
-    "If you've been reassigned away from this stage, you'll see a message instead of the form.",
-    "You can expand the candidate's other and previous applications for this posting to see their snapshot and past evaluation scores — the audit timeline and comments there stay hidden from evaluators.",
-  ],
-};

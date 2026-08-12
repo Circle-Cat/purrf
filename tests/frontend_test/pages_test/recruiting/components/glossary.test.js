@@ -58,4 +58,12 @@ describe("glossary", () => {
   it("returns null for an unknown stage rather than throwing", () => {
     expect(stageTermId("not_a_stage", "employment")).toBeNull();
   });
+
+  // Only the badge on a non-clickable row gets a term. The Confirmed/Pending
+  // badges sit inside a row that is itself a Link, where a focusable trigger
+  // would nest one control in another -- the same reason the postings list
+  // leaves its status badge inert.
+  it("holds the term the interviewer's queue renders", () => {
+    expect(GLOSSARY["evaluation.no_longer_assigned"]).toBeDefined();
+  });
 });
