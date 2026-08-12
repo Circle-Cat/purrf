@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { rejectKindLabel } from "@/pages/Recruiting/components/rejectKindLabels";
+import TermHint from "@/pages/Recruiting/components/TermHint";
 
 /** Maps every JobStatus to its 3-state base lifecycle stage. */
 const BASE_STATE = {
@@ -44,17 +45,27 @@ const ACTION_LABELS = {
  * the "most recent" review), and every pending sub-status corresponds to
  * exactly one open review. Shared between PostingsList and PostingDetailPage.
  *
+ * With ``explain`` the Draft badge carries its own explanation, for the reader
+ * who is looking at one posting and wondering why it cannot be edited. It is
+ * opt-in because the list renders each row as a single click-through button,
+ * and a focusable trigger inside that row would nest one control in another
+ * and add a tab stop per posting.
+ *
  * @param {{job: {status: string, lastRejectComment?: string,
- *          lastRejectKind?: string}}} props
+ *          lastRejectKind?: string}, explain?: boolean}} props
  */
-const PostingStatusBadges = ({ job }) => {
+const PostingStatusBadges = ({ job, explain = false }) => {
   const baseState = BASE_STATE[job.status];
   const actionLabel = ACTION_LABELS[job.status];
 
   return (
     <>
       <Badge variant={STATE_VARIANT[baseState]}>
-        {STATE_LABELS[baseState]}
+        {explain && baseState === "draft" ? (
+          <TermHint id="posting.draft">{STATE_LABELS[baseState]}</TermHint>
+        ) : (
+          STATE_LABELS[baseState]
+        )}
       </Badge>
       {actionLabel && <Badge variant="outline">{actionLabel}</Badge>}
       {job.lastRejectComment && (

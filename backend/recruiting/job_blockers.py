@@ -1,7 +1,10 @@
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 
-NO_STAGE = "the posting needs at least one pipeline stage before submission"
-NO_RECRUITER = "the posting needs at least one recruiter before submission"
+# Written as instructions rather than as complaints, because they are read in
+# two places: raised as the API's refusal, and rendered beside the Submit
+# control as the reason it is disabled.
+NO_STAGE = "Add at least one pipeline stage before submitting for review."
+NO_RECRUITER = "Add at least one recruiter before submitting for review."
 
 
 def effective_pipeline_config(job) -> dict:

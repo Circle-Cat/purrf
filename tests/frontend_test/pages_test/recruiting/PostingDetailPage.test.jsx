@@ -82,6 +82,88 @@ describe("PostingDetailPage", () => {
     expect(within(dialog).getByText("Submit for review")).toBeInTheDocument();
   });
 
+  // The Operate row stops rendering entirely in every pending state, so the
+  // author sees a gap where the buttons were. These pin the explanation that
+  // fills it, including which of the four pending states it names.
+  it("explains the missing operate row while an initial review is pending", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "pending_review",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: 2,
+      },
+    });
+    api.listApprovers.mockResolvedValue({
+      data: [{ userId: 2, name: "Bob", email: "bob@x.com" }],
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    expect(await screen.findByText("Submitted for review")).toBeInTheDocument();
+    expect(screen.getByText("Waiting on Bob.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Editing is locked until they approve or reject."),
+    ).toBeInTheDocument();
+  });
+
+  it("names the pending action rather than always saying submitted", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "pending_close",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    expect(await screen.findByText("Close requested")).toBeInTheDocument();
+    expect(screen.queryByText("Submitted for review")).not.toBeInTheDocument();
+  });
+
+  it("does not explain a missing operate row when the row is there", async () => {
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    expect(await screen.findByText("Operate:")).toBeInTheDocument();
+    expect(screen.queryByText("Submitted for review")).not.toBeInTheDocument();
+  });
+
+  it("explains the Draft badge that a pending posting keeps", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "pending_review",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    (await screen.findByText("Draft")).focus();
+
+    expect(
+      await screen.findByText(
+        "Not yet published. A posting keeps its Draft badge while a review is open — that's why you can't edit it right now.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("shows the Operate block for a canWrite viewer", async () => {
     authState.permissions = ["recruiting.job.write"];
     renderAt(1);
@@ -511,38 +593,26 @@ describe("PostingDetailPage", () => {
     );
   });
 
-  it("disables Submit for review with a hint when the draft has no pipeline stage", async () => {
-    // Default fixture ships pipelineConfig: null — no stage configured.
-    authState.permissions = ["recruiting.job.write"];
-    renderAt(1);
-
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Submit for review" }),
-      ).toBeDisabled(),
-    );
-    expect(
-      screen.getByText(
-        "Add at least one pipeline stage before submitting for review.",
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it("disables Submit for review with a hint when the draft has no recruiter", async () => {
+  // The gate itself is JobService._revalidate_job_config's and is tested in
+  // job_blockers_test.py, including the staged-vs-live choice and the legacy
+  // ownerId shape. What is this page's own is rendering every blocker the
+  // server reports, and disabling Submit while any stands.
+  it("disables Submit for review and shows every blocker the server reports", async () => {
     api.getJob.mockResolvedValue({
       data: {
         id: 1,
         title: "Backend Engineer",
         description: "desc",
         status: "draft",
-        pipelineConfig: {
-          stages: [{ stage: "recruiter_screening", rounds: 1 }],
-          ownerIds: [],
-        },
+        pipelineConfig: null,
         screenRules: null,
         profileConfig: null,
         lastRejectComment: null,
         reviewerId: null,
+        submitBlockers: [
+          "Add at least one pipeline stage before submitting for review.",
+          "Add at least one recruiter before submitting for review.",
+        ],
       },
     });
     authState.permissions = ["recruiting.job.write"];
@@ -553,6 +623,13 @@ describe("PostingDetailPage", () => {
         screen.getByRole("button", { name: "Submit for review" }),
       ).toBeDisabled(),
     );
+    // Both, not just the first -- a reader who fixes one and clicks again
+    // should not discover the second only then.
+    expect(
+      screen.getByText(
+        "Add at least one pipeline stage before submitting for review.",
+      ),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(
         "Add at least one recruiter before submitting for review.",
@@ -560,7 +637,7 @@ describe("PostingDetailPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("enables Submit for review when the draft has a stage and a recruiter", async () => {
+  it("enables Submit for review when the server reports no blockers", async () => {
     api.getJob.mockResolvedValue({
       data: {
         id: 1,
@@ -587,34 +664,7 @@ describe("PostingDetailPage", () => {
     );
   });
 
-  it("accepts the legacy single-ownerId shape for the submit gate", async () => {
-    api.getJob.mockResolvedValue({
-      data: {
-        id: 1,
-        title: "Backend Engineer",
-        description: "desc",
-        status: "draft",
-        pipelineConfig: {
-          stages: [{ stage: "recruiter_screening", rounds: 1 }],
-          ownerId: 7,
-        },
-        screenRules: null,
-        profileConfig: null,
-        lastRejectComment: null,
-        reviewerId: null,
-      },
-    });
-    authState.permissions = ["recruiting.job.write"];
-    renderAt(1);
-
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Submit for review" }),
-      ).toBeEnabled(),
-    );
-  });
-
-  it("gates the staged-edit Submit for review on the staged pipeline, not the live one", async () => {
+  it("shows the blockers on a published posting carrying a staged edit", async () => {
     api.getJob.mockResolvedValue({
       data: {
         id: 1,
@@ -634,6 +684,9 @@ describe("PostingDetailPage", () => {
           title: "Senior Backend Engineer",
           pipelineConfig: { stages: [], ownerIds: [5] },
         },
+        submitBlockers: [
+          "Add at least one pipeline stage before submitting for review.",
+        ],
       },
     });
     authState.permissions = ["recruiting.job.write"];
