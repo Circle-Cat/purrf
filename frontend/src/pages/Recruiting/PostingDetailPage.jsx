@@ -35,18 +35,10 @@ import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicant
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import PendingNotice from "@/pages/Recruiting/components/PendingNotice";
 import { GLOSSARY, rejectTermId } from "@/pages/Recruiting/components/glossary";
-
-/**
- * What the posting is waiting on, per status with no Operate action left.
- * Naming the specific request matters: three of these four are not a
- * submission for publication, and calling them one would be wrong.
- */
-const PENDING_HEADLINE = {
-  pending_review: "Submitted for review",
-  published_pending_revision: "Revision submitted for review",
-  pending_close: "Close requested",
-  pending_reopen: "Reopen requested",
-};
+import {
+  OPERABLE_STATUSES,
+  PENDING_HEADLINE,
+} from "@/pages/Recruiting/components/jobStatus";
 
 /** Title and dispatch fn per review action kind. */
 const REVIEW_ACTION = {
@@ -182,7 +174,10 @@ const PostingDetailPage = () => {
   const isDraft = job.status === "draft";
   const isPublished = job.status === "published";
   const isClosed = job.status === "closed";
-  const hasOperateAction = isDraft || isPublished || isClosed;
+  // From the shared status map, so a status added on the backend cannot land
+  // in the gap between "has an action" and "has a headline" (jobStatus.test.js
+  // pins that it cannot).
+  const hasOperateAction = OPERABLE_STATUSES.includes(job.status);
   // Mirrors JobService.update_job's allowed_from check on the backend:
   // editing is only accepted from DRAFT/PUBLISHED/CLOSED, never from
   // PUBLISHED_PENDING_REVISION (a revision is already staged and pending

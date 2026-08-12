@@ -1,37 +1,16 @@
 import { Badge } from "@/components/ui/badge";
 import TermHint from "@/pages/Recruiting/components/TermHint";
 import { GLOSSARY, rejectTermId } from "@/pages/Recruiting/components/glossary";
-
-/** Maps every JobStatus to its 3-state base lifecycle stage. */
-const BASE_STATE = {
-  draft: "draft",
-  pending_review: "draft",
-  published: "published",
-  published_pending_revision: "published",
-  pending_close: "published",
-  pending_reopen: "closed",
-  closed: "closed",
-};
+import {
+  ACTION_TERM,
+  BASE_STATE,
+  BASE_TERM,
+} from "@/pages/Recruiting/components/jobStatus";
 
 const STATE_VARIANT = {
   draft: "secondary",
   published: "default",
   closed: "secondary",
-};
-
-/** Glossary id per base lifecycle stage. */
-const BASE_TERM = {
-  draft: "posting.draft",
-  published: "posting.published",
-  closed: "posting.closed",
-};
-
-/** Glossary id per pending sub-status; an absent JobStatus means no action badge. */
-const ACTION_TERM = {
-  pending_review: "posting.pending_review",
-  published_pending_revision: "posting.revision_pending_review",
-  pending_close: "posting.pending_close",
-  pending_reopen: "posting.pending_reopen",
 };
 
 /**

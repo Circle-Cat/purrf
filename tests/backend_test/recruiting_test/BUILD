@@ -48,11 +48,12 @@ py_test(
 )
 
 py_test(
-    name = "application_stages_vector_test",
-    srcs = ["application_stages_vector_test.py"],
+    name = "shared_enum_vectors_test",
+    srcs = ["shared_enum_vectors_test.py"],
     data = [
         "//tests/shared:application_lock_reasons_vector",
         "//tests/shared:application_stages_vector",
+        "//tests/shared:job_statuses_vector",
     ],
     deps = [
         "//backend/common:recruiting_enums",
