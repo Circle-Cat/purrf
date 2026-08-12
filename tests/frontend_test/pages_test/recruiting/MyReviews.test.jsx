@@ -44,15 +44,17 @@ describe("MyReviews", () => {
     );
   });
 
-  it("shows the How it works guide with review kinds", async () => {
+  // The review kinds are explained on the badges themselves now; see
+  // ReviewQueue.test.jsx.
+  it("shows no How it works button", async () => {
     const router = createMemoryRouter(
       [{ path: ROUTE_PATHS.RECRUITING_REVIEWS, element: <MyReviews /> }],
       { initialEntries: [ROUTE_PATHS.RECRUITING_REVIEWS] },
     );
     render(<RouterProvider router={router} />);
     await screen.findByRole("button", { name: "Review" });
-    fireEvent.click(screen.getByRole("button", { name: "How it works" }));
-    const dialog = await screen.findByRole("dialog");
-    expect(dialog).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "How it works" }),
+    ).not.toBeInTheDocument();
   });
 });

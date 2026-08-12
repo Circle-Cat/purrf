@@ -19,8 +19,6 @@ import {
 import { humanize, stageLabel } from "@/pages/Recruiting/board/stageFormat";
 import { getStageColors } from "@/pages/Recruiting/board/stageColors";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
-import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
-import { APPLICATIONS_BOARD_GUIDE } from "@/pages/Recruiting/components/guideContent";
 
 /** Offer is always inserted between an employment job's configured pipeline
  * stages and the terminal lanes — never something a job opts into (see
@@ -366,7 +364,6 @@ const BoardPage = () => {
             onSelect={handleOpen}
           />
         </div>
-        <HowItWorksDialog {...APPLICATIONS_BOARD_GUIDE} />
       </div>
 
       {!board ? (

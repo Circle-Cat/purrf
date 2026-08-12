@@ -30,8 +30,6 @@ import {
 } from "@/api/recruitingApi";
 import SubmitReviewDialog from "@/pages/Recruiting/components/SubmitReviewDialog";
 import PostingStatusBadges from "@/pages/Recruiting/components/PostingStatusBadges";
-import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
-import { POSTINGS_GUIDE } from "@/pages/Recruiting/components/guideContent";
 import PostingConfigSummary from "@/pages/Recruiting/components/PostingConfigSummary";
 import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
@@ -349,9 +347,7 @@ const PostingDetailPage = () => {
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold text-slate-900">{job.title}</h1>
           <PostingStatusBadges job={job} explain />
-          <div className="ml-auto">
-            <HowItWorksDialog {...POSTINGS_GUIDE} />
-          </div>
+          <div className="ml-auto"></div>
         </div>
         <p className="text-sm text-slate-600">{job.description}</p>
         {ownerIds.length > 0 && (

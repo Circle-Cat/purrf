@@ -71,15 +71,15 @@ describe("PostingDetailPage", () => {
 
   // The lifecycle guide belongs wherever the lifecycle actions are, and every
   // one of them lives on this page rather than on the list it links from.
-  it("shows the How it works guide with the posting lifecycle", async () => {
+  // The lifecycle narration is gone: the badges carry the states, the pending
+  // notice carries what is being waited on, and the submit blockers carry what
+  // is missing -- each where the reader already is.
+  it("shows no How it works button", async () => {
     renderAt(1);
     await screen.findByRole("heading", { name: "Backend Engineer" });
-    fireEvent.click(screen.getByRole("button", { name: "How it works" }));
-    const dialog = screen.getByRole("dialog");
     expect(
-      within(dialog).getByRole("heading", { name: "How postings work" }),
-    ).toBeInTheDocument();
-    expect(within(dialog).getByText("Submit for review")).toBeInTheDocument();
+      screen.queryByRole("button", { name: "How it works" }),
+    ).not.toBeInTheDocument();
   });
 
   it("explains the missing operate row while an initial review is pending", async () => {

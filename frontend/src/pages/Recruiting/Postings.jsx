@@ -9,8 +9,6 @@ import { PERMISSIONS } from "@/constants/Permissions";
 import { listJobs, listJobOwners } from "@/api/recruitingApi";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import PostingsList from "@/pages/Recruiting/components/PostingsList";
-import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
-import { POSTINGS_GUIDE } from "@/pages/Recruiting/components/guideContent";
 
 /** Postings browse page: status + Recruiter list, click-through to the unified detail page. */
 const Postings = () => {
@@ -54,7 +52,6 @@ const Postings = () => {
             do with what is on the page, so it should not be somewhere the
             reader has to scroll a long list of postings to reach. */}
         <div className="flex items-center gap-2">
-          <HowItWorksDialog {...POSTINGS_GUIDE} />
           <Button
             disabled={!canWrite}
             onClick={() => navigate(ROUTE_PATHS.RECRUITING_POSTING_NEW)}
