@@ -148,20 +148,24 @@ export const GLOSSARY = {
     label: "Reopen Request",
     hint: "A request to reopen a closed posting. Rejecting just aborts the request.",
   },
-  "concept.recruiter": {
-    label: "Recruiter",
-    hint: "Staff who can advance applicants through every stage of this posting's pipeline.",
+  "editor.basics": {
+    label: "Basics",
+    hint: "Title, description, posting type, an optional mentorship role, and a cooldown before a rejected applicant may re-apply. Posting type and mentorship role lock once the posting is published.",
   },
-  "concept.stage": {
-    label: "Stage",
-    hint: "One step of the interview pipeline, e.g. recruiter screening or tech. Each can require several sessions.",
+  "editor.application_form": {
+    label: "Application form",
+    hint: "The questions applicants answer -- short or long text, single or multi choice, or exact-match text.",
   },
-  "concept.screen_rule": {
-    label: "Screening rule",
-    hint: "An automatic condition checked against an applicant's answers or verified email domain the moment they apply. It can reject them, qualify them, or hire them outright with no human review.",
+  "editor.pipeline": {
+    label: "Interview pipeline",
+    hint: "Pick one or more recruiters -- staff who can advance applicants through every stage of this posting -- then add the stages applicants move through, in order. A stage can require several sessions.",
   },
-  "concept.profile_requirement": {
-    label: "Profile requirement",
+  "editor.screening": {
+    label: "Machine screening",
+    hint: "Optional conditions checked the moment an applicant applies, matched against their answers or their verified email domain. Each can reject them, qualify them like an unscreened applicant, or hire them outright with no human review.",
+  },
+  "editor.profile": {
+    label: "Profile requirements",
     hint: "Whether education, work experience and resume are Required, Optional or Off for applicants.",
   },
 };
@@ -211,6 +215,27 @@ export const lockReasonText = (reason, stageLabel) => {
   }
   return null;
 };
+
+/**
+ * Resolves a rejected review's kind to a glossary id, falling back for a kind
+ * this frontend does not know yet (a backend-added JobReviewKind).
+ *
+ * @param {string | null | undefined} kind The `lastRejectKind` from JobDto.
+ * @returns {string} A glossary id that always resolves.
+ */
+export const rejectTermId = (kind) =>
+  GLOSSARY[`reject.${kind}`] ? `reject.${kind}` : "reject.unknown";
+
+/**
+ * Resolves a JobReviewKind to its glossary id, or null for a kind this
+ * frontend does not know yet, so the caller can fall back to the raw value
+ * rather than render nothing.
+ *
+ * @param {string} kind A JobReviewKind value.
+ * @returns {string|null}
+ */
+export const reviewTermId = (kind) =>
+  GLOSSARY[`review.${kind}`] ? `review.${kind}` : null;
 
 /**
  * Resolves an application stage to its glossary id. Activity postings have no

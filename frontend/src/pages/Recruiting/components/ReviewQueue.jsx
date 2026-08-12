@@ -2,18 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import EmptyState from "@/pages/Recruiting/components/EmptyState";
 import TermHint from "@/pages/Recruiting/components/TermHint";
-import { GLOSSARY } from "@/pages/Recruiting/components/glossary";
-
-/**
- * Resolves a JobReviewKind to its glossary id, or null for a kind this
- * frontend does not know yet (a backend-added JobReviewKind), which falls
- * back to showing the raw kind rather than nothing.
- *
- * @param {string} kind A JobReviewKind value.
- * @returns {string|null}
- */
-const reviewTermId = (kind) =>
-  GLOSSARY[`review.${kind}`] ? `review.${kind}` : null;
+import { reviewTermId } from "@/pages/Recruiting/components/glossary";
 
 /**
  * The reviewer's pending reviews. Each row's kind badge carries what

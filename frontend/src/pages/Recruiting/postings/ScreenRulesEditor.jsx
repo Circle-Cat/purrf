@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import TermHint from "@/pages/Recruiting/components/TermHint";
 import {
   Select,
   SelectContent,
@@ -126,7 +127,9 @@ const ScreenRulesEditor = ({
 
   return (
     <div className="space-y-3">
-      <p className="text-sm font-medium text-slate-700">Machine screening</p>
+      <p className="text-sm font-medium text-slate-700">
+        <TermHint id="editor.screening" />
+      </p>
 
       <div className="space-y-2">
         {emailRules.map((rule) => (

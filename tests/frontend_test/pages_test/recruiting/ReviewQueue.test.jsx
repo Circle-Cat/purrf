@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import ReviewQueue from "@/pages/Recruiting/components/ReviewQueue";
 
 describe("ReviewQueue", () => {
@@ -63,7 +62,6 @@ describe("ReviewQueue", () => {
   });
 
   it("explains what approving or rejecting each request kind does", async () => {
-    const user = userEvent.setup();
     render(
       <ReviewQueue
         reviews={[{ reviewId: 1, jobId: 2, jobTitle: "T", kind: "close" }]}

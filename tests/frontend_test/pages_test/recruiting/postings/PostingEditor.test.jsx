@@ -1,11 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
@@ -61,14 +55,38 @@ const renderAt = (path) => {
 };
 
 describe("PostingEditor", () => {
-  it("shows the How it works guide explaining the form", () => {
+  // The dialog is gone: each of its six steps described exactly one section
+  // of this form, and a heading the reader is already looking at beats a
+  // modal they have to find, open, and then search for the right paragraph in.
+  it("labels every section of the form with its own explanation", async () => {
     renderAt("/postings/new");
-    fireEvent.click(screen.getByRole("button", { name: "How it works" }));
-    const dialog = screen.getByRole("dialog");
+
+    for (const heading of [
+      "Basics",
+      "Application form",
+      "Interview pipeline",
+      "Machine screening",
+      "Profile requirements",
+    ]) {
+      expect(screen.getByText(heading)).toBeInTheDocument();
+    }
     expect(
-      within(dialog).getByRole("heading", { name: "How posting setup works" }),
+      screen.queryByRole("button", { name: "How it works" }),
+    ).not.toBeInTheDocument();
+
+    (await screen.findByText("Interview pipeline")).focus();
+
+    expect(
+      await screen.findByText(
+        "Pick one or more recruiters -- staff who can advance applicants through every stage of this posting -- then add the stages applicants move through, in order. A stage can require several sessions.",
+      ),
     ).toBeInTheDocument();
-    expect(within(dialog).getByText("Recruiter")).toBeInTheDocument();
+  });
+
+  // Testers read Save as "publish"; the correction belongs where the click is.
+  it("says beside Save that saving does not publish", () => {
+    renderAt("/postings/new");
+    expect(screen.getByText(/Saving never publishes\./)).toBeInTheDocument();
   });
 
   // The form is long; from the top of the page, saving means scrolling back up

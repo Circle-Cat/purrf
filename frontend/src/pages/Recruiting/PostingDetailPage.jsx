@@ -29,16 +29,14 @@ import {
   decideReview,
 } from "@/api/recruitingApi";
 import SubmitReviewDialog from "@/pages/Recruiting/components/SubmitReviewDialog";
-import PostingStatusBadges, {
-  rejectTermId,
-} from "@/pages/Recruiting/components/PostingStatusBadges";
+import PostingStatusBadges from "@/pages/Recruiting/components/PostingStatusBadges";
 import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
 import { POSTINGS_GUIDE } from "@/pages/Recruiting/components/guideContent";
 import PostingConfigSummary from "@/pages/Recruiting/components/PostingConfigSummary";
 import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import PendingNotice from "@/pages/Recruiting/components/PendingNotice";
-import { GLOSSARY } from "@/pages/Recruiting/components/glossary";
+import { GLOSSARY, rejectTermId } from "@/pages/Recruiting/components/glossary";
 
 /**
  * What the posting is waiting on, per status with no Operate action left.

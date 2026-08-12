@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import TermHint from "@/pages/Recruiting/components/TermHint";
-import { GLOSSARY } from "@/pages/Recruiting/components/glossary";
+import { GLOSSARY, rejectTermId } from "@/pages/Recruiting/components/glossary";
 
 /** Maps every JobStatus to its 3-state base lifecycle stage. */
 const BASE_STATE = {
@@ -35,16 +35,6 @@ const ACTION_TERM = {
 };
 
 /**
- * Resolves a rejected review's kind to a glossary id, falling back for a kind
- * this frontend does not know yet (a backend-added JobReviewKind).
- *
- * @param {string | null | undefined} kind The `lastRejectKind` from JobDto.
- * @returns {string} A glossary id that always resolves.
- */
-export const rejectTermId = (kind) =>
-  GLOSSARY[`reject.${kind}`] ? `reject.${kind}` : "reject.unknown";
-
-/**
  * State badge (Draft/Published/Closed), plus an optional action badge when a
  * review is currently pending, plus an optional reject-reason badge when the
  * posting's most recent review was a rejection. The rejection *comment* is
@@ -75,8 +65,7 @@ const PostingStatusBadges = ({ job, explain = false }) => {
     : null;
 
   /** The label alone, or the label with its hint attached. */
-  const label = (id) =>
-    explain ? <TermHint id={id} /> : GLOSSARY[id]?.label;
+  const label = (id) => (explain ? <TermHint id={id} /> : GLOSSARY[id]?.label);
 
   return (
     <>
@@ -84,9 +73,7 @@ const PostingStatusBadges = ({ job, explain = false }) => {
         {label(baseTerm)}
       </Badge>
       {actionTerm && <Badge variant="outline">{label(actionTerm)}</Badge>}
-      {rejectTerm && (
-        <Badge variant="destructive">{label(rejectTerm)}</Badge>
-      )}
+      {rejectTerm && <Badge variant="destructive">{label(rejectTerm)}</Badge>}
     </>
   );
 };
