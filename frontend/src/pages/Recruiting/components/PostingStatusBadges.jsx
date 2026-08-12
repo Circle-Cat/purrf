@@ -37,7 +37,7 @@ const STATE_VARIANT = {
  *          lastRejectKind?: string}, explain?: boolean}} props
  */
 const PostingStatusBadges = ({ job, explain = false }) => {
-  const baseTerm = BASE_TERM[BASE_STATE[job.status]];
+  const baseTerm = BASE_TERM[job.status];
   const actionTerm = ACTION_TERM[job.status];
   const rejectTerm = job.lastRejectComment
     ? rejectTermId(job.lastRejectKind)

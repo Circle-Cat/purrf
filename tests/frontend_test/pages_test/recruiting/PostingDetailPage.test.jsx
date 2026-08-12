@@ -136,6 +136,21 @@ describe("PostingDetailPage", () => {
     expect(screen.queryByText("Submitted for review")).not.toBeInTheDocument();
   });
 
+  // The bug this pins: one term keyed on the shared "draft" base state told a
+  // plain, freely-editable draft that it could not be edited.
+  it("tells a plain draft it is editable", async () => {
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    (await screen.findByText("Draft")).focus();
+
+    expect(
+      await screen.findByText(
+        "Not published yet, and only you can see it. Edit it as much as you like, then submit it for review when it is ready.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("explains the Draft badge that a pending posting keeps", async () => {
     api.getJob.mockResolvedValue({
       data: {
@@ -156,7 +171,7 @@ describe("PostingDetailPage", () => {
 
     expect(
       await screen.findByText(
-        "Not yet published. A posting keeps its Draft badge while a review is open — that's why you can't edit it right now.",
+        "Still unpublished. It keeps the Draft badge while its review is open, which is why you cannot edit it right now.",
       ),
     ).toBeInTheDocument();
   });

@@ -74,7 +74,11 @@ export const GLOSSARY = {
   },
   "posting.draft": {
     label: "Draft",
-    hint: "Not yet published. A posting keeps its Draft badge while a review is open — that's why you can't edit it right now.",
+    hint: "Not published yet, and only you can see it. Edit it as much as you like, then submit it for review when it is ready.",
+  },
+  "posting.draft_in_review": {
+    label: "Draft",
+    hint: "Still unpublished. It keeps the Draft badge while its review is open, which is why you cannot edit it right now.",
   },
   "posting.published": {
     label: "Published",

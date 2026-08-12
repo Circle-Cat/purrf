@@ -49,15 +49,25 @@ describe("job status coverage", () => {
   });
 
   // Without this, a new status renders a badge with no label at all.
-  it("resolves every status to a base state with a glossary term", () => {
+  it("resolves every status to a base state and a badge term", () => {
     for (const status of STATUSES) {
-      const base = BASE_STATE[status];
-      expect(base, `"${status}" has no base state`).toBeTruthy();
+      expect(BASE_STATE[status], `"${status}" has no base state`).toBeTruthy();
       expect(
-        GLOSSARY[BASE_TERM[base]],
-        `base state "${base}" has no glossary term`,
+        GLOSSARY[BASE_TERM[status]],
+        `"${status}" has no base badge term`,
       ).toBeDefined();
     }
+  });
+
+  // draft and pending_review share the Draft badge but are opposites: one is
+  // freely editable, the other frozen. A term keyed on their shared base state
+  // is necessarily false for one of them, which is exactly the bug this pins.
+  it("gives draft and a draft under review different explanations", () => {
+    expect(BASE_TERM.draft).not.toBe(BASE_TERM.pending_review);
+    expect(GLOSSARY[BASE_TERM.draft].label).toBe("Draft");
+    expect(GLOSSARY[BASE_TERM.pending_review].label).toBe("Draft");
+    expect(GLOSSARY[BASE_TERM.draft].hint).not.toMatch(/can ?not edit/i);
+    expect(GLOSSARY[BASE_TERM.pending_review].hint).toMatch(/can ?not edit/i);
   });
 
   // Every pending status also shows an action badge beside the base one.

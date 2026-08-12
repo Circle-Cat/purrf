@@ -37,10 +37,20 @@ export const PENDING_HEADLINE = {
   pending_reopen: "Reopen requested",
 };
 
-/** Glossary id per base lifecycle stage. */
+/**
+ * Glossary id per status, for the base badge. Keyed by status rather than by
+ * base state because `draft` and `pending_review` share the `Draft` badge but
+ * need opposite explanations -- one is freely editable, the other is frozen --
+ * so a single term keyed on the shared base state is wrong for whichever case
+ * it was not written for.
+ */
 export const BASE_TERM = {
   draft: "posting.draft",
+  pending_review: "posting.draft_in_review",
   published: "posting.published",
+  published_pending_revision: "posting.published",
+  pending_close: "posting.published",
+  pending_reopen: "posting.closed",
   closed: "posting.closed",
 };
 
