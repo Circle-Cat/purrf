@@ -1,3 +1,6 @@
+from datetime import datetime, timezone
+from dateutil.parser import isoparse
+from dateutil.relativedelta import relativedelta
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.matches_dto import MatchesDto
 from backend.dto.user_context_dto import UserContextDto
@@ -354,6 +357,64 @@ class ParticipationService:
             partner_feedback=partner_feedback,
         )
 
+    async def _feedback_closes_at(
+        self, session: AsyncSession, round_id: int
+    ) -> datetime | None:
+        """
+        Resolve the moment feedback stops being editable for a round.
+
+        `feedback_deadline_at` is optional in the round form, so it falls back to
+        a month past the (required) meetings deadline -- the same rule the
+        dashboard uses to decide when to stop offering the form. A round with
+        neither date configured has no cutoff at all rather than an immediate
+        one, so a half-filled timeline cannot lock participants out.
+
+        Args:
+            session (AsyncSession): Active async database session.
+            round_id (int): The mentorship round ID.
+
+        Returns:
+            datetime | None: The UTC cutoff, or None when the round sets no dates.
+        """
+        round_entity = await self.mentorship_round_repository.get_by_round_id(
+            session, round_id
+        )
+        timeline = getattr(round_entity, "description", None) or {}
+
+        raw = timeline.get("feedback_deadline_at")
+        offset = relativedelta()
+        if not raw:
+            raw = timeline.get("meetings_completion_deadline_at")
+            offset = relativedelta(months=1)
+        if not raw:
+            return None
+
+        closes_at = isoparse(raw) + offset
+        # Timelines predating timezone-aware storage are recorded in UTC.
+        if closes_at.tzinfo is None:
+            closes_at = closes_at.replace(tzinfo=timezone.utc)
+        return closes_at
+
+    async def _assert_feedback_open(self, session: AsyncSession, round_id: int) -> None:
+        """
+        Reject writes once the round's feedback window has closed.
+
+        Args:
+            session (AsyncSession): Active async database session.
+            round_id (int): The mentorship round ID.
+
+        Raises:
+            ValueError: If the round's feedback window has already closed.
+        """
+        closes_at = await self._feedback_closes_at(session=session, round_id=round_id)
+        if closes_at and datetime.now(timezone.utc) > closes_at:
+            self.logger.warning(
+                "[ParticipationService] feedback window closed for round_id=%s, closed_at=%s",
+                round_id,
+                closes_at.isoformat(),
+            )
+            raise ValueError("The feedback deadline for this round has passed.")
+
     async def upsert_program_feedback(
         self,
         session: AsyncSession,
@@ -365,6 +426,9 @@ class ParticipationService:
         Save or overwrite the current user's program feedback for a specific round,
         then recompute the round's average score for the participant's role.
 
+        Answers stay editable for as long as the round's feedback window is open,
+        so this is a plain overwrite rather than a one-shot submission.
+
         Args:
             session (AsyncSession): Active async database session.
             user_context (UserContextDto): Authenticated user context.
@@ -375,7 +439,8 @@ class ParticipationService:
             FeedbackDto: The saved feedback DTO.
 
         Raises:
-            ValueError: If the user has no participant record for this round.
+            ValueError: If the user has no participant record for this round, or
+                if the round's feedback window has already closed.
         """
 
         self.logger.debug(
@@ -397,6 +462,8 @@ class ParticipationService:
             raise ValueError(
                 f"No participant record found for user_id={user_context.user_id}, round_id={round_id}."
             )
+
+        await self._assert_feedback_open(session=session, round_id=round_id)
 
         feedback_dump = feedback_data.model_dump(
             mode="json", by_alias=False, exclude_unset=False
