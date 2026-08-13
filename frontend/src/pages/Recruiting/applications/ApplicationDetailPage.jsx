@@ -2118,7 +2118,7 @@ const ApplicationDetailPage = () => {
             <SelectTrigger aria-label="Rejection reason" className="w-full">
               <SelectValue placeholder="Select a reason…" />
             </SelectTrigger>
-            <SelectContent className="z-[110]">
+            <SelectContent>
               {REJECT_REASONS.map((reason) => (
                 <SelectItem key={reason} value={reason}>
                   {reason}
