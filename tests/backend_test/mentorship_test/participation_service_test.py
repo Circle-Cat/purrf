@@ -496,6 +496,9 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             "challenges": None,
             "program_rating": 5,
         }
+        mock_participant.pair_feedback = [
+            {"partner_id": 10, "rating": 5, "feedback": "Great mentor"}
+        ]
         self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
             mock_participant
         )
@@ -512,6 +515,10 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.most_valuable_aspects, "networking")
         self.assertEqual(result.program_rating, 5)
         self.assertEqual(result.participant_role, ParticipantRole.MENTEE)
+        self.assertEqual(len(result.partner_feedback), 1)
+        self.assertEqual(result.partner_feedback[0].partner_id, 10)
+        self.assertEqual(result.partner_feedback[0].rating, 5)
+        self.assertEqual(result.partner_feedback[0].feedback, "Great mentor")
         self.logger.debug.assert_called()
 
     async def test_get_program_feedback_without_submission(self):
@@ -525,6 +532,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
         mock_participant.participant_role = ParticipantRole.MENTOR
         mock_participant.program_feedback = None
+        mock_participant.pair_feedback = None
         self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
             mock_participant
         )
@@ -538,6 +546,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.has_submitted)
         self.assertIsNone(result.sessions_completed)
         self.assertIsNone(result.program_rating)
+        self.assertEqual(result.partner_feedback, [])
 
     async def test_get_program_feedback_raises_when_no_participant(self):
         """Raises ValueError and logs error when participant record does not exist."""
