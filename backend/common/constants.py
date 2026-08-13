@@ -99,9 +99,6 @@ MICROSOFT_USER_INFO_SELECT_FIELDS = [
     "mail",
     "accountEnabled",
     "id",
-    # Employment fields for the leave system. `employeeHireDate` and
-    # `employeeLeaveDateTime` need `User-LifeCycleInfo.Read.All` on top of
-    # `User.Read.All`.
     "jobTitle",
     "officeLocation",
     "employeeType",
@@ -109,8 +106,6 @@ MICROSOFT_USER_INFO_SELECT_FIELDS = [
     "employeeLeaveDateTime",
 ]
 
-# Carries each user's approver on the same request instead of one request per
-# user. `manager` is not returnable through $select.
 MICROSOFT_USER_INFO_EXPAND = ["manager($levels=1;$select=id,mail)"]
 MICROSOFT_CONSISTENCY_HEADER = "ConsistencyLevel"
 MICROSOFT_CONSISTENCY_VALUE = "eventual"
