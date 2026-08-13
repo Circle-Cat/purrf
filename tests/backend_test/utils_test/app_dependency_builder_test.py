@@ -76,6 +76,7 @@ from backend.common.environment_constants import (
 @patch("backend.utils.app_dependency_builder.MicrosoftChatAnalyticsService")
 @patch("backend.utils.app_dependency_builder.LdapService")
 @patch("backend.utils.app_dependency_builder.InternalActivityController")
+@patch("backend.utils.app_dependency_builder.EmploymentSyncService")
 @patch("backend.utils.app_dependency_builder.MicrosoftMemberSyncService")
 @patch("backend.utils.app_dependency_builder.HistoricalController")
 @patch("backend.utils.app_dependency_builder.ConsumerController")
@@ -119,6 +120,7 @@ class TestAppDependencyBuilder(TestCase):
         mock_consumer_controller_cls,
         mock_historical_controller_cls,
         mock_microsoft_member_sync_service_cls,
+        mock_employment_sync_service_cls,
         mock_internal_activity_controller_cls,
         mock_ldap_service_cls,
         mock_microsoft_chat_analytics_service_cls,
@@ -362,6 +364,12 @@ class TestAppDependencyBuilder(TestCase):
             microsoft_service=mock_microsoft_service.return_value,
             retry_utils=mock_retry_utils_instance,
         )
+        mock_employment_sync_service_cls.assert_called_once_with(
+            logger=mock_logger,
+            redis_client=mock_redis_client,
+            microsoft_service=mock_microsoft_service.return_value,
+            retry_utils=mock_retry_utils_instance,
+        )
         mock_microsoft_chat_history_sync_service_cls.assert_called_once_with(
             logger=mock_logger,
             microsoft_service=mock_microsoft_service.return_value,
@@ -402,6 +410,7 @@ class TestAppDependencyBuilder(TestCase):
             google_chat_message_utils=mock_google_chat_messages_utils.return_value,
         )
         mock_historical_controller_cls.assert_called_once_with(
+            logger=mock_logger,
             microsoft_member_sync_service=mock_microsoft_member_sync_service_cls.return_value,
             microsoft_chat_history_sync_service=mock_microsoft_chat_history_sync_service_cls.return_value,
             jira_history_sync_service=mock_jira_history_service,
@@ -409,6 +418,7 @@ class TestAppDependencyBuilder(TestCase):
             date_time_utils=mock_date_time_util_cls.return_value,
             gerrit_sync_service=mock_gerrit_sync_service,
             google_chat_history_sync_service=mock_google_chat_history_sync_service,
+            employment_sync_service=mock_employment_sync_service_cls.return_value,
         )
         mock_ldap_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -745,6 +755,10 @@ class TestAppDependencyBuilder(TestCase):
         self.assertEqual(
             builder.microsoft_member_sync_service,
             mock_microsoft_member_sync_service_cls.return_value,
+        )
+        self.assertEqual(
+            builder.employment_sync_service,
+            mock_employment_sync_service_cls.return_value,
         )
         self.assertEqual(
             builder.microsoft_chat_history_sync_service,
