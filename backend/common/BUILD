@@ -209,6 +209,11 @@ py_library(
 )
 
 py_library(
+    name = "leave_enums",
+    srcs = ["leave_enums.py"],
+)
+
+py_library(
     name = "identity_type",
     srcs = [
         "identity_type.py",

@@ -34,6 +34,30 @@ py_test(
 )
 
 py_test(
+    name = "leave_holiday_entity_test",
+    srcs = ["leave_holiday_entity_test.py"],
+    deps = ["//backend/entity:entities"],
+)
+
+py_test(
+    name = "leave_ledger_entity_test",
+    srcs = ["leave_ledger_entity_test.py"],
+    deps = [
+        "//backend/common:leave_enums",
+        "//backend/entity:entities",
+    ],
+)
+
+py_test(
+    name = "leave_request_entity_test",
+    srcs = ["leave_request_entity_test.py"],
+    deps = [
+        "//backend/common:leave_enums",
+        "//backend/entity:entities",
+    ],
+)
+
+py_test(
     name = "notification_entity_test",
     srcs = ["notification_entity_test.py"],
     deps = [
