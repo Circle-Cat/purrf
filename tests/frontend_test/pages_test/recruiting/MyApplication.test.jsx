@@ -59,9 +59,6 @@ const renderAt = (jobId) => {
 };
 
 describe("MyApplication", () => {
-  // A candidate reading `Status: Recruiter screening` learns an internal enum
-  // name and nothing about whether anything is expected of them, which is
-  // their actual question.
   it("explains the stage the candidate is looking at", async () => {
     api.getMyApplication.mockResolvedValue({
       data: {
