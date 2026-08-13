@@ -2,7 +2,6 @@ import { Card, CardContent, CardTitle, CardHeader } from "@/components/ui/card";
 import { Target } from "lucide-react";
 import MentorshipRegistrationDialog from "@/pages/PersonalDashboard/components/MentorshipRegistrationDialog";
 import MatchingResultDialog from "@/pages/PersonalDashboard/components/MatchingResultDialog";
-import MentorshipFeedbackDialog from "@/pages/PersonalDashboard/components/MentorshipFeedbackDialog";
 
 export default function MentorshipInfoBanner({
   registration,
@@ -20,6 +19,14 @@ export default function MentorshipInfoBanner({
   matchResultRoundName,
   canViewMatch,
 }) {
+  // TODO(PUR-569): remove these two props. Feedback moved to
+  // MentorshipParticipantsCard, so nothing here reads them any more, but
+  // deleting them from the parameter list above collides with the missing
+  // hiredMentorshipRole on prod and the promote workflow cannot resolve
+  // conflicts. Drop them once prod has caught up.
+  void feedbackRoundId;
+  void feedbackRoundName;
+
   // Do not render the banner if there is no registration data,
   // registration is closed, and feedback is not enabled
   if (!isRegistrationOpen && !registration && !isFeedbackEnabled) return null;
@@ -77,13 +84,8 @@ export default function MentorshipInfoBanner({
                 />
               </>
             )}
-
-            {/* Feedback dialog button */}
-            <MentorshipFeedbackDialog
-              roundId={feedbackRoundId}
-              roundName={feedbackRoundName}
-              isFeedbackEnabled={isFeedbackEnabled}
-            />
+            {/* Feedback now lives on MentorshipParticipantsCard, next to
+                Submit Meeting Info, so it follows the round selected there. */}
           </div>
         </div>
       </CardContent>
