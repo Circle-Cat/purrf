@@ -16,6 +16,7 @@ from msgraph import GraphServiceClient
 from backend.common.constants import (
     MICROSOFT_USER_INFO_FILTER,
     MICROSOFT_USER_INFO_SELECT_FIELDS,
+    MICROSOFT_USER_INFO_EXPAND,
     MICROSOFT_CONSISTENCY_HEADER,
     MICROSOFT_CONSISTENCY_VALUE,
     MICROSOFT_TEAMS_MESSAGES_SORTER,
@@ -69,6 +70,7 @@ class MicrosoftService:
         query_params = UsersRequestBuilder.UsersRequestBuilderGetQueryParameters(
             filter=MICROSOFT_USER_INFO_FILTER,
             select=MICROSOFT_USER_INFO_SELECT_FIELDS,
+            expand=MICROSOFT_USER_INFO_EXPAND,
         )
         request_configuration = RequestConfiguration(query_parameters=query_params)
         request_configuration.headers.add(

@@ -33,6 +33,7 @@ from backend.consumers.gerrit_processor_service import GerritProcessorService
 from backend.consumers.pubsub_pull_manager import PubSubPullManager
 from backend.consumers.pubsub_sync_pull_service import PubSubSyncPullService
 from backend.historical_data.historical_controller import HistoricalController
+from backend.leave.employment_sync_service import EmploymentSyncService
 from backend.historical_data.microsoft_member_sync_service import (
     MicrosoftMemberSyncService,
 )
@@ -377,6 +378,12 @@ class AppDependencyBuilder:
             microsoft_service=self.microsoft_service,
             retry_utils=self.retry_utils,
         )
+        self.employment_sync_service = EmploymentSyncService(
+            logger=self.logger,
+            redis_client=self.redis_client,
+            microsoft_service=self.microsoft_service,
+            retry_utils=self.retry_utils,
+        )
         self.microsoft_chat_history_sync_service = MicrosoftChatHistorySyncService(
             logger=self.logger,
             microsoft_service=self.microsoft_service,
@@ -415,6 +422,7 @@ class AppDependencyBuilder:
             google_chat_message_utils=self.google_chat_messages_utils,
         )
         self.historical_controller = HistoricalController(
+            logger=self.logger,
             microsoft_member_sync_service=self.microsoft_member_sync_service,
             microsoft_chat_history_sync_service=self.microsoft_chat_history_sync_service,
             jira_history_sync_service=self.jira_history_sync_service,
@@ -422,6 +430,7 @@ class AppDependencyBuilder:
             date_time_utils=self.date_time_util,
             gerrit_sync_service=self.gerrit_sync_service,
             google_chat_history_sync_service=self.google_chat_history_sync_service,
+            employment_sync_service=self.employment_sync_service,
         )
         self.microsoft_chat_analytics_service = MicrosoftChatAnalyticsService(
             logger=self.logger,

@@ -477,8 +477,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     ).toBeInTheDocument();
   });
 
-  it("assignee-only viewer in evaluator mode sees the How-it-works guide for evaluating", async () => {
-    const user = userEvent.setup();
+  it("assignee-only viewer in evaluator mode sees no How-it-works button", async () => {
     authState.userId = ASSIGNEE_ID;
     api.getApplicationDetail.mockResolvedValue({
       data: makeDetail({ isOwner: false, assigneeId: ASSIGNEE_ID }),
@@ -499,11 +498,9 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     renderEvaluatorPage();
     await waitLoaded();
 
-    await user.click(screen.getByRole("button", { name: "How it works" }));
-
     expect(
-      screen.getByRole("heading", { name: "How evaluating works" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "How it works" }),
+    ).not.toBeInTheDocument();
   });
 
   it("a viewer who is neither owner/read.all nor the current-stage assignee sees no How-it-works button", async () => {

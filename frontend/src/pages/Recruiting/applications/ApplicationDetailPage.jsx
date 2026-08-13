@@ -86,10 +86,7 @@ import { useAuth } from "@/context/auth/AuthContext";
 import { PERMISSIONS } from "@/constants/Permissions";
 import { formatInTz, resolveViewerTimezone } from "@/utils/dateTime";
 import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
-import {
-  APPLICATION_OWNER_GUIDE,
-  APPLICATION_EVALUATOR_GUIDE,
-} from "@/pages/Recruiting/components/guideContent";
+import { APPLICATION_OWNER_GUIDE } from "@/pages/Recruiting/components/guideContent";
 import InterviewMeetingCard from "@/pages/Recruiting/applications/InterviewMeetingCard";
 import InterviewMeetingDialog from "@/pages/Recruiting/applications/InterviewMeetingDialog";
 import BackToBoardLink from "@/pages/Recruiting/applications/BackToBoardLink";
@@ -1679,13 +1676,13 @@ const ApplicationDetailPage = () => {
     interviewPool.find((u) => u.userId === detail.assigneeId)?.name ??
     (detail.assigneeId != null ? `User ${detail.assigneeId}` : null);
 
-  const guide = evaluatorMode
-    ? showRubric
-      ? APPLICATION_EVALUATOR_GUIDE
-      : null
-    : detail.canView
-      ? APPLICATION_OWNER_GUIDE
-      : null;
+  // Evaluators get no dialog: every question theirs answered is now answered
+  // where it arises -- the rubric's own controls show which fields take a
+  // score and which take notes, the Confirm & Submit dialog states that a
+  // submission cannot be edited, and a reassigned evaluator is told so in
+  // place of the form.
+  const guide =
+    !evaluatorMode && detail.canView ? APPLICATION_OWNER_GUIDE : null;
 
   return (
     <div className="flex flex-col gap-6 p-6">

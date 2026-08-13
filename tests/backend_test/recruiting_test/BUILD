@@ -40,6 +40,26 @@ py_test(
 )
 
 py_test(
+    name = "job_blockers_test",
+    srcs = ["job_blockers_test.py"],
+    deps = [
+        "//backend/recruiting",
+    ],
+)
+
+py_test(
+    name = "application_stages_vector_test",
+    srcs = ["application_stages_vector_test.py"],
+    data = [
+        "//tests/shared:application_lock_reasons_vector",
+        "//tests/shared:application_stages_vector",
+    ],
+    deps = [
+        "//backend/common:recruiting_enums",
+    ],
+)
+
+py_test(
     name = "form_visibility_test",
     srcs = ["form_visibility_test.py"],
     data = ["//tests/shared:form_visibility_vectors"],

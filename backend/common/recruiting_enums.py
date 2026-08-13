@@ -84,6 +84,25 @@ class ApplicationStage(StrEnum):
     BLACKLISTED = "blacklisted"
 
 
+class ApplicationLockReason(StrEnum):
+    """Why a candidate can no longer edit their own application.
+
+    Two members, though ``ApplicationService._lock_reason`` tests three
+    conditions: a sub_status the recruiter has moved on and a frozen
+    submission are the same fact to the candidate -- someone has started
+    work -- and telling them apart would publish internal mechanics that
+    change nothing the reader can do.
+
+    The candidate-facing wording lives in the frontend glossary, not here,
+    because the ADVANCED sentence names the stage and only the glossary holds
+    stage labels. ``tests/shared/application_lock_reasons.json`` pins this set
+    so a member added here without wording turns the frontend red.
+    """
+
+    ADVANCED = "advanced"
+    IN_REVIEW = "in_review"
+
+
 # Work-email domains whose holders are auto-approved as mentors (lowercased, no "@").
 # Add Google subsidiaries (e.g. "youtube.com", "deepmind.com") here if they should qualify.
 MENTOR_ALLOWED_EMAIL_DOMAINS: frozenset[str] = frozenset({"google.com"})

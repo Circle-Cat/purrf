@@ -18,6 +18,7 @@ from backend.entity.application_submission_entity import ApplicationSubmissionEn
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
 from backend.common.recruiting_enums import (
+    ApplicationLockReason,
     ApplicationStage,
     JobKind,
     JobStatus,
@@ -2378,3 +2379,112 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         await self.service.submit(self.session, self._ctx(), dto)
 
         self.notification_repo.create.assert_not_awaited()
+
+
+class LockReasonTest(unittest.TestCase):
+    """Why a candidate can no longer edit -- the one source `editable` derives from."""
+
+    def setUp(self):
+        self.service = ApplicationService(
+            application_repository=MagicMock(),
+            application_submission_repository=MagicMock(),
+            job_repository=MagicMock(),
+            users_repository=MagicMock(),
+            recruiting_mapper=RecruitingMapper(),
+            application_assignment_repository=MagicMock(),
+            notification_repository=MagicMock(),
+            user_emails_repository=MagicMock(),
+            onboarding_training_service=MagicMock(),
+        )
+        self.job = JobEntity(
+            kind=JobKind.EMPLOYMENT,
+            title="T",
+            status=JobStatus.PUBLISHED,
+            pipeline_config={
+                "stages": [
+                    {"stage": ApplicationStage.RECRUITER_SCREENING, "rounds": 1},
+                    {"stage": ApplicationStage.TECH, "rounds": 1},
+                ]
+            },
+        )
+
+    def _app(self, stage=ApplicationStage.RECRUITER_SCREENING, sub_status="pending"):
+        return SimpleNamespace(stage=stage, sub_status=sub_status)
+
+    def _sub(self, is_frozen=False):
+        return SimpleNamespace(is_frozen=is_frozen)
+
+    def test_untouched_first_stage_is_not_locked(self):
+        self.assertIsNone(self.service._lock_reason(self._app(), self.job, self._sub()))
+
+    def test_a_later_stage_is_locked_as_advanced(self):
+        self.assertEqual(
+            self.service._lock_reason(
+                self._app(stage=ApplicationStage.TECH), self.job, self._sub()
+            ),
+            ApplicationLockReason.ADVANCED,
+        )
+
+    def test_a_moved_sub_status_is_locked_as_in_review(self):
+        self.assertEqual(
+            self.service._lock_reason(
+                self._app(sub_status="screening"), self.job, self._sub()
+            ),
+            ApplicationLockReason.IN_REVIEW,
+        )
+
+    def test_a_frozen_submission_is_locked_as_in_review(self):
+        self.assertEqual(
+            self.service._lock_reason(self._app(), self.job, self._sub(is_frozen=True)),
+            ApplicationLockReason.IN_REVIEW,
+        )
+
+    def test_advanced_wins_over_in_review_because_it_says_more(self):
+        self.assertEqual(
+            self.service._lock_reason(
+                self._app(stage=ApplicationStage.TECH, sub_status="screening"),
+                self.job,
+                self._sub(is_frozen=True),
+            ),
+            ApplicationLockReason.ADVANCED,
+        )
+
+    def test_a_null_sub_status_counts_as_pending(self):
+        self.assertIsNone(
+            self.service._lock_reason(self._app(sub_status=None), self.job, self._sub())
+        )
+
+    def test_no_submission_yet_is_not_frozen(self):
+        self.assertIsNone(self.service._lock_reason(self._app(), self.job, None))
+
+
+class ApplicationDtoLockConsistencyTest(unittest.TestCase):
+    """`editable` and `lockReason` cannot contradict each other."""
+
+    def setUp(self):
+        self.mapper = RecruitingMapper()
+        self.app = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.TECH, current_round=1
+        )
+        self.app.application_id = 7
+
+    def test_a_lock_reason_forces_editable_false_even_if_the_caller_says_true(self):
+        dto = self.mapper.to_application_dto(
+            self.app, None, editable=True, lock_reason=ApplicationLockReason.ADVANCED
+        )
+        self.assertFalse(dto.editable)
+        self.assertEqual(dto.lock_reason, ApplicationLockReason.ADVANCED)
+
+    def test_owner_facing_callers_get_locked_with_no_reason(self):
+        dto = self.mapper.to_application_dto(self.app, None)
+        self.assertFalse(dto.editable)
+        self.assertIsNone(dto.lock_reason)
+
+    def test_no_reason_and_editable_true_stays_editable(self):
+        dto = self.mapper.to_application_dto(self.app, None, editable=True)
+        self.assertTrue(dto.editable)
+        self.assertIsNone(dto.lock_reason)
+
+
+if __name__ == "__main__":
+    unittest.main()

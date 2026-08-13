@@ -2,16 +2,14 @@ import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import { GLOSSARY, stageTermId } from "@/pages/Recruiting/components/glossary";
 
-/** Human-readable label for an ApplicationStage value, e.g. "hired" ->
- * "Hired" — except on activity postings, whose `hired` stage is presented
- * as "Admitted" (display-only rename). */
-const formatStageLabel = (stage, jobKind) => {
-  if (!stage) return "";
-  if (jobKind === "activity" && stage === "hired") return "Admitted";
-  const words = stage.split("_").join(" ");
-  return words[0].toUpperCase() + words.slice(1);
-};
+/** Human-readable label for an ApplicationStage value, from the recruiting
+ * glossary so this card and the application page cannot name a stage
+ * differently. Rendered as plain text: the row is itself a button, and a
+ * tooltip trigger inside it would nest one control in another. */
+const formatStageLabel = (stage, jobKind) =>
+  GLOSSARY[stageTermId(stage, jobKind)]?.label ?? "";
 
 /**
  * MyApplicationsCard

@@ -2,12 +2,18 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import EmptyState from "@/pages/Recruiting/components/EmptyState";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
+import TermHint from "@/pages/Recruiting/components/TermHint";
+import { GLOSSARY, stageTermId } from "@/pages/Recruiting/components/glossary";
 import { listMyEvaluations } from "@/api/recruitingApi";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
-/** Human label for a stage key, e.g. "recruiter_screening" -> "Recruiter screening". */
+/** Human label for a stage key, from the recruiting glossary. Falls back to
+ * humanising the key so a pipeline stage the glossary has not caught up with
+ * still reads as words rather than as an enum. */
 const stageLabel = (key) =>
+  GLOSSARY[stageTermId(key, "employment")]?.label ??
   String(key ?? "")
     .replace(/_/g, " ")
     .replace(/^\w/, (c) => c.toUpperCase());
@@ -57,9 +63,11 @@ const MyEvaluations = () => {
         My Interview Evaluations
       </h1>
       {evaluations.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          You have no assigned evaluations.
-        </p>
+        <EmptyState
+          what="Interviews you've been assigned to appear here."
+          how="A recruiter assigns you to an interview session from their applications board."
+          who="You can't add yourself — ask the posting's recruiter."
+        />
       ) : (
         <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
           {evaluations.map((row) => {
@@ -81,7 +89,9 @@ const MyEvaluations = () => {
                   {row.isConfirmed ? "Confirmed" : "Pending"}
                 </Badge>
                 {!row.isCurrent && (
-                  <Badge variant="secondary">No longer assigned</Badge>
+                  <Badge variant="secondary">
+                    <TermHint id="evaluation.no_longer_assigned" />
+                  </Badge>
                 )}
               </>
             );

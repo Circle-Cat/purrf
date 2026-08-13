@@ -59,6 +59,86 @@ const renderAt = (jobId) => {
 };
 
 describe("MyApplication", () => {
+  it("explains the stage the candidate is looking at", async () => {
+    api.getMyApplication.mockResolvedValue({
+      data: {
+        id: 9,
+        stage: "recruiter_screening",
+        editable: false,
+        lockReason: "in_review",
+        current: { submission: {} },
+      },
+    });
+    renderAt(5);
+
+    (await screen.findByText("Recruiter screening")).focus();
+
+    expect(
+      await screen.findByText(
+        "A recruiter is reviewing your application. Nothing is needed from you right now.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says why the application can no longer be edited", async () => {
+    api.getMyApplication.mockResolvedValue({
+      data: {
+        id: 9,
+        stage: "recruiter_screening",
+        editable: false,
+        lockReason: "in_review",
+        current: { submission: {} },
+      },
+    });
+    renderAt(5);
+
+    expect(
+      await screen.findByText("Your application is locked"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "A recruiter has started reviewing it, so it can't be edited any more.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("names the stage it moved to when that is why it is locked", async () => {
+    api.getMyApplication.mockResolvedValue({
+      data: {
+        id: 9,
+        stage: "tech",
+        editable: false,
+        lockReason: "advanced",
+        current: { submission: {} },
+      },
+    });
+    renderAt(5);
+
+    expect(
+      await screen.findByText(
+        "It moved to Tech, so it can't be edited any more.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows no lock notice when the server sent no reason", async () => {
+    api.getMyApplication.mockResolvedValue({
+      data: {
+        id: 9,
+        stage: "hired",
+        editable: false,
+        lockReason: null,
+        current: { submission: {} },
+      },
+    });
+    renderAt(5);
+
+    await screen.findByText("Admitted");
+    expect(
+      screen.queryByText("Your application is locked"),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders the ApplicationForm as a new submission when there is no existing application", async () => {
     api.getMyApplication.mockResolvedValue({ data: null });
     renderAt(5);
@@ -109,9 +189,7 @@ describe("MyApplication", () => {
     // Exact string: stage labels are sentence case ("Recruiter screening",
     // not "Recruiter Screening").
     await waitFor(() =>
-      expect(
-        screen.getByText("Status: Recruiter screening"),
-      ).toBeInTheDocument(),
+      expect(screen.getByText("Recruiter screening")).toBeInTheDocument(),
     );
     expect(
       screen.queryByRole("button", { name: /submit application/i }),
@@ -218,7 +296,7 @@ describe("MyApplication", () => {
     renderAt(5);
 
     await waitFor(() =>
-      expect(screen.getByText("Status: Rejected")).toBeInTheDocument(),
+      expect(screen.getByText("Rejected")).toBeInTheDocument(),
     );
     fireEvent.click(screen.getByRole("button", { name: /reapply/i }));
 
@@ -249,7 +327,7 @@ describe("MyApplication", () => {
     renderAt(5);
 
     await waitFor(() =>
-      expect(screen.getByText("Status: Rejected")).toBeInTheDocument(),
+      expect(screen.getByText("Rejected")).toBeInTheDocument(),
     );
     fireEvent.click(screen.getByRole("button", { name: /reapply/i }));
 
@@ -320,7 +398,7 @@ describe("MyApplication", () => {
     renderAt(5);
     // Activity posting fixture: `hired` renders as "Admitted".
     await waitFor(() =>
-      expect(screen.getByText("Status: Admitted")).toBeInTheDocument(),
+      expect(screen.getByText("Admitted")).toBeInTheDocument(),
     );
     expect(
       screen.queryByRole("button", { name: /reapply/i }),
@@ -348,7 +426,7 @@ describe("MyApplication", () => {
     });
     renderAt(5);
     await waitFor(() =>
-      expect(screen.getByText("Status: Applied")).toBeInTheDocument(),
+      expect(screen.getByText("Applied")).toBeInTheDocument(),
     );
     expect(
       screen.queryByRole("button", { name: /submit application/i }),
@@ -375,7 +453,7 @@ describe("MyApplication", () => {
     // The job fixture is an activity posting, whose `hired` stage is
     // presented as "Admitted" (display-only rename).
     await waitFor(() =>
-      expect(screen.getByText("Status: Admitted")).toBeInTheDocument(),
+      expect(screen.getByText("Admitted")).toBeInTheDocument(),
     );
     expect(
       screen.queryByRole("button", { name: /submit application/i }),

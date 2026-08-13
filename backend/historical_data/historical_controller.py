@@ -32,6 +32,7 @@ class GerritBackfillRequest(BaseModel):
 class HistoricalController:
     def __init__(
         self,
+        logger,
         microsoft_member_sync_service,
         microsoft_chat_history_sync_service,
         jira_history_sync_service,
@@ -39,11 +40,13 @@ class HistoricalController:
         date_time_utils,
         gerrit_sync_service,
         google_chat_history_sync_service,
+        employment_sync_service,
     ):
         """
         Initialize the HistoricalController with required dependencies.
 
         Args:
+            logger: Logger instance.
             microsoft_member_sync_service: MicrosoftMemberSyncService instance.
             microsoft_chat_history_sync_service: MicrosoftChatHistorySyncService instance.
             jira_history_sync_service: JiraHistorySyncService instance
@@ -51,7 +54,9 @@ class HistoricalController:
             date_time_utils: DateTimeUtil instance.
             gerrit_sync_service: GerritSyncService instance.
             google_chat_history_sync_service: GoogleChatHistorySyncService instance
+            employment_sync_service: EmploymentSyncService instance.
         """
+        self.logger = logger
         self.microsoft_member_sync_service = microsoft_member_sync_service
         self.microsoft_chat_history_sync_service = microsoft_chat_history_sync_service
         self.jira_history_sync_service = jira_history_sync_service
@@ -59,6 +64,7 @@ class HistoricalController:
         self.date_time_utils = date_time_utils
         self.gerrit_sync_service = gerrit_sync_service
         self.google_chat_history_sync_service = google_chat_history_sync_service
+        self.employment_sync_service = employment_sync_service
 
         self.router = APIRouter(tags=["history"])
 
@@ -174,8 +180,26 @@ class HistoricalController:
         )
 
     async def backfill_microsoft_ldaps(self):
-        """API endpoint to backfill Microsoft 365 user LDAP information into Redis."""
+        """API endpoint to backfill Microsoft 365 user LDAP information into Redis.
+
+        Also refreshes the leave system's employment profiles, which must run
+        second: they read the group membership the sync above writes.
+
+        A failing employment refresh is logged and swallowed. The ldap cache is
+        read by recruiting and notifications and must not be taken down by the
+        leave module; a day-stale leave cache is the cheaper loss. A failing ldap
+        sync still fails the request.
+        """
         await self.microsoft_member_sync_service.sync_microsoft_members_to_redis()
+
+        try:
+            await self.employment_sync_service.sync_employment_profiles_to_redis()
+        except Exception:
+            self.logger.exception(
+                "Employment profile refresh failed; leave data is stale but the "
+                "LDAP sync above succeeded."
+            )
+
         return api_response(
             success=True,
             message="Microsoft 365 user LDAP information backfilled successfully.",
