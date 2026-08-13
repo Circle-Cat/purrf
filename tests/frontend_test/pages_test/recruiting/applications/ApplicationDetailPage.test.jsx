@@ -480,6 +480,20 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     ).not.toBeInTheDocument();
   });
 
+  // Wording lives in the glossary and is asserted there; what this pins is
+  // that the Status label is a hint trigger at all, since the consequence it
+  // carries -- the candidate loses their edit -- has nowhere else to be read.
+  it("hangs the edit-lock hint on the Status label", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByRole("button", { name: "Status:" })).toBeInTheDocument();
+  });
+
   it("states how far blacklisting reaches before it is confirmed", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;

@@ -72,6 +72,12 @@ export const GLOSSARY = {
     label: "No longer assigned",
     hint: "This session was reassigned to someone else, so it is read-only for you.",
   },
+  // Written for the recruiter, not the candidate: these buttons decide
+  // someone else's edit access, and nothing else on the page says so.
+  "application.edit_lock": {
+    label: "Status",
+    hint: "Moving off Pending closes the application to the candidate's own edits, as do advancing the stage and confirming an evaluation. It is one-way — setting the status back to Pending does not give their edit access back.",
+  },
   "posting.draft": {
     label: "Draft",
     hint: "Not published yet, and only you can see it. Edit it as much as you like, then submit it for review when it is ready.",

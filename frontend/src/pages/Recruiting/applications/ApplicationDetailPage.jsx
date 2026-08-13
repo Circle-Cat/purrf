@@ -42,6 +42,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
+import TermHint from "@/pages/Recruiting/components/TermHint";
 import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
 import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
 import AnswersSection from "@/pages/Recruiting/components/AnswersSection";
@@ -177,6 +178,10 @@ const advanceTarget = (jobStages, stage, kind) => {
  * without one), so it only becomes clickable once the current round has a
  * confirmed evaluation.
  *
+ * The label carries a hint because these buttons decide something the
+ * recruiter is not otherwise told: the first move off "pending" freezes the
+ * candidate's submission, and nothing brings the edit back.
+ *
  * @param {{stage: string, subStatus: string|null, disabled: boolean,
  *          evaluatedDisabled: boolean,
  *          onSelect: (value: string) => void}} props
@@ -192,7 +197,9 @@ const SubStatusSelector = ({
   if (!options) return null;
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-sm font-medium text-slate-700">Status:</span>
+      <span className="text-sm font-medium text-slate-700">
+        <TermHint id="application.edit_lock">Status:</TermHint>
+      </span>
       {options.map((value) => {
         const isActive = value === subStatus;
         return (
