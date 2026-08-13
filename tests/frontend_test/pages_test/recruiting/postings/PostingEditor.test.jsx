@@ -55,9 +55,6 @@ const renderAt = (path) => {
 };
 
 describe("PostingEditor", () => {
-  // The dialog is gone: each of its six steps described exactly one section
-  // of this form, and a heading the reader is already looking at beats a
-  // modal they have to find, open, and then search for the right paragraph in.
   it("labels every section of the form with its own explanation", async () => {
     renderAt("/postings/new");
 
@@ -83,8 +80,6 @@ describe("PostingEditor", () => {
     ).toBeInTheDocument();
   });
 
-  // Authors expect editing a live posting to change what applicants see now.
-  // It does not, and nothing on this form used to say so.
   it("says that editing a live posting only stages the change", async () => {
     api.getJob.mockResolvedValue({
       data: {
@@ -122,7 +117,6 @@ describe("PostingEditor", () => {
     ).not.toBeInTheDocument();
   });
 
-  // Testers read Save as "publish"; the correction belongs where the click is.
   it("says beside Save that saving does not publish", () => {
     renderAt("/postings/new");
     expect(screen.getByText(/Saving never publishes\./)).toBeInTheDocument();

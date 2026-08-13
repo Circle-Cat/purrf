@@ -27,10 +27,6 @@ describe("job status coverage", () => {
     expect(JOB_STATUSES).toEqual(STATUSES);
   });
 
-  // The gap this closes: a status in neither set renders a PendingNotice whose
-  // headline is undefined -- "this is locked" with no answer to "waiting on
-  // what". A status in both would render an Operate row and an explanation of
-  // its absence at the same time.
   it("puts every status in exactly one of operable or pending", () => {
     for (const status of STATUSES) {
       const operable = OPERABLE_STATUSES.includes(status);
@@ -48,7 +44,6 @@ describe("job status coverage", () => {
     }
   });
 
-  // Without this, a new status renders a badge with no label at all.
   it("resolves every status to a base state and a badge term", () => {
     for (const status of STATUSES) {
       expect(BASE_STATE[status], `"${status}" has no base state`).toBeTruthy();
@@ -59,9 +54,6 @@ describe("job status coverage", () => {
     }
   });
 
-  // draft and pending_review share the Draft badge but are opposites: one is
-  // freely editable, the other frozen. A term keyed on their shared base state
-  // is necessarily false for one of them, which is exactly the bug this pins.
   it("gives draft and a draft under review different explanations", () => {
     expect(BASE_TERM.draft).not.toBe(BASE_TERM.pending_review);
     expect(GLOSSARY[BASE_TERM.draft].label).toBe("Draft");
@@ -70,7 +62,6 @@ describe("job status coverage", () => {
     expect(GLOSSARY[BASE_TERM.pending_review].hint).toMatch(/can ?not edit/i);
   });
 
-  // Every pending status also shows an action badge beside the base one.
   it("gives every pending status its own action-badge term", () => {
     for (const status of Object.keys(PENDING_HEADLINE)) {
       expect(

@@ -278,8 +278,6 @@ describe("BoardPage", () => {
     );
   });
 
-  // The board guide's only real content was its three tag explanations, and
-  // those now ride on the tags themselves (see ApplicantCard).
   // Which lanes exist, and why an activity posting has no Offer lane.
   it("explains how the lanes read", async () => {
     api.listBoardJobs.mockResolvedValue({ data: [jobA] });

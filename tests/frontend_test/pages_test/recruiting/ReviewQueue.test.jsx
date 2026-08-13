@@ -40,9 +40,6 @@ describe("ReviewQueue", () => {
     expect(screen.getByText("Reopen Request")).toBeInTheDocument();
   });
 
-  // "No pending reviews." told a reviewer nothing they could act on. An
-  // empty queue is the normal state, and the useful facts are that someone
-  // else has to name them and that they can never review their own work.
   it("explains an empty queue rather than only stating it is empty", () => {
     render(<ReviewQueue reviews={[]} onOpen={() => {}} />);
 
@@ -78,8 +75,6 @@ describe("ReviewQueue", () => {
     ).toBeInTheDocument();
   });
 
-  // Approving a reopen that carries a staged edit publishes the proposed
-  // version, not the one that was live -- irreversible and not guessable.
   it("warns that approving a reopen may publish a staged edit", async () => {
     render(
       <ReviewQueue

@@ -44,8 +44,6 @@ describe("MyReviews", () => {
     );
   });
 
-  // The review kinds are explained on the badges themselves now; see
-  // ReviewQueue.test.jsx.
   it("shows no How it works button", async () => {
     const router = createMemoryRouter(
       [{ path: ROUTE_PATHS.RECRUITING_REVIEWS, element: <MyReviews /> }],

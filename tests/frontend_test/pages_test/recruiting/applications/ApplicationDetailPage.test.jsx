@@ -461,12 +461,6 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     expect(screen.queryByText(/^Assigned to:/)).not.toBeInTheDocument();
   });
 
-  // The owner dialog is gone too. Everything it said is already stated by the
-  // control it described: the disabled Blacklist button carries the permission
-  // it needs, the Assignee required dialog says what to do first, and the
-  // disabled Evaluated sub-status says why it is disabled. The one fact with
-  // nowhere else to live -- how far blacklisting reaches -- moved into the
-  // confirmation, which is the moment it matters.
   it("owner-only viewer sees no How-it-works button", async () => {
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({
@@ -481,8 +475,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
   });
 
   // Wording lives in the glossary and is asserted there; what this pins is
-  // that the Status label is a hint trigger at all, since the consequence it
-  // carries -- the candidate loses their edit -- has nowhere else to be read.
+  // that the Status label is a hint trigger at all.
   it("hangs the edit-lock hint on the Status label", async () => {
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({

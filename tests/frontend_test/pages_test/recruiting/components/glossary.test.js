@@ -77,8 +77,7 @@ describe("glossary", () => {
   });
 
   // The three conditions ApplicationService._lock_reason tests, said once in
-  // the recruiter's words. It is the only place the owner side states that a
-  // sub-status move costs the candidate their edit, and that it is one-way.
+  // the recruiter's words.
   it("tells the recruiter that a status move locks the candidate out", () => {
     const { hint } = GLOSSARY["application.edit_lock"];
 

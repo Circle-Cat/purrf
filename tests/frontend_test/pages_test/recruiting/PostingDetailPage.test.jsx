@@ -71,9 +71,6 @@ describe("PostingDetailPage", () => {
 
   // The lifecycle guide belongs wherever the lifecycle actions are, and every
   // one of them lives on this page rather than on the list it links from.
-  // The lifecycle narration is gone: the badges carry the states, the pending
-  // notice carries what is being waited on, and the submit blockers carry what
-  // is missing -- each where the reader already is.
   it("shows no How it works button", async () => {
     renderAt(1);
     await screen.findByRole("heading", { name: "Backend Engineer" });
@@ -136,8 +133,6 @@ describe("PostingDetailPage", () => {
     expect(screen.queryByText("Submitted for review")).not.toBeInTheDocument();
   });
 
-  // The bug this pins: one term keyed on the shared "draft" base state told a
-  // plain, freely-editable draft that it could not be edited.
   it("tells a plain draft it is editable", async () => {
     authState.permissions = ["recruiting.job.write"];
     renderAt(1);
@@ -176,8 +171,6 @@ describe("PostingDetailPage", () => {
     ).toBeInTheDocument();
   });
 
-  // Delete simply stops rendering once a posting has been published, which is
-  // another "where did my button go".
   it("says why a published posting has no Delete", async () => {
     api.getJob.mockResolvedValue({
       data: {
