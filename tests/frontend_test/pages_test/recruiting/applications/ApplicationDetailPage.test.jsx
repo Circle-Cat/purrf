@@ -477,10 +477,6 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     ).toBeInTheDocument();
   });
 
-  // An evaluator gets no dialog at all: the rubric's controls, the
-  // Confirm & Submit dialog and the reassigned message each answer their
-  // question where it arises, so a modal would only be a second copy to keep
-  // in sync.
   it("assignee-only viewer in evaluator mode sees no How-it-works button", async () => {
     authState.userId = ASSIGNEE_ID;
     api.getApplicationDetail.mockResolvedValue({

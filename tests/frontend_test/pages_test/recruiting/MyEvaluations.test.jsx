@@ -31,10 +31,6 @@ const renderPage = () => {
 };
 
 describe("MyEvaluations page", () => {
-  // This page is the interviewer's whole entry point, and an empty one is what
-  // they see before anyone has assigned them anything. "You have no assigned
-  // evaluations" reads as "nothing is expected of me", when the truth is that
-  // a named other person has to act first.
   it("explains an empty queue rather than only stating it is empty", async () => {
     api.listMyEvaluations.mockResolvedValue({ data: [] });
     renderPage();
