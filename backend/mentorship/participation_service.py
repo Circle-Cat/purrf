@@ -373,7 +373,6 @@ class ParticipationService:
         return FeedbackDto(
             participant_role=role,
             has_submitted=has_submitted,
-            sessions_completed=existing.get("sessions_completed"),
             most_valuable_aspects=existing.get("most_valuable_aspects"),
             challenges=existing.get("challenges"),
             program_rating=existing.get("program_rating"),
