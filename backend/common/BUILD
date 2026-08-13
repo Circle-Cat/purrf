@@ -58,7 +58,6 @@ py_library(
     deps = [
         ":constants",
         ":environment_constants",
-        ":logger",
         "@pypi//google_api_python_client",
         "@pypi//google_apps_meet",
         "@pypi//google_auth_oauthlib",
@@ -84,7 +83,7 @@ py_library(
     srcs = ["redis_client.py"],
     deps = [
         ":constants",
-        ":logger",
+        ":environment_constants",
         "@pypi//redis",
         "@pypi//tenacity",
     ],
@@ -129,7 +128,7 @@ py_library(
         "jira_client.py",
     ],
     deps = [
-        ":logger",
+        ":environment_constants",
         "@pypi//jira",
         "@pypi//tenacity",
     ],
@@ -154,7 +153,6 @@ py_library(
         "//backend/schemas",
     ],
     deps = [
-        ":logger",
         "@pypi//jsonschema",
     ],
 )
@@ -162,9 +160,6 @@ py_library(
 py_library(
     name = "asyncio_event_loop_manager",
     srcs = ["asyncio_event_loop_manager.py"],
-    deps = [
-        ":logger",
-    ],
 )
 
 py_library(

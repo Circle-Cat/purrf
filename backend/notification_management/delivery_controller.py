@@ -5,10 +5,7 @@ from http import HTTPStatus
 from fastapi import APIRouter, Request, Response
 
 from backend.common.api_endpoints import NOTIFICATION_DELIVER_ENDPOINT
-from backend.common.logger import get_logger
 from backend.notification_management.delivery_service import DeliveryOutcome
-
-logger = get_logger()
 
 
 class NotificationDeliveryController:
@@ -25,6 +22,7 @@ class NotificationDeliveryController:
 
     def __init__(
         self,
+        logger,
         delivery_service,
         publisher,
         topic_path,
@@ -34,6 +32,7 @@ class NotificationDeliveryController:
     ):
         """
         Args:
+            logger: Logger instance.
             delivery_service (DeliveryService): Claims, renders and sends
                 the notification named in the push envelope.
             publisher: Pub/Sub publisher client, reused to republish any
@@ -42,6 +41,7 @@ class NotificationDeliveryController:
                 go to.
             database: Async session provider.
         """
+        self.logger = logger
         self.delivery_service = delivery_service
         self.publisher = publisher
         self.topic_path = topic_path
@@ -60,7 +60,7 @@ class NotificationDeliveryController:
         """Deliver the notification named in a Pub/Sub push envelope."""
         authorization = request.headers.get("Authorization", "")
         if not authorization.startswith("Bearer "):
-            logger.warning("[Delivery] request carried no token; refusing")
+            self.logger.warning("[Delivery] request carried no token; refusing")
             return Response(status_code=HTTPStatus.FORBIDDEN)
 
         try:
@@ -68,18 +68,20 @@ class NotificationDeliveryController:
                 authorization.removeprefix("Bearer ")
             )
         except ValueError as e:
-            logger.warning("[Delivery] token rejected: %s", e)
+            self.logger.warning("[Delivery] token rejected: %s", e)
             return Response(status_code=HTTPStatus.FORBIDDEN)
 
         if not self.pusher_subs:
-            logger.warning(
+            self.logger.warning(
                 "[Delivery] NOTIFICATION_PUSHER_SUBS is missing or empty -- "
                 "refusing every caller until it is configured"
             )
             return Response(status_code=HTTPStatus.FORBIDDEN)
 
         if claims.get("sub") not in self.pusher_subs:
-            logger.warning("[Delivery] token sub is not a provisioned pusher; refusing")
+            self.logger.warning(
+                "[Delivery] token sub is not a provisioned pusher; refusing"
+            )
             return Response(status_code=HTTPStatus.FORBIDDEN)
 
         envelope = await request.json()
@@ -87,7 +89,7 @@ class NotificationDeliveryController:
             data = envelope["message"]["data"]
             notification_id = json.loads(base64.b64decode(data))["notification_id"]
         except (KeyError, TypeError, ValueError):
-            logger.warning("[Delivery] unparseable envelope; acking")
+            self.logger.warning("[Delivery] unparseable envelope; acking")
             return Response(status_code=HTTPStatus.OK)
 
         async with self.database.session() as session:
