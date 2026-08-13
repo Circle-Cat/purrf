@@ -63,3 +63,11 @@ py_test(
         "//backend/leave:leave_calendar_controller",
     ],
 )
+
+py_test(
+    name = "leave_accrual_test",
+    srcs = ["leave_accrual_test.py"],
+    deps = [
+        "//backend/leave:leave_accrual",
+    ],
+)
