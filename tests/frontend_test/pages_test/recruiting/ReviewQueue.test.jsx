@@ -40,8 +40,65 @@ describe("ReviewQueue", () => {
     expect(screen.getByText("Reopen Request")).toBeInTheDocument();
   });
 
-  it("shows an empty state", () => {
+  it("explains an empty queue rather than only stating it is empty", () => {
     render(<ReviewQueue reviews={[]} onOpen={() => {}} />);
-    expect(screen.getByText("No pending reviews.")).toBeInTheDocument();
+
+    expect(
+      screen.getByText("Postings submitted for your approval appear here."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "An author picks you as the reviewer when they submit a posting.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "You can't add one yourself, and you can't review your own postings.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("explains what approving or rejecting each request kind does", async () => {
+    render(
+      <ReviewQueue
+        reviews={[{ reviewId: 1, jobId: 2, jobTitle: "T", kind: "close" }]}
+        onOpen={() => {}}
+      />,
+    );
+
+    (await screen.findByText("Close Request")).focus();
+
+    expect(
+      await screen.findByText(
+        "A request to close a published posting. Rejecting just aborts the request.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("warns that approving a reopen may publish a staged edit", async () => {
+    render(
+      <ReviewQueue
+        reviews={[{ reviewId: 1, jobId: 2, jobTitle: "T", kind: "reopen" }]}
+        onOpen={() => {}}
+      />,
+    );
+
+    (await screen.findByText("Reopen Request")).focus();
+
+    expect(
+      await screen.findByText(/approving republishes that proposed version/),
+    ).toBeInTheDocument();
+  });
+
+  it("falls back to the raw kind for one the glossary does not know", () => {
+    render(
+      <ReviewQueue
+        reviews={[
+          { reviewId: 1, jobId: 2, jobTitle: "T", kind: "some_future_kind" },
+        ]}
+        onOpen={() => {}}
+      />,
+    );
+    expect(screen.getByText("some_future_kind")).toBeInTheDocument();
   });
 });

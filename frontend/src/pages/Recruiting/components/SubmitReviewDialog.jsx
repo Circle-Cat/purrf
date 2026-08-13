@@ -66,6 +66,12 @@ const SubmitReviewDialog = ({
           <div className="space-y-4">
             <div className="space-y-1">
               <Label htmlFor="reviewer">Reviewer</Label>
+              {/* Stated whenever the picker is shown, not only when it is
+                  empty: an author who has colleagues to pick from still needs
+                  to know they are not one of the options. */}
+              <p className="text-xs text-slate-500">
+                You cannot review your own posting, so you are not in this list.
+              </p>
               <select
                 id="reviewer"
                 className="w-full rounded-md border border-slate-300 p-2 text-sm"

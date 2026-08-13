@@ -1,40 +1,55 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-
-/** Human labels per JobReviewKind, matching the "How it works" guide's status legend. */
-const KIND_LABELS = {
-  initial: "Initial Request",
-  revision: "Revision Request",
-  close: "Close Request",
-  reopen: "Reopen Request",
-};
+import EmptyState from "@/pages/Recruiting/components/EmptyState";
+import TermHint from "@/pages/Recruiting/components/TermHint";
+import { reviewTermId } from "@/pages/Recruiting/components/glossary";
 
 /**
- * Read-only list of the reviewer's pending reviews.
+ * The reviewer's pending reviews. Each row's kind badge carries what
+ * approving and rejecting that kind actually do, which differs sharply
+ * between them -- rejecting an initial request sends a posting back to Draft,
+ * while rejecting a close request changes nothing at all.
+ *
+ * A row is not itself clickable (it holds its own Review button), so a
+ * tooltip trigger inside it nests nothing.
  *
  * @param {{reviews: object[], onOpen: Function}} props
  */
 const ReviewQueue = ({ reviews, onOpen }) => (
-  <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
-    {reviews.length === 0 && (
-      <p className="p-6 text-sm text-slate-500">No pending reviews.</p>
-    )}
-    {reviews.map((r) => (
-      <div key={r.reviewId} className="flex items-center gap-3 p-4">
-        <div className="min-w-0 flex-1">
-          <p className="font-medium text-slate-900">
-            {r.jobTitle || `Job #${r.jobId}`}
-          </p>
-          {r.submitMessage && (
-            <p className="truncate text-xs text-slate-500">{r.submitMessage}</p>
-          )}
-        </div>
-        <Badge variant="outline">{KIND_LABELS[r.kind] ?? r.kind}</Badge>
-        <Button size="sm" onClick={() => onOpen(r)}>
-          Review
-        </Button>
+  <div className="space-y-4">
+    {reviews.length === 0 ? (
+      <EmptyState
+        what="Postings submitted for your approval appear here."
+        how="An author picks you as the reviewer when they submit a posting."
+        who="You can't add one yourself, and you can't review your own postings."
+      />
+    ) : (
+      <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
+        {reviews.map((r) => {
+          const termId = reviewTermId(r.kind);
+          return (
+            <div key={r.reviewId} className="flex items-center gap-3 p-4">
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-slate-900">
+                  {r.jobTitle || `Job #${r.jobId}`}
+                </p>
+                {r.submitMessage && (
+                  <p className="truncate text-xs text-slate-500">
+                    {r.submitMessage}
+                  </p>
+                )}
+              </div>
+              <Badge variant="outline">
+                {termId ? <TermHint id={termId} /> : r.kind}
+              </Badge>
+              <Button size="sm" onClick={() => onOpen(r)}>
+                Review
+              </Button>
+            </div>
+          );
+        })}
       </div>
-    ))}
+    )}
   </div>
 );
 

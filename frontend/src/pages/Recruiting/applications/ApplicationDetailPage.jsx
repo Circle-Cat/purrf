@@ -42,6 +42,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
+import TermHint from "@/pages/Recruiting/components/TermHint";
 import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
 import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
 import AnswersSection from "@/pages/Recruiting/components/AnswersSection";
@@ -85,8 +86,6 @@ import {
 import { useAuth } from "@/context/auth/AuthContext";
 import { PERMISSIONS } from "@/constants/Permissions";
 import { formatInTz, resolveViewerTimezone } from "@/utils/dateTime";
-import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
-import { APPLICATION_OWNER_GUIDE } from "@/pages/Recruiting/components/guideContent";
 import InterviewMeetingCard from "@/pages/Recruiting/applications/InterviewMeetingCard";
 import InterviewMeetingDialog from "@/pages/Recruiting/applications/InterviewMeetingDialog";
 import BackToBoardLink from "@/pages/Recruiting/applications/BackToBoardLink";
@@ -179,6 +178,10 @@ const advanceTarget = (jobStages, stage, kind) => {
  * without one), so it only becomes clickable once the current round has a
  * confirmed evaluation.
  *
+ * The label carries a hint because these buttons decide something the
+ * recruiter is not otherwise told: the first move off "pending" freezes the
+ * candidate's submission, and nothing brings the edit back.
+ *
  * @param {{stage: string, subStatus: string|null, disabled: boolean,
  *          evaluatedDisabled: boolean,
  *          onSelect: (value: string) => void}} props
@@ -194,7 +197,9 @@ const SubStatusSelector = ({
   if (!options) return null;
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-sm font-medium text-slate-700">Status:</span>
+      <span className="text-sm font-medium text-slate-700">
+        <TermHint id="application.edit_lock">Status:</TermHint>
+      </span>
       {options.map((value) => {
         const isActive = value === subStatus;
         return (
@@ -1676,14 +1681,6 @@ const ApplicationDetailPage = () => {
     interviewPool.find((u) => u.userId === detail.assigneeId)?.name ??
     (detail.assigneeId != null ? `User ${detail.assigneeId}` : null);
 
-  // Evaluators get no dialog: every question theirs answered is now answered
-  // where it arises -- the rubric's own controls show which fields take a
-  // score and which take notes, the Confirm & Submit dialog states that a
-  // submission cannot be edited, and a reassigned evaluator is told so in
-  // place of the form.
-  const guide =
-    !evaluatorMode && detail.canView ? APPLICATION_OWNER_GUIDE : null;
-
   return (
     <div className="flex flex-col gap-6 p-6">
       <div className="space-y-2">
@@ -1701,7 +1698,6 @@ const ApplicationDetailPage = () => {
             <Badge variant="secondary">
               {stageLabel(detail.application.stage, job?.kind)}
             </Badge>
-            {guide && <HowItWorksDialog {...guide} />}
           </div>
           <p className="text-sm text-slate-600">{detail.applicantEmail}</p>
         </div>
@@ -2005,6 +2001,16 @@ const ApplicationDetailPage = () => {
           <DialogHeader>
             <DialogTitle>Blacklist this applicant?</DialogTitle>
           </DialogHeader>
+          {/* The reach of this action is far wider than the page it is taken
+              from, and it was previously only ever stated in a help dialog
+              nobody opens before clicking. It renders unconditionally: the
+              interview list below is conditional, and this must not be. */}
+          <p className="text-sm text-slate-700">
+            This rejects the application you are looking at, blocks the
+            applicant from applying to anything in future, and closes every
+            other application they hold on every posting — including any that
+            already reached Hired. Each one is tagged as blacklisted.
+          </p>
           {blacklistUpcoming.length > 0 && (
             <div className="text-sm text-slate-700">
               <p>

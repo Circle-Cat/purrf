@@ -30,25 +30,15 @@ import {
 } from "@/api/recruitingApi";
 import SubmitReviewDialog from "@/pages/Recruiting/components/SubmitReviewDialog";
 import PostingStatusBadges from "@/pages/Recruiting/components/PostingStatusBadges";
-import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
-import { POSTINGS_GUIDE } from "@/pages/Recruiting/components/guideContent";
-import { rejectKindLabel } from "@/pages/Recruiting/components/rejectKindLabels";
 import PostingConfigSummary from "@/pages/Recruiting/components/PostingConfigSummary";
 import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import PendingNotice from "@/pages/Recruiting/components/PendingNotice";
-
-/**
- * What the posting is waiting on, per status with no Operate action left.
- * Naming the specific request matters: three of these four are not a
- * submission for publication, and calling them one would be wrong.
- */
-const PENDING_HEADLINE = {
-  pending_review: "Submitted for review",
-  published_pending_revision: "Revision submitted for review",
-  pending_close: "Close requested",
-  pending_reopen: "Reopen requested",
-};
+import { GLOSSARY, rejectTermId } from "@/pages/Recruiting/components/glossary";
+import {
+  OPERABLE_STATUSES,
+  PENDING_HEADLINE,
+} from "@/pages/Recruiting/components/jobStatus";
 
 /** Title and dispatch fn per review action kind. */
 const REVIEW_ACTION = {
@@ -184,7 +174,10 @@ const PostingDetailPage = () => {
   const isDraft = job.status === "draft";
   const isPublished = job.status === "published";
   const isClosed = job.status === "closed";
-  const hasOperateAction = isDraft || isPublished || isClosed;
+  // From the shared status map, so a status added on the backend cannot land
+  // in the gap between "has an action" and "has a headline" (jobStatus.test.js
+  // pins that it cannot).
+  const hasOperateAction = OPERABLE_STATUSES.includes(job.status);
   // Mirrors JobService.update_job's allowed_from check on the backend:
   // editing is only accepted from DRAFT/PUBLISHED/CLOSED, never from
   // PUBLISHED_PENDING_REVISION (a revision is already staged and pending
@@ -349,9 +342,7 @@ const PostingDetailPage = () => {
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold text-slate-900">{job.title}</h1>
           <PostingStatusBadges job={job} explain />
-          <div className="ml-auto">
-            <HowItWorksDialog {...POSTINGS_GUIDE} />
-          </div>
+          <div className="ml-auto"></div>
         </div>
         <p className="text-sm text-slate-600">{job.description}</p>
         {ownerIds.length > 0 && (
@@ -381,7 +372,7 @@ const PostingDetailPage = () => {
       {job.lastRejectComment && (
         <div className="space-y-1 rounded border border-red-200 bg-red-50 p-3">
           <p className="text-sm font-medium text-red-800">
-            {rejectKindLabel(job.lastRejectKind)}
+            {GLOSSARY[rejectTermId(job.lastRejectKind)].label}
           </p>
           <p className="text-sm whitespace-pre-line text-red-700">
             {job.lastRejectComment}
@@ -474,6 +465,14 @@ const PostingDetailPage = () => {
             >
               Delete
             </Button>
+          )}
+          {job.wasPublished && (
+            <span
+              className="text-xs text-slate-500"
+              title={GLOSSARY["posting.undeletable"].hint}
+            >
+              Published postings cannot be deleted
+            </span>
           )}
           {submitBlockers.length > 0 &&
             (isDraft || (isPublished && job.pendingPayload != null)) &&

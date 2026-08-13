@@ -71,15 +71,12 @@ describe("PostingDetailPage", () => {
 
   // The lifecycle guide belongs wherever the lifecycle actions are, and every
   // one of them lives on this page rather than on the list it links from.
-  it("shows the How it works guide with the posting lifecycle", async () => {
+  it("shows no How it works button", async () => {
     renderAt(1);
     await screen.findByRole("heading", { name: "Backend Engineer" });
-    fireEvent.click(screen.getByRole("button", { name: "How it works" }));
-    const dialog = screen.getByRole("dialog");
     expect(
-      within(dialog).getByRole("heading", { name: "How postings work" }),
-    ).toBeInTheDocument();
-    expect(within(dialog).getByText("Submit for review")).toBeInTheDocument();
+      screen.queryByRole("button", { name: "How it works" }),
+    ).not.toBeInTheDocument();
   });
 
   it("explains the missing operate row while an initial review is pending", async () => {
@@ -136,6 +133,19 @@ describe("PostingDetailPage", () => {
     expect(screen.queryByText("Submitted for review")).not.toBeInTheDocument();
   });
 
+  it("tells a plain draft it is editable", async () => {
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    (await screen.findByText("Draft")).focus();
+
+    expect(
+      await screen.findByText(
+        "Not published yet, and only you can see it. Edit it as much as you like, then submit it for review when it is ready.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("explains the Draft badge that a pending posting keeps", async () => {
     api.getJob.mockResolvedValue({
       data: {
@@ -156,9 +166,59 @@ describe("PostingDetailPage", () => {
 
     expect(
       await screen.findByText(
-        "Not yet published. A posting keeps its Draft badge while a review is open — that's why you can't edit it right now.",
+        "Still unpublished. It keeps the Draft badge while its review is open, which is why you cannot edit it right now.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("says why a published posting has no Delete", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "closed",
+        wasPublished: true,
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    expect(
+      await screen.findByText("Published postings cannot be deleted"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Delete" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows Delete with no such note on a never-published closed posting", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "closed",
+        wasPublished: false,
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        reviewerId: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    expect(
+      await screen.findByRole("button", { name: "Delete" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Published postings cannot be deleted"),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the Operate block for a canWrite viewer", async () => {

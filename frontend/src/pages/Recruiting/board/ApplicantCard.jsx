@@ -1,4 +1,9 @@
 import { Badge } from "@/components/ui/badge";
+// A `title` rather than a TermHint: this whole card is one <button>, so a
+// tooltip trigger inside it would nest a control in a control and swallow the
+// click the card exists to receive. Same copy, weaker affordance, forced by
+// the structure.
+import { termHint } from "@/pages/Recruiting/components/glossary";
 import {
   humanize,
   INTERVIEW_STAGES,
@@ -84,15 +89,22 @@ const ApplicantCard = ({ card, showStatus, highlighted = false, onOpen }) => {
       {showColdFreeze || card.tags?.blacklisted ? (
         <div className="flex flex-wrap gap-1">
           {showColdFreeze && (
-            <Badge variant="secondary">
+            <Badge variant="secondary" title={termHint("tag.cold_freeze")}>
               Cold freeze · {daysLeft} {daysLeft === 1 ? "day" : "days"} left
             </Badge>
           )}
           {card.tags?.blacklisted &&
             (card.isBlocked ? (
-              <Badge variant="destructive">Blacklisted</Badge>
+              <Badge variant="destructive" title={termHint("tag.blacklisted")}>
+                Blacklisted
+              </Badge>
             ) : (
-              <Badge variant="secondary">Blacklist Lifted</Badge>
+              <Badge
+                variant="secondary"
+                title={termHint("tag.blacklist_lifted")}
+              >
+                Blacklist Lifted
+              </Badge>
             ))}
         </div>
       ) : null}
