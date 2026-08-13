@@ -68,6 +68,10 @@ export const GLOSSARY = {
     label: "Blacklisted",
     hint: "This application was closed and the applicant is blocked from future postings.",
   },
+  "evaluation.no_longer_assigned": {
+    label: "No longer assigned",
+    hint: "This session was reassigned to someone else, so it is read-only for you.",
+  },
   "posting.draft": {
     label: "Draft",
     hint: "Not yet published. A posting keeps its Draft badge while a review is open — that's why you can't edit it right now.",
