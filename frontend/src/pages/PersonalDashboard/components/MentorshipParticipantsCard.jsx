@@ -2,7 +2,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
-import { addDays, isAfter } from "date-fns";
+import { addDays, addMonths, isAfter, isBefore, subMonths } from "date-fns";
 import { formatInTz } from "@/utils/dateTime";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import MeetingSubmissionModal from "@/pages/PersonalDashboard/components/MeetingSubmissionModal";
 import MeetingOverviewCard from "@/pages/PersonalDashboard/components/MeetingOverviewCard";
+import MentorshipFeedbackDialog from "@/pages/PersonalDashboard/components/MentorshipFeedbackDialog";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
 import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
 
@@ -71,6 +72,35 @@ export default function MentorshipParticipantsCard({
       ? isAfter(new Date(), addDays(new Date(deadline), 1))
       : roundInfo?.status === MentorshipRoundStatus.COMPLETED);
 
+  // Feedback opens halfway through the round rather than after all meetings are
+  // done, so participants can write it while the round is still fresh. Both
+  // anchors are optional in the round form, so each falls back to a month
+  // either side of the (required) meetings deadline.
+  const meetingsEnd = deadline ? new Date(deadline) : null;
+  const feedbackOpensAt = roundInfo?.timeline?.meetingLogReminderAt
+    ? new Date(roundInfo.timeline.meetingLogReminderAt)
+    : meetingsEnd
+      ? subMonths(meetingsEnd, 1)
+      : null;
+  const feedbackClosesAt = roundInfo?.timeline?.feedbackDeadlineAt
+    ? new Date(roundInfo.timeline.feedbackDeadlineAt)
+    : meetingsEnd
+      ? addMonths(meetingsEnd, 1)
+      : null;
+
+  // Past the closing date the dialog stays reachable but read-only, so people
+  // can still look back at what they submitted.
+  const showFeedback = Boolean(
+    hasParticipation &&
+    feedbackOpensAt &&
+    !isBefore(new Date(), feedbackOpensAt),
+  );
+  const isFeedbackEditable =
+    !feedbackClosesAt || !isAfter(new Date(), feedbackClosesAt);
+  const feedbackDeadlineText = feedbackClosesAt
+    ? `${formatInTz(feedbackClosesAt.toISOString(), userTimezone, "MMM d, yyyy HH:mm")} ${userTimezone || "UTC"}`
+    : null;
+
   const getRoleIcon = (participantRole) => {
     return participantRole?.toLowerCase() ===
       MentorshipParticipantRoles.MENTOR ? (
@@ -96,6 +126,14 @@ export default function MentorshipParticipantsCard({
                 <Plus className="h-4 w-4 mr-2" />
                 Submit Meeting Info
               </Button>
+            )}
+            {showFeedback && (
+              <MentorshipFeedbackDialog
+                roundId={selectedRoundId}
+                roundName={roundInfo?.name}
+                isEditable={isFeedbackEditable}
+                feedbackDeadlineText={feedbackDeadlineText}
+              />
             )}
             <Select
               value={selectedRoundId?.toString() || ""}

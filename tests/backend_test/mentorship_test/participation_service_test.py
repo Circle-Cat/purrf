@@ -1,5 +1,7 @@
 import uuid
 import unittest
+from datetime import datetime, timezone
+from dateutil.relativedelta import relativedelta
 from unittest.mock import MagicMock, AsyncMock
 
 from backend.mentorship.participation_service import ParticipationService
@@ -43,6 +45,10 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.mock_round_repo = MagicMock()
         self.mock_round_repo.update_mentee_average_score = AsyncMock()
         self.mock_round_repo.update_mentor_average_score = AsyncMock()
+        # A round with no configured deadlines leaves feedback open.
+        self.mock_round_repo.get_by_round_id = AsyncMock(
+            return_value=MagicMock(description={})
+        )
 
         self.mock_session = AsyncMock()
         self.mock_mapper = MagicMock()
@@ -645,6 +651,99 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             "[ParticipationService] program_feedback saved for user_id=%s, round_id=%s",
             self.mock_current_user.user_id,
             mock_round_id,
+        )
+
+    def _iso(self, **delta):
+        """UTC ISO timestamp offset from now, in the shape stored on the round."""
+        moment = datetime.now(timezone.utc) + relativedelta(**delta)
+        return moment.isoformat().replace("+00:00", "Z")
+
+    def _with_timeline(self, timeline):
+        """Point the round repository at a round whose stored timeline is `timeline`."""
+        self.mock_round_repo.get_by_round_id.return_value = MagicMock(
+            description=timeline
+        )
+
+    async def test_feedback_closes_at_uses_the_feedback_deadline(self):
+        """The round's own feedback deadline wins when it is configured."""
+        self._with_timeline({"feedback_deadline_at": "2026-05-09T06:59:59Z"})
+
+        closes_at = await self.participation_service._feedback_closes_at(
+            session=self.mock_session, round_id=1
+        )
+
+        self.assertEqual(
+            closes_at, datetime(2026, 5, 9, 6, 59, 59, tzinfo=timezone.utc)
+        )
+
+    async def test_feedback_closes_at_falls_back_to_a_month_after_meetings(self):
+        """Without a feedback deadline the cutoff is a month past the meetings deadline."""
+        self._with_timeline({"meetings_completion_deadline_at": "2026-04-30T06:59:59Z"})
+
+        closes_at = await self.participation_service._feedback_closes_at(
+            session=self.mock_session, round_id=1
+        )
+
+        self.assertEqual(
+            closes_at, datetime(2026, 5, 30, 6, 59, 59, tzinfo=timezone.utc)
+        )
+
+    async def test_feedback_closes_at_is_none_without_any_deadline(self):
+        """An unconfigured timeline yields no cutoff rather than an immediate one."""
+        self._with_timeline({})
+
+        closes_at = await self.participation_service._feedback_closes_at(
+            session=self.mock_session, round_id=1
+        )
+
+        self.assertIsNone(closes_at)
+
+    async def test_feedback_closes_at_treats_naive_timestamps_as_utc(self):
+        """Timelines stored before timezone-aware serialisation are read as UTC."""
+        self._with_timeline({"feedback_deadline_at": "2026-05-09T06:59:59"})
+
+        closes_at = await self.participation_service._feedback_closes_at(
+            session=self.mock_session, round_id=1
+        )
+
+        self.assertEqual(
+            closes_at, datetime(2026, 5, 9, 6, 59, 59, tzinfo=timezone.utc)
+        )
+
+    async def test_assert_feedback_open_rejects_after_the_deadline(self):
+        """Writing past the round's feedback deadline is refused."""
+        self._with_timeline({"feedback_deadline_at": self._iso(days=-1)})
+
+        with self.assertRaises(ValueError):
+            await self.participation_service._assert_feedback_open(
+                session=self.mock_session, round_id=1
+            )
+
+    async def test_assert_feedback_open_rejects_past_the_derived_deadline(self):
+        """The derived cutoff is enforced just like an explicit one."""
+        self._with_timeline({
+            "meetings_completion_deadline_at": self._iso(months=-1, days=-1)
+        })
+
+        with self.assertRaises(ValueError):
+            await self.participation_service._assert_feedback_open(
+                session=self.mock_session, round_id=1
+            )
+
+    async def test_assert_feedback_open_allows_inside_the_window(self):
+        """An open window lets the write through."""
+        self._with_timeline({"feedback_deadline_at": self._iso(days=1)})
+
+        await self.participation_service._assert_feedback_open(
+            session=self.mock_session, round_id=1
+        )
+
+    async def test_assert_feedback_open_allows_when_no_deadline_configured(self):
+        """An unconfigured timeline must not lock participants out entirely."""
+        self._with_timeline({})
+
+        await self.participation_service._assert_feedback_open(
+            session=self.mock_session, round_id=1
         )
 
     async def test_upsert_program_feedback_raises_when_no_participant(self):
