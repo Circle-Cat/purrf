@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import MentorshipFeedbackDialog from "@/pages/PersonalDashboard/components/MentorshipFeedbackDialog";
 import {
   getMyMentorshipFeedback,
+  getMyMentorshipPartners,
   postMyMentorshipFeedback,
 } from "@/api/mentorshipApi";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
@@ -11,6 +12,7 @@ import { toast } from "sonner";
 
 vi.mock("@/api/mentorshipApi", () => ({
   getMyMentorshipFeedback: vi.fn(),
+  getMyMentorshipPartners: vi.fn(),
   postMyMentorshipFeedback: vi.fn(),
 }));
 
@@ -137,6 +139,11 @@ const defaultProps = {
   isFeedbackEnabled: true,
 };
 
+const multiplePartners = [
+  { id: 20, preferredName: "Bob Smith" },
+  { id: 21, preferredName: "Jennifer Martinez" },
+];
+
 describe("MentorshipFeedbackDialog", () => {
   let user;
 
@@ -144,6 +151,7 @@ describe("MentorshipFeedbackDialog", () => {
     vi.clearAllMocks();
     user = userEvent.setup();
     getMyMentorshipFeedback.mockResolvedValue({ data: menteeResponse });
+    getMyMentorshipPartners.mockResolvedValue({ data: [] });
     postMyMentorshipFeedback.mockResolvedValue({});
     useFeatureFlags.mockReturnValue({});
   });
@@ -314,6 +322,7 @@ describe("MentorshipFeedbackDialog", () => {
       mostValuableAspects: null,
       challenges: null,
       programRating: 4,
+      partnerFeedback: [],
     });
     expect(screen.getByTestId("dialog")).toHaveAttribute("data-open", "false");
     expect(toast.success).toHaveBeenCalledWith(
@@ -348,6 +357,7 @@ describe("MentorshipFeedbackDialog", () => {
       mostValuableAspects: "Hands-on pairing",
       challenges: "Timezone gaps",
       programRating: 5,
+      partnerFeedback: [],
     });
   });
 
@@ -430,5 +440,82 @@ describe("MentorshipFeedbackDialog", () => {
     expect(screen.queryByText("Submit")).not.toBeInTheDocument();
     expect(screen.queryByText("Update")).not.toBeInTheDocument();
     expect(screen.getByText("Close")).toBeInTheDocument();
+  });
+
+  it("renders a rating and feedback question for each partner", async () => {
+    getMyMentorshipPartners.mockResolvedValue({ data: multiplePartners });
+    render(<MentorshipFeedbackDialog {...defaultProps} />);
+    await waitFor(() => screen.getByText("Submit Feedback"));
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    expect(
+      screen.getByText(
+        /How was your overall experience working with your mentor Bob Smith\?/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("Share feedback about Bob Smith..."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /How was your overall experience working with your mentor Jennifer Martinez\?/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("Share feedback about Jennifer Martinez..."),
+    ).toBeInTheDocument();
+  });
+
+  it("requires a rating for every partner before submitting", async () => {
+    getMyMentorshipPartners.mockResolvedValue({ data: multiplePartners });
+    render(<MentorshipFeedbackDialog {...defaultProps} />);
+    await waitFor(() => screen.getByText("Submit Feedback"));
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    // Satisfy the unrelated required fields so the only errors left after
+    // submit are the partner ratings this test cares about.
+    await user.selectOptions(screen.getByTestId("sessions-select"), "3");
+    await user.click(screen.getByLabelText("4"));
+
+    await user.click(screen.getByText("Submit"));
+
+    expect(screen.getAllByText("This field is required.").length).toBe(
+      multiplePartners.length,
+    );
+    expect(postMyMentorshipFeedback).not.toHaveBeenCalled();
+  });
+
+  it("submits a rating and feedback entry per partner", async () => {
+    getMyMentorshipPartners.mockResolvedValue({ data: multiplePartners });
+    render(<MentorshipFeedbackDialog {...defaultProps} />);
+    await waitFor(() => screen.getByText("Submit Feedback"));
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    await user.selectOptions(screen.getByTestId("sessions-select"), "3");
+    await user.click(screen.getByLabelText("4"));
+
+    const excellentOptions = screen.getAllByLabelText("Excellent");
+    const poorOptions = screen.getAllByLabelText("Poor");
+    await user.click(excellentOptions[0]); // Bob Smith
+    await user.click(poorOptions[1]); // Jennifer Martinez
+
+    await user.type(
+      screen.getByPlaceholderText("Share feedback about Bob Smith..."),
+      "Very supportive",
+    );
+
+    await user.click(screen.getByText("Submit"));
+
+    await waitFor(() => expect(postMyMentorshipFeedback).toHaveBeenCalled());
+    expect(postMyMentorshipFeedback).toHaveBeenCalledWith("round-1", {
+      sessionsCompleted: 3,
+      mostValuableAspects: null,
+      challenges: null,
+      programRating: 4,
+      partnerFeedback: [
+        { partnerId: 20, rating: 5, feedback: "Very supportive" },
+        { partnerId: 21, rating: 1, feedback: null },
+      ],
+    });
   });
 });
