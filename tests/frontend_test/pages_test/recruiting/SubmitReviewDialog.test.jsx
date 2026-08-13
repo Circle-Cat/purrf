@@ -9,10 +9,6 @@ const approvers = [
 ];
 
 describe("SubmitReviewDialog", () => {
-  // An empty picker reads as a broken screen: the author cannot tell whether
-  // the load failed, their own permission is short, or the org simply has
-  // nobody else who can approve. Only the last is true, and only it names
-  // something they can go do.
   it("explains an empty approver pool instead of showing an empty picker", () => {
     render(
       <SubmitReviewDialog

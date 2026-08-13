@@ -8,10 +8,9 @@ import {
   APPLICATION_STAGES,
 } from "@/pages/Recruiting/components/glossary";
 
-// Contract shared with application_stages_vector_test.py, which pins this same
-// file to ApplicationStage. Read through node rather than imported, so the
-// fixture stays outside vite's root and needs no resolver configuration; the
-// path is relative to the vitest working directory (tests/frontend_test).
+// Read through node rather than imported, so the fixture stays outside vite's
+// root and needs no resolver configuration; the path is relative to the vitest
+// working directory (tests/frontend_test).
 const STAGES = JSON.parse(
   readFileSync(
     path.resolve(process.cwd(), "../shared/application_stages.json"),

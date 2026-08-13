@@ -4,11 +4,6 @@ from pathlib import Path
 
 from backend.common.recruiting_enums import ApplicationStage
 
-# Contract shared with the frontend glossary. The stage vocabulary a candidate
-# reads is rendered from a glossary keyed by these values, so a stage added
-# here without a term would show a raw enum name. Pinning the vector to the
-# enum here, and the glossary to the vector on the JS side, makes that
-# omission a red test on whichever side falls behind.
 _VECTOR = Path("tests/shared/application_stages.json")
 
 

@@ -28,9 +28,6 @@ describe("TermHint", () => {
     ).toBeInTheDocument();
   });
 
-  // The hint is useless if it renders behind the fixed header (z-[100]) or
-  // sidebar (z-[90]); shadcn's own default of z-50 loses to both, and a badge
-  // beside a page title opens its hint upward straight into the header.
   it("stacks the hint above the fixed header and sidebar", async () => {
     const user = userEvent.setup();
     render(<TermHint id="stage.recruiter_screening" />);

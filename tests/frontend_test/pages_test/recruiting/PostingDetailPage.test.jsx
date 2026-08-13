@@ -82,9 +82,6 @@ describe("PostingDetailPage", () => {
     expect(within(dialog).getByText("Submit for review")).toBeInTheDocument();
   });
 
-  // The Operate row stops rendering entirely in every pending state, so the
-  // author sees a gap where the buttons were. These pin the explanation that
-  // fills it, including which of the four pending states it names.
   it("explains the missing operate row while an initial review is pending", async () => {
     api.getJob.mockResolvedValue({
       data: {
@@ -593,10 +590,6 @@ describe("PostingDetailPage", () => {
     );
   });
 
-  // The gate itself is JobService._revalidate_job_config's and is tested in
-  // job_blockers_test.py, including the staged-vs-live choice and the legacy
-  // ownerId shape. What is this page's own is rendering every blocker the
-  // server reports, and disabling Submit while any stands.
   it("disables Submit for review and shows every blocker the server reports", async () => {
     api.getJob.mockResolvedValue({
       data: {
@@ -623,8 +616,6 @@ describe("PostingDetailPage", () => {
         screen.getByRole("button", { name: "Submit for review" }),
       ).toBeDisabled(),
     );
-    // Both, not just the first -- a reader who fixes one and clicks again
-    // should not discover the second only then.
     expect(
       screen.getByText(
         "Add at least one pipeline stage before submitting for review.",
