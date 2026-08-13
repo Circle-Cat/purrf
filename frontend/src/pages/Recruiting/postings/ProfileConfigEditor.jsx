@@ -1,4 +1,5 @@
 import { Label } from "@/components/ui/label";
+import TermHint from "@/pages/Recruiting/components/TermHint";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 const FIELDS = [
@@ -21,7 +22,9 @@ const ProfileConfigEditor = ({ value = {}, onChange }) => {
 
   return (
     <div className="space-y-3">
-      <p className="text-sm font-medium text-slate-700">Profile requirements</p>
+      <p className="text-sm font-medium text-slate-700">
+        <TermHint id="editor.profile" />
+      </p>
       {FIELDS.map((f) => (
         <div key={f.key} className="flex items-center gap-4">
           <span className="w-36 text-sm text-slate-700">{f.label}</span>

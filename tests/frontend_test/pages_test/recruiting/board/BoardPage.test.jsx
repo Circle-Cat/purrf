@@ -278,8 +278,23 @@ describe("BoardPage", () => {
     );
   });
 
-  it("opens the How it works guide with the board's title and steps", async () => {
-    const user = userEvent.setup();
+  // Which lanes exist, and why an activity posting has no Offer lane.
+  it("explains how the lanes read", async () => {
+    api.listBoardJobs.mockResolvedValue({ data: [jobA] });
+    api.getJobBoard.mockResolvedValue({
+      data: {
+        stages: {
+          recruiter_screening: { items: [], total: 0, has_more: false },
+        },
+      },
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("How the lanes read")).toBeInTheDocument();
+  });
+
+  it("shows no How it works button", async () => {
     api.listBoardJobs.mockResolvedValue({ data: [jobA] });
     api.getJobBoard.mockResolvedValue({
       data: {
@@ -294,12 +309,9 @@ describe("BoardPage", () => {
       expect(screen.getByText("Recruiter screening")).toBeInTheDocument(),
     );
 
-    await user.click(screen.getByRole("button", { name: "How it works" }));
-
     expect(
-      screen.getByRole("heading", { name: "How the board works" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Pick a posting")).toBeInTheDocument();
+      screen.queryByRole("button", { name: "How it works" }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not show a sub-status badge in terminal lanes and shows one in pipeline lanes", async () => {

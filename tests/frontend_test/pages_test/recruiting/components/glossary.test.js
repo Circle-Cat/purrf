@@ -75,6 +75,17 @@ describe("glossary", () => {
   it("holds the term the interviewer's queue renders", () => {
     expect(GLOSSARY["evaluation.no_longer_assigned"]).toBeDefined();
   });
+
+  // The three conditions ApplicationService._lock_reason tests, said once in
+  // the recruiter's words.
+  it("tells the recruiter that a status move locks the candidate out", () => {
+    const { hint } = GLOSSARY["application.edit_lock"];
+
+    expect(hint).toContain("Moving off Pending");
+    expect(hint).toContain("advancing the stage");
+    expect(hint).toContain("confirming an evaluation");
+    expect(hint).toContain("one-way");
+  });
 });
 
 describe("lockReasonText", () => {

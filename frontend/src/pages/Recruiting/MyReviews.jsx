@@ -4,8 +4,6 @@ import { toast } from "sonner";
 import { listMyReviews } from "@/api/recruitingApi";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import ReviewQueue from "@/pages/Recruiting/components/ReviewQueue";
-import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
-import { REVIEWS_GUIDE } from "@/pages/Recruiting/components/guideContent";
 
 /** Reviewer's queue page: list pending reviews, opening one goes to the unified job detail page. */
 const MyReviews = () => {
@@ -31,7 +29,6 @@ const MyReviews = () => {
         <h1 className="text-xl font-semibold text-slate-900">
           My Posting Reviews
         </h1>
-        <HowItWorksDialog {...REVIEWS_GUIDE} />
       </div>
       <ReviewQueue reviews={reviews} onOpen={open} />
     </div>

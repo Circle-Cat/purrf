@@ -461,8 +461,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     expect(screen.queryByText(/^Assigned to:/)).not.toBeInTheDocument();
   });
 
-  it("owner-only viewer sees the How-it-works guide for reviewing applications", async () => {
-    const user = userEvent.setup();
+  it("owner-only viewer sees no How-it-works button", async () => {
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({
       data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
@@ -470,10 +469,48 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     renderPage();
     await waitLoaded();
 
-    await user.click(screen.getByRole("button", { name: "How it works" }));
+    expect(
+      screen.queryByRole("button", { name: "How it works" }),
+    ).not.toBeInTheDocument();
+  });
+
+  // Wording lives in the glossary and is asserted there; what this pins is
+  // that the Status label is a hint trigger at all.
+  it("hangs the edit-lock hint on the Status label", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByRole("button", { name: "Status:" })).toBeInTheDocument();
+  });
+
+  it("states how far blacklisting reaches before it is confirmed", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    authState.permissions = [
+      ...authState.permissions,
+      "recruiting.blacklist.write",
+    ];
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    // Opening the dialog also fetches the applicant's upcoming interviews to
+    // list them; an empty list is what proves the blast-radius sentence is
+    // unconditional rather than riding on that list.
+    api.listBlacklistUpcomingInterviews.mockResolvedValue({ data: [] });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Blacklist" }));
 
     expect(
-      screen.getByRole("heading", { name: "How application review works" }),
+      await screen.findByText(/closes every other application they hold/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/including any that already reached Hired/),
     ).toBeInTheDocument();
   });
 

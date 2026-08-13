@@ -1,11 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
@@ -61,14 +55,71 @@ const renderAt = (path) => {
 };
 
 describe("PostingEditor", () => {
-  it("shows the How it works guide explaining the form", () => {
+  it("labels every section of the form with its own explanation", async () => {
     renderAt("/postings/new");
-    fireEvent.click(screen.getByRole("button", { name: "How it works" }));
-    const dialog = screen.getByRole("dialog");
+
+    for (const heading of [
+      "Basics",
+      "Application form",
+      "Interview pipeline",
+      "Machine screening",
+      "Profile requirements",
+    ]) {
+      expect(screen.getByText(heading)).toBeInTheDocument();
+    }
     expect(
-      within(dialog).getByRole("heading", { name: "How posting setup works" }),
+      screen.queryByRole("button", { name: "How it works" }),
+    ).not.toBeInTheDocument();
+
+    (await screen.findByText("Interview pipeline")).focus();
+
+    expect(
+      await screen.findByText(
+        "Pick one or more recruiters -- staff who can advance applicants through every stage of this posting -- then add the stages applicants move through, in order. A stage can require several sessions.",
+      ),
     ).toBeInTheDocument();
-    expect(within(dialog).getByText("Recruiter")).toBeInTheDocument();
+  });
+
+  it("says that editing a live posting only stages the change", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 5,
+        title: "Loaded",
+        description: "",
+        kind: "activity",
+        status: "published",
+        cooldownDays: null,
+        formSchema: { questions: [] },
+        pipelineConfig: { ownerId: 9, stages: [] },
+      },
+    });
+    const router = createMemoryRouter(
+      [{ path: "/postings/:id/edit", element: <PostingEditor /> }],
+      { initialEntries: ["/postings/5/edit"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(
+      await screen.findByText(/Saving stages your change/),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing about staging on a draft, which has nothing live to protect", async () => {
+    const router = createMemoryRouter(
+      [{ path: "/postings/:id/edit", element: <PostingEditor /> }],
+      { initialEntries: ["/postings/5/edit"] },
+    );
+    render(<RouterProvider router={router} />);
+    await screen.findByDisplayValue("Loaded");
+
+    expect(
+      screen.queryByText(/Saving stages your change/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says beside Save that saving does not publish", () => {
+    renderAt("/postings/new");
+    expect(screen.getByText(/Saving never publishes\./)).toBeInTheDocument();
   });
 
   // The form is long; from the top of the page, saving means scrolling back up

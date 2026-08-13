@@ -1,4 +1,5 @@
 import { Input } from "@/components/ui/input";
+import TermHint from "@/pages/Recruiting/components/TermHint";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -45,6 +46,9 @@ const JobBasicsSection = ({
   errors = {},
 }) => (
   <div className="space-y-3">
+    <p className="text-sm font-medium text-slate-700">
+      <TermHint id="editor.basics" />
+    </p>
     <div className="space-y-1">
       <Label htmlFor="posting-title">Title</Label>
       <Input

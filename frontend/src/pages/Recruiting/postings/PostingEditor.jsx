@@ -17,8 +17,8 @@ import PipelineConfigEditor from "@/pages/Recruiting/postings/PipelineConfigEdit
 import ScreenRulesEditor from "@/pages/Recruiting/postings/ScreenRulesEditor";
 import ProfileConfigEditor from "@/pages/Recruiting/postings/ProfileConfigEditor";
 import { validatePosting } from "@/pages/Recruiting/postings/postingValidation";
-import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
-import { POSTING_EDITOR_GUIDE } from "@/pages/Recruiting/components/guideContent";
+import PendingNotice from "@/pages/Recruiting/components/PendingNotice";
+import { GLOSSARY } from "@/pages/Recruiting/components/glossary";
 
 /** A blank posting draft. */
 const BLANK = {
@@ -72,6 +72,9 @@ const PostingEditor = () => {
   // draft; a brand-new (not-yet-loaded) posting has no status yet and is
   // always editable.
   const kindLocked = Boolean(id) && jobStatus != null && jobStatus !== "draft";
+  // Editing anything that has a live version stages the change rather than
+  // applying it; a draft has nothing live to protect.
+  const isLive = jobStatus != null && jobStatus !== "draft";
 
   useEffect(() => {
     listInterviewPool()
@@ -194,8 +197,15 @@ const PostingEditor = () => {
         <h1 className="text-xl font-semibold text-slate-900">
           {id ? "Edit posting" : "New posting"}
         </h1>
-        <HowItWorksDialog {...POSTING_EDITOR_GUIDE} />
       </div>
+      {/* Most authors expect editing a live posting to change what applicants
+          see immediately. It does not, and nothing on this form said so. */}
+      {isLive && (
+        <PendingNotice
+          headline={GLOSSARY["posting.staged_edit"].label}
+          detail={GLOSSARY["posting.staged_edit"].hint}
+        />
+      )}
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
         <div className="space-y-6">
           <JobBasicsSection
@@ -251,7 +261,14 @@ const PostingEditor = () => {
       </div>
       {/* After the form, not above it: the editor is long enough that saving
           from the top means scrolling back up past everything just edited. */}
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {/* Beside the button, because the belief it corrects -- that saving
+            publishes -- is acted on at the moment of clicking it. */}
+        <p className="mr-auto text-xs text-slate-500">
+          Saving never publishes. It writes a draft, or stages an edit to a live
+          posting; submit it for review from the posting&apos;s own page when it
+          is ready.
+        </p>
         <Button
           variant="outline"
           onClick={() => navigate(ROUTE_PATHS.RECRUITING_POSTINGS)}
