@@ -10,24 +10,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
-import { useFeatureFlags } from "@/hooks/useFeatureFlags";
-import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import {
   getMyMentorshipFeedback,
   getMyMentorshipPartners,
   postMyMentorshipFeedback,
 } from "@/api/mentorshipApi";
 import { toast } from "sonner";
-
-const SESSION_COUNT_OPTIONS = Array.from({ length: 10 }, (_, i) => i + 1);
 
 const RATING_OPTIONS = [1, 2, 3, 4, 5];
 
@@ -40,7 +29,6 @@ const PARTNER_RATING_OPTIONS = [
 ];
 
 const EMPTY_FORM = {
-  sessionsCompleted: "",
   mostValuableAspects: "",
   challenges: "",
   programRating: "",
@@ -57,7 +45,6 @@ function toFormState(data) {
     };
   });
   return {
-    sessionsCompleted: data.sessionsCompleted?.toString() ?? "",
     mostValuableAspects: data.mostValuableAspects ?? "",
     challenges: data.challenges ?? "",
     programRating: data.programRating?.toString() ?? "",
@@ -93,10 +80,8 @@ function TextArea({ value, onChange, placeholder, maxLength, disabled }) {
  * all. The trigger is also withheld until the initial status fetch resolves, to
  * avoid a "Submit" → "Edit" flash on page load.
  *
- * Required fields vary by participant role:
- * - All roles: `programRating`, `mostValuableAspects` (optional), `challenges` (optional),
- *   a rating per partner (`mostValuableAspects`-style feedback text per partner is optional)
- * - Mentee only: `sessionsCompleted`
+ * `programRating` and a rating per partner are required; the free-text answers
+ * are optional.
  *
  * Partners are fetched by `roundId` rather than reused from the participant
  * card, so this dialog owns every field it renders.
@@ -125,7 +110,6 @@ export default function MentorshipFeedbackDialog({
   const [fetchError, setFetchError] = useState(false);
   const [errors, setErrors] = useState({});
 
-  const [sessionsCompleted, setSessionsCompleted] = useState("");
   const [mostValuableAspects, setMostValuableAspects] = useState("");
   const [challenges, setChallenges] = useState("");
   const [programRating, setProgramRating] = useState("");
@@ -136,17 +120,10 @@ export default function MentorshipFeedbackDialog({
   // abandoned edits never masquerade as saved answers on the next open.
   const savedFormRef = useRef(EMPTY_FORM);
 
-  const flags = useFeatureFlags();
-  // When Google Meetings is enabled, mentee session attendance is captured
-  // automatically, so the manual sessions-completed question is hidden.
-  const isCreateGoogleMeetingsEnabled =
-    flags[FEATURE_FLAGS.CREATE_GOOGLE_MEETING];
-
   const isMentee = participantRole === MentorshipParticipantRoles.MENTEE;
   const partnerRoleLabel = isMentee ? "mentor" : "mentee";
 
   const applyFormState = (form) => {
-    setSessionsCompleted(form.sessionsCompleted);
     setMostValuableAspects(form.mostValuableAspects);
     setChallenges(form.challenges);
     setProgramRating(form.programRating);
@@ -206,8 +183,6 @@ export default function MentorshipFeedbackDialog({
 
   const validate = () => {
     const newErrors = {};
-    if (isMentee && !isCreateGoogleMeetingsEnabled && !sessionsCompleted)
-      newErrors.sessionsCompleted = "This field is required.";
     if (!programRating) newErrors.programRating = "This field is required.";
     partners.forEach((partner) => {
       if (!partnerFeedback[partner.id]?.rating) {
@@ -223,9 +198,6 @@ export default function MentorshipFeedbackDialog({
     setIsSaving(true);
     try {
       await postMyMentorshipFeedback(roundId, {
-        sessionsCompleted: sessionsCompleted
-          ? parseInt(sessionsCompleted, 10)
-          : null,
         mostValuableAspects: mostValuableAspects || null,
         challenges: challenges || null,
         programRating: programRating ? parseInt(programRating, 10) : null,
@@ -236,7 +208,6 @@ export default function MentorshipFeedbackDialog({
         })),
       });
       savedFormRef.current = {
-        sessionsCompleted,
         mostValuableAspects,
         challenges,
         programRating,
@@ -305,42 +276,6 @@ export default function MentorshipFeedbackDialog({
         </DialogHeader>
 
         <div className="py-4 space-y-6 max-h-[70vh] overflow-y-auto px-1">
-          {/* Sessions completed (Mentee only, hidden when Google Meetings is enabled) */}
-          {isMentee && !isCreateGoogleMeetingsEnabled && (
-            <div className="space-y-3">
-              <Label className="text-sm font-semibold">
-                How many sessions have you completed during this past round and
-                logged in Moodle? <span className="text-destructive">*</span>
-              </Label>
-              <Select
-                value={sessionsCompleted}
-                onValueChange={(val) => {
-                  setSessionsCompleted(val);
-                  clearError("sessionsCompleted");
-                }}
-                disabled={!isEditable}
-              >
-                <SelectTrigger
-                  className={`w-full${errors.sessionsCompleted ? " border-destructive" : ""}`}
-                >
-                  <SelectValue placeholder="Select number of sessions" />
-                </SelectTrigger>
-                <SelectContent>
-                  {SESSION_COUNT_OPTIONS.map((n) => (
-                    <SelectItem key={n} value={n.toString()}>
-                      {n}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.sessionsCompleted && (
-                <p className="text-xs text-destructive">
-                  {errors.sessionsCompleted}
-                </p>
-              )}
-            </div>
-          )}
-
           {/* Most valuable aspects (All) */}
           <div className="space-y-3">
             <Label className="text-sm font-semibold">

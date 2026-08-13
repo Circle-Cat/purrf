@@ -7,7 +7,6 @@ import {
   getMyMentorshipPartners,
   postMyMentorshipFeedback,
 } from "@/api/mentorshipApi";
-import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { toast } from "sonner";
 
 vi.mock("@/api/mentorshipApi", () => ({
@@ -18,14 +17,6 @@ vi.mock("@/api/mentorshipApi", () => ({
 
 vi.spyOn(toast, "success").mockImplementation(() => {});
 vi.spyOn(toast, "error").mockImplementation(() => {});
-
-vi.mock("@/hooks/useFeatureFlags", () => ({
-  useFeatureFlags: vi.fn(() => ({})),
-}));
-
-vi.mock("@/constants/FeatureFlags", () => ({
-  FEATURE_FLAGS: { CREATE_GOOGLE_MEETING: "create-google-meeting" },
-}));
 
 /**
  * Radix Dialog does not render portal content in jsdom without this mock.
@@ -43,28 +34,6 @@ vi.mock("@/components/ui/dialog", () => ({
   DialogTitle: ({ children }) => <div>{children}</div>,
   DialogTrigger: ({ children }) => <div>{children}</div>,
   DialogFooter: ({ children }) => <div>{children}</div>,
-}));
-
-/**
- * Radix Select does not render options in jsdom. We expose a native <select>
- * so tests can change values with userEvent.selectOptions.
- */
-vi.mock("@/components/ui/select", () => ({
-  Select: ({ value, onValueChange, children }) => (
-    <select
-      data-testid="sessions-select"
-      value={value}
-      onChange={(e) => onValueChange?.(e.target.value)}
-    >
-      {children}
-    </select>
-  ),
-  SelectTrigger: () => null,
-  SelectValue: () => null,
-  SelectContent: ({ children }) => <>{children}</>,
-  SelectItem: ({ value, children }) => (
-    <option value={value}>{children}</option>
-  ),
 }));
 
 /**
@@ -127,7 +96,6 @@ const mentorResponse = {
 const submittedMenteeResponse = {
   participantRole: "mentee",
   hasSubmitted: true,
-  sessionsCompleted: 3,
   mostValuableAspects: "Great sessions",
   challenges: "Scheduling",
   programRating: 4,
@@ -154,7 +122,6 @@ describe("MentorshipFeedbackDialog", () => {
     getMyMentorshipFeedback.mockResolvedValue({ data: menteeResponse });
     getMyMentorshipPartners.mockResolvedValue({ data: [] });
     postMyMentorshipFeedback.mockResolvedValue({});
-    useFeatureFlags.mockReturnValue({});
   });
 
   it("renders nothing until the initial status fetch resolves", () => {
@@ -235,7 +202,6 @@ describe("MentorshipFeedbackDialog", () => {
 
     await user.click(screen.getByText("Toggle Dialog"));
 
-    expect(screen.getByTestId("sessions-select")).toHaveValue("3");
     expect(
       screen.getByPlaceholderText("Share what you found most valuable..."),
     ).toHaveValue("Great sessions");
@@ -244,12 +210,19 @@ describe("MentorshipFeedbackDialog", () => {
     ).toHaveValue("Scheduling");
   });
 
-  it("shows sessions field only for mentee, free-text fields for all roles", async () => {
+  it("no longer asks how many sessions were completed", async () => {
     render(<MentorshipFeedbackDialog {...defaultProps} />);
     await waitFor(() => screen.getByText("Submit Feedback"));
     await user.click(screen.getByText("Toggle Dialog"));
 
-    expect(screen.getByTestId("sessions-select")).toBeInTheDocument();
+    expect(screen.queryByText(/How many sessions/)).not.toBeInTheDocument();
+  });
+
+  it("shows the free-text fields for a mentee", async () => {
+    render(<MentorshipFeedbackDialog {...defaultProps} />);
+    await waitFor(() => screen.getByText("Submit Feedback"));
+    await user.click(screen.getByText("Toggle Dialog"));
+
     expect(
       screen.getByPlaceholderText("Share what you found most valuable..."),
     ).toBeInTheDocument();
@@ -258,13 +231,12 @@ describe("MentorshipFeedbackDialog", () => {
     ).toBeInTheDocument();
   });
 
-  it("hides sessions field for mentor role but shows free-text fields", async () => {
+  it("shows the same free-text fields for a mentor", async () => {
     getMyMentorshipFeedback.mockResolvedValue({ data: mentorResponse });
     render(<MentorshipFeedbackDialog {...defaultProps} />);
     await waitFor(() => screen.getByText("Submit Feedback"));
     await user.click(screen.getByText("Toggle Dialog"));
 
-    expect(screen.queryByTestId("sessions-select")).not.toBeInTheDocument();
     expect(
       screen.getByPlaceholderText("Share what you found most valuable..."),
     ).toBeInTheDocument();
@@ -273,16 +245,7 @@ describe("MentorshipFeedbackDialog", () => {
     ).toBeInTheDocument();
   });
 
-  it("hides sessions field for mentee when create-google-meeting flag is on", async () => {
-    useFeatureFlags.mockReturnValue({ "create-google-meeting": true });
-    render(<MentorshipFeedbackDialog {...defaultProps} />);
-    await waitFor(() => screen.getByText("Submit Feedback"));
-    await user.click(screen.getByText("Toggle Dialog"));
-
-    expect(screen.queryByTestId("sessions-select")).not.toBeInTheDocument();
-  });
-
-  it("shows inline errors for all empty required fields on submit (mentee)", async () => {
+  it("shows an inline error for the empty required field on submit (mentee)", async () => {
     render(<MentorshipFeedbackDialog {...defaultProps} />);
     await waitFor(() => screen.getByText("Submit Feedback"));
     await user.click(screen.getByText("Toggle Dialog"));
@@ -290,12 +253,12 @@ describe("MentorshipFeedbackDialog", () => {
     await user.click(screen.getByText("Submit"));
 
     const errors = screen.getAllByText("This field is required.");
-    // sessionsCompleted + programRating = 2
-    expect(errors.length).toBe(2);
+    // programRating is the only always-required field
+    expect(errors.length).toBe(1);
     expect(postMyMentorshipFeedback).not.toHaveBeenCalled();
   });
 
-  it("shows only programRating error for mentor (no sessions field)", async () => {
+  it("shows the same programRating error for a mentor", async () => {
     getMyMentorshipFeedback.mockResolvedValue({ data: mentorResponse });
     render(<MentorshipFeedbackDialog {...defaultProps} />);
     await waitFor(() => screen.getByText("Submit Feedback"));
@@ -312,7 +275,6 @@ describe("MentorshipFeedbackDialog", () => {
     await waitFor(() => screen.getByText("Submit Feedback"));
     await user.click(screen.getByText("Toggle Dialog"));
 
-    await user.selectOptions(screen.getByTestId("sessions-select"), "3");
     await user.click(screen.getByLabelText("4"));
 
     await user.click(screen.getByText("Submit"));
@@ -320,7 +282,6 @@ describe("MentorshipFeedbackDialog", () => {
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
 
     expect(postMyMentorshipFeedback).toHaveBeenCalledWith("round-1", {
-      sessionsCompleted: 3,
       mostValuableAspects: null,
       challenges: null,
       programRating: 4,
@@ -340,7 +301,6 @@ describe("MentorshipFeedbackDialog", () => {
     await waitFor(() => screen.getByText("Submit Feedback"));
     await user.click(screen.getByText("Toggle Dialog"));
 
-    await user.selectOptions(screen.getByTestId("sessions-select"), "2");
     await user.click(screen.getByLabelText("5"));
     await user.type(
       screen.getByPlaceholderText("Share what you found most valuable..."),
@@ -355,7 +315,6 @@ describe("MentorshipFeedbackDialog", () => {
 
     await waitFor(() => expect(postMyMentorshipFeedback).toHaveBeenCalled());
     expect(postMyMentorshipFeedback).toHaveBeenCalledWith("round-1", {
-      sessionsCompleted: 2,
       mostValuableAspects: "Hands-on pairing",
       challenges: "Timezone gaps",
       programRating: 5,
@@ -369,7 +328,6 @@ describe("MentorshipFeedbackDialog", () => {
     await waitFor(() => screen.getByText("Submit Feedback"));
     await user.click(screen.getByText("Toggle Dialog"));
 
-    await user.selectOptions(screen.getByTestId("sessions-select"), "3");
     await user.click(screen.getByLabelText("4"));
 
     await user.click(screen.getByText("Submit"));
@@ -583,7 +541,6 @@ describe("MentorshipFeedbackDialog", () => {
 
     // Satisfy the unrelated required fields so the only errors left after
     // submit are the partner ratings this test cares about.
-    await user.selectOptions(screen.getByTestId("sessions-select"), "3");
     await user.click(screen.getByLabelText("4"));
 
     await user.click(screen.getByText("Submit"));
@@ -600,7 +557,6 @@ describe("MentorshipFeedbackDialog", () => {
     await waitFor(() => screen.getByText("Submit Feedback"));
     await user.click(screen.getByText("Toggle Dialog"));
 
-    await user.selectOptions(screen.getByTestId("sessions-select"), "3");
     await user.click(screen.getByLabelText("4"));
 
     const excellentOptions = screen.getAllByLabelText("Excellent");
@@ -617,7 +573,6 @@ describe("MentorshipFeedbackDialog", () => {
 
     await waitFor(() => expect(postMyMentorshipFeedback).toHaveBeenCalled());
     expect(postMyMentorshipFeedback).toHaveBeenCalledWith("round-1", {
-      sessionsCompleted: 3,
       mostValuableAspects: null,
       challenges: null,
       programRating: 4,
