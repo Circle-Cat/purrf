@@ -438,7 +438,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
         mock_participant.participant_role = ParticipantRole.MENTEE
         mock_participant.program_feedback = {
-            "sessions_completed": 3,
             "most_valuable_aspects": "networking",
             "challenges": None,
             "program_rating": 5,
@@ -458,7 +457,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsInstance(result, FeedbackDto)
         self.assertTrue(result.has_submitted)
-        self.assertEqual(result.sessions_completed, 3)
         self.assertEqual(result.most_valuable_aspects, "networking")
         self.assertEqual(result.program_rating, 5)
         self.assertEqual(result.participant_role, ParticipantRole.MENTEE)
@@ -487,7 +485,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertFalse(result.has_submitted)
-        self.assertIsNone(result.sessions_completed)
         self.assertIsNone(result.program_rating)
         self.assertEqual(result.partner_feedback, [])
 
@@ -522,7 +519,6 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         )
 
         feedback_data = FeedbackCreateDto(
-            sessions_completed=4,
             most_valuable_aspects="guidance",
             challenges="time zones",
             program_rating=4,
@@ -537,9 +533,9 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsInstance(result, FeedbackDto)
         self.assertTrue(result.has_submitted)
-        self.assertEqual(result.sessions_completed, 4)
         self.assertEqual(result.most_valuable_aspects, "guidance")
         self.assertEqual(result.program_rating, 4)
+        self.assertFalse(hasattr(result, "sessions_completed"))
         self.mock_round_participants_repo.upsert_participant.assert_awaited_once_with(
             session=self.mock_session, entity=mock_participant
         )
