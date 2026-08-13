@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -39,6 +39,32 @@ const PARTNER_RATING_OPTIONS = [
   { value: 5, label: "Excellent" },
 ];
 
+const EMPTY_FORM = {
+  sessionsCompleted: "",
+  mostValuableAspects: "",
+  challenges: "",
+  programRating: "",
+  partnerFeedback: {},
+};
+
+/** Convert a feedback API payload into the dialog's form state. */
+function toFormState(data) {
+  const partnerFeedback = {};
+  (data.partnerFeedback ?? []).forEach((entry) => {
+    partnerFeedback[entry.partnerId] = {
+      rating: entry.rating?.toString() ?? "",
+      feedback: entry.feedback ?? "",
+    };
+  });
+  return {
+    sessionsCompleted: data.sessionsCompleted?.toString() ?? "",
+    mostValuableAspects: data.mostValuableAspects ?? "",
+    challenges: data.challenges ?? "",
+    programRating: data.programRating?.toString() ?? "",
+    partnerFeedback,
+  };
+}
+
 function TextArea({ value, onChange, placeholder, maxLength, disabled }) {
   return (
     <div className="relative">
@@ -58,33 +84,38 @@ function TextArea({ value, onChange, placeholder, maxLength, disabled }) {
 }
 
 /**
- * Dialog for submitting or viewing mentorship program feedback for a round.
+ * Dialog for submitting, editing, or viewing mentorship program feedback.
  *
- * Renders a trigger button whose label reflects the user's prior submission
- * status. The button is hidden until the initial status fetch resolves to
- * avoid a "Submit Feedback" → "View Feedback" flash on page load.
+ * Answers stay editable for as long as the feedback window is open, so the
+ * trigger reads "Submit Feedback", "Edit Feedback", or -- once the deadline has
+ * passed -- "View Feedback" over a fully disabled form. After the deadline a
+ * participant who never submitted has nothing to look at, so nothing renders at
+ * all. The trigger is also withheld until the initial status fetch resolves, to
+ * avoid a "Submit" → "Edit" flash on page load.
  *
  * Required fields vary by participant role:
  * - All roles: `programRating`, `mostValuableAspects` (optional), `challenges` (optional),
  *   a rating per partner (`mostValuableAspects`-style feedback text per partner is optional)
  * - Mentee only: `sessionsCompleted`
  *
- * Partners are fetched by `roundId` directly (not reused from the participant
- * card), since the card defaults to the active round while this dialog only
- * opens for a round in its feedback window -- those are never the same round.
+ * Partners are fetched by `roundId` rather than reused from the participant
+ * card, so this dialog owns every field it renders.
  *
  * Inline field-level errors are shown on submit; each clears as soon as the
- * user interacts with that field.
+ * user interacts with that field. Closing the dialog discards anything typed
+ * since the last successful save.
  *
  * @param {object}  props
- * @param {string}  props.roundId           - ID of the mentorship round.
- * @param {string}  props.roundName         - Display name of the round (used in the dialog title).
- * @param {boolean} props.isFeedbackEnabled - When false the trigger button is disabled.
+ * @param {string}  props.roundId              - ID of the mentorship round.
+ * @param {string}  props.roundName            - Display name of the round (used in the dialog title).
+ * @param {boolean} props.isEditable           - When false the form is read-only.
+ * @param {string|null} props.feedbackDeadlineText - Preformatted deadline shown in the hint, or null when unknown.
  */
 export default function MentorshipFeedbackDialog({
   roundId,
   roundName,
-  isFeedbackEnabled,
+  isEditable,
+  feedbackDeadlineText,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -101,6 +132,10 @@ export default function MentorshipFeedbackDialog({
   const [partners, setPartners] = useState([]);
   const [partnerFeedback, setPartnerFeedback] = useState({});
 
+  // Last state persisted on the server. Closing the dialog rewinds to it so
+  // abandoned edits never masquerade as saved answers on the next open.
+  const savedFormRef = useRef(EMPTY_FORM);
+
   const flags = useFeatureFlags();
   // When Google Meetings is enabled, mentee session attendance is captured
   // automatically, so the manual sessions-completed question is hidden.
@@ -110,19 +145,12 @@ export default function MentorshipFeedbackDialog({
   const isMentee = participantRole === MentorshipParticipantRoles.MENTEE;
   const partnerRoleLabel = isMentee ? "mentor" : "mentee";
 
-  const populateForm = (data) => {
-    setSessionsCompleted(data.sessionsCompleted?.toString() ?? "");
-    setMostValuableAspects(data.mostValuableAspects ?? "");
-    setChallenges(data.challenges ?? "");
-    setProgramRating(data.programRating?.toString() ?? "");
-    const partnerMap = {};
-    (data.partnerFeedback ?? []).forEach((entry) => {
-      partnerMap[entry.partnerId] = {
-        rating: entry.rating?.toString() ?? "",
-        feedback: entry.feedback ?? "",
-      };
-    });
-    setPartnerFeedback(partnerMap);
+  const applyFormState = (form) => {
+    setSessionsCompleted(form.sessionsCompleted);
+    setMostValuableAspects(form.mostValuableAspects);
+    setChallenges(form.challenges);
+    setProgramRating(form.programRating);
+    setPartnerFeedback(form.partnerFeedback);
   };
 
   const clearError = (field) => {
@@ -142,9 +170,8 @@ export default function MentorshipFeedbackDialog({
   };
 
   useEffect(() => {
-    // When feedback isn't available for this round, render a disabled trigger
-    // button without hitting the API.
-    if (!isFeedbackEnabled || !roundId) {
+    // Without a round there is nothing to fetch; render a disabled trigger.
+    if (!roundId) {
       setHasSubmitted(false);
       return;
     }
@@ -158,7 +185,10 @@ export default function MentorshipFeedbackDialog({
         setParticipantRole(data.participantRole);
         setHasSubmitted(Boolean(data.hasSubmitted));
         setPartners(partnersData ?? []);
-        if (data.hasSubmitted) populateForm(data);
+        if (data.hasSubmitted) {
+          savedFormRef.current = toFormState(data);
+          applyFormState(savedFormRef.current);
+        }
       })
       .catch((err) => {
         if (cancelled) return;
@@ -172,7 +202,7 @@ export default function MentorshipFeedbackDialog({
     return () => {
       cancelled = true;
     };
-  }, [roundId, isFeedbackEnabled]);
+  }, [roundId]);
 
   const validate = () => {
     const newErrors = {};
@@ -205,9 +235,17 @@ export default function MentorshipFeedbackDialog({
           feedback: partnerFeedback[partner.id]?.feedback || null,
         })),
       });
+      savedFormRef.current = {
+        sessionsCompleted,
+        mostValuableAspects,
+        challenges,
+        programRating,
+        partnerFeedback,
+      };
+      const wasUpdate = hasSubmitted;
       setHasSubmitted(true);
       setIsOpen(false);
-      toast.success("Feedback Submitted", {
+      toast.success(wasUpdate ? "Feedback Updated" : "Feedback Submitted", {
         description: `Thank you for sharing feedback on ${roundName || "this round"}.`,
         duration: 4000,
       });
@@ -223,28 +261,36 @@ export default function MentorshipFeedbackDialog({
   };
 
   if (hasSubmitted === null) return null;
+  // Past the deadline there is nothing to show someone who never submitted.
+  if (!isEditable && !hasSubmitted) return null;
 
   const handleOpenChange = (open) => {
-    if (!open && !hasSubmitted) {
-      setSessionsCompleted("");
-      setMostValuableAspects("");
-      setChallenges("");
-      setProgramRating("");
-      setPartnerFeedback({});
+    if (!open) {
+      applyFormState(savedFormRef.current);
       setErrors({});
     }
     setIsOpen(open);
   };
 
+  const triggerLabel = !isEditable
+    ? "View Feedback"
+    : hasSubmitted
+      ? "Edit Feedback"
+      : "Submit Feedback";
+
+  const deadlineNote = isEditable
+    ? feedbackDeadlineText
+      ? `You can update your responses until ${feedbackDeadlineText}.`
+      : "You can update your responses until the feedback deadline."
+    : feedbackDeadlineText
+      ? `The feedback deadline passed on ${feedbackDeadlineText}. Your responses are read-only.`
+      : "The feedback deadline has passed. Your responses are read-only.";
+
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button
-          variant="outline"
-          className="border-[#6035F3] text-[#6035F3] hover:bg-purple-50 disabled:opacity-50"
-          disabled={!isFeedbackEnabled || fetchError}
-        >
-          {hasSubmitted ? "View Feedback" : "Submit Feedback"}
+        <Button variant="outline" size="sm" disabled={!roundId || fetchError}>
+          {triggerLabel}
         </Button>
       </DialogTrigger>
 
@@ -253,16 +299,9 @@ export default function MentorshipFeedbackDialog({
           <DialogTitle>
             {roundName ? `${roundName} Feedback` : "Feedback"}
           </DialogTitle>
-          {hasSubmitted ? (
-            <p className="text-[11px] text-muted-foreground italic mt-1">
-              Thank you for sharing feedback with us!
-            </p>
-          ) : (
-            <p className="text-[11px] text-destructive mt-1">
-              Please review your responses carefully. Feedback cannot be edited
-              after submission.
-            </p>
-          )}
+          <p className="text-[11px] text-muted-foreground italic mt-1">
+            {deadlineNote}
+          </p>
         </DialogHeader>
 
         <div className="py-4 space-y-6 max-h-[70vh] overflow-y-auto px-1">
@@ -279,7 +318,7 @@ export default function MentorshipFeedbackDialog({
                   setSessionsCompleted(val);
                   clearError("sessionsCompleted");
                 }}
-                disabled={hasSubmitted}
+                disabled={!isEditable}
               >
                 <SelectTrigger
                   className={`w-full${errors.sessionsCompleted ? " border-destructive" : ""}`}
@@ -312,7 +351,7 @@ export default function MentorshipFeedbackDialog({
               onChange={setMostValuableAspects}
               placeholder="Share what you found most valuable..."
               maxLength={300}
-              disabled={hasSubmitted}
+              disabled={!isEditable}
             />
           </div>
 
@@ -326,7 +365,7 @@ export default function MentorshipFeedbackDialog({
               onChange={setChallenges}
               placeholder="Describe any challenges you faced..."
               maxLength={300}
-              disabled={hasSubmitted}
+              disabled={!isEditable}
             />
           </div>
 
@@ -349,7 +388,7 @@ export default function MentorshipFeedbackDialog({
                   <RadioGroupItem
                     value={n.toString()}
                     id={`program-rating-${n}`}
-                    disabled={hasSubmitted}
+                    disabled={!isEditable}
                   />
                   <Label
                     htmlFor={`program-rating-${n}`}
@@ -395,7 +434,7 @@ export default function MentorshipFeedbackDialog({
                       <RadioGroupItem
                         value={option.value.toString()}
                         id={`partner-rating-${partner.id}-${option.value}`}
-                        disabled={hasSubmitted}
+                        disabled={!isEditable}
                       />
                       <Label
                         htmlFor={`partner-rating-${partner.id}-${option.value}`}
@@ -422,7 +461,7 @@ export default function MentorshipFeedbackDialog({
                   }
                   placeholder={`Share feedback about ${partner.preferredName}...`}
                   maxLength={300}
-                  disabled={hasSubmitted}
+                  disabled={!isEditable}
                 />
               </div>,
             ];
@@ -434,9 +473,13 @@ export default function MentorshipFeedbackDialog({
             <Button variant="outline" onClick={() => handleOpenChange(false)}>
               Close
             </Button>
-            {!hasSubmitted && (
+            {isEditable && (
               <Button onClick={handleSave} disabled={isSaving}>
-                {isSaving ? "Saving..." : "Submit"}
+                {isSaving
+                  ? "Saving..."
+                  : hasSubmitted
+                    ? "Save Changes"
+                    : "Submit"}
               </Button>
             )}
           </div>

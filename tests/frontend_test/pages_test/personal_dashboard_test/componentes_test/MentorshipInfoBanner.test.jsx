@@ -23,17 +23,6 @@ vi.mock("@/pages/PersonalDashboard/components/MatchingResultDialog", () => ({
   )),
 }));
 
-vi.mock(
-  "@/pages/PersonalDashboard/components/MentorshipFeedbackDialog",
-  () => ({
-    default: vi.fn((props) => (
-      <div data-testid="mock-feedback-dialog">
-        Feedback Enabled: {props.isFeedbackEnabled ? "Yes" : "No"}
-      </div>
-    )),
-  }),
-);
-
 describe("MentorshipInfoBanner", () => {
   const defaultProps = {
     registration: null,
@@ -162,19 +151,9 @@ describe("MentorshipInfoBanner", () => {
     expect(screen.getByText(/Dialog Locked: Yes/)).toBeInTheDocument();
   });
 
-  it("passes isFeedbackEnabled=false to MentorshipFeedbackDialog when feedback is disabled", () => {
-    render(
-      <MentorshipInfoBanner {...defaultProps} isFeedbackEnabled={false} />,
-    );
-
-    const dialog = screen.getByTestId("mock-feedback-dialog");
-    expect(dialog).toHaveTextContent("Feedback Enabled: No");
-  });
-
-  it("passes isFeedbackEnabled=true to MentorshipFeedbackDialog when feedback is enabled", () => {
+  it("does not offer feedback -- that lives on the participants card", () => {
     render(<MentorshipInfoBanner {...defaultProps} isFeedbackEnabled={true} />);
 
-    const dialog = screen.getByTestId("mock-feedback-dialog");
-    expect(dialog).toHaveTextContent("Feedback Enabled: Yes");
+    expect(screen.queryByText(/Feedback/)).not.toBeInTheDocument();
   });
 });

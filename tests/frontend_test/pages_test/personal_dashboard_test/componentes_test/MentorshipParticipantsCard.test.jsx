@@ -26,6 +26,21 @@ vi.mock("@/pages/PersonalDashboard/components/MeetingOverviewCard", () => ({
   ),
 }));
 
+vi.mock(
+  "@/pages/PersonalDashboard/components/MentorshipFeedbackDialog",
+  () => ({
+    default: ({ roundId, roundName, isEditable, feedbackDeadlineText }) => (
+      <div
+        data-testid="feedback-dialog"
+        data-round-id={roundId}
+        data-round-name={roundName}
+        data-editable={String(isEditable)}
+        data-deadline={feedbackDeadlineText ?? ""}
+      />
+    ),
+  }),
+);
+
 const baseProps = {
   roundSelectionData: {
     sortedRounds: [{ id: "1", name: "2026 Spring", status: "active" }],
@@ -264,6 +279,126 @@ describe("MentorshipParticipantsCard", () => {
     expect(
       screen.getByRole("button", { name: /Submit Meeting Info/ }),
     ).toBeDisabled();
+  });
+
+  // "now" is pinned to 2026-03-01T00:00:00Z by the beforeEach above.
+  describe("feedback dialog", () => {
+    const renderWithTimeline = (timeline) =>
+      render(
+        <MentorshipParticipantsCard
+          {...baseProps}
+          participantDetails={{
+            ...baseProps.participantDetails,
+            roundInfo: {
+              ...baseProps.participantDetails.roundInfo,
+              timeline,
+            },
+          }}
+        />,
+      );
+
+    it("should not render the dialog before the feedback window opens", () => {
+      renderWithTimeline({
+        meetingLogReminderAt: "2026-04-02T06:59:59Z",
+        meetingsCompletionDeadlineAt: "2026-04-30T06:59:59Z",
+        feedbackDeadlineAt: "2026-05-09T15:59:59Z",
+      });
+      expect(screen.queryByTestId("feedback-dialog")).not.toBeInTheDocument();
+    });
+
+    it("should render an editable dialog once the mid-term reminder date has passed", () => {
+      renderWithTimeline({
+        meetingLogReminderAt: "2026-02-15T06:59:59Z",
+        meetingsCompletionDeadlineAt: "2026-04-30T06:59:59Z",
+        feedbackDeadlineAt: "2026-05-09T15:59:59Z",
+      });
+      expect(screen.getByTestId("feedback-dialog")).toHaveAttribute(
+        "data-editable",
+        "true",
+      );
+    });
+
+    it("should pass the selected round id and name to the dialog", () => {
+      renderWithTimeline({
+        meetingLogReminderAt: "2026-02-15T06:59:59Z",
+        feedbackDeadlineAt: "2026-05-09T15:59:59Z",
+      });
+      const dialog = screen.getByTestId("feedback-dialog");
+      expect(dialog).toHaveAttribute("data-round-id", "1");
+      expect(dialog).toHaveAttribute("data-round-name", "2026 Spring");
+    });
+
+    it("should open one month before the meetings deadline when no mid-term reminder is set", () => {
+      // Meetings end 2026-03-15, so the window opens 2026-02-15 — already past.
+      renderWithTimeline({
+        meetingsCompletionDeadlineAt: "2026-03-15T06:59:59Z",
+        feedbackDeadlineAt: "2026-05-09T15:59:59Z",
+      });
+      expect(screen.getByTestId("feedback-dialog")).toBeInTheDocument();
+    });
+
+    it("should stay closed when the derived open date is still in the future", () => {
+      // Meetings end 2026-04-30, so the window opens 2026-03-30 — not yet.
+      renderWithTimeline({
+        meetingsCompletionDeadlineAt: "2026-04-30T06:59:59Z",
+        feedbackDeadlineAt: "2026-05-09T15:59:59Z",
+      });
+      expect(screen.queryByTestId("feedback-dialog")).not.toBeInTheDocument();
+    });
+
+    it("should render a read-only dialog after the feedback deadline", () => {
+      renderWithTimeline({
+        meetingLogReminderAt: "2026-01-01T00:00:00Z",
+        meetingsCompletionDeadlineAt: "2026-01-20T00:00:00Z",
+        feedbackDeadlineAt: "2026-02-01T00:00:00Z",
+      });
+      expect(screen.getByTestId("feedback-dialog")).toHaveAttribute(
+        "data-editable",
+        "false",
+      );
+    });
+
+    it("should close one month after the meetings deadline when no feedback deadline is set", () => {
+      // Meetings end 2026-02-10, so the window closes 2026-03-10 — still open.
+      renderWithTimeline({
+        meetingLogReminderAt: "2026-01-01T00:00:00Z",
+        meetingsCompletionDeadlineAt: "2026-02-10T06:59:59Z",
+      });
+      const dialog = screen.getByTestId("feedback-dialog");
+      expect(dialog).toHaveAttribute("data-editable", "true");
+      expect(dialog).toHaveAttribute(
+        "data-deadline",
+        "Mar 10, 2026 14:59 Asia/Shanghai",
+      );
+    });
+
+    it("should show the deadline in the user's timezone", () => {
+      renderWithTimeline({
+        meetingLogReminderAt: "2026-02-15T06:59:59Z",
+        feedbackDeadlineAt: "2026-05-09T15:59:59Z",
+      });
+      expect(screen.getByTestId("feedback-dialog")).toHaveAttribute(
+        "data-deadline",
+        "May 9, 2026 23:59 Asia/Shanghai",
+      );
+    });
+
+    it("should not render the dialog when the user has no participation", () => {
+      render(
+        <MentorshipParticipantsCard
+          {...baseProps}
+          participantDetails={{
+            roundInfo: {
+              ...baseProps.participantDetails.roundInfo,
+              timeline: { meetingLogReminderAt: "2026-01-01T00:00:00Z" },
+            },
+            partnerMeetingOverview: [],
+            participantRole: null,
+          }}
+        />,
+      );
+      expect(screen.queryByTestId("feedback-dialog")).not.toBeInTheDocument();
+    });
   });
 
   it("should disable submit when round is completed without deadline", () => {
