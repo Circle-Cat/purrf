@@ -7,23 +7,14 @@ import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
 import AnswersSection from "@/pages/Recruiting/components/AnswersSection";
 import { Button } from "@/components/ui/button";
+import PendingNotice from "@/pages/Recruiting/components/PendingNotice";
+import TermHint from "@/pages/Recruiting/components/TermHint";
+import {
+  GLOSSARY,
+  lockReasonText,
+  stageTermId,
+} from "@/pages/Recruiting/components/glossary";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
-
-/**
- * Human-readable label for an `ApplicationStage` enum value, e.g.
- * "recruiter_screening" -> "Recruiter screening". Activity postings have no
- * offer step and present `hired` as "Admitted" (display-only rename).
- *
- * @param {string} stage
- * @param {string|null|undefined} jobKind JobKind value ("employment"|"activity").
- * @returns {string}
- */
-const formatStageLabel = (stage, jobKind) => {
-  if (!stage) return "";
-  if (jobKind === "activity" && stage === "hired") return "Admitted";
-  const words = stage.split("_").join(" ");
-  return words[0].toUpperCase() + words.slice(1);
-};
 
 /**
  * Read-only summary of a submitted application: the applicant's answers, no
@@ -39,15 +30,26 @@ const formatStageLabel = (stage, jobKind) => {
 const ReadOnlySummary = ({ job, application, onReapply }) => {
   const submission = application.current?.submission ?? {};
   const personal = submission.personal ?? {};
+  const termId = stageTermId(application.stage, job.kind);
+  const lockText = lockReasonText(
+    application.lockReason,
+    GLOSSARY[termId]?.label,
+  );
 
   return (
     <div className="space-y-4 p-6">
       <div className="space-y-1">
         <h1 className="text-xl font-semibold text-slate-900">{job.title}</h1>
         <p className="text-sm text-slate-600">
-          Status: {formatStageLabel(application.stage, job.kind)}
+          Status: <TermHint id={termId} />
         </p>
       </div>
+      {lockText && (
+        <PendingNotice
+          headline="Your application is locked"
+          detail={lockText}
+        />
+      )}
       <div className="space-y-1">
         <h2 className="text-sm font-medium text-slate-700">Personal</h2>
         <p className="text-sm text-slate-700">

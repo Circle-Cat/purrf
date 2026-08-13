@@ -24,3 +24,13 @@ js_library(
     name = "application_stages_vector_js",
     srcs = ["application_stages.json"],
 )
+
+filegroup(
+    name = "application_lock_reasons_vector",
+    srcs = ["application_lock_reasons.json"],
+)
+
+js_library(
+    name = "application_lock_reasons_vector_js",
+    srcs = ["application_lock_reasons.json"],
+)
