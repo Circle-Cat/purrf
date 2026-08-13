@@ -36,6 +36,19 @@ import { rejectKindLabel } from "@/pages/Recruiting/components/rejectKindLabels"
 import PostingConfigSummary from "@/pages/Recruiting/components/PostingConfigSummary";
 import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
+import PendingNotice from "@/pages/Recruiting/components/PendingNotice";
+
+/**
+ * What the posting is waiting on, per status with no Operate action left.
+ * Naming the specific request matters: three of these four are not a
+ * submission for publication, and calling them one would be wrong.
+ */
+const PENDING_HEADLINE = {
+  pending_review: "Submitted for review",
+  published_pending_revision: "Revision submitted for review",
+  pending_close: "Close requested",
+  pending_reopen: "Reopen requested",
+};
 
 /** Title and dispatch fn per review action kind. */
 const REVIEW_ACTION = {
@@ -187,22 +200,10 @@ const PostingDetailPage = () => {
   const proposedJob = job.pendingPayload
     ? { ...job, ...job.pendingPayload }
     : null;
-  // Mirrors JobService._revalidate_job_config's publish gate: whatever
-  // approval would put live (the staged pipeline when an edit is staged,
-  // else the live one) needs >=1 stage and >=1 Recruiter owner, or every
-  // application would land outside all board lanes with no one to see it.
-  const effectivePipeline =
-    (job.pendingPayload
-      ? job.pendingPayload.pipelineConfig
-      : job.pipelineConfig) ?? {};
-  const effectiveOwnerIds =
-    effectivePipeline.ownerIds ??
-    (effectivePipeline.ownerId != null ? [effectivePipeline.ownerId] : []);
-  const submitBlocker = !effectivePipeline.stages?.length
-    ? "Add at least one pipeline stage before submitting for review."
-    : effectiveOwnerIds.length === 0
-      ? "Add at least one recruiter before submitting for review."
-      : null;
+  // The publish gate is JobService._revalidate_job_config's, evaluated server
+  // side and carried here whole, so the reason the button is disabled and the
+  // reason the API would refuse cannot drift apart.
+  const submitBlockers = job.submitBlockers ?? [];
 
   const formatActivity = (entry) => {
     const { eventType, actorName, details = {} } = entry;
@@ -347,7 +348,7 @@ const PostingDetailPage = () => {
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold text-slate-900">{job.title}</h1>
-          <PostingStatusBadges job={job} />
+          <PostingStatusBadges job={job} explain />
           <div className="ml-auto">
             <HowItWorksDialog {...POSTINGS_GUIDE} />
           </div>
@@ -406,7 +407,7 @@ const PostingDetailPage = () => {
             <>
               <Button
                 size="sm"
-                disabled={submitBlocker != null}
+                disabled={submitBlockers.length > 0}
                 onClick={() => openReview("submit")}
               >
                 Submit for review
@@ -433,7 +434,7 @@ const PostingDetailPage = () => {
             <>
               <Button
                 size="sm"
-                disabled={submitBlocker != null}
+                disabled={submitBlockers.length > 0}
                 onClick={() => openReview("submit")}
               >
                 Submit for review
@@ -474,11 +475,22 @@ const PostingDetailPage = () => {
               Delete
             </Button>
           )}
-          {submitBlocker != null &&
-            (isDraft || (isPublished && job.pendingPayload != null)) && (
-              <span className="text-xs text-amber-600">{submitBlocker}</span>
-            )}
+          {submitBlockers.length > 0 &&
+            (isDraft || (isPublished && job.pendingPayload != null)) &&
+            submitBlockers.map((blocker) => (
+              <span key={blocker} className="text-xs text-amber-600">
+                {blocker}
+              </span>
+            ))}
         </div>
+      )}
+
+      {canWrite && !hasOperateAction && (
+        <PendingNotice
+          headline={PENDING_HEADLINE[job.status]}
+          waitingOn={reviewerName}
+          detail="Editing is locked until they approve or reject."
+        />
       )}
 
       {isAssignedReviewer && (

@@ -190,6 +190,16 @@ class TestRecruitingMapper(unittest.TestCase):
         dto = self.mapper.to_job_dto(job)
         self.assertIsNone(dto.reviewer_id)
 
+    def test_to_job_dto_carries_submit_blockers(self):
+        job = self._make_job_entity()
+        dto = self.mapper.to_job_dto(job, submit_blockers=["needs a stage"])
+        self.assertEqual(dto.submit_blockers, ["needs a stage"])
+
+    def test_to_job_dto_defaults_submit_blockers_to_empty(self):
+        job = self._make_job_entity()
+        dto = self.mapper.to_job_dto(job)
+        self.assertEqual(dto.submit_blockers, [])
+
     def test_to_my_application_summary_dto_maps_fields(self):
         application = ApplicationEntity(
             job_id=5, user_id=2, stage=ApplicationStage.HIRED
