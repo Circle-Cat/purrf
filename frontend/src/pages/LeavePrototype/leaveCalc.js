@@ -309,11 +309,17 @@ export const TYPE_LABEL = {
  * break split across a working day stays two segments — which is how the real
  * calendar is actually written.
  *
- * Exchangeability is per date, so a segment reports how many of its days
- * qualify rather than a single flag.
+ * Exchangeability belongs to the holiday, not to its individual dates, so a
+ * segment carries one flag. It joins the match test for that reason: rows that
+ * disagree cannot have come from the entry form, so splitting them apart puts
+ * the inconsistency on screen instead of hiding it behind whichever row
+ * happened to sort first.
+ *
+ * Employees still exchange part of a break — that choice is made on the request,
+ * not here.
  *
  * @param {Array<{date: string, name: string, exchangeable: boolean}>} holidays
- * @returns {Array<{name: string, start: string, end: string, days: number, exchangeableDays: number, dates: string[]}>}
+ * @returns {Array<{name: string, start: string, end: string, days: number, exchangeable: boolean, dates: string[]}>}
  */
 export const groupHolidays = (holidays) => {
   const sorted = [...holidays].sort((a, b) => a.date.localeCompare(b.date));
@@ -329,18 +335,22 @@ export const groupHolidays = (holidays) => {
         )
       : null;
 
-    if (last && last.name === row.name && dayAfterLast === row.date) {
+    if (
+      last &&
+      last.name === row.name &&
+      last.exchangeable === Boolean(row.exchangeable) &&
+      dayAfterLast === row.date
+    ) {
       last.end = row.date;
       last.days += 1;
       last.dates.push(row.date);
-      if (row.exchangeable) last.exchangeableDays += 1;
     } else {
       segments.push({
         name: row.name,
         start: row.date,
         end: row.date,
         days: 1,
-        exchangeableDays: row.exchangeable ? 1 : 0,
+        exchangeable: Boolean(row.exchangeable),
         dates: [row.date],
       });
     }

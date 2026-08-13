@@ -66,19 +66,17 @@ const EmployeeView = ({
   );
 
   /**
-   * The picker lists individual dates rather than whole segments: a break can
-   * be only partly exchangeable, so the choice is per day even though a single
-   * request may span several of them.
+   * The picker lists individual dates rather than whole segments. Whether a
+   * break can be traded at all is decided for the break, but how much of one to
+   * work is the employee's choice, so the dates are what they pick from.
    */
-  const exchangeableDays = upcomingSegments.flatMap((segment) =>
-    segment.dates
-      .filter(
-        (date) =>
-          date >= today() &&
-          COMPANY_HOLIDAYS.find((h) => h.date === date)?.exchangeable,
-      )
-      .map((date) => ({ date, segment })),
-  );
+  const exchangeableDays = upcomingSegments
+    .filter((segment) => segment.exchangeable)
+    .flatMap((segment) =>
+      segment.dates
+        .filter((date) => date >= today())
+        .map((date) => ({ date, segment })),
+    );
 
   // Dialogs live outside the page switch so they stay mounted wherever you
   // opened them from.

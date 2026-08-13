@@ -14,8 +14,8 @@ import {
  *
  * Holidays are stored one row per date, so a multi-day break arrives here as
  * several rows; they are grouped into segments before display, or a five-day
- * break reads as five identical lines. Exchangeability is per date, so a
- * segment reports how many of its days qualify rather than one flag.
+ * break reads as five identical lines. Exchangeability belongs to the break as
+ * a whole, so a segment carries one flag.
  *
  * @param {object} props
  * @param {boolean} props.open
@@ -30,8 +30,8 @@ const HolidaysDialog = ({ open, onOpenChange, segments }) => (
         <DialogTitle>Company holidays</DialogTitle>
         <DialogDescription>
           You do not request these — the office is closed and nothing is
-          deducted. Days marked exchangeable can be worked in trade for 8h of
-          paid leave.
+          deducted. A break marked exchangeable can be worked in trade for 8h of
+          paid leave a day; you choose how many of its days to work.
         </DialogDescription>
       </DialogHeader>
 
@@ -57,11 +57,9 @@ const HolidaysDialog = ({ open, onOpenChange, segments }) => (
                   </span>
                 )}
               </div>
-              {s.exchangeableDays > 0 && (
+              {s.exchangeable && (
                 <Badge variant="outline" className="text-xs shrink-0">
-                  {s.exchangeableDays === s.days
-                    ? "Exchangeable"
-                    : `${s.exchangeableDays} of ${s.days} exchangeable`}
+                  Exchangeable
                 </Badge>
               )}
             </li>

@@ -48,13 +48,15 @@ export const HOLIDAY_GRANT_ALLOWANCE = 24;
  * real table, where a multi-day break is several rows sharing a name rather
  * than a start/end pair.
  *
- * Two properties of the real calendar are reproduced here because they are what
- * break naive display code:
+ * One property of the real calendar is reproduced here because it is what
+ * breaks naive display code: a named holiday can be split across
+ * non-consecutive dates (Founders Week below covers Oct 1-3 and Oct 5,
+ * skipping Oct 4).
  *
- *   - A named holiday can be split across non-consecutive dates (Founders Week
- *     below covers Oct 1-3 and Oct 5, skipping Oct 4).
- *   - Exchangeability is per date, not per holiday, so one break can be partly
- *     exchangeable (Founders Week again).
+ * Exchangeability belongs to the whole holiday, so every row of one break
+ * carries the same value. Year End Break is exchangeable across all three of
+ * its days, which is what lets the request form demonstrate working two of
+ * them and keeping the third.
  */
 export const COMPANY_HOLIDAYS = [
   { date: "2026-08-21", name: "Charter Day", exchangeable: false },
@@ -67,14 +69,14 @@ export const COMPANY_HOLIDAYS = [
 
   { date: "2026-10-01", name: "Founders Week", exchangeable: false },
   { date: "2026-10-02", name: "Founders Week", exchangeable: false },
-  { date: "2026-10-03", name: "Founders Week", exchangeable: true },
-  { date: "2026-10-05", name: "Founders Week", exchangeable: true },
+  { date: "2026-10-03", name: "Founders Week", exchangeable: false },
+  { date: "2026-10-05", name: "Founders Week", exchangeable: false },
 
   { date: "2026-11-13", name: "Founders Day", exchangeable: false },
 
   { date: "2026-12-23", name: "Year End Break", exchangeable: true },
   { date: "2026-12-24", name: "Year End Break", exchangeable: true },
-  { date: "2026-12-25", name: "Year End Break", exchangeable: false },
+  { date: "2026-12-25", name: "Year End Break", exchangeable: true },
 ];
 
 /**
@@ -110,7 +112,7 @@ export const REGIONS = {
 export const INTL_COMPANY_HOLIDAYS = [
   { date: "2026-09-07", name: "Labour Day", exchangeable: false },
   { date: "2026-11-26", name: "Thanksgiving", exchangeable: false },
-  { date: "2026-11-27", name: "Thanksgiving", exchangeable: true },
+  { date: "2026-11-27", name: "Thanksgiving", exchangeable: false },
   { date: "2026-12-24", name: "Winter Break", exchangeable: false },
   { date: "2026-12-25", name: "Winter Break", exchangeable: false },
 ];

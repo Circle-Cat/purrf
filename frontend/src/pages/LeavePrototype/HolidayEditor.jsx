@@ -11,14 +11,14 @@ import { datesBetween, groupHolidays } from "@/pages/LeavePrototype/leaveCalc";
 /**
  * HolidayEditor
  *
- * Enter a holiday as it is announced — a name and the dates it runs — and
- * store it as one row per date, which is what everything downstream needs:
- * exchangeability is decided per day, and periods are found by looking for
- * consecutive dates.
+ * Enter a holiday as it is announced — a name, the dates it runs, and whether
+ * it can be traded — and store it as one row per date, which is what
+ * everything downstream needs: periods are found by looking for consecutive
+ * dates.
  *
- * A break that is only partly tradeable is entered as two rows with the same
- * name. They merge back into one period on display, so nothing is lost and
- * there is no per-day control to fiddle with.
+ * Exchangeability is one switch for the whole break, because that is how the
+ * policy reads: a holiday can be traded or it cannot. Employees still trade
+ * part of one, but they say so on the request, not here.
  *
  * @param {object} props
  * @param {string} props.title
@@ -148,7 +148,7 @@ const HolidayEditor = ({
         <p className="text-xs text-slate-400">
           A one-day holiday has the same date in both.
           {withExchangeable &&
-            " For a break that is only partly tradeable, add it as two entries with the same name."}
+            " Exchangeable applies to the whole break; employees choose how much of it to work."}
         </p>
       )}
 
@@ -177,11 +177,9 @@ const HolidayEditor = ({
                       {annotate(s)}
                     </span>
                   )}
-                  {withExchangeable && s.exchangeableDays > 0 && (
+                  {withExchangeable && s.exchangeable && (
                     <Badge variant="outline" className="text-xs">
-                      {s.exchangeableDays === s.days
-                        ? "Exchangeable"
-                        : `${s.exchangeableDays}/${s.days}`}
+                      Exchangeable
                     </Badge>
                   )}
                   <Button

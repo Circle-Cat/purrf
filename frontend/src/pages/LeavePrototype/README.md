@@ -101,10 +101,12 @@ each one:
 - **A break can be part-exchanged.** Work two days of a three-day break and the
   third stays yours. Pick a range inside the break; the request covers only what
   you picked.
-- **Exchange is all-or-nothing over its range.** A break can be exchangeable on
-  some days and not others, and the calendar can skip a day mid-break. Include
-  a day that does not qualify and the whole request is refused, naming the day —
-  rather than silently crediting you for less than you worked.
+- **Exchange is all-or-nothing over its range.** Whether a break can be traded
+  is decided for the break as a whole, but a range can still reach past one —
+  the calendar can skip a day mid-break, and the day after a break is an
+  ordinary working day. Include a day that does not qualify and the whole
+  request is refused, naming the day — rather than silently crediting you for
+  less than you worked.
 - **Short sick leave skips approval.** Three days or less is approved on
   submission and never touches the balance. Longer goes to the manager, still
   without touching the balance.
