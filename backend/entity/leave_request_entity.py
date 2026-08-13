@@ -43,7 +43,7 @@ class LeaveRequestEntity(Base):
     __table_args__ = (
         # Times describe one calendar day, so a multi-day range cannot carry
         # them: a request from the 3rd at 14:00 to the 5th at 16:00 has no
-        # single reading. Part days are single-day by construction.
+        # single reading.
         CheckConstraint(
             "start_date = end_date OR (start_time IS NULL AND end_time IS NULL)",
             name="times_only_on_a_single_day",

@@ -30,9 +30,7 @@ class TestLeaveLedgerEntity(unittest.TestCase):
         self.assertEqual(entry.effective_date, datetime.date(2026, 3, 2))
 
     def test_the_double_write_guard_covers_only_what_a_job_writes(self):
-        """The test is "did a cron write it", not "was it automatic". Adding
-        manual_adjustment here would reject an admin's second correction for
-        the same person on the same day, which is a legitimate entry."""
+        """The test is "did a cron write it", not "was it automatic"."""
         where = str(_job_written_index().dialect_options["postgresql"]["where"])
 
         self.assertIn(LeaveEntryType.WEEKLY_ACCRUAL.value, where)
@@ -50,8 +48,8 @@ class TestLeaveLedgerEntity(unittest.TestCase):
         )
 
     def test_the_ledger_has_no_updated_timestamp(self):
-        """Rows are never edited. A cancellation writes a reversal against the
-        original, so an updated column would only ever record a mistake."""
+        """Its presence would mean a row had been edited, which never happens
+        here."""
         self.assertNotIn("updated_timestamp", LeaveLedgerEntity.__table__.c)
 
     def test_created_by_is_nullable_because_a_job_has_no_person_behind_it(self):
@@ -60,8 +58,8 @@ class TestLeaveLedgerEntity(unittest.TestCase):
 
 class TestLeaveEntryType(unittest.TestCase):
     def test_the_entry_types_are_exactly_the_six_the_design_settled_on(self):
-        """holiday_grant went away with the public-holiday conversion. It is
-        still in git history; it must not come back from there."""
+        """The set is closed: a seventh value is an enum migration, not an
+        edit here."""
         self.assertEqual(
             {entry.value for entry in LeaveEntryType},
             {

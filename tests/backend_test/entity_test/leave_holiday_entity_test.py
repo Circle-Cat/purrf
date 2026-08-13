@@ -21,8 +21,7 @@ class TestLeaveHolidayEntity(unittest.TestCase):
 
     def test_year_and_date_are_unique_together_with_year_leading(self):
         """The leading column matters: "has 2027 been entered?" is answered by
-        an existence lookup on this index, and that is a hard gate on every
-        request submission."""
+        an existence lookup on this index."""
         unique = [
             constraint
             for constraint in LeaveHolidayEntity.__table__.constraints
@@ -35,8 +34,6 @@ class TestLeaveHolidayEntity(unittest.TestCase):
         )
 
     def test_a_check_constraint_ties_the_redundant_year_to_the_date(self):
-        """year duplicates information already in date, so nothing but the
-        database can stop the two from drifting apart."""
         checks = [
             str(constraint.sqltext)
             for constraint in LeaveHolidayEntity.__table__.constraints

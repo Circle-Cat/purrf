@@ -33,15 +33,11 @@ class TestLeaveRequestEntity(unittest.TestCase):
         self.assertEqual(request.approver_user_id, 2)
 
     def test_an_approver_is_required(self):
-        """Snapshotted from Azure at submission. Relaxing this to let someone
-        with no manager submit would turn a blank HR field into unreviewed
-        leave taking effect -- the system cannot tell that case apart from
-        "this person genuinely has no supervisor"."""
+        """Relaxing this to let someone with no manager submit would turn a
+        blank HR field into unreviewed leave taking effect."""
         self.assertFalse(LeaveRequestEntity.__table__.c.approver_user_id.nullable)
 
     def test_times_are_only_allowed_within_a_single_day(self):
-        """A range with times attached has no single reading: the 3rd at 14:00
-        through the 5th at 16:00 is not an interval anyone can price."""
         constraint = _check_constraints()["ck_leave_request_times_only_on_a_single_day"]
 
         self.assertIn("start_date = end_date", constraint)
@@ -66,17 +62,13 @@ class TestLeaveRequestEntity(unittest.TestCase):
 
 class TestLeaveRequestEnums(unittest.TestCase):
     def test_there_is_no_unpaid_leave_type(self):
-        """Out of scope for now. Adding it is an enum migration plus a branch
-        in the approval path, not a quiet extra value."""
         self.assertEqual(
             {request_type.value for request_type in LeaveRequestType},
             {"paid", "sick", "exchange"},
         )
 
     def test_the_status_values_cover_the_whole_state_machine(self):
-        """cancel_pending is the one that gets dropped as redundant: cancelling
-        an already-approved request needs the manager again, so it cannot go
-        straight to cancelled."""
+        """cancel_pending is the one that reads as redundant and is not."""
         self.assertEqual(
             {status.value for status in LeaveRequestStatus},
             {

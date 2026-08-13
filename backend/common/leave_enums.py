@@ -4,8 +4,7 @@ from enum import StrEnum
 class LeaveEntryType(StrEnum):
     """What produced a ledger row.
 
-    A balance is the signed sum of every row for one user, so each type is
-    just a reason attached to a number -- except for one asymmetry:
+    Every type is a reason attached to a number, with one asymmetry:
     ``WEEKLY_ACCRUAL`` is the only type the accrual engine counts as "already
     granted" when it works out what this week still owes. Counting a second
     type there would quietly change everyone's entitlement rather than fail.
@@ -19,11 +18,8 @@ class LeaveEntryType(StrEnum):
     CARRYOVER_FORFEIT = "carryover_forfeit"
 
 
-# Types written by a scheduled job rather than by a person. Both come from a
-# cron that can be run twice -- a retried pod, a manual re-trigger -- and both
-# would double-grant or double-forfeit if it were. The partial unique index on
-# leave_ledger covers exactly these; manual adjustments stay outside it because
-# an admin may legitimately book several corrections for one person on one day.
+# Types written by a scheduled job rather than by a person. The partial unique
+# index on leave_ledger covers exactly these; the entity explains why.
 JOB_WRITTEN_ENTRY_TYPES = (
     LeaveEntryType.WEEKLY_ACCRUAL,
     LeaveEntryType.CARRYOVER_FORFEIT,
@@ -33,10 +29,8 @@ JOB_WRITTEN_ENTRY_TYPES = (
 class LeaveRequestType(StrEnum):
     """What is being requested.
 
-    Exchange trades a company holiday for a working day and is not a separate
-    table -- it is a request row whose ledger entry is positive. Unpaid leave
-    is out of scope for now; adding it is an enum migration plus a branch in
-    the approval path.
+    Unpaid leave is out of scope for now; adding it is an enum migration plus
+    a branch in the approval path.
     """
 
     PAID = "paid"
