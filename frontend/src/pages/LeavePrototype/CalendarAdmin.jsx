@@ -1,49 +1,27 @@
 import { useMemo } from "react";
 import { AlertOctagon } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import HolidayEditor from "@/pages/LeavePrototype/HolidayEditor";
-import { REGIONS } from "@/pages/LeavePrototype/mockData";
+import { LEVEL_POLICY, WEEKEND_LABEL } from "@/pages/LeavePrototype/mockData";
 
 /**
  * CalendarAdmin
  *
- * One region's company holidays and the figures that go with them.
+ * The company holidays, and the figures that surround them.
  *
- * There is no statutory calendar here. It used to exist only to decide when
- * extra paid leave was paid out; now half of that accrues weekly and the other
- * half is granted by hand before each holiday, so nothing reads a government
- * calendar and there is nothing to keep in step with one.
- *
- * Editable rather than loaded by migration because a region is created the day
- * somebody is hired into it, and its holidays and figures have to exist from
- * that moment.
+ * The holidays are the only part that is editable, and they are the only part
+ * held in the database: they are rearranged every year, so entering them on a
+ * screen beats opening a migration each December. The weekend and the level
+ * entitlement are code constants shown here read-only, so an administrator can
+ * see what is in force without being able to move it — changing either is a
+ * pull request, which is the point.
  *
  * @param {object} props
- * @param {string} props.region
- * @param {(region: string) => void} props.onRegionChange
- * @param {object} props.settings - {weeklyExtraHours, holidayGrantAllowance, weekendLabel}
- * @param {(settings: object) => void} props.onSettingsChange
  * @param {Array<object>} props.company
  * @param {(rows: Array<object>) => void} props.onCompanyChange
  * @returns {JSX.Element}
  */
-const CalendarAdmin = ({
-  region,
-  onRegionChange,
-  settings,
-  onSettingsChange,
-  company,
-  onCompanyChange,
-}) => {
+const CalendarAdmin = ({ company, onCompanyChange }) => {
   const loadedYears = useMemo(() => {
     const years = new Set();
     for (const r of company) years.add(r.date.slice(0, 4));
@@ -53,69 +31,26 @@ const CalendarAdmin = ({
   const nextYear = String(new Date().getFullYear() + 1);
   const nextYearMissing = !loadedYears.has(nextYear);
 
-  const set = (key, value) => onSettingsChange({ ...settings, [key]: value });
-
   return (
     <div className="space-y-4">
       <Card className="p-4 space-y-3">
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="calendar-region" className="text-xs">
-              Region
-            </Label>
-            <Select value={region} onValueChange={onRegionChange}>
-              <SelectTrigger id="calendar-region" className="w-44">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(REGIONS).map(([key, r]) => (
-                  <SelectItem key={key} value={key}>
-                    {r.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        <div className="flex flex-wrap items-start gap-8">
+          <div className="space-y-1">
+            <p className="text-xs text-slate-500">Weekend</p>
+            <p className="text-sm text-slate-700">{WEEKEND_LABEL}</p>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="calendar-weekly" className="text-xs">
-              Extra leave, accrued weekly
-            </Label>
-            <Input
-              id="calendar-weekly"
-              type="number"
-              step="8"
-              className="w-36"
-              value={settings.weeklyExtraHours}
-              onChange={(e) => set("weeklyExtraHours", Number(e.target.value))}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="calendar-grant" className="text-xs">
-              Extra leave, granted by hand
-            </Label>
-            <Input
-              id="calendar-grant"
-              type="number"
-              step="8"
-              className="w-36"
-              value={settings.holidayGrantAllowance}
-              onChange={(e) =>
-                set("holidayGrantAllowance", Number(e.target.value))
-              }
-            />
-          </div>
-          <div className="space-y-1.5 min-w-36">
-            <Label className="text-xs">Weekend</Label>
-            <p className="text-sm text-slate-700 h-9 flex items-center">
-              {settings.weekendLabel}
+          <div className="space-y-1">
+            <p className="text-xs text-slate-500">Yearly entitlement</p>
+            <p className="text-sm text-slate-700 tabular-nums">
+              {Object.entries(LEVEL_POLICY)
+                .map(([level, hours]) => `${level} ${hours}h`)
+                .join(" · ")}
             </p>
           </div>
         </div>
         <p className="text-xs text-slate-400">
-          Regional. The level entitlement is global and lives in code; these do
-          not, because a new region needs them the day it is created. Set the
-          granted figure to zero for a region that does not do it — the grant
-          screen then has nothing to issue there.
+          Read-only. These live in code rather than in this screen, so changing
+          one leaves a reviewed trail instead of happening in an afternoon.
         </p>
       </Card>
 
@@ -125,7 +60,7 @@ const CalendarAdmin = ({
             <AlertOctagon size={16} className="mt-0.5 shrink-0 text-rose-500" />
             <div>
               <h3 className="text-sm font-semibold text-slate-900">
-                No {nextYear} calendar for {REGIONS[region].label}
+                No {nextYear} calendar yet
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 Every request dated in {nextYear} will be refused until there
@@ -138,7 +73,7 @@ const CalendarAdmin = ({
 
       <HolidayEditor
         title="Company holidays"
-        blurb="Office closed. Never deducted from anyone's leave. Mark the days that may be worked in trade."
+        blurb="Office closed. Never deducted from anyone's leave. Mark the breaks that may be worked in trade."
         rows={company}
         withExchangeable
         onChange={onCompanyChange}

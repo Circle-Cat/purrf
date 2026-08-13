@@ -1,10 +1,8 @@
 import { useMemo, useState } from "react";
-import { AlertOctagon, AlertTriangle, CheckCircle2, Gift } from "lucide-react";
+import { AlertOctagon, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -19,9 +17,7 @@ import AdjustDialog from "@/pages/LeavePrototype/AdjustDialog";
 import {
   COMPANY_HOLIDAYS,
   DATA_ISSUE_LABELS,
-  INTL_COMPANY_HOLIDAYS,
   ORG_BALANCES,
-  REGIONS,
 } from "@/pages/LeavePrototype/mockData";
 
 /**
@@ -142,33 +138,11 @@ const AdminView = ({ adjustments, onAdjust }) => {
   const [adjusting, setAdjusting] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  // Per region, because a region is created the day someone is hired into it
-  // and needs its own calendars and figures from that moment. Level
-  // entitlement is global and lives in code, so it is not here.
-  const [region, setRegion] = useState("CN");
-  const [calendars, setCalendars] = useState({
-    CN: COMPANY_HOLIDAYS,
-    INTL: INTL_COMPANY_HOLIDAYS,
-  });
-  const [settings, setSettings] = useState({
-    CN: { ...REGIONS.CN },
-    INTL: { ...REGIONS.INTL },
-  });
-  const [allowanceUsed, setAllowanceUsed] = useState({});
+  // One calendar, because the system covers one country. There is no
+  // dimension to hold a second set of holidays against.
+  const [calendar, setCalendar] = useState(COMPANY_HOLIDAYS);
 
-  /** One dialog writes rows for one person or a whole region. */
-  const writeRows = (rows, countsAgainstAllowance) => {
-    rows.forEach(onAdjust);
-    if (countsAgainstAllowance) {
-      setAllowanceUsed((prev) => {
-        const next = { ...prev };
-        for (const r of rows) {
-          next[r.personId] = (next[r.personId] ?? 0) + r.hours;
-        }
-        return next;
-      });
-    }
-  };
+  const writeRows = (rows) => rows.forEach(onAdjust);
 
   /** Session adjustments folded into the seeded balances. */
   const balances = ORG_BALANCES.map((p) => ({
@@ -196,10 +170,7 @@ const AdminView = ({ adjustments, onAdjust }) => {
           if (!next) setAdjusting(null);
         }}
         person={adjusting}
-        people={balances}
         balanceOf={(id) => balances.find((p) => p.id === id)?.balance ?? 0}
-        allowanceUsedBy={(id) => allowanceUsed[id] ?? 0}
-        allowanceFor={(r) => settings[r]?.holidayGrantAllowance ?? 0}
         onSubmit={writeRows}
       />
 
@@ -211,40 +182,15 @@ const AdminView = ({ adjustments, onAdjust }) => {
         </TabsList>
 
         <TabsContent value="year" className="mt-4">
-          <CalendarAdmin
-            region={region}
-            onRegionChange={setRegion}
-            settings={settings[region]}
-            onSettingsChange={(next) =>
-              setSettings((prev) => ({ ...prev, [region]: next }))
-            }
-            company={calendars[region]}
-            onCompanyChange={(rows) =>
-              setCalendars((prev) => ({ ...prev, [region]: rows }))
-            }
-          />
+          <CalendarAdmin company={calendar} onCompanyChange={setCalendar} />
         </TabsContent>
 
         <TabsContent value="balances" className="mt-4 space-y-4">
-          <div className="flex justify-end">
-            <Button
-              size="sm"
-              onClick={() => {
-                setAdjusting(null);
-                setDialogOpen(true);
-              }}
-            >
-              <Gift size={15} />
-              Grant holiday allowance
-            </Button>
-          </div>
-
           <Card className="p-0 overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>Region</TableHead>
                   <TableHead>Level</TableHead>
                   <TableHead>Manager</TableHead>
                   <TableHead className="text-right">Balance</TableHead>
@@ -268,9 +214,6 @@ const AdminView = ({ adjustments, onAdjust }) => {
                           </Badge>
                         )}
                       </div>
-                    </TableCell>
-                    <TableCell className="text-slate-500">
-                      {REGIONS[p.region]?.label ?? p.region}
                     </TableCell>
                     <TableCell className="text-slate-500">
                       {p.level ?? "—"}

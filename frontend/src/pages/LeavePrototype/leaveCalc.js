@@ -367,7 +367,6 @@ export const groupHolidays = (holidays) => {
  */
 export const ENTRY_LABEL = {
   weekly_accrual: "Weekly accrual",
-  holiday_grant: "Public holiday grant",
   leave_deduction: "Leave taken",
   exchange_credit: "Holiday worked",
   manual_adjustment: "Adjustment by administrator",
