@@ -35,6 +35,7 @@ _SHARD_COUNT = 10
             ":vitest_config",
             "//:npm_deps",
             "//frontend:all_srcs",
+            "//tests/shared:application_lock_reasons_vector_js",
             "//tests/shared:application_stages_vector_js",
             "//tests/shared:form_visibility_vectors_js",
         ],

@@ -5,11 +5,15 @@ import { Badge } from "@/components/ui/badge";
 import EmptyState from "@/pages/Recruiting/components/EmptyState";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import TermHint from "@/pages/Recruiting/components/TermHint";
+import { GLOSSARY, stageTermId } from "@/pages/Recruiting/components/glossary";
 import { listMyEvaluations } from "@/api/recruitingApi";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
-/** Human label for a stage key, e.g. "recruiter_screening" -> "Recruiter screening". */
+/** Human label for a stage key, from the recruiting glossary. Falls back to
+ * humanising the key so a pipeline stage the glossary has not caught up with
+ * still reads as words rather than as an enum. */
 const stageLabel = (key) =>
+  GLOSSARY[stageTermId(key, "employment")]?.label ??
   String(key ?? "")
     .replace(/_/g, " ")
     .replace(/^\w/, (c) => c.toUpperCase());
