@@ -1,6 +1,3 @@
-/** Sibling-key suffix holding an "Other" option's free text. */
-export const OTHER_SUFFIX = "__other";
-
 /** True when a recorded answer satisfies a showWhen rule's `equals`. */
 const matches = (answer, target) =>
   Array.isArray(answer) ? answer.includes(target) : answer === target;
@@ -68,28 +65,8 @@ export const visibleQuestions = (questions, answers) => {
 };
 
 /**
- * True when a question's recorded value selects its "Other" option, which is
- * what makes `FormRenderer` render the `${id}__other` sibling answer.
- *
- * Shared for the same reason `visibleQuestions` is: the renderer and any
- * consumer computing which recorded answers the renderer will *not* show must
- * agree exactly, or the free text ends up either dropped from both views or
- * rendered twice.
- *
- * @param {object} question
- * @param {unknown} value The question's own recorded value.
- * @returns {boolean}
- */
-export const otherSelected = (question, value) =>
-  question.otherOption != null &&
-  (question.type === "multi_choice"
-    ? Array.isArray(value) && value.includes(question.otherOption)
-    : value === question.otherOption);
-
-/**
  * The answer keys this form still accounts for: one per visible question that
- * has a recorded value, plus its `${id}__other` free text while the value
- * still selects that question's "Other" option.
+ * has a recorded value.
  *
  * This is the client-side statement of the rule `prune_answers` in
  * `backend/recruiting/form_visibility.py` enforces when it *deletes* the rest
@@ -116,13 +93,6 @@ export const pruneAnswers = (questions, answers) => {
     if (question.id == null) return;
     if (Object.hasOwn(answers, question.id)) {
       kept[question.id] = answers[question.id];
-    }
-    const otherKey = `${question.id}${OTHER_SUFFIX}`;
-    if (
-      Object.hasOwn(answers, otherKey) &&
-      otherSelected(question, answers[question.id])
-    ) {
-      kept[otherKey] = answers[otherKey];
     }
   });
   return kept;

@@ -272,12 +272,6 @@ class ApplicationService:
             problem = self._question_value_error(question, value)
             if problem is not None:
                 raise ValueError(problem)
-            # The renderer marks the "Other" free text required whenever that
-            # option is picked, and until now nothing held it to that.
-            if form_visibility.other_selected(question, value) and not self._answered(
-                dto.answers.get(f"{question['id']}{form_visibility.OTHER_SUFFIX}")
-            ):
-                raise ValueError(f"{label}: describe your answer")
 
     @staticmethod
     def _blank(value) -> bool:

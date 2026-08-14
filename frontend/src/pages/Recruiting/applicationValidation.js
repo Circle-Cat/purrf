@@ -1,8 +1,4 @@
-import {
-  OTHER_SUFFIX,
-  otherSelected,
-  visibleQuestions,
-} from "@/pages/Recruiting/postings/questionVisibility";
+import { visibleQuestions } from "@/pages/Recruiting/postings/questionVisibility";
 import {
   validatePersonal,
   validateEducationRow,
@@ -40,8 +36,6 @@ import { textBudget } from "@/pages/Recruiting/postings/questionLimits";
 
 /** A question's own answer. */
 export const answerKey = (questionId) => `answer:${questionId}`;
-/** The free text beside a question's "Other" option. */
-export const otherKey = (questionId) => `answer:${questionId}${OTHER_SUFFIX}`;
 /** A personal field, or a profile section the posting requires. */
 export const profileKey = (field) => `profile:${field}`;
 /**
@@ -57,9 +51,6 @@ export const profileKey = (field) => `profile:${field}`;
  * @param {string} field
  */
 export const rowKey = (section, rowId, field) => `${section}:${rowId}:${field}`;
-
-/** Blank, or nothing but whitespace. */
-const isBlank = (value) => !value || !String(value).trim();
 
 /**
  * Whether a question has an answer at all.
@@ -210,15 +201,6 @@ export const validateApplication = (questions, answers, profile = {}) => {
       // Trimmed, because stray whitespace is never what the author is asking
       // the candidate to confirm; otherwise exact, since that is the point.
       errors[key] = `Type ${question.expectedValue} exactly`;
-    }
-
-    // The renderer puts a required marker on the "Other" free text whenever
-    // that option is picked. Nothing used to hold it to that.
-    if (
-      otherSelected(question, value) &&
-      isBlank(recorded[`${question.id}${OTHER_SUFFIX}`])
-    ) {
-      errors[otherKey(question.id)] = "Please describe your answer";
     }
   });
 

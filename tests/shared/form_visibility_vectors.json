@@ -143,79 +143,53 @@
       "pruned": { "q1": "kept" }
     },
     {
-      "name": "single_choice Other keeps its free text while selected",
-      "questions": [
-        {
-          "id": "q1",
-          "type": "single_choice",
-          "options": ["A", "Other"],
-          "otherOption": "Other"
-        }
-      ],
-      "answers": { "q1": "Other", "q1__other": "Infrastructure" },
-      "visible": ["q1"],
-      "pruned": { "q1": "Other", "q1__other": "Infrastructure" }
-    },
-    {
-      "name": "multi_choice Other keeps its free text while selected",
+      "name": "an option's follow-up keeps its answer only while that option is picked",
       "questions": [
         {
           "id": "q3",
           "type": "multi_choice",
-          "options": ["Backend", "Other"],
-          "otherOption": "Other"
+          "options": ["Backend", "Frontend"]
+        },
+        {
+          "id": "q4",
+          "type": "short_text",
+          "showWhen": { "questionId": "q3", "equals": "Frontend" }
         }
       ],
-      "answers": { "q3": ["Backend", "Other"], "q3__other": "Infrastructure" },
+      "answers": { "q3": ["Backend"], "q4": "Infrastructure" },
       "visible": ["q3"],
-      "pruned": { "q3": ["Backend", "Other"], "q3__other": "Infrastructure" }
+      "pruned": { "q3": ["Backend"] }
     },
     {
-      "name": "deselecting Other drops the free text but keeps the answer",
+      "name": "several options each keep their own follow-up answer",
       "questions": [
         {
           "id": "q3",
           "type": "multi_choice",
-          "options": ["Backend", "Frontend", "Other"],
-          "otherOption": "Other"
+          "options": ["Backend", "Frontend"]
+        },
+        {
+          "id": "q4",
+          "type": "short_text",
+          "showWhen": { "questionId": "q3", "equals": "Backend" }
+        },
+        {
+          "id": "q5",
+          "type": "short_text",
+          "showWhen": { "questionId": "q3", "equals": "Frontend" }
         }
       ],
       "answers": {
         "q3": ["Backend", "Frontend"],
-        "q3__other": "Infrastructure"
+        "q4": "Infrastructure",
+        "q5": "Design systems"
       },
-      "visible": ["q3"],
-      "pruned": { "q3": ["Backend", "Frontend"] }
-    },
-    {
-      "name": "hiding a question drops its Other free text with it",
-      "questions": [
-        { "id": "q1" },
-        {
-          "id": "q3",
-          "type": "multi_choice",
-          "options": ["Other"],
-          "otherOption": "Other",
-          "showWhen": { "questionId": "q1", "equals": "Yes" }
-        }
-      ],
-      "answers": { "q1": "No", "q3": ["Other"], "q3__other": "Infrastructure" },
-      "visible": ["q1"],
-      "pruned": { "q1": "No" }
-    },
-    {
-      "name": "a scalar value never selects a multi_choice Other option",
-      "questions": [
-        {
-          "id": "q3",
-          "type": "multi_choice",
-          "options": ["Other"],
-          "otherOption": "Other"
-        }
-      ],
-      "answers": { "q3": "Other", "q3__other": "Infrastructure" },
-      "visible": ["q3"],
-      "pruned": { "q3": "Other" }
+      "visible": ["q3", "q4", "q5"],
+      "pruned": {
+        "q3": ["Backend", "Frontend"],
+        "q4": "Infrastructure",
+        "q5": "Design systems"
+      }
     },
     {
       "name": "falsy answers are kept: presence decides, not truthiness",
@@ -264,7 +238,7 @@
         { "type": "short_text", "label": "orphan" },
         { "id": "q1" }
       ],
-      "answers": { "q1": "x", "undefined": "stray", "None__other": "stray" },
+      "answers": { "q1": "x", "undefined": "stray" },
       "visible": [null, "q1"],
       "pruned": { "q1": "x" }
     },
