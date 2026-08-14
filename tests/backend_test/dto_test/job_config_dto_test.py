@@ -55,6 +55,10 @@ class TestQuestionDto(unittest.TestCase):
         with self.assertRaises(ValidationError):
             QuestionDto(id="q1", type="long_text", label="Why", max_length=0)
 
+    def test_long_text_requires_a_max_length(self):
+        with self.assertRaisesRegex(ValidationError, "long_text requires a max_length"):
+            QuestionDto(id="q1", type="long_text", label="Why")
+
     def test_long_text_max_length_must_not_exceed_the_hard_ceiling(self):
         QuestionDto(
             id="q1", type="long_text", label="Why", max_length=LONG_TEXT_MAX_LENGTH

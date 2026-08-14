@@ -79,6 +79,20 @@ describe("addQuestion", () => {
     expect(schema.questions.map((q) => q.id)).toEqual(["q1", "q3"]);
   });
 
+  // The budget is required, so a long text that arrived without one would
+  // start life carrying an error the author never caused. 300 is asserted as a
+  // literal rather than through the exported constant: importing it would make
+  // the assertion pass vacuously if the constant were ever removed.
+  it("gives a new long text the default character budget", () => {
+    const next = addQuestion({ questions: [] }, "long_text");
+    expect(next.questions[0].maxLength).toBe(300);
+  });
+
+  it("gives no character budget to a short text", () => {
+    const next = addQuestion({ questions: [] }, "short_text");
+    expect(next.questions[0]).not.toHaveProperty("maxLength");
+  });
+
   it("preserves other schema keys", () => {
     const next = addQuestion({ questions: [], someFutureKey: 1 }, "short_text");
     expect(next.someFutureKey).toBe(1);
