@@ -4,26 +4,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import MentorshipFeedbackDialog from "@/pages/PersonalDashboard/components/MentorshipFeedbackDialog";
 import {
   getMyMentorshipFeedback,
+  getMyMentorshipPartners,
   postMyMentorshipFeedback,
 } from "@/api/mentorshipApi";
-import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { toast } from "sonner";
 
 vi.mock("@/api/mentorshipApi", () => ({
   getMyMentorshipFeedback: vi.fn(),
+  getMyMentorshipPartners: vi.fn(),
   postMyMentorshipFeedback: vi.fn(),
 }));
 
 vi.spyOn(toast, "success").mockImplementation(() => {});
 vi.spyOn(toast, "error").mockImplementation(() => {});
-
-vi.mock("@/hooks/useFeatureFlags", () => ({
-  useFeatureFlags: vi.fn(() => ({})),
-}));
-
-vi.mock("@/constants/FeatureFlags", () => ({
-  FEATURE_FLAGS: { CREATE_GOOGLE_MEETING: "create-google-meeting" },
-}));
 
 /**
  * Radix Dialog does not render portal content in jsdom without this mock.
@@ -41,28 +34,6 @@ vi.mock("@/components/ui/dialog", () => ({
   DialogTitle: ({ children }) => <div>{children}</div>,
   DialogTrigger: ({ children }) => <div>{children}</div>,
   DialogFooter: ({ children }) => <div>{children}</div>,
-}));
-
-/**
- * Radix Select does not render options in jsdom. We expose a native <select>
- * so tests can change values with userEvent.selectOptions.
- */
-vi.mock("@/components/ui/select", () => ({
-  Select: ({ value, onValueChange, children }) => (
-    <select
-      data-testid="sessions-select"
-      value={value}
-      onChange={(e) => onValueChange?.(e.target.value)}
-    >
-      {children}
-    </select>
-  ),
-  SelectTrigger: () => null,
-  SelectValue: () => null,
-  SelectContent: ({ children }) => <>{children}</>,
-  SelectItem: ({ value, children }) => (
-    <option value={value}>{children}</option>
-  ),
 }));
 
 /**
@@ -125,7 +96,6 @@ const mentorResponse = {
 const submittedMenteeResponse = {
   participantRole: "mentee",
   hasSubmitted: true,
-  sessionsCompleted: 3,
   mostValuableAspects: "Great sessions",
   challenges: "Scheduling",
   programRating: 4,
@@ -134,8 +104,14 @@ const submittedMenteeResponse = {
 const defaultProps = {
   roundId: "round-1",
   roundName: "Spring 2025",
-  isFeedbackEnabled: true,
+  isEditable: true,
+  feedbackDeadlineText: "May 9, 2026 23:59 Asia/Shanghai",
 };
+
+const multiplePartners = [
+  { id: 20, preferredName: "Bob Smith" },
+  { id: 21, preferredName: "Jennifer Martinez" },
+];
 
 describe("MentorshipFeedbackDialog", () => {
   let user;
@@ -144,8 +120,8 @@ describe("MentorshipFeedbackDialog", () => {
     vi.clearAllMocks();
     user = userEvent.setup();
     getMyMentorshipFeedback.mockResolvedValue({ data: menteeResponse });
+    getMyMentorshipPartners.mockResolvedValue({ data: [] });
     postMyMentorshipFeedback.mockResolvedValue({});
-    useFeatureFlags.mockReturnValue({});
   });
 
   it("renders nothing until the initial status fetch resolves", () => {
@@ -176,33 +152,34 @@ describe("MentorshipFeedbackDialog", () => {
     );
   });
 
-  it("shows 'View Feedback' when user has already submitted", async () => {
+  it("shows 'Edit Feedback' when user has already submitted and the window is open", async () => {
     getMyMentorshipFeedback.mockResolvedValue({
       data: { ...menteeResponse, hasSubmitted: true },
     });
     render(<MentorshipFeedbackDialog {...defaultProps} />);
     await waitFor(() =>
+      expect(screen.getByText("Edit Feedback")).toBeInTheDocument(),
+    );
+  });
+
+  it("shows 'View Feedback' once the deadline has passed", async () => {
+    getMyMentorshipFeedback.mockResolvedValue({
+      data: { ...menteeResponse, hasSubmitted: true },
+    });
+    render(<MentorshipFeedbackDialog {...defaultProps} isEditable={false} />);
+    await waitFor(() =>
       expect(screen.getByText("View Feedback")).toBeInTheDocument(),
     );
   });
 
-  it("disables the trigger button and skips the fetch when isFeedbackEnabled is false", async () => {
-    render(
-      <MentorshipFeedbackDialog {...defaultProps} isFeedbackEnabled={false} />,
-    );
-    await waitFor(() => screen.getByText("Submit Feedback"));
-    expect(screen.getByText("Submit Feedback")).toBeDisabled();
-    expect(getMyMentorshipFeedback).not.toHaveBeenCalled();
+  it("renders nothing after the deadline when nothing was submitted", async () => {
+    render(<MentorshipFeedbackDialog {...defaultProps} isEditable={false} />);
+    await waitFor(() => expect(getMyMentorshipFeedback).toHaveBeenCalled());
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("renders a disabled button without fetching when roundId is null", async () => {
-    render(
-      <MentorshipFeedbackDialog
-        {...defaultProps}
-        roundId={null}
-        isFeedbackEnabled={false}
-      />,
-    );
+    render(<MentorshipFeedbackDialog {...defaultProps} roundId={null} />);
     await waitFor(() => screen.getByText("Submit Feedback"));
     expect(screen.getByText("Submit Feedback")).toBeDisabled();
     expect(getMyMentorshipFeedback).not.toHaveBeenCalled();
@@ -221,11 +198,10 @@ describe("MentorshipFeedbackDialog", () => {
       data: submittedMenteeResponse,
     });
     render(<MentorshipFeedbackDialog {...defaultProps} />);
-    await waitFor(() => screen.getByText("View Feedback"));
+    await waitFor(() => screen.getByText("Edit Feedback"));
 
     await user.click(screen.getByText("Toggle Dialog"));
 
-    expect(screen.getByTestId("sessions-select")).toHaveValue("3");
     expect(
       screen.getByPlaceholderText("Share what you found most valuable..."),
     ).toHaveValue("Great sessions");
@@ -234,12 +210,19 @@ describe("MentorshipFeedbackDialog", () => {
     ).toHaveValue("Scheduling");
   });
 
-  it("shows sessions field only for mentee, free-text fields for all roles", async () => {
+  it("no longer asks how many sessions were completed", async () => {
     render(<MentorshipFeedbackDialog {...defaultProps} />);
     await waitFor(() => screen.getByText("Submit Feedback"));
     await user.click(screen.getByText("Toggle Dialog"));
 
-    expect(screen.getByTestId("sessions-select")).toBeInTheDocument();
+    expect(screen.queryByText(/How many sessions/)).not.toBeInTheDocument();
+  });
+
+  it("shows the free-text fields for a mentee", async () => {
+    render(<MentorshipFeedbackDialog {...defaultProps} />);
+    await waitFor(() => screen.getByText("Submit Feedback"));
+    await user.click(screen.getByText("Toggle Dialog"));
+
     expect(
       screen.getByPlaceholderText("Share what you found most valuable..."),
     ).toBeInTheDocument();
@@ -248,13 +231,12 @@ describe("MentorshipFeedbackDialog", () => {
     ).toBeInTheDocument();
   });
 
-  it("hides sessions field for mentor role but shows free-text fields", async () => {
+  it("shows the same free-text fields for a mentor", async () => {
     getMyMentorshipFeedback.mockResolvedValue({ data: mentorResponse });
     render(<MentorshipFeedbackDialog {...defaultProps} />);
     await waitFor(() => screen.getByText("Submit Feedback"));
     await user.click(screen.getByText("Toggle Dialog"));
 
-    expect(screen.queryByTestId("sessions-select")).not.toBeInTheDocument();
     expect(
       screen.getByPlaceholderText("Share what you found most valuable..."),
     ).toBeInTheDocument();
@@ -263,16 +245,7 @@ describe("MentorshipFeedbackDialog", () => {
     ).toBeInTheDocument();
   });
 
-  it("hides sessions field for mentee when create-google-meeting flag is on", async () => {
-    useFeatureFlags.mockReturnValue({ "create-google-meeting": true });
-    render(<MentorshipFeedbackDialog {...defaultProps} />);
-    await waitFor(() => screen.getByText("Submit Feedback"));
-    await user.click(screen.getByText("Toggle Dialog"));
-
-    expect(screen.queryByTestId("sessions-select")).not.toBeInTheDocument();
-  });
-
-  it("shows inline errors for all empty required fields on submit (mentee)", async () => {
+  it("shows an inline error for the empty required field on submit (mentee)", async () => {
     render(<MentorshipFeedbackDialog {...defaultProps} />);
     await waitFor(() => screen.getByText("Submit Feedback"));
     await user.click(screen.getByText("Toggle Dialog"));
@@ -280,12 +253,12 @@ describe("MentorshipFeedbackDialog", () => {
     await user.click(screen.getByText("Submit"));
 
     const errors = screen.getAllByText("This field is required.");
-    // sessionsCompleted + programRating = 2
-    expect(errors.length).toBe(2);
+    // programRating is the only always-required field
+    expect(errors.length).toBe(1);
     expect(postMyMentorshipFeedback).not.toHaveBeenCalled();
   });
 
-  it("shows only programRating error for mentor (no sessions field)", async () => {
+  it("shows the same programRating error for a mentor", async () => {
     getMyMentorshipFeedback.mockResolvedValue({ data: mentorResponse });
     render(<MentorshipFeedbackDialog {...defaultProps} />);
     await waitFor(() => screen.getByText("Submit Feedback"));
@@ -302,7 +275,6 @@ describe("MentorshipFeedbackDialog", () => {
     await waitFor(() => screen.getByText("Submit Feedback"));
     await user.click(screen.getByText("Toggle Dialog"));
 
-    await user.selectOptions(screen.getByTestId("sessions-select"), "3");
     await user.click(screen.getByLabelText("4"));
 
     await user.click(screen.getByText("Submit"));
@@ -310,10 +282,10 @@ describe("MentorshipFeedbackDialog", () => {
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
 
     expect(postMyMentorshipFeedback).toHaveBeenCalledWith("round-1", {
-      sessionsCompleted: 3,
       mostValuableAspects: null,
       challenges: null,
       programRating: 4,
+      partnerFeedback: [],
     });
     expect(screen.getByTestId("dialog")).toHaveAttribute("data-open", "false");
     expect(toast.success).toHaveBeenCalledWith(
@@ -329,7 +301,6 @@ describe("MentorshipFeedbackDialog", () => {
     await waitFor(() => screen.getByText("Submit Feedback"));
     await user.click(screen.getByText("Toggle Dialog"));
 
-    await user.selectOptions(screen.getByTestId("sessions-select"), "2");
     await user.click(screen.getByLabelText("5"));
     await user.type(
       screen.getByPlaceholderText("Share what you found most valuable..."),
@@ -344,10 +315,10 @@ describe("MentorshipFeedbackDialog", () => {
 
     await waitFor(() => expect(postMyMentorshipFeedback).toHaveBeenCalled());
     expect(postMyMentorshipFeedback).toHaveBeenCalledWith("round-1", {
-      sessionsCompleted: 2,
       mostValuableAspects: "Hands-on pairing",
       challenges: "Timezone gaps",
       programRating: 5,
+      partnerFeedback: [],
     });
   });
 
@@ -357,7 +328,6 @@ describe("MentorshipFeedbackDialog", () => {
     await waitFor(() => screen.getByText("Submit Feedback"));
     await user.click(screen.getByText("Toggle Dialog"));
 
-    await user.selectOptions(screen.getByTestId("sessions-select"), "3");
     await user.click(screen.getByLabelText("4"));
 
     await user.click(screen.getByText("Submit"));
@@ -373,22 +343,129 @@ describe("MentorshipFeedbackDialog", () => {
     expect(screen.getByText("Submit Feedback")).toBeInTheDocument();
   });
 
-  it("shows read-only form with no submit button when user has already submitted", async () => {
+  it("shows a read-only form with no submit button once the deadline has passed", async () => {
     getMyMentorshipFeedback.mockResolvedValue({
       data: submittedMenteeResponse,
     });
-    render(<MentorshipFeedbackDialog {...defaultProps} />);
+    render(<MentorshipFeedbackDialog {...defaultProps} isEditable={false} />);
     await waitFor(() => screen.getByText("View Feedback"));
     await user.click(screen.getByText("Toggle Dialog"));
 
     expect(screen.queryByText("Submit")).not.toBeInTheDocument();
-    expect(screen.queryByText("Update")).not.toBeInTheDocument();
+    expect(screen.queryByText("Save Changes")).not.toBeInTheDocument();
     expect(
       screen.getByPlaceholderText("Share what you found most valuable..."),
     ).toBeDisabled();
     expect(
       screen.getByPlaceholderText("Describe any challenges you faced..."),
     ).toBeDisabled();
+  });
+
+  it("keeps a submitted form editable while the window is open", async () => {
+    getMyMentorshipFeedback.mockResolvedValue({
+      data: submittedMenteeResponse,
+    });
+    render(<MentorshipFeedbackDialog {...defaultProps} />);
+    await waitFor(() => screen.getByText("Edit Feedback"));
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    expect(
+      screen.getByPlaceholderText("Share what you found most valuable..."),
+    ).not.toBeDisabled();
+    expect(screen.getByText("Save Changes")).toBeInTheDocument();
+  });
+
+  it("posts the edited answers and reports an update when re-submitting", async () => {
+    getMyMentorshipFeedback.mockResolvedValue({
+      data: submittedMenteeResponse,
+    });
+    render(<MentorshipFeedbackDialog {...defaultProps} />);
+    await waitFor(() => screen.getByText("Edit Feedback"));
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    const challenges = screen.getByPlaceholderText(
+      "Describe any challenges you faced...",
+    );
+    await user.clear(challenges);
+    await user.type(challenges, "Nothing this time");
+
+    await user.click(screen.getByText("Save Changes"));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(postMyMentorshipFeedback).toHaveBeenCalledWith(
+      "round-1",
+      expect.objectContaining({ challenges: "Nothing this time" }),
+    );
+    expect(toast.success).toHaveBeenCalledWith(
+      "Feedback Updated",
+      expect.any(Object),
+    );
+  });
+
+  it("discards unsaved edits to submitted feedback when the dialog is closed", async () => {
+    getMyMentorshipFeedback.mockResolvedValue({
+      data: submittedMenteeResponse,
+    });
+    render(<MentorshipFeedbackDialog {...defaultProps} />);
+    await waitFor(() => screen.getByText("Edit Feedback"));
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    const challenges = screen.getByPlaceholderText(
+      "Describe any challenges you faced...",
+    );
+    await user.clear(challenges);
+    await user.type(challenges, "Typed but never saved");
+
+    await user.click(screen.getByText("Close"));
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    expect(
+      screen.getByPlaceholderText("Describe any challenges you faced..."),
+    ).toHaveValue("Scheduling");
+  });
+
+  it("shows the deadline in the editable hint", async () => {
+    render(<MentorshipFeedbackDialog {...defaultProps} />);
+    await waitFor(() => screen.getByText("Submit Feedback"));
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    expect(
+      screen.getByText(
+        /You can update your responses until May 9, 2026 23:59 Asia\/Shanghai\./,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("falls back to generic wording when no deadline is known", async () => {
+    render(
+      <MentorshipFeedbackDialog
+        {...defaultProps}
+        feedbackDeadlineText={null}
+      />,
+    );
+    await waitFor(() => screen.getByText("Submit Feedback"));
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    expect(
+      screen.getByText(
+        /You can update your responses until the feedback deadline\./,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says the deadline has passed in read-only mode", async () => {
+    getMyMentorshipFeedback.mockResolvedValue({
+      data: submittedMenteeResponse,
+    });
+    render(<MentorshipFeedbackDialog {...defaultProps} isEditable={false} />);
+    await waitFor(() => screen.getByText("View Feedback"));
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    expect(
+      screen.getByText(
+        /The feedback deadline passed on May 9, 2026 23:59 Asia\/Shanghai\. Your responses are read-only\./,
+      ),
+    ).toBeInTheDocument();
   });
 
   it("closes dialog when Close button is clicked", async () => {
@@ -419,16 +496,90 @@ describe("MentorshipFeedbackDialog", () => {
     ).toHaveValue("");
   });
 
-  it("hides submit button in footer when user has already submitted", async () => {
+  it("hides submit button in footer once the deadline has passed", async () => {
     getMyMentorshipFeedback.mockResolvedValue({
       data: submittedMenteeResponse,
     });
-    render(<MentorshipFeedbackDialog {...defaultProps} />);
+    render(<MentorshipFeedbackDialog {...defaultProps} isEditable={false} />);
     await waitFor(() => screen.getByText("View Feedback"));
     await user.click(screen.getByText("Toggle Dialog"));
 
     expect(screen.queryByText("Submit")).not.toBeInTheDocument();
-    expect(screen.queryByText("Update")).not.toBeInTheDocument();
+    expect(screen.queryByText("Save Changes")).not.toBeInTheDocument();
     expect(screen.getByText("Close")).toBeInTheDocument();
+  });
+
+  it("renders a rating and feedback question for each partner", async () => {
+    getMyMentorshipPartners.mockResolvedValue({ data: multiplePartners });
+    render(<MentorshipFeedbackDialog {...defaultProps} />);
+    await waitFor(() => screen.getByText("Submit Feedback"));
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    expect(
+      screen.getByText(
+        /How was your overall experience working with your mentor Bob Smith\?/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("Share feedback about Bob Smith..."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /How was your overall experience working with your mentor Jennifer Martinez\?/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("Share feedback about Jennifer Martinez..."),
+    ).toBeInTheDocument();
+  });
+
+  it("requires a rating for every partner before submitting", async () => {
+    getMyMentorshipPartners.mockResolvedValue({ data: multiplePartners });
+    render(<MentorshipFeedbackDialog {...defaultProps} />);
+    await waitFor(() => screen.getByText("Submit Feedback"));
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    // Satisfy the unrelated required fields so the only errors left after
+    // submit are the partner ratings this test cares about.
+    await user.click(screen.getByLabelText("4"));
+
+    await user.click(screen.getByText("Submit"));
+
+    expect(screen.getAllByText("This field is required.").length).toBe(
+      multiplePartners.length,
+    );
+    expect(postMyMentorshipFeedback).not.toHaveBeenCalled();
+  });
+
+  it("submits a rating and feedback entry per partner", async () => {
+    getMyMentorshipPartners.mockResolvedValue({ data: multiplePartners });
+    render(<MentorshipFeedbackDialog {...defaultProps} />);
+    await waitFor(() => screen.getByText("Submit Feedback"));
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    await user.click(screen.getByLabelText("4"));
+
+    const excellentOptions = screen.getAllByLabelText("Excellent");
+    const poorOptions = screen.getAllByLabelText("Poor");
+    await user.click(excellentOptions[0]); // Bob Smith
+    await user.click(poorOptions[1]); // Jennifer Martinez
+
+    await user.type(
+      screen.getByPlaceholderText("Share feedback about Bob Smith..."),
+      "Very supportive",
+    );
+
+    await user.click(screen.getByText("Submit"));
+
+    await waitFor(() => expect(postMyMentorshipFeedback).toHaveBeenCalled());
+    expect(postMyMentorshipFeedback).toHaveBeenCalledWith("round-1", {
+      mostValuableAspects: null,
+      challenges: null,
+      programRating: 4,
+      partnerFeedback: [
+        { partnerId: 20, rating: 5, feedback: "Very supportive" },
+        { partnerId: 21, rating: 1, feedback: null },
+      ],
+    });
   });
 });
