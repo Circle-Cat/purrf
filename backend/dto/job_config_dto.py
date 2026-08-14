@@ -13,8 +13,8 @@ QuestionType = Literal[
 _ALLOWED_FIELDS: dict[str, set[str]] = {
     "short_text": set(),
     "long_text": {"max_length"},
-    "single_choice": {"options", "other_option"},
-    "multi_choice": {"options", "max_selections", "other_option"},
+    "single_choice": {"options"},
+    "multi_choice": {"options", "max_selections"},
     "exact_text": {"expected_value"},
 }
 
@@ -91,7 +91,6 @@ class QuestionDto(BaseRequestDto):
     # for some candidates and never for others.
     max_length: int | None = None
     expected_value: str | None = None
-    other_option: str | None = None
 
     @field_validator("label")
     @classmethod
@@ -130,7 +129,6 @@ class QuestionDto(BaseRequestDto):
                 "max_selections",
                 "max_length",
                 "expected_value",
-                "other_option",
             )
             if getattr(self, name) is not None
         }
@@ -144,9 +142,9 @@ class QuestionDto(BaseRequestDto):
             if any(not opt or not opt.strip() for opt in self.options):
                 raise ValueError("options entries must be non-empty")
             # Options are referenced by their text -- a showWhen rule stores it
-            # in ``equals`` and ``other_option`` names one outright -- so two
-            # options reading the same are one option wearing two rows:
-            # whichever the candidate picks, every rule on either fires.
+            # in ``equals`` -- so two options reading the same are one option
+            # wearing two rows: whichever the candidate picks, every rule on
+            # either fires.
             if len(self.options) != len(set(self.options)):
                 raise ValueError("options entries must be unique")
         if self.type == "multi_choice" and self.max_selections is not None:
@@ -167,10 +165,6 @@ class QuestionDto(BaseRequestDto):
         if self.type == "exact_text":
             if not self.expected_value or not self.expected_value.strip():
                 raise ValueError("exact_text requires a non-empty expected_value")
-        if self.other_option is not None and self.other_option not in (
-            self.options or []
-        ):
-            raise ValueError("other_option must be one of options")
         return self
 
 

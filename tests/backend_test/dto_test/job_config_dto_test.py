@@ -129,42 +129,16 @@ class TestQuestionDto(unittest.TestCase):
                 expected_value="x",
             )
 
-    def test_other_option_valid_on_single_choice(self):
-        q = QuestionDto(
-            id="q1",
-            type="single_choice",
-            label="Source",
-            options=["Friend", "Others"],
-            other_option="Others",
-        )
-        self.assertEqual(q.other_option, "Others")
-
-    def test_other_option_valid_on_multi_choice(self):
-        q = QuestionDto(
-            id="q1",
-            type="multi_choice",
-            label="Source",
-            options=["A", "Others"],
-            other_option="Others",
-        )
-        self.assertEqual(q.other_option, "Others")
-
-    def test_other_option_must_be_in_options(self):
+    def test_other_option_is_not_a_question_field(self):
+        """Rejected rather than ignored: a form saying it collects free text
+        beside an option, on a renderer that shows none, would be a question
+        the candidate never sees."""
         with self.assertRaises(ValidationError):
             QuestionDto(
                 id="q1",
                 type="single_choice",
                 label="Source",
-                options=["Friend", "LinkedIn"],
-                other_option="Others",
-            )
-
-    def test_other_option_rejected_on_non_choice(self):
-        with self.assertRaises(ValidationError):
-            QuestionDto(
-                id="q1",
-                type="short_text",
-                label="Name",
+                options=["Friend", "Others"],
                 other_option="Others",
             )
 

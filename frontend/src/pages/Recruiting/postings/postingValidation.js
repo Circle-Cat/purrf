@@ -84,9 +84,9 @@ export const validatePosting = (draft) => {
           return;
         }
         // Not a server rule — options are matched by their text, so two that
-        // read the same are one option wearing two rows: `showWhen.equals` and
-        // `otherOption` cannot tell them apart, and whichever the candidate
-        // picks reveals both. Blocked here rather than left to confuse.
+        // read the same are one option wearing two rows: `showWhen.equals`
+        // cannot tell them apart, and whichever the candidate picks reveals
+        // the questions hung on both. Blocked here rather than left to confuse.
         if (seen.has(option)) {
           errors[optionKey(question.id, index)] =
             `Duplicate of option ${seen.get(option) + 1}`;
