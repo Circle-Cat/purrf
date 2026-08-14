@@ -228,7 +228,7 @@ export default function MeetingSubmissionModal({
                       )}
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0 z-[201]" side="top">
+                  <PopoverContent className="w-auto p-0" side="top">
                     <Calendar
                       mode="single"
                       selected={selectedDate}
@@ -247,7 +247,7 @@ export default function MeetingSubmissionModal({
                     <SelectTrigger className="w-full bg-gray-50 border-none">
                       <SelectValue placeholder="Pick a start time" />
                     </SelectTrigger>
-                    <SelectContent className="z-[201]">
+                    <SelectContent>
                       {timeOptions.map((t) => (
                         <SelectItem
                           key={t}
@@ -267,7 +267,7 @@ export default function MeetingSubmissionModal({
                     <SelectTrigger className="w-full bg-gray-50 border-none">
                       <SelectValue placeholder="Pick an end time" />
                     </SelectTrigger>
-                    <SelectContent className="z-[201]">
+                    <SelectContent>
                       {timeOptions.map((t) => (
                         <SelectItem
                           key={t}

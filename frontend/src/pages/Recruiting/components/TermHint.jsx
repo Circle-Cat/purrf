@@ -31,14 +31,7 @@ const TermHint = ({ id, children }) => {
         <TooltipTrigger className="cursor-help underline decoration-dotted underline-offset-4">
           {children ?? term.label}
         </TooltipTrigger>
-        {/* The shadcn primitive ships z-50, which loses to this app's fixed
-            chrome -- the header sits at z-[100] and the sidebar at z-[90], so
-            a hint opening upward from a badge near the page title renders
-            behind the header. Clearing 100 is enough; dialogs live at z-[999]
-            and up and should still cover a hint. */}
-        <TooltipContent className="z-[110] max-w-xs">
-          {term.hint}
-        </TooltipContent>
+        <TooltipContent className="max-w-xs">{term.hint}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );

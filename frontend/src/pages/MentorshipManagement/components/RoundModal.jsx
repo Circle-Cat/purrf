@@ -194,7 +194,7 @@ export default function RoundModal({
                     <SelectTrigger className="w-auto min-w-[7rem]">
                       <SelectValue placeholder="Select season" />
                     </SelectTrigger>
-                    <SelectContent className="z-[201]">
+                    <SelectContent>
                       {SEASONS.map((s) => (
                         <SelectItem key={s} value={s}>
                           {s}
@@ -209,7 +209,7 @@ export default function RoundModal({
                     <SelectTrigger className="w-auto min-w-[7rem]">
                       <SelectValue placeholder="Select year" />
                     </SelectTrigger>
-                    <SelectContent className="z-[201]">
+                    <SelectContent>
                       {yearOptions.map((y) => (
                         <SelectItem key={y} value={y}>
                           {y}
@@ -253,7 +253,7 @@ export default function RoundModal({
                   <SelectTrigger className="w-auto min-w-[7rem]">
                     <SelectValue placeholder="Select" />
                   </SelectTrigger>
-                  <SelectContent className="z-[201]">
+                  <SelectContent>
                     {Array.from({ length: 11 }, (_, i) => (
                       <SelectItem key={i} value={String(i)}>
                         {String(i)}

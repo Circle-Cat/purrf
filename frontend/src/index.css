@@ -48,6 +48,17 @@
 
 :root {
   --radius: 0.625rem;
+  /* The layer every dropdown, popover and tooltip paints on.
+     These render through a portal on <body>, so they stack against the app
+     chrome rather than against the field that opened them, and shadcn's stock
+     z-50 loses to all of it: the sidebar is z-[90], the environment banner
+     z-[99], the header z-[100]. It also has to clear every overlay, because a
+     select opened inside one must appear over it and not under it -- the
+     highest are the hand-rolled full-screen ones in common/Modal.jsx and
+     DataSearch/MemberSelector.jsx at z-[9999]. Hence a number above the lot:
+     a popover is always the topmost thing on the page, so this ceiling needs
+     no per-callsite exception. */
+  --z-popover: 10000;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
