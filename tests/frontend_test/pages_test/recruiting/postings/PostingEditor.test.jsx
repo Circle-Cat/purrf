@@ -212,6 +212,70 @@ describe("PostingEditor", () => {
     );
   });
 
+  it("says the change was staged, not updated, when saving a live posting", async () => {
+    // "Posting updated." is the belief the editor's own note corrects: saving
+    // a live posting changes nothing an applicant can see.
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 5,
+        title: "Loaded",
+        description: "",
+        kind: "activity",
+        status: "published",
+        cooldownDays: null,
+        formSchema: { questions: [] },
+      },
+    });
+    const router = createMemoryRouter(
+      [
+        { path: "/postings/:id/edit", element: <PostingEditor /> },
+        {
+          path: ROUTE_PATHS.RECRUITING_POSTING_DETAIL(":id"),
+          element: <div />,
+        },
+      ],
+      { initialEntries: ["/postings/5/edit"] },
+    );
+    render(<RouterProvider router={router} />);
+    expect(await screen.findByDisplayValue("Loaded")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(api.updateJob).toHaveBeenCalled());
+    expect(toast.success).toHaveBeenCalledWith(
+      "Change staged, not yet live. Submit it for review to apply it.",
+    );
+  });
+
+  it("still says updated when saving a draft posting", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 5,
+        title: "Loaded",
+        description: "",
+        kind: "activity",
+        status: "draft",
+        cooldownDays: null,
+        formSchema: { questions: [] },
+      },
+    });
+    const router = createMemoryRouter(
+      [
+        { path: "/postings/:id/edit", element: <PostingEditor /> },
+        {
+          path: ROUTE_PATHS.RECRUITING_POSTING_DETAIL(":id"),
+          element: <div />,
+        },
+      ],
+      { initialEntries: ["/postings/5/edit"] },
+    );
+    render(<RouterProvider router={router} />);
+    expect(await screen.findByDisplayValue("Loaded")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(api.updateJob).toHaveBeenCalled());
+    expect(toast.success).toHaveBeenCalledWith("Posting updated.");
+  });
+
   it("prefills from pendingPayload when a CLOSED posting already has a staged edit", async () => {
     api.getJob.mockResolvedValue({
       data: {

@@ -369,6 +369,22 @@ const PostingDetailPage = () => {
         )}
       </div>
 
+      {/* A staged edit is invisible to applicants until a reviewer approves
+          it, and the Overview tab's Current/Proposed pair shows the two
+          versions without saying which one is live. Said here, above the
+          Submit for review button that resolves it. */}
+      {isPublished && job.pendingPayload != null && (
+        <div className="space-y-1 rounded border border-amber-200 bg-amber-50 p-3">
+          <p className="text-sm font-medium text-amber-800">
+            Staged edit not submitted for review
+          </p>
+          <p className="text-sm text-amber-700">
+            Applicants still see the published version. Submit it for review to
+            make your changes live.
+          </p>
+        </div>
+      )}
+
       {/* Only ever set while a review cycle is open, so this disappears on its
           own once the reviewer decides -- no status check needed here. */}
       {job.submitMessage && (
