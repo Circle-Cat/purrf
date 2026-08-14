@@ -117,21 +117,20 @@ describe("PostingEditor", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("says beside Save that saving does not publish", () => {
+  it("says above the buttons that saving does not publish", () => {
     renderAt("/postings/new");
     expect(screen.getByText(/Saving never publishes\./)).toBeInTheDocument();
   });
 
-  // The form is long; from the top of the page, saving means scrolling back up
-  // past everything just edited.
-  it("renders Cancel and Save after the form", () => {
+  // Same column as the preview box, not a separate footer below the whole
+  // form -- so the buttons always sit right under it.
+  it("renders Cancel and Save inside the preview column", () => {
     renderAt("/postings/new");
-    const preview = screen.getByText("Preview");
+    const previewColumn = screen.getByText("Preview").parentElement;
     for (const name of ["Cancel", "Save"]) {
-      expect(
-        preview.compareDocumentPosition(screen.getByRole("button", { name })) &
-          Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
+      expect(previewColumn).toContainElement(
+        screen.getByRole("button", { name }),
+      );
     }
   });
 
