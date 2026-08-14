@@ -183,7 +183,16 @@ const PostingEditor = () => {
         const { data } = await createJob(body);
         savedId = data.id;
       }
-      toast.success(id ? "Posting updated." : "Posting created.");
+      // Never "updated" for a live posting: saving there stages a copy and
+      // leaves what applicants see untouched, so confirming an update is
+      // confirming the one belief the notice above the button corrects.
+      toast.success(
+        isLive
+          ? "Change staged, not yet live. Submit it for review to apply it."
+          : id
+            ? "Posting updated."
+            : "Posting created.",
+      );
       navigate(ROUTE_PATHS.RECRUITING_POSTING_DETAIL(savedId));
     } catch (e) {
       toast.error(e.message);

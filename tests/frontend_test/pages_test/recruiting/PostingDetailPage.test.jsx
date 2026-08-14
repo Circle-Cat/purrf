@@ -404,6 +404,59 @@ describe("PostingDetailPage", () => {
     expect(screen.queryByText("Operate:")).not.toBeInTheDocument();
   });
 
+  it("warns that a staged edit is not what applicants see", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "published",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+        pendingPayload: { title: "Backend Engineer II" },
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Staged edit not submitted for review"),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("shows no staged-edit warning on a published posting with nothing staged", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "published",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+        pendingPayload: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Request close" }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByText("Staged edit not submitted for review"),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows the requester's note on the posting while a review is open", async () => {
     api.getJob.mockResolvedValue({
       data: {
