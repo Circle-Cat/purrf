@@ -1,8 +1,5 @@
 import asyncio
 import threading
-from backend.common.logger import get_logger
-
-logger = get_logger()
 
 
 class AsyncioEventLoopManager:
@@ -13,7 +10,7 @@ class AsyncioEventLoopManager:
     _instance = None
     _lock = threading.Lock()
 
-    def __new__(cls):
+    def __new__(cls, *args, **kwargs):
         """
         Create or return the singleton instance of the AsyncioEventLoopManager.
 
@@ -25,6 +22,15 @@ class AsyncioEventLoopManager:
                 cls._instance = super().__new__(cls)
                 cls._instance._init_loop()
             return cls._instance
+
+    def __init__(self, logger):
+        """
+        Args:
+            logger: Logger instance. Being a singleton, the instance keeps the
+                logger of whichever construction ran last; AppDependencyBuilder
+                is the only production caller.
+        """
+        self.logger = logger
 
     def _init_loop(self):
         """
@@ -74,14 +80,14 @@ class AsyncioEventLoopManager:
                     self._loop.call_soon_threadsafe(self._loop.stop)
                     self._thread.join(timeout=5)
             except Exception as e:
-                logger.warning(
+                self.logger.warning(
                     "[AsyncioEventLoopManager] Failed to stop event loop safely: %s", e
                 )
             finally:
                 try:
                     self._loop.close()
                 except Exception as close_err:
-                    logger.warning(
+                    self.logger.warning(
                         "[AsyncioEventLoopManager] Failed to close event loop: %s",
                         close_err,
                     )
@@ -110,7 +116,7 @@ class AsyncioEventLoopManager:
 
         loop = self.get_loop()
         if not loop or not loop.is_running():
-            logger.error(
+            self.logger.error(
                 "[AsyncioEventLoopManager] Background event loop not available. Cannot run async task."
             )
             raise RuntimeError("Background event loop not available.")
@@ -120,7 +126,7 @@ class AsyncioEventLoopManager:
             result = future.result(timeout=timeout)
             return result
         except Exception as e:
-            logger.error(
+            self.logger.error(
                 "[AsyncioEventLoopManager] Exception occurred in background async task: %s",
                 e,
                 exc_info=True,
