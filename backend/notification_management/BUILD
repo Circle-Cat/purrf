@@ -91,7 +91,6 @@ py_library(
         "delivery_service.py",
     ],
     deps = [
-        "//backend/common:logger",
         "//backend/common:recruiting_enums",
         "//backend/entity:entities",
         "@pypi//sqlalchemy",
@@ -106,7 +105,6 @@ py_library(
     deps = [
         ":delivery_service",
         "//backend/common:api_endpoints",
-        "//backend/common:logger",
         "@pypi//fastapi",
     ],
 )

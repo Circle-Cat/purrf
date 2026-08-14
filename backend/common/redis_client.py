@@ -5,10 +5,7 @@ from backend.common.environment_constants import (
     REDIS_PASSWORD,
     REDIS_PORT,
 )
-from backend.common.logger import get_logger
 import os
-
-logger = get_logger()
 
 
 class RedisClientError(Exception):

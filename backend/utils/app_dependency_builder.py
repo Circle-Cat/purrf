@@ -314,7 +314,7 @@ class AppDependencyBuilder:
             retry_utils=self.retry_utils,
             date_time_util=self.date_time_util,
         )
-        self.asyncio_event_loop_manager = AsyncioEventLoopManager()
+        self.asyncio_event_loop_manager = AsyncioEventLoopManager(logger=self.logger)
 
         self.pubsub_puller_factory = PubSubPullerFactory(
             puller_creator=PubSubPuller,
@@ -700,9 +700,11 @@ class AppDependencyBuilder:
             email_service=self.notification_email_service,
         )
         self.delivery_service = DeliveryService(
+            logger=self.logger,
             email_service=self.notification_event_email_service,
         )
         self.notification_delivery_controller = NotificationDeliveryController(
+            logger=self.logger,
             delivery_service=self.delivery_service,
             publisher=self.notification_publisher_client,
             topic_path=self.notification_topic_path,

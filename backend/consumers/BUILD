@@ -44,7 +44,6 @@ py_library(
         ":pubsub_puller",
         "//backend/common:constants",
         "//backend/common:google_client",
-        "//backend/common:logger",
         "@pypi//tenacity",
     ],
 )

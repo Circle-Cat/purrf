@@ -4,11 +4,8 @@ from enum import Enum
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.common.logger import get_logger
 from backend.common.recruiting_enums import NotificationStatus
 from backend.entity.notification_entity import NotificationEntity
-
-logger = get_logger()
 
 EXPIRY = timedelta(hours=24)
 CLAIM_TIMEOUT = timedelta(minutes=10)
@@ -30,12 +27,14 @@ class DeliveryOutcome(Enum):
 class DeliveryService:
     """Turns one notification row into one email, exactly once."""
 
-    def __init__(self, email_service):
+    def __init__(self, logger, email_service):
         """
         Args:
+            logger: Logger instance.
             email_service: Object with ``async send(session, notification)``,
                 raising LookupError when the recipient can never be emailed.
         """
+        self.logger = logger
         self.email_service = email_service
 
     async def deliver(
@@ -53,7 +52,7 @@ class DeliveryService:
         """
         notification = await session.get(NotificationEntity, notification_id)
         if notification is None:
-            logger.info("[Delivery] %s does not exist; acking", notification_id)
+            self.logger.info("[Delivery] %s does not exist; acking", notification_id)
             return DeliveryOutcome.ACKED
 
         now = datetime.now(timezone.utc)
@@ -67,13 +66,13 @@ class DeliveryService:
         try:
             await self.email_service.send(session, notification)
         except LookupError:
-            logger.warning(
+            self.logger.warning(
                 "[Delivery] %s can never be emailed; marking failed", notification_id
             )
             await self._settle(session, notification_id, NotificationStatus.FAILED)
             return DeliveryOutcome.ACKED
         except Exception:
-            logger.exception("[Delivery] %s failed transiently", notification_id)
+            self.logger.exception("[Delivery] %s failed transiently", notification_id)
             await self._settle(session, notification_id, NotificationStatus.PENDING)
             return DeliveryOutcome.RETRY
 
