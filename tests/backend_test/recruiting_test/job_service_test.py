@@ -1606,15 +1606,6 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.service.delete_job(self.session, job.job_id)
 
-    async def test_delete_job_non_closed_non_draft_raises(self):
-        """delete_job on a PUBLISHED posting raises ValueError."""
-        job = self._job(status=JobStatus.PUBLISHED)
-        job.was_published = True
-        self.repo.get_by_job_id.return_value = job
-
-        with self.assertRaises(ValueError):
-            await self.service.delete_job(self.session, job.job_id)
-
     async def test_delete_job_published_raises(self):
         """delete_job on a PUBLISHED posting raises ValueError."""
         job = self._job(status=JobStatus.PUBLISHED)
