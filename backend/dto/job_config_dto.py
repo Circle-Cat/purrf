@@ -152,7 +152,14 @@ class QuestionDto(BaseRequestDto):
         if self.type == "multi_choice" and self.max_selections is not None:
             if not (1 <= self.max_selections <= len(self.options)):
                 raise ValueError("max_selections must be within [1, len(options)]")
-        if self.type == "long_text" and self.max_length is not None:
+        if self.type == "long_text":
+            # Required rather than defaulted here: the budget is a judgement
+            # about the answer this question wants, and a number picked by the
+            # server would bind the candidate to a limit no author chose. The
+            # editor seeds one on every long text it creates, so an author
+            # reaches this only by clearing the field.
+            if self.max_length is None:
+                raise ValueError("long_text requires a max_length")
             if not (1 <= self.max_length <= LONG_TEXT_MAX_LENGTH):
                 raise ValueError(
                     f"max_length must be within [1, {LONG_TEXT_MAX_LENGTH}]"

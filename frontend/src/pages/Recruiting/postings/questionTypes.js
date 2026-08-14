@@ -1,3 +1,5 @@
+import { DEFAULT_LONG_TEXT_MAX_LENGTH } from "@/pages/Recruiting/postings/questionLimits";
+
 /** Ordered, user-facing list of the five submission-form question types. */
 export const QUESTION_TYPES = [
   { value: "short_text", label: "Short text" },
@@ -38,7 +40,9 @@ export const nextQuestionId = (formSchema) => {
 /**
  * A form schema with one blank question of the given type appended and the
  * `nextSeq` counter advanced past it. Choice types start with an empty
- * options array.
+ * options array, and a long text with the default character budget -- that one
+ * is required, so it is seeded rather than left for the author to discover
+ * through a validation error on a question they just added.
  *
  * @param {{questions?: object[], nextSeq?: number}} formSchema
  * @param {string} type One of `QUESTION_TYPES[].value`.
@@ -48,6 +52,7 @@ export const addQuestion = (formSchema, type) => {
   const id = nextQuestionId(formSchema);
   const question = { id, type, label: "", required: false };
   if (CHOICE_TYPES.has(type)) question.options = [];
+  if (type === "long_text") question.maxLength = DEFAULT_LONG_TEXT_MAX_LENGTH;
   return {
     ...formSchema,
     questions: [...(formSchema?.questions ?? []), question],
