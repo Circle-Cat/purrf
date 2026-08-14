@@ -2,13 +2,6 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import OptionsEditor from "@/pages/Recruiting/postings/OptionsEditor";
 import { revealedBy as revealedByOption } from "@/pages/Recruiting/postings/questionTypes";
@@ -17,7 +10,6 @@ import { errorBorder } from "@/components/common/fieldErrors";
 import { questionKey } from "@/pages/Recruiting/postings/postingValidation";
 
 const CHOICE_TYPES = new Set(["single_choice", "multi_choice"]);
-const NONE = "__none__";
 
 /**
  * Editor for a single submission-form question: label, required flag,
@@ -190,37 +182,6 @@ const QuestionEditor = ({
           />
           <FieldError errors={errors} errorKey={key("options")} />
         </>
-      )}
-      {CHOICE_TYPES.has(question.type) && (
-        <div className="space-y-1">
-          <Label htmlFor={`${question.id}-other`}>
-            Reveal a text box when this option is selected
-          </Label>
-          <Select
-            value={question.otherOption ?? NONE}
-            onValueChange={(v) =>
-              patch({ otherOption: v === NONE ? undefined : v })
-            }
-          >
-            <SelectTrigger
-              id={`${question.id}-other`}
-              aria-label="Other option"
-              className="max-w-xs"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>— none —</SelectItem>
-              {(question.options ?? [])
-                .filter((o) => o && o.trim() !== "")
-                .map((o) => (
-                  <SelectItem key={o} value={o}>
-                    {o}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-        </div>
       )}
       {question.type === "multi_choice" && (
         <div className="space-y-1">

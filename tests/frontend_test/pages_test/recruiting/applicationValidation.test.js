@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   answerKey,
-  otherKey,
   profileKey,
   rowKey,
   validateApplication,
@@ -200,33 +199,6 @@ describe("exact text", () => {
   });
 });
 
-describe("the Other free text", () => {
-  const withOther = q({
-    type: "single_choice",
-    label: "How did you hear?",
-    options: ["Friend", "Other"],
-    otherOption: "Other",
-  });
-
-  it("is required once Other is picked", () => {
-    expect(
-      validateApplication([withOther], { q1: "Other", q1__other: "  " })[
-        otherKey("q1")
-      ],
-    ).toBe("Please describe your answer");
-  });
-
-  it("is not required when Other is not picked", () => {
-    expect(validateApplication([withOther], { q1: "Friend" })).toEqual({});
-  });
-
-  it("is satisfied by any text", () => {
-    expect(
-      validateApplication([withOther], { q1: "Other", q1__other: "A podcast" }),
-    ).toEqual({});
-  });
-});
-
 describe("profile sections", () => {
   const config = { education: "required", workExperience: "required" };
 
@@ -414,10 +386,9 @@ describe("the order problems are reported in", () => {
 });
 
 describe("key helpers", () => {
-  it("keeps a question's own answer distinct from its Other free text", () => {
+  it("keeps every field's key distinct", () => {
     const keys = [
       answerKey("q1"),
-      otherKey("q1"),
       answerKey("q2"),
       profileKey("education"),
       profileKey("experience"),

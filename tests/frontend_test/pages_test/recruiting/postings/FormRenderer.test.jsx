@@ -56,6 +56,51 @@ describe("FormRenderer", () => {
     expect(screen.getByText("Explain")).toBeInTheDocument();
   });
 
+  // Each rule names one option, so a question can offer a follow-up per
+  // option, and a multi_choice answer showing several of them at once.
+  it("shows the follow-up of every selected option, one per option", () => {
+    const questions = [
+      {
+        id: "q1",
+        type: "multi_choice",
+        label: "Sources",
+        options: ["Friend", "Other", "Referral"],
+      },
+      {
+        id: "q2",
+        type: "short_text",
+        label: "Which other source?",
+        showWhen: { questionId: "q1", equals: "Other" },
+      },
+      {
+        id: "q3",
+        type: "short_text",
+        label: "Who referred you?",
+        showWhen: { questionId: "q1", equals: "Referral" },
+      },
+    ];
+    const { rerender } = render(
+      <FormRenderer
+        questions={questions}
+        answers={{ q1: ["Other"] }}
+        onAnswerChange={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText("Which other source?")).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Who referred you?"),
+    ).not.toBeInTheDocument();
+    rerender(
+      <FormRenderer
+        questions={questions}
+        answers={{ q1: ["Other", "Referral"] }}
+        onAnswerChange={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText("Which other source?")).toBeInTheDocument();
+    expect(screen.getByLabelText("Who referred you?")).toBeInTheDocument();
+  });
+
   it("fires onAnswerChange when a short_text answer changes", () => {
     const onAnswerChange = vi.fn();
     render(
@@ -191,67 +236,6 @@ describe("FormRenderer", () => {
     );
     expect(screen.getAllByRole("checkbox")).toHaveLength(2);
   });
-
-  it("reveals an inline specify input when the designated single_choice option is selected", () => {
-    const onAnswerChange = vi.fn();
-    const q = {
-      id: "q1",
-      type: "single_choice",
-      label: "Src",
-      options: ["Friend", "Others"],
-      otherOption: "Others",
-    };
-    const { rerender } = render(
-      <FormRenderer
-        questions={[q]}
-        answers={{ q1: "Friend" }}
-        onAnswerChange={onAnswerChange}
-      />,
-    );
-    expect(
-      screen.queryByLabelText("Others (please specify)"),
-    ).not.toBeInTheDocument();
-    rerender(
-      <FormRenderer
-        questions={[q]}
-        answers={{ q1: "Others" }}
-        onAnswerChange={onAnswerChange}
-      />,
-    );
-    const input = screen.getByLabelText("Others (please specify)");
-    fireEvent.change(input, { target: { value: "Hackathon" } });
-    expect(onAnswerChange).toHaveBeenCalledWith("q1__other", "Hackathon");
-  });
-
-  it("reveals the specify input for multi_choice only when the designated option is among the selected", () => {
-    const q = {
-      id: "q1",
-      type: "multi_choice",
-      label: "Src",
-      options: ["A", "Others"],
-      otherOption: "Others",
-    };
-    const { rerender } = render(
-      <FormRenderer
-        questions={[q]}
-        answers={{ q1: ["A"] }}
-        onAnswerChange={() => {}}
-      />,
-    );
-    expect(
-      screen.queryByLabelText("Others (please specify)"),
-    ).not.toBeInTheDocument();
-    rerender(
-      <FormRenderer
-        questions={[q]}
-        answers={{ q1: ["A", "Others"] }}
-        onAnswerChange={() => {}}
-      />,
-    );
-    expect(
-      screen.getByLabelText("Others (please specify)"),
-    ).toBeInTheDocument();
-  });
 });
 
 describe("read-only mode", () => {
@@ -319,23 +303,6 @@ describe("read-only mode", () => {
     expect(boxes[1]).toBeChecked();
     expect(boxes[2]).not.toBeChecked();
     boxes.forEach((b) => expect(b).toBeDisabled());
-  });
-
-  it("shows the other-option free text as text", () => {
-    renderReadOnly(
-      [
-        {
-          id: "q1",
-          type: "single_choice",
-          label: "Work mode",
-          options: ["Remote", "Other"],
-          otherOption: "Other",
-        },
-      ],
-      { q1: "Other", q1__other: "One day on-site weekly" },
-    );
-    expect(screen.getByText("One day on-site weekly")).toBeInTheDocument();
-    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
 
   it("still hides a question whose showWhen condition is unmet", () => {
@@ -473,24 +440,6 @@ describe("read-only mode", () => {
     expect(screen.getByRole("radio", { name: "Hybrid" })).not.toBeChecked();
   });
 
-  it("does not duplicate the other option into the retired rows", () => {
-    renderReadOnly(
-      [
-        {
-          id: "q1",
-          type: "single_choice",
-          label: "Work mode",
-          options: ["Remote", "Other"],
-          otherOption: "Other",
-        },
-      ],
-      { q1: "Other", q1__other: "Two days on-site" },
-    );
-    expect(screen.getAllByRole("radio")).toHaveLength(2);
-    expect(screen.queryByText("(no longer an option)")).not.toBeInTheDocument();
-    expect(screen.getByText("Two days on-site")).toBeInTheDocument();
-  });
-
   it("drops the required asterisk and labels no control", () => {
     renderReadOnly(
       [{ id: "q1", type: "short_text", label: "Name?", required: true }],
@@ -499,28 +448,6 @@ describe("read-only mode", () => {
     const label = screen.getByText("Name?");
     expect(label.tagName).toBe("P");
     expect(label.textContent).toBe("Name?");
-  });
-
-  it("drops the required asterisk on the other-option label too", () => {
-    renderReadOnly(
-      [
-        {
-          id: "q1",
-          type: "single_choice",
-          label: "Work mode",
-          options: ["Remote", "Other"],
-          otherOption: "Other",
-        },
-      ],
-      { q1: "Other", q1__other: "Two days on-site" },
-    );
-    // The option row's own <label> also reads "Other"; the heading above the
-    // free text is the <p>.
-    const heading = screen
-      .getAllByText("Other")
-      .find((el) => el.tagName === "P");
-    expect(heading).toBeDefined();
-    expect(heading.textContent).toBe("Other");
   });
 
   it("prefixes DOM ids so two copies can coexist", () => {

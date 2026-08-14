@@ -188,45 +188,24 @@ describe("AnswersSection", () => {
     expect(screen.queryByText(/\[object Object\]/)).not.toBeInTheDocument();
   });
 
-  it("groups an other-option free text with its own question", () => {
+  it("keeps a follow-up's answer visible after its option is deselected", () => {
     render(
       <AnswersSection
         submission={{
-          answers: { q4: "Other", q4__other: "One day on-site" },
+          answers: { q4: "Remote", q5: "One day on-site" },
           formSchema: {
             questions: [
               {
                 id: "q4",
                 type: "single_choice",
                 label: "Work mode",
-                options: ["Remote", "Other"],
-                otherOption: "Other",
+                options: ["Remote", "Hybrid"],
               },
-            ],
-          },
-        }}
-      />,
-    );
-    expect(screen.getByText("One day on-site")).toBeInTheDocument();
-    expect(screen.queryByText("q4__other")).not.toBeInTheDocument();
-    expect(
-      screen.queryByText("Other recorded answers"),
-    ).not.toBeInTheDocument();
-  });
-
-  it("keeps a stale other-option answer visible after the selection moves away", () => {
-    render(
-      <AnswersSection
-        submission={{
-          answers: { q4: "Remote", q4__other: "One day on-site" },
-          formSchema: {
-            questions: [
               {
-                id: "q4",
-                type: "single_choice",
-                label: "Work mode",
-                options: ["Remote", "Other"],
-                otherOption: "Other",
+                id: "q5",
+                type: "short_text",
+                label: "How often on-site?",
+                showWhen: { questionId: "q4", equals: "Hybrid" },
               },
             ],
           },
@@ -234,7 +213,7 @@ describe("AnswersSection", () => {
       />,
     );
     expect(screen.getByText("Other recorded answers")).toBeInTheDocument();
-    expect(screen.getByText("q4__other")).toBeInTheDocument();
+    expect(screen.getByText("q5")).toBeInTheDocument();
     expect(screen.getByText("One day on-site")).toBeInTheDocument();
   });
 

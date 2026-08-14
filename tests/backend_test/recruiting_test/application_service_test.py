@@ -324,9 +324,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         created_sub = self.sub_repo.create.call_args.args[1]
         self.assertEqual(created_sub.submission["answers"], {"q1": "No"})
 
-    async def test_submit_keeps_other_free_text_through_the_write(self):
-        """The `__other` sibling is not a question, so nothing in the schema
-        loop keeps it -- only the explicit Other branch does."""
+    async def test_submit_keeps_the_follow_up_of_every_selected_option(self):
+        """One option's follow-up must not drop another's: each is a question
+        in its own right, gated on its own option."""
         job = self._job(status=JobStatus.PUBLISHED)
         job.form_schema = {
             "questions": [
@@ -334,25 +334,38 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
                     "id": "q3",
                     "type": "multi_choice",
                     "label": "Teams?",
-                    "options": ["Backend", "Other"],
-                    "otherOption": "Other",
-                }
+                    "options": ["Backend", "Frontend"],
+                },
+                {
+                    "id": "q4",
+                    "type": "short_text",
+                    "label": "Which stack?",
+                    "showWhen": {"questionId": "q3", "equals": "Backend"},
+                },
+                {
+                    "id": "q5",
+                    "type": "short_text",
+                    "label": "Which framework?",
+                    "showWhen": {"questionId": "q3", "equals": "Frontend"},
+                },
             ]
         }
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        answers = {
+            "q3": ["Backend", "Frontend"],
+            "q4": "Infrastructure",
+            "q5": "React",
+        }
         dto = ApplicationSubmitDto.model_validate({
             "personal": REQUIRED_PERSONAL,
             "jobId": 1,
-            "answers": {"q3": ["Backend", "Other"], "q3__other": "Infrastructure"},
+            "answers": answers,
         })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
         created_sub = self.sub_repo.create.call_args.args[1]
-        self.assertEqual(
-            created_sub.submission["answers"],
-            {"q3": ["Backend", "Other"], "q3__other": "Infrastructure"},
-        )
+        self.assertEqual(created_sub.submission["answers"], answers)
 
     async def test_screening_sees_the_pruned_answers(self):
         """A rule must not fire on an answer the form had stopped showing."""
@@ -1048,34 +1061,6 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ValueError):
             await self._submit_answers({"q1": "i agree"})
-
-    async def test_other_free_text_is_required_once_other_is_picked(self):
-        """The renderer marks it required; nothing used to hold it to that."""
-        self._typed_job({
-            "id": "q1",
-            "type": "single_choice",
-            "label": "How did you hear?",
-            "options": ["Friend", "Other"],
-            "otherOption": "Other",
-        })
-
-        with self.assertRaises(ValueError) as ctx:
-            await self._submit_answers({"q1": "Other", "q1__other": "  "})
-
-        self.assertIn("describe your answer", str(ctx.exception))
-
-    async def test_other_free_text_is_not_required_when_other_is_not_picked(self):
-        self._typed_job({
-            "id": "q1",
-            "type": "single_choice",
-            "label": "How did you hear?",
-            "options": ["Friend", "Other"],
-            "otherOption": "Other",
-        })
-
-        await self._submit_answers({"q1": "Friend"})
-
-        self.sub_repo.create.assert_awaited_once()
 
     async def test_a_hidden_question_is_not_value_checked(self):
         """A stale answer under a question the form stopped showing is pruned,
