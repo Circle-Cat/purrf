@@ -53,6 +53,7 @@ class RecruitingMapper:
         last_reject_comment: str | None = None,
         last_reject_kind: str | None = None,
         reviewer_id: int | None = None,
+        submit_message: str | None = None,
         submit_blockers: list[str] | None = None,
     ) -> JobDto:
         """Map a JobEntity to a JobDto.
@@ -69,6 +70,10 @@ class RecruitingMapper:
             reviewer_id (int | None): The user_id of the posting's currently
                 assigned reviewer, when it has an open (PENDING) review
                 cycle, otherwise ``None``. Serialised as ``reviewerId``.
+            submit_message (str | None): The note the requester wrote to the
+                reviewer when opening that same review cycle, or ``None``
+                when there is no open cycle or it carried no note.
+                Serialised as ``submitMessage``.
             submit_blockers (list[str] | None): Everything stopping this
                 posting from being submitted for review, empty when nothing
                 does. Serialised as ``submitBlockers``.
@@ -93,6 +98,7 @@ class RecruitingMapper:
             was_published=job.was_published or False,
             cooldown_days=job.cooldown_days,
             reviewer_id=reviewer_id,
+            submit_message=submit_message,
             submit_blockers=submit_blockers or [],
         )
 

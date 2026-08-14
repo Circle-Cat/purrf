@@ -404,6 +404,55 @@ describe("PostingDetailPage", () => {
     expect(screen.queryByText("Operate:")).not.toBeInTheDocument();
   });
 
+  it("shows the requester's note on the posting while a review is open", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "pending_review",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: 9,
+        submitMessage: "Please check the pipeline stages.",
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Please check the pipeline stages."),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("renders no note panel when the open review carried none", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "pending_review",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: 9,
+        submitMessage: null,
+      },
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    await waitFor(() =>
+      expect(screen.getByText("Submitted for review")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Note to the reviewer")).not.toBeInTheDocument();
+  });
+
   it("renders no reject panel when the latest review was not a rejection", async () => {
     authState.permissions = ["recruiting.job.write"];
     renderAt(1);

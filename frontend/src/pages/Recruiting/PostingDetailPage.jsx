@@ -369,6 +369,19 @@ const PostingDetailPage = () => {
         )}
       </div>
 
+      {/* Only ever set while a review cycle is open, so this disappears on its
+          own once the reviewer decides -- no status check needed here. */}
+      {job.submitMessage && (
+        <div className="space-y-1 rounded border border-slate-200 bg-slate-50 p-3">
+          <p className="text-sm font-medium text-slate-700">
+            Note to the reviewer
+          </p>
+          <p className="text-sm whitespace-pre-line text-slate-600">
+            {job.submitMessage}
+          </p>
+        </div>
+      )}
+
       {job.lastRejectComment && (
         <div className="space-y-1 rounded border border-red-200 bg-red-50 p-3">
           <p className="text-sm font-medium text-red-800">

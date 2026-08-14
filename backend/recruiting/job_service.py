@@ -1084,11 +1084,11 @@ class JobService:
             job_id (int): Identifier of the posting to retrieve.
 
         Returns:
-            JobDto: The requested posting, with ``reviewer_id`` set to its
-            open (PENDING) review's reviewer when one exists, and
-            ``last_reject_comment``/``last_reject_kind`` set from its
-            most-recent review when that review was a rejection, otherwise
-            ``None`` for all three.
+            JobDto: The requested posting, with ``reviewer_id`` and
+            ``submit_message`` set from its open (PENDING) review cycle when
+            one exists, and ``last_reject_comment``/``last_reject_kind`` set
+            from its most-recent review when that review was a rejection,
+            otherwise ``None`` for all four.
 
         Raises:
             ValueError: If no posting with the given id exists.
@@ -1096,6 +1096,7 @@ class JobService:
         job = await self._require_job(session, job_id)
         open_review = await self.job_review_repository.get_open_for_job(session, job_id)
         reviewer_id = open_review.reviewer_id if open_review is not None else None
+        submit_message = open_review.submit_message if open_review is not None else None
         latest_reviews = await self.job_review_repository.get_latest_reviews(
             session, [job_id]
         )
@@ -1105,6 +1106,7 @@ class JobService:
             last_reject_comment=comment,
             last_reject_kind=kind,
             reviewer_id=reviewer_id,
+            submit_message=submit_message,
         )
 
     async def get_job_activity(
