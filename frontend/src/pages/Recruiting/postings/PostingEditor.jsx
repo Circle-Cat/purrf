@@ -257,27 +257,25 @@ const PostingEditor = () => {
               />
             )}
           </div>
+          {/* Above the buttons, because the belief it corrects -- that saving
+              publishes -- is acted on at the moment of clicking Save. */}
+          <p className="text-xs text-slate-500">
+            Saving never publishes. It writes a draft, or stages an edit to a
+            live posting; submit it for review from the posting&apos;s own page
+            when it is ready.
+          </p>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => navigate(ROUTE_PATHS.RECRUITING_POSTINGS)}
+            >
+              Cancel
+            </Button>
+            <Button onClick={save} disabled={saving}>
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </div>
         </div>
-      </div>
-      {/* After the form, not above it: the editor is long enough that saving
-          from the top means scrolling back up past everything just edited. */}
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        {/* Beside the button, because the belief it corrects -- that saving
-            publishes -- is acted on at the moment of clicking it. */}
-        <p className="mr-auto text-xs text-slate-500">
-          Saving never publishes. It writes a draft, or stages an edit to a live
-          posting; submit it for review from the posting&apos;s own page when it
-          is ready.
-        </p>
-        <Button
-          variant="outline"
-          onClick={() => navigate(ROUTE_PATHS.RECRUITING_POSTINGS)}
-        >
-          Cancel
-        </Button>
-        <Button onClick={save} disabled={saving}>
-          {saving ? "Saving…" : "Save"}
-        </Button>
       </div>
     </div>
   );
