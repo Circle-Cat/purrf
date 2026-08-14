@@ -71,7 +71,7 @@ const PeoplePicker = ({
       <SelectTrigger aria-label={label} className="max-w-xs">
         <SelectValue placeholder={noneLabel} />
       </SelectTrigger>
-      <SelectContent className="z-[110]">
+      <SelectContent>
         <SelectItem value={NONE}>{noneLabel}</SelectItem>
         {pool.map((u) => (
           <SelectItem key={u.userId} value={String(u.userId)}>

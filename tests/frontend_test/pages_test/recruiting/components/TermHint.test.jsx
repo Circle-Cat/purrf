@@ -28,7 +28,12 @@ describe("TermHint", () => {
     ).toBeInTheDocument();
   });
 
-  it("stacks the hint above the fixed header and sidebar", async () => {
+  // The hint portals onto <body>, so it stacks against the fixed header and
+  // sidebar rather than against the badge it points at. `--z-popover` is the
+  // one layer the whole popover family shares; asserting the token here is
+  // also the only reachable check on it, since Radix's Select cannot be opened
+  // under jsdom and so its own content class is never rendered in a test.
+  it("puts the hint on the shared popover layer", async () => {
     const user = userEvent.setup();
     render(<TermHint id="stage.recruiter_screening" />);
 
@@ -37,7 +42,7 @@ describe("TermHint", () => {
     const hint = await screen.findByText(
       "A recruiter is reviewing your application. Nothing is needed from you right now.",
     );
-    expect(hint).toHaveClass("z-[110]");
+    expect(hint).toHaveClass("z-(--z-popover)");
   });
 
   it("degrades an unknown id to plain text with no trigger and no throw", () => {
