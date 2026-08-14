@@ -5,9 +5,9 @@
 
 fullnameOverride: purrf-staging
 image:
-  # Kept on the current Terraform-built image (image path unchanged for now);
-  # switching to the CI/GHCR image is a follow-up.
-  repository: us-docker.pkg.dev/k8s-dev-437501/purrf/purrf
+  # Built and pushed by deploy-staging.yml. The pin PR it opens rewrites `tag`
+  # only, so `repository` has to stay correct by hand.
+  repository: ghcr.io/circle-cat/purrf
   tag: "f7b9b8d51ed3f64bbb97ac9e7fa509162bc9da33"
 envFrom:
   - secretRef:
