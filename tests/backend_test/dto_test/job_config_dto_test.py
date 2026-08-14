@@ -303,7 +303,7 @@ class TestPipelineConfigDto(unittest.TestCase):
 
 
 class TestScreenRulesDto(unittest.TestCase):
-    def test_email_domain_qualify(self):
+    def test_reject_action_accepted(self):
         ScreenRulesDto(
             rules=[
                 ScreenRuleDto(
@@ -311,10 +311,20 @@ class TestScreenRulesDto(unittest.TestCase):
                     condition=ScreenRuleConditionDto(
                         source="email_domain", operator="in", value=["google.com"]
                     ),
-                    action="qualify",
+                    action="reject",
                 )
             ]
         )
+
+    def test_unsupported_action_rejected(self):
+        with self.assertRaises(ValidationError):
+            ScreenRuleDto(
+                id="r1",
+                condition=ScreenRuleConditionDto(
+                    source="email_domain", operator="in", value=["google.com"]
+                ),
+                action="qualify",
+            )
 
     def test_auto_hire_action_accepted(self):
         ScreenRulesDto(

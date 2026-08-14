@@ -880,21 +880,6 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.editable)
         self.record_event.assert_not_awaited()
 
-    async def test_edit_into_a_qualify_rule_stays_put(self):
-        """qualify lands on the first stage, which is where an editable
-        application already is."""
-        self._answer_rule("qualify")
-        app = self._editable_app()
-        dto = ApplicationEditDto.model_validate({
-            "answers": {"q1": "Yes"},
-            "personal": REQUIRED_PERSONAL,
-        })
-
-        await self.service.edit(self.session, self._ctx(), 100, dto)
-
-        self.assertEqual(app.stage, ApplicationStage.RECRUITER_SCREENING)
-        self.assertIsNone(app.tags)
-
     async def test_edit_into_an_auto_hire_rule_hires(self):
         self._answer_rule("auto_hire")
         app = self._editable_app()
@@ -1876,9 +1861,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             details={"reason": "screen_rule", "ruleId": "r1"},
         )
 
-    async def test_submit_screen_rule_qualify_lands_first_stage_with_activity_detail(
-        self,
-    ):
+    async def test_submit_screen_rule_that_matches_nothing_lands_first_stage(self):
         job = self._job(
             screen_rules={
                 "rules": [
@@ -1889,14 +1872,14 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
                             "operator": "equals",
                             "value": "google.com",
                         },
-                        "action": "qualify",
+                        "action": "auto_hire",
                     }
                 ]
             }
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.user_emails_repo.list_by_user_id.return_value = [
-            self._email_row("a@google.com")
+            self._email_row("a@yahoo.com")
         ]
         dto = ApplicationSubmitDto.model_validate({
             "jobId": 1,
@@ -1914,10 +1897,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             subject_id=100,
             actor_id=2,
             event_type="recruiting.application_submitted",
-            details={
-                "stage": "recruiter_screening",
-                "screenQualifyRuleId": "r1",
-            },
+            details={"stage": "recruiter_screening"},
         )
 
     async def test_submit_screen_rule_auto_hire_lands_hired_with_no_sub_status(self):

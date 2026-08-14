@@ -2579,7 +2579,7 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("notes a screen-rule auto-qualify on the submission entry", async () => {
+  it("names the landing stage on an unscreened submission entry", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({
@@ -2590,10 +2590,7 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
         {
           id: 1,
           eventType: "recruiting.application_submitted",
-          details: {
-            stage: "recruiter_screening",
-            screenQualifyRuleId: "r1",
-          },
+          details: { stage: "recruiter_screening" },
           actorId: OWNER_ID,
           actorName: "Casey Candidate",
           createdAt: "2026-07-08T12:00:00Z",
@@ -2606,47 +2603,11 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
     await user.click(screen.getByRole("tab", { name: "Timeline" }));
 
     expect(
-      screen.getByText(
-        /Submitted — landed on Recruiter screening \(auto-qualified by screening rule\)/,
-      ),
+      screen.getByText(/Submitted — landed on Recruiter screening/),
     ).toBeInTheDocument();
   });
 
-  it("shows which rule auto-qualified on the submission entry", async () => {
-    const user = userEvent.setup();
-    authState.userId = OWNER_ID;
-    api.getApplicationDetail.mockResolvedValue({
-      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
-    });
-    api.getApplicationActivity.mockResolvedValue({
-      data: [
-        {
-          id: 1,
-          eventType: "recruiting.application_submitted",
-          details: {
-            stage: "recruiter_screening",
-            screenQualifyRuleId: "r2",
-            screenQualifyRuleLabel: "answer to q_role equals mentor",
-          },
-          actorId: OWNER_ID,
-          actorName: "Casey Candidate",
-          createdAt: "2026-07-08T12:00:00Z",
-        },
-      ],
-    });
-    renderPage();
-    await waitLoaded();
-
-    await user.click(screen.getByRole("tab", { name: "Timeline" }));
-
-    expect(
-      await screen.findByText(
-        /Submitted — landed on Recruiter screening \(auto-qualified by screening rule "answer to q_role equals mentor"\)/,
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it("notes a screen-rule auto-hire distinctly from auto-qualify", async () => {
+  it("notes a screen-rule auto-hire on the submission entry", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({

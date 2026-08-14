@@ -91,7 +91,6 @@ _ASSIGNEE_NAME_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
 _SCREEN_RULE_ID_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
     "recruiting.auto_rejected": (("ruleId", "ruleLabel"),),
     "recruiting.application_submitted": (
-        ("screenQualifyRuleId", "screenQualifyRuleLabel"),
         ("screenAutoHireRuleId", "screenAutoHireRuleLabel"),
     ),
 }
@@ -1217,11 +1216,11 @@ class BoardService:
         user resolves to ``f"User {id}"``, same fallback as ``actor_name``.
 
         Screening-rule ids (``auto_rejected``'s ``ruleId``, and
-        ``application_submitted``'s ``screenQualifyRuleId``/
-        ``screenAutoHireRuleId``) are likewise resolved read-time only,
-        against the job's *current* ``screen_rules`` — never persisted back
-        to the stored row. A rule id no longer present in the job's config
-        (edited/removed since the row was written) resolves to
+        ``application_submitted``'s ``screenAutoHireRuleId``) are likewise
+        resolved read-time only, against the job's *current*
+        ``screen_rules`` — never persisted back to the stored row. A rule
+        id no longer present in the job's config (edited/removed since the
+        row was written) resolves to
         ``f"rule {id} (no longer configured)"``.
 
         Args:
