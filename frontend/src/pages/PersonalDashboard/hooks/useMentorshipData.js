@@ -33,10 +33,15 @@ import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
  * - which round is currently actionable
  * - whether registration or feedback actions are enabled
  *
+ * @param {{enabled?: boolean, hiredMentorshipRole?: "mentor"|"mentee"|null}} params -
+ *   `hiredMentorshipRole` comes from the user's HIRED activity application
+ *   and decides which of the round's two deadlines applies to them.
  * @returns {{
  *   regRoundId: string | null,
+ *   regRoundName: string,
  *   feedbackRoundId: string | null,
  *   isRegistrationOpen: boolean,
+ *   registrationDeadlineAt: string | null,
  *   isFeedbackEnabled: boolean,
  *   registration: Object | null,
  *   saveRegistration: (data: Object) => Promise<any> | undefined,
@@ -46,7 +51,10 @@ import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
  *   userTimezone: string | null
  * }}
  */
-export const useMentorshipData = ({ enabled = true } = {}) => {
+export const useMentorshipData = ({
+  enabled = true,
+  hiredMentorshipRole = null,
+} = {}) => {
   const flags = useFeatureFlags();
   const useV2Meetings = !!flags[FEATURE_FLAGS.CREATE_GOOGLE_MEETING];
 
@@ -58,6 +66,10 @@ export const useMentorshipData = ({ enabled = true } = {}) => {
     canViewMatch: false,
   });
   const [isRegistrationOpen, setIsRegistrationOpen] = useState(false);
+  // The deadline that produced `isRegistrationOpen`, kept so callers can
+  // name the date instead of only knowing whether it has passed.
+  const [registrationDeadlineAt, setRegistrationDeadlineAt] = useState(null);
+  const [regRoundName, setRegRoundName] = useState("");
   const [matchResult, setMatchResult] = useState(null);
   // Current user's registration data for the active round
   const [registration, setRegistration] = useState(null);
@@ -128,6 +140,12 @@ export const useMentorshipData = ({ enabled = true } = {}) => {
       return;
     }
 
+    // The disabled pass above already resolved isLoading to false, so it
+    // has to be raised again here. Otherwise the window between being
+    // enabled and the fetch returning looks settled, and the empty
+    // initial state -- no open round, no deadline -- reads as an answer.
+    setIsLoading(true);
+
     const fetchData = async () => {
       try {
         const now = new Date().toISOString();
@@ -144,15 +162,21 @@ export const useMentorshipData = ({ enabled = true } = {}) => {
           );
           setRegistration(regData);
 
-          const participantRole = regData?.roundPreferences?.participantRole;
+          // Which deadline applies comes from the admission, not from an
+          // existing registration: a first-time registrant has no
+          // `roundPreferences` at all, so reading the role from there put
+          // every mentor on the mentee deadline.
           const deadlineKey =
-            participantRole === MentorshipParticipantRoles.MENTOR
+            hiredMentorshipRole === MentorshipParticipantRoles.MENTOR
               ? "mentorApplicationDeadlineAt"
               : "menteeApplicationDeadlineAt";
           const regRound = rounds.find(
             (r) => r.id?.toString() === status.regRoundId?.toString(),
           );
-          setIsRegistrationOpen(now < regRound?.timeline?.[deadlineKey]);
+          const deadline = regRound?.timeline?.[deadlineKey] ?? null;
+          setRegRoundName(regRound?.name ?? "");
+          setRegistrationDeadlineAt(deadline);
+          setIsRegistrationOpen(Boolean(deadline) && now < deadline);
 
           if (regData && regData.isRegistered) {
             try {
@@ -183,7 +207,7 @@ export const useMentorshipData = ({ enabled = true } = {}) => {
     };
 
     fetchData();
-  }, [enabled]);
+  }, [enabled, hiredMentorshipRole]);
 
   /**
    * Lazily load the user's past mentorship partners.
@@ -338,6 +362,8 @@ export const useMentorshipData = ({ enabled = true } = {}) => {
   return {
     ...roundStatus,
     isRegistrationOpen,
+    registrationDeadlineAt,
+    regRoundName,
     // registration
     registration,
     saveRegistration,

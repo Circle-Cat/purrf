@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
-import { useMyApplications } from "@/pages/PersonalDashboard/hooks/useMyApplications";
+import { useMyApplications } from "@/hooks/useMyApplications";
 import * as api from "@/api/recruitingApi";
 
 vi.mock("@/api/recruitingApi");

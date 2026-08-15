@@ -2,6 +2,7 @@ import React, { useState } from "react";
 
 import { useProfileData } from "@/pages/Profile/hooks/useProfileData";
 import { useProfileCompletenessReminder } from "@/pages/Profile/hooks/useProfileCompletenessReminder";
+import { useMyApplications } from "@/hooks/useMyApplications";
 
 import ProfileHeader from "@/pages/Profile/components/ProfileHeader";
 import LinkedInSection from "@/pages/Profile/components/LinkedInSection";
@@ -34,7 +35,14 @@ const Profile = () => {
     refresh,
   } = useProfileData();
 
+  // The completeness reminder speaks only about mentorship matching, so it
+  // is addressed to admitted participants alone. `hiredMentorshipRole` is
+  // null while the applications list is still in flight, which keeps the
+  // reminder quiet until we actually know.
+  const { hiredMentorshipRole } = useMyApplications();
+
   useProfileCompletenessReminder({
+    enabled: hiredMentorshipRole !== null,
     isLoading,
     loadError,
     personalInfo,
