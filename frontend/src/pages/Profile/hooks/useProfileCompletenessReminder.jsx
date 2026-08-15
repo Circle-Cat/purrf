@@ -16,6 +16,15 @@ const PROFILE_TOAST_PREFIX =
  * Information / Experience / Education is empty. Lists exactly the
  * missing sections.
  *
+ * `enabled` has no default: the message is written entirely around
+ * mentorship partner matching, so it is only meaningful to an admitted
+ * mentor or mentee. Everyone else — including someone who applied to a
+ * different kind of activity — reads it as a demand to fill in a profile
+ * for a program they are not in. It is also false while the caller is
+ * still finding out, which is why a disabled run leaves the session
+ * marker untouched rather than writing it: the reminder still has to be
+ * able to fire once the answer arrives.
+ *
  * The sessionStorage key keeps navigating in and out of /profile from
  * re-nagging. The mentorship onboarding training reminder is a separate
  * concern and lives on the Personal Dashboard
@@ -23,6 +32,7 @@ const PROFILE_TOAST_PREFIX =
  * sees it without having to visit their profile first.
  */
 export const useProfileCompletenessReminder = ({
+  enabled,
   isLoading,
   loadError,
   personalInfo,
@@ -30,6 +40,8 @@ export const useProfileCompletenessReminder = ({
   educationList,
 }) => {
   useEffect(() => {
+    if (!enabled) return;
+
     // Don't nag while loading, or when the data failed to load — empty state
     // from a fetch failure must not be mistaken for a genuinely empty profile.
     if (isLoading || loadError) return;
@@ -52,6 +64,7 @@ export const useProfileCompletenessReminder = ({
       }
     }
   }, [
+    enabled,
     isLoading,
     loadError,
     personalInfo.firstName,

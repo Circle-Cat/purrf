@@ -5,7 +5,8 @@ import MentorshipInfoBanner from "@/pages/PersonalDashboard/components/Mentorshi
 import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorshipData";
 import { useAuth } from "@/context/auth";
 import { useWorkActivityData } from "@/pages/PersonalDashboard/hooks/useWorkActivityData";
-import { useMyApplications } from "@/pages/PersonalDashboard/hooks/useMyApplications";
+import { useMyApplications } from "@/hooks/useMyApplications";
+import { useRegistrationReminder } from "@/pages/PersonalDashboard/hooks/useRegistrationReminder";
 import { PERMISSIONS } from "@/constants/Permissions";
 import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
@@ -26,6 +27,10 @@ vi.mock("@/pages/PersonalDashboard/hooks/useMentorshipData", () => ({
   useMentorshipData: vi.fn(),
 }));
 
+vi.mock("@/pages/PersonalDashboard/hooks/useRegistrationReminder", () => ({
+  useRegistrationReminder: vi.fn(),
+}));
+
 vi.mock("@/context/auth", () => ({
   useAuth: vi.fn(),
 }));
@@ -34,7 +39,7 @@ vi.mock("@/pages/PersonalDashboard/hooks/useWorkActivityData", () => ({
   useWorkActivityData: vi.fn(),
 }));
 
-vi.mock("@/pages/PersonalDashboard/hooks/useMyApplications", () => ({
+vi.mock("@/hooks/useMyApplications", () => ({
   useMyApplications: vi.fn(),
 }));
 
@@ -114,6 +119,78 @@ describe("PersonalDashboard", () => {
     useAuth.mockReturnValue({ permissions: [] });
     vi.mocked(useFeatureFlags).mockReturnValue({
       [FEATURE_FLAGS.CREATE_GOOGLE_MEETING]: true,
+    });
+  });
+
+  describe("registration reminder", () => {
+    const lastReminderCall = () => useRegistrationReminder.mock.calls.at(-1)[0];
+
+    it("measures the deadline against the role the user was admitted as", () => {
+      // The round carries a separate deadline per role, and only the
+      // admission says which one is this user's.
+      render(<PersonalDashboard />);
+
+      expect(useMentorshipData).toHaveBeenCalledWith({
+        enabled: true,
+        hiredMentorshipRole: "mentee",
+      });
+    });
+
+    it("hands the reminder the round it should name", () => {
+      useMentorshipData.mockReturnValue({
+        ...mockHookData,
+        registrationDeadlineAt: "2026-09-30T15:59:00Z",
+        regRoundName: "2026 Fall",
+      });
+
+      render(<PersonalDashboard />);
+
+      expect(lastReminderCall()).toMatchObject({
+        enabled: true,
+        isRegistered: false,
+        isRegistrationOpen: true,
+        registrationDeadlineAt: "2026-09-30T15:59:00Z",
+        roundName: "2026 Fall",
+      });
+    });
+
+    it("reports an existing registration so the reminder stays quiet", () => {
+      useMentorshipData.mockReturnValue({
+        ...mockHookData,
+        registration: { id: "reg-1", isRegistered: true },
+      });
+
+      render(<PersonalDashboard />);
+
+      expect(lastReminderCall().isRegistered).toBe(true);
+    });
+
+    it("stays disabled for someone with no mentorship admission", () => {
+      useMyApplications.mockReturnValue({
+        applications: [],
+        isLoading: false,
+        loadError: false,
+        load: vi.fn(),
+        hiredMentorshipRole: null,
+      });
+
+      render(<PersonalDashboard />);
+
+      expect(lastReminderCall().enabled).toBe(false);
+    });
+
+    it("stays disabled while the applications list is still loading", () => {
+      useMyApplications.mockReturnValue({
+        applications: [],
+        isLoading: true,
+        loadError: false,
+        load: vi.fn(),
+        hiredMentorshipRole: null,
+      });
+
+      render(<PersonalDashboard />);
+
+      expect(lastReminderCall().enabled).toBe(false);
     });
   });
 
@@ -405,7 +482,10 @@ describe("PersonalDashboard", () => {
 
     render(<PersonalDashboard />);
 
-    expect(useMentorshipData).toHaveBeenCalledWith({ enabled: false });
+    expect(useMentorshipData).toHaveBeenCalledWith({
+      enabled: false,
+      hiredMentorshipRole: null,
+    });
   });
 
   it("passes hiredMentorshipRole through to MentorshipInfoBanner", () => {
