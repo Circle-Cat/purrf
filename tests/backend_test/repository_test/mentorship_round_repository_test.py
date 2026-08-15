@@ -548,6 +548,9 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
 class TestGetOpenMentorRegistrationRound(BaseRepositoryTestLib):
     """The round a newly admitted mentor should be pointed at."""
 
+    # Before self.now, so these fixtures vary only the deadline.
+    PROMOTION_STARTED = "2026-08-01T07:00:00+00:00"
+
     async def asyncSetUp(self):
         await super().asyncSetUp()
         self.repo = MentorshipRoundRepository()
@@ -570,11 +573,17 @@ class TestGetOpenMentorRegistrationRound(BaseRepositoryTestLib):
         register for."""
         later = self._round(
             "2027 Spring",
-            {"mentor_application_deadline_at": "2026-12-31T23:59:00+00:00"},
+            {
+                "promotion_start_at": self.PROMOTION_STARTED,
+                "mentor_application_deadline_at": "2026-12-31T23:59:00+00:00",
+            },
         )
         sooner = self._round(
             "2026 Fall",
-            {"mentor_application_deadline_at": "2026-09-30T23:59:00+00:00"},
+            {
+                "promotion_start_at": self.PROMOTION_STARTED,
+                "mentor_application_deadline_at": "2026-09-30T23:59:00+00:00",
+            },
         )
         await self.insert_entities([later, sooner])
 
@@ -587,7 +596,69 @@ class TestGetOpenMentorRegistrationRound(BaseRepositoryTestLib):
         await self.insert_entities([
             self._round(
                 "2026 Spring",
-                {"mentor_application_deadline_at": "2026-03-31T23:59:00+00:00"},
+                {
+                    "promotion_start_at": "2025-12-18T08:00:00+00:00",
+                    "mentor_application_deadline_at": "2026-03-31T23:59:00+00:00",
+                },
+            )
+        ])
+
+        self.assertIsNone(await self._select())
+
+    async def test_ignores_rounds_whose_promotion_has_not_started(self):
+        """The deadline alone does not mean a mentor can act.
+
+        Registration only surfaces on the Personal Dashboard once promotion
+        has started (``currentRegRound`` in mentorshipRounds.js requires it),
+        so a round in the gap between admission and promotion has nothing for
+        the mentor to open. Pointing them at it would send them to an empty
+        dashboard.
+        """
+        await self.insert_entities([
+            self._round(
+                "2026 Fall",
+                {
+                    "promotion_start_at": "2026-08-18T07:00:00+00:00",
+                    "mentor_application_deadline_at": "2026-09-30T23:59:00+00:00",
+                },
+            )
+        ])
+
+        self.assertIsNone(await self._select())
+
+    async def test_prefers_the_soonest_deadline_among_promoted_rounds(self):
+        """Ordering is by deadline, but only rounds already promoting are
+        candidates -- a sooner deadline that has not started promoting yet
+        must not shadow the round the mentor can actually register for."""
+        await self.insert_entities([
+            self._round(
+                "2026 Fall",
+                {
+                    "promotion_start_at": "2026-08-18T07:00:00+00:00",
+                    "mentor_application_deadline_at": "2026-08-25T23:59:00+00:00",
+                },
+            ),
+            self._round(
+                "2026 Summer",
+                {
+                    "promotion_start_at": self.PROMOTION_STARTED,
+                    "mentor_application_deadline_at": "2026-09-30T23:59:00+00:00",
+                },
+            ),
+        ])
+
+        selected = await self._select()
+
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected.name, "2026 Summer")
+
+    async def test_ignores_rounds_without_a_promotion_start(self):
+        """A round missing the field is invalid to the dashboard too --
+        mentorshipRounds.js filters it out before any slot is computed."""
+        await self.insert_entities([
+            self._round(
+                "2026 Fall",
+                {"mentor_application_deadline_at": "2026-09-30T23:59:00+00:00"},
             )
         ])
 
@@ -602,7 +673,10 @@ class TestGetOpenMentorRegistrationRound(BaseRepositoryTestLib):
         await self.insert_entities([
             self._round(
                 "2026 Fall",
-                {"application_deadline_at": "2026-09-30T23:59:00+00:00"},
+                {
+                    "promotion_start_at": self.PROMOTION_STARTED,
+                    "application_deadline_at": "2026-09-30T23:59:00+00:00",
+                },
             )
         ])
 

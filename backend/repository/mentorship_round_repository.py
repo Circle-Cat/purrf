@@ -128,17 +128,26 @@ class MentorshipRoundRepository:
     ) -> MentorshipRoundEntity | None:
         """The round a mentor admitted right now should register for.
 
-        Of the rounds still accepting mentor registrations -- those whose
-        ``mentor_application_deadline_at`` is in the future -- the one closing
-        soonest wins, so a mentor admitted while two windows overlap is
-        pointed at the one about to close rather than an arbitrary match.
+        A round qualifies only while it is open on BOTH ends: promotion has
+        started and the mentor deadline has not passed. Of those, the one
+        closing soonest wins, so a mentor admitted while two windows overlap
+        is pointed at the one about to close rather than an arbitrary match.
+
+        The promotion bound is not decoration. Registration surfaces on the
+        Personal Dashboard only once ``promotion_start_at`` has passed --
+        ``currentRegRound`` in mentorshipRounds.js requires it, and the
+        banner renders nothing without it. A round whose deadline is open but
+        whose promotion has not started would send an admitted mentor to a
+        dashboard with nothing on it. Rounds missing the field entirely drop
+        out here for the same reason the dashboard filters them out: they are
+        not something a mentor can act on.
 
         Returns None when no window is open. That is a normal state, not an
         error: the program is not always recruiting.
 
-        The deadline is cast to a timestamp in SQL rather than parsed in
+        Both bounds are cast to timestamps in SQL rather than parsed in
         Python, for the reason ``RunningRoundWindow``'s docstring gives --
-        the writers of this JSONB field disagree on format. Rounds carrying
+        the writers of these JSONB fields disagree on format. Rounds carrying
         the one-off import's bare ``YYYY-MM-DD`` are historical and their
         deadlines long past, so they can never win this comparison.
 
@@ -149,13 +158,17 @@ class MentorshipRoundRepository:
             MentorshipRoundEntity | None: The round closing soonest, or None.
         """
         now_utc = datetime.now(timezone.utc)
+        promotion_start = cast(
+            MentorshipRoundEntity.description["promotion_start_at"].astext,
+            TIMESTAMP(timezone=True),
+        )
         deadline = cast(
             MentorshipRoundEntity.description["mentor_application_deadline_at"].astext,
             TIMESTAMP(timezone=True),
         )
         result = await session.execute(
             select(MentorshipRoundEntity)
-            .where(deadline > now_utc)
+            .where(promotion_start <= now_utc, deadline > now_utc)
             .order_by(deadline.asc())
             .limit(1)
         )

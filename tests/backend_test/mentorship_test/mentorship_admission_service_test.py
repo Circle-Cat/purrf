@@ -29,6 +29,7 @@ from tests.backend_test.repository_test.base_repository_test_lib import (
 )
 
 # Verbatim as the admin API writes them into the round's JSONB description.
+_PROMOTION = "2026-08-01T07:00:00+00:00"
 _DEADLINE = "2026-09-30T15:59:00+00:00"
 _MATCHING = "2026-10-15T00:00:00+00:00"
 
@@ -75,6 +76,7 @@ class MentorshipAdmissionServiceTest(BaseRepositoryTestLib):
             name=name,
             required_meetings=5,
             description={
+                "promotion_start_at": _PROMOTION,
                 "mentor_application_deadline_at": _DEADLINE,
                 "match_notification_at": _MATCHING,
             },
@@ -144,6 +146,7 @@ class MentorshipAdmissionServiceTest(BaseRepositoryTestLib):
             name="2026 Fall",
             required_meetings=5,
             description={
+                "promotion_start_at": _PROMOTION,
                 "mentor_application_deadline_at": "2026-08-20T15:59:00+00:00",
                 "match_notification_at": _MATCHING,
             },
