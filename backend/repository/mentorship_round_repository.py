@@ -123,6 +123,44 @@ class MentorshipRoundRepository:
         )
         return [RunningRoundWindow(*row) for row in result.all()]
 
+    async def get_open_mentor_registration_round(
+        self, session: AsyncSession
+    ) -> MentorshipRoundEntity | None:
+        """The round a mentor admitted right now should register for.
+
+        Of the rounds still accepting mentor registrations -- those whose
+        ``mentor_application_deadline_at`` is in the future -- the one closing
+        soonest wins, so a mentor admitted while two windows overlap is
+        pointed at the one about to close rather than an arbitrary match.
+
+        Returns None when no window is open. That is a normal state, not an
+        error: the program is not always recruiting.
+
+        The deadline is cast to a timestamp in SQL rather than parsed in
+        Python, for the reason ``RunningRoundWindow``'s docstring gives --
+        the writers of this JSONB field disagree on format. Rounds carrying
+        the one-off import's bare ``YYYY-MM-DD`` are historical and their
+        deadlines long past, so they can never win this comparison.
+
+        Args:
+            session (AsyncSession): The active async database session.
+
+        Returns:
+            MentorshipRoundEntity | None: The round closing soonest, or None.
+        """
+        now_utc = datetime.now(timezone.utc)
+        deadline = cast(
+            MentorshipRoundEntity.description["mentor_application_deadline_at"].astext,
+            TIMESTAMP(timezone=True),
+        )
+        result = await session.execute(
+            select(MentorshipRoundEntity)
+            .where(deadline > now_utc)
+            .order_by(deadline.asc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
     async def update_mentee_average_score(
         self, session: AsyncSession, round_id: int, value: float | None
     ) -> None:

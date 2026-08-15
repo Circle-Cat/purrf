@@ -545,5 +545,69 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         )
 
 
+class TestGetOpenMentorRegistrationRound(BaseRepositoryTestLib):
+    """The round a newly admitted mentor should be pointed at."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.repo = MentorshipRoundRepository()
+        self.now = datetime(2026, 8, 15, tzinfo=timezone.utc)
+
+    def _round(self, name: str, description: dict) -> MentorshipRoundEntity:
+        return MentorshipRoundEntity(
+            name=name, description=description, required_meetings=5
+        )
+
+    async def _select(self):
+        with patch(
+            "backend.repository.mentorship_round_repository.datetime"
+        ) as mock_datetime:
+            mock_datetime.now.return_value = self.now
+            return await self.repo.get_open_mentor_registration_round(self.session)
+
+    async def test_returns_the_round_closing_soonest(self):
+        """Two windows open at once: the one about to close is the one to
+        register for."""
+        later = self._round(
+            "2027 Spring",
+            {"mentor_application_deadline_at": "2026-12-31T23:59:00+00:00"},
+        )
+        sooner = self._round(
+            "2026 Fall",
+            {"mentor_application_deadline_at": "2026-09-30T23:59:00+00:00"},
+        )
+        await self.insert_entities([later, sooner])
+
+        selected = await self._select()
+
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected.name, "2026 Fall")
+
+    async def test_ignores_rounds_whose_deadline_has_passed(self):
+        await self.insert_entities([
+            self._round(
+                "2026 Spring",
+                {"mentor_application_deadline_at": "2026-03-31T23:59:00+00:00"},
+            )
+        ])
+
+        self.assertIsNone(await self._select())
+
+    async def test_returns_none_when_no_round_qualifies(self):
+        self.assertIsNone(await self._select())
+
+    async def test_ignores_the_backfill_singular_deadline_key(self):
+        """``application_deadline_at`` is the one-off import's key, not this
+        one. A round carrying only that is not a mentor registration window."""
+        await self.insert_entities([
+            self._round(
+                "2026 Fall",
+                {"application_deadline_at": "2026-09-30T23:59:00+00:00"},
+            )
+        ])
+
+        self.assertIsNone(await self._select())
+
+
 if __name__ == "__main__":
     unittest.main()

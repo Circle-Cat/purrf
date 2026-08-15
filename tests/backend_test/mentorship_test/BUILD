@@ -68,3 +68,46 @@ py_test(
         "//backend/mentorship",
     ],
 )
+
+py_test(
+    name = "notification_renderers_test",
+    srcs = ["notification_renderers_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/notification_management:render_registry",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "recipient_resolvers_test",
+    srcs = ["recipient_resolvers_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/notification_management:recipient_registry",
+        "//backend/notification_management:render_registry",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "mentorship_admission_service_test",
+    srcs = ["mentorship_admission_service_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)

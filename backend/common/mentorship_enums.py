@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum, StrEnum
 
 
 class ApprovalStatus(str, Enum):
@@ -46,6 +46,17 @@ class MenteeActionStatus(str, Enum):
     PENDING = "pending"
     TIME_PROPOSED = "time_proposed"
     CONFIRMED = "confirmed"
+
+
+class MentorshipEvent(StrEnum):
+    """Every mentorship event type that may be recorded on the event log.
+
+    Same catalogue rule as ``RecruitingEvent``: a write site naming a member
+    that does not exist fails at import, where a bare string would record the
+    event and then resolve to nobody.
+    """
+
+    MENTOR_ADMITTED = "mentorship.mentor_admitted"
 
 
 class ParticipantRole(Enum):

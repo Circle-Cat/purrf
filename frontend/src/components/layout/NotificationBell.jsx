@@ -15,10 +15,19 @@ import {
   listNotifications,
 } from "@/api/recruitingApi";
 
-/** Compose a notification's display text from its event type and details. */
+/**
+ * Compose a notification's display text from its event type and details.
+ *
+ * Two audiences share this switch. Every recruiting line is written from
+ * staff's point of view, about someone else ("{actor} moved {applicant}");
+ * the mentorship line below is written to the person it happened to. Match
+ * the case you are adding, not the surrounding voice.
+ */
 const describe = (n) => {
   const actor = n.actorName ?? "Someone";
   switch (n.eventType) {
+    case "mentorship.mentor_admitted":
+      return `You were admitted to ${n.jobTitle}`;
     case "recruiting.reassigned":
       return `${actor} assigned you to evaluate ${n.applicantName} — ${n.jobTitle}`;
     case "recruiting.auto_assigned":
