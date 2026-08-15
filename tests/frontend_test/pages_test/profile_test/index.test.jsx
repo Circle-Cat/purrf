@@ -2,8 +2,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import Profile from "@/pages/Profile";
 import { useProfileData } from "@/pages/Profile/hooks/useProfileData";
+import { useProfileCompletenessReminder } from "@/pages/Profile/hooks/useProfileCompletenessReminder";
+import { useMyApplications } from "@/hooks/useMyApplications";
 
 vi.mock("@/pages/Profile/hooks/useProfileData");
+
+vi.mock("@/pages/Profile/hooks/useProfileCompletenessReminder", () => ({
+  useProfileCompletenessReminder: vi.fn(),
+}));
+
+vi.mock("@/hooks/useMyApplications", () => ({
+  useMyApplications: vi.fn(),
+}));
 
 vi.mock("@/pages/Profile/components/ProfileHeader", () => ({
   default: ({ onEditClick }) => (
@@ -87,6 +97,34 @@ describe("Profile Component", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useProfileData.mockReturnValue(mockProfileData);
+    useMyApplications.mockReturnValue({ hiredMentorshipRole: null });
+  });
+
+  describe("mentorship completeness reminder", () => {
+    const enabledFlag = () =>
+      useProfileCompletenessReminder.mock.calls.at(-1)[0].enabled;
+
+    it("enables the reminder for an admitted mentor", () => {
+      useMyApplications.mockReturnValue({ hiredMentorshipRole: "mentor" });
+
+      render(<Profile />);
+
+      expect(enabledFlag()).toBe(true);
+    });
+
+    it("enables the reminder for an admitted mentee", () => {
+      useMyApplications.mockReturnValue({ hiredMentorshipRole: "mentee" });
+
+      render(<Profile />);
+
+      expect(enabledFlag()).toBe(true);
+    });
+
+    it("leaves it disabled for someone in no mentorship program", () => {
+      render(<Profile />);
+
+      expect(enabledFlag()).toBe(false);
+    });
   });
 
   it("renders the loading state when isLoading is true", () => {
