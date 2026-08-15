@@ -74,8 +74,23 @@ export const useMentorshipData = ({
   // Current user's registration data for the active round
   const [registration, setRegistration] = useState(null);
 
-  // Loading state for initial mentorship data
-  const [isLoading, setIsLoading] = useState(true);
+  // Loading state for initial mentorship data, derived during render
+  // rather than set from the effect. Which fetch the data in state
+  // belongs to is what actually decides it, so being enabled -- or
+  // handed a different role -- reports loading on the very render that
+  // does it. Raising the flag from the effect instead is one commit too
+  // late: sibling hooks in the same commit have already read the stale
+  // `false` and taken the empty initial state, no open round and no
+  // deadline, for a finished answer.
+  const requestKey = enabled ? `role:${hiredMentorshipRole}` : null;
+  const [fetchState, setFetchState] = useState({
+    key: requestKey,
+    isSettled: false,
+  });
+  if (fetchState.key !== requestKey) {
+    setFetchState({ key: requestKey, isSettled: false });
+  }
+  const isLoading = enabled && !fetchState.isSettled;
 
   // Cached list of past mentorship partners
   const [pastPartners, setPastPartners] = useState([]);
@@ -130,21 +145,13 @@ export const useMentorshipData = ({
    *
    * This effect is run once when the component is mounted. It fetches the available mentorship rounds, calculates
    * the mentorship slot status, and then fetches the user's registration data for the active round (if any).
-   * The loading state (`isLoading`) is set to `false` once the data has been fetched (or an error has occurred).
+   * It marks the request settled once the data has been fetched (or an error has occurred), which is what
+   * resolves `isLoading` to `false`.
    *
    * @returns {void}
    */
   useEffect(() => {
-    if (!enabled) {
-      setIsLoading(false);
-      return;
-    }
-
-    // The disabled pass above already resolved isLoading to false, so it
-    // has to be raised again here. Otherwise the window between being
-    // enabled and the fetch returning looks settled, and the empty
-    // initial state -- no open round, no deadline -- reads as an answer.
-    setIsLoading(true);
+    if (!enabled) return;
 
     const fetchData = async () => {
       try {
@@ -202,12 +209,15 @@ export const useMentorshipData = ({
       } catch (err) {
         console.error("Failed to fetch mentorship data", err);
       } finally {
-        setIsLoading(false);
+        // Tagged with the request it answers: a response that arrives
+        // after the role changed settles nothing, and the next render
+        // notices the mismatch and goes back to loading.
+        setFetchState({ key: requestKey, isSettled: true });
       }
     };
 
     fetchData();
-  }, [enabled, hiredMentorshipRole]);
+  }, [enabled, hiredMentorshipRole, requestKey]);
 
   /**
    * Lazily load the user's past mentorship partners.
