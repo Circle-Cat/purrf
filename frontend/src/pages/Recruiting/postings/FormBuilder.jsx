@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import TermHint from "@/pages/Recruiting/components/TermHint";
 import QuestionEditor from "@/pages/Recruiting/postings/QuestionEditor";
 import {
   QUESTION_TYPES,
@@ -58,6 +59,9 @@ const FormBuilder = ({
 
   return (
     <div className="space-y-4">
+      <p className="text-sm font-medium text-slate-700">
+        <TermHint id="editor.application_form" />
+      </p>
       {questions.map((q, i) => (
         <QuestionEditor
           key={q.id}

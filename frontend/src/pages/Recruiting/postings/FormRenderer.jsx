@@ -2,13 +2,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RecordedValue } from "@/pages/Recruiting/components/RecordedValue";
-import {
-  otherSelected,
-  visibleQuestions,
-} from "@/pages/Recruiting/postings/questionVisibility";
+import { visibleQuestions } from "@/pages/Recruiting/postings/questionVisibility";
 import FieldError from "@/components/common/FieldError";
 import { errorBorder } from "@/components/common/fieldErrors";
-import { answerKey, otherKey } from "@/pages/Recruiting/applicationValidation";
+import { answerKey } from "@/pages/Recruiting/applicationValidation";
 import { textBudget } from "@/pages/Recruiting/postings/questionLimits";
 
 /**
@@ -97,14 +94,12 @@ const CharacterCounter = ({ question, value }) => {
  * answered.
  *
  * @param {{question: object, value: unknown,
- *          otherValue: unknown,
  *          onAnswerChange: (id: string, value: string|string[]) => void,
  *          readOnly?: boolean, idPrefix?: string}} props
  */
 const QuestionControl = ({
   question,
   value,
-  otherValue,
   onAnswerChange,
   readOnly = false,
   idPrefix = "",
@@ -114,33 +109,6 @@ const QuestionControl = ({
   const domId = `${idPrefix}${id}`;
   const set = (v) => onAnswerChange(id, v);
   const shownOptions = options.filter((opt) => opt && opt.trim() !== "");
-
-  const specifyInput = otherSelected(question, value) ? (
-    <div className="space-y-1">
-      {readOnly ? (
-        <p className="text-sm font-medium">{question.otherOption}</p>
-      ) : (
-        <Label htmlFor={`${domId}__other`}>
-          {question.otherOption}
-          <span className="ml-1 text-red-500">*</span>
-        </Label>
-      )}
-      {readOnly ? (
-        <RecordedValue value={otherValue} />
-      ) : (
-        <>
-          <Input
-            id={`${domId}__other`}
-            aria-label={`${question.otherOption} (please specify)`}
-            className={errorBorder(errors, otherKey(id)).trim()}
-            value={otherValue ?? ""}
-            onChange={(e) => onAnswerChange(`${id}__other`, e.target.value)}
-          />
-          <FieldError errors={errors} errorKey={otherKey(id)} />
-        </>
-      )}
-    </div>
-  ) : null;
 
   if (type === "long_text") {
     return readOnly ? (
@@ -173,36 +141,33 @@ const QuestionControl = ({
         ? [value]
         : [];
     return (
-      <div className="space-y-2">
-        <div role="radiogroup" aria-label={label} className="space-y-1">
-          {shownOptions.map((opt) => (
-            <label
-              key={opt}
-              className={`flex items-center gap-2 text-sm ${
-                readOnly && value === opt ? "font-medium" : ""
-              }`}
-            >
-              <input
-                type="radio"
-                name={domId}
-                value={opt}
-                checked={value === opt}
-                disabled={readOnly}
-                onChange={readOnly ? () => {} : () => set(opt)}
-              />
-              {opt}
-            </label>
-          ))}
-          {retired.map((v) => (
-            <RetiredChoice
-              key={answerLabel(v)}
-              kind="radio"
+      <div role="radiogroup" aria-label={label} className="space-y-1">
+        {shownOptions.map((opt) => (
+          <label
+            key={opt}
+            className={`flex items-center gap-2 text-sm ${
+              readOnly && value === opt ? "font-medium" : ""
+            }`}
+          >
+            <input
+              type="radio"
               name={domId}
-              value={v}
+              value={opt}
+              checked={value === opt}
+              disabled={readOnly}
+              onChange={readOnly ? () => {} : () => set(opt)}
             />
-          ))}
-        </div>
-        {specifyInput}
+            {opt}
+          </label>
+        ))}
+        {retired.map((v) => (
+          <RetiredChoice
+            key={answerLabel(v)}
+            kind="radio"
+            name={domId}
+            value={v}
+          />
+        ))}
       </div>
     );
   }
@@ -267,7 +232,6 @@ const QuestionControl = ({
               : `Selected ${selected.length} / ${cap}`}
           </p>
         )}
-        {specifyInput}
       </div>
     );
   }
@@ -336,7 +300,6 @@ const FormRenderer = ({
         <QuestionControl
           question={q}
           value={answers[q.id]}
-          otherValue={answers[`${q.id}__other`]}
           onAnswerChange={onAnswerChange}
           readOnly={readOnly}
           idPrefix={idPrefix}

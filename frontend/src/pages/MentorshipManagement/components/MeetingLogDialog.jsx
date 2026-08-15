@@ -152,7 +152,7 @@ function CompleteStatusSelect({ isCompleted, note, onChange }) {
       <SelectTrigger aria-label="Complete Status" className="w-full">
         <SelectValue />
       </SelectTrigger>
-      <SelectContent className="z-[210]">
+      <SelectContent>
         <SelectItem value="completed" disabled={hasAbsentTag(note)}>
           Completed
         </SelectItem>
@@ -207,7 +207,7 @@ function NoteTagPopover({
           <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-64 z-[210]">
+      <PopoverContent className="w-64">
         <div className="flex flex-col gap-2">
           {MEETING_NOTE_TAGS.map((tag) => (
             <label

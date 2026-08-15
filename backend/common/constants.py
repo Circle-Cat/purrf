@@ -94,7 +94,19 @@ class MicrosoftAccountStatus(str, Enum):
 
 
 MICROSOFT_USER_INFO_FILTER = "endswith(mail,'circlecat.org')"
-MICROSOFT_USER_INFO_SELECT_FIELDS = ["displayName", "mail", "accountEnabled", "id"]
+MICROSOFT_USER_INFO_SELECT_FIELDS = [
+    "displayName",
+    "mail",
+    "accountEnabled",
+    "id",
+    "jobTitle",
+    "officeLocation",
+    "employeeType",
+    "employeeHireDate",
+    "employeeLeaveDateTime",
+]
+
+MICROSOFT_USER_INFO_EXPAND = ["manager($levels=1;$select=id,mail)"]
 MICROSOFT_CONSISTENCY_HEADER = "ConsistencyLevel"
 MICROSOFT_CONSISTENCY_VALUE = "eventual"
 MICROSOFT_TEAMS_MESSAGES_SORTER = ["createdDateTime desc"]

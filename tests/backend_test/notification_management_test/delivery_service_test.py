@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 from backend.common.mentorship_enums import CommunicationMethod
 from backend.common.recruiting_enums import NotificationStatus
@@ -45,7 +45,8 @@ class DeliveryServiceTest(BaseRepositoryTestLib):
     async def asyncSetUp(self):
         await super().asyncSetUp()
         self.email = AsyncMock()
-        self.service = DeliveryService(email_service=self.email)
+        self.logger = MagicMock()
+        self.service = DeliveryService(logger=self.logger, email_service=self.email)
 
     async def _make_notification(
         self, *, status=None, claimed_at=None, created_at=None
@@ -84,10 +85,13 @@ class DeliveryServiceTest(BaseRepositoryTestLib):
         self.assertEqual(self.email.send.await_count, 1)
 
     async def test_unknown_id_is_acked_not_retried(self):
+        """Acking a message for a row that is not there ends it silently, so
+        the log line is the only record that the id was ever pushed."""
         outcome = await self.service.deliver(self.session, 999_999)
 
         self.assertEqual(outcome, DeliveryOutcome.ACKED)
         self.email.send.assert_not_awaited()
+        self.logger.info.assert_called_once()
 
     async def test_a_stale_claim_may_be_retaken(self):
         """A process that died between claiming and sending must not strand the row."""
@@ -131,6 +135,7 @@ class DeliveryServiceTest(BaseRepositoryTestLib):
 
         self.assertEqual(outcome, DeliveryOutcome.ACKED)
         self.assertEqual(notification.status, NotificationStatus.FAILED)
+        self.logger.warning.assert_called_once()
 
     async def test_gmail_being_down_asks_for_a_retry(self):
         self.email.send.side_effect = RuntimeError("gmail 503")
@@ -140,6 +145,7 @@ class DeliveryServiceTest(BaseRepositoryTestLib):
 
         self.assertEqual(outcome, DeliveryOutcome.RETRY)
         self.assertEqual(notification.status, NotificationStatus.PENDING)
+        self.logger.exception.assert_called_once()
 
 
 if __name__ == "__main__":

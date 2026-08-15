@@ -55,6 +55,10 @@ class TestQuestionDto(unittest.TestCase):
         with self.assertRaises(ValidationError):
             QuestionDto(id="q1", type="long_text", label="Why", max_length=0)
 
+    def test_long_text_requires_a_max_length(self):
+        with self.assertRaisesRegex(ValidationError, "long_text requires a max_length"):
+            QuestionDto(id="q1", type="long_text", label="Why")
+
     def test_long_text_max_length_must_not_exceed_the_hard_ceiling(self):
         QuestionDto(
             id="q1", type="long_text", label="Why", max_length=LONG_TEXT_MAX_LENGTH
@@ -125,42 +129,16 @@ class TestQuestionDto(unittest.TestCase):
                 expected_value="x",
             )
 
-    def test_other_option_valid_on_single_choice(self):
-        q = QuestionDto(
-            id="q1",
-            type="single_choice",
-            label="Source",
-            options=["Friend", "Others"],
-            other_option="Others",
-        )
-        self.assertEqual(q.other_option, "Others")
-
-    def test_other_option_valid_on_multi_choice(self):
-        q = QuestionDto(
-            id="q1",
-            type="multi_choice",
-            label="Source",
-            options=["A", "Others"],
-            other_option="Others",
-        )
-        self.assertEqual(q.other_option, "Others")
-
-    def test_other_option_must_be_in_options(self):
+    def test_other_option_is_not_a_question_field(self):
+        """Rejected rather than ignored: a form saying it collects free text
+        beside an option, on a renderer that shows none, would be a question
+        the candidate never sees."""
         with self.assertRaises(ValidationError):
             QuestionDto(
                 id="q1",
                 type="single_choice",
                 label="Source",
-                options=["Friend", "LinkedIn"],
-                other_option="Others",
-            )
-
-    def test_other_option_rejected_on_non_choice(self):
-        with self.assertRaises(ValidationError):
-            QuestionDto(
-                id="q1",
-                type="short_text",
-                label="Name",
+                options=["Friend", "Others"],
                 other_option="Others",
             )
 
@@ -325,7 +303,7 @@ class TestPipelineConfigDto(unittest.TestCase):
 
 
 class TestScreenRulesDto(unittest.TestCase):
-    def test_email_domain_qualify(self):
+    def test_reject_action_accepted(self):
         ScreenRulesDto(
             rules=[
                 ScreenRuleDto(
@@ -333,10 +311,20 @@ class TestScreenRulesDto(unittest.TestCase):
                     condition=ScreenRuleConditionDto(
                         source="email_domain", operator="in", value=["google.com"]
                     ),
-                    action="qualify",
+                    action="reject",
                 )
             ]
         )
+
+    def test_unsupported_action_rejected(self):
+        with self.assertRaises(ValidationError):
+            ScreenRuleDto(
+                id="r1",
+                condition=ScreenRuleConditionDto(
+                    source="email_domain", operator="in", value=["google.com"]
+                ),
+                action="qualify",
+            )
 
     def test_auto_hire_action_accepted(self):
         ScreenRulesDto(

@@ -42,6 +42,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
+import TermHint from "@/pages/Recruiting/components/TermHint";
 import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
 import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
 import AnswersSection from "@/pages/Recruiting/components/AnswersSection";
@@ -85,11 +86,6 @@ import {
 import { useAuth } from "@/context/auth/AuthContext";
 import { PERMISSIONS } from "@/constants/Permissions";
 import { formatInTz, resolveViewerTimezone } from "@/utils/dateTime";
-import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
-import {
-  APPLICATION_OWNER_GUIDE,
-  APPLICATION_EVALUATOR_GUIDE,
-} from "@/pages/Recruiting/components/guideContent";
 import InterviewMeetingCard from "@/pages/Recruiting/applications/InterviewMeetingCard";
 import InterviewMeetingDialog from "@/pages/Recruiting/applications/InterviewMeetingDialog";
 import BackToBoardLink from "@/pages/Recruiting/applications/BackToBoardLink";
@@ -182,6 +178,10 @@ const advanceTarget = (jobStages, stage, kind) => {
  * without one), so it only becomes clickable once the current round has a
  * confirmed evaluation.
  *
+ * The label carries a hint because these buttons decide something the
+ * recruiter is not otherwise told: the first move off "pending" freezes the
+ * candidate's submission, and nothing brings the edit back.
+ *
  * @param {{stage: string, subStatus: string|null, disabled: boolean,
  *          evaluatedDisabled: boolean,
  *          onSelect: (value: string) => void}} props
@@ -197,7 +197,9 @@ const SubStatusSelector = ({
   if (!options) return null;
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-sm font-medium text-slate-700">Status:</span>
+      <span className="text-sm font-medium text-slate-700">
+        <TermHint id="application.edit_lock">Status:</TermHint>
+      </span>
       {options.map((value) => {
         const isActive = value === subStatus;
         return (
@@ -409,11 +411,11 @@ const CancelUpcomingMeetingField = ({
  * on the underlying event (resolved server-side, read-time only — see
  * `BoardService.get_application_activity`). Similarly,
  * `details.ruleLabel` (on `auto_rejected`) and
- * `details.screenQualifyRuleLabel`/`details.screenAutoHireRuleLabel` (on
- * `application_submitted`) are read-time labels resolved from the
- * corresponding rule id and are optional — older activity rows or rules
- * that have since been removed from the screening config may lack them,
- * in which case the description degrades to the generic unlabeled text.
+ * `details.screenAutoHireRuleLabel` (on `application_submitted`) are
+ * read-time labels resolved from the corresponding rule id and are
+ * optional — older activity rows or rules that have since been removed
+ * from the screening config may lack them, in which case the description
+ * degrades to the generic unlabeled text.
  * Falls back to the raw `eventType` for anything not explicitly handled,
  * so a future event type still renders something rather than going blank.
  * The actor is rendered separately by `ActivityTimeline`, as a shared
@@ -434,14 +436,7 @@ const describeActivity = ({ eventType, details }, jobKind, timezone) => {
             : ""
         } (landed on ${stageLabel("hired", jobKind)})`;
       }
-      const base = `Submitted — landed on ${humanize(details.stage)}`;
-      return details.screenQualifyRuleId
-        ? `${base} (auto-qualified by screening rule${
-            details.screenQualifyRuleLabel
-              ? ` "${details.screenQualifyRuleLabel}"`
-              : ""
-          })`
-        : base;
+      return `Submitted — landed on ${humanize(details.stage)}`;
     }
     case "recruiting.auto_rejected":
       return details.reason === "screen_rule"
@@ -1679,14 +1674,6 @@ const ApplicationDetailPage = () => {
     interviewPool.find((u) => u.userId === detail.assigneeId)?.name ??
     (detail.assigneeId != null ? `User ${detail.assigneeId}` : null);
 
-  const guide = evaluatorMode
-    ? showRubric
-      ? APPLICATION_EVALUATOR_GUIDE
-      : null
-    : detail.canView
-      ? APPLICATION_OWNER_GUIDE
-      : null;
-
   return (
     <div className="flex flex-col gap-6 p-6">
       <div className="space-y-2">
@@ -1704,7 +1691,6 @@ const ApplicationDetailPage = () => {
             <Badge variant="secondary">
               {stageLabel(detail.application.stage, job?.kind)}
             </Badge>
-            {guide && <HowItWorksDialog {...guide} />}
           </div>
           <p className="text-sm text-slate-600">{detail.applicantEmail}</p>
         </div>
@@ -2008,6 +1994,16 @@ const ApplicationDetailPage = () => {
           <DialogHeader>
             <DialogTitle>Blacklist this applicant?</DialogTitle>
           </DialogHeader>
+          {/* The reach of this action is far wider than the page it is taken
+              from, and it was previously only ever stated in a help dialog
+              nobody opens before clicking. It renders unconditionally: the
+              interview list below is conditional, and this must not be. */}
+          <p className="text-sm text-slate-700">
+            This rejects the application you are looking at, blocks the
+            applicant from applying to anything in future, and closes every
+            other application they hold on every posting — including any that
+            already reached Hired. Each one is tagged as blacklisted.
+          </p>
           {blacklistUpcoming.length > 0 && (
             <div className="text-sm text-slate-700">
               <p>
@@ -2115,7 +2111,7 @@ const ApplicationDetailPage = () => {
             <SelectTrigger aria-label="Rejection reason" className="w-full">
               <SelectValue placeholder="Select a reason…" />
             </SelectTrigger>
-            <SelectContent className="z-[110]">
+            <SelectContent>
               {REJECT_REASONS.map((reason) => (
                 <SelectItem key={reason} value={reason}>
                   {reason}

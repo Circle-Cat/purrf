@@ -79,6 +79,7 @@ py_library(
     deps = [
         ":auth_middleware",
         "//backend/common:fast_api_error_handler",
+        "//backend/mentorship",
         "//backend/notification_management:publish_on_commit",
         "//backend/recruiting",
         "@pypi//fastapi",
@@ -138,6 +139,7 @@ py_library(
         "//backend/internal_activity_service:microsoft_chat_analytics_service",
         "//backend/internal_activity_service:microsoft_meeting_chat_topic_cache_service",
         "//backend/internal_activity_service:summary_service",
+        "//backend/leave:employment_sync_service",
         "//backend/mentorship",
         "//backend/notification_management:delivery_controller",
         "//backend/notification_management:delivery_service",

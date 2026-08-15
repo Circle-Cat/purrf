@@ -46,7 +46,9 @@ class NotificationDeliveryControllerTest(unittest.TestCase):
         self.database = _FakeDatabase(AsyncMock())
         self.auth_service = MagicMock()
         self.auth_service.verify_google_token.return_value = {"sub": "111-pusher"}
+        self.logger = MagicMock()
         self.controller = NotificationDeliveryController(
+            logger=self.logger,
             delivery_service=self.delivery_service,
             publisher=self.publisher,
             topic_path="projects/p/topics/notifications",
@@ -64,6 +66,19 @@ class NotificationDeliveryControllerTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
         self.delivery_service.deliver.assert_not_awaited()
+        self.logger.warning.assert_called_once()
+
+    def test_a_token_that_fails_verification_is_refused(self):
+        """An expired or wrong-audience token must not reach the allowlist check."""
+        self.auth_service.verify_google_token.side_effect = ValueError("expired")
+
+        response = self.client.post(
+            NOTIFICATION_DELIVER_ENDPOINT, json=_envelope(42), headers=_PUSH_HEADERS
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
+        self.delivery_service.deliver.assert_not_awaited()
+        self.logger.warning.assert_called_once()
 
     def test_a_token_from_an_unknown_service_account_is_refused(self):
         """Any account can mint a token for this audience, so the
@@ -76,11 +91,13 @@ class NotificationDeliveryControllerTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
         self.delivery_service.deliver.assert_not_awaited()
+        self.logger.warning.assert_called_once()
 
     def test_an_empty_allowlist_refuses_everything(self):
         """Unconfigured must mean closed: envFrom changes do not restart
         pods, so an image can run before the value exists."""
         controller = NotificationDeliveryController(
+            logger=self.logger,
             delivery_service=self.delivery_service,
             publisher=self.publisher,
             topic_path="projects/p/topics/notifications",
@@ -97,6 +114,7 @@ class NotificationDeliveryControllerTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
         self.delivery_service.deliver.assert_not_awaited()
+        self.logger.warning.assert_called_once()
 
     def test_unparseable_envelope_is_acked_not_retried(self):
         response = self.client.post(
@@ -107,6 +125,7 @@ class NotificationDeliveryControllerTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.delivery_service.deliver.assert_not_awaited()
+        self.logger.warning.assert_called_once()
 
     def test_acked_outcome_returns_200(self):
         self.delivery_service.deliver.return_value = DeliveryOutcome.ACKED

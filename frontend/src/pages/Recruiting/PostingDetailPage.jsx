@@ -30,12 +30,15 @@ import {
 } from "@/api/recruitingApi";
 import SubmitReviewDialog from "@/pages/Recruiting/components/SubmitReviewDialog";
 import PostingStatusBadges from "@/pages/Recruiting/components/PostingStatusBadges";
-import HowItWorksDialog from "@/pages/Recruiting/components/HowItWorksDialog";
-import { POSTINGS_GUIDE } from "@/pages/Recruiting/components/guideContent";
-import { rejectKindLabel } from "@/pages/Recruiting/components/rejectKindLabels";
 import PostingConfigSummary from "@/pages/Recruiting/components/PostingConfigSummary";
 import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
+import PendingNotice from "@/pages/Recruiting/components/PendingNotice";
+import { GLOSSARY, rejectTermId } from "@/pages/Recruiting/components/glossary";
+import {
+  OPERABLE_STATUSES,
+  PENDING_HEADLINE,
+} from "@/pages/Recruiting/components/jobStatus";
 
 /** Title and dispatch fn per review action kind. */
 const REVIEW_ACTION = {
@@ -171,7 +174,10 @@ const PostingDetailPage = () => {
   const isDraft = job.status === "draft";
   const isPublished = job.status === "published";
   const isClosed = job.status === "closed";
-  const hasOperateAction = isDraft || isPublished || isClosed;
+  // From the shared status map, so a status added on the backend cannot land
+  // in the gap between "has an action" and "has a headline" (jobStatus.test.js
+  // pins that it cannot).
+  const hasOperateAction = OPERABLE_STATUSES.includes(job.status);
   // Mirrors JobService.update_job's allowed_from check on the backend:
   // editing is only accepted from DRAFT/PUBLISHED/CLOSED, never from
   // PUBLISHED_PENDING_REVISION (a revision is already staged and pending
@@ -187,22 +193,10 @@ const PostingDetailPage = () => {
   const proposedJob = job.pendingPayload
     ? { ...job, ...job.pendingPayload }
     : null;
-  // Mirrors JobService._revalidate_job_config's publish gate: whatever
-  // approval would put live (the staged pipeline when an edit is staged,
-  // else the live one) needs >=1 stage and >=1 Recruiter owner, or every
-  // application would land outside all board lanes with no one to see it.
-  const effectivePipeline =
-    (job.pendingPayload
-      ? job.pendingPayload.pipelineConfig
-      : job.pipelineConfig) ?? {};
-  const effectiveOwnerIds =
-    effectivePipeline.ownerIds ??
-    (effectivePipeline.ownerId != null ? [effectivePipeline.ownerId] : []);
-  const submitBlocker = !effectivePipeline.stages?.length
-    ? "Add at least one pipeline stage before submitting for review."
-    : effectiveOwnerIds.length === 0
-      ? "Add at least one recruiter before submitting for review."
-      : null;
+  // The publish gate is JobService._revalidate_job_config's, evaluated server
+  // side and carried here whole, so the reason the button is disabled and the
+  // reason the API would refuse cannot drift apart.
+  const submitBlockers = job.submitBlockers ?? [];
 
   const formatActivity = (entry) => {
     const { eventType, actorName, details = {} } = entry;
@@ -347,10 +341,8 @@ const PostingDetailPage = () => {
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-xl font-semibold text-slate-900">{job.title}</h1>
-          <PostingStatusBadges job={job} />
-          <div className="ml-auto">
-            <HowItWorksDialog {...POSTINGS_GUIDE} />
-          </div>
+          <PostingStatusBadges job={job} explain />
+          <div className="ml-auto"></div>
         </div>
         <p className="text-sm text-slate-600">{job.description}</p>
         {ownerIds.length > 0 && (
@@ -377,10 +369,39 @@ const PostingDetailPage = () => {
         )}
       </div>
 
+      {/* A staged edit is invisible to applicants until a reviewer approves
+          it, and the Overview tab's Current/Proposed pair shows the two
+          versions without saying which one is live. Said here, above the
+          Submit for review button that resolves it. */}
+      {isPublished && job.pendingPayload != null && (
+        <div className="space-y-1 rounded border border-amber-200 bg-amber-50 p-3">
+          <p className="text-sm font-medium text-amber-800">
+            Staged edit not submitted for review
+          </p>
+          <p className="text-sm text-amber-700">
+            Applicants still see the published version. Submit it for review to
+            make your changes live.
+          </p>
+        </div>
+      )}
+
+      {/* Only ever set while a review cycle is open, so this disappears on its
+          own once the reviewer decides -- no status check needed here. */}
+      {job.submitMessage && (
+        <div className="space-y-1 rounded border border-slate-200 bg-slate-50 p-3">
+          <p className="text-sm font-medium text-slate-700">
+            Note to the reviewer
+          </p>
+          <p className="text-sm whitespace-pre-line text-slate-600">
+            {job.submitMessage}
+          </p>
+        </div>
+      )}
+
       {job.lastRejectComment && (
         <div className="space-y-1 rounded border border-red-200 bg-red-50 p-3">
           <p className="text-sm font-medium text-red-800">
-            {rejectKindLabel(job.lastRejectKind)}
+            {GLOSSARY[rejectTermId(job.lastRejectKind)].label}
           </p>
           <p className="text-sm whitespace-pre-line text-red-700">
             {job.lastRejectComment}
@@ -406,7 +427,7 @@ const PostingDetailPage = () => {
             <>
               <Button
                 size="sm"
-                disabled={submitBlocker != null}
+                disabled={submitBlockers.length > 0}
                 onClick={() => openReview("submit")}
               >
                 Submit for review
@@ -433,7 +454,7 @@ const PostingDetailPage = () => {
             <>
               <Button
                 size="sm"
-                disabled={submitBlocker != null}
+                disabled={submitBlockers.length > 0}
                 onClick={() => openReview("submit")}
               >
                 Submit for review
@@ -474,11 +495,30 @@ const PostingDetailPage = () => {
               Delete
             </Button>
           )}
-          {submitBlocker != null &&
-            (isDraft || (isPublished && job.pendingPayload != null)) && (
-              <span className="text-xs text-amber-600">{submitBlocker}</span>
-            )}
+          {job.wasPublished && (
+            <span
+              className="text-xs text-slate-500"
+              title={GLOSSARY["posting.undeletable"].hint}
+            >
+              Published postings cannot be deleted
+            </span>
+          )}
+          {submitBlockers.length > 0 &&
+            (isDraft || (isPublished && job.pendingPayload != null)) &&
+            submitBlockers.map((blocker) => (
+              <span key={blocker} className="text-xs text-amber-600">
+                {blocker}
+              </span>
+            ))}
         </div>
+      )}
+
+      {canWrite && !hasOperateAction && (
+        <PendingNotice
+          headline={PENDING_HEADLINE[job.status]}
+          waitingOn={reviewerName}
+          detail="Editing is locked until they approve or reject."
+        />
       )}
 
       {isAssignedReviewer && (

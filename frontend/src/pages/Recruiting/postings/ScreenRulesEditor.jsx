@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import TermHint from "@/pages/Recruiting/components/TermHint";
 import {
   Select,
   SelectContent,
@@ -11,7 +12,7 @@ import { errorBorder } from "@/components/common/fieldErrors";
 import DomainsInput from "@/pages/Recruiting/postings/DomainsInput";
 import { ruleKey } from "@/pages/Recruiting/postings/postingValidation";
 
-const ACTIONS = ["reject", "qualify", "auto_hire"];
+const ACTIONS = ["reject", "auto_hire"];
 const EMAIL_MODES = [
   { value: "include", label: "Include" },
   { value: "exclude", label: "Exclude" },
@@ -100,7 +101,7 @@ const ScreenRulesEditor = ({
       {
         id: nextRuleId(rules),
         condition: { source: "email_domain", operator: "in", value: [] },
-        action: "qualify",
+        action: "reject",
       },
     ]);
   const patchEmailRule = (rule, fields) =>
@@ -126,7 +127,9 @@ const ScreenRulesEditor = ({
 
   return (
     <div className="space-y-3">
-      <p className="text-sm font-medium text-slate-700">Machine screening</p>
+      <p className="text-sm font-medium text-slate-700">
+        <TermHint id="editor.screening" />
+      </p>
 
       <div className="space-y-2">
         {emailRules.map((rule) => (

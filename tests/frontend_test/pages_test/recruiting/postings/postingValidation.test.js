@@ -105,6 +105,15 @@ describe("questions", () => {
     expect(errors[questionKey("q1", field)]).toBe("Must be between 1 and 5000");
   });
 
+  it("rejects a long text with no character budget", () => {
+    const errors = validatePosting(
+      withQuestions({ id: "q1", type: "long_text", label: "Why?" }),
+    );
+    expect(errors[questionKey("q1", "maxLength")]).toBe(
+      "Max characters is required",
+    );
+  });
+
   it("rejects a budget past the hard ceiling", () => {
     const errors = validatePosting({
       title: "Engineer",

@@ -3,7 +3,6 @@ import path from "node:path";
 import process from "node:process";
 import { describe, it, expect } from "vitest";
 import {
-  otherSelected,
   pruneAnswers,
   visibleQuestions,
 } from "@/pages/Recruiting/postings/questionVisibility";
@@ -29,7 +28,7 @@ const visibleIds = (questions, answers) =>
 describe("shared visibility vectors", () => {
   it("loaded the fixture", () => {
     // A path typo would otherwise turn the whole contract into a no-op.
-    expect(VECTORS.cases.length).toBeGreaterThanOrEqual(27);
+    expect(VECTORS.cases.length).toBeGreaterThanOrEqual(24);
   });
 
   it("names every case distinctly", () => {
@@ -91,25 +90,5 @@ describe("visibleQuestions", () => {
       { id: "q1" },
     ];
     expect(visibleIds(questions, { q1: "Yes" })).toEqual(["q2", "q1"]);
-  });
-});
-
-describe("otherSelected", () => {
-  it("is false for a question that offers no Other option", () => {
-    expect(
-      otherSelected({ id: "q1", type: "single_choice", options: ["A"] }, "A"),
-    ).toBe(false);
-  });
-
-  it("matches the value itself for single_choice", () => {
-    const question = { id: "q1", type: "single_choice", otherOption: "Other" };
-    expect(otherSelected(question, "Other")).toBe(true);
-    expect(otherSelected(question, "A")).toBe(false);
-  });
-
-  it("matches membership for multi_choice", () => {
-    const question = { id: "q1", type: "multi_choice", otherOption: "Other" };
-    expect(otherSelected(question, ["A", "Other"])).toBe(true);
-    expect(otherSelected(question, ["A"])).toBe(false);
   });
 });

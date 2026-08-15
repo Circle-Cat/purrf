@@ -24,6 +24,17 @@ export const SHORT_TEXT_MAX_LENGTH = 255;
 export const LONG_TEXT_MAX_LENGTH = 5000;
 
 /**
+ * The budget a long text question is created with.
+ *
+ * Every long text must state a budget, so the field can never be empty when
+ * the author first sees it -- otherwise adding a question would spawn an error
+ * the author did not cause. This is a starting point, not a ceiling: it is what
+ * most written answers need, and the author raises or lowers it. Editor-side
+ * only, deliberately: the server requires a value but has no opinion on which.
+ */
+export const DEFAULT_LONG_TEXT_MAX_LENGTH = 300;
+
+/**
  * The character budget a text question enforces, and whether its author chose
  * it.
  *

@@ -461,8 +461,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     expect(screen.queryByText(/^Assigned to:/)).not.toBeInTheDocument();
   });
 
-  it("owner-only viewer sees the How-it-works guide for reviewing applications", async () => {
-    const user = userEvent.setup();
+  it("owner-only viewer sees no How-it-works button", async () => {
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({
       data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
@@ -470,15 +469,52 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     renderPage();
     await waitLoaded();
 
-    await user.click(screen.getByRole("button", { name: "How it works" }));
+    expect(
+      screen.queryByRole("button", { name: "How it works" }),
+    ).not.toBeInTheDocument();
+  });
+
+  // Wording lives in the glossary and is asserted there; what this pins is
+  // that the Status label is a hint trigger at all.
+  it("hangs the edit-lock hint on the Status label", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByRole("button", { name: "Status:" })).toBeInTheDocument();
+  });
+
+  it("states how far blacklisting reaches before it is confirmed", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    authState.permissions = [
+      ...authState.permissions,
+      "recruiting.blacklist.write",
+    ];
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    // Opening the dialog also fetches the applicant's upcoming interviews to
+    // list them; an empty list is what proves the blast-radius sentence is
+    // unconditional rather than riding on that list.
+    api.listBlacklistUpcomingInterviews.mockResolvedValue({ data: [] });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Blacklist" }));
 
     expect(
-      screen.getByRole("heading", { name: "How application review works" }),
+      await screen.findByText(/closes every other application they hold/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/including any that already reached Hired/),
     ).toBeInTheDocument();
   });
 
-  it("assignee-only viewer in evaluator mode sees the How-it-works guide for evaluating", async () => {
-    const user = userEvent.setup();
+  it("assignee-only viewer in evaluator mode sees no How-it-works button", async () => {
     authState.userId = ASSIGNEE_ID;
     api.getApplicationDetail.mockResolvedValue({
       data: makeDetail({ isOwner: false, assigneeId: ASSIGNEE_ID }),
@@ -499,11 +535,9 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     renderEvaluatorPage();
     await waitLoaded();
 
-    await user.click(screen.getByRole("button", { name: "How it works" }));
-
     expect(
-      screen.getByRole("heading", { name: "How evaluating works" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "How it works" }),
+    ).not.toBeInTheDocument();
   });
 
   it("a viewer who is neither owner/read.all nor the current-stage assignee sees no How-it-works button", async () => {
@@ -2545,7 +2579,7 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("notes a screen-rule auto-qualify on the submission entry", async () => {
+  it("names the landing stage on an unscreened submission entry", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({
@@ -2556,10 +2590,7 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
         {
           id: 1,
           eventType: "recruiting.application_submitted",
-          details: {
-            stage: "recruiter_screening",
-            screenQualifyRuleId: "r1",
-          },
+          details: { stage: "recruiter_screening" },
           actorId: OWNER_ID,
           actorName: "Casey Candidate",
           createdAt: "2026-07-08T12:00:00Z",
@@ -2572,47 +2603,11 @@ describe("ApplicationDetailPage — screen-rule activity messages", () => {
     await user.click(screen.getByRole("tab", { name: "Timeline" }));
 
     expect(
-      screen.getByText(
-        /Submitted — landed on Recruiter screening \(auto-qualified by screening rule\)/,
-      ),
+      screen.getByText(/Submitted — landed on Recruiter screening/),
     ).toBeInTheDocument();
   });
 
-  it("shows which rule auto-qualified on the submission entry", async () => {
-    const user = userEvent.setup();
-    authState.userId = OWNER_ID;
-    api.getApplicationDetail.mockResolvedValue({
-      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
-    });
-    api.getApplicationActivity.mockResolvedValue({
-      data: [
-        {
-          id: 1,
-          eventType: "recruiting.application_submitted",
-          details: {
-            stage: "recruiter_screening",
-            screenQualifyRuleId: "r2",
-            screenQualifyRuleLabel: "answer to q_role equals mentor",
-          },
-          actorId: OWNER_ID,
-          actorName: "Casey Candidate",
-          createdAt: "2026-07-08T12:00:00Z",
-        },
-      ],
-    });
-    renderPage();
-    await waitLoaded();
-
-    await user.click(screen.getByRole("tab", { name: "Timeline" }));
-
-    expect(
-      await screen.findByText(
-        /Submitted — landed on Recruiter screening \(auto-qualified by screening rule "answer to q_role equals mentor"\)/,
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it("notes a screen-rule auto-hire distinctly from auto-qualify", async () => {
+  it("notes a screen-rule auto-hire on the submission entry", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({

@@ -962,7 +962,17 @@ class MeetAttendanceService:
                 )
                 check_targets = []
             else:
-                check_targets = [(best_m_role, best_m_tree), (best_s_role, best_s_tree)]
+                # "mentor"/"mentee" sort before every anon candidate in
+                # all_candidates, so combinations() can only place an anon
+                # role into the best_s_role slot, never best_m_role. The
+                # attribution loop below matches on "mentor"/"mentee"
+                # substrings, so remap an anon label here to the missing
+                # counterpart role -- the same anon_mentee/anon_mentor
+                # inference the zero-overlap branch below already uses.
+                s_role = best_s_role
+                if s_role not in ("mentor", "mentee"):
+                    s_role = "anon_mentee" if best_m_role == "mentor" else "anon_mentor"
+                check_targets = [(best_m_role, best_m_tree), (s_role, best_s_tree)]
                 self.logger.debug(
                     "[MeetAttendanceService] Lateness case A: check_targets=%s",
                     [r for r, _ in check_targets],

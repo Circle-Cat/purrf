@@ -11,14 +11,11 @@ in the reviewer's "Other recorded answers" group.
 
 Form schemas live in a JSONB column and are stored camelCase — their contents
 never pass through a request DTO's alias generator — so keys are read here as
-``showWhen`` / ``questionId`` / ``otherOption``.
+``showWhen`` / ``questionId``.
 
 The two are pinned to one another by the shared cases in
 ``tests/shared/form_visibility_vectors.json``, which both test suites load.
 """
-
-# Sibling-key suffix holding an "Other" option's free text.
-OTHER_SUFFIX = "__other"
 
 
 def _matches(answer, target) -> bool:
@@ -49,29 +46,6 @@ def _is_evaluable(rule) -> bool:
         bool: True when the rule can be resolved against an answer.
     """
     return isinstance(rule, dict) and "questionId" in rule and "equals" in rule
-
-
-def other_selected(question, value) -> bool:
-    """Whether a recorded value selects the question's "Other" option.
-
-    That selection is what makes the renderer display the ``<id>__other``
-    sibling holding the free text, and so what makes that sibling worth
-    keeping.
-
-    Args:
-        question (dict): One question out of a form schema.
-        value: The question's own recorded value.
-
-    Returns:
-        bool: True when the question offers an "Other" option and the value
-        picks it.
-    """
-    other = question.get("otherOption")
-    if other is None:
-        return False
-    if question.get("type") == "multi_choice":
-        return isinstance(value, list) and other in value
-    return value == other
 
 
 def visible_questions(form_schema: dict | None, answers: dict) -> list[dict]:
@@ -141,8 +115,7 @@ def prune_answers(form_schema: dict | None, answers: dict) -> dict:
 
     Returns:
         dict: The kept answers — one entry per visible question that has a
-        recorded value, plus its ``<id>__other`` free text while the value
-        still selects the "Other" option.
+        recorded value.
     """
     kept = {}
     for question in visible_questions(form_schema, answers):
@@ -156,7 +129,4 @@ def prune_answers(form_schema: dict | None, answers: dict) -> dict:
             continue
         if question_id in answers:
             kept[question_id] = answers[question_id]
-        other_key = f"{question_id}{OTHER_SUFFIX}"
-        if other_key in answers and other_selected(question, answers.get(question_id)):
-            kept[other_key] = answers[other_key]
     return kept

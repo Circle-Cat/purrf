@@ -4,8 +4,9 @@ import MentorshipParticipantsCard from "@/pages/PersonalDashboard/components/Men
 import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorshipData";
 import { useWorkActivityData } from "@/pages/PersonalDashboard/hooks/useWorkActivityData";
 import MyApplicationsCard from "@/pages/PersonalDashboard/components/MyApplicationsCard";
-import { useMyApplications } from "@/pages/PersonalDashboard/hooks/useMyApplications";
+import { useMyApplications } from "@/hooks/useMyApplications";
 import { useOnboardingTrainingReminder } from "@/pages/PersonalDashboard/hooks/useOnboardingTrainingReminder";
+import { useRegistrationReminder } from "@/pages/PersonalDashboard/hooks/useRegistrationReminder";
 import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
 import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
@@ -51,6 +52,8 @@ const PersonalDashboard = () => {
   const {
     registration, // Registration data for the current or most recent round
     isRegistrationOpen, // Whether the registration period is currently open
+    registrationDeadlineAt, // Deadline the registration window is measured against
+    regRoundName, // Display name of the round taking registrations
     isFeedbackEnabled, // Whether the feedback phase is currently active
     feedbackRoundId, // Round ID for which feedback is currently open
     feedbackRoundName, // Display name of the feedback round
@@ -68,8 +71,21 @@ const PersonalDashboard = () => {
     participantDetails, // Round info, per-partner meeting overview, and user role
     refreshMeetings, // Trigger a refresh of meeting log data for the selected round
     isParticipantCardLoading, // Whether the participant card data is currently loading
+    isLoading: isMentorshipLoading, // Whether the rounds and registration fetch is still in flight
     userTimezone, // Current user's IANA timezone string from their profile
-  } = useMentorshipData({ enabled: showMentorshipSection });
+  } = useMentorshipData({
+    enabled: showMentorshipSection,
+    hiredMentorshipRole,
+  });
+
+  useRegistrationReminder({
+    enabled: showMentorshipSection,
+    isLoading: isMentorshipLoading,
+    isRegistered: Boolean(registration?.isRegistered),
+    isRegistrationOpen,
+    registrationDeadlineAt,
+    roundName: regRoundName,
+  });
 
   const { permissions } = useAuth();
   const canViewActivitySummary = permissions?.includes(

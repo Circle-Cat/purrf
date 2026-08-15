@@ -10,7 +10,9 @@ from backend.recruiting.board_service import (
     BoardService,
 )
 from backend.recruiting.interview_scheduling_service import InterviewSchedulingService
-from backend.mentorship.onboarding_training_service import OnboardingTrainingService
+from backend.mentorship.mentorship_admission_service import (
+    MentorshipAdmissionService,
+)
 from backend.repository.notification_repository import NotificationRepository
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.board_dto import (
@@ -143,10 +145,10 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         # it was cancelled"; the flag-off tests assert it is never awaited.
         self.interview_svc = create_autospec(InterviewSchedulingService, instance=True)
         self.interview_svc.cancel_for_round.return_value = True
-        # autospec so a signature drift on ensure_for_admitted fails the test
+        # autospec so a signature drift on on_admitted fails the test
         # instead of silently accepting any arity.
-        self.onboarding_training_svc = create_autospec(
-            OnboardingTrainingService, instance=True
+        self.mentorship_admission_svc = create_autospec(
+            MentorshipAdmissionService, instance=True
         )
         self.notification_repo = self._notification_repository_double()
         self.service = BoardService(
@@ -169,7 +171,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.interview_repo,
             self.application_access,
             self.interview_svc,
-            self.onboarding_training_svc,
+            self.mentorship_admission_svc,
         )
         # Default persistence mocks: echo the entity back, like SQLAlchemy's
         # merge-and-flush does when nothing else stubs them out.
@@ -2324,10 +2326,10 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(saved.stage_entered_at)
         self.assertGreaterEqual(saved.stage_entered_at, before)
 
-    async def test_change_stage_to_hired_assigns_onboarding_training(self):
-        """Admitting to HIRED is what assigns the onboarding training task;
-        OnboardingTrainingService itself decides whether the job's kind/role
-        actually owes one (Task 2) -- change_stage just always calls it."""
+    async def test_change_stage_to_hired_hands_the_admission_to_mentorship(self):
+        """Admitting to HIRED is what starts the onboarding training and the
+        admission email; MentorshipAdmissionService itself decides whether the
+        job's kind/role owes either -- change_stage just always calls it."""
         job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
         application = self._application(
             application_id=10, job_id=1, user_id=5, stage=ApplicationStage.TECH
@@ -2340,13 +2342,13 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         dto = StageChangeDto(to_stage=ApplicationStage.HIRED)
         await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.onboarding_training_svc.ensure_for_admitted.assert_awaited_once_with(
+        self.mentorship_admission_svc.on_admitted.assert_awaited_once_with(
             session=self.session,
-            user_id=5,
+            application=application,
             job=job,
         )
 
-    async def test_change_stage_to_rejected_does_not_assign_onboarding_training(self):
+    async def test_change_stage_to_rejected_records_no_admission(self):
         job = self._job(job_id=1, owner_ids=(2,), stages=("tech",))
         application = self._application(
             application_id=10, job_id=1, stage=ApplicationStage.TECH
@@ -2361,7 +2363,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
         await self.service.change_stage(self.session, self._ctx(user_id=2), 10, dto)
 
-        self.onboarding_training_svc.ensure_for_admitted.assert_not_awaited()
+        self.mentorship_admission_svc.on_admitted.assert_not_awaited()
 
     # -- reassign --
 
@@ -4567,51 +4569,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result[0].details["ruleLabel"], "answer to 'q1' equals No")
-
-    async def test_activity_resolves_qualify_and_auto_hire_labels(self):
-        job = self._job(job_id=1, owner_ids=(2,))
-        job.screen_rules = {
-            "rules": [
-                {
-                    "id": "r1",
-                    "condition": {
-                        "source": "answer",
-                        "questionId": "q_role",
-                        "operator": "equals",
-                        "value": "mentor",
-                    },
-                    "action": "qualify",
-                }
-            ]
-        }
-        application = self._application(application_id=10, job_id=1)
-        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.app_repo.get_by_id = AsyncMock(return_value=application)
-        row = SimpleNamespace(
-            event_id=1,
-            subject_type="application",
-            subject_id=10,
-            actor_id=2,
-            event_type="recruiting.application_submitted",
-            details={
-                "stage": "recruiter_screening",
-                "screenQualifyRuleId": "r1",
-            },
-            created_at=datetime(2026, 7, 4, 12, 0, 0),
-        )
-        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
-        self.users_repo.get_all_by_ids = AsyncMock(
-            return_value=[self._user(user_id=2, first="Owen", last="Owner")]
-        )
-
-        result = await self.service.get_application_activity(
-            self.session, self._ctx(user_id=2), 10
-        )
-
-        self.assertEqual(
-            result[0].details["screenQualifyRuleLabel"],
-            "answer to 'q_role' equals mentor",
-        )
 
     async def test_activity_resolves_auto_hire_label(self):
         job = self._job(job_id=1, owner_ids=(2,))

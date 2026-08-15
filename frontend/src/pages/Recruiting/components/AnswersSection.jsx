@@ -8,11 +8,8 @@ import { pruneAnswers } from "@/pages/Recruiting/postings/questionVisibility";
  * `FormRenderer`'s read-only rendering is total: a visible question shows its
  * recorded value whatever shape that value has (see `RecordedValue` and
  * `RetiredChoice` there), so a rendered key is never a silently dropped
- * answer. Covered here: answers to questions since deleted from the form,
- * answers left behind under a question a showWhen rule now hides, and a
- * `__other` sibling left over from a question whose primary answer no longer
- * selects that question's "Other" option (so `FormRenderer` no longer shows
- * the free text either).
+ * answer. Covered here: answers to questions since deleted from the form, and
+ * answers left behind under a question a showWhen rule now hides.
  *
  * Computed as the complement of `pruneAnswers`, the same function whose Python
  * twin decides which answers survive a write — so this group holds exactly

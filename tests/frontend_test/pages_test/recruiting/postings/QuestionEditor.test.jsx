@@ -198,32 +198,6 @@ describe("QuestionEditor", () => {
     });
   });
 
-  it("designates an other-specify option", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn();
-    render(
-      <QuestionEditor
-        question={{
-          id: "q1",
-          type: "single_choice",
-          label: "Src",
-          options: ["A", "Others"],
-        }}
-        allQuestions={[]}
-        onChange={onChange}
-        onRemove={() => {}}
-        onMoveUp={() => {}}
-        onMoveDown={() => {}}
-        optionOps={spyOps()}
-      />,
-    );
-    await user.click(screen.getByRole("combobox", { name: "Other option" }));
-    await user.click(screen.getByRole("option", { name: "Others" }));
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ otherOption: "Others" }),
-    );
-  });
-
   it("offers each option a picker over the form's other questions", async () => {
     const user = userEvent.setup();
     const parent = {

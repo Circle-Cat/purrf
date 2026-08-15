@@ -1,3 +1,5 @@
+import { DEFAULT_LONG_TEXT_MAX_LENGTH } from "@/pages/Recruiting/postings/questionLimits";
+
 /** Ordered, user-facing list of the five submission-form question types. */
 export const QUESTION_TYPES = [
   { value: "short_text", label: "Short text" },
@@ -38,7 +40,9 @@ export const nextQuestionId = (formSchema) => {
 /**
  * A form schema with one blank question of the given type appended and the
  * `nextSeq` counter advanced past it. Choice types start with an empty
- * options array.
+ * options array, and a long text with the default character budget -- that one
+ * is required, so it is seeded rather than left for the author to discover
+ * through a validation error on a question they just added.
  *
  * @param {{questions?: object[], nextSeq?: number}} formSchema
  * @param {string} type One of `QUESTION_TYPES[].value`.
@@ -48,6 +52,7 @@ export const addQuestion = (formSchema, type) => {
   const id = nextQuestionId(formSchema);
   const question = { id, type, label: "", required: false };
   if (CHOICE_TYPES.has(type)) question.options = [];
+  if (type === "long_text") question.maxLength = DEFAULT_LONG_TEXT_MAX_LENGTH;
   return {
     ...formSchema,
     questions: [...(formSchema?.questions ?? []), question],
@@ -128,9 +133,9 @@ export const addOption = (formSchema, parentId) =>
  * reference to its old text along with it.
  *
  * An option is referenced by its text, not by an id: each question it reveals
- * stores that text in `showWhen.equals`, and `otherOption` stores it too. A
- * rename that left those behind would point them at text no answer can equal,
- * silently turning a revealed question into one that never appears.
+ * stores that text in `showWhen.equals`. A rename that left those behind would
+ * point them at text no answer can equal, silently turning a revealed question
+ * into one that never appears.
  *
  * @param {{questions?: object[]}} formSchema
  * @param {string} parentId
@@ -143,12 +148,10 @@ export const renameOption = (formSchema, parentId, index, value) => {
   const from = parent?.options?.[index];
   return mapQuestions(formSchema, (q) => {
     if (q.id === parentId) {
-      const next = {
+      return {
         ...q,
         options: (q.options ?? []).map((o, i) => (i === index ? value : o)),
       };
-      if (q.otherOption === from) next.otherOption = value;
-      return next;
     }
     if (q.showWhen?.questionId === parentId && q.showWhen.equals === from) {
       return { ...q, showWhen: { ...q.showWhen, equals: value } };
@@ -158,8 +161,7 @@ export const renameOption = (formSchema, parentId, index, value) => {
 };
 
 /**
- * A schema with `parentId`'s option at `index` dropped, and `otherOption`
- * cleared when it named that option.
+ * A schema with `parentId`'s option at `index` dropped.
  *
  * Questions the option revealed are deliberately left alone: the editor
  * blocks removal while any exist, since neither outcome is safe to pick
@@ -172,13 +174,8 @@ export const renameOption = (formSchema, parentId, index, value) => {
  * @returns {object} A new schema; the input is not mutated.
  */
 export const removeOption = (formSchema, parentId, index) =>
-  mapQuestions(formSchema, (q) => {
-    if (q.id !== parentId) return q;
-    const dropped = q.options?.[index];
-    const next = {
-      ...q,
-      options: (q.options ?? []).filter((_, i) => i !== index),
-    };
-    if (q.otherOption === dropped) next.otherOption = undefined;
-    return next;
-  });
+  mapQuestions(formSchema, (q) =>
+    q.id === parentId
+      ? { ...q, options: (q.options ?? []).filter((_, i) => i !== index) }
+      : q,
+  );

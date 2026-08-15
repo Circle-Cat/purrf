@@ -33,6 +33,7 @@ from backend.consumers.gerrit_processor_service import GerritProcessorService
 from backend.consumers.pubsub_pull_manager import PubSubPullManager
 from backend.consumers.pubsub_sync_pull_service import PubSubSyncPullService
 from backend.historical_data.historical_controller import HistoricalController
+from backend.leave.employment_sync_service import EmploymentSyncService
 from backend.historical_data.microsoft_member_sync_service import (
     MicrosoftMemberSyncService,
 )
@@ -171,6 +172,9 @@ from backend.mentorship.participation_service import ParticipationService
 from backend.mentorship.registration_service import RegistrationService
 from backend.mentorship.meeting_service import MeetingService
 from backend.mentorship.meet_attendance_service import MeetAttendanceService
+from backend.mentorship.mentorship_admission_service import (
+    MentorshipAdmissionService,
+)
 from backend.mentorship.onboarding_training_service import OnboardingTrainingService
 from backend.profile.profile_query_service import ProfileQueryService
 from backend.profile.profile_command_service import ProfileCommandService
@@ -313,7 +317,7 @@ class AppDependencyBuilder:
             retry_utils=self.retry_utils,
             date_time_util=self.date_time_util,
         )
-        self.asyncio_event_loop_manager = AsyncioEventLoopManager()
+        self.asyncio_event_loop_manager = AsyncioEventLoopManager(logger=self.logger)
 
         self.pubsub_puller_factory = PubSubPullerFactory(
             puller_creator=PubSubPuller,
@@ -377,6 +381,12 @@ class AppDependencyBuilder:
             microsoft_service=self.microsoft_service,
             retry_utils=self.retry_utils,
         )
+        self.employment_sync_service = EmploymentSyncService(
+            logger=self.logger,
+            redis_client=self.redis_client,
+            microsoft_service=self.microsoft_service,
+            retry_utils=self.retry_utils,
+        )
         self.microsoft_chat_history_sync_service = MicrosoftChatHistorySyncService(
             logger=self.logger,
             microsoft_service=self.microsoft_service,
@@ -415,6 +425,7 @@ class AppDependencyBuilder:
             google_chat_message_utils=self.google_chat_messages_utils,
         )
         self.historical_controller = HistoricalController(
+            logger=self.logger,
             microsoft_member_sync_service=self.microsoft_member_sync_service,
             microsoft_chat_history_sync_service=self.microsoft_chat_history_sync_service,
             jira_history_sync_service=self.jira_history_sync_service,
@@ -422,6 +433,7 @@ class AppDependencyBuilder:
             date_time_utils=self.date_time_util,
             gerrit_sync_service=self.gerrit_sync_service,
             google_chat_history_sync_service=self.google_chat_history_sync_service,
+            employment_sync_service=self.employment_sync_service,
         )
         self.microsoft_chat_analytics_service = MicrosoftChatAnalyticsService(
             logger=self.logger,
@@ -522,6 +534,15 @@ class AppDependencyBuilder:
             logger=self.logger,
         )
         self.mentorship_round_repository = MentorshipRoundRepository()
+        # Recruiting's three admission sites call this rather than the
+        # training service directly, so that "what an admission means" --
+        # training for both roles, an email for mentors -- lives in one place
+        # instead of three mentor-only conditions inside recruiting.
+        self.mentorship_admission_service = MentorshipAdmissionService(
+            logger=self.logger,
+            onboarding_training_service=self.onboarding_training_service,
+            mentorship_round_repository=self.mentorship_round_repository,
+        )
         self.mentorship_pairs_repository = MentorshipPairsRepository()
         self.mentorship_meeting_repository = MentorshipMeetingRepository()
         self.mentorship_round_participants_repo = (
@@ -691,9 +712,11 @@ class AppDependencyBuilder:
             email_service=self.notification_email_service,
         )
         self.delivery_service = DeliveryService(
+            logger=self.logger,
             email_service=self.notification_event_email_service,
         )
         self.notification_delivery_controller = NotificationDeliveryController(
+            logger=self.logger,
             delivery_service=self.delivery_service,
             publisher=self.notification_publisher_client,
             topic_path=self.notification_topic_path,
@@ -729,7 +752,7 @@ class AppDependencyBuilder:
             self.application_assignment_repository,
             self.notification_repository,
             self.user_emails_repository,
-            self.onboarding_training_service,
+            self.mentorship_admission_service,
         )
         self.application_controller = ApplicationController(
             self.application_service,
@@ -805,7 +828,7 @@ class AppDependencyBuilder:
             self.application_interview_repository,
             self.application_access,
             self.interview_scheduling_service,
-            self.onboarding_training_service,
+            self.mentorship_admission_service,
         )
         self.board_controller = BoardController(
             self.board_service,

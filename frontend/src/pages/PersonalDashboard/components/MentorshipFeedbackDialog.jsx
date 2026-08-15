@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,25 +10,47 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
-import { useFeatureFlags } from "@/hooks/useFeatureFlags";
-import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import {
   getMyMentorshipFeedback,
+  getMyMentorshipPartners,
   postMyMentorshipFeedback,
 } from "@/api/mentorshipApi";
 import { toast } from "sonner";
 
-const SESSION_COUNT_OPTIONS = Array.from({ length: 10 }, (_, i) => i + 1);
-
 const RATING_OPTIONS = [1, 2, 3, 4, 5];
+
+const PARTNER_RATING_OPTIONS = [
+  { value: 1, label: "Poor" },
+  { value: 2, label: "Below Average" },
+  { value: 3, label: "Average" },
+  { value: 4, label: "Good" },
+  { value: 5, label: "Excellent" },
+];
+
+const EMPTY_FORM = {
+  mostValuableAspects: "",
+  challenges: "",
+  programRating: "",
+  partnerFeedback: {},
+};
+
+/** Convert a feedback API payload into the dialog's form state. */
+function toFormState(data) {
+  const partnerFeedback = {};
+  (data.partnerFeedback ?? []).forEach((entry) => {
+    partnerFeedback[entry.partnerId] = {
+      rating: entry.rating?.toString() ?? "",
+      feedback: entry.feedback ?? "",
+    };
+  });
+  return {
+    mostValuableAspects: data.mostValuableAspects ?? "",
+    challenges: data.challenges ?? "",
+    programRating: data.programRating?.toString() ?? "",
+    partnerFeedback,
+  };
+}
 
 function TextArea({ value, onChange, placeholder, maxLength, disabled }) {
   return (
@@ -49,28 +71,36 @@ function TextArea({ value, onChange, placeholder, maxLength, disabled }) {
 }
 
 /**
- * Dialog for submitting or viewing mentorship program feedback for a round.
+ * Dialog for submitting, editing, or viewing mentorship program feedback.
  *
- * Renders a trigger button whose label reflects the user's prior submission
- * status. The button is hidden until the initial status fetch resolves to
- * avoid a "Submit Feedback" → "View Feedback" flash on page load.
+ * Answers stay editable for as long as the feedback window is open, so the
+ * trigger reads "Submit Feedback", "Edit Feedback", or -- once the deadline has
+ * passed -- "View Feedback" over a fully disabled form. After the deadline a
+ * participant who never submitted has nothing to look at, so nothing renders at
+ * all. The trigger is also withheld until the initial status fetch resolves, to
+ * avoid a "Submit" → "Edit" flash on page load.
  *
- * Required fields vary by participant role:
- * - All roles: `programRating`, `mostValuableAspects` (optional), `challenges` (optional)
- * - Mentee only: `sessionsCompleted`
+ * `programRating` and a rating per partner are required; the free-text answers
+ * are optional.
+ *
+ * Partners are fetched by `roundId` rather than reused from the participant
+ * card, so this dialog owns every field it renders.
  *
  * Inline field-level errors are shown on submit; each clears as soon as the
- * user interacts with that field.
+ * user interacts with that field. Closing the dialog discards anything typed
+ * since the last successful save.
  *
  * @param {object}  props
- * @param {string}  props.roundId           - ID of the mentorship round.
- * @param {string}  props.roundName         - Display name of the round (used in the dialog title).
- * @param {boolean} props.isFeedbackEnabled - When false the trigger button is disabled.
+ * @param {string}  props.roundId              - ID of the mentorship round.
+ * @param {string}  props.roundName            - Display name of the round (used in the dialog title).
+ * @param {boolean} props.isEditable           - When false the form is read-only.
+ * @param {string|null} props.feedbackDeadlineText - Preformatted deadline shown in the hint, or null when unknown.
  */
 export default function MentorshipFeedbackDialog({
   roundId,
   roundName,
-  isFeedbackEnabled,
+  isEditable,
+  feedbackDeadlineText,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -80,24 +110,24 @@ export default function MentorshipFeedbackDialog({
   const [fetchError, setFetchError] = useState(false);
   const [errors, setErrors] = useState({});
 
-  const [sessionsCompleted, setSessionsCompleted] = useState("");
   const [mostValuableAspects, setMostValuableAspects] = useState("");
   const [challenges, setChallenges] = useState("");
   const [programRating, setProgramRating] = useState("");
+  const [partners, setPartners] = useState([]);
+  const [partnerFeedback, setPartnerFeedback] = useState({});
 
-  const flags = useFeatureFlags();
-  // When Google Meetings is enabled, mentee session attendance is captured
-  // automatically, so the manual sessions-completed question is hidden.
-  const isCreateGoogleMeetingsEnabled =
-    flags[FEATURE_FLAGS.CREATE_GOOGLE_MEETING];
+  // Last state persisted on the server. Closing the dialog rewinds to it so
+  // abandoned edits never masquerade as saved answers on the next open.
+  const savedFormRef = useRef(EMPTY_FORM);
 
   const isMentee = participantRole === MentorshipParticipantRoles.MENTEE;
+  const partnerRoleLabel = isMentee ? "mentor" : "mentee";
 
-  const populateForm = (data) => {
-    setSessionsCompleted(data.sessionsCompleted?.toString() ?? "");
-    setMostValuableAspects(data.mostValuableAspects ?? "");
-    setChallenges(data.challenges ?? "");
-    setProgramRating(data.programRating?.toString() ?? "");
+  const applyFormState = (form) => {
+    setMostValuableAspects(form.mostValuableAspects);
+    setChallenges(form.challenges);
+    setProgramRating(form.programRating);
+    setPartnerFeedback(form.partnerFeedback);
   };
 
   const clearError = (field) => {
@@ -109,20 +139,33 @@ export default function MentorshipFeedbackDialog({
     });
   };
 
+  const updatePartnerField = (partnerId, field, value) => {
+    setPartnerFeedback((prev) => ({
+      ...prev,
+      [partnerId]: { ...prev[partnerId], [field]: value },
+    }));
+  };
+
   useEffect(() => {
-    // When feedback isn't available for this round, render a disabled trigger
-    // button without hitting the API.
-    if (!isFeedbackEnabled || !roundId) {
+    // Without a round there is nothing to fetch; render a disabled trigger.
+    if (!roundId) {
       setHasSubmitted(false);
       return;
     }
     let cancelled = false;
-    getMyMentorshipFeedback(roundId)
-      .then(({ data }) => {
+    Promise.all([
+      getMyMentorshipFeedback(roundId),
+      getMyMentorshipPartners(roundId),
+    ])
+      .then(([{ data }, { data: partnersData }]) => {
         if (cancelled) return;
         setParticipantRole(data.participantRole);
         setHasSubmitted(Boolean(data.hasSubmitted));
-        if (data.hasSubmitted) populateForm(data);
+        setPartners(partnersData ?? []);
+        if (data.hasSubmitted) {
+          savedFormRef.current = toFormState(data);
+          applyFormState(savedFormRef.current);
+        }
       })
       .catch((err) => {
         if (cancelled) return;
@@ -136,13 +179,16 @@ export default function MentorshipFeedbackDialog({
     return () => {
       cancelled = true;
     };
-  }, [roundId, isFeedbackEnabled]);
+  }, [roundId]);
 
   const validate = () => {
     const newErrors = {};
-    if (isMentee && !isCreateGoogleMeetingsEnabled && !sessionsCompleted)
-      newErrors.sessionsCompleted = "This field is required.";
     if (!programRating) newErrors.programRating = "This field is required.";
+    partners.forEach((partner) => {
+      if (!partnerFeedback[partner.id]?.rating) {
+        newErrors[`partnerRating-${partner.id}`] = "This field is required.";
+      }
+    });
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -152,16 +198,25 @@ export default function MentorshipFeedbackDialog({
     setIsSaving(true);
     try {
       await postMyMentorshipFeedback(roundId, {
-        sessionsCompleted: sessionsCompleted
-          ? parseInt(sessionsCompleted, 10)
-          : null,
         mostValuableAspects: mostValuableAspects || null,
         challenges: challenges || null,
         programRating: programRating ? parseInt(programRating, 10) : null,
+        partnerFeedback: partners.map((partner) => ({
+          partnerId: partner.id,
+          rating: parseInt(partnerFeedback[partner.id]?.rating, 10),
+          feedback: partnerFeedback[partner.id]?.feedback || null,
+        })),
       });
+      savedFormRef.current = {
+        mostValuableAspects,
+        challenges,
+        programRating,
+        partnerFeedback,
+      };
+      const wasUpdate = hasSubmitted;
       setHasSubmitted(true);
       setIsOpen(false);
-      toast.success("Feedback Submitted", {
+      toast.success(wasUpdate ? "Feedback Updated" : "Feedback Submitted", {
         description: `Thank you for sharing feedback on ${roundName || "this round"}.`,
         duration: 4000,
       });
@@ -177,27 +232,36 @@ export default function MentorshipFeedbackDialog({
   };
 
   if (hasSubmitted === null) return null;
+  // Past the deadline there is nothing to show someone who never submitted.
+  if (!isEditable && !hasSubmitted) return null;
 
   const handleOpenChange = (open) => {
-    if (!open && !hasSubmitted) {
-      setSessionsCompleted("");
-      setMostValuableAspects("");
-      setChallenges("");
-      setProgramRating("");
+    if (!open) {
+      applyFormState(savedFormRef.current);
       setErrors({});
     }
     setIsOpen(open);
   };
 
+  const triggerLabel = !isEditable
+    ? "View Feedback"
+    : hasSubmitted
+      ? "Edit Feedback"
+      : "Submit Feedback";
+
+  const deadlineNote = isEditable
+    ? feedbackDeadlineText
+      ? `You can update your responses until ${feedbackDeadlineText}.`
+      : "You can update your responses until the feedback deadline."
+    : feedbackDeadlineText
+      ? `The feedback deadline passed on ${feedbackDeadlineText}. Your responses are read-only.`
+      : "The feedback deadline has passed. Your responses are read-only.";
+
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button
-          variant="outline"
-          className="border-[#6035F3] text-[#6035F3] hover:bg-purple-50 disabled:opacity-50"
-          disabled={!isFeedbackEnabled || fetchError}
-        >
-          {hasSubmitted ? "View Feedback" : "Submit Feedback"}
+        <Button variant="outline" size="sm" disabled={!roundId || fetchError}>
+          {triggerLabel}
         </Button>
       </DialogTrigger>
 
@@ -206,55 +270,12 @@ export default function MentorshipFeedbackDialog({
           <DialogTitle>
             {roundName ? `${roundName} Feedback` : "Feedback"}
           </DialogTitle>
-          {hasSubmitted ? (
-            <p className="text-[11px] text-muted-foreground italic mt-1">
-              Thank you for sharing feedback with us!
-            </p>
-          ) : (
-            <p className="text-[11px] text-destructive mt-1">
-              Please review your responses carefully. Feedback cannot be edited
-              after submission.
-            </p>
-          )}
+          <p className="text-[11px] text-muted-foreground italic mt-1">
+            {deadlineNote}
+          </p>
         </DialogHeader>
 
         <div className="py-4 space-y-6 max-h-[70vh] overflow-y-auto px-1">
-          {/* Sessions completed (Mentee only, hidden when Google Meetings is enabled) */}
-          {isMentee && !isCreateGoogleMeetingsEnabled && (
-            <div className="space-y-3">
-              <Label className="text-sm font-semibold">
-                How many sessions have you completed during this past round and
-                logged in Moodle? <span className="text-destructive">*</span>
-              </Label>
-              <Select
-                value={sessionsCompleted}
-                onValueChange={(val) => {
-                  setSessionsCompleted(val);
-                  clearError("sessionsCompleted");
-                }}
-                disabled={hasSubmitted}
-              >
-                <SelectTrigger
-                  className={`w-full${errors.sessionsCompleted ? " border-destructive" : ""}`}
-                >
-                  <SelectValue placeholder="Select number of sessions" />
-                </SelectTrigger>
-                <SelectContent>
-                  {SESSION_COUNT_OPTIONS.map((n) => (
-                    <SelectItem key={n} value={n.toString()}>
-                      {n}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.sessionsCompleted && (
-                <p className="text-xs text-destructive">
-                  {errors.sessionsCompleted}
-                </p>
-              )}
-            </div>
-          )}
-
           {/* Most valuable aspects (All) */}
           <div className="space-y-3">
             <Label className="text-sm font-semibold">
@@ -265,7 +286,7 @@ export default function MentorshipFeedbackDialog({
               onChange={setMostValuableAspects}
               placeholder="Share what you found most valuable..."
               maxLength={300}
-              disabled={hasSubmitted}
+              disabled={!isEditable}
             />
           </div>
 
@@ -279,7 +300,7 @@ export default function MentorshipFeedbackDialog({
               onChange={setChallenges}
               placeholder="Describe any challenges you faced..."
               maxLength={300}
-              disabled={hasSubmitted}
+              disabled={!isEditable}
             />
           </div>
 
@@ -302,7 +323,7 @@ export default function MentorshipFeedbackDialog({
                   <RadioGroupItem
                     value={n.toString()}
                     id={`program-rating-${n}`}
-                    disabled={hasSubmitted}
+                    disabled={!isEditable}
                   />
                   <Label
                     htmlFor={`program-rating-${n}`}
@@ -320,6 +341,66 @@ export default function MentorshipFeedbackDialog({
               <p className="text-xs text-destructive">{errors.programRating}</p>
             )}
           </div>
+
+          {/* Every participant rates and leaves feedback for each of their partners */}
+          {partners.flatMap((partner) => {
+            const entry = partnerFeedback[partner.id] || {};
+            const ratingError = errors[`partnerRating-${partner.id}`];
+            return [
+              <div key={`${partner.id}-rating`} className="space-y-3">
+                <Label className="text-sm font-semibold">
+                  How was your overall experience working with your{" "}
+                  {partnerRoleLabel} {partner.preferredName}?{" "}
+                  <span className="text-destructive">*</span>
+                </Label>
+                <RadioGroup
+                  value={entry.rating || ""}
+                  onValueChange={(val) => {
+                    updatePartnerField(partner.id, "rating", val);
+                    clearError(`partnerRating-${partner.id}`);
+                  }}
+                  className="flex flex-wrap gap-4"
+                >
+                  {PARTNER_RATING_OPTIONS.map((option) => (
+                    <div
+                      key={option.value}
+                      className="flex items-center space-x-1"
+                    >
+                      <RadioGroupItem
+                        value={option.value.toString()}
+                        id={`partner-rating-${partner.id}-${option.value}`}
+                        disabled={!isEditable}
+                      />
+                      <Label
+                        htmlFor={`partner-rating-${partner.id}-${option.value}`}
+                        className="font-normal cursor-pointer"
+                      >
+                        {option.label}
+                      </Label>
+                    </div>
+                  ))}
+                </RadioGroup>
+                {ratingError && (
+                  <p className="text-xs text-destructive">{ratingError}</p>
+                )}
+              </div>,
+              <div key={`${partner.id}-feedback`} className="space-y-3">
+                <Label className="text-sm font-semibold">
+                  What feedback would you like to share about your{" "}
+                  {partnerRoleLabel} {partner.preferredName}?
+                </Label>
+                <TextArea
+                  value={entry.feedback || ""}
+                  onChange={(val) =>
+                    updatePartnerField(partner.id, "feedback", val)
+                  }
+                  placeholder={`Share feedback about ${partner.preferredName}...`}
+                  maxLength={300}
+                  disabled={!isEditable}
+                />
+              </div>,
+            ];
+          })}
         </div>
 
         <DialogFooter>
@@ -327,9 +408,13 @@ export default function MentorshipFeedbackDialog({
             <Button variant="outline" onClick={() => handleOpenChange(false)}>
               Close
             </Button>
-            {!hasSubmitted && (
+            {isEditable && (
               <Button onClick={handleSave} disabled={isSaving}>
-                {isSaving ? "Saving..." : "Submit"}
+                {isSaving
+                  ? "Saving..."
+                  : hasSubmitted
+                    ? "Save Changes"
+                    : "Submit"}
               </Button>
             )}
           </div>

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.recruiting_enums import (
+    ApplicationLockReason,
     ApplicationStage,
     PUBLICLY_VISIBLE_JOB_STATUSES,
     RecruitingEvent,
@@ -60,7 +61,7 @@ class ApplicationService:
         application_assignment_repository,
         notification_repository,
         user_emails_repository,
-        onboarding_training_service,
+        mentorship_admission_service,
     ):
         """
         Args:
@@ -79,9 +80,11 @@ class ApplicationService:
             notification_repository (NotificationRepository): Same -- notification
                 rows are written by ``record_event`` from the resolved
                 recipients, not by this service.
-            onboarding_training_service (OnboardingTrainingService): Assigns
-                the mentorship onboarding training task when an `auto_hire`
-                screen rule lands the submission directly on HIRED.
+            mentorship_admission_service (MentorshipAdmissionService): Owns
+                what an admission means -- the onboarding training task and,
+                for a mentor, the admission email -- when an `auto_hire`
+                screen rule lands the submission directly on HIRED. Recruiting
+                does not decide which of those a posting owes.
         """
         self.application_repository = application_repository
         self.application_submission_repository = application_submission_repository
@@ -91,7 +94,7 @@ class ApplicationService:
         self.application_assignment_repository = application_assignment_repository
         self.notification_repository = notification_repository
         self.user_emails_repository = user_emails_repository
-        self.onboarding_training_service = onboarding_training_service
+        self.mentorship_admission_service = mentorship_admission_service
 
     @staticmethod
     def _today():
@@ -271,12 +274,6 @@ class ApplicationService:
             problem = self._question_value_error(question, value)
             if problem is not None:
                 raise ValueError(problem)
-            # The renderer marks the "Other" free text required whenever that
-            # option is picked, and until now nothing held it to that.
-            if form_visibility.other_selected(question, value) and not self._answered(
-                dto.answers.get(f"{question['id']}{form_visibility.OTHER_SUFFIX}")
-            ):
-                raise ValueError(f"{label}: describe your answer")
 
     @staticmethod
     def _blank(value) -> bool:
@@ -373,18 +370,16 @@ class ApplicationService:
         Args:
             job (JobEntity): The posting being submitted to.
             blocked (bool): Whether the applicant is blacklisted.
-            screen_action (str | None): ``"reject"`` | ``"qualify"`` |
-                ``"auto_hire"`` | None — the outcome of
-                ``screen_rules.evaluate()`` (always None when ``blocked``,
-                since a blacklist entry is evaluated first and wins
-                outright).
+            screen_action (str | None): ``"reject"`` | ``"auto_hire"`` |
+                None — the outcome of ``screen_rules.evaluate()`` (always
+                None when ``blocked``, since a blacklist entry is
+                evaluated first and wins outright).
 
         Returns:
             ApplicationStage: ``REJECTED`` when blocked or a ``"reject"``
                 rule matched; ``HIRED`` when an ``"auto_hire"`` rule
                 matched; otherwise the job's first configured pipeline
-                stage (unscreened and ``"qualify"`` both land here
-                identically).
+                stage.
         """
         if blocked or screen_action == "reject":
             return ApplicationStage.REJECTED
@@ -448,9 +443,7 @@ class ApplicationService:
         and a blocked/screen-rejected outcome alike. Independent of the
         blacklist check, a matching ``screen_rules`` rule can also land the
         submission on ``REJECTED`` (a ``"reject"`` match) or ``HIRED`` (an
-        ``"auto_hire"`` match) with zero human review; a ``"qualify"``
-        match proceeds exactly as an unscreened submission would, with a
-        note added to the activity log.
+        ``"auto_hire"`` match) with zero human review.
 
         A re-apply after rejection creates a fresh application row rather
         than reusing the rejected one: prior attempts are immutable
@@ -556,9 +549,9 @@ class ApplicationService:
         )
 
         if stage == ApplicationStage.HIRED:
-            await self.onboarding_training_service.ensure_for_admitted(
+            await self.mentorship_admission_service.on_admitted(
                 session=session,
-                user_id=current_user.user_id,
+                application=application,
                 job=job,
             )
 
@@ -587,9 +580,7 @@ class ApplicationService:
             )
         else:
             details = {"stage": application.stage.value}
-            if screen_action == "qualify":
-                details["screenQualifyRuleId"] = screen_rule_id
-            elif screen_action == "auto_hire":
+            if screen_action == "auto_hire":
                 details["screenAutoHireRuleId"] = screen_rule_id
             await record_event(
                 session,
@@ -601,9 +592,12 @@ class ApplicationService:
             )
 
         await session.commit()
-        editable = self._is_editable(application, job, current_sub)
+        lock_reason = self._lock_reason(application, job, current_sub)
         return self.recruiting_mapper.to_application_dto(
-            application, current_sub, editable=editable
+            application,
+            current_sub,
+            editable=lock_reason is None,
+            lock_reason=lock_reason,
         )
 
     async def _rescreen_after_edit(
@@ -641,9 +635,7 @@ class ApplicationService:
         ]
         result = screen_rules.evaluate(job.screen_rules, applicant_emails, dto.answers)
         action, rule_id = result["action"], result["rule_id"]
-        if action is None or action == "qualify":
-            # "qualify" lands on the first stage on submit, which is where an
-            # editable application already sits. Nothing to move.
+        if action is None:
             return
 
         if action == "reject":
@@ -679,9 +671,9 @@ class ApplicationService:
                     "onEdit": True,
                 },
             )
-            await self.onboarding_training_service.ensure_for_admitted(
+            await self.mentorship_admission_service.on_admitted(
                 session=session,
-                user_id=current_user.user_id,
+                application=application,
                 job=job,
             )
 
@@ -767,7 +759,7 @@ class ApplicationService:
         concurrent owner decision (freeze/advance via ``BoardService``)
         can't interleave with this edit — without the lock, an edit could
         silently overwrite the submission a decision was already based on.
-        ``_is_editable`` is evaluated after this locked load, on the
+        ``_lock_reason`` is evaluated after this locked load, on the
         now-current row.
 
         Args:
@@ -791,7 +783,7 @@ class ApplicationService:
         current_sub = await self.application_submission_repository.get_current(
             session, application_id
         )
-        if not self._is_editable(application, job, current_sub):
+        if self._lock_reason(application, job, current_sub) is not None:
             raise ValueError("application is locked once processing has started")
         self._validate_submission(job, dto)
         self._prune_hidden_answers(job, dto)
@@ -803,9 +795,12 @@ class ApplicationService:
         )
         await self._rescreen_after_edit(session, current_user, application, job, dto)
         await session.commit()
-        editable = self._is_editable(application, job, current_sub)
+        lock_reason = self._lock_reason(application, job, current_sub)
         return self.recruiting_mapper.to_application_dto(
-            application, current_sub, editable=editable
+            application,
+            current_sub,
+            editable=lock_reason is None,
+            lock_reason=lock_reason,
         )
 
     async def get_my_latest_profile(self, session, current_user: UserContextDto):
@@ -860,9 +855,12 @@ class ApplicationService:
             session, application.application_id
         )
         job = await self.job_repository.get_by_job_id(session, application.job_id)
-        editable = self._is_editable(application, job, current_sub)
+        lock_reason = self._lock_reason(application, job, current_sub)
         return self.recruiting_mapper.to_application_dto(
-            application, current_sub, editable=editable
+            application,
+            current_sub,
+            editable=lock_reason is None,
+            lock_reason=lock_reason,
         )
 
     async def list_mine(self, session, current_user) -> list:
@@ -884,8 +882,15 @@ class ApplicationService:
             for application, job in rows
         ]
 
-    def _is_editable(self, application, job, current_submission) -> bool:
-        """Whether the candidate may still edit: first-stage, untouched, unfrozen.
+    def _lock_reason(self, application, job, current_submission):
+        """Why the candidate can no longer edit, or None while they still can.
+
+        ``editable`` is derived from this rather than computed beside it, so a
+        client cannot be told it is locked and shown no reason, or the reverse.
+
+        ADVANCED is checked first because it is the more informative answer:
+        naming where the application went tells the reader more than saying
+        someone is working on it.
 
         Args:
             application (ApplicationEntity): The application container.
@@ -894,15 +899,17 @@ class ApplicationService:
                 application's current (highest) submission version.
 
         Returns:
-            bool: True while the application sits at the job's first
-                configured pipeline stage, its sub_status is still
-                ``"pending"``, and the current submission is not frozen.
+            ApplicationLockReason | None: The reason editing is closed, or
+                None while the application sits at the job's first configured
+                stage with a pending sub_status and an unfrozen submission.
         """
-        return (
-            application.stage == stage_machine.first_stage(job.pipeline_config)
-            and (application.sub_status or "pending") == "pending"
-            and not (current_submission is not None and current_submission.is_frozen)
-        )
+        if application.stage != stage_machine.first_stage(job.pipeline_config):
+            return ApplicationLockReason.ADVANCED
+        if (application.sub_status or "pending") != "pending":
+            return ApplicationLockReason.IN_REVIEW
+        if current_submission is not None and current_submission.is_frozen:
+            return ApplicationLockReason.IN_REVIEW
+        return None
 
     async def _load_owned(
         self, session, current_user, application_id, *, for_update: bool = False

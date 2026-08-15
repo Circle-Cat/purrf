@@ -1286,6 +1286,56 @@ class TestSyncAttendance(unittest.IsolatedAsyncioTestCase):
         )
         self.assertFalse(meeting.has_unknown_late)
 
+    async def test_one_signed_in_one_anonymous_both_late_sets_both_late_user_ids(
+        self,
+    ):
+        """1 signed-in (mentor) + 1 anon (mentee never resolves to an identity),
+        both arrive late, overlap still meets the threshold → both must be
+        tagged late, not just the identified mentor."""
+        self.mock_round_repo.get_running_rounds.return_value = [self.round_window]
+        self.mock_google_service.list_conferences_by_meeting_code.return_value = (
+            [
+                self._make_conference(
+                    start="2026-04-07T10:00:00+00:00",
+                    end="2026-04-07T11:00:00+00:00",
+                )
+            ],
+            0,
+        )
+        pair, meeting = self._make_active_pair_and_meeting(
+            start="2026-04-07T10:00:00+00:00",
+            end="2026-04-07T11:00:00+00:00",
+        )
+        self.mock_pairs_repo.get_active_pairs_by_round.return_value = [pair]
+        self.mock_meeting_repo.get_pending_google_meetings_in_window.return_value = [
+            meeting
+        ]
+        self.mock_users_repo.get_all_by_ids.return_value = [self.mentor, self.mentee]
+        self.mock_google_service.fetch_participants_for_record.return_value = [
+            {
+                "signedin_user_id": "uid-mentor",
+                "start_time": "2026-04-07T10:07:00+00:00",
+                "end_time": "2026-04-07T11:00:00+00:00",
+            },  # 7 min late, identified
+            {
+                "display_name": "unrecognized guest",
+                "start_time": "2026-04-07T10:08:00+00:00",
+                "end_time": "2026-04-07T11:00:00+00:00",
+            },  # 8 min late, never resolves to the mentee
+        ]
+        self.mock_google_service.get_email_by_google_user_id.return_value = (
+            "mentor@example.com"
+        )
+
+        await self.service.sync_attendance(session=self.mock_session, lookback_hours=2)
+
+        # Overlap 10:08-11:00 = 52 of 60 min (>80%) → completed
+        self.assertTrue(meeting.is_completed)
+        self.assertCountEqual(
+            meeting.late_user_ids, [self.mentor.user_id, self.mentee.user_id]
+        )
+        self.assertFalse(meeting.has_unknown_late)
+
     async def test_multiple_conference_records_accumulates_reconnect_sessions(self):
         """Two conference records for the same space (disconnect + rejoin) are merged.
         Each session alone is < 80%; combined they exceed the threshold → is_completed=True."""

@@ -3,7 +3,9 @@ from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, create_autospec, patch
 from backend.common.mentorship_enums import ParticipantRole
-from backend.mentorship.onboarding_training_service import OnboardingTrainingService
+from backend.mentorship.mentorship_admission_service import (
+    MentorshipAdmissionService,
+)
 from backend.recruiting.application_service import ApplicationService
 from backend.repository.notification_repository import NotificationRepository
 from backend.recruiting.recruiting_mapper import RecruitingMapper
@@ -18,6 +20,7 @@ from backend.entity.application_submission_entity import ApplicationSubmissionEn
 from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
 from backend.common.recruiting_enums import (
+    ApplicationLockReason,
     ApplicationStage,
     JobKind,
     JobStatus,
@@ -93,10 +96,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         # matches against every confirmed claim, not one contact address.
         self.user_emails_repo = MagicMock()
         self.user_emails_repo.list_by_user_id = AsyncMock(return_value=[])
-        # autospec so a signature drift on ensure_for_admitted fails the test
+        # autospec so a signature drift on on_admitted fails the test
         # instead of silently accepting any arity.
-        self.onboarding_training_svc = create_autospec(
-            OnboardingTrainingService, instance=True
+        self.mentorship_admission_svc = create_autospec(
+            MentorshipAdmissionService, instance=True
         )
         self.service = ApplicationService(
             self.app_repo,
@@ -107,7 +110,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self.assignment_repo,
             self.notification_repo,
             self.user_emails_repo,
-            self.onboarding_training_svc,
+            self.mentorship_admission_svc,
         )
 
     def _notification_repository_double(self):
@@ -323,9 +326,9 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         created_sub = self.sub_repo.create.call_args.args[1]
         self.assertEqual(created_sub.submission["answers"], {"q1": "No"})
 
-    async def test_submit_keeps_other_free_text_through_the_write(self):
-        """The `__other` sibling is not a question, so nothing in the schema
-        loop keeps it -- only the explicit Other branch does."""
+    async def test_submit_keeps_the_follow_up_of_every_selected_option(self):
+        """One option's follow-up must not drop another's: each is a question
+        in its own right, gated on its own option."""
         job = self._job(status=JobStatus.PUBLISHED)
         job.form_schema = {
             "questions": [
@@ -333,25 +336,38 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
                     "id": "q3",
                     "type": "multi_choice",
                     "label": "Teams?",
-                    "options": ["Backend", "Other"],
-                    "otherOption": "Other",
-                }
+                    "options": ["Backend", "Frontend"],
+                },
+                {
+                    "id": "q4",
+                    "type": "short_text",
+                    "label": "Which stack?",
+                    "showWhen": {"questionId": "q3", "equals": "Backend"},
+                },
+                {
+                    "id": "q5",
+                    "type": "short_text",
+                    "label": "Which framework?",
+                    "showWhen": {"questionId": "q3", "equals": "Frontend"},
+                },
             ]
         }
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        answers = {
+            "q3": ["Backend", "Frontend"],
+            "q4": "Infrastructure",
+            "q5": "React",
+        }
         dto = ApplicationSubmitDto.model_validate({
             "personal": REQUIRED_PERSONAL,
             "jobId": 1,
-            "answers": {"q3": ["Backend", "Other"], "q3__other": "Infrastructure"},
+            "answers": answers,
         })
 
         await self.service.submit(self.session, self._ctx(), dto)
 
         created_sub = self.sub_repo.create.call_args.args[1]
-        self.assertEqual(
-            created_sub.submission["answers"],
-            {"q3": ["Backend", "Other"], "q3__other": "Infrastructure"},
-        )
+        self.assertEqual(created_sub.submission["answers"], answers)
 
     async def test_screening_sees_the_pruned_answers(self):
         """A rule must not fire on an answer the form had stopped showing."""
@@ -866,21 +882,6 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.editable)
         self.record_event.assert_not_awaited()
 
-    async def test_edit_into_a_qualify_rule_stays_put(self):
-        """qualify lands on the first stage, which is where an editable
-        application already is."""
-        self._answer_rule("qualify")
-        app = self._editable_app()
-        dto = ApplicationEditDto.model_validate({
-            "answers": {"q1": "Yes"},
-            "personal": REQUIRED_PERSONAL,
-        })
-
-        await self.service.edit(self.session, self._ctx(), 100, dto)
-
-        self.assertEqual(app.stage, ApplicationStage.RECRUITER_SCREENING)
-        self.assertIsNone(app.tags)
-
     async def test_edit_into_an_auto_hire_rule_hires(self):
         self._answer_rule("auto_hire")
         app = self._editable_app()
@@ -892,7 +893,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         await self.service.edit(self.session, self._ctx(), 100, dto)
 
         self.assertEqual(app.stage, ApplicationStage.HIRED)
-        self.onboarding_training_svc.ensure_for_admitted.assert_awaited_once()
+        self.mentorship_admission_svc.on_admitted.assert_awaited_once()
 
     async def test_edit_screens_the_answers_it_just_stored(self):
         """The rule reads the edit's answers, not the ones already on file."""
@@ -1047,34 +1048,6 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ValueError):
             await self._submit_answers({"q1": "i agree"})
-
-    async def test_other_free_text_is_required_once_other_is_picked(self):
-        """The renderer marks it required; nothing used to hold it to that."""
-        self._typed_job({
-            "id": "q1",
-            "type": "single_choice",
-            "label": "How did you hear?",
-            "options": ["Friend", "Other"],
-            "otherOption": "Other",
-        })
-
-        with self.assertRaises(ValueError) as ctx:
-            await self._submit_answers({"q1": "Other", "q1__other": "  "})
-
-        self.assertIn("describe your answer", str(ctx.exception))
-
-    async def test_other_free_text_is_not_required_when_other_is_not_picked(self):
-        self._typed_job({
-            "id": "q1",
-            "type": "single_choice",
-            "label": "How did you hear?",
-            "options": ["Friend", "Other"],
-            "otherOption": "Other",
-        })
-
-        await self._submit_answers({"q1": "Friend"})
-
-        self.sub_repo.create.assert_awaited_once()
 
     async def test_a_hidden_question_is_not_value_checked(self):
         """A stale answer under a question the form stopped showing is pruned,
@@ -1890,9 +1863,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             details={"reason": "screen_rule", "ruleId": "r1"},
         )
 
-    async def test_submit_screen_rule_qualify_lands_first_stage_with_activity_detail(
-        self,
-    ):
+    async def test_submit_screen_rule_that_matches_nothing_lands_first_stage(self):
         job = self._job(
             screen_rules={
                 "rules": [
@@ -1903,14 +1874,14 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
                             "operator": "equals",
                             "value": "google.com",
                         },
-                        "action": "qualify",
+                        "action": "auto_hire",
                     }
                 ]
             }
         )
         self.job_repo.get_by_job_id = AsyncMock(return_value=job)
         self.user_emails_repo.list_by_user_id.return_value = [
-            self._email_row("a@google.com")
+            self._email_row("a@yahoo.com")
         ]
         dto = ApplicationSubmitDto.model_validate({
             "jobId": 1,
@@ -1928,10 +1899,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             subject_id=100,
             actor_id=2,
             event_type="recruiting.application_submitted",
-            details={
-                "stage": "recruiter_screening",
-                "screenQualifyRuleId": "r1",
-            },
+            details={"stage": "recruiter_screening"},
         )
 
     async def test_submit_screen_rule_auto_hire_lands_hired_with_no_sub_status(self):
@@ -1973,11 +1941,11 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             details={"stage": "hired", "screenAutoHireRuleId": "r1"},
         )
 
-    async def test_submit_auto_hire_assigns_onboarding_training(self):
+    async def test_submit_auto_hire_hands_the_admission_to_mentorship(self):
         """An `auto_hire` screen rule admits the candidate without any board
         action, so this is a second, independent path into HIRED --
-        OnboardingTrainingService itself decides whether the job's kind/role
-        actually owes one (Task 2); submit just always calls it once HIRED."""
+        MentorshipAdmissionService itself decides what the job's kind/role
+        actually owes; submit just always calls it once HIRED."""
         job = self._job(
             screen_rules={
                 "rules": [
@@ -2005,13 +1973,15 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
         await self.service.submit(self.session, self._ctx(), dto)
 
-        self.onboarding_training_svc.ensure_for_admitted.assert_awaited_once_with(
-            session=self.session,
-            user_id=2,
-            job=job,
-        )
+        self.mentorship_admission_svc.on_admitted.assert_awaited_once()
+        kwargs = self.mentorship_admission_svc.on_admitted.await_args.kwargs
+        self.assertIs(kwargs["session"], self.session)
+        self.assertIs(kwargs["job"], job)
+        # The row just created, not a re-read: the admission service reads
+        # its user_id and application_id inside this same transaction.
+        self.assertIs(kwargs["application"], self.app_repo.create.await_args.args[1])
 
-    async def test_submit_without_auto_hire_does_not_assign_onboarding_training(self):
+    async def test_submit_without_auto_hire_records_no_admission(self):
         dto = ApplicationSubmitDto.model_validate({
             "jobId": 1,
             "personal": REQUIRED_PERSONAL,
@@ -2020,7 +1990,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.submit(self.session, self._ctx(), dto)
 
         self.assertEqual(result.stage, ApplicationStage.RECRUITER_SCREENING)
-        self.onboarding_training_svc.ensure_for_admitted.assert_not_awaited()
+        self.mentorship_admission_svc.on_admitted.assert_not_awaited()
 
     async def test_submit_email_domain_include_and_exclude_rules_together(self):
         """A posting configured with both an include+auto_hire rule and an
@@ -2378,3 +2348,112 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         await self.service.submit(self.session, self._ctx(), dto)
 
         self.notification_repo.create.assert_not_awaited()
+
+
+class LockReasonTest(unittest.TestCase):
+    """Why a candidate can no longer edit -- the one source `editable` derives from."""
+
+    def setUp(self):
+        self.service = ApplicationService(
+            application_repository=MagicMock(),
+            application_submission_repository=MagicMock(),
+            job_repository=MagicMock(),
+            users_repository=MagicMock(),
+            recruiting_mapper=RecruitingMapper(),
+            application_assignment_repository=MagicMock(),
+            notification_repository=MagicMock(),
+            user_emails_repository=MagicMock(),
+            mentorship_admission_service=MagicMock(),
+        )
+        self.job = JobEntity(
+            kind=JobKind.EMPLOYMENT,
+            title="T",
+            status=JobStatus.PUBLISHED,
+            pipeline_config={
+                "stages": [
+                    {"stage": ApplicationStage.RECRUITER_SCREENING, "rounds": 1},
+                    {"stage": ApplicationStage.TECH, "rounds": 1},
+                ]
+            },
+        )
+
+    def _app(self, stage=ApplicationStage.RECRUITER_SCREENING, sub_status="pending"):
+        return SimpleNamespace(stage=stage, sub_status=sub_status)
+
+    def _sub(self, is_frozen=False):
+        return SimpleNamespace(is_frozen=is_frozen)
+
+    def test_untouched_first_stage_is_not_locked(self):
+        self.assertIsNone(self.service._lock_reason(self._app(), self.job, self._sub()))
+
+    def test_a_later_stage_is_locked_as_advanced(self):
+        self.assertEqual(
+            self.service._lock_reason(
+                self._app(stage=ApplicationStage.TECH), self.job, self._sub()
+            ),
+            ApplicationLockReason.ADVANCED,
+        )
+
+    def test_a_moved_sub_status_is_locked_as_in_review(self):
+        self.assertEqual(
+            self.service._lock_reason(
+                self._app(sub_status="screening"), self.job, self._sub()
+            ),
+            ApplicationLockReason.IN_REVIEW,
+        )
+
+    def test_a_frozen_submission_is_locked_as_in_review(self):
+        self.assertEqual(
+            self.service._lock_reason(self._app(), self.job, self._sub(is_frozen=True)),
+            ApplicationLockReason.IN_REVIEW,
+        )
+
+    def test_advanced_wins_over_in_review_because_it_says_more(self):
+        self.assertEqual(
+            self.service._lock_reason(
+                self._app(stage=ApplicationStage.TECH, sub_status="screening"),
+                self.job,
+                self._sub(is_frozen=True),
+            ),
+            ApplicationLockReason.ADVANCED,
+        )
+
+    def test_a_null_sub_status_counts_as_pending(self):
+        self.assertIsNone(
+            self.service._lock_reason(self._app(sub_status=None), self.job, self._sub())
+        )
+
+    def test_no_submission_yet_is_not_frozen(self):
+        self.assertIsNone(self.service._lock_reason(self._app(), self.job, None))
+
+
+class ApplicationDtoLockConsistencyTest(unittest.TestCase):
+    """`editable` and `lockReason` cannot contradict each other."""
+
+    def setUp(self):
+        self.mapper = RecruitingMapper()
+        self.app = ApplicationEntity(
+            job_id=1, user_id=2, stage=ApplicationStage.TECH, current_round=1
+        )
+        self.app.application_id = 7
+
+    def test_a_lock_reason_forces_editable_false_even_if_the_caller_says_true(self):
+        dto = self.mapper.to_application_dto(
+            self.app, None, editable=True, lock_reason=ApplicationLockReason.ADVANCED
+        )
+        self.assertFalse(dto.editable)
+        self.assertEqual(dto.lock_reason, ApplicationLockReason.ADVANCED)
+
+    def test_owner_facing_callers_get_locked_with_no_reason(self):
+        dto = self.mapper.to_application_dto(self.app, None)
+        self.assertFalse(dto.editable)
+        self.assertIsNone(dto.lock_reason)
+
+    def test_no_reason_and_editable_true_stays_editable(self):
+        dto = self.mapper.to_application_dto(self.app, None, editable=True)
+        self.assertTrue(dto.editable)
+        self.assertIsNone(dto.lock_reason)
+
+
+if __name__ == "__main__":
+    unittest.main()

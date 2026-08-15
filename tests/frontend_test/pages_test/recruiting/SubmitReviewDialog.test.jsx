@@ -9,6 +9,65 @@ const approvers = [
 ];
 
 describe("SubmitReviewDialog", () => {
+  it("explains an empty approver pool instead of showing an empty picker", () => {
+    render(
+      <SubmitReviewDialog
+        open
+        approvers={[{ userId: 1, name: "Me", email: "me@x.com" }]}
+        currentUserId={1}
+        onSubmit={() => {}}
+        onOpenChange={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByText("No one else can approve this posting."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Approval needs a colleague with posting-approval access, and you can't approve your own posting.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Ask an admin to grant someone that access."),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Reviewer")).not.toBeInTheDocument();
+  });
+
+  it("says the author is not in the list, even when the list is not empty", () => {
+    render(
+      <SubmitReviewDialog
+        open
+        approvers={approvers}
+        currentUserId={1}
+        onSubmit={() => {}}
+        onOpenChange={() => {}}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "You cannot review your own posting, so you are not in this list.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the picker when someone else can approve", () => {
+    render(
+      <SubmitReviewDialog
+        open
+        approvers={approvers}
+        currentUserId={1}
+        onSubmit={() => {}}
+        onOpenChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByLabelText("Reviewer")).toBeInTheDocument();
+    expect(
+      screen.queryByText("No one else can approve this posting."),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders default title 'Submit for review' when no title prop passed", () => {
     render(
       <SubmitReviewDialog

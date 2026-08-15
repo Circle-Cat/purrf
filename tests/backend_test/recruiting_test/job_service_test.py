@@ -189,6 +189,34 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(result.reviewer_id)
 
+    async def test_get_job_includes_submit_message_from_open_review(self):
+        """get_job surfaces the requester's note from the job's open review."""
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        open_review = JobReviewEntity(
+            review_id=5,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=4,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+            submit_message="Please check the pipeline stages.",
+        )
+        self.review_repo.get_open_for_job = AsyncMock(return_value=open_review)
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(result.submit_message, "Please check the pipeline stages.")
+
+    async def test_get_job_submit_message_none_without_open_review(self):
+        """get_job leaves submit_message None when no review is open."""
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertIsNone(result.submit_message)
+
     async def test_get_job_surfaces_last_reject_kind(self):
         """get_job populates last_reject_comment/last_reject_kind from the job's most-recent rejected review, mirroring list_all_jobs."""
         job = self._job(status=JobStatus.DRAFT)
@@ -1600,15 +1628,6 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
     async def test_delete_job_ever_published_raises(self):
         """delete_job on a CLOSED posting that was_published raises ValueError."""
         job = self._job(status=JobStatus.CLOSED)
-        job.was_published = True
-        self.repo.get_by_job_id.return_value = job
-
-        with self.assertRaises(ValueError):
-            await self.service.delete_job(self.session, job.job_id)
-
-    async def test_delete_job_non_closed_non_draft_raises(self):
-        """delete_job on a PUBLISHED posting raises ValueError."""
-        job = self._job(status=JobStatus.PUBLISHED)
         job.was_published = True
         self.repo.get_by_job_id.return_value = job
 

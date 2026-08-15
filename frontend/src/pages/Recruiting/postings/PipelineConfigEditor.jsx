@@ -1,4 +1,5 @@
 import { Checkbox } from "@/components/ui/checkbox";
+import TermHint from "@/pages/Recruiting/components/TermHint";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
@@ -87,7 +88,9 @@ const PipelineConfigEditor = ({
 
   return (
     <div className="space-y-3">
-      <p className="text-sm font-medium text-slate-700">Interview pipeline</p>
+      <p className="text-sm font-medium text-slate-700">
+        <TermHint id="editor.pipeline" />
+      </p>
       <div className="space-y-1">
         <div className="flex items-center gap-2">
           <Label className="shrink-0">Recruiter</Label>

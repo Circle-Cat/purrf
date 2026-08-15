@@ -1,0 +1,9 @@
+[
+  "draft",
+  "pending_review",
+  "published",
+  "closed",
+  "published_pending_revision",
+  "pending_close",
+  "pending_reopen"
+]

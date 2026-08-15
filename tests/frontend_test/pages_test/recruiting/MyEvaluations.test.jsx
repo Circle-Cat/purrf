@@ -31,14 +31,48 @@ const renderPage = () => {
 };
 
 describe("MyEvaluations page", () => {
-  it("shows the empty state when no evaluations are assigned", async () => {
+  it("explains an empty queue rather than only stating it is empty", async () => {
     api.listMyEvaluations.mockResolvedValue({ data: [] });
     renderPage();
-    await waitFor(() =>
-      expect(
-        screen.getByText("You have no assigned evaluations."),
-      ).toBeInTheDocument(),
-    );
+
+    expect(
+      await screen.findByText(
+        "Interviews you've been assigned to appear here.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "A recruiter assigns you to an interview session from their applications board.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("You can't add yourself — ask the posting's recruiter."),
+    ).toBeInTheDocument();
+  });
+
+  it("explains the No longer assigned badge", async () => {
+    api.listMyEvaluations.mockResolvedValue({
+      data: [
+        {
+          applicationId: 9,
+          applicantName: "Dana",
+          jobTitle: "Backend Engineer",
+          stage: "tech",
+          round: 1,
+          isConfirmed: false,
+          isCurrent: false,
+        },
+      ],
+    });
+    renderPage();
+
+    (await screen.findByText("No longer assigned")).focus();
+
+    expect(
+      await screen.findByText(
+        "This session was reassigned to someone else, so it is read-only for you.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("lists each evaluation's job, applicant, stage, and confirmation status, and navigates to the detail page on click", async () => {

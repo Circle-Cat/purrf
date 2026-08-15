@@ -79,6 +79,20 @@ describe("addQuestion", () => {
     expect(schema.questions.map((q) => q.id)).toEqual(["q1", "q3"]);
   });
 
+  // The budget is required, so a long text that arrived without one would
+  // start life carrying an error the author never caused. 300 is asserted as a
+  // literal rather than through the exported constant: importing it would make
+  // the assertion pass vacuously if the constant were ever removed.
+  it("gives a new long text the default character budget", () => {
+    const next = addQuestion({ questions: [] }, "long_text");
+    expect(next.questions[0].maxLength).toBe(300);
+  });
+
+  it("gives no character budget to a short text", () => {
+    const next = addQuestion({ questions: [] }, "short_text");
+    expect(next.questions[0]).not.toHaveProperty("maxLength");
+  });
+
   it("preserves other schema keys", () => {
     const next = addQuestion({ questions: [], someFutureKey: 1 }, "short_text");
     expect(next.someFutureKey).toBe(1);
@@ -187,20 +201,6 @@ describe("renameOption", () => {
     expect(next.questions[3].showWhen.equals).toBe("No");
   });
 
-  it("carries otherOption when it named the renamed option", () => {
-    const schema = revealSchema();
-    schema.questions[0].otherOption = "No";
-    const next = renameOption(schema, "q1", 1, "Nope");
-    expect(next.questions[0].otherOption).toBe("Nope");
-  });
-
-  it("leaves otherOption alone when it named a different option", () => {
-    const schema = revealSchema();
-    schema.questions[0].otherOption = "No";
-    const next = renameOption(schema, "q1", 0, "Yep");
-    expect(next.questions[0].otherOption).toBe("No");
-  });
-
   it("only rewrites rules pointing at the renamed question", () => {
     const schema = revealSchema();
     schema.questions.push({
@@ -217,18 +217,30 @@ describe("renameOption", () => {
 });
 
 describe("removeOption", () => {
-  it("drops the option and clears otherOption when it named it", () => {
-    const schema = revealSchema();
-    schema.questions[0].otherOption = "No";
-    const next = removeOption(schema, "q1", 1);
+  it("drops the option at the given index", () => {
+    const next = removeOption(revealSchema(), "q1", 1);
     expect(next.questions[0].options).toEqual(["Yes"]);
-    expect(next.questions[0].otherOption).toBeUndefined();
   });
 
-  it("keeps otherOption when a different option is removed", () => {
+  // The editor blocks removal while any exist, so this is the shape the ops
+  // layer is allowed to leave behind, not one a user can reach.
+  it("leaves the questions the option revealed alone", () => {
+    const next = removeOption(revealSchema(), "q1", 1);
+    expect(next.questions[3].showWhen).toEqual({
+      questionId: "q1",
+      equals: "No",
+    });
+  });
+
+  it("leaves the other questions' options untouched", () => {
     const schema = revealSchema();
-    schema.questions[0].otherOption = "No";
+    schema.questions.push({
+      id: "q5",
+      type: "single_choice",
+      label: "Bike?",
+      options: ["Yes", "No"],
+    });
     const next = removeOption(schema, "q1", 0);
-    expect(next.questions[0].otherOption).toBe("No");
+    expect(next.questions[4].options).toEqual(["Yes", "No"]);
   });
 });

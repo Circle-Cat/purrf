@@ -7,6 +7,7 @@ from backend.common.asyncio_event_loop_manager import AsyncioEventLoopManager
 class TestAsyncioEventLoopManager(TestCase):
     def setUp(self):
         AsyncioEventLoopManager._instance = None
+        self.logger = MagicMock()
 
     def tearDown(self):
         if AsyncioEventLoopManager._instance:
@@ -14,18 +15,18 @@ class TestAsyncioEventLoopManager(TestCase):
         AsyncioEventLoopManager._instance = None
 
     def test_singleton_behavior(self):
-        inst1 = AsyncioEventLoopManager()
-        inst2 = AsyncioEventLoopManager()
+        inst1 = AsyncioEventLoopManager(logger=self.logger)
+        inst2 = AsyncioEventLoopManager(logger=self.logger)
         self.assertIs(inst1, inst2)
 
     def test_get_loop_creates_and_starts_loop(self):
-        mgr = AsyncioEventLoopManager()
+        mgr = AsyncioEventLoopManager(logger=self.logger)
         loop = mgr.get_loop()
         self.assertIsInstance(loop, asyncio.AbstractEventLoop)
         self.assertTrue(mgr._thread.is_alive())
 
     def test_stop_loop_stops_and_cleans_up(self):
-        mgr = AsyncioEventLoopManager()
+        mgr = AsyncioEventLoopManager(logger=self.logger)
         loop = mgr.get_loop()
         self.assertTrue(loop.is_running())
 
@@ -35,7 +36,7 @@ class TestAsyncioEventLoopManager(TestCase):
         self.assertIsNone(mgr._thread)
 
     def test_run_async_in_background_loop_success(self):
-        mgr = AsyncioEventLoopManager()
+        mgr = AsyncioEventLoopManager(logger=self.logger)
 
         async def sample():
             return "hello"
@@ -44,7 +45,7 @@ class TestAsyncioEventLoopManager(TestCase):
         self.assertEqual(result, "hello")
 
     def test_run_async_in_background_loop_type_error(self):
-        mgr = AsyncioEventLoopManager()
+        mgr = AsyncioEventLoopManager(logger=self.logger)
 
         with self.assertRaises(TypeError):
             mgr.run_async_in_background_loop("not-a-coro")
@@ -57,7 +58,7 @@ class TestAsyncioEventLoopManager(TestCase):
         mock_loop.is_running.return_value = False
         mock_get_loop.return_value = mock_loop
 
-        mgr = AsyncioEventLoopManager()
+        mgr = AsyncioEventLoopManager(logger=self.logger)
 
         async def coro():
             return 1
@@ -65,8 +66,10 @@ class TestAsyncioEventLoopManager(TestCase):
         with self.assertRaises(RuntimeError):
             mgr.run_async_in_background_loop(coro())
 
+        self.logger.error.assert_called_once()
+
     def test_run_async_in_background_loop_propagates_exception(self):
-        mgr = AsyncioEventLoopManager()
+        mgr = AsyncioEventLoopManager(logger=self.logger)
 
         async def faulty():
             raise ValueError("oops")
@@ -75,6 +78,7 @@ class TestAsyncioEventLoopManager(TestCase):
             mgr.run_async_in_background_loop(faulty())
 
         self.assertIn("oops", str(context.exception))
+        self.logger.error.assert_called_once()
 
 
 if __name__ == "__main__":

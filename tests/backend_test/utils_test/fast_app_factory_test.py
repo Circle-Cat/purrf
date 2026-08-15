@@ -358,6 +358,7 @@ class TestFastAppFactory(unittest.TestCase):
         )
 
         delivery_controller = NotificationDeliveryController(
+            logger=MagicMock(),
             delivery_service=MagicMock(),
             publisher=MagicMock(),
             topic_path="projects/p/topics/t",

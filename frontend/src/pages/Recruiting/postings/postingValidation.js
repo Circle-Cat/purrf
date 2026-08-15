@@ -84,9 +84,9 @@ export const validatePosting = (draft) => {
           return;
         }
         // Not a server rule — options are matched by their text, so two that
-        // read the same are one option wearing two rows: `showWhen.equals` and
-        // `otherOption` cannot tell them apart, and whichever the candidate
-        // picks reveals both. Blocked here rather than left to confuse.
+        // read the same are one option wearing two rows: `showWhen.equals`
+        // cannot tell them apart, and whichever the candidate picks reveals
+        // the questions hung on both. Blocked here rather than left to confuse.
         if (seen.has(option)) {
           errors[optionKey(question.id, index)] =
             `Duplicate of option ${seen.get(option) + 1}`;
@@ -107,13 +107,21 @@ export const validatePosting = (draft) => {
     }
 
     if (question.type === "long_text") {
+      // QuestionDto.validate_type_fields: "long_text requires a max_length".
+      // A new question is seeded with one, so what reaches here is a field the
+      // author cleared, or a form carrying a long text that never stated a
+      // budget at all.
+      if (question.maxLength == null) {
+        errors[questionKey(question.id, "maxLength")] =
+          "Max characters is required";
+      }
       // QuestionDto.validate_type_fields: "max_length must be within [1, N]".
       // The upper bound is the same ceiling an unbudgeted long text falls back
       // to -- a budget above it would promise the candidate room the submit
       // check will not give them.
-      if (
-        question.maxLength != null &&
-        (question.maxLength < 1 || question.maxLength > LONG_TEXT_MAX_LENGTH)
+      else if (
+        question.maxLength < 1 ||
+        question.maxLength > LONG_TEXT_MAX_LENGTH
       ) {
         errors[questionKey(question.id, "maxLength")] =
           `Must be between 1 and ${LONG_TEXT_MAX_LENGTH}`;

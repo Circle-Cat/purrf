@@ -7,6 +7,7 @@ from backend.repository.job_repository import JobRepository
 from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.repository.users_repository import UsersRepository
+from backend.recruiting.job_blockers import effective_pipeline_config, submit_blockers
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.job_activity_dto import JobActivityDto
@@ -320,19 +321,10 @@ class JobService:
             ValueError: If the effective config has no stage or no owner, or
                 a stored assignee/owner no longer holds its permission.
         """
-        cfg = (
-            job.pending_payload.get("pipelineConfig")
-            if job.pending_payload is not None
-            else job.pipeline_config
-        ) or {}
-        if not cfg.get("stages"):
-            raise ValueError(
-                "the posting needs at least one pipeline stage before submission"
-            )
-        if not normalized_owner_ids(cfg):
-            raise ValueError(
-                "the posting needs at least one recruiter before submission"
-            )
+        blockers = submit_blockers(job)
+        if blockers:
+            raise ValueError(blockers[0])
+        cfg = effective_pipeline_config(job)
         assignee_ids = {
             s.get("defaultAssigneeId")
             for s in cfg.get("stages", [])
@@ -637,7 +629,9 @@ class JobService:
             },
         )
         await session.commit()
-        return self.recruiting_mapper.to_job_dto(job, reviewer_id=reviewer_id)
+        return self.recruiting_mapper.to_job_dto(
+            job, reviewer_id=reviewer_id, submit_blockers=submit_blockers(job)
+        )
 
     async def submit_for_review(
         self,
@@ -1090,11 +1084,11 @@ class JobService:
             job_id (int): Identifier of the posting to retrieve.
 
         Returns:
-            JobDto: The requested posting, with ``reviewer_id`` set to its
-            open (PENDING) review's reviewer when one exists, and
-            ``last_reject_comment``/``last_reject_kind`` set from its
-            most-recent review when that review was a rejection, otherwise
-            ``None`` for all three.
+            JobDto: The requested posting, with ``reviewer_id`` and
+            ``submit_message`` set from its open (PENDING) review cycle when
+            one exists, and ``last_reject_comment``/``last_reject_kind`` set
+            from its most-recent review when that review was a rejection,
+            otherwise ``None`` for all four.
 
         Raises:
             ValueError: If no posting with the given id exists.
@@ -1102,6 +1096,7 @@ class JobService:
         job = await self._require_job(session, job_id)
         open_review = await self.job_review_repository.get_open_for_job(session, job_id)
         reviewer_id = open_review.reviewer_id if open_review is not None else None
+        submit_message = open_review.submit_message if open_review is not None else None
         latest_reviews = await self.job_review_repository.get_latest_reviews(
             session, [job_id]
         )
@@ -1111,6 +1106,7 @@ class JobService:
             last_reject_comment=comment,
             last_reject_kind=kind,
             reviewer_id=reviewer_id,
+            submit_message=submit_message,
         )
 
     async def get_job_activity(

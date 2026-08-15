@@ -28,7 +28,7 @@ class SharedVectorTest(unittest.TestCase):
 
     def test_the_fixture_is_not_silently_empty(self):
         """A path typo would otherwise turn the whole contract into a no-op."""
-        self.assertGreaterEqual(len(_VECTORS["cases"]), 27)
+        self.assertGreaterEqual(len(_VECTORS["cases"]), 24)
 
     def test_every_case_is_named_distinctly(self):
         """Two cases sharing a name once hid that they were the same case."""
@@ -71,29 +71,6 @@ class SharedVectorTest(unittest.TestCase):
                 self.assertEqual(
                     form_visibility.prune_answers(schema, once), case["pruned"]
                 )
-
-
-class OtherSelectedTest(unittest.TestCase):
-    def test_false_when_the_question_has_no_other_option(self):
-        self.assertFalse(
-            form_visibility.other_selected(
-                _question("q1", type="single_choice", options=["A"]), "A"
-            )
-        )
-
-    def test_single_choice_matches_the_value_itself(self):
-        question = _question(
-            "q1", type="single_choice", options=["A", "Other"], otherOption="Other"
-        )
-        self.assertTrue(form_visibility.other_selected(question, "Other"))
-        self.assertFalse(form_visibility.other_selected(question, "A"))
-
-    def test_multi_choice_matches_membership(self):
-        question = _question(
-            "q1", type="multi_choice", options=["A", "Other"], otherOption="Other"
-        )
-        self.assertTrue(form_visibility.other_selected(question, ["A", "Other"]))
-        self.assertFalse(form_visibility.other_selected(question, ["A"]))
 
 
 class VisibleQuestionsTest(unittest.TestCase):

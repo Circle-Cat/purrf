@@ -26,6 +26,7 @@ const findRenderedToast = (toastId) => {
 };
 
 const completeProfile = {
+  enabled: true,
   isLoading: false,
   personalInfo: {
     firstName: "Jane",
@@ -56,6 +57,7 @@ describe("useProfileCompletenessReminder", () => {
     // emptiness is a load failure — not a genuinely incomplete profile.
     renderHook(() =>
       useProfileCompletenessReminder({
+        enabled: true,
         isLoading: false,
         loadError: true,
         personalInfo: { completedTraining: [] },
@@ -64,6 +66,32 @@ describe("useProfileCompletenessReminder", () => {
       }),
     );
     expect(toast.info).not.toHaveBeenCalled();
+  });
+
+  it("stays silent for someone who is not a mentorship participant", () => {
+    // Every word of this toast is about mentorship partner matching, so
+    // it is noise to someone who only ever applied to another activity.
+    renderHook(() =>
+      useProfileCompletenessReminder({
+        ...completeProfile,
+        enabled: false,
+        experienceList: [],
+      }),
+    );
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+
+  it("leaves the session marker alone while disabled", () => {
+    // Otherwise the one visit made before the applications list resolved
+    // would burn the marker and silence the reminder for the session.
+    renderHook(() =>
+      useProfileCompletenessReminder({
+        ...completeProfile,
+        enabled: false,
+        experienceList: [],
+      }),
+    );
+    expect(sessionStorage.getItem(PROFILE_SESSION_KEY)).toBeNull();
   });
 
   it("does nothing when nothing is missing", () => {
@@ -153,6 +181,7 @@ describe("useProfileCompletenessReminder", () => {
     it("lists every missing profile section in one toast", () => {
       renderHook(() =>
         useProfileCompletenessReminder({
+          enabled: true,
           isLoading: false,
           personalInfo: {
             firstName: "",
@@ -228,6 +257,7 @@ describe("useProfileCompletenessReminder", () => {
     // newly admitted participant will actually see it.
     renderHook(() =>
       useProfileCompletenessReminder({
+        enabled: true,
         isLoading: false,
         loadError: false,
         personalInfo: {
