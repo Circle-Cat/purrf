@@ -186,7 +186,7 @@ class BoardService:
         application_interview_repository,
         application_access,
         interview_scheduling_service,
-        onboarding_training_service,
+        mentorship_admission_service,
     ):
         """
         Args:
@@ -249,10 +249,10 @@ class BoardService:
                 ``set_round`` delegate the opt-in "cancel the meeting on the
                 round being left" cleanup to its ``cancel_for_round``, rather
                 than reaching for the Calendar themselves.
-            onboarding_training_service (OnboardingTrainingService): Assigns
-                the mentorship onboarding training task when an application
-                is admitted to a mentor/mentee activity posting. A no-op for
-                every other kind of posting.
+            mentorship_admission_service (MentorshipAdmissionService): Owns
+                what an admission means -- the onboarding training task, and
+                the admission email a mentor receives. A no-op for every
+                posting that is not a mentor/mentee activity.
         """
         self.job_repository = job_repository
         self.application_repository = application_repository
@@ -275,7 +275,7 @@ class BoardService:
         self.application_interview_repository = application_interview_repository
         self.application_access = application_access
         self.interview_scheduling_service = interview_scheduling_service
-        self.onboarding_training_service = onboarding_training_service
+        self.mentorship_admission_service = mentorship_admission_service
 
     async def _visible_jobs(
         self, session: AsyncSession, current_user: UserContextDto
@@ -1672,10 +1672,11 @@ class BoardService:
         if dto.to_stage == ApplicationStage.HIRED:
             # Admission is what assigns the onboarding training, not round
             # registration — inside this transaction, so an admission that
-            # rolls back does not leave an orphaned task behind.
-            await self.onboarding_training_service.ensure_for_admitted(
+            # rolls back does not leave an orphaned task or notification
+            # behind.
+            await self.mentorship_admission_service.on_admitted(
                 session=session,
-                user_id=application.user_id,
+                application=application,
                 job=job,
             )
         if new_interview_assignee is not None:

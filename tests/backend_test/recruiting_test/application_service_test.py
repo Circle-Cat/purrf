@@ -3,7 +3,9 @@ from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, create_autospec, patch
 from backend.common.mentorship_enums import ParticipantRole
-from backend.mentorship.onboarding_training_service import OnboardingTrainingService
+from backend.mentorship.mentorship_admission_service import (
+    MentorshipAdmissionService,
+)
 from backend.recruiting.application_service import ApplicationService
 from backend.repository.notification_repository import NotificationRepository
 from backend.recruiting.recruiting_mapper import RecruitingMapper
@@ -94,10 +96,10 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         # matches against every confirmed claim, not one contact address.
         self.user_emails_repo = MagicMock()
         self.user_emails_repo.list_by_user_id = AsyncMock(return_value=[])
-        # autospec so a signature drift on ensure_for_admitted fails the test
+        # autospec so a signature drift on on_admitted fails the test
         # instead of silently accepting any arity.
-        self.onboarding_training_svc = create_autospec(
-            OnboardingTrainingService, instance=True
+        self.mentorship_admission_svc = create_autospec(
+            MentorshipAdmissionService, instance=True
         )
         self.service = ApplicationService(
             self.app_repo,
@@ -108,7 +110,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self.assignment_repo,
             self.notification_repo,
             self.user_emails_repo,
-            self.onboarding_training_svc,
+            self.mentorship_admission_svc,
         )
 
     def _notification_repository_double(self):
@@ -891,7 +893,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         await self.service.edit(self.session, self._ctx(), 100, dto)
 
         self.assertEqual(app.stage, ApplicationStage.HIRED)
-        self.onboarding_training_svc.ensure_for_admitted.assert_awaited_once()
+        self.mentorship_admission_svc.on_admitted.assert_awaited_once()
 
     async def test_edit_screens_the_answers_it_just_stored(self):
         """The rule reads the edit's answers, not the ones already on file."""
@@ -1939,11 +1941,11 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             details={"stage": "hired", "screenAutoHireRuleId": "r1"},
         )
 
-    async def test_submit_auto_hire_assigns_onboarding_training(self):
+    async def test_submit_auto_hire_hands_the_admission_to_mentorship(self):
         """An `auto_hire` screen rule admits the candidate without any board
         action, so this is a second, independent path into HIRED --
-        OnboardingTrainingService itself decides whether the job's kind/role
-        actually owes one (Task 2); submit just always calls it once HIRED."""
+        MentorshipAdmissionService itself decides what the job's kind/role
+        actually owes; submit just always calls it once HIRED."""
         job = self._job(
             screen_rules={
                 "rules": [
@@ -1971,13 +1973,15 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
 
         await self.service.submit(self.session, self._ctx(), dto)
 
-        self.onboarding_training_svc.ensure_for_admitted.assert_awaited_once_with(
-            session=self.session,
-            user_id=2,
-            job=job,
-        )
+        self.mentorship_admission_svc.on_admitted.assert_awaited_once()
+        kwargs = self.mentorship_admission_svc.on_admitted.await_args.kwargs
+        self.assertIs(kwargs["session"], self.session)
+        self.assertIs(kwargs["job"], job)
+        # The row just created, not a re-read: the admission service reads
+        # its user_id and application_id inside this same transaction.
+        self.assertIs(kwargs["application"], self.app_repo.create.await_args.args[1])
 
-    async def test_submit_without_auto_hire_does_not_assign_onboarding_training(self):
+    async def test_submit_without_auto_hire_records_no_admission(self):
         dto = ApplicationSubmitDto.model_validate({
             "jobId": 1,
             "personal": REQUIRED_PERSONAL,
@@ -1986,7 +1990,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.submit(self.session, self._ctx(), dto)
 
         self.assertEqual(result.stage, ApplicationStage.RECRUITER_SCREENING)
-        self.onboarding_training_svc.ensure_for_admitted.assert_not_awaited()
+        self.mentorship_admission_svc.on_admitted.assert_not_awaited()
 
     async def test_submit_email_domain_include_and_exclude_rules_together(self):
         """A posting configured with both an include+auto_hire rule and an
@@ -2359,7 +2363,7 @@ class LockReasonTest(unittest.TestCase):
             application_assignment_repository=MagicMock(),
             notification_repository=MagicMock(),
             user_emails_repository=MagicMock(),
-            onboarding_training_service=MagicMock(),
+            mentorship_admission_service=MagicMock(),
         )
         self.job = JobEntity(
             kind=JobKind.EMPLOYMENT,

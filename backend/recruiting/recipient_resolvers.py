@@ -4,10 +4,12 @@ Recipients are derived from data already in the database -- job owners,
 current assignees, and the participants named on a review or a comment --
 rather than from a subscription table.
 
-Notifications are internal only, and the only recipient ``record_event``
-subtracts is the actor. An internal member who owns a posting and applies to
-it is therefore still resolved as an owner of their own application; the
-legacy write sites excluded that case explicitly.
+Every recipient resolved *here* is internal staff -- the notifications that
+reach outside the company are mentorship's, resolved in
+``backend/mentorship/recipient_resolvers.py``. The only recipient
+``record_event`` subtracts is the actor. An internal member who owns a
+posting and applies to it is therefore still resolved as an owner of their
+own application; the legacy write sites excluded that case explicitly.
 
 Importing this module registers every resolver. ``fast_app_factory`` imports
 it once at startup for that side effect.

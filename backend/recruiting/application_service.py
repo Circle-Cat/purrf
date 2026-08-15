@@ -61,7 +61,7 @@ class ApplicationService:
         application_assignment_repository,
         notification_repository,
         user_emails_repository,
-        onboarding_training_service,
+        mentorship_admission_service,
     ):
         """
         Args:
@@ -80,9 +80,11 @@ class ApplicationService:
             notification_repository (NotificationRepository): Same -- notification
                 rows are written by ``record_event`` from the resolved
                 recipients, not by this service.
-            onboarding_training_service (OnboardingTrainingService): Assigns
-                the mentorship onboarding training task when an `auto_hire`
-                screen rule lands the submission directly on HIRED.
+            mentorship_admission_service (MentorshipAdmissionService): Owns
+                what an admission means -- the onboarding training task and,
+                for a mentor, the admission email -- when an `auto_hire`
+                screen rule lands the submission directly on HIRED. Recruiting
+                does not decide which of those a posting owes.
         """
         self.application_repository = application_repository
         self.application_submission_repository = application_submission_repository
@@ -92,7 +94,7 @@ class ApplicationService:
         self.application_assignment_repository = application_assignment_repository
         self.notification_repository = notification_repository
         self.user_emails_repository = user_emails_repository
-        self.onboarding_training_service = onboarding_training_service
+        self.mentorship_admission_service = mentorship_admission_service
 
     @staticmethod
     def _today():
@@ -547,9 +549,9 @@ class ApplicationService:
         )
 
         if stage == ApplicationStage.HIRED:
-            await self.onboarding_training_service.ensure_for_admitted(
+            await self.mentorship_admission_service.on_admitted(
                 session=session,
-                user_id=current_user.user_id,
+                application=application,
                 job=job,
             )
 
@@ -669,9 +671,9 @@ class ApplicationService:
                     "onEdit": True,
                 },
             )
-            await self.onboarding_training_service.ensure_for_admitted(
+            await self.mentorship_admission_service.on_admitted(
                 session=session,
-                user_id=current_user.user_id,
+                application=application,
                 job=job,
             )
 

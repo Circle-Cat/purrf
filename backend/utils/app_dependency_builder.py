@@ -172,6 +172,9 @@ from backend.mentorship.participation_service import ParticipationService
 from backend.mentorship.registration_service import RegistrationService
 from backend.mentorship.meeting_service import MeetingService
 from backend.mentorship.meet_attendance_service import MeetAttendanceService
+from backend.mentorship.mentorship_admission_service import (
+    MentorshipAdmissionService,
+)
 from backend.mentorship.onboarding_training_service import OnboardingTrainingService
 from backend.profile.profile_query_service import ProfileQueryService
 from backend.profile.profile_command_service import ProfileCommandService
@@ -531,6 +534,15 @@ class AppDependencyBuilder:
             logger=self.logger,
         )
         self.mentorship_round_repository = MentorshipRoundRepository()
+        # Recruiting's three admission sites call this rather than the
+        # training service directly, so that "what an admission means" --
+        # training for both roles, an email for mentors -- lives in one place
+        # instead of three mentor-only conditions inside recruiting.
+        self.mentorship_admission_service = MentorshipAdmissionService(
+            logger=self.logger,
+            onboarding_training_service=self.onboarding_training_service,
+            mentorship_round_repository=self.mentorship_round_repository,
+        )
         self.mentorship_pairs_repository = MentorshipPairsRepository()
         self.mentorship_meeting_repository = MentorshipMeetingRepository()
         self.mentorship_round_participants_repo = (
@@ -740,7 +752,7 @@ class AppDependencyBuilder:
             self.application_assignment_repository,
             self.notification_repository,
             self.user_emails_repository,
-            self.onboarding_training_service,
+            self.mentorship_admission_service,
         )
         self.application_controller = ApplicationController(
             self.application_service,
@@ -816,7 +828,7 @@ class AppDependencyBuilder:
             self.application_interview_repository,
             self.application_access,
             self.interview_scheduling_service,
-            self.onboarding_training_service,
+            self.mentorship_admission_service,
         )
         self.board_controller = BoardController(
             self.board_service,

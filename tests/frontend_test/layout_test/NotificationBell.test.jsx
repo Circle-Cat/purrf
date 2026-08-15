@@ -187,6 +187,14 @@ describe("NotificationBell", () => {
       "employment",
       "Ada Lovelace applied to Backend Engineer and was hired automatically",
     ],
+    // The one entry written to the person it happened to, rather than to
+    // staff watching a pipeline.
+    [
+      "mentorship.mentor_admitted",
+      {},
+      "activity",
+      "You were admitted to Backend Engineer",
+    ],
   ])(
     "describes a %s notification (%s posting)",
     async (eventType, details, jobKind, text) => {
