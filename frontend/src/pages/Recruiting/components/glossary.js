@@ -184,7 +184,7 @@ export const GLOSSARY = {
   },
   "editor.screening": {
     label: "Machine screening",
-    hint: "Optional conditions checked the moment an applicant applies, matched against their answers or their verified email domain. Each can reject them, qualify them like an unscreened applicant, or hire them outright with no human review.",
+    hint: "Optional conditions checked the moment an applicant applies, matched against their answers or their verified email domain. Each can reject them, or hire them outright with no human review.",
   },
   "editor.profile": {
     label: "Profile requirements",

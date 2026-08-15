@@ -43,7 +43,7 @@ describe("ScreenRulesEditor", () => {
         operator: "equals",
         value: "google.com",
       },
-      action: "qualify",
+      action: "reject",
     };
     const { rerender } = render(
       <ScreenRulesEditor
@@ -79,7 +79,7 @@ describe("ScreenRulesEditor", () => {
       {
         id: "r1",
         condition: { source: "email_domain", operator: "in", value: [] },
-        action: "qualify",
+        action: "reject",
       },
     ]);
   });
@@ -95,10 +95,6 @@ describe("ScreenRulesEditor", () => {
       screen.getByLabelText("Email domains"),
       "google.com{Enter}",
     );
-    await user.click(
-      screen.getByRole("combobox", { name: "Email domain action" }),
-    );
-    await user.click(screen.getByRole("option", { name: "qualify" }));
     const last = onChange.mock.calls.at(-1)[0];
     expect(last.rules).toEqual([
       {
@@ -108,7 +104,7 @@ describe("ScreenRulesEditor", () => {
           operator: "in",
           value: ["google.com"],
         },
-        action: "qualify",
+        action: "reject",
       },
     ]);
   });
@@ -158,7 +154,7 @@ describe("ScreenRulesEditor", () => {
               operator: "equals",
               value: "google.com",
             },
-            action: "qualify",
+            action: "reject",
           },
         ]}
         onChange={onChange}
@@ -282,7 +278,7 @@ describe("ScreenRulesEditor", () => {
           operator: "not_in",
           value: ["circlecat.org"],
         },
-        action: "qualify",
+        action: "reject",
       },
     ]);
   });
@@ -300,7 +296,7 @@ describe("ScreenRulesEditor", () => {
               operator: "equals",
               value: "google.com",
             },
-            action: "qualify",
+            action: "auto_hire",
           },
           {
             id: "r2",

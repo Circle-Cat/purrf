@@ -48,12 +48,12 @@ class TestScreenRulesEvaluate(unittest.TestCase):
                     "email_domain",
                     "in",
                     ["google.com", "circlecat.org"],
-                    "qualify",
+                    "auto_hire",
                 )
             ]
         }
         result = screen_rules.evaluate(rules, ["a@circlecat.org"], {})
-        self.assertEqual(result, {"action": "qualify", "rule_id": "r1"})
+        self.assertEqual(result, {"action": "auto_hire", "rule_id": "r1"})
 
     def test_email_domain_not_in_matches_excluded_domain(self):
         rules = {
@@ -80,10 +80,10 @@ class TestScreenRulesEvaluate(unittest.TestCase):
 
     def test_email_domain_in_matches_any_of_multiple_emails(self):
         rules = {
-            "rules": [_rule("r1", "email_domain", "in", ["circlecat.org"], "qualify")]
+            "rules": [_rule("r1", "email_domain", "in", ["circlecat.org"], "auto_hire")]
         }
         result = screen_rules.evaluate(rules, ["a@yahoo.com", "a@circlecat.org"], {})
-        self.assertEqual(result, {"action": "qualify", "rule_id": "r1"})
+        self.assertEqual(result, {"action": "auto_hire", "rule_id": "r1"})
 
     def test_email_domain_not_in_no_match_when_any_email_holds_listed_domain(self):
         """A candidate holding one address in the listed domains escapes a
@@ -100,7 +100,7 @@ class TestScreenRulesEvaluate(unittest.TestCase):
         rules = {
             "rules": [
                 _rule("r1", "email_domain", "equals", "circlecat.org", "auto_hire"),
-                _rule("r2", "email_domain", "in", ["circlecat.org"], "qualify"),
+                _rule("r2", "email_domain", "in", ["circlecat.org"], "reject"),
             ]
         }
         result = screen_rules.evaluate(rules, [], {})
@@ -149,17 +149,19 @@ class TestScreenRulesEvaluate(unittest.TestCase):
         result = screen_rules.evaluate(rules, ["a@b.com"], {})
         self.assertEqual(result, {"action": None, "rule_id": None})
 
-    def test_reject_wins_over_qualify_regardless_of_order(self):
+    def test_reject_wins_over_auto_hire_regardless_of_order(self):
         rules = {
             "rules": [
-                _rule("r1", "email_domain", "equals", "google.com", "qualify"),
+                _rule("r1", "email_domain", "equals", "google.com", "auto_hire"),
                 _rule("r2", "answer", "equals", "no", "reject", question_id="q1"),
             ]
         }
         result = screen_rules.evaluate(rules, ["a@google.com"], {"q1": "no"})
         self.assertEqual(result, {"action": "reject", "rule_id": "r2"})
 
-    def test_auto_hire_wins_over_qualify_when_no_reject(self):
+    def test_unknown_action_is_ignored(self):
+        """An action outside the supported set never wins, so a rule set
+        carrying a retired action behaves as though it were absent."""
         rules = {
             "rules": [
                 _rule("r1", "email_domain", "equals", "google.com", "qualify"),

@@ -411,11 +411,11 @@ const CancelUpcomingMeetingField = ({
  * on the underlying event (resolved server-side, read-time only — see
  * `BoardService.get_application_activity`). Similarly,
  * `details.ruleLabel` (on `auto_rejected`) and
- * `details.screenQualifyRuleLabel`/`details.screenAutoHireRuleLabel` (on
- * `application_submitted`) are read-time labels resolved from the
- * corresponding rule id and are optional — older activity rows or rules
- * that have since been removed from the screening config may lack them,
- * in which case the description degrades to the generic unlabeled text.
+ * `details.screenAutoHireRuleLabel` (on `application_submitted`) are
+ * read-time labels resolved from the corresponding rule id and are
+ * optional — older activity rows or rules that have since been removed
+ * from the screening config may lack them, in which case the description
+ * degrades to the generic unlabeled text.
  * Falls back to the raw `eventType` for anything not explicitly handled,
  * so a future event type still renders something rather than going blank.
  * The actor is rendered separately by `ActivityTimeline`, as a shared
@@ -436,14 +436,7 @@ const describeActivity = ({ eventType, details }, jobKind, timezone) => {
             : ""
         } (landed on ${stageLabel("hired", jobKind)})`;
       }
-      const base = `Submitted — landed on ${humanize(details.stage)}`;
-      return details.screenQualifyRuleId
-        ? `${base} (auto-qualified by screening rule${
-            details.screenQualifyRuleLabel
-              ? ` "${details.screenQualifyRuleLabel}"`
-              : ""
-          })`
-        : base;
+      return `Submitted — landed on ${humanize(details.stage)}`;
     }
     case "recruiting.auto_rejected":
       return details.reason === "screen_rule"

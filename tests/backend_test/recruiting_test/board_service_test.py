@@ -4568,51 +4568,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result[0].details["ruleLabel"], "answer to 'q1' equals No")
 
-    async def test_activity_resolves_qualify_and_auto_hire_labels(self):
-        job = self._job(job_id=1, owner_ids=(2,))
-        job.screen_rules = {
-            "rules": [
-                {
-                    "id": "r1",
-                    "condition": {
-                        "source": "answer",
-                        "questionId": "q_role",
-                        "operator": "equals",
-                        "value": "mentor",
-                    },
-                    "action": "qualify",
-                }
-            ]
-        }
-        application = self._application(application_id=10, job_id=1)
-        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
-        self.app_repo.get_by_id = AsyncMock(return_value=application)
-        row = SimpleNamespace(
-            event_id=1,
-            subject_type="application",
-            subject_id=10,
-            actor_id=2,
-            event_type="recruiting.application_submitted",
-            details={
-                "stage": "recruiter_screening",
-                "screenQualifyRuleId": "r1",
-            },
-            created_at=datetime(2026, 7, 4, 12, 0, 0),
-        )
-        self.event_repo.list_by_subject = AsyncMock(return_value=[row])
-        self.users_repo.get_all_by_ids = AsyncMock(
-            return_value=[self._user(user_id=2, first="Owen", last="Owner")]
-        )
-
-        result = await self.service.get_application_activity(
-            self.session, self._ctx(user_id=2), 10
-        )
-
-        self.assertEqual(
-            result[0].details["screenQualifyRuleLabel"],
-            "answer to 'q_role' equals mentor",
-        )
-
     async def test_activity_resolves_auto_hire_label(self):
         job = self._job(job_id=1, owner_ids=(2,))
         job.screen_rules = {

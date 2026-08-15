@@ -379,7 +379,7 @@ class ScreenRuleDto(BaseRequestDto):
 
     id: str
     condition: ScreenRuleConditionDto
-    action: Literal["reject", "qualify", "auto_hire"]
+    action: Literal["reject", "auto_hire"]
 
 
 class ScreenRulesDto(BaseRequestDto):
