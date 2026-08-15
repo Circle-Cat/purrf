@@ -368,18 +368,16 @@ class ApplicationService:
         Args:
             job (JobEntity): The posting being submitted to.
             blocked (bool): Whether the applicant is blacklisted.
-            screen_action (str | None): ``"reject"`` | ``"qualify"`` |
-                ``"auto_hire"`` | None — the outcome of
-                ``screen_rules.evaluate()`` (always None when ``blocked``,
-                since a blacklist entry is evaluated first and wins
-                outright).
+            screen_action (str | None): ``"reject"`` | ``"auto_hire"`` |
+                None — the outcome of ``screen_rules.evaluate()`` (always
+                None when ``blocked``, since a blacklist entry is
+                evaluated first and wins outright).
 
         Returns:
             ApplicationStage: ``REJECTED`` when blocked or a ``"reject"``
                 rule matched; ``HIRED`` when an ``"auto_hire"`` rule
                 matched; otherwise the job's first configured pipeline
-                stage (unscreened and ``"qualify"`` both land here
-                identically).
+                stage.
         """
         if blocked or screen_action == "reject":
             return ApplicationStage.REJECTED
@@ -443,9 +441,7 @@ class ApplicationService:
         and a blocked/screen-rejected outcome alike. Independent of the
         blacklist check, a matching ``screen_rules`` rule can also land the
         submission on ``REJECTED`` (a ``"reject"`` match) or ``HIRED`` (an
-        ``"auto_hire"`` match) with zero human review; a ``"qualify"``
-        match proceeds exactly as an unscreened submission would, with a
-        note added to the activity log.
+        ``"auto_hire"`` match) with zero human review.
 
         A re-apply after rejection creates a fresh application row rather
         than reusing the rejected one: prior attempts are immutable
@@ -582,9 +578,7 @@ class ApplicationService:
             )
         else:
             details = {"stage": application.stage.value}
-            if screen_action == "qualify":
-                details["screenQualifyRuleId"] = screen_rule_id
-            elif screen_action == "auto_hire":
+            if screen_action == "auto_hire":
                 details["screenAutoHireRuleId"] = screen_rule_id
             await record_event(
                 session,
@@ -639,9 +633,7 @@ class ApplicationService:
         ]
         result = screen_rules.evaluate(job.screen_rules, applicant_emails, dto.answers)
         action, rule_id = result["action"], result["rule_id"]
-        if action is None or action == "qualify":
-            # "qualify" lands on the first stage on submit, which is where an
-            # editable application already sits. Nothing to move.
+        if action is None:
             return
 
         if action == "reject":

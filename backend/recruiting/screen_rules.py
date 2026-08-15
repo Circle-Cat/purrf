@@ -4,7 +4,7 @@ Mirrors backend/recruiting/cooldown.py's shape: pure functions, no I/O,
 independently unit-testable, called from ApplicationService.submit().
 """
 
-_ACTION_PRIORITY = ("reject", "auto_hire", "qualify")
+_ACTION_PRIORITY = ("reject", "auto_hire")
 
 
 def _normalized_values(value: str | list[str]) -> list[str]:
@@ -122,11 +122,10 @@ def evaluate(screen_rules: dict | None, emails: list[str], answers: dict) -> dic
         answers (dict): The submission's question_id -> answer value map.
 
     Returns:
-        dict: ``{"action": "reject" | "qualify" | "auto_hire" | None,
-        "rule_id": str | None}``. Any matching ``"reject"`` rule wins
-        outright; otherwise a matching ``"auto_hire"`` rule wins over a
-        matching ``"qualify"`` rule; the first matching rule (list order)
-        is returned within a tied action type. ``{"action": None,
+        dict: ``{"action": "reject" | "auto_hire" | None, "rule_id": str |
+        None}``. Any matching ``"reject"`` rule wins outright; otherwise a
+        matching ``"auto_hire"`` rule wins; the first matching rule (list
+        order) is returned within a tied action type. ``{"action": None,
         "rule_id": None}`` when nothing matches or ``screen_rules`` is
         empty/missing.
     """

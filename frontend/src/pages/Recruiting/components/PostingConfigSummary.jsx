@@ -3,7 +3,6 @@ import PipelineSummary from "@/pages/Recruiting/components/PipelineSummary";
 
 const ACTION_LABEL = {
   reject: "Reject",
-  qualify: "Qualify",
   auto_hire: "Auto-hire",
 };
 

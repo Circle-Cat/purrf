@@ -99,7 +99,7 @@ describe("PostingConfigSummary", () => {
                   operator: "not_in",
                   value: ["google.com", "circlecat.org"],
                 },
-                action: "qualify",
+                action: "auto_hire",
               },
             ],
           },
@@ -110,7 +110,7 @@ describe("PostingConfigSummary", () => {
 
     expect(
       screen.getByText(
-        "Qualify if email domain is not one of google.com, circlecat.org",
+        "Auto-hire if email domain is not one of google.com, circlecat.org",
       ),
     ).toBeInTheDocument();
   });
