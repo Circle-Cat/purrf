@@ -53,8 +53,8 @@ class TestProfileService(unittest.IsolatedAsyncioTestCase):
             id=1, user=self.user_dto, training=[], work_history=[], education=[]
         )
 
-    async def test_get_profile_user_exists(self):
-        """Test when user exists, query_service.get_profile returns profile."""
+    async def test_get_profile_no_fields_returns_user_only(self):
+        """Omitting fields should include none of the optional sections."""
         self.query_service.get_profile.return_value = self.profile_dto
 
         profile = await self.service.get_profile(
@@ -64,9 +64,9 @@ class TestProfileService(unittest.IsolatedAsyncioTestCase):
         self.query_service.get_profile.assert_awaited_once_with(
             session=self.session,
             user_context=self.user_context,
-            include_training=True,
-            include_work_history=True,
-            include_education=True,
+            include_training=False,
+            include_work_history=False,
+            include_education=False,
         )
         self.assertEqual(profile, self.profile_dto)
         self.users_repository.get_user_by_user_id.assert_not_awaited()
