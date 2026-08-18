@@ -15,12 +15,21 @@
  *    - If none is open, fall back to the most recently started round
  *      (used for "view only" purposes).
  *
+ * 3. Matching result:
+ *    - Always describes the registration / view round from rule 2, so the
+ *      banner never names one round while showing another round's status.
+ *    - Viewable only inside that round's own announcement period, between
+ *      `matchNotificationAt` and `feedbackDeadlineAt`.
+ *
  * @param {Array<Object>} allRounds - All mentorship rounds.
  * @param {Object} allRounds[].timeline - Timeline information of a round.
  * @returns {{
  *   feedbackRoundId: string | null,
+ *   feedbackRoundName: string,
  *   isFeedbackEnabled: boolean,
  *   regRoundId: string | null,
+ *   matchResultRoundName: string,
+ *   canViewMatch: boolean,
  * }}
  */
 export const calculateMentorshipSlots = (allRounds) => {
@@ -66,18 +75,23 @@ export const calculateMentorshipSlots = (allRounds) => {
     (r) => now >= r.timeline.promotionStartAt,
   );
 
+  // The single round the banner speaks about, shared by registration and the
+  // matching result: both read the same id, name and timeline.
+  const regRound = currentRegRound || lastStartedRound;
+
   /**
    *  3. Match Result Logic
    *
-   * Goal: Identify the round that is currently in the announcement period.
-   * Logic: The current date must fall between `matchNotificationAt` and `feedbackDeadlineAt`.
+   * Goal: Decide whether the registration round's match is announced yet.
+   * Logic: The current date must fall between that round's
+   * `matchNotificationAt` and `feedbackDeadlineAt`.
    */
-  const activeMatchRound = sorted.find(
-    (r) =>
-      r.timeline.matchNotificationAt &&
-      now >= r.timeline.matchNotificationAt &&
-      now <= r.timeline.feedbackDeadlineAt,
+  const isRegRoundAnnounced = Boolean(
+    regRound?.timeline?.matchNotificationAt &&
+    now >= regRound.timeline.matchNotificationAt &&
+    now <= regRound.timeline.feedbackDeadlineAt,
   );
+
   return {
     // Controls the "Feedback" button
     feedbackRoundId: feedbackRound?.id || null,
@@ -85,12 +99,11 @@ export const calculateMentorshipSlots = (allRounds) => {
     isFeedbackEnabled: Boolean(feedbackRound),
 
     // Controls the "Register" / "View" button
-    regRoundId: currentRegRound?.id || lastStartedRound?.id || null,
-    matchResultRoundName:
-      activeMatchRound?.name || lastStartedRound?.name || "",
+    regRoundId: regRound?.id || null,
+    matchResultRoundName: regRound?.name || "",
 
-    // Set to true only during the announcement period
-    canViewMatch: !!activeMatchRound,
+    // Set to true only during that round's announcement period
+    canViewMatch: isRegRoundAnnounced,
   };
 };
 
