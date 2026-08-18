@@ -36,13 +36,30 @@ describe("OtpVerifyForm", () => {
     ).toBeInTheDocument();
   });
 
+  it("hints at the spam folder only once a code has been sent", async () => {
+    const user = userEvent.setup();
+    initiateEmailVerification.mockResolvedValue({ data: { state: "st-1" } });
+    render(<OtpVerifyForm initialEmail="bob@gmail.com" onVerified={vi.fn()} />);
+
+    // Nothing has been mailed yet, so the hint would be noise on the email step.
+    expect(screen.queryByText(/spam folder/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Send code" }));
+
+    expect(
+      await screen.findByText(/Check your spam folder or resend it/i),
+    ).toBeInTheDocument();
+  });
+
   it("warns and does not call the API when the email is blank", async () => {
     const user = userEvent.setup();
     render(<OtpVerifyForm onVerified={vi.fn()} />);
 
     await user.click(screen.getByRole("button", { name: "Send code" }));
 
-    expect(toast.error).toHaveBeenCalledWith("Enter an email address first.");
+    expect(toast.error).toHaveBeenCalledWith(
+      "Please enter your email address.",
+    );
     expect(initiateEmailVerification).not.toHaveBeenCalled();
   });
 
@@ -59,10 +76,10 @@ describe("OtpVerifyForm", () => {
       expect(initiateEmailVerification).toHaveBeenCalledWith("bob@gmail.com"),
     );
     expect(toast.success).toHaveBeenCalledWith(
-      "We sent a 6-digit code to bob@gmail.com.",
+      "Verification code sent to bob@gmail.com.",
     );
     expect(
-      screen.getByLabelText("Enter the code sent to bob@gmail.com"),
+      screen.getByLabelText("Enter the 6-digit code sent to bob@gmail.com"),
     ).toBeInTheDocument();
   });
 
@@ -120,7 +137,9 @@ describe("OtpVerifyForm", () => {
     initiateEmailVerification.mockResolvedValue({ data: { state: "st-1" } });
     await user.type(screen.getByLabelText("Email address"), "bob@gmail.com");
     await user.click(screen.getByRole("button", { name: "Send code" }));
-    await screen.findByLabelText("Enter the code sent to bob@gmail.com");
+    await screen.findByLabelText(
+      "Enter the 6-digit code sent to bob@gmail.com",
+    );
   };
 
   it("warns and does not verify when the code is blank", async () => {
@@ -130,7 +149,9 @@ describe("OtpVerifyForm", () => {
 
     await user.click(screen.getByRole("button", { name: "Verify" }));
 
-    expect(toast.error).toHaveBeenCalledWith("Enter the code from your email.");
+    expect(toast.error).toHaveBeenCalledWith(
+      "Please enter the 6-digit verification code.",
+    );
     expect(verifyEmailOtp).not.toHaveBeenCalled();
   });
 
@@ -145,7 +166,7 @@ describe("OtpVerifyForm", () => {
     await advanceToCodeStep(user);
 
     await user.type(
-      screen.getByLabelText("Enter the code sent to bob@gmail.com"),
+      screen.getByLabelText("Enter the 6-digit code sent to bob@gmail.com"),
       "  123456  ",
     );
     await user.click(screen.getByRole("button", { name: "Verify" }));
@@ -170,7 +191,7 @@ describe("OtpVerifyForm", () => {
     await advanceToCodeStep(user);
 
     await user.type(
-      screen.getByLabelText("Enter the code sent to bob@gmail.com"),
+      screen.getByLabelText("Enter the 6-digit code sent to bob@gmail.com"),
       "000000",
     );
     await user.click(screen.getByRole("button", { name: "Verify" }));
@@ -179,14 +200,12 @@ describe("OtpVerifyForm", () => {
     expect(onVerified).not.toHaveBeenCalled();
   });
 
-  it("returns to the email step via 'Use a different email'", async () => {
+  it("returns to the email step via 'Change email'", async () => {
     const user = userEvent.setup();
     render(<OtpVerifyForm onVerified={vi.fn()} />);
     await advanceToCodeStep(user);
 
-    await user.click(
-      screen.getByRole("button", { name: "Use a different email" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Change email" }));
 
     expect(screen.getByLabelText("Email address")).toBeInTheDocument();
     expect(

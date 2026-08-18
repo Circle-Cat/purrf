@@ -52,15 +52,15 @@ const VerifyRequired = () => {
     <div className="flex min-h-[70vh] items-center justify-center p-6">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Set your contact email</CardTitle>
+          <CardTitle>Verify your email address</CardTitle>
           <CardDescription>
             {isInternal
-              ? "As a Circle Cat member, please verify your Google Workspace " +
-                "email (@circlecat.org) as your contact address. If this " +
-                "address can't receive the verification code, please contact " +
-                "your manager."
-              : "Enter an address and the code we send it; it becomes your " +
-                "primary contact and works for signing in."}
+              ? "Please verify your Google Workspace email " +
+                "(@circlecat.org) to continue. If you don't receive the " +
+                "code, please contact your manager."
+              : "Enter your email address to receive a verification code. " +
+                "This email will be used for sign-in and account " +
+                "notifications."}
           </CardDescription>
         </CardHeader>
 

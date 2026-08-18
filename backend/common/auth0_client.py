@@ -139,11 +139,13 @@ class Auth0Client:
             )
             if HTTPStatus.TOO_MANY_REQUESTS == response.status_code:
                 raise RateLimitedError(
-                    "Too many verification attempts; try again later"
+                    "Too many verification attempts. Please try again later."
                 )
             # invalid_grant is Auth0's signal for a wrong/expired OTP.
             if error == "invalid_grant":
-                raise ValueError("Incorrect or expired verification code")
+                raise ValueError(
+                    "Incorrect or expired verification code. Please request a new one."
+                )
             raise RuntimeError("Email verification failed")
 
         id_token = response.json()["id_token"]

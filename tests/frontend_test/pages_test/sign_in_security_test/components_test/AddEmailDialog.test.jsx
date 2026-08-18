@@ -26,9 +26,9 @@ describe("AddEmailDialog", () => {
   it("renders the title, description and address input when open", () => {
     render(<AddEmailDialog open onOpenChange={vi.fn()} onAdded={vi.fn()} />);
 
-    expect(screen.getByText("Add an email")).toBeInTheDocument();
+    expect(screen.getByText("Add an email address")).toBeInTheDocument();
     expect(
-      screen.getByText(/We'll send a verification code to the address/i),
+      screen.getByText(/We'll send a verification code to your new address/i),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Email address")).toBeInTheDocument();
   });
@@ -38,7 +38,7 @@ describe("AddEmailDialog", () => {
       <AddEmailDialog open={false} onOpenChange={vi.fn()} onAdded={vi.fn()} />,
     );
 
-    expect(screen.queryByText("Add an email")).not.toBeInTheDocument();
+    expect(screen.queryByText("Add an email address")).not.toBeInTheDocument();
   });
 
   it("initiates verification for the typed address and advances to the code step", async () => {
@@ -53,7 +53,7 @@ describe("AddEmailDialog", () => {
       expect(initiateEmailVerification).toHaveBeenCalledWith("backup@x.com"),
     );
     expect(
-      screen.getByLabelText("Enter the code sent to backup@x.com"),
+      screen.getByLabelText("Enter the 6-digit code sent to backup@x.com"),
     ).toBeInTheDocument();
   });
 
@@ -71,10 +71,10 @@ describe("AddEmailDialog", () => {
 
     await user.type(screen.getByLabelText("Email address"), "backup@x.com");
     await user.click(screen.getByRole("button", { name: "Send code" }));
-    await screen.findByLabelText("Enter the code sent to backup@x.com");
+    await screen.findByLabelText("Enter the 6-digit code sent to backup@x.com");
 
     await user.type(
-      screen.getByLabelText("Enter the code sent to backup@x.com"),
+      screen.getByLabelText("Enter the 6-digit code sent to backup@x.com"),
       "123456",
     );
     await user.click(screen.getByRole("button", { name: "Verify" }));
@@ -82,7 +82,9 @@ describe("AddEmailDialog", () => {
     await waitFor(() =>
       expect(verifyEmailOtp).toHaveBeenCalledWith("st-1", "123456"),
     );
-    expect(toast.success).toHaveBeenCalledWith("Email added and verified.");
+    expect(toast.success).toHaveBeenCalledWith(
+      "Email address successfully added.",
+    );
     expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(onAdded).toHaveBeenCalledTimes(1);
   });
@@ -122,7 +124,7 @@ describe("AddEmailDialog", () => {
 
     await user.type(screen.getByLabelText("Email address"), "backup@x.com");
     await user.click(screen.getByRole("button", { name: "Send code" }));
-    await screen.findByLabelText("Enter the code sent to backup@x.com");
+    await screen.findByLabelText("Enter the 6-digit code sent to backup@x.com");
 
     rerender(
       <AddEmailDialog open={false} onOpenChange={vi.fn()} onAdded={vi.fn()} />,
