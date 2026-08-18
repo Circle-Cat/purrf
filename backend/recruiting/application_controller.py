@@ -82,9 +82,15 @@ class ApplicationController:
         )
 
     async def get_public_job(self, current_user: UserContextDto, job_id: int):
-        """Fetch a published posting's candidate-safe projection for the application form."""
+        """Fetch a posting's candidate-safe projection for the application form.
+
+        Scoped to the caller: live to everyone, no longer live only to a
+        candidate who already applied to it.
+        """
         async with self.database.session() as session:
-            result = await self.job_service.get_published_job_public(session, job_id)
+            result = await self.application_service.get_job_for_applicant(
+                session, current_user, job_id
+            )
         return api_response(message="Job fetched.", data=result)
 
     async def list_public_jobs(self, current_user: UserContextDto):

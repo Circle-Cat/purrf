@@ -38,7 +38,13 @@ vi.spyOn(toast, "error").mockImplementation(() => {});
 beforeEach(() => {
   vi.clearAllMocks();
   api.getPublicJob.mockResolvedValue({
-    data: { id: 5, title: "Mentee", kind: "activity", description: "" },
+    data: {
+      id: 5,
+      title: "Mentee",
+      kind: "activity",
+      description: "",
+      acceptingApplications: true,
+    },
   });
   api.getMyApplication.mockResolvedValue({ data: null });
 });
@@ -66,6 +72,38 @@ describe("JobDetailPage", () => {
     await waitFor(() => expect(screen.getByText("Mentee")).toBeInTheDocument());
     expect(api.getPublicJob).toHaveBeenCalledWith("5");
     expect(screen.getByRole("button", { name: /apply/i })).toBeInTheDocument();
+  });
+
+  it("says nothing about closing while the posting is still open", async () => {
+    renderAt("/recruiting/jobs/5");
+    await waitFor(() => expect(screen.getByText("Mentee")).toBeInTheDocument());
+    expect(screen.queryByText(/has closed/i)).not.toBeInTheDocument();
+  });
+
+  it("says the posting has closed when it no longer takes applications", async () => {
+    // Only an applicant can load a closed posting at all, and the page they
+    // came from linked here -- without this line it reads exactly like a
+    // posting still on offer.
+    api.getPublicJob.mockResolvedValue({
+      data: {
+        id: 5,
+        title: "Mentee",
+        kind: "activity",
+        description: "",
+        acceptingApplications: false,
+      },
+    });
+    api.getMyApplication.mockResolvedValue({
+      data: { id: 9, stage: "rejected", editable: false },
+    });
+
+    renderAt("/recruiting/jobs/5");
+
+    expect(
+      await screen.findByText(
+        "This posting has closed and is no longer accepting applications.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("checks for an existing application on the plain job-detail route too", async () => {

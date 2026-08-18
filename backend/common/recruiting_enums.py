@@ -87,11 +87,14 @@ class ApplicationStage(StrEnum):
 class ApplicationLockReason(StrEnum):
     """Why a candidate can no longer edit their own application.
 
-    Two members, though ``ApplicationService._lock_reason`` tests three
-    conditions: a sub_status the recruiter has moved on and a frozen
-    submission are the same fact to the candidate -- someone has started
-    work -- and telling them apart would publish internal mechanics that
-    change nothing the reader can do.
+    ADVANCED and IN_REVIEW are about the application; CLOSED is about the
+    posting it was made to, which stops taking submissions of any kind once
+    it leaves ``PUBLICLY_VISIBLE_JOB_STATUSES``.
+
+    IN_REVIEW covers two conditions, though: a sub_status the recruiter has
+    moved on and a frozen submission are the same fact to the candidate --
+    someone has started work -- and telling them apart would publish
+    internal mechanics that change nothing the reader can do.
 
     The candidate-facing wording lives in the frontend glossary, not here,
     because the ADVANCED sentence names the stage and only the glossary holds
@@ -101,6 +104,7 @@ class ApplicationLockReason(StrEnum):
 
     ADVANCED = "advanced"
     IN_REVIEW = "in_review"
+    CLOSED = "closed"
 
 
 # Work-email domains whose holders are auto-approved as mentors (lowercased, no "@").

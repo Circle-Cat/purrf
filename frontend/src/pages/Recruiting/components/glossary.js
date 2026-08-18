@@ -210,7 +210,7 @@ export const termHint = (id) => GLOSSARY[id]?.hint;
  * `backend/common/recruiting_enums.py`. Held to that enum by
  * `tests/shared/application_lock_reasons.json`.
  */
-export const APPLICATION_LOCK_REASONS = ["advanced", "in_review"];
+export const APPLICATION_LOCK_REASONS = ["advanced", "in_review", "closed"];
 
 /**
  * What to tell a candidate about why their application is closed to edits.
@@ -220,7 +220,9 @@ export const APPLICATION_LOCK_REASONS = ["advanced", "in_review"];
  * IN_REVIEW sentence deliberately says only that work has begun: the backend
  * collapses a moved sub-status and a frozen submission into one reason,
  * because telling them apart would publish internal mechanics that change
- * nothing the reader can do.
+ * nothing the reader can do. CLOSED is about the posting rather than the
+ * application: it stopped taking submissions, so there is nothing to edit
+ * into it.
  *
  * @param {string|null|undefined} reason An `ApplicationLockReason` value.
  * @param {string|null|undefined} stageLabel The stage's human label, when known.
@@ -234,6 +236,9 @@ export const lockReasonText = (reason, stageLabel) => {
   }
   if (reason === "in_review") {
     return "A recruiter has started reviewing it, so it can't be edited any more.";
+  }
+  if (reason === "closed") {
+    return "This posting has closed, so it can't be edited any more.";
   }
   return null;
 };

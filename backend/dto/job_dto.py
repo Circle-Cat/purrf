@@ -134,6 +134,12 @@ class PublicJobDto(BaseDto):
     (internal stages + staff ``ownerIds``/``defaultAssigneeId``), the
     ``pending_*`` fields, and ``last_reject_comment``. Only what the
     applicant-facing form needs is exposed.
+
+    ``accepting_applications`` is the one status fact a candidate gets, and
+    a boolean rather than the raw status: the status string names internal
+    review states (``pending_close``, ``pending_reopen``) that say what
+    recruiting is doing, while all the candidate can act on is whether this
+    posting still takes a submission.
     """
 
     id: int
@@ -143,6 +149,7 @@ class PublicJobDto(BaseDto):
     mentorship_role: ParticipantRole | None = None
     form_schema: dict | None = None
     profile_config: dict | None = None
+    accepting_applications: bool
 
 
 class PublicJobSummaryDto(BaseDto):

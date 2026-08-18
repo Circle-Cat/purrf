@@ -80,7 +80,10 @@ const ReadOnlySummary = ({ job, application, onReapply }) => {
  * and on failure toasts the error and shows an inline retryable error state.
  * A `rejected` application's read-only summary offers a "Reapply" action
  * that swaps in an `ApplicationForm` seeded from the prior submission,
- * submitting via the create path (the backend's reapply branch).
+ * submitting via the create path (the backend's reapply branch) — but only
+ * while the posting still takes applications. A posting that has closed is
+ * still readable here (the candidate applied to it), and offering a button
+ * the backend would refuse is worse than offering none.
  */
 const MyApplication = () => {
   const { jobId } = useParams();
@@ -151,7 +154,9 @@ const MyApplication = () => {
       job={job}
       application={application}
       onReapply={
-        application.stage === "rejected" ? () => setReapplying(true) : undefined
+        application.stage === "rejected" && job.acceptingApplications
+          ? () => setReapplying(true)
+          : undefined
       }
     />
   );

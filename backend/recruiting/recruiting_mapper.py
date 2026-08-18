@@ -3,6 +3,7 @@ from backend.entity.application_interview_entity import ApplicationInterviewEnti
 from backend.entity.job_entity import JobEntity
 from backend.entity.job_review_entity import JobReviewEntity
 from backend.entity.users_entity import UsersEntity
+from backend.common.recruiting_enums import PUBLICLY_VISIBLE_JOB_STATUSES
 from backend.dto.board_dto import BoardApplicantHitDto, BoardCardDto
 from backend.dto.interview_dto import InterviewDto
 from backend.dto.job_dto import JobDto, PublicJobDto, PublicJobSummaryDto
@@ -110,8 +111,14 @@ class RecruitingMapper:
         ``pending_*`` variants — and omits ``screen_rules``,
         ``pipeline_config``, and ``last_reject_comment`` entirely.
 
+        Takes any posting, not only a live one: a candidate who already
+        applied may read the posting back after it closes (see
+        ``ApplicationService.get_job_for_applicant``), and
+        ``accepting_applications`` is what stops that page offering actions
+        the backend would refuse.
+
         Args:
-            job (JobEntity): The published posting entity to convert.
+            job (JobEntity): The posting entity to convert.
 
         Returns:
             PublicJobDto: The candidate-facing projection.
@@ -124,6 +131,7 @@ class RecruitingMapper:
             mentorship_role=job.mentorship_role,
             form_schema=job.form_schema,
             profile_config=job.profile_config,
+            accepting_applications=job.status in PUBLICLY_VISIBLE_JOB_STATUSES,
         )
 
     def to_public_job_summary_dto(self, job: JobEntity) -> PublicJobSummaryDto:
