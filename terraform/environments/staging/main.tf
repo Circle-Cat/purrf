@@ -44,9 +44,15 @@ module "purrf_instance" {
   mentorship_calendar_id = "c_d22a80da785e3232991f3823ba799ed91fa6f1bcc388552686a72583b23b6cd2@group.calendar.google.com"
   interview_calendar_id  = "c_ebe9f94084ac6049f47805f47b4278a4a14b6fea8d40e9cd401eda0625b449da@group.calendar.google.com"
 
+  # Both non-prod environments send as the test aliases. A From address only
+  # works once it is a verified Send-As on the mailbox the refresh token
+  # belongs to, and test and staging already share that one machine mailbox,
+  # so a staging-only pair would buy nothing but two more verifications to
+  # keep alive. The cost is that a non-prod message does not name which
+  # environment sent it -- read the body, not the From.
   gmail_client_id           = var.gmail_client_id
   gmail_client_secret       = var.gmail_client_secret
   gmail_refresh_token       = var.gmail_refresh_token
-  gmail_sender_recruiting   = "recruiting-staging@circlecat.org"
-  gmail_sender_notification = "notification-staging@circlecat.org"
+  gmail_sender_recruiting   = "recruiting-test@circlecat.org"
+  gmail_sender_notification = "notification-test@circlecat.org"
 }
