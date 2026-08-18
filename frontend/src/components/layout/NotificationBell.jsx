@@ -24,7 +24,11 @@ import {
  * the case you are adding, not the surrounding voice.
  */
 const describe = (n) => {
-  const actor = n.actorName ?? "Someone";
+  // `||`, not `??`: actorName carries three states. A name renders as
+  // itself, null means the system acted under its own rules (those lines
+  // never read this value), and "" means a person acted but their user row
+  // no longer resolves -- which still reads as "Someone", not as a blank.
+  const actor = n.actorName || "Someone";
   switch (n.eventType) {
     case "mentorship.mentor_admitted":
       return `You were admitted to ${n.jobTitle}`;

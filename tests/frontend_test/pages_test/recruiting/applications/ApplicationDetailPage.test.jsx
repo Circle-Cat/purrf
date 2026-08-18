@@ -1582,6 +1582,45 @@ describe("ApplicationDetailPage — activity timeline", () => {
     ).toBeInTheDocument();
   });
 
+  it("attributes an entry with no actor to the system", async () => {
+    // The pipeline's own rules record events under no actor at all, so
+    // actorName arrives null and there is nobody to name. Without a
+    // fallback the line trailed off after "by".
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "recruiting.auto_assigned",
+          details: {
+            stage: "recruiter_screening",
+            round: 1,
+            assigneeId: ASSIGNEE_ID,
+            assigneeName: "Ann Assignee",
+          },
+          actorId: null,
+          actorName: null,
+          createdAt: "2026-08-18T12:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Timeline" }));
+
+    // Scoped to the timeline panel: the page renders other <li> lists
+    // (education, experience) that a bare listitem query also matches.
+    const timeline = within(screen.getByRole("tabpanel"));
+    expect(timeline.getByRole("listitem").textContent).toContain(
+      ", by the system",
+    );
+  });
+
   it("shows an empty state when there's no activity yet", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
