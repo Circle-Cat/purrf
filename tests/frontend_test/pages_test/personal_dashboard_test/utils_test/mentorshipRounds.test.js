@@ -62,8 +62,63 @@ describe("calculateMentorshipSlots", () => {
 
     const result = calculateMentorshipSlots(rounds);
     expect(result.canViewMatch).toBe(false);
-    // Should still pick up the name from lastStartedRound as a fallback
+    // The dialog still names the round it is about, it just cannot be opened.
     expect(result.matchResultRoundName).toBe("Autumn 2024");
+  });
+
+  it("should name the registration round, not another round inside its announcement period", () => {
+    const rounds = [
+      {
+        id: "round-previous",
+        name: "Summer 2023",
+        timeline: {
+          promotionStartAt: "2023-05-01T00:00:00Z",
+          mentorApplicationDeadlineAt: "2023-05-20T00:00:00Z",
+          menteeApplicationDeadlineAt: "2023-05-20T00:00:00Z",
+          matchNotificationAt: "2023-06-01T00:00:00Z", // 10-15 is after this
+          feedbackDeadlineAt: "2023-12-01T00:00:00Z", // 10-15 is before this
+        },
+      },
+      {
+        id: "round-current",
+        name: "Autumn 2023",
+        timeline: {
+          promotionStartAt: "2023-10-01T00:00:00Z",
+          mentorApplicationDeadlineAt: "2023-10-30T00:00:00Z", // still open
+          menteeApplicationDeadlineAt: "2023-10-30T00:00:00Z",
+          matchNotificationAt: "2023-11-05T00:00:00Z", // not announced yet
+          feedbackDeadlineAt: "2024-03-01T00:00:00Z",
+        },
+      },
+    ];
+
+    const result = calculateMentorshipSlots(rounds);
+    expect(result.regRoundId).toBe("round-current");
+    // Summer is inside its own announcement period, but registration is on
+    // Autumn, so that is the round the matching result must describe.
+    expect(result.matchResultRoundName).toBe("Autumn 2023");
+    expect(result.canViewMatch).toBe(false);
+  });
+
+  it("should enable canViewMatch from the fallback round once its results are announced", () => {
+    const rounds = [
+      {
+        id: "round-closed",
+        name: "Autumn 2023",
+        timeline: {
+          promotionStartAt: "2023-08-01T00:00:00Z",
+          mentorApplicationDeadlineAt: "2023-09-01T00:00:00Z", // closed
+          menteeApplicationDeadlineAt: "2023-09-01T00:00:00Z",
+          matchNotificationAt: "2023-10-01T00:00:00Z", // 10-15 is after this
+          feedbackDeadlineAt: "2023-12-01T00:00:00Z",
+        },
+      },
+    ];
+
+    const result = calculateMentorshipSlots(rounds);
+    expect(result.regRoundId).toBe("round-closed");
+    expect(result.matchResultRoundName).toBe("Autumn 2023");
+    expect(result.canViewMatch).toBe(true);
   });
 
   it("should correctly identify a round that is currently open for registration", () => {
