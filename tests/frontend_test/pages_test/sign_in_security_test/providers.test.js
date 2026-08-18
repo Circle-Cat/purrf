@@ -27,7 +27,6 @@ describe("SignInSecurity providers", () => {
       expect(providerLabel("google-oauth2|1")).toBe("Google account");
       expect(providerLabel("google|1")).toBe("Google account");
       expect(providerLabel(`${EMAIL_PROVIDER}|1`)).toBe("Email OTP");
-      expect(providerLabel("auth0|1")).toBe("Email & password");
     });
 
     it("echoes an unknown provider prefix", () => {
@@ -63,8 +62,8 @@ describe("SignInSecurity providers", () => {
     });
 
     it("uses just the provider label when there is no email claim", () => {
-      expect(identityLabel({ subjectIdentifier: "auth0|1" })).toBe(
-        "Email & password",
+      expect(identityLabel({ subjectIdentifier: `${EMAIL_PROVIDER}|1` })).toBe(
+        "Email OTP",
       );
     });
 

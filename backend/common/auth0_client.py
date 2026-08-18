@@ -139,11 +139,13 @@ class Auth0Client:
             )
             if HTTPStatus.TOO_MANY_REQUESTS == response.status_code:
                 raise RateLimitedError(
-                    "Too many verification attempts; try again later"
+                    "Too many verification attempts. Please try again later."
                 )
             # invalid_grant is Auth0's signal for a wrong/expired OTP.
             if error == "invalid_grant":
-                raise ValueError("Incorrect or expired verification code")
+                raise ValueError(
+                    "Incorrect or expired verification code. Please request a new one."
+                )
             raise RuntimeError("Email verification failed")
 
         id_token = response.json()["id_token"]
@@ -251,7 +253,9 @@ class Auth0Client:
             # The PyJWT detail names Auth0 internals (issuer, audience, kid);
             # log it server-side and hand the caller a user-safe message.
             self._logger.warning("[Auth0Client] ID token verification failed: %s", e)
-            raise ValueError("Email verification failed; request a new code")
+            raise ValueError(
+                "We couldn't verify that email address. Please request a new code."
+            )
 
     def _raise_for_auth0_error(self, response, op: str) -> None:
         """
@@ -280,7 +284,7 @@ class Auth0Client:
             description,
         )
         if response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
-            raise RateLimitedError("Too many requests; try again later")
+            raise RateLimitedError("Too many requests. Please try again later.")
         raise RuntimeError(f"Auth0 {op} failed")
 
 

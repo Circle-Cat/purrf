@@ -189,7 +189,7 @@ const AddressRow = ({
             >
               {busy?.kind === "primary" && busy.id === emailRow.emailId
                 ? "Setting…"
-                : "Set as primary contact"}
+                : "Make primary contact"}
             </Button>
           )}
           {!!onUnlink &&
@@ -235,8 +235,8 @@ const AddressRow = ({
       )}
       {showMultiPathHint && (
         <p className="text-xs text-muted-foreground">
-          Removing one method won&apos;t fully disconnect this address — remove
-          both its sign-in and Email OTP to cut it off.
+          Note: to fully disconnect this address, remove both its sign-in method
+          and Email OTP.
         </p>
       )}
     </li>

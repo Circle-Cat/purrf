@@ -14,7 +14,6 @@ export const PROVIDER_LABELS = {
   "google-oauth2": "Google account",
   google: "Google account",
   [EMAIL_PROVIDER]: "Email OTP",
-  auth0: "Email & password",
 };
 
 /**
@@ -42,9 +41,9 @@ export const providerLabel = (subjectIdentifier) => {
 /**
  * Whether a sign-in method authenticates by email (the passwordless email-OTP
  * provider). Only these methods expose contact-email management — the primary-
- * contact badge and the "Set as primary contact" action — because the contact
- * address is synced from the email method itself; SSO methods (e.g. Google) and
- * the email-and-password (auth0) method do not.
+ * contact badge and the "Make primary contact" action — because the contact
+ * address is synced from the email method itself; SSO methods (e.g. Google) do
+ * not.
  *
  * @param {string} subjectIdentifier
  * @returns {boolean}

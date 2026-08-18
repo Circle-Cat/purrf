@@ -34,7 +34,7 @@ _STATE_FLOW = "add_email"
 _UNLINK_STATE_FLOW = "unlink_identity"
 _STATE_ALGORITHM = "HS256"
 _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-_INVALID_STATE_MESSAGE = "Verification state is invalid or expired"
+_INVALID_STATE_MESSAGE = "Verification session expired. Please request a new code."
 _SET_PRIMARY_STATE_FLOW = "set_primary"
 
 
@@ -112,24 +112,24 @@ class EmailManagementService:
         """
         row = await self._user_emails.get_by_id(session, email_id)
         if row is None or row.user_id != current_user_id:
-            raise ValueError("Email not found")
+            raise ValueError("Email address not found.")
         if row.is_primary:
-            raise ConflictError("The primary contact email cannot be removed")
+            raise ConflictError("Your primary contact email cannot be removed.")
         if (
             current_sub.startswith("email|")
             and current_claim_email
             and row.email == current_claim_email.strip().lower()
         ):
             raise ConflictError(
-                "Cannot remove the email used for the current session; "
-                "log in with another method first"
+                "You cannot remove the email tied to your current session. "
+                "Sign in with another method first."
             )
         if is_company_email(row.email) and await self._users.exists_active_internal(
             session, current_user_id
         ):
             raise ConflictError(
-                "Active employees cannot remove a corp email; "
-                "it is their required internal contact"
+                "Company email addresses cannot be removed from active "
+                "employee accounts."
             )
 
         await self._user_emails.delete(session, email_id)
@@ -161,13 +161,13 @@ class EmailManagementService:
         """
         normalized = email.strip().lower()
         if not _EMAIL_PATTERN.match(normalized):
-            raise ValueError("Invalid email format")
+            raise ValueError("Please enter a valid email address.")
         if await self._user_emails.exists_on_other_user(
             session, normalized, current_user_id
         ):
             raise ConflictError(
-                "Email already in use by another account. If it's yours, "
-                "sign in with a code to that address instead."
+                "This email is already in use by another account. If it's "
+                "yours, sign in with a code sent to that address instead."
             )
 
         self._auth0.start_passwordless(normalized)
@@ -223,9 +223,11 @@ class EmailManagementService:
             self._logger.warning(
                 "[EmailManagementService] OTP exchange returned email_verified=false"
             )
-            raise ValueError("Email verification failed; request a new code")
+            raise ValueError(
+                "We couldn't verify that email address. Please request a new code."
+            )
         if id_token_claims.get("email", "").lower() != target_email:
-            raise ValueError("Verified email does not match the requested address")
+            raise ValueError("The verified email address does not match your request.")
 
         new_sub = id_token_claims["sub"]
         existing_identity = await self._user_identities.get_by_subject_identifier(
@@ -235,7 +237,9 @@ class EmailManagementService:
             existing_identity is not None
             and existing_identity.user_id != current_user_id
         ):
-            raise ConflictError("Identity already linked to another account")
+            raise ConflictError(
+                "This sign-in method is already linked to another account."
+            )
 
         await self._confirm_email(session, current_user_id, target_email)
         if is_company_email(target_email):
@@ -352,7 +356,9 @@ class EmailManagementService:
 
         primary = await self._user_emails.get_primary(session, current_user_id)
         if primary is None:
-            raise ValueError("No primary email to verify against")
+            raise ValueError(
+                "Your account has no primary contact email to send a code to."
+            )
 
         self._auth0.start_passwordless(primary.email)
         state = self._sign_state(
@@ -389,9 +395,7 @@ class EmailManagementService:
         ):
             raise ValueError(_INVALID_STATE_MESSAGE)
 
-        await self._consume_step_up_otp(
-            session, current_user_id, claims, code, "switch"
-        )
+        await self._consume_step_up_otp(session, current_user_id, claims, code)
 
         target = await self._user_emails.get_by_id(session, email_id)
         await self._validate_promotable(session, current_user_id, target)
@@ -414,16 +418,20 @@ class EmailManagementService:
             PermissionError: an active employee targeting a non-corp domain.
         """
         if target is None or target.user_id != current_user_id:
-            raise ValueError("Email not found")
+            raise ValueError("Email address not found.")
         if not target.otp_confirmed:
-            raise ValueError("Email must be verified before promoting to primary")
+            raise ValueError(
+                "You must verify this email address before setting it as primary."
+            )
 
         # Covers both corp domains (@circlecat.org and @u.circlecat.org); an
         # active employee must keep a company address as primary.
         if not is_company_email(
             target.email
         ) and await self._users.exists_active_internal(session, current_user_id):
-            raise PermissionError("Active employees must keep a corp email as primary")
+            raise PermissionError(
+                "Your primary contact email must be a company email address."
+            )
 
     def _sign_state(self, flow: str, **claims) -> str:
         """
@@ -453,7 +461,7 @@ class EmailManagementService:
             raise ValueError(_INVALID_STATE_MESSAGE)
 
     async def _consume_step_up_otp(
-        self, session, current_user_id: int, claims: dict, code: str, operation: str
+        self, session, current_user_id: int, claims: dict, code: str
     ) -> None:
         """
         Verify a step-up OTP against the *current* primary email.
@@ -462,13 +470,13 @@ class EmailManagementService:
         primary and refuses (``PermissionError``) if it changed since initiate —
         the OTP was mailed to the primary snapshotted in ``claims``, so a swap
         mid-flow must abort rather than accept a code sent to a stale address —
-        then consumes the OTP. ``operation`` only customizes the error wording.
+        then consumes the OTP.
         """
         primary = await self._user_emails.get_primary(session, current_user_id)
         if primary is None or primary.email != claims["primary_email_at_request"]:
             raise PermissionError(
-                f"Your primary contact email changed during this {operation}; "
-                "start over"
+                "Your primary contact email changed while this was in "
+                "progress. Please start over."
             )
         self._auth0.exchange_otp(primary.email, code)
 
@@ -564,14 +572,16 @@ class EmailManagementService:
         """
         if identity.subject_identifier == current_sub:
             raise ConflictError(
-                "Cannot remove the sign-in used for the current session; "
-                "log in with another method first"
+                "You cannot remove the sign-in method used for your current "
+                "session. Sign in with another method first."
             )
 
         if is_company_email(
             identity.email_claim or ""
         ) and await self._users.exists_active_internal(session, current_user_id):
-            raise PermissionError("Active employees cannot remove corp sign-in")
+            raise PermissionError(
+                "Active employees cannot remove their company sign-in method."
+            )
 
     async def initiate_unlink(
         self, session, current_user_id: int, current_sub: str, identity_id: int
@@ -603,13 +613,15 @@ class EmailManagementService:
         """
         identity = await self._user_identities.get_by_id(session, identity_id)
         if identity is None or identity.user_id != current_user_id:
-            raise ValueError("Identity not found")
+            raise ValueError("Sign-in method not found.")
 
         await self._validate_unlinkable(session, current_user_id, current_sub, identity)
 
         primary = await self._user_emails.get_primary(session, current_user_id)
         if primary is None:
-            raise ValueError("No primary email to verify against")
+            raise ValueError(
+                "Your account has no primary contact email to send a code to."
+            )
 
         self._auth0.start_passwordless(primary.email)
         state = self._sign_state(
@@ -676,13 +688,11 @@ class EmailManagementService:
         if claims.get("target_identity_id") != identity_id:
             raise ValueError(_INVALID_STATE_MESSAGE)
 
-        await self._consume_step_up_otp(
-            session, current_user_id, claims, code, "unlink"
-        )
+        await self._consume_step_up_otp(session, current_user_id, claims, code)
 
         identity = await self._user_identities.get_by_id(session, identity_id)
         if identity is None or identity.user_id != current_user_id:
-            raise ValueError("Identity not found")
+            raise ValueError("Sign-in method not found.")
 
         # Re-check the unlink preconditions against current state — the only/
         # current-session/active-employee guards from initiate may no longer hold.

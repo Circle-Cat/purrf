@@ -505,7 +505,7 @@ describe("SignInMethodList", () => {
     });
   });
 
-  describe("Set as primary contact", () => {
+  describe("Make primary contact", () => {
     it("offers the action for a verified, non-primary email on a non-internal account", async () => {
       const user = userEvent.setup();
       const onSetPrimary = vi.fn().mockResolvedValue();
@@ -522,7 +522,7 @@ describe("SignInMethodList", () => {
       );
 
       await user.click(
-        screen.getByRole("button", { name: "Set as primary contact" }),
+        screen.getByRole("button", { name: "Make primary contact" }),
       );
       expect(onSetPrimary).toHaveBeenCalledWith(email);
     });
@@ -546,7 +546,7 @@ describe("SignInMethodList", () => {
       );
 
       expect(
-        screen.queryByRole("button", { name: "Set as primary contact" }),
+        screen.queryByRole("button", { name: "Make primary contact" }),
       ).not.toBeInTheDocument();
     });
 
@@ -572,7 +572,7 @@ describe("SignInMethodList", () => {
       );
 
       expect(
-        screen.queryByRole("button", { name: "Set as primary contact" }),
+        screen.queryByRole("button", { name: "Make primary contact" }),
       ).not.toBeInTheDocument();
     });
 
@@ -587,7 +587,7 @@ describe("SignInMethodList", () => {
       );
 
       expect(
-        screen.queryByRole("button", { name: "Set as primary contact" }),
+        screen.queryByRole("button", { name: "Make primary contact" }),
       ).not.toBeInTheDocument();
     });
 
@@ -612,7 +612,7 @@ describe("SignInMethodList", () => {
       );
 
       await user.click(
-        screen.getByRole("button", { name: "Set as primary contact" }),
+        screen.getByRole("button", { name: "Make primary contact" }),
       );
 
       expect(screen.getByText("Setting…")).toBeInTheDocument();
@@ -641,7 +641,7 @@ describe("SignInMethodList", () => {
       );
 
       expect(
-        screen.getByText(/won.t fully disconnect this address/i),
+        screen.getByText(/to fully disconnect this address/i),
       ).toBeInTheDocument();
     });
 
@@ -657,7 +657,7 @@ describe("SignInMethodList", () => {
       );
 
       expect(
-        screen.queryByText(/won.t fully disconnect this address/i),
+        screen.queryByText(/to fully disconnect this address/i),
       ).not.toBeInTheDocument();
     });
 
@@ -674,7 +674,7 @@ describe("SignInMethodList", () => {
       );
 
       expect(
-        screen.queryByText(/won.t fully disconnect this address/i),
+        screen.queryByText(/to fully disconnect this address/i),
       ).not.toBeInTheDocument();
     });
   });
@@ -726,7 +726,7 @@ describe("SignInMethodList", () => {
       );
 
       expect(
-        screen.queryByRole("button", { name: "Set as primary contact" }),
+        screen.queryByRole("button", { name: "Make primary contact" }),
       ).not.toBeInTheDocument();
     });
 
