@@ -254,3 +254,15 @@ py_test(
         "//backend/repository:repositories",
     ],
 )
+
+py_test(
+    name = "retire_unconfirmed_emails_migration_test",
+    srcs = ["retire_unconfirmed_emails_migration_test.py"],
+    data = ["//:alembic_files"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+    ],
+)
