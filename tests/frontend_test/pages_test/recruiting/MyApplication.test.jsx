@@ -36,7 +36,13 @@ vi.mock("@/pages/Recruiting/ApplicationForm", () => ({
 
 vi.spyOn(toast, "error").mockImplementation(() => {});
 
-const JOB = { id: 5, title: "Mentee", kind: "activity", description: "" };
+const JOB = {
+  id: 5,
+  title: "Mentee",
+  kind: "activity",
+  description: "",
+  acceptingApplications: true,
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -384,6 +390,52 @@ describe("MyApplication", () => {
     await waitFor(() =>
       expect(screen.getByText("Personal Dashboard")).toBeInTheDocument(),
     );
+  });
+
+  it("does not offer Reapply once the posting has closed", async () => {
+    // The posting no longer takes submissions, so the button could only ever
+    // fail: `submit` refuses a posting that is not live.
+    api.getPublicJob.mockResolvedValue({
+      data: { ...JOB, acceptingApplications: false },
+    });
+    api.getMyApplication.mockResolvedValue({
+      data: {
+        id: 9,
+        stage: "rejected",
+        editable: false,
+        current: { submission: {} },
+      },
+    });
+    renderAt(5);
+
+    await waitFor(() =>
+      expect(screen.getByText("Rejected")).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("button", { name: /reapply/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("explains that a closed posting is what froze the application", async () => {
+    api.getPublicJob.mockResolvedValue({
+      data: { ...JOB, acceptingApplications: false },
+    });
+    api.getMyApplication.mockResolvedValue({
+      data: {
+        id: 9,
+        stage: "recruiter_screening",
+        editable: false,
+        lockReason: "closed",
+        current: { submission: {} },
+      },
+    });
+    renderAt(5);
+
+    expect(
+      await screen.findByText(
+        "This posting has closed, so it can't be edited any more.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("does not show a Reapply button for a non-rejected read-only application", async () => {

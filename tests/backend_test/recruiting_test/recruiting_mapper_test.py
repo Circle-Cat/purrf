@@ -38,6 +38,34 @@ class TestRecruitingMapper(unittest.TestCase):
             set(type(dto).model_fields.keys()), {"id", "title", "kind", "description"}
         )
 
+    def test_to_public_job_dto_reports_whether_the_posting_still_takes_applications(
+        self,
+    ):
+        """The one status fact a candidate is allowed to see.
+
+        An applicant can now open a posting that has stopped being live, so
+        the projection has to say so -- otherwise the page offers actions
+        (edit, reapply) the backend will refuse.
+        """
+        live = {
+            JobStatus.PUBLISHED,
+            JobStatus.PUBLISHED_PENDING_REVISION,
+            JobStatus.PENDING_CLOSE,
+        }
+        for status in JobStatus:
+            with self.subTest(status=status):
+                dto = self.mapper.to_public_job_dto(
+                    self._make_job_entity(status=status)
+                )
+                self.assertEqual(dto.accepting_applications, status in live)
+
+    def test_to_public_job_dto_does_not_expose_the_raw_status(self):
+        """`accepting_applications` is the whole answer: the status string
+        names internal review states (pending_close, pending_reopen) that are
+        nobody's business outside recruiting."""
+        dto = self.mapper.to_public_job_dto(self._make_job_entity())
+        self.assertNotIn("status", dto.model_dump())
+
     def test_to_board_card_dto_maps_fields_and_joins_applicant_name(self):
         applied_at = datetime(2026, 6, 1, tzinfo=timezone.utc)
         application = ApplicationEntity(
