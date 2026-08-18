@@ -107,7 +107,6 @@ export const API_ENDPOINTS = {
  * Query parameter values for the `/profiles/me` API.
  */
 export const ProfileFields = Object.freeze({
-  USER: "user",
   WORK_HISTORY: "workHistory",
   EDUCATION: "education",
   TRAINING: "training",

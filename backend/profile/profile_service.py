@@ -41,7 +41,9 @@ class ProfileService:
         fields: set[ProfileField] | None = None,
     ) -> ProfileDto:
         """
-        Retrieve a user profile.
+        Retrieve a user profile. When `fields` is omitted, only the base
+        user record is returned. Training, work history, and education
+        are included only when explicitly requested in `fields`.
 
         Args:
             session (AsyncSession): Active DB session.
@@ -51,8 +53,7 @@ class ProfileService:
         Returns:
             ProfileDto: Profile containing only requested fields.
         """
-        if fields is None:
-            fields = set(ProfileField)
+        fields = fields or set()
 
         includes = {
             "include_training": ProfileField.TRAINING in fields,
