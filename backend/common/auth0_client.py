@@ -253,7 +253,9 @@ class Auth0Client:
             # The PyJWT detail names Auth0 internals (issuer, audience, kid);
             # log it server-side and hand the caller a user-safe message.
             self._logger.warning("[Auth0Client] ID token verification failed: %s", e)
-            raise ValueError("Email verification failed; request a new code")
+            raise ValueError(
+                "We couldn't verify that email address. Please request a new code."
+            )
 
     def _raise_for_auth0_error(self, response, op: str) -> None:
         """
@@ -282,7 +284,7 @@ class Auth0Client:
             description,
         )
         if response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
-            raise RateLimitedError("Too many requests; try again later")
+            raise RateLimitedError("Too many requests. Please try again later.")
         raise RuntimeError(f"Auth0 {op} failed")
 
 
