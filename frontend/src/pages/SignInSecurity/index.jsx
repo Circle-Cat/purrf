@@ -134,10 +134,11 @@ const SignInSecurity = () => {
     <div className="flex flex-col gap-4 py-8">
       <Card>
         <CardHeader>
-          <CardTitle>Sign-in methods & emails</CardTitle>
+          <CardTitle>Emails &amp; sign-in methods</CardTitle>
           <CardDescription>
-            The methods you can use to sign in to Purrf. Your primary contact
-            email receives account notifications.
+            Manage the email addresses and sign-in methods linked to your Purrf
+            account. Account notifications will be sent to your primary contact
+            email.
           </CardDescription>
           <CardAction>
             <Button
@@ -173,9 +174,9 @@ const SignInSecurity = () => {
         onOpenChange={(o) => {
           if (!o) setPrimaryTarget(null);
         }}
-        title="Set primary contact email"
-        description={`Enter the 6-digit code we sent to ${primaryEmail} to make ${primaryTarget?.email} your primary contact email.`}
-        confirmLabel="Set as primary contact"
+        title="Change primary contact email"
+        description={`To make ${primaryTarget?.email} your primary contact email, enter the 6-digit code we sent to ${primaryEmail}.`}
+        confirmLabel="Make primary contact"
         otpEmail={primaryEmail}
         onConfirm={handleConfirmSetPrimary}
         onResend={handleResendSetPrimary}
@@ -187,7 +188,7 @@ const SignInSecurity = () => {
           if (!o) setUnlinkTarget(null);
         }}
         title="Remove sign-in method"
-        description={`Enter the 6-digit code we sent to ${primaryEmail} to confirm removing ${unlinkTarget?.label}. This removes only that sign-in. Its email address stays on your account and can still be used to sign in with Email OTP. To fully disconnect this address, also remove its Email OTP.`}
+        description={`To remove ${unlinkTarget?.label}, enter the 6-digit code sent to ${primaryEmail}. This removes only that sign-in method — the address stays on your account and can still be used with Email OTP. To fully disconnect it, remove its Email OTP as well.`}
         confirmLabel="Remove sign-in method"
         confirmVariant="destructive"
         otpEmail={primaryEmail}

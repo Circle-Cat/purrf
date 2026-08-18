@@ -143,8 +143,8 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(
             str(ctx.exception),
-            "Email already in use by another account. If it's yours, sign "
-            "in with a code to that address instead.",
+            "This email is already in use by another account. If it's "
+            "yours, sign in with a code sent to that address instead.",
         )
         self.auth0.start_passwordless.assert_not_called()
 
@@ -1242,7 +1242,7 @@ class TestConsumeStepUpOtp(unittest.IsolatedAsyncioTestCase):
         claims = {"primary_email_at_request": "old@example.com"}
 
         await self.service._consume_step_up_otp(
-            self.session, _USER_ID, claims, "123456", "switch"
+            self.session, _USER_ID, claims, "123456"
         )
 
         self.auth0.exchange_otp.assert_called_once_with("old@example.com", "123456")
@@ -1253,10 +1253,10 @@ class TestConsumeStepUpOtp(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(PermissionError) as ctx:
             await self.service._consume_step_up_otp(
-                self.session, _USER_ID, claims, "123456", "unlink"
+                self.session, _USER_ID, claims, "123456"
             )
-        # The operation noun customizes the message; the OTP is never consumed.
-        self.assertIn("unlink", str(ctx.exception))
+        # A primary that moved mid-flow aborts; the OTP is never consumed.
+        self.assertIn("changed while this was in progress", str(ctx.exception))
         self.auth0.exchange_otp.assert_not_called()
 
     async def test_rejects_when_no_primary(self):
@@ -1265,7 +1265,7 @@ class TestConsumeStepUpOtp(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(PermissionError):
             await self.service._consume_step_up_otp(
-                self.session, _USER_ID, claims, "123456", "switch"
+                self.session, _USER_ID, claims, "123456"
             )
         self.auth0.exchange_otp.assert_not_called()
 

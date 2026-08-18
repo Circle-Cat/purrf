@@ -52,7 +52,9 @@ describe("StepUpConfirmDialog", () => {
 
     await user.click(screen.getByRole("button", { name: "Switch primary" }));
 
-    expect(toast.error).toHaveBeenCalledWith("Enter the code from your email.");
+    expect(toast.error).toHaveBeenCalledWith(
+      "Please enter the 6-digit verification code.",
+    );
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
@@ -85,7 +87,7 @@ describe("StepUpConfirmDialog", () => {
     await waitFor(() => expect(onResend).toHaveBeenCalledTimes(1));
     // Without otpEmail the toast falls back to the generic wording.
     expect(toast.success).toHaveBeenCalledWith(
-      "We sent a new code to your primary contact email.",
+      "A new code was sent to your primary contact email. Check your inbox or spam folder.",
     );
   });
 
@@ -98,7 +100,7 @@ describe("StepUpConfirmDialog", () => {
 
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(
-        "We sent a new code to prime@x.com.",
+        "A new code was sent to prime@x.com. Check your inbox or spam folder.",
       ),
     );
   });
@@ -136,7 +138,7 @@ describe("StepUpConfirmDialog", () => {
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        "Could not resend the code. Please try again.",
+        "Failed to resend code. Please try again.",
       ),
     );
   });

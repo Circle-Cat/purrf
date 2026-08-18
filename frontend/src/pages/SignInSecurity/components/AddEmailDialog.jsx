@@ -26,7 +26,7 @@ import OtpVerifyForm from "@/components/common/OtpVerifyForm";
 const AddEmailDialog = ({ open, onOpenChange, onAdded }) => {
   const handleVerified = async () => {
     onOpenChange(false);
-    toast.success("Email added and verified.");
+    toast.success("Email address successfully added.");
     await onAdded?.();
   };
 
@@ -34,10 +34,10 @@ const AddEmailDialog = ({ open, onOpenChange, onAdded }) => {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add an email</DialogTitle>
+          <DialogTitle>Add an email address</DialogTitle>
           <DialogDescription>
-            We'll send a verification code to the address; entering it adds the
-            email to your account, ready for contact and sign-in.
+            We'll send a verification code to your new address to confirm it's
+            yours.
           </DialogDescription>
         </DialogHeader>
         {open && (

@@ -61,10 +61,10 @@ describe("VerifyRequired", () => {
   it("renders the hard-wall heading and description", () => {
     renderWall();
 
-    expect(screen.getByText("Set your contact email")).toBeInTheDocument();
+    expect(screen.getByText("Verify your email address")).toBeInTheDocument();
     expect(
       screen.getByText(
-        /Enter an address and the code we send it; it becomes your/,
+        /Enter your email address to receive a verification code/,
       ),
     ).toBeInTheDocument();
   });
@@ -102,7 +102,7 @@ describe("VerifyRequired", () => {
 
       expect(
         screen.getByText(
-          /Enter an address and the code we send it; it becomes your/,
+          /Enter your email address to receive a verification code/,
         ),
       ).toBeInTheDocument();
       expect(

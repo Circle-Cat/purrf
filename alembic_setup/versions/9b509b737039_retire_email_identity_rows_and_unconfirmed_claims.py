@@ -19,7 +19,7 @@ deletion leaves it with none at all. The backfill placeholders a sub only
 when it cannot parse one, so these accounts carry the real sub of the
 connection they sign in with, every later login resolves at the sub lookup,
 and the swap path that would confirm an address for them never runs — they
-would sit behind the "Set your contact email" hard wall permanently. Their
+would sit behind the email verification hard wall permanently. Their
 address is therefore re-seeded as a confirmed primary from
 user_identities.email_claim: company-held contact data carried over from the
 legacy users.email, the same source the deleted row was written from.

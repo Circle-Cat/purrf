@@ -52,7 +52,7 @@ const StepUpConfirmDialog = ({
 
   const handleConfirm = async () => {
     if (!code.trim()) {
-      toast.error("Enter the code from your email.");
+      toast.error("Please enter the 6-digit verification code.");
       return;
     }
     setBusy(true);
@@ -69,12 +69,13 @@ const StepUpConfirmDialog = ({
       await onResend();
       setCode("");
       toast.success(
-        `We sent a new code to ${otpEmail ?? "your primary contact email"}.`,
+        `A new code was sent to ${otpEmail ?? "your primary contact email"}. ` +
+          "Check your inbox or spam folder.",
       );
     } catch (error) {
       toast.error(
         error?.response?.data?.message ||
-          "Could not resend the code. Please try again.",
+          "Failed to resend code. Please try again.",
       );
     } finally {
       setBusy(false);
