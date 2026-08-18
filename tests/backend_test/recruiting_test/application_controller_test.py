@@ -17,9 +17,9 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
         self.app_service.submit = AsyncMock(return_value={"id": 100})
         self.app_service.edit = AsyncMock(return_value={"id": 100})
         self.app_service.get_mine = AsyncMock(return_value=None)
+        self.app_service.get_job_for_applicant = AsyncMock(return_value={"id": 1})
 
         self.job_service = MagicMock()
-        self.job_service.get_published_job_public = AsyncMock(return_value={"id": 1})
 
         self.resume_storage = MagicMock()
         self.resume_storage.put = MagicMock(return_value=("abc", "resumes/abc.pdf"))
@@ -40,10 +40,12 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
 
         self.ctx = UserContextDto(sub="s", primary_email="a@b.com", user_id=2)
 
-    async def test_get_public_job_delegates(self):
+    async def test_get_public_job_delegates_with_the_caller(self):
+        """The caller is part of the lookup: an applicant may read back a
+        posting that has since stopped being live, a stranger may not."""
         resp = await self.controller.get_public_job(self.ctx, 1)
-        self.job_service.get_published_job_public.assert_awaited_once_with(
-            self.session, 1
+        self.app_service.get_job_for_applicant.assert_awaited_once_with(
+            self.session, self.ctx, 1
         )
         self.assertEqual(resp["data"], {"id": 1})
 

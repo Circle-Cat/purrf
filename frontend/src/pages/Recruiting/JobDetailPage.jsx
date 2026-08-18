@@ -23,6 +23,12 @@ import LoadGate from "@/pages/Recruiting/components/LoadGate";
  * returning candidate can find their submission instead of only ever
  * seeing "Apply" again. A failed check falls back to the no-application
  * behavior on both routes -- the submit path still surfaces backend errors.
+ *
+ * A posting that has stopped accepting applications says so under its kind.
+ * Only a candidate who already applied can load one at all, and for them
+ * the action is "View your application" either way, so nothing here breaks
+ * -- but without the line the page reads exactly like a posting still on
+ * offer.
  */
 const JobDetailPage = () => {
   const { jobId } = useParams();
@@ -101,6 +107,13 @@ const JobDetailPage = () => {
       <div className="space-y-1">
         <h1 className="text-xl font-semibold text-slate-900">{job.title}</h1>
         <p className="text-sm text-slate-500 capitalize">{job.kind}</p>
+        {/* Explicitly `=== false`, not falsy: never claim a posting has
+            closed on a field the server did not send. */}
+        {job.acceptingApplications === false && (
+          <p className="text-sm text-slate-600">
+            This posting has closed and is no longer accepting applications.
+          </p>
+        )}
       </div>
       {job.description && (
         <p className="text-sm whitespace-pre-line text-slate-700">

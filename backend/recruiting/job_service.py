@@ -12,7 +12,7 @@ from backend.recruiting.pipeline_owners import normalized_owner_ids
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.job_activity_dto import JobActivityDto
 from backend.dto.job_config_dto import question_seq_floor
-from backend.dto.job_dto import JobCreateDto, JobDto, PublicJobDto, PublicJobSummaryDto
+from backend.dto.job_dto import JobCreateDto, JobDto, PublicJobSummaryDto
 from backend.dto.job_review_dto import ApproverDto, JobReviewDto
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import (
@@ -1181,31 +1181,3 @@ class JobService:
         if job is None or job.status not in PUBLICLY_VISIBLE_JOB_STATUSES:
             raise ValueError(f"Published job {job_id} not found")
         return self.recruiting_mapper.to_job_dto(job)
-
-    async def get_published_job_public(
-        self, session: AsyncSession, job_id: int
-    ) -> PublicJobDto:
-        """Return a candidate-visible posting's candidate-safe projection.
-
-        Same lookup/validation as ``get_published_job``, but maps through
-        ``to_public_job_dto`` so internal config (screen_rules,
-        pipeline_config, pending_*, last_reject_comment) never reaches the
-        candidate-facing application form. Because the projection reads the
-        live columns and drops ``pending_payload``, a posting mid
-        revision-review serves the approved version, not the staged edit.
-
-        Args:
-            session (AsyncSession): Active database async session.
-            job_id (int): The posting id.
-
-        Returns:
-            PublicJobDto: The posting's candidate-safe projection.
-
-        Raises:
-            ValueError: If the posting is missing or its status is outside
-                ``PUBLICLY_VISIBLE_JOB_STATUSES``.
-        """
-        job = await self.job_repository.get_by_job_id(session, job_id)
-        if job is None or job.status not in PUBLICLY_VISIBLE_JOB_STATUSES:
-            raise ValueError(f"Published job {job_id} not found")
-        return self.recruiting_mapper.to_public_job_dto(job)

@@ -1457,6 +1457,193 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.get_mine(self.session, self._ctx(), 1)
         self.assertFalse(result.editable)
 
+    async def _application_at_first_stage(self):
+        """Seed the caller's own application at the first stage, pending and
+        unfrozen -- the one state in which nothing but the posting's status
+        can lock it."""
+        app = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.RECRUITER_SCREENING,
+            sub_status="pending",
+            current_round=1,
+        )
+        app.application_id = 100
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
+        current = ApplicationSubmissionEntity(
+            application_id=100, version=1, submission={"personal": {}}
+        )
+        current.is_frozen = False
+        self.sub_repo.get_current = AsyncMock(return_value=current)
+        return app
+
+    async def test_get_mine_locked_once_the_posting_stops_being_live(self):
+        """A closed posting freezes the answers it closed on.
+
+        Nothing else locks this application -- first stage, pending,
+        unfrozen -- so without the posting check the candidate would be
+        handed an editable form for a posting that takes no submissions.
+        """
+        for status in (
+            JobStatus.CLOSED,
+            JobStatus.PENDING_REOPEN,
+        ):
+            with self.subTest(status=status):
+                await self._application_at_first_stage()
+                self.job_repo.get_by_job_id = AsyncMock(
+                    return_value=self._job(status=status)
+                )
+                result = await self.service.get_mine(self.session, self._ctx(), 1)
+                self.assertFalse(result.editable)
+                self.assertEqual(result.lock_reason, ApplicationLockReason.CLOSED)
+
+    async def test_get_mine_stays_editable_while_a_close_is_only_under_review(self):
+        """PENDING_CLOSE is still live, so it must not lock anything."""
+        await self._application_at_first_stage()
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(status=JobStatus.PENDING_CLOSE)
+        )
+        result = await self.service.get_mine(self.session, self._ctx(), 1)
+        self.assertTrue(result.editable)
+
+    async def test_get_mine_names_the_stage_over_the_closed_posting(self):
+        """An advanced application is not locked *by* the posting closing.
+
+        Telling the candidate their application moved to Tech says more than
+        telling them the posting shut -- the application is still alive.
+        """
+        app = ApplicationEntity(
+            job_id=1,
+            user_id=2,
+            stage=ApplicationStage.TECH,
+            sub_status="pending",
+            current_round=1,
+        )
+        app.application_id = 100
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=app)
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(status=JobStatus.CLOSED)
+        )
+        result = await self.service.get_mine(self.session, self._ctx(), 1)
+        self.assertEqual(result.lock_reason, ApplicationLockReason.ADVANCED)
+
+    async def test_edit_rejected_once_the_posting_stops_being_live(self):
+        """The same lock that greys out the form has to refuse the write.
+
+        Without it the candidate could PATCH answers onto a posting that has
+        already closed -- the form is only a suggestion, this is the gate.
+        """
+        app = await self._application_at_first_stage()
+        self.app_repo.get_by_id = AsyncMock(return_value=app)
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(status=JobStatus.CLOSED)
+        )
+        with self.assertRaises(ValueError):
+            await self.service.edit(
+                self.session,
+                self._ctx(),
+                100,
+                ApplicationEditDto(personal=REQUIRED_PERSONAL),
+            )
+
+    # -- get_job_for_applicant --
+
+    async def test_get_job_for_applicant_serves_a_live_posting_to_anyone(self):
+        """A revision or close still under review keeps the posting live."""
+        for status in (
+            JobStatus.PUBLISHED,
+            JobStatus.PUBLISHED_PENDING_REVISION,
+            JobStatus.PENDING_CLOSE,
+        ):
+            with self.subTest(status=status):
+                self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=None)
+                self.job_repo.get_by_job_id = AsyncMock(
+                    return_value=self._job(status=status)
+                )
+                dto = await self.service.get_job_for_applicant(
+                    self.session, self._ctx(), 1
+                )
+                self.assertEqual(dto.id, 1)
+                self.assertTrue(dto.accepting_applications)
+
+    async def test_get_job_for_applicant_serves_the_live_version_not_the_staged_edit(
+        self,
+    ):
+        """Mid-revision, candidates get the approved version, not the staged one."""
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=None)
+        job = self._job(status=JobStatus.PUBLISHED_PENDING_REVISION)
+        job.title = "Live title"
+        job.form_schema = {"questions": [{"id": "live"}]}
+        job.pending_payload = {
+            "title": "Staged title",
+            "formSchema": {"questions": [{"id": "staged"}]},
+        }
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        dto = await self.service.get_job_for_applicant(self.session, self._ctx(), 1)
+
+        self.assertEqual(dto.title, "Live title")
+        self.assertEqual(dto.form_schema, {"questions": [{"id": "live"}]})
+
+    async def test_get_job_for_applicant_serves_a_closed_posting_to_its_applicant(self):
+        """Reading back your own submission is not discovering a posting."""
+        await self._application_at_first_stage()
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(status=JobStatus.CLOSED)
+        )
+        dto = await self.service.get_job_for_applicant(self.session, self._ctx(), 1)
+        self.assertEqual(dto.id, 1)
+        self.assertFalse(dto.accepting_applications)
+
+    async def test_get_job_for_applicant_hides_a_closed_posting_from_a_stranger(self):
+        """Someone who never applied learns nothing a closed posting held."""
+        for status in (
+            JobStatus.DRAFT,
+            JobStatus.PENDING_REVIEW,
+            JobStatus.CLOSED,
+            JobStatus.PENDING_REOPEN,
+        ):
+            with self.subTest(status=status):
+                self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=None)
+                self.job_repo.get_by_job_id = AsyncMock(
+                    return_value=self._job(status=status)
+                )
+                with self.assertRaises(ValueError):
+                    await self.service.get_job_for_applicant(
+                        self.session, self._ctx(), 1
+                    )
+
+    async def test_get_job_for_applicant_rejects_a_missing_posting(self):
+        self.job_repo.get_by_job_id = AsyncMock(return_value=None)
+        self.app_repo.get_latest_by_job_and_user = AsyncMock(return_value=None)
+        with self.assertRaises(ValueError):
+            await self.service.get_job_for_applicant(self.session, self._ctx(), 1)
+
+    async def test_get_job_for_applicant_withholds_internal_config(self):
+        """The relaxed lookup must not relax the projection."""
+        await self._application_at_first_stage()
+        job = self._job(status=JobStatus.CLOSED)
+        job.form_schema = {"questions": []}
+        job.profile_config = {"resume": "required"}
+        job.screen_rules = {"rules": [{"id": "r1"}]}
+        job.pipeline_config = {"stages": [{"stage": "tech", "ownerId": 9}]}
+        job.pending_payload = {"formSchema": {"questions": [{"id": "leak"}]}}
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+
+        dto = await self.service.get_job_for_applicant(self.session, self._ctx(), 1)
+
+        self.assertEqual(dto.form_schema, {"questions": []})
+        self.assertEqual(dto.profile_config, {"resume": "required"})
+        dumped = dto.model_dump()
+        for leaked_field in (
+            "screen_rules",
+            "pipeline_config",
+            "pending_payload",
+            "last_reject_comment",
+        ):
+            self.assertNotIn(leaked_field, dumped)
+
     async def test_submit_accepted_while_revision_under_review(self):
         """A staged revision must not stop applications to the live posting."""
         self.job_repo.get_by_job_id = AsyncMock(
@@ -2425,6 +2612,26 @@ class LockReasonTest(unittest.TestCase):
 
     def test_no_submission_yet_is_not_frozen(self):
         self.assertIsNone(self.service._lock_reason(self._app(), self.job, None))
+
+    def test_a_posting_that_stopped_being_live_locks_as_closed(self):
+        self.job.status = JobStatus.CLOSED
+        self.assertEqual(
+            self.service._lock_reason(self._app(), self.job, self._sub()),
+            ApplicationLockReason.CLOSED,
+        )
+
+    def test_a_close_still_under_review_locks_nothing(self):
+        self.job.status = JobStatus.PENDING_CLOSE
+        self.assertIsNone(self.service._lock_reason(self._app(), self.job, self._sub()))
+
+    def test_advanced_wins_over_closed_because_the_application_lives_on(self):
+        self.job.status = JobStatus.CLOSED
+        self.assertEqual(
+            self.service._lock_reason(
+                self._app(stage=ApplicationStage.TECH), self.job, self._sub()
+            ),
+            ApplicationLockReason.ADVANCED,
+        )
 
 
 class ApplicationDtoLockConsistencyTest(unittest.TestCase):
