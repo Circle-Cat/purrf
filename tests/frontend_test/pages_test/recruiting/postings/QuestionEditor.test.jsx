@@ -99,6 +99,74 @@ describe("QuestionEditor", () => {
     ).toBeInTheDocument();
   });
 
+  // Blank is a legal, and common, way to leave a multi choice uncapped, so
+  // the field has to say both that it may be skipped and what skipping it
+  // means -- "(optional)" alone leaves the author guessing whether a blank
+  // cap is no limit or one selection.
+  it("says Max selections is optional and what leaving it blank does", () => {
+    render(
+      <QuestionEditor
+        question={{
+          id: "q1",
+          type: "multi_choice",
+          label: "Pick",
+          options: ["a", "b"],
+        }}
+        allQuestions={[]}
+        onChange={() => {}}
+        onRemove={() => {}}
+        onMoveUp={() => {}}
+        onMoveDown={() => {}}
+        optionOps={spyOps()}
+      />,
+    );
+    expect(screen.getByText("Max selections (optional)")).toBeInTheDocument();
+    expect(
+      screen.getByText("Blank means candidates can pick every option."),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing about a cap on a single choice", () => {
+    render(
+      <QuestionEditor
+        question={{
+          id: "q1",
+          type: "single_choice",
+          label: "Pick",
+          options: ["a", "b"],
+        }}
+        allQuestions={[]}
+        onChange={() => {}}
+        onRemove={() => {}}
+        onMoveUp={() => {}}
+        onMoveDown={() => {}}
+        optionOps={spyOps()}
+      />,
+    );
+    expect(screen.queryByLabelText("Max selections")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Blank means candidates can pick every option."),
+    ).not.toBeInTheDocument();
+  });
+
+  // The other type-specific number field, and the opposite rule: clearing it
+  // is what a save rejects. Marked so the pair does not read as two fields
+  // the author may equally skip.
+  it("marks Max characters required", () => {
+    render(
+      <QuestionEditor
+        question={{ id: "q3", type: "long_text", label: "Essay" }}
+        allQuestions={[]}
+        onChange={() => {}}
+        onRemove={() => {}}
+        onMoveUp={() => {}}
+        onMoveDown={() => {}}
+        optionOps={spyOps()}
+      />,
+    );
+    expect(screen.getByText("Max characters (required)")).toBeInTheDocument();
+  });
+
   // The rule is authored from the choice question that reveals this one, so
   // this editor only explains it.
   it("explains the rule that reveals it, naming the revealing question", () => {
