@@ -112,10 +112,7 @@ export const useMentorshipData = ({
   // Cached list of past mentorship partners
   const [pastPartners, setPastPartners] = useState([]);
 
-  // The user's profile timezone, fetched independently of round selection
-  // (unlike the round/meeting log requests below) so it is available as
-  // soon as the dashboard mounts rather than only once a round is picked.
-  // Starts at the org default and is overwritten once the profile responds.
+  // Loading state for user profile timezone
   const [userTimezone, setUserTimezone] = useState(DEFAULT_TIMEZONE);
 
   // Loading state for partners data
@@ -298,6 +295,7 @@ export const useMentorshipData = ({
     [roundStatus.regRoundId],
   );
 
+  // Fetch the profile timezone independently so it's available on mount.
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;

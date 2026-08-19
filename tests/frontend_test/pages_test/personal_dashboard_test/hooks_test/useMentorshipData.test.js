@@ -34,9 +34,6 @@ vi.mock("@/api/profileApi", () => ({
   getMyProfile: vi.fn(),
 }));
 
-// Never resolved by default -- most tests don't care about the profile
-// fetch and the hook already defaults `userTimezone` to the org timezone
-// without needing it to resolve.
 const mockProfileTimezone = (timezone = "America/Los_Angeles") =>
   getMyProfile.mockResolvedValue({ data: { profile: { user: { timezone } } } });
 
