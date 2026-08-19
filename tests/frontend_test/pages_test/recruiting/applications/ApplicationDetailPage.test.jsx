@@ -106,6 +106,7 @@ const makeOtherApplication = ({
   jobKind = "employment",
   stage = "tech",
   resumeAvailable = false,
+  emailsVisible = false,
   evaluations = [],
   activity = [],
   comments = [],
@@ -124,6 +125,7 @@ const makeOtherApplication = ({
   jobTitle,
   jobKind,
   resumeAvailable,
+  emailsVisible,
   evaluations,
   activity,
   comments,
@@ -2479,7 +2481,7 @@ describe("ApplicationDetailPage — history row timeline and comments", () => {
     return label.closest("li");
   };
 
-  it("shows Evaluations, Timeline and Comments tabs in an expanded row", async () => {
+  it("shows Evaluations, Timeline, Comments and Emails tabs in an expanded row", async () => {
     const user = userEvent.setup();
     const row = await renderAndExpand(user, makeOtherApplication());
 
@@ -2491,6 +2493,9 @@ describe("ApplicationDetailPage — history row timeline and comments", () => {
     ).toBeInTheDocument();
     expect(
       within(row).getByRole("tab", { name: "Comments" }),
+    ).toBeInTheDocument();
+    expect(
+      within(row).getByRole("tab", { name: "Emails" }),
     ).toBeInTheDocument();
   });
 
@@ -2583,6 +2588,189 @@ describe("ApplicationDetailPage — history row timeline and comments", () => {
     expect(
       within(row).queryByPlaceholderText("Add a comment…"),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("ApplicationDetailPage — history row emails", () => {
+  /** Render as owner with one cross-job entry, expand it, return its <li>. */
+  const renderAndExpand = async (user, entry) => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true }),
+    });
+    api.getOtherApplications.mockResolvedValue({
+      data: { otherJobs: [entry], previousSameJob: [] },
+    });
+    renderPage();
+    await waitLoaded();
+    const label = screen.getByText(/Backend Engineer — /);
+    await user.click(label);
+    api.getApplicationEmails.mockClear();
+    return label.closest("li");
+  };
+
+  it("renders the conversation when the caller may read it", async () => {
+    const user = userEvent.setup();
+    const row = await renderAndExpand(
+      user,
+      makeOtherApplication({ emailsVisible: true }),
+    );
+    api.getApplicationEmails.mockResolvedValue({
+      data: {
+        threads: [
+          {
+            threadId: "t9",
+            subject: "Interview invite",
+            messages: [
+              {
+                messageId: "m9",
+                from: "hr@circlecat.org",
+                to: ["cand@example.com"],
+                cc: [],
+                subject: "Interview invite",
+                bodyText: "Are you free Thursday?",
+                bodyHtml: null,
+                sentAt: "2026-07-05T12:00:00Z",
+              },
+            ],
+          },
+        ],
+        defaultTo: "cand@example.com",
+        defaultCc: [],
+      },
+    });
+
+    await user.click(within(row).getByRole("tab", { name: "Emails" }));
+
+    expect(
+      await within(row).findByText("Interview invite"),
+    ).toBeInTheDocument();
+    expect(
+      within(row).getByText(/Are you free Thursday\?/),
+    ).toBeInTheDocument();
+    expect(api.getApplicationEmails).toHaveBeenCalledWith(201);
+  });
+
+  it("says the emails are withheld rather than absent, and does not request them", async () => {
+    const user = userEvent.setup();
+    const row = await renderAndExpand(
+      user,
+      makeOtherApplication({ emailsVisible: false }),
+    );
+
+    await user.click(within(row).getByRole("tab", { name: "Emails" }));
+
+    expect(
+      within(row).getByText(
+        "You do not have permission to read emails for this application.",
+      ),
+    ).toBeInTheDocument();
+    // "No emails yet." would be a lie here, and the request would 400.
+    expect(within(row).queryByText("No emails yet.")).not.toBeInTheDocument();
+    expect(api.getApplicationEmails).not.toHaveBeenCalled();
+  });
+
+  it("distinguishes an empty inbox from a withheld one", async () => {
+    const user = userEvent.setup();
+    const row = await renderAndExpand(
+      user,
+      makeOtherApplication({ emailsVisible: true }),
+    );
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: "cand@example.com", defaultCc: [] },
+    });
+
+    await user.click(within(row).getByRole("tab", { name: "Emails" }));
+
+    expect(await within(row).findByText("No emails yet.")).toBeInTheDocument();
+  });
+
+  it("is read-only: no Send, Reply or Refresh in a history row", async () => {
+    const user = userEvent.setup();
+    const row = await renderAndExpand(
+      user,
+      makeOtherApplication({ emailsVisible: true }),
+    );
+    api.getApplicationEmails.mockResolvedValue({
+      data: {
+        threads: [
+          {
+            threadId: "t9",
+            subject: "Interview invite",
+            messages: [
+              {
+                messageId: "m9",
+                from: "hr@circlecat.org",
+                to: ["cand@example.com"],
+                cc: [],
+                subject: "Interview invite",
+                bodyText: "Are you free Thursday?",
+                bodyHtml: null,
+                sentAt: "2026-07-05T12:00:00Z",
+              },
+            ],
+          },
+        ],
+        defaultTo: "cand@example.com",
+        defaultCc: [],
+      },
+    });
+
+    await user.click(within(row).getByRole("tab", { name: "Emails" }));
+    await within(row).findByText("Interview invite");
+
+    expect(
+      within(row).queryByRole("button", { name: "Send email" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(row).queryByRole("button", { name: "Reply" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(row).queryByRole("button", { name: "Refresh" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("fetches a row's conversation once across tab switches", async () => {
+    const user = userEvent.setup();
+    const row = await renderAndExpand(
+      user,
+      makeOtherApplication({ emailsVisible: true }),
+    );
+    api.getApplicationEmails.mockResolvedValue({
+      data: { threads: [], defaultTo: null, defaultCc: [] },
+    });
+
+    await user.click(within(row).getByRole("tab", { name: "Emails" }));
+    await within(row).findByText("No emails yet.");
+    await user.click(within(row).getByRole("tab", { name: "Timeline" }));
+    await user.click(within(row).getByRole("tab", { name: "Emails" }));
+    await within(row).findByText("No emails yet.");
+
+    // Radix unmounts inactive tab content; without the cache this would be 2.
+    expect(api.getApplicationEmails).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not fetch a conversation just because the row was expanded", async () => {
+    const user = userEvent.setup();
+    await renderAndExpand(user, makeOtherApplication({ emailsVisible: true }));
+
+    expect(api.getApplicationEmails).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed load without claiming the inbox is empty", async () => {
+    const user = userEvent.setup();
+    const row = await renderAndExpand(
+      user,
+      makeOtherApplication({ emailsVisible: true }),
+    );
+    api.getApplicationEmails.mockRejectedValue(new Error("boom"));
+
+    await user.click(within(row).getByRole("tab", { name: "Emails" }));
+
+    expect(
+      await within(row).findByText("Could not load emails."),
+    ).toBeInTheDocument();
+    expect(within(row).queryByText("No emails yet.")).not.toBeInTheDocument();
   });
 });
 
