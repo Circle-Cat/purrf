@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 import { addDays, addMonths, isAfter, isBefore, subMonths } from "date-fns";
-import { formatInTz } from "@/utils/dateTime";
+import { formatInTz, formatDateTimeWithZone } from "@/utils/dateTime";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { GraduationCap, User, Plus } from "lucide-react";
@@ -99,7 +99,7 @@ export default function MentorshipParticipantsCard({
   const isFeedbackEditable =
     !feedbackClosesAt || !isAfter(new Date(), feedbackClosesAt);
   const feedbackDeadlineText = feedbackClosesAt
-    ? `${formatInTz(feedbackClosesAt.toISOString(), userTimezone, "MMM d, yyyy HH:mm")} ${userTimezone || "UTC"}`
+    ? formatDateTimeWithZone(feedbackClosesAt.toISOString(), userTimezone)
     : null;
 
   const getRoleIcon = (participantRole) => {
@@ -199,7 +199,8 @@ export default function MentorshipParticipantsCard({
                     to{" "}
                     {formatDt(
                       roundInfo?.timeline?.meetingsCompletionDeadlineAt,
-                    )}
+                    )}{" "}
+                    {userTimezone}
                   </p>
                 </div>
               </div>
