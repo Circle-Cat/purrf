@@ -99,6 +99,31 @@ azureWorkloadIdentity:
 # Secret configuration
 secret:
 
+# Schema migration run as an ArgoCD PreSync hook. Helm's own pre-upgrade hooks
+# do NOT fire under ArgoCD, which templates and applies rather than running
+# helm upgrade, so the ordering comes from the argocd.argoproj.io/hook
+# annotation in templates/migrate-job.yaml.
+migrate:
+  enabled: true
+  image:
+    # Built from the same commit as image.repository and pinned by the same
+    # image.tag, so the migration chain always matches the server that follows.
+    repository: ghcr.io/circle-cat/purrf-migrate
+  # One retry absorbs a cold Neon pooler refusing the first connection. A
+  # migration that actually fails has already rolled back in full, so retrying
+  # it is safe; a second failure is a real failure and turns the sync red.
+  backoffLimit: 1
+  # Long enough for any real migration, short enough that a wedged run fails the
+  # sync instead of hanging it.
+  activeDeadlineSeconds: 600
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
 cronjobDefaults:
   resources:
     limits:
