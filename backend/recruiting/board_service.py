@@ -645,33 +645,116 @@ class BoardService:
         application_id: int,
         refresh: bool = False,
     ) -> EmailConversationDto:
-        """Read one application's email conversation (owner or read.all).
+        """Read one application's email conversation.
 
-        Opening the tab is a pure DB read; ``refresh=True`` (manual Refresh)
-        first pulls the threads from Gmail, then reads.
+        Reading and refreshing are gated differently on purpose.
+
+        Reading passes for a *direct* caller — an owner of this
+        application's own posting, or a ``read.all`` holder — and also for a
+        caller with that standing on any OTHER application by the same
+        candidate. The wider rule is what makes the read-only Emails tab in
+        the cross-posting aggregation view work: past correspondence is
+        history about the candidate in the same sense their résumé is (see
+        ``get_resume``, which already resolves the same way), and the
+        aggregation view hands over that résumé, every answer, every
+        evaluation, the audit timeline and the internal comments already.
+        Withholding only the mail would protect nothing while leaving the
+        history with a hole in it.
+
+        Refreshing does NOT widen: ``refresh=True`` calls out to Gmail and
+        writes, and nobody should be able to drive a sync on a posting they
+        have no standing on. A candidate-scope caller asking to refresh is
+        refused outright rather than quietly downgraded to a plain read, so
+        the frontend can't mistake a stale view for a fresh one. The history
+        rows accordingly render without Send or Refresh; sending stays
+        owner-only in ``send_application_email``.
+
+        A candidate-scope caller also gets no compose prefill
+        (``default_to``/``default_cc`` come back empty): those exist to seed
+        a compose box they aren't allowed to open, and ``default_cc`` would
+        otherwise hand out a recruiter's contact address.
 
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller.
             application_id (int): The application to read.
             refresh (bool): When True, sync from Gmail before reading.
+                Direct callers only.
 
         Returns:
-            EmailConversationDto: Threads (with messages) plus the candidate's
-                default contact address for compose prefill.
+            EmailConversationDto: Threads (with messages), plus the
+                candidate's default contact address and Cc prefill for a
+                direct caller.
 
         Raises:
-            ValueError: If the application is missing, or the caller is neither
-                an owner nor a ``RECRUITING_APPLICATION_READ_ALL`` holder.
+            ValueError: If the application is missing; if the caller has no
+                owner/``read.all`` standing on it or on any other
+                application by the same candidate; or if a candidate-scope
+                caller asked to refresh.
         """
-        application = await self._require_application_owner(
-            session, current_user, application_id, allow_read_all=True
+        application = await self.application_repository.get_by_id(
+            session, application_id
+        )
+        if application is None:
+            raise ValueError(f"Application {application_id} not found")
+        is_direct = await self._has_owner_standing(
+            session, current_user, application.job_id
         )
         if refresh:
+            if not is_direct:
+                raise ValueError("you are not an owner of this job")
             await self.email_sync_service.sync_application(session, application)
             await session.commit()
+        elif not is_direct and not await self._has_candidate_standing(
+            session, current_user, application.user_id
+        ):
+            raise ValueError("you are not an owner of this job")
         return await self._build_application_conversation(
-            session, current_user, application_id, application.user_id
+            session,
+            current_user,
+            application_id,
+            application.user_id,
+            compose_prefill=is_direct,
+        )
+
+    async def _has_owner_standing(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        job_id: int,
+    ) -> bool:
+        """Whether the caller owns ``job_id`` or holds ``read.all``."""
+        try:
+            await self._require_owner(
+                session, current_user, job_id, allow_read_all=True
+            )
+        except ValueError:
+            return False
+        return True
+
+    async def _has_candidate_standing(
+        self,
+        session: AsyncSession,
+        current_user: UserContextDto,
+        candidate_user_id: int,
+    ) -> bool:
+        """Whether the caller owns ANY posting this candidate applied to.
+
+        The "single entry gate" rule of the cross-posting aggregation view
+        (see ``get_other_applications`` and ``get_resume``), narrowed to the
+        owner/``read.all`` set: unlike ``get_resume`` this does not admit a
+        current-stage assignee or the candidate themselves, because email
+        follows the timeline and comments — an owner-facing view — rather
+        than the résumé.
+        """
+        if current_user.has_permission(Permission.RECRUITING_APPLICATION_READ_ALL):
+            return True
+        rows = await self.application_repository.list_by_user(
+            session, candidate_user_id
+        )
+        return any(
+            current_user.user_id in normalized_owner_ids(job.pipeline_config)
+            for _application, job in rows
         )
 
     async def _require_application_owner(
@@ -699,6 +782,8 @@ class BoardService:
         current_user: UserContextDto,
         application_id: int,
         user_id: int,
+        *,
+        compose_prefill: bool = True,
     ) -> EmailConversationDto:
         """Assemble the EmailConversationDto for one application.
 
@@ -706,10 +791,19 @@ class BoardService:
         address for a new mail (conversation level), and the recruiter plus
         that thread's prior Cc for a reply (thread level) — always excluding
         the company sender and the candidate's To address.
+
+        ``compose_prefill=False`` drops all of that (and skips the two
+        contact lookups it needs): a read-only caller has no compose box to
+        seed, and the Cc prefill would otherwise disclose a recruiter's
+        address.
         """
         threads = await self.email_conversation_service.list_conversation(
             session, ContextType.APPLICATION, application_id
         )
+        if not compose_prefill:
+            for thread in threads:
+                thread.default_cc = []
+            return EmailConversationDto(threads=threads, default_to=None, default_cc=[])
         default_to = await self.user_emails_repository.get_contact_email(
             session, user_id
         )
@@ -1365,6 +1459,17 @@ class BoardService:
         (``get_application_activity``'s gate), and the frontend only renders
         these panels in the owner/read.all layout anyway.
 
+        ``emails_visible`` rides along on the same ``include_history`` rule,
+        for the same reason: past correspondence is owner-facing history
+        about the candidate, and an owner who is already being handed the
+        other posting's résumé, answers, evaluations, timeline and internal
+        comments gains nothing from a hole where the mail should be. No
+        message bodies ride along here -- they would bloat a payload
+        fetched eagerly for every row -- so the flag only tells the frontend
+        whether to offer the tab; it fetches the threads from
+        ``get_application_conversation`` (whose read gate resolves the same
+        way) when that tab is opened.
+
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller.
@@ -1378,7 +1483,8 @@ class BoardService:
                 first), each entry carrying its job title, its job's kind,
                 its job's live form schema (the label fallback for a
                 submission with no schema snapshot of its own), full
-                application snapshot, résumé availability, and every
+                application snapshot, résumé availability, whether the
+                caller may read the email conversation, and every
                 evaluation row submitted for it.
 
         Raises:
@@ -1393,9 +1499,13 @@ class BoardService:
             allow_assignee=True,
             allow_read_all=True,
         )
-        include_history = current_user.user_id in normalized_owner_ids(
-            entry_job.pipeline_config
-        ) or current_user.has_permission(Permission.RECRUITING_APPLICATION_READ_ALL)
+        has_read_all = current_user.has_permission(
+            Permission.RECRUITING_APPLICATION_READ_ALL
+        )
+        include_history = (
+            current_user.user_id in normalized_owner_ids(entry_job.pipeline_config)
+            or has_read_all
+        )
         rows = await self.application_repository.list_by_user(
             session, application.user_id
         )
@@ -1430,6 +1540,7 @@ class BoardService:
                 resume_available=bool(
                     current_sub is not None and current_sub.resume_object_key
                 ),
+                emails_visible=include_history,
                 activity=activity,
                 comments=comments,
                 evaluations=[

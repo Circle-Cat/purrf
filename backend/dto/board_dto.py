@@ -286,12 +286,21 @@ class OtherApplicationDto(BaseDto):
     on the application they're grading. ``job_kind`` lets the frontend
     label stages for the entry's OWN job (activity: hired -> "Admitted"),
     which may differ in kind from the job being viewed.
+
+    ``emails_visible`` follows the same owner/``read.all`` rule as
+    ``activity``/``comments``: past correspondence is owner-facing history
+    about the candidate, like the résumé and the timeline the same entry
+    already carries. It holds no message bodies -- they would bloat a
+    payload fetched eagerly for every row -- so it only tells the frontend
+    whether to offer a read-only Emails tab, which fetches the threads from
+    the emails endpoint when opened.
     """
 
     application: ApplicationDto
     job_title: str
     job_kind: JobKind
     resume_available: bool
+    emails_visible: bool = False
     # That job's LIVE form_schema — these applications belong to *other*
     # postings, so the detail page's own schema cannot label their answers.
     # Only a fallback: submissions written after the snapshot change carry

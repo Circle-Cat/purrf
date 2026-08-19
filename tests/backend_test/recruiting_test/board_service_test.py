@@ -567,6 +567,81 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsInstance(result, EmailConversationDto)
 
+    async def test_conversation_read_allows_owner_of_another_posting_of_the_candidate(
+        self,
+    ):
+        """The cross-posting history rows read mail through this endpoint,
+        so an owner of ANY posting the candidate applied to can read it —
+        the same "single entry gate" get_resume already resolves by."""
+        app = self._setup_owned_application(application_id=7, user_id=5, owner=2)
+        sibling_job = self._job(job_id=200, owner_ids=(42,))
+        sibling_app = self._application(application_id=8, job_id=200, user_id=5)
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[
+                (app, self._job(job_id=100, owner_ids=(2,))),
+                (sibling_app, sibling_job),
+            ]
+        )
+
+        result = await self.service.get_application_conversation(
+            self.session, self._ctx(user_id=42), 7, refresh=False
+        )
+
+        self.assertIsInstance(result, EmailConversationDto)
+        self.email_svc.list_conversation.assert_awaited_once()
+
+    async def test_conversation_read_gives_a_candidate_scope_caller_no_prefill(self):
+        """A read-only caller has no compose box to seed, and default_cc
+        would otherwise hand out a recruiter's contact address."""
+        app = self._setup_owned_application(application_id=7, user_id=5, owner=2)
+        sibling_app = self._application(application_id=8, job_id=200, user_id=5)
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[
+                (app, self._job(job_id=100, owner_ids=(2,))),
+                (sibling_app, self._job(job_id=200, owner_ids=(42,))),
+            ]
+        )
+
+        result = await self.service.get_application_conversation(
+            self.session, self._ctx(user_id=42), 7, refresh=False
+        )
+
+        self.assertIsNone(result.default_to)
+        self.assertEqual(result.default_cc, [])
+        self.user_emails_repo.get_contact_email.assert_not_awaited()
+
+    async def test_conversation_read_forbids_a_caller_with_no_standing_anywhere(self):
+        app = self._setup_owned_application(application_id=7, user_id=5, owner=2)
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[(app, self._job(job_id=100, owner_ids=(2,)))]
+        )
+
+        with self.assertRaises(ValueError):
+            await self.service.get_application_conversation(
+                self.session, self._ctx(user_id=42), 7, refresh=False
+            )
+        self.email_svc.list_conversation.assert_not_awaited()
+
+    async def test_conversation_refresh_does_not_widen_to_candidate_scope(self):
+        """Refresh calls out to Gmail and writes: nobody drives a sync on a
+        posting they have no standing on. Refused outright rather than
+        silently downgraded, so the caller can't mistake a stale view for a
+        fresh one."""
+        app = self._setup_owned_application(application_id=7, user_id=5, owner=2)
+        sibling_app = self._application(application_id=8, job_id=200, user_id=5)
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[
+                (app, self._job(job_id=100, owner_ids=(2,))),
+                (sibling_app, self._job(job_id=200, owner_ids=(42,))),
+            ]
+        )
+
+        with self.assertRaises(ValueError):
+            await self.service.get_application_conversation(
+                self.session, self._ctx(user_id=42), 7, refresh=True
+            )
+        self.email_sync_svc.sync_application.assert_not_awaited()
+
     async def test_send_application_email_write_forbids_read_all_non_owner(self):
         self._setup_owned_application(owner=2)
         ctx = self._ctx(
@@ -5638,6 +5713,125 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([a.id for a in result.other_jobs[0].activity], [1])
         self.assertEqual(result.other_jobs[0].comments, [])
+
+    async def test_get_other_applications_exposes_emails_with_the_rest_of_history(
+        self,
+    ):
+        """``emails_visible`` follows ``include_history``: an owner of the
+        ENTRY job gets the flag on every entry, including a posting they
+        have no standing on of their own — same rule that already hands
+        them that posting's timeline and comments."""
+        entry_job = self._job(job_id=1, owner_ids=(2,))
+        other_job = self._job(job_id=2, owner_ids=(9,))
+        entry_app = self._application(application_id=10, job_id=1, user_id=3)
+        prior_app = self._application(
+            application_id=9,
+            job_id=1,
+            user_id=3,
+            stage=ApplicationStage.REJECTED,
+        )
+        other_app = self._application(
+            application_id=11,
+            job_id=2,
+            user_id=3,
+            stage=ApplicationStage.TECH,
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=entry_app)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=entry_job)
+        self.assignment_repo.get.return_value = None
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[
+                (entry_app, entry_job),
+                (prior_app, entry_job),
+                (other_app, other_job),
+            ]
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.list_by_application.return_value = []
+        self.event_repo.list_by_subject.return_value = []
+        self.comment_repo.list_by_application.return_value = []
+
+        result = await self.service.get_other_applications(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertTrue(result.other_jobs[0].emails_visible)
+        self.assertTrue(result.previous_same_job[0].emails_visible)
+
+    async def test_get_other_applications_read_all_caller_sees_every_conversation(self):
+        """``read.all`` clears the flag everywhere, matching the read gate on
+        get_application_conversation."""
+        entry_job = self._job(job_id=1, owner_ids=(9,))
+        other_job = self._job(job_id=2, owner_ids=(9,))
+        entry_app = self._application(application_id=10, job_id=1, user_id=3)
+        other_app = self._application(
+            application_id=11,
+            job_id=2,
+            user_id=3,
+            stage=ApplicationStage.TECH,
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=entry_app)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=entry_job)
+        self.assignment_repo.get.return_value = None
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[(entry_app, entry_job), (other_app, other_job)]
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.list_by_application.return_value = []
+        self.event_repo.list_by_subject.return_value = []
+        self.comment_repo.list_by_application.return_value = []
+        ctx = UserContextDto(
+            sub="s",
+            primary_email="hr@b.com",
+            user_id=5,
+            permissions=frozenset({Permission.RECRUITING_APPLICATION_READ_ALL}),
+        )
+
+        result = await self.service.get_other_applications(self.session, ctx, 10)
+
+        self.assertTrue(result.other_jobs[0].emails_visible)
+
+    async def test_get_other_applications_assignee_only_caller_gets_no_emails(self):
+        """A pure assignee passes the entry gate but is not an owner, so mail
+        is withheld along with the timeline and comments. The frontend never
+        renders the tab for this caller anyway; the flag must still be
+        honest about it."""
+        entry_job = self._job(job_id=1, owner_ids=(9,))
+        other_job = self._job(job_id=2, owner_ids=(9,))
+        entry_app = self._application(application_id=10, job_id=1, user_id=3)
+        prior_app = self._application(
+            application_id=9,
+            job_id=1,
+            user_id=3,
+            stage=ApplicationStage.REJECTED,
+        )
+        other_app = self._application(
+            application_id=11,
+            job_id=2,
+            user_id=3,
+            stage=ApplicationStage.TECH,
+        )
+        self.app_repo.get_by_id = AsyncMock(return_value=entry_app)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=entry_job)
+        self.assignment_repo.get.return_value = self._assignment(
+            10, ApplicationStage.RECRUITER_SCREENING, 1, assignee_id=5
+        )
+        self.app_repo.list_by_user = AsyncMock(
+            return_value=[
+                (entry_app, entry_job),
+                (prior_app, entry_job),
+                (other_app, other_job),
+            ]
+        )
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+        self.evaluation_repo.list_by_application.return_value = []
+
+        result = await self.service.get_other_applications(
+            self.session, self._ctx(user_id=5), 10
+        )
+
+        self.assertFalse(result.other_jobs[0].emails_visible)
+        self.assertFalse(result.previous_same_job[0].emails_visible)
 
 
 if __name__ == "__main__":
