@@ -9,6 +9,13 @@ image:
   # switching to the CI/GHCR image is a follow-up.
   repository: ghcr.io/circle-cat/purrf
   tag: "359d6ed9196739657e45cf1d804a02758bf6a657"
+# The PreSync migration hook stays off here until a build has pushed a
+# purrf-migrate image carrying the tag pinned above; turning it on before that
+# would fail every sync on a missing image. Enabled per environment in order:
+# test, then staging, then prod.
+migrate:
+  enabled: false
+
 envFrom:
   - secretRef:
       name: purrf-staging
