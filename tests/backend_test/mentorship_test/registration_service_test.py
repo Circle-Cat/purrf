@@ -58,6 +58,9 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
         self.mock_application_repo.get_recent_hired_activity_role = AsyncMock(
             return_value=ParticipantRole.MENTOR
         )
+        self.mock_application_repo.get_hired_activity_application = AsyncMock(
+            return_value=MagicMock()
+        )
 
         self.service = RegistrationService(
             logger=self.mock_logger,
@@ -175,7 +178,8 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(existing_entity.specific_industry)
 
     async def test_get_registration_info(self):
-        """Test: Get registration info, containing global and round preferences."""
+        """Test: Get registration info, containing global and round preferences,
+        for a caller who names a role they were admitted into."""
         mock_entity = MagicMock(spec=PreferenceEntity)
         self.mock_preference_repo.get_preferences_by_user_id.return_value = mock_entity
         self.mock_mapper.map_to_global_preferences_dto.return_value = (
@@ -193,18 +197,21 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             session=self.mock_session,
             user_context=self.user_context,
             round_id=self.mock_round_id,
+            role=ParticipantRole.MENTOR,
         )
 
-        # Role is resolved from the HIRED activity application (MENTOR in
-        # setUp) and passed through; GET no longer infers it.
+        # The named role is checked against the HIRED activity application
+        # and, once cleared, passed straight through — never inferred.
+        self.mock_application_repo.get_hired_activity_application.assert_awaited_once_with(
+            session=self.mock_session,
+            user_id=self.user_id,
+            mentorship_role=ParticipantRole.MENTOR,
+        )
         self.mock_participation_service.get_user_round_preferences.assert_awaited_once_with(
             session=self.mock_session,
             user_id=self.user_id,
             round_id=self.mock_round_id,
             participant_role=ParticipantRole.MENTOR,
-        )
-        self.mock_application_repo.get_recent_hired_activity_role.assert_awaited_once_with(
-            session=self.mock_session, user_id=self.user_id
         )
         self.mock_preference_repo.get_preferences_by_user_id.assert_awaited_once_with(
             session=self.mock_session, user_id=self.user_id
@@ -213,24 +220,55 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
             preference_entity=mock_entity
         )
 
-    async def test_get_registration_info_blocks_without_approved_application(self):
-        """Test: GET hard-blocks (mirrors POST) when the user has no HIRED
-        activity application, instead of fabricating a default role."""
+    async def test_get_registration_info_rejects_a_role_the_user_lacks(self):
+        """A role named by the caller is checked, not trusted: no HIRED
+        activity application in that role is a 403, mapped from
+        PermissionError by the global handler."""
         mock_round = MagicMock()
         mock_round.name = "test_round"
         self.mock_round_repo.get_by_round_id.return_value = mock_round
-        self.mock_application_repo.get_recent_hired_activity_role.return_value = None
+        self.mock_application_repo.get_hired_activity_application.return_value = None
 
-        with self.assertRaisesRegex(
-            ValueError, "complete your mentor or mentee application"
-        ):
+        with self.assertRaises(PermissionError):
             await self.service.get_registration_info(
                 session=self.mock_session,
                 user_context=self.user_context,
                 round_id=self.mock_round_id,
+                role=ParticipantRole.MENTOR,
             )
 
         self.mock_participation_service.get_user_round_preferences.assert_not_awaited()
+
+    async def test_get_registration_info_without_a_role_skips_the_eligibility_check(
+        self,
+    ):
+        """Omitting the role asks only "am I registered, and as what" — no
+        eligibility check runs, and there may be nothing to prefill."""
+        mock_round = MagicMock()
+        mock_round.name = "test_round"
+        self.mock_round_repo.get_by_round_id.return_value = mock_round
+        self.mock_application_repo.get_hired_activity_application.return_value = None
+        self.mock_preference_repo.get_preferences_by_user_id.return_value = None
+        self.mock_participation_service.get_user_round_preferences.return_value = (
+            None,
+            False,
+        )
+
+        result = await self.service.get_registration_info(
+            session=self.mock_session,
+            user_context=self.user_context,
+            round_id=self.mock_round_id,
+        )
+
+        self.assertIsNone(result.round_preferences)
+        self.assertFalse(result.is_registered)
+        self.mock_application_repo.get_hired_activity_application.assert_not_awaited()
+        self.mock_participation_service.get_user_round_preferences.assert_awaited_once_with(
+            session=self.mock_session,
+            user_id=self.user_id,
+            round_id=self.mock_round_id,
+            participant_role=None,
+        )
 
     async def test_update_user_round_preferences_existing(self):
         """Test: When the user already has participant record, update the existing entity"""

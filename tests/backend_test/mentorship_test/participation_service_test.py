@@ -5,6 +5,7 @@ from dateutil.relativedelta import relativedelta
 from unittest.mock import MagicMock, AsyncMock
 
 from backend.mentorship.participation_service import ParticipationService
+from backend.common.exceptions import ConflictError
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RoundPreferencesDto
 from backend.dto.feedback_create_dto import FeedbackCreateDto
@@ -225,6 +226,7 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         """Returns preferences from the current round if record exists."""
         mock_round_id = 1
         mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
+        mock_participant.participant_role = ParticipantRole.MENTOR
         self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
             mock_participant
         )
@@ -330,6 +332,79 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.expected_partner_ids, [])
         self.assertEqual(result.goal, "")
         self.assertEqual(result.max_partners, 1)
+
+    async def test_registered_row_wins_over_a_matching_requested_role(self):
+        """A saved registration's role settles the round when it matches the
+        requested role: its preferences come back as-is."""
+        mock_round_id = 1
+        mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
+        mock_participant.participant_role = ParticipantRole.MENTEE
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            mock_participant
+        )
+        expected_dto = RoundPreferencesDto(
+            participant_role=ParticipantRole.MENTEE,
+            expected_partner_ids=[],
+            unexpected_partner_ids=[],
+            max_partners=1,
+            goal="",
+        )
+        self.mock_mapper.map_to_round_preference_dto.return_value = expected_dto
+
+        (
+            result,
+            is_registered,
+        ) = await self.participation_service.get_user_round_preferences(
+            session=self.mock_session,
+            user_id=self.user_context.user_id,
+            round_id=mock_round_id,
+            participant_role=ParticipantRole.MENTEE,
+        )
+
+        self.assertTrue(is_registered)
+        self.assertEqual(ParticipantRole.MENTEE, result.participant_role)
+
+    async def test_registered_row_conflicts_with_a_different_requested_role(self):
+        """A saved registration under a different role than requested is a
+        conflict, not a silent correction."""
+        mock_round_id = 1
+        mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
+        mock_participant.participant_role = ParticipantRole.MENTEE
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            mock_participant
+        )
+
+        with self.assertRaises(ConflictError) as ctx:
+            await self.participation_service.get_user_round_preferences(
+                session=self.mock_session,
+                user_id=self.user_context.user_id,
+                round_id=mock_round_id,
+                participant_role=ParticipantRole.MENTOR,
+            )
+
+        self.assertIn("mentee", str(ctx.exception))
+
+    async def test_no_row_and_no_role_yields_no_preferences(self):
+        """With no registration and no role supplied, there is nothing to
+        prefill: return None."""
+        mock_round_id = 1
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            None
+        )
+
+        (
+            result,
+            is_registered,
+        ) = await self.participation_service.get_user_round_preferences(
+            session=self.mock_session,
+            user_id=self.user_context.user_id,
+            round_id=mock_round_id,
+            participant_role=None,
+        )
+
+        self.assertIsNone(result)
+        self.assertFalse(is_registered)
+        self.mock_round_participants_repo.get_recent_participant_by_user_id_and_role.assert_not_awaited()
 
     async def test_get_my_match_result_unregistered(self):
         """Test result when user has not registered for the round."""
