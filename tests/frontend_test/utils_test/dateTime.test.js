@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   formatInTz,
+  formatDateTimeWithZone,
+  formatDateTimeRangeWithZone,
   formatLocalYmd,
   todayInTz,
   nowInTz,
@@ -68,6 +70,55 @@ describe("formatInTz", () => {
     expect(
       formatInTz("2024-01-01T20:00:00Z", "Asia/Shanghai", "yyyy-MM-dd"),
     ).toBe("2024-01-02");
+  });
+});
+
+describe("formatDateTimeWithZone", () => {
+  it("returns null for missing iso or tz", () => {
+    expect(formatDateTimeWithZone(null, "America/New_York")).toBeNull();
+    expect(formatDateTimeWithZone("2024-03-15T12:00:00Z", null)).toBeNull();
+  });
+
+  it("appends the IANA zone name to the formatted instant", () => {
+    expect(
+      formatDateTimeWithZone("2024-03-15T12:00:00Z", "America/New_York"),
+    ).toBe("2024-03-15 08:00 America/New_York");
+  });
+});
+
+describe("formatDateTimeRangeWithZone", () => {
+  it("returns null when any input is missing", () => {
+    expect(
+      formatDateTimeRangeWithZone(
+        null,
+        "2024-03-15T13:00:00Z",
+        "America/New_York",
+      ),
+    ).toBeNull();
+    expect(
+      formatDateTimeRangeWithZone(
+        "2024-03-15T12:00:00Z",
+        null,
+        "America/New_York",
+      ),
+    ).toBeNull();
+    expect(
+      formatDateTimeRangeWithZone(
+        "2024-03-15T12:00:00Z",
+        "2024-03-15T13:00:00Z",
+        null,
+      ),
+    ).toBeNull();
+  });
+
+  it("appends the IANA zone name to the formatted range", () => {
+    expect(
+      formatDateTimeRangeWithZone(
+        "2024-03-15T12:00:00Z",
+        "2024-03-15T13:00:00Z",
+        "America/New_York",
+      ),
+    ).toBe("2024-03-15 · 08:00 - 09:00 America/New_York");
   });
 });
 

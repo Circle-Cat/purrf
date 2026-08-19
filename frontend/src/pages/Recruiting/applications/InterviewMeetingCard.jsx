@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatInTz } from "@/utils/dateTime";
+import { formatDateTimeRangeWithZone } from "@/utils/dateTime";
 
 /**
  * The scheduled interview meeting for one application's current stage+round.
@@ -68,11 +68,11 @@ const InterviewMeetingCard = ({
   const meetLinkDisplay = interview.meetLink
     ? interview.meetLink.replace(/^https?:\/\//, "")
     : null;
-  const timeRange = `${formatInTz(interview.startAt, timezone, "yyyy-MM-dd")} · ${formatInTz(
+  const timeRange = formatDateTimeRangeWithZone(
     interview.startAt,
+    interview.endAt,
     timezone,
-    "HH:mm",
-  )} - ${formatInTz(interview.endAt, timezone, "HH:mm")} ${timezone}`;
+  );
 
   return (
     <Card>
