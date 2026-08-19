@@ -11,6 +11,7 @@ from backend.dto.registration_create_dto import RegistrationCreateDto
 from backend.dto.feedback_create_dto import FeedbackCreateDto
 from backend.dto.feedback_dto import FeedbackDto
 from backend.common.fast_api_response_wrapper import api_response
+from backend.common.mentorship_enums import ParticipantRole
 from backend.utils.permission_decorators import authenticate
 from backend.common.api_endpoints import (
     MENTORSHIP_ROUNDS_ENDPOINT,
@@ -300,13 +301,22 @@ class MentorshipController:
             data=partners,
         )
 
-    async def get_registration_info(self, current_user: UserContextDto, round_id: int):
+    async def get_registration_info(
+        self,
+        current_user: UserContextDto,
+        round_id: int,
+        role: ParticipantRole | None = None,
+    ):
         """
         Fetch the registration information for the current user in a specific mentorship round.
 
         Args:
             current_user (UserContextDto): The authenticated user context.
             round_id (int): The ID of the specific mentorship round the user is registering for.
+            role (ParticipantRole | None): Which role's registration form to
+                answer with. Omitted asks only "am I registered, and as
+                what"; supplied additionally prefills that role's form for a
+                user who has not registered yet.
 
         Returns:
             API response containing the unified RegistrationDto.
@@ -314,7 +324,10 @@ class MentorshipController:
         async with self.database.session() as session:
             registration_info: RegistrationDto = (
                 await self.registration_service.get_registration_info(
-                    session=session, user_context=current_user, round_id=round_id
+                    session=session,
+                    user_context=current_user,
+                    round_id=round_id,
+                    role=role,
                 )
             )
 

@@ -36,13 +36,13 @@ const Profile = () => {
   } = useProfileData();
 
   // The completeness reminder speaks only about mentorship matching, so it
-  // is addressed to admitted participants alone. `hiredMentorshipRole` is
-  // null while the applications list is still in flight, which keeps the
+  // is addressed to admitted participants alone. `hiredMentorshipRoles` is
+  // empty while the applications list is still in flight, which keeps the
   // reminder quiet until we actually know.
-  const { hiredMentorshipRole } = useMyApplications();
+  const { hiredMentorshipRoles } = useMyApplications();
 
   useProfileCompletenessReminder({
-    enabled: hiredMentorshipRole !== null,
+    enabled: hiredMentorshipRoles.length > 0,
     isLoading,
     loadError,
     personalInfo,

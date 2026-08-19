@@ -3,14 +3,42 @@ import { Target } from "lucide-react";
 import MentorshipRegistrationDialog from "@/pages/PersonalDashboard/components/MentorshipRegistrationDialog";
 import MatchingResultDialog from "@/pages/PersonalDashboard/components/MatchingResultDialog";
 
+/**
+ * Mentorship banner for the personal dashboard: the round's name, the goal
+ * of an existing registration, and one registration entry point per role
+ * the user may act on.
+ *
+ * @param {Object} props - Component props.
+ * @param {Object|null} props.registration - The user's registration for the
+ *   round taking registrations, or the round-level answer when they have
+ *   not registered.
+ * @param {boolean} props.isRegistrationOpen - Whether any of the user's
+ *   roles still has an open window.
+ * @param {boolean} props.isFeedbackEnabled - Whether the feedback phase is active.
+ * @param {Array<{role: string, deadlineAt: string|null, isOpen: boolean}>} props.registrationEntries -
+ *   One entry per role the user may register under.
+ * @param {"mentor"|"mentee"|null} props.registeredRole - The role an existing
+ *   registration settled on, or null when there is none.
+ * @param {(data: Object) => Promise<any>} props.onSaveRegistration - Submits a registration.
+ * @param {(role: string) => Promise<Object|null>} props.loadRegistrationForRole -
+ *   Fetches one role's form prefill.
+ * @param {Array<Object>} props.pastPartners - The user's past partners.
+ * @param {boolean} props.isPartnersLoading - Whether the partner list is loading.
+ * @param {() => Promise<void>} props.onLoadPastPartners - Loads the partner list.
+ * @param {() => Promise<void>} props.refreshRegistration - Refreshes the registration.
+ * @param {Object|null} props.matchResult - The matching result data.
+ * @param {string} props.matchResultRoundName - Round name the match belongs to.
+ * @param {boolean} props.canViewMatch - Whether the match result is visible.
+ * @returns {JSX.Element|null}
+ */
 export default function MentorshipInfoBanner({
   registration,
   isRegistrationOpen,
   isFeedbackEnabled,
-  feedbackRoundId,
-  feedbackRoundName,
-  hiredMentorshipRole,
+  registrationEntries = [],
+  registeredRole,
   onSaveRegistration,
+  loadRegistrationForRole,
   pastPartners,
   isPartnersLoading,
   onLoadPastPartners,
@@ -19,19 +47,18 @@ export default function MentorshipInfoBanner({
   matchResultRoundName,
   canViewMatch,
 }) {
-  // TODO(PUR-569): remove these two props. Feedback moved to
-  // MentorshipParticipantsCard, so nothing here reads them any more, but
-  // deleting them from the parameter list above collides with the missing
-  // hiredMentorshipRole on prod and the promote workflow cannot resolve
-  // conflicts. Drop them once prod has caught up.
-  void feedbackRoundId;
-  void feedbackRoundName;
-
   // Do not render the banner if there is no registration data,
   // registration is closed, and feedback is not enabled
   if (!isRegistrationOpen && !registration && !isFeedbackEnabled) return null;
 
   const displayGoal = registration?.roundPreferences?.goal || "";
+
+  // Once a role is settled it is the only one on offer, open or closed.
+  // Before that, only the roles whose window is still open: a closed one
+  // offers nothing to fill in and nothing to read back.
+  const visibleEntries = registeredRole
+    ? registrationEntries.filter((entry) => entry.role === registeredRole)
+    : registrationEntries.filter((entry) => entry.isOpen);
 
   return (
     <Card className="border-gray-200 shadow-sm bg-gradient-to-r from-purple-50 to-white">
@@ -61,17 +88,21 @@ export default function MentorshipInfoBanner({
 
           {/* Action buttons */}
           <div className="flex flex-wrap items-center gap-3 pt-2">
-            {/* Registration / view dialog button */}
-            <MentorshipRegistrationDialog
-              currentRegistration={registration}
-              hiredMentorshipRole={hiredMentorshipRole}
-              allPastPartners={pastPartners}
-              isPartnersLoading={isPartnersLoading}
-              loadPastPartners={onLoadPastPartners}
-              refreshRegistration={refreshRegistration}
-              isLocked={!isRegistrationOpen}
-              onSave={onSaveRegistration}
-            />
+            {/* One registration / view dialog per actionable role */}
+            {visibleEntries.map((entry) => (
+              <MentorshipRegistrationDialog
+                key={entry.role}
+                role={entry.role}
+                currentRegistration={registration}
+                loadRegistrationForRole={loadRegistrationForRole}
+                allPastPartners={pastPartners}
+                isPartnersLoading={isPartnersLoading}
+                loadPastPartners={onLoadPastPartners}
+                refreshRegistration={refreshRegistration}
+                isLocked={!entry.isOpen}
+                onSave={onSaveRegistration}
+              />
+            ))}
 
             {/* Render these buttons only when the user is registered for the current round */}
             {registration?.isRegistered && (

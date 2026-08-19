@@ -13,7 +13,7 @@ import {
   calculateRoundStatus,
 } from "@/pages/PersonalDashboard/utils/mentorshipRounds";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { useRequestGuard } from "@/hooks/useRequestGuard";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
@@ -33,17 +33,21 @@ import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
  * - which round is currently actionable
  * - whether registration or feedback actions are enabled
  *
- * @param {{enabled?: boolean, hiredMentorshipRole?: "mentor"|"mentee"|null}} params -
- *   `hiredMentorshipRole` comes from the user's HIRED activity application
- *   and decides which of the round's two deadlines applies to them.
+ * @param {{enabled?: boolean, hiredMentorshipRoles?: Array<"mentor"|"mentee">}} params -
+ *   `hiredMentorshipRoles` lists every role the user's admissions qualify
+ *   them to register under. A round carries one deadline per role, so each
+ *   of them is measured against its own.
  * @returns {{
  *   regRoundId: string | null,
  *   regRoundName: string,
  *   feedbackRoundId: string | null,
+ *   registrationEntries: Array<{role: string, deadlineAt: string|null, isOpen: boolean}>,
+ *   registeredRole: "mentor" | "mentee" | null,
  *   isRegistrationOpen: boolean,
  *   registrationDeadlineAt: string | null,
  *   isFeedbackEnabled: boolean,
  *   registration: Object | null,
+ *   loadRegistrationForRole: (role: string) => Promise<Object | null>,
  *   saveRegistration: (data: Object) => Promise<any> | undefined,
  *   isLoading: boolean,
  *   isPartnersLoading: boolean,
@@ -53,7 +57,7 @@ import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
  */
 export const useMentorshipData = ({
   enabled = true,
-  hiredMentorshipRole = null,
+  hiredMentorshipRoles = [],
 } = {}) => {
   const flags = useFeatureFlags();
   const useV2Meetings = !!flags[FEATURE_FLAGS.CREATE_GOOGLE_MEETING];
@@ -65,10 +69,10 @@ export const useMentorshipData = ({
     matchResultRoundName: "",
     canViewMatch: false,
   });
-  const [isRegistrationOpen, setIsRegistrationOpen] = useState(false);
-  // The deadline that produced `isRegistrationOpen`, kept so callers can
-  // name the date instead of only knowing whether it has passed.
-  const [registrationDeadlineAt, setRegistrationDeadlineAt] = useState(null);
+  // One entry per role the user may register under, each carrying that
+  // role's own deadline: a round can be closed to mentors and still open
+  // to mentees.
+  const [roleEntries, setRoleEntries] = useState([]);
   const [regRoundName, setRegRoundName] = useState("");
   const [matchResult, setMatchResult] = useState(null);
   // Current user's registration data for the active round
@@ -77,12 +81,21 @@ export const useMentorshipData = ({
   // Loading state for initial mentorship data, derived during render
   // rather than set from the effect. Which fetch the data in state
   // belongs to is what actually decides it, so being enabled -- or
-  // handed a different role -- reports loading on the very render that
-  // does it. Raising the flag from the effect instead is one commit too
+  // handed a different set of roles -- reports loading on the very render
+  // that does it. Raising the flag from the effect instead is one commit too
   // late: sibling hooks in the same commit have already read the stale
   // `false` and taken the empty initial state, no open round and no
   // deadline, for a finished answer.
-  const requestKey = enabled ? `role:${hiredMentorshipRole}` : null;
+  //
+  // The parent may hand over a fresh array on every render, so the fetch
+  // is keyed on what the roles are, not on which array object carries
+  // them.
+  const rolesKey = hiredMentorshipRoles.join(",");
+  const eligibleRoles = useMemo(
+    () => (rolesKey ? rolesKey.split(",") : []),
+    [rolesKey],
+  );
+  const requestKey = enabled ? `roles:${rolesKey}` : null;
   const [fetchState, setFetchState] = useState({
     key: requestKey,
     isSettled: false,
@@ -164,26 +177,33 @@ export const useMentorshipData = ({
         // If there is an actionable round, fetch the user's registration data
         // Note: registration data is fetched based on the registration slot first
         if (status.regRoundId) {
+          // Role-less: answers "am I registered for this round, and as
+          // what". The per-role form prefill is fetched when a dialog
+          // opens, by loadRegistrationForRole.
           const { data: regData } = await getMyMentorshipRegistration(
             status.regRoundId,
           );
           setRegistration(regData);
 
-          // Which deadline applies comes from the admission, not from an
-          // existing registration: a first-time registrant has no
-          // `roundPreferences` at all, so reading the role from there put
-          // every mentor on the mentee deadline.
-          const deadlineKey =
-            hiredMentorshipRole === MentorshipParticipantRoles.MENTOR
-              ? "mentorApplicationDeadlineAt"
-              : "menteeApplicationDeadlineAt";
           const regRound = rounds.find(
             (r) => r.id?.toString() === status.regRoundId?.toString(),
           );
-          const deadline = regRound?.timeline?.[deadlineKey] ?? null;
           setRegRoundName(regRound?.name ?? "");
-          setRegistrationDeadlineAt(deadline);
-          setIsRegistrationOpen(Boolean(deadline) && now < deadline);
+          setRoleEntries(
+            eligibleRoles.map((role) => {
+              const deadlineAt =
+                regRound?.timeline?.[
+                  role === MentorshipParticipantRoles.MENTOR
+                    ? "mentorApplicationDeadlineAt"
+                    : "menteeApplicationDeadlineAt"
+                ] ?? null;
+              return {
+                role,
+                deadlineAt,
+                isOpen: Boolean(deadlineAt) && now < deadlineAt,
+              };
+            }),
+          );
 
           if (regData && regData.isRegistered) {
             try {
@@ -210,14 +230,66 @@ export const useMentorshipData = ({
         console.error("Failed to fetch mentorship data", err);
       } finally {
         // Tagged with the request it answers: a response that arrives
-        // after the role changed settles nothing, and the next render
+        // after the roles changed settles nothing, and the next render
         // notices the mismatch and goes back to loading.
         setFetchState({ key: requestKey, isSettled: true });
       }
     };
 
     fetchData();
-  }, [enabled, hiredMentorshipRole, requestKey]);
+  }, [enabled, eligibleRoles, requestKey]);
+
+  // A registration settles the round's role, so the role it names is the
+  // only entry left to act on -- read-only once its window has shut. The
+  // fallback keeps that read-only view reachable even if the round no
+  // longer carries a deadline for the settled role.
+  const registeredRole = registration?.isRegistered
+    ? (registration?.roundPreferences?.participantRole ?? null)
+    : null;
+  const registrationEntries = registeredRole
+    ? [
+        roleEntries.find((entry) => entry.role === registeredRole) ?? {
+          role: registeredRole,
+          deadlineAt: null,
+          isOpen: false,
+        },
+      ]
+    : roleEntries;
+
+  // The registration reminder names a single date, so with more than one
+  // window still open it speaks about the one that runs out first.
+  const activeEntry =
+    registrationEntries
+      .filter((entry) => entry.isOpen)
+      .sort((a, b) => a.deadlineAt.localeCompare(b.deadlineAt))[0] ??
+    registrationEntries[0] ??
+    null;
+  const registrationDeadlineAt = activeEntry?.deadlineAt ?? null;
+  const isRegistrationOpen = Boolean(activeEntry?.isOpen);
+
+  /**
+   * Fetch the registration form for one role, used when a registration
+   * dialog opens for a user who has not registered yet.
+   *
+   * Its identity is held stable across renders: the dialog re-seeds every
+   * field of its form when this changes, which would overwrite whatever
+   * the user has typed.
+   *
+   * @param {"mentor"|"mentee"} role - Role whose form to prefill.
+   * @returns {Promise<Object|null>} The RegistrationDto, or null when no
+   *   round is taking registrations.
+   */
+  const loadRegistrationForRole = useCallback(
+    async (role) => {
+      if (!roundStatus.regRoundId) return null;
+      const { data } = await getMyMentorshipRegistration(
+        roundStatus.regRoundId,
+        role,
+      );
+      return data;
+    },
+    [roundStatus.regRoundId],
+  );
 
   /**
    * Lazily load the user's past mentorship partners.
@@ -241,15 +313,29 @@ export const useMentorshipData = ({
    *
    * This operation is only allowed when:
    * - a valid registration round exists
-   * - registration for that round is currently open
+   * - the window of the role the payload names is currently open
+   *
+   * A successful save is adopted as the current registration.
    *
    * @param {Object} data - Registration payload submitted by the user.
    * @returns {Promise<any> | undefined} API response when saved, or undefined if not allowed.
    */
   const saveRegistration = async (data) => {
-    // Only allow saving when registration is open and a valid round exists
-    if (!roundStatus.regRoundId || !isRegistrationOpen) return;
-    return postMyMentorshipRegistration(roundStatus.regRoundId, data);
+    // Gated on the window of the role being registered, not on whether
+    // anything is open: the two roles close on their own deadlines.
+    const role = data?.roundPreferences?.participantRole;
+    const entry = registrationEntries.find((e) => e.role === role);
+    if (!roundStatus.regRoundId || !entry?.isOpen) return;
+    const response = await postMyMentorshipRegistration(
+      roundStatus.regRoundId,
+      data,
+    );
+    // The POST answers with the saved registration. Adopting it settles
+    // the round's role here and now, so the other role's entry point
+    // stops being offered the moment the save lands -- pressing it would
+    // otherwise unmount the dialog it just opened.
+    if (response?.data) setRegistration(response.data);
+    return response;
   };
 
   const handleRoundChange = useCallback(
@@ -376,6 +462,9 @@ export const useMentorshipData = ({
     regRoundName,
     // registration
     registration,
+    registrationEntries,
+    registeredRole,
+    loadRegistrationForRole,
     saveRegistration,
     refreshRegistration,
     // loading states

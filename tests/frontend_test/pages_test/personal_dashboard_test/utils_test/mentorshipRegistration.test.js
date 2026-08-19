@@ -66,6 +66,20 @@ describe("mentorshipRegistration utils", () => {
       expect(result.selectedPartners).toEqual([]);
       expect(result.excludedPartners).toEqual([]);
     });
+
+    // The role-less read answers only "am I registered", and carries a
+    // null `roundPreferences` when the answer is no.
+    it("tolerates a source carrying null round preferences", () => {
+      const result = mapRegistrationToForm(
+        { isRegistered: false, roundPreferences: null },
+        [],
+      );
+
+      expect(result.partnerCapacity).toBe(1);
+      expect(result.goal).toBe("");
+      expect(result.currentStage).toBe("");
+      expect(result.timeUrgency).toBe("");
+    });
   });
 
   describe("mapFormToApi", () => {
@@ -85,7 +99,7 @@ describe("mentorshipRegistration utils", () => {
         roundPreferences: {},
       };
 
-      const result = mapFormToApi(formData, currentRegistration);
+      const result = mapFormToApi(formData, currentRegistration, "mentor");
 
       // Industry boolean map
       expect(result.globalPreferences.specificIndustry).toEqual(
@@ -127,14 +141,71 @@ describe("mentorshipRegistration utils", () => {
 
       const currentRegistration = {
         globalPreferences: { foo: "bar" },
-        roundPreferences: { baz: "qux", participantRole: "mentee" },
+        roundPreferences: { baz: "qux" },
       };
 
-      const result = mapFormToApi(formData, currentRegistration);
+      const result = mapFormToApi(formData, currentRegistration, "mentee");
 
       expect(result.globalPreferences.foo).toBe("bar");
       expect(result.roundPreferences.baz).toBe("qux");
+    });
+
+    // The role is what the entry point the user pressed says it is. The
+    // server validates it against their admissions and against any
+    // registration the round already holds.
+    it("states the role it was given", () => {
+      const formData = {
+        industries: [],
+        skillsets: [],
+        partnerCapacity: 1,
+        goal: "",
+        selectedPartners: [],
+        excludedPartners: [],
+      };
+
+      const result = mapFormToApi(formData, {}, "mentor");
+
+      expect(result.roundPreferences.participantRole).toBe("mentor");
+    });
+
+    it("states the role over one carried by the source data", () => {
+      const formData = {
+        industries: [],
+        skillsets: [],
+        partnerCapacity: 1,
+        goal: "",
+        selectedPartners: [],
+        excludedPartners: [],
+      };
+
+      const result = mapFormToApi(
+        formData,
+        { roundPreferences: { participantRole: "mentee" } },
+        "mentor",
+      );
+
+      expect(result.roundPreferences.participantRole).toBe("mentor");
+    });
+
+    it("tolerates a source carrying null round preferences", () => {
+      const formData = {
+        industries: [],
+        skillsets: [],
+        partnerCapacity: 2,
+        goal: "Ship it",
+        selectedPartners: [],
+        excludedPartners: [],
+      };
+
+      const result = mapFormToApi(
+        formData,
+        { isRegistered: false, roundPreferences: null },
+        "mentee",
+      );
+
       expect(result.roundPreferences.participantRole).toBe("mentee");
+      expect(result.roundPreferences.maxPartners).toBe(2);
+      expect(result.roundPreferences.goal).toBe("Ship it");
     });
   });
 });

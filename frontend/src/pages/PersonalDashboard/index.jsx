@@ -33,19 +33,19 @@ const PersonalDashboard = () => {
     isLoading: isApplicationsLoading,
     loadError: applicationsLoadError,
     load: loadApplications,
-    hiredMentorshipRole,
+    hiredMentorshipRoles,
   } = useMyApplications();
 
   // Only show the mentorship section, and only start fetching mentorship
-  // data, once we've actually confirmed a hired mentorship role — not
-  // while the applications fetch is still loading or has errored. This is
-  // a deliberate reversal of the previous fail-open behavior: a slow/failed
-  // fetch now hides the section (the user can retry via My Applications'
-  // own retry button) rather than firing a wasted mentorship-data fetch.
+  // data, once we've actually confirmed at least one mentorship admission
+  // — not while the applications fetch is still loading or has errored.
+  // A slow or failed fetch hides the section (the user can retry via My
+  // Applications' own retry button) rather than firing a wasted
+  // mentorship-data fetch.
   const showMentorshipSection =
     !isApplicationsLoading &&
     !applicationsLoadError &&
-    hiredMentorshipRole !== null;
+    hiredMentorshipRoles.length > 0;
 
   useOnboardingTrainingReminder({ enabled: showMentorshipSection });
 
@@ -55,8 +55,9 @@ const PersonalDashboard = () => {
     registrationDeadlineAt, // Deadline the registration window is measured against
     regRoundName, // Display name of the round taking registrations
     isFeedbackEnabled, // Whether the feedback phase is currently active
-    feedbackRoundId, // Round ID for which feedback is currently open
-    feedbackRoundName, // Display name of the feedback round
+    registrationEntries, // One entry per role the user may register under, each with its own deadline
+    registeredRole, // Role an existing registration settled on, or null
+    loadRegistrationForRole, // Fetches one role's registration form prefill
     saveRegistration, // Function to submit or update registration data
     pastPartners, // List of past mentorship partners
     isPartnersLoading, // Whether partner data is currently loading
@@ -75,7 +76,7 @@ const PersonalDashboard = () => {
     userTimezone, // Current user's IANA timezone string from their profile
   } = useMentorshipData({
     enabled: showMentorshipSection,
-    hiredMentorshipRole,
+    hiredMentorshipRoles,
   });
 
   useRegistrationReminder({
@@ -139,9 +140,9 @@ const PersonalDashboard = () => {
             registration={registration}
             isRegistrationOpen={isRegistrationOpen}
             isFeedbackEnabled={isFeedbackEnabled}
-            feedbackRoundId={feedbackRoundId}
-            feedbackRoundName={feedbackRoundName}
-            hiredMentorshipRole={hiredMentorshipRole}
+            registrationEntries={registrationEntries}
+            registeredRole={registeredRole}
+            loadRegistrationForRole={loadRegistrationForRole}
             onSaveRegistration={saveRegistration}
             pastPartners={pastPartners}
             isPartnersLoading={isPartnersLoading}

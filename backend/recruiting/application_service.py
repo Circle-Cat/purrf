@@ -909,15 +909,13 @@ class ApplicationService:
 
     async def list_mine(self, session, current_user) -> MyApplicationsDto:
         """Return every application the caller has ever submitted, any job
-        kind, together with the mentorship role those applications earned.
+        kind, together with every mentorship role those applications earned.
 
-        The role is resolved here rather than left to the caller: when a user
-        has been hired into more than one mentor/mentee activity posting, the
-        rule for which one governs is the same rule that decides what they
-        register for a mentorship round as, and it lives in one place
-        (`ApplicationRepository.get_recent_hired_activity_role`). Handing back
-        the rows alone would invite a client to reach a different answer than
-        the registration it is about to submit.
+        The roles are resolved here rather than left to the caller: which
+        roles a user may register a mentorship round under is validated by
+        the registration endpoints against the same repository read, and a
+        client filtering the rows itself could reach a different answer than
+        the request it is about to send.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -925,23 +923,24 @@ class ApplicationService:
 
         Returns:
             MyApplicationsDto: One row per application, in the order
-                `ApplicationRepository.list_by_user` returns them, plus the
-                caller's mentorship role or None when they have none.
+                `ApplicationRepository.list_by_user` returns them, plus every
+                mentorship role the caller holds a HIRED admission in, or an
+                empty list when they have none. That list's order carries no
+                authority — it is most-recent-admission-first for display
+                only, and no code may treat element 0 as "the" role.
         """
         rows = await self.application_repository.list_by_user(
             session, current_user.user_id
         )
-        last_mentorship_role = (
-            await self.application_repository.get_recent_hired_activity_role(
-                session, current_user.user_id
-            )
+        mentorship_roles = await self.application_repository.list_hired_activity_roles(
+            session, current_user.user_id
         )
         return MyApplicationsDto(
             applications=[
                 self.recruiting_mapper.to_my_application_summary_dto(application, job)
                 for application, job in rows
             ],
-            last_mentorship_role=last_mentorship_role,
+            mentorship_roles=mentorship_roles,
         )
 
     def _lock_reason(self, application, job, current_submission):

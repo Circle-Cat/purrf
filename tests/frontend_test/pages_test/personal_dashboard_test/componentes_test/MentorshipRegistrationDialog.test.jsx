@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import MentorshipRegistrationDialog from "@/pages/PersonalDashboard/components/MentorshipRegistrationDialog";
@@ -121,8 +121,9 @@ describe("MentorshipRegistrationDialog Component", () => {
   let user;
 
   const defaultProps = {
-    currentRegistration: {},
-    hiredMentorshipRole: "mentee",
+    currentRegistration: { roundName: "Spring 2026" },
+    role: "mentee",
+    loadRegistrationForRole: vi.fn(),
     allPastPartners: [
       { id: "1", preferredName: "Alice" },
       { id: "2", preferredName: "Bob" },
@@ -140,6 +141,14 @@ describe("MentorshipRegistrationDialog Component", () => {
 
     // Initialize a new userEvent instance for each test
     user = userEvent.setup();
+
+    // A user who has not registered yet is seeded from the role's own
+    // prefill, which the dialog fetches when it opens.
+    defaultProps.loadRegistrationForRole.mockResolvedValue({
+      isRegistered: false,
+      roundName: "Spring 2026",
+      roundPreferences: { participantRole: "mentee" },
+    });
 
     mapRegistrationToForm.mockReturnValue({
       industries: [],
@@ -162,12 +171,208 @@ describe("MentorshipRegistrationDialog Component", () => {
     });
   });
 
-  it("should render the trigger button with correct text", () => {
+  it("names the role on the trigger of a first registration", () => {
     render(<MentorshipRegistrationDialog {...defaultProps} />);
-    expect(screen.getByText("Register for Next Round")).toBeInTheDocument();
+    expect(screen.getByText("Register as Mentee")).toBeInTheDocument();
 
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
+    expect(screen.getByText("Register as Mentor")).toBeInTheDocument();
+  });
+
+  it("offers an update on the trigger once the user is registered", () => {
+    render(
+      <MentorshipRegistrationDialog
+        {...defaultProps}
+        currentRegistration={{ isRegistered: true }}
+      />,
+    );
+    // The mocked Dialog renders its content next to the trigger, so the
+    // label shows up twice: on the trigger and on the submit button.
+    expect(screen.getAllByText("Update Registration")).toHaveLength(2);
+    expect(screen.queryByText("Register as Mentee")).not.toBeInTheDocument();
+  });
+
+  it("offers only a read-only view on the trigger when the window is locked", () => {
     render(<MentorshipRegistrationDialog {...defaultProps} isLocked />);
     expect(screen.getByText("View Registration")).toBeInTheDocument();
+    expect(screen.queryByText("Register as Mentee")).not.toBeInTheDocument();
+  });
+
+  it("seeds a first registration from the role's own prefill", async () => {
+    const prefill = {
+      isRegistered: false,
+      roundName: "Spring 2026",
+      roundPreferences: { participantRole: "mentor" },
+    };
+    const loadRegistrationForRole = vi.fn().mockResolvedValue(prefill);
+
+    render(
+      <MentorshipRegistrationDialog
+        {...defaultProps}
+        role="mentor"
+        loadRegistrationForRole={loadRegistrationForRole}
+      />,
+    );
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    await waitFor(() =>
+      expect(loadRegistrationForRole).toHaveBeenCalledWith("mentor"),
+    );
+    expect(mapRegistrationToForm).toHaveBeenCalledWith(
+      prefill,
+      defaultProps.allPastPartners,
+    );
+  });
+
+  it("seeds an existing registration from the registration itself", async () => {
+    const currentRegistration = {
+      isRegistered: true,
+      roundName: "Spring 2026",
+      roundPreferences: { participantRole: "mentee" },
+    };
+
+    render(
+      <MentorshipRegistrationDialog
+        {...defaultProps}
+        currentRegistration={currentRegistration}
+      />,
+    );
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    await waitFor(() =>
+      expect(mapRegistrationToForm).toHaveBeenCalledWith(
+        currentRegistration,
+        defaultProps.allPastPartners,
+      ),
+    );
+    expect(defaultProps.loadRegistrationForRole).not.toHaveBeenCalled();
+  });
+
+  // Tasks 3 and 4 gave the server two refusals with user-ready English --
+  // "You have not been admitted as a mentor." and "You are already
+  // registered for this round as a mentee." -- and this is the client that
+  // provokes them. There is no global error toast, so the dialog shows them.
+  it("explains a refused prefill and closes instead of showing a blank form", async () => {
+    const loadRegistrationForRole = vi
+      .fn()
+      .mockRejectedValue(new Error("You have not been admitted as a mentor."));
+
+    render(
+      <MentorshipRegistrationDialog
+        {...defaultProps}
+        role="mentor"
+        loadRegistrationForRole={loadRegistrationForRole}
+      />,
+    );
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    await waitFor(() =>
+      expect(
+        showReminderToast.mock.calls.find(
+          ([args]) => args.id === "registration-error-toast",
+        ),
+      ).toBeDefined(),
+    );
+    const [toastArgs] = showReminderToast.mock.calls.find(
+      ([args]) => args.id === "registration-error-toast",
+    );
+    expect(toastArgs.type).toBe("error");
+    expect(toastArgs.message).toBe("You have not been admitted as a mentor.");
+    expect(screen.getByTestId("dialog")).toHaveAttribute("data-open", "false");
+  });
+
+  it("keeps the filled-in form open and explains a refused save", async () => {
+    mapFormToApi.mockReturnValue({ api: "data" });
+    mapRegistrationToForm.mockReturnValue({
+      industries: [],
+      skillsets: [{ label: "React", value: "react" }],
+      partnerCapacity: 1,
+      goal: "",
+      selectedPartners: [],
+      excludedPartners: [],
+      careerTransition: "none",
+      careerTransitionOther: "",
+      region: "us",
+      regionOther: "",
+      externalMentoringExp: "none",
+      currentBackground: "",
+      currentBackgroundOther: "",
+      targetRegion: "",
+      targetRegionOther: "",
+      currentStage: "",
+      timeUrgency: "",
+    });
+    const onSave = vi
+      .fn()
+      .mockRejectedValue(
+        new Error("You are already registered for this round as a mentee."),
+      );
+
+    render(
+      <MentorshipRegistrationDialog
+        {...defaultProps}
+        role="mentor"
+        onSave={onSave}
+      />,
+    );
+    await user.click(screen.getByText("Toggle Dialog"));
+    await waitFor(() => expect(mapRegistrationToForm).toHaveBeenCalled());
+    await user.click(screen.getByText("Register"));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    const errorCall = showReminderToast.mock.calls.find(
+      ([args]) => args.id === "registration-error-toast",
+    );
+    expect(errorCall?.[0].message).toBe(
+      "You are already registered for this round as a mentee.",
+    );
+    // The form stays on screen so the user does not lose what they typed,
+    // and nothing announces a registration that never happened.
+    expect(screen.getByTestId("dialog")).toHaveAttribute("data-open", "true");
+    expect(
+      showReminderToast.mock.calls.find(
+        ([args]) => args.id === "registration-success-toast",
+      ),
+    ).toBeUndefined();
+    expect(
+      showReminderToast.mock.calls.find(
+        ([args]) => args.id === "post-registration-training-toast",
+      ),
+    ).toBeUndefined();
+  });
+
+  it("sends the dialog's own role to the payload builder", async () => {
+    mapFormToApi.mockReturnValue({ api: "data" });
+    mapRegistrationToForm.mockReturnValue({
+      industries: [],
+      skillsets: [{ label: "React", value: "react" }],
+      partnerCapacity: 1,
+      goal: "",
+      selectedPartners: [],
+      excludedPartners: [],
+      careerTransition: "none",
+      careerTransitionOther: "",
+      region: "us",
+      regionOther: "",
+      externalMentoringExp: "none",
+      currentBackground: "",
+      currentBackgroundOther: "",
+      targetRegion: "",
+      targetRegionOther: "",
+      currentStage: "",
+      timeUrgency: "",
+    });
+
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
+    await user.click(screen.getByText("Toggle Dialog"));
+    await waitFor(() => expect(mapRegistrationToForm).toHaveBeenCalled());
+    await user.click(screen.getByText("Register"));
+
+    expect(mapFormToApi).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "mentor",
+    );
   });
 
   it("should call loadPastPartners and refreshRegistration when opened", async () => {
@@ -190,12 +395,7 @@ describe("MentorshipRegistrationDialog Component", () => {
     ).toBeInTheDocument();
 
     // Switch role to Mentor and verify Industry selector is hidden
-    rerender(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        hiredMentorshipRole="mentor"
-      />,
-    );
+    rerender(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     expect(
       screen.queryByText(/Which industry are you interested in/i),
@@ -203,12 +403,7 @@ describe("MentorshipRegistrationDialog Component", () => {
   });
 
   it("should show Capacity RadioGroup for Mentor", async () => {
-    render(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        hiredMentorshipRole="mentor"
-      />,
-    );
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     await user.click(screen.getByText("Toggle Dialog"));
 
@@ -364,7 +559,7 @@ describe("MentorshipRegistrationDialog Component", () => {
         <MentorshipRegistrationDialog
           {...defaultProps}
           onSave={onSave}
-          hiredMentorshipRole="mentor"
+          role="mentor"
         />,
       );
       await user.click(screen.getByText("Toggle Dialog"));
@@ -470,11 +665,13 @@ describe("MentorshipRegistrationDialog Component", () => {
           {...defaultProps}
           onSave={onSave}
           currentRegistration={{ isRegistered: true }}
-          hiredMentorshipRole="mentee"
+          role="mentee"
         />,
       );
       await user.click(screen.getByText("Toggle Dialog"));
-      await user.click(screen.getByText("Update Registration"));
+      // The trigger carries the same label as the submit button once the
+      // user is registered; the submit button is the last one rendered.
+      await user.click(screen.getAllByText("Update Registration").at(-1));
 
       const success = callWithId("registration-success-toast");
       expect(success).toBeDefined();
@@ -525,7 +722,7 @@ describe("MentorshipRegistrationDialog Component", () => {
         <MentorshipRegistrationDialog
           {...defaultProps}
           currentRegistration={{ isOnboardingTrainingCompleted: false }}
-          hiredMentorshipRole="mentee"
+          role="mentee"
         />,
       );
       await user.click(screen.getByText("Toggle Dialog"));
@@ -619,10 +816,11 @@ describe("MentorshipRegistrationDialog Component", () => {
       />,
     );
 
-    const textarea = screen.getByPlaceholderText(
-      "What do you hope to achieve?",
+    await waitFor(() =>
+      expect(
+        screen.getByPlaceholderText("What do you hope to achieve?"),
+      ).toHaveValue("New Goal"),
     );
-    expect(textarea).toHaveValue("New Goal");
   });
 
   it("should close the dialog when Close button is clicked", async () => {
@@ -635,12 +833,7 @@ describe("MentorshipRegistrationDialog Component", () => {
   });
 
   it("should render mentor survey questions for mentor role", async () => {
-    render(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        hiredMentorshipRole="mentor"
-      />,
-    );
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     await user.click(screen.getByText("Toggle Dialog"));
 
@@ -691,12 +884,7 @@ describe("MentorshipRegistrationDialog Component", () => {
   });
 
   it("should not render mentee survey questions for mentor role", async () => {
-    render(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        hiredMentorshipRole="mentor"
-      />,
-    );
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     await user.click(screen.getByText("Toggle Dialog"));
 
@@ -715,12 +903,7 @@ describe("MentorshipRegistrationDialog Component", () => {
   });
 
   it("should show careerTransitionOther input when careerTransition is 'other'", async () => {
-    render(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        hiredMentorshipRole="mentor"
-      />,
-    );
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     await user.click(screen.getByText("Toggle Dialog"));
 
@@ -774,12 +957,7 @@ describe("MentorshipRegistrationDialog Component", () => {
       timeUrgency: "",
     });
 
-    render(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        hiredMentorshipRole="mentor"
-      />,
-    );
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     await user.click(screen.getByText("Toggle Dialog"));
 
@@ -813,12 +991,7 @@ describe("MentorshipRegistrationDialog Component", () => {
     const mockPayload = { api: "data" };
     mapFormToApi.mockReturnValue(mockPayload);
 
-    render(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        hiredMentorshipRole="mentor"
-      />,
-    );
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     await user.click(screen.getByText("Toggle Dialog"));
     await user.click(screen.getByText("Register"));
@@ -830,6 +1003,7 @@ describe("MentorshipRegistrationDialog Component", () => {
         externalMentoringExp: "1_to_3",
       }),
       expect.anything(),
+      "mentor",
     );
     expect(defaultProps.onSave).toHaveBeenCalledWith(mockPayload);
   });
@@ -852,12 +1026,7 @@ describe("MentorshipRegistrationDialog Component", () => {
   });
 
   it("should block mentor submit and show errors when required fields are empty", async () => {
-    render(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        hiredMentorshipRole="mentor"
-      />,
-    );
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     await user.click(screen.getByText("Toggle Dialog"));
     await user.click(screen.getByText("Register"));
@@ -925,12 +1094,7 @@ describe("MentorshipRegistrationDialog Component", () => {
       timeUrgency: "",
     });
 
-    render(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        hiredMentorshipRole="mentor"
-      />,
-    );
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     await user.click(screen.getByText("Toggle Dialog"));
     await user.click(screen.getByText("Register"));
@@ -974,12 +1138,7 @@ describe("MentorshipRegistrationDialog Component", () => {
   });
 
   it("should clear *Other text when user changes selection away from 'other'", async () => {
-    render(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        hiredMentorshipRole="mentor"
-      />,
-    );
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     await user.click(screen.getByText("Toggle Dialog"));
 
