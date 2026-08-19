@@ -723,6 +723,83 @@ describe("registration entries by role", () => {
     expect(getMyMentorshipRegistration).not.toHaveBeenCalled();
   });
 
+  // A save settles the round's role. Until the hook adopts that answer the
+  // banner keeps offering the other role's button, and pressing it
+  // unmounts the dialog it just opened.
+  it("collapses the entries as soon as a save settles the role", async () => {
+    mockRoundWith({ mentor: FUTURE, mentee: FUTURE });
+    postMyMentorshipRegistration.mockResolvedValue({
+      data: {
+        isRegistered: true,
+        roundPreferences: { participantRole: "mentor" },
+      },
+    });
+
+    const { result } = renderHook(() =>
+      useMentorshipData({ hiredMentorshipRoles: ["mentor", "mentee"] }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.registrationEntries).toHaveLength(2);
+
+    await act(async () => {
+      await result.current.saveRegistration({
+        roundPreferences: { participantRole: "mentor" },
+      });
+    });
+
+    expect(result.current.registeredRole).toBe("mentor");
+    expect(result.current.registrationEntries.map((e) => e.role)).toEqual([
+      "mentor",
+    ]);
+  });
+
+  it("hands the saved registration back to the caller", async () => {
+    mockRoundWith({ mentor: FUTURE, mentee: FUTURE });
+    const saved = {
+      data: {
+        isRegistered: true,
+        isOnboardingTrainingCompleted: false,
+        roundPreferences: { participantRole: "mentor" },
+      },
+    };
+    postMyMentorshipRegistration.mockResolvedValue(saved);
+
+    const { result } = renderHook(() =>
+      useMentorshipData({ hiredMentorshipRoles: ["mentor"] }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    let response;
+    await act(async () => {
+      response = await result.current.saveRegistration({
+        roundPreferences: { participantRole: "mentor" },
+      });
+    });
+
+    expect(response).toEqual(saved);
+  });
+
+  // The dialog re-seeds its whole form whenever this function's identity
+  // changes, so an unstable one refetches and overwrites what the user is
+  // typing on every parent render.
+  it("hands out the same loadRegistrationForRole across renders", async () => {
+    mockRoundWith({ mentor: FUTURE, mentee: FUTURE });
+
+    const { result, rerender } = renderHook(() =>
+      useMentorshipData({ hiredMentorshipRoles: ["mentor", "mentee"] }),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    const first = result.current.loadRegistrationForRole;
+    rerender();
+    getMyMentorshipPartners.mockResolvedValue({ data: [] });
+    await act(async () => {
+      await result.current.loadPastPartners();
+    });
+
+    expect(result.current.loadRegistrationForRole).toBe(first);
+  });
+
   // Refreshing after a save settles the round's role, so the other role's
   // entry must stop being offered without waiting for a full reload.
   it("collapses the entries when a refresh reports a new registration", async () => {

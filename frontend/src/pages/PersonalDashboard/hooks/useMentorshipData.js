@@ -271,18 +271,25 @@ export const useMentorshipData = ({
    * Fetch the registration form for one role, used when a registration
    * dialog opens for a user who has not registered yet.
    *
+   * Its identity is held stable across renders: the dialog re-seeds every
+   * field of its form when this changes, which would overwrite whatever
+   * the user has typed.
+   *
    * @param {"mentor"|"mentee"} role - Role whose form to prefill.
    * @returns {Promise<Object|null>} The RegistrationDto, or null when no
    *   round is taking registrations.
    */
-  const loadRegistrationForRole = async (role) => {
-    if (!roundStatus.regRoundId) return null;
-    const { data } = await getMyMentorshipRegistration(
-      roundStatus.regRoundId,
-      role,
-    );
-    return data;
-  };
+  const loadRegistrationForRole = useCallback(
+    async (role) => {
+      if (!roundStatus.regRoundId) return null;
+      const { data } = await getMyMentorshipRegistration(
+        roundStatus.regRoundId,
+        role,
+      );
+      return data;
+    },
+    [roundStatus.regRoundId],
+  );
 
   /**
    * Lazily load the user's past mentorship partners.
@@ -308,6 +315,8 @@ export const useMentorshipData = ({
    * - a valid registration round exists
    * - the window of the role the payload names is currently open
    *
+   * A successful save is adopted as the current registration.
+   *
    * @param {Object} data - Registration payload submitted by the user.
    * @returns {Promise<any> | undefined} API response when saved, or undefined if not allowed.
    */
@@ -317,7 +326,16 @@ export const useMentorshipData = ({
     const role = data?.roundPreferences?.participantRole;
     const entry = registrationEntries.find((e) => e.role === role);
     if (!roundStatus.regRoundId || !entry?.isOpen) return;
-    return postMyMentorshipRegistration(roundStatus.regRoundId, data);
+    const response = await postMyMentorshipRegistration(
+      roundStatus.regRoundId,
+      data,
+    );
+    // The POST answers with the saved registration. Adopting it settles
+    // the round's role here and now, so the other role's entry point
+    // stops being offered the moment the save lands -- pressing it would
+    // otherwise unmount the dialog it just opened.
+    if (response?.data) setRegistration(response.data);
+    return response;
   };
 
   const handleRoundChange = useCallback(

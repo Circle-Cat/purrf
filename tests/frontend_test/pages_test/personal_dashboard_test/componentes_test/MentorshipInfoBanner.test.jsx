@@ -234,6 +234,25 @@ describe("MentorshipInfoBanner", () => {
     expect(screen.getByText("Learn React Testing")).toBeInTheDocument();
   });
 
+  // The round-level read carries no round preferences for someone who has
+  // not registered, so no earlier round's goal can leak into this one.
+  it("shows no goal to a user who has not registered", () => {
+    render(
+      <MentorshipInfoBanner
+        {...defaultProps}
+        registration={{
+          isRegistered: false,
+          roundName: "Spring",
+          roundPreferences: null,
+        }}
+      />,
+    );
+
+    expect(
+      screen.queryByText("Current Mentorship Goal"),
+    ).not.toBeInTheDocument();
+  });
+
   it("does not render the goal section when the goal is empty", () => {
     render(<MentorshipInfoBanner {...defaultProps} registration={null} />);
     expect(
