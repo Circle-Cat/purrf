@@ -136,7 +136,6 @@ class MentorshipMapper:
     def map_to_meeting_dto(
         self,
         round_id: int,
-        user_timezone: str,
         grouped_pairs: list[tuple[MentorshipPairsEntity, int]],
         meetings_by_pair: dict[int, list[MentorshipMeetingEntity]],
     ) -> MeetingDto:
@@ -144,7 +143,6 @@ class MentorshipMapper:
 
         Args:
             round_id (int): The mentorship round ID.
-            user_timezone (str): The current user's timezone.
             grouped_pairs (list[tuple[MentorshipPairsEntity, int]]): Each pair
                 paired with the partner's user id.
             meetings_by_pair (dict[int, list[MentorshipMeetingEntity]]):
@@ -163,7 +161,6 @@ class MentorshipMapper:
         """
         return MeetingDto(
             round_id=round_id,
-            user_timezone=user_timezone,
             meeting_info=[
                 MeetingInfoDto(
                     partner_id=partner_id,
@@ -190,7 +187,6 @@ class MentorshipMapper:
     def map_to_meeting_v2_dto(
         self,
         round_id: int,
-        user_timezone: str,
         grouped_pairs: list[tuple[MentorshipPairsEntity, int]],
         meetings_by_pair: dict[int, list[MentorshipMeetingEntity]],
         include_details: bool = False,
@@ -208,7 +204,6 @@ class MentorshipMapper:
 
         Args:
             round_id (int): The mentorship round ID.
-            user_timezone (str): The current user's timezone.
             grouped_pairs (list[tuple[MentorshipPairsEntity, int]]): Each pair
                 paired with the partner's user id.
             meetings_by_pair (dict[int, list[MentorshipMeetingEntity]]):
@@ -220,7 +215,6 @@ class MentorshipMapper:
         """
         return MeetingDto(
             round_id=round_id,
-            user_timezone=user_timezone,
             meeting_info=[
                 MeetingInfoDto(
                     partner_id=partner_id,
