@@ -53,11 +53,11 @@ export default function MentorshipInfoBanner({
 
   const displayGoal = registration?.roundPreferences?.goal || "";
 
-  // Entries a registered user can still act on, plus -- when they have not
-  // registered -- only the roles whose window is still open. A closed role
+  // Once a role is settled it is the only one on offer, open or closed.
+  // Before that, only the roles whose window is still open: a closed one
   // offers nothing to fill in and nothing to read back.
   const visibleEntries = registeredRole
-    ? registrationEntries
+    ? registrationEntries.filter((entry) => entry.role === registeredRole)
     : registrationEntries.filter((entry) => entry.isOpen);
 
   return (

@@ -123,7 +123,19 @@ class RegistrationService:
         existing = await self.participants_repo.get_by_user_id_and_round_id(
             session=session, user_id=user_context.user_id, round_id=round_id
         )
-        if existing and existing.participant_role != participant_role:
+        if (
+            existing
+            and existing.participant_role
+            and existing.participant_role != participant_role
+        ):
+            self.logger.warning(
+                "[RegistrationService] user %s submitted role %s for round %s, "
+                "already registered as %s.",
+                user_context.user_id,
+                participant_role,
+                round_id,
+                existing.participant_role,
+            )
             raise ConflictError(
                 "You are already registered for this round as a "
                 f"{existing.participant_role.value}."
@@ -346,8 +358,17 @@ class RegistrationService:
         Consolidates global and round preferences into a comprehensive registration DTO.
 
         This method:
-        1. Retrieves both global and round-specific preferences.
-        2. Combines both preference DTOs into a unified RegistrationDto.
+        1. Validates the existence of the mentorship round.
+        2. Gates a supplied role on the user's admissions, before any
+            preference is read: a role they were never admitted into is
+            refused outright.
+        3. Retrieves both global and round-specific preferences.
+        4. Combines both preference DTOs into a unified RegistrationDto.
+
+        The gate is on the role asked about, not on the row that comes back.
+        A user who is registered for this round but whose HIRED application
+        has since disappeared is refused rather than handed their own row —
+        omitting `role` reads that row back without the gate.
 
         Args:
             session (AsyncSession): Active SQLAlchemy async session.
@@ -360,6 +381,13 @@ class RegistrationService:
 
         Returns:
             RegistrationDto: A DTO combining GlobalPreferenceDTO and RoundPreferenceDto.
+
+        Raises:
+            ValueError: No mentorship round with this ID exists.
+            PermissionError: `role` was supplied and the user holds no HIRED
+                activity application in that role.
+            ConflictError: `role` was supplied and disagrees with the role
+                the user's existing registration for this round settled on.
         """
         round_entity = await self.mentorship_round_repo.get_by_round_id(
             session=session, round_id=round_id

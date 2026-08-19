@@ -31,6 +31,7 @@ import {
 } from "@/pages/PersonalDashboard/utils/mentorshipRegistration";
 
 const REGISTRATION_SUCCESS_TOAST_ID = "registration-success-toast";
+const REGISTRATION_ERROR_TOAST_ID = "registration-error-toast";
 const POST_REGISTRATION_TOAST_ID = "post-registration-training-toast";
 const POST_REGISTRATION_TOAST_TITLE = "Complete onboarding training";
 const PROFILE_CHECK_TOAST_ID = "post-registration-profile-check-toast";
@@ -159,7 +160,21 @@ export default function MentorshipRegistrationDialog({
       setTimeUrgency(formData.timeUrgency);
     };
 
-    seed();
+    // The server refuses a role the user was never admitted into, and a
+    // role that disagrees with a registration made in another tab. Its
+    // messages are user-ready English, so they are shown as written --
+    // there is no global error toast, and an unhandled rejection would
+    // leave a blank form sitting under the button.
+    seed().catch((err) => {
+      if (cancelled) return;
+      setIsOpen(false);
+      showReminderToast({
+        id: REGISTRATION_ERROR_TOAST_ID,
+        type: "error",
+        title: "Registration unavailable",
+        message: err?.message,
+      });
+    });
     return () => {
       cancelled = true;
     };
@@ -246,7 +261,21 @@ export default function MentorshipRegistrationDialog({
       role,
     );
 
-    const response = await onSave(payload);
+    let response;
+    try {
+      response = await onSave(payload);
+    } catch (err) {
+      // Same refusals as the prefill, reached here by a save that raced
+      // another tab. The dialog stays open with the form as the user left
+      // it, and nothing announces a registration that did not happen.
+      showReminderToast({
+        id: REGISTRATION_ERROR_TOAST_ID,
+        type: "error",
+        title: "Registration failed",
+        message: err?.message,
+      });
+      return;
+    }
     setIsOpen(false);
 
     // Fire the success toast first so the training reminder, fired

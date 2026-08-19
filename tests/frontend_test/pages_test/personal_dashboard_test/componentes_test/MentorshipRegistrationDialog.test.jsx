@@ -248,6 +248,99 @@ describe("MentorshipRegistrationDialog Component", () => {
     expect(defaultProps.loadRegistrationForRole).not.toHaveBeenCalled();
   });
 
+  // Tasks 3 and 4 gave the server two refusals with user-ready English --
+  // "You have not been admitted as a mentor." and "You are already
+  // registered for this round as a mentee." -- and this is the client that
+  // provokes them. There is no global error toast, so the dialog shows them.
+  it("explains a refused prefill and closes instead of showing a blank form", async () => {
+    const loadRegistrationForRole = vi
+      .fn()
+      .mockRejectedValue(new Error("You have not been admitted as a mentor."));
+
+    render(
+      <MentorshipRegistrationDialog
+        {...defaultProps}
+        role="mentor"
+        loadRegistrationForRole={loadRegistrationForRole}
+      />,
+    );
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    await waitFor(() =>
+      expect(
+        showReminderToast.mock.calls.find(
+          ([args]) => args.id === "registration-error-toast",
+        ),
+      ).toBeDefined(),
+    );
+    const [toastArgs] = showReminderToast.mock.calls.find(
+      ([args]) => args.id === "registration-error-toast",
+    );
+    expect(toastArgs.type).toBe("error");
+    expect(toastArgs.message).toBe("You have not been admitted as a mentor.");
+    expect(screen.getByTestId("dialog")).toHaveAttribute("data-open", "false");
+  });
+
+  it("keeps the filled-in form open and explains a refused save", async () => {
+    mapFormToApi.mockReturnValue({ api: "data" });
+    mapRegistrationToForm.mockReturnValue({
+      industries: [],
+      skillsets: [{ label: "React", value: "react" }],
+      partnerCapacity: 1,
+      goal: "",
+      selectedPartners: [],
+      excludedPartners: [],
+      careerTransition: "none",
+      careerTransitionOther: "",
+      region: "us",
+      regionOther: "",
+      externalMentoringExp: "none",
+      currentBackground: "",
+      currentBackgroundOther: "",
+      targetRegion: "",
+      targetRegionOther: "",
+      currentStage: "",
+      timeUrgency: "",
+    });
+    const onSave = vi
+      .fn()
+      .mockRejectedValue(
+        new Error("You are already registered for this round as a mentee."),
+      );
+
+    render(
+      <MentorshipRegistrationDialog
+        {...defaultProps}
+        role="mentor"
+        onSave={onSave}
+      />,
+    );
+    await user.click(screen.getByText("Toggle Dialog"));
+    await waitFor(() => expect(mapRegistrationToForm).toHaveBeenCalled());
+    await user.click(screen.getByText("Register"));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    const errorCall = showReminderToast.mock.calls.find(
+      ([args]) => args.id === "registration-error-toast",
+    );
+    expect(errorCall?.[0].message).toBe(
+      "You are already registered for this round as a mentee.",
+    );
+    // The form stays on screen so the user does not lose what they typed,
+    // and nothing announces a registration that never happened.
+    expect(screen.getByTestId("dialog")).toHaveAttribute("data-open", "true");
+    expect(
+      showReminderToast.mock.calls.find(
+        ([args]) => args.id === "registration-success-toast",
+      ),
+    ).toBeUndefined();
+    expect(
+      showReminderToast.mock.calls.find(
+        ([args]) => args.id === "post-registration-training-toast",
+      ),
+    ).toBeUndefined();
+  });
+
   it("sends the dialog's own role to the payload builder", async () => {
     mapFormToApi.mockReturnValue({ api: "data" });
     mapRegistrationToForm.mockReturnValue({

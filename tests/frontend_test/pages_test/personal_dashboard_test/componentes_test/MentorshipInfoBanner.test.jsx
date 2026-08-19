@@ -260,7 +260,7 @@ describe("MentorshipInfoBanner", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("locks the dialog of an entry whose own window has closed", () => {
+  it("leaves the dialog unlocked while the entry's window is open", () => {
     render(
       <MentorshipInfoBanner
         {...defaultProps}
@@ -272,6 +272,29 @@ describe("MentorshipInfoBanner", () => {
       />,
     );
     expect(screen.getByText(/Dialog Locked: No/)).toBeInTheDocument();
+  });
+
+  // The invariant is the banner's own: once a role is settled, nothing
+  // else is on offer, whatever list of entries it was handed.
+  it("offers nothing but the registered role", () => {
+    render(
+      <MentorshipInfoBanner
+        {...defaultProps}
+        registration={{ isRegistered: true, roundName: "Spring" }}
+        registeredRole="mentee"
+        registrationEntries={[
+          { role: "mentor", deadlineAt: FUTURE, isOpen: true },
+          { role: "mentee", deadlineAt: FUTURE, isOpen: true },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByTestId("mock-registration-dialog-mentee"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("mock-registration-dialog-mentor"),
+    ).not.toBeInTheDocument();
   });
 
   it("does not offer feedback -- that lives on the participants card", () => {

@@ -532,6 +532,15 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
                     ParticipantRole.MENTEE,
                 )
 
+                # The eligibility check has to be asked about the role that
+                # was submitted. A hardcoded role here would let a
+                # mentee-only user register as a mentor.
+                self.mock_application_repo.get_hired_activity_application.assert_awaited_once_with(
+                    session=self.mock_session,
+                    user_id=self.user_id,
+                    mentorship_role=ParticipantRole.MENTEE,
+                )
+
                 self.mock_session.commit.assert_awaited_once()
 
     async def test_update_rejects_a_role_the_user_was_not_admitted_into(self):
