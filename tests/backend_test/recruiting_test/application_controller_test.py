@@ -94,10 +94,14 @@ class TestApplicationController(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(resp["data"])
 
     async def test_list_my_applications_delegates(self):
-        self.app_service.list_mine = AsyncMock(return_value=[{"applicationId": 10}])
+        payload = {
+            "applications": [{"applicationId": 10}],
+            "lastMentorshipRole": "mentor",
+        }
+        self.app_service.list_mine = AsyncMock(return_value=payload)
         resp = await self.controller.list_my_applications(self.ctx)
         self.app_service.list_mine.assert_awaited_once_with(self.session, self.ctx)
-        self.assertEqual(resp["data"], [{"applicationId": 10}])
+        self.assertEqual(resp["data"], payload)
 
     async def test_get_my_latest_profile_delegates_and_passes_no_id(self):
         """There is no id to pass, so no application but the caller's own can

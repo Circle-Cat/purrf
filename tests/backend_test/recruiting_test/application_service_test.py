@@ -65,6 +65,7 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_by_id = AsyncMock(return_value=None)
         self.app_repo.create = AsyncMock(side_effect=self._create_side_effect)
         self.app_repo.update = AsyncMock(side_effect=lambda s, e: e)
+        self.app_repo.get_recent_hired_activity_role = AsyncMock(return_value=None)
         self.sub_repo = MagicMock()
         self.sub_repo.get_current = AsyncMock(return_value=None)
         self.sub_repo.create = AsyncMock(
@@ -2505,19 +2506,54 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.list_mine(self.session, self._user())
 
         self.app_repo.list_by_user.assert_awaited_once_with(self.session, 2)
-        self.assertEqual(len(result), 2)
-        self.assertEqual(result[0].application_id, 10)
-        self.assertEqual(result[0].job_title, "CircleCat Mentor")
-        self.assertEqual(result[0].mentorship_role, ParticipantRole.MENTOR)
-        self.assertEqual(result[1].application_id, 11)
-        self.assertEqual(result[1].mentorship_role, None)
+        self.assertEqual(len(result.applications), 2)
+        self.assertEqual(result.applications[0].application_id, 10)
+        self.assertEqual(result.applications[0].job_title, "CircleCat Mentor")
+        self.assertEqual(result.applications[0].mentorship_role, ParticipantRole.MENTOR)
+        self.assertEqual(result.applications[1].application_id, 11)
+        self.assertEqual(result.applications[1].mentorship_role, None)
 
     async def test_list_mine_returns_empty_for_no_applications(self):
         self.app_repo.list_by_user = AsyncMock(return_value=[])
 
         result = await self.service.list_mine(self.session, self._user())
 
-        self.assertEqual(result, [])
+        self.assertEqual(result.applications, [])
+        self.assertIsNone(result.last_mentorship_role)
+
+    async def test_list_mine_reports_the_role_the_repository_resolved(self):
+        """The caller is handed the role, not the rows to work it out from:
+        whichever hired activity application the repository judges most
+        recent is what comes back, so a client cannot reach a different
+        answer than the round registration it is about to submit."""
+        self.app_repo.list_by_user = AsyncMock(return_value=[])
+        self.app_repo.get_recent_hired_activity_role = AsyncMock(
+            return_value=ParticipantRole.MENTOR
+        )
+
+        result = await self.service.list_mine(self.session, self._user())
+
+        self.assertEqual(result.last_mentorship_role, ParticipantRole.MENTOR)
+        self.app_repo.get_recent_hired_activity_role.assert_awaited_once_with(
+            self.session, 2
+        )
+
+    async def test_list_mine_role_is_none_when_no_hired_activity_application(self):
+        """Rows alone never imply a role — a user with applications but no
+        hired mentor/mentee admission is not a participant."""
+        job = self._job(kind=JobKind.EMPLOYMENT)
+        job.job_id = 2
+        job.title = "Backend Engineer"
+        app = ApplicationEntity(
+            job_id=2, user_id=2, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        app.application_id = 11
+        self.app_repo.list_by_user = AsyncMock(return_value=[(app, job)])
+
+        result = await self.service.list_mine(self.session, self._user())
+
+        self.assertEqual(len(result.applications), 1)
+        self.assertIsNone(result.last_mentorship_role)
 
     def _owner_types(self):
         """The (user_id, type) pairs of every notification submit wrote."""

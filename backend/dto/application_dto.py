@@ -76,3 +76,21 @@ class MyApplicationSummaryDto(BaseDto):
     job_kind: JobKind
     mentorship_role: ParticipantRole | None = None
     stage: ApplicationStage
+
+
+class MyApplicationsDto(BaseDto):
+    """The current user's own application list, plus the mentorship role
+    those applications earned them.
+
+    `last_mentorship_role` is resolved server-side rather than left for the
+    caller to work out from the rows: the rule for which of several hired
+    activity applications governs (see
+    `ApplicationRepository.get_recent_hired_activity_role`) also gates
+    mentorship round registration, and a second implementation of it in a
+    client would be free to disagree with the one that actually decides.
+    """
+
+    applications: list[MyApplicationSummaryDto]
+    # The role from the caller's most recent HIRED mentor/mentee ACTIVITY
+    # application; None when they have none and are not a participant.
+    last_mentorship_role: ParticipantRole | None = None
