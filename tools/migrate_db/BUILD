@@ -26,6 +26,7 @@ py_binary(
 py_library(
     name = "migrate_db_lib",
     srcs = ["migrate_db.py"],
+    data = ["//:alembic_files"],
     visibility = ["//tests:__subpackages__"],
     deps = [
         "@pypi//alembic",

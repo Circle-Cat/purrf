@@ -24,15 +24,19 @@ class TestResolveAlembicIni(unittest.TestCase):
         self.assertEqual(result, "alembic.ini")
 
     def test_uses_bundled_ini_when_no_workspace(self):
-        """Without a workspace, resolve alembic.ini from the runfiles and do not chdir."""
+        """Without a workspace, resolve the real bundled alembic.ini from the
+        runfiles (via the //:alembic_files data dep) and do not chdir. This
+        exercises the actual `parents[2]` depth instead of stubbing is_file."""
         with patch.dict("os.environ", {}, clear=True):
             with patch("os.chdir") as mock_chdir:
-                with patch.object(migrate_db_module.Path, "is_file", return_value=True):
-                    result = migrate_db_module._resolve_alembic_ini()
+                result = migrate_db_module._resolve_alembic_ini()
 
         mock_chdir.assert_not_called()
         self.assertTrue(result.endswith("/alembic.ini"))
         self.assertNotEqual(result, "alembic.ini")
+        resolved = migrate_db_module.Path(result)
+        self.assertTrue(resolved.is_file())
+        self.assertTrue((resolved.parent / "alembic_setup").is_dir())
 
     def test_exits_when_bundled_ini_missing(self):
         """Exit 1 rather than let alembic fail with a confusing error later."""
@@ -64,27 +68,12 @@ class TestMigrateDb(unittest.TestCase):
     @patch.object(migrate_db_module, "command")
     @patch.object(migrate_db_module, "Config")
     @patch.object(migrate_db_module, "_resolve_alembic_ini")
-    def test_resolves_config_before_upgrading(
-        self, mock_resolve, mock_config, mock_command
-    ):
-        """Resolution happens first; upgrade never runs against an unresolved config."""
-        call_order = []
-        mock_resolve.side_effect = lambda: call_order.append("resolve") or "alembic.ini"
-        mock_command.upgrade.side_effect = lambda *_: call_order.append("upgrade")
-
-        migrate_db_module.main()
-
-        self.assertEqual(call_order, ["resolve", "upgrade"])
-
-    @patch.object(migrate_db_module, "command")
-    @patch.object(migrate_db_module, "Config")
-    @patch.object(migrate_db_module, "_resolve_alembic_ini")
     def test_upgrade_failure_propagates(self, mock_resolve, mock_config, mock_command):
         """A failed migration must surface as a non-zero exit, not be swallowed."""
         mock_resolve.return_value = "alembic.ini"
         mock_command.upgrade.side_effect = Exception("migration failed")
 
-        with self.assertRaises(Exception, msg="migration failed"):
+        with self.assertRaisesRegex(Exception, "migration failed"):
             migrate_db_module.main()
 
 

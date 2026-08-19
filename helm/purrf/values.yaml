@@ -116,6 +116,11 @@ migrate:
   # Long enough for any real migration, short enough that a wedged run fails the
   # sync instead of hanging it.
   activeDeadlineSeconds: 600
+  # Empty on purpose: this Job now gates every deploy in every environment, so
+  # it must not inherit the Deployment's spot-node preference. An exhausted
+  # spot pool would otherwise block deploys entirely instead of just costing
+  # more for a few minutes on-demand.
+  nodeSelector: {}
   resources:
     limits:
       cpu: 500m

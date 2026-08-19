@@ -13,9 +13,10 @@ name: Deploy Test
 on:
   push:
     branches: [main]
-    # Only rebuild when something in the backend image actually changes.
-    # Frontend is served from a CDN. The backend image carries only the server; the
-    # alembic chain ships as a separate migration image built from the same commit.
+    # Only rebuild when something that ends up in the backend or migration image
+    # actually changes. Frontend is served from a CDN. The backend image carries
+    # only the server; alembic_setup/alembic.ini changes are what feed the
+    # separate migration image, built from the same commit.
     paths:
       - 'backend/**'
       - 'tools/**'

@@ -24,10 +24,13 @@ exports_files(
 
 filegroup(
     name = "alembic_files",
-    srcs = glob([
-        "alembic_setup/**",
-        "alembic.ini",
-    ]),
+    srcs = glob(
+        [
+            "alembic_setup/**",
+            "alembic.ini",
+        ],
+        exclude = ["alembic_setup/**/__pycache__/**"],
+    ),
 )
 
 js_library(
