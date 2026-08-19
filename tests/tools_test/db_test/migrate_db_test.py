@@ -27,9 +27,7 @@ class TestResolveAlembicIni(unittest.TestCase):
         """Without a workspace, resolve alembic.ini from the runfiles and do not chdir."""
         with patch.dict("os.environ", {}, clear=True):
             with patch("os.chdir") as mock_chdir:
-                with patch.object(
-                    migrate_db_module.Path, "is_file", return_value=True
-                ):
+                with patch.object(migrate_db_module.Path, "is_file", return_value=True):
                     result = migrate_db_module._resolve_alembic_ini()
 
         mock_chdir.assert_not_called()
@@ -39,9 +37,7 @@ class TestResolveAlembicIni(unittest.TestCase):
     def test_exits_when_bundled_ini_missing(self):
         """Exit 1 rather than let alembic fail with a confusing error later."""
         with patch.dict("os.environ", {}, clear=True):
-            with patch.object(
-                migrate_db_module.Path, "is_file", return_value=False
-            ):
+            with patch.object(migrate_db_module.Path, "is_file", return_value=False):
                 with self.assertRaises(SystemExit) as ctx:
                     migrate_db_module._resolve_alembic_ini()
 
