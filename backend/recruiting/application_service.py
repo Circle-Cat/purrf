@@ -925,7 +925,9 @@ class ApplicationService:
             MyApplicationsDto: One row per application, in the order
                 `ApplicationRepository.list_by_user` returns them, plus every
                 mentorship role the caller holds a HIRED admission in, or an
-                empty list when they have none.
+                empty list when they have none. That list's order carries no
+                authority — it is most-recent-admission-first for display
+                only, and no code may treat element 0 as "the" role.
         """
         rows = await self.application_repository.list_by_user(
             session, current_user.user_id
