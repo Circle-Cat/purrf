@@ -85,7 +85,10 @@ import {
 } from "@/pages/Recruiting/board/stageFormat";
 import { useAuth } from "@/context/auth/AuthContext";
 import { PERMISSIONS } from "@/constants/Permissions";
-import { formatInTz, resolveViewerTimezone } from "@/utils/dateTime";
+import {
+  formatDateTimeWithZone,
+  resolveViewerTimezone,
+} from "@/utils/dateTime";
 import InterviewMeetingCard from "@/pages/Recruiting/applications/InterviewMeetingCard";
 import InterviewMeetingDialog from "@/pages/Recruiting/applications/InterviewMeetingDialog";
 import BackToBoardLink from "@/pages/Recruiting/applications/BackToBoardLink";
@@ -354,9 +357,7 @@ const EvaluationSummary = ({ evaluations, interviewPool }) => (
  * @returns {string|null}
  */
 const formatInterviewWhen = (startAt, tz) =>
-  startAt && tz
-    ? `${formatInTz(startAt, tz, "yyyy-MM-dd")} ${formatInTz(startAt, tz, "HH:mm")} ${tz}`
-    : null;
+  formatDateTimeWithZone(startAt, tz);
 
 /**
  * The "cancel the meeting this decision would strand" opt-in.
