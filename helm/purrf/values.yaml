@@ -104,7 +104,10 @@ secret:
 # helm upgrade, so the ordering comes from the argocd.argoproj.io/hook
 # annotation in templates/migrate-job.yaml.
 migrate:
-  enabled: true
+  # Off unless an environment turns it on. Each environment owns this switch in
+  # its own branch's values-<env>.yaml, because those files diverge from main by
+  # design and a promote must never carry one environment's answer to another.
+  enabled: false
   image:
     # Built from the same commit as image.repository and pinned by the same
     # image.tag, so the migration chain always matches the server that follows.
