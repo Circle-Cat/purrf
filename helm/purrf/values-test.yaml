@@ -11,6 +11,13 @@ image:
   # here is just the bootstrap before the first deploy-test run pins a SHA.
   repository: ghcr.io/circle-cat/purrf
   tag: "cb72a9d3b575aec2caa37fc88dc19c7e06f8efdb"
+# The PreSync migration hook stays off here until a build has pushed a
+# purrf-migrate image carrying the tag pinned above; turning it on before that
+# would fail every sync on a missing image. Enabled per environment in order:
+# test, then staging, then prod.
+migrate:
+  enabled: false
+
 envFrom:
   - secretRef:
       name: purrf-test

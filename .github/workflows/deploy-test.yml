@@ -13,10 +13,15 @@ name: Deploy Test
 on:
   push:
     branches: [main]
-    # Only rebuild when something in the backend image actually changes.
-    # Frontend is served from a CDN; tools/ and alembic are not in the image.
+    # Only rebuild when something that ends up in the backend or migration image
+    # actually changes. Frontend is served from a CDN. The backend image carries
+    # only the server; alembic_setup/alembic.ini changes are what feed the
+    # separate migration image, built from the same commit.
     paths:
       - 'backend/**'
+      - 'tools/**'
+      - 'alembic_setup/**'
+      - 'alembic.ini'
       - 'requirements.txt'
       - 'MODULE.bazel'
       - 'MODULE.bazel.lock'
@@ -68,6 +73,15 @@ jobs:
         run: >-
           bazel --max_idle_secs=10 run //:purrf_image_push_dynamic
           --action_env=BE_REPO=ghcr.io/circle-cat/purrf
+          --action_env=TAG_1=main
+          --action_env=TAG_2=${{ github.sha }}
+
+      - name: Build and push migration image
+        # Same TAG_2 as the backend image: values-test.yaml pins one tag and it
+        # addresses both images, so the migration always matches the server.
+        run: >-
+          bazel --max_idle_secs=10 run //:purrf_migrate_image_push_dynamic
+          --action_env=MIGRATE_REPO=ghcr.io/circle-cat/purrf-migrate
           --action_env=TAG_1=main
           --action_env=TAG_2=${{ github.sha }}
 
