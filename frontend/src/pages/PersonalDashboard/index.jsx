@@ -55,8 +55,9 @@ const PersonalDashboard = () => {
     registrationDeadlineAt, // Deadline the registration window is measured against
     regRoundName, // Display name of the round taking registrations
     isFeedbackEnabled, // Whether the feedback phase is currently active
-    feedbackRoundId, // Round ID for which feedback is currently open
-    feedbackRoundName, // Display name of the feedback round
+    registrationEntries, // One entry per role the user may register under, each with its own deadline
+    registeredRole, // Role an existing registration settled on, or null
+    loadRegistrationForRole, // Fetches one role's registration form prefill
     saveRegistration, // Function to submit or update registration data
     pastPartners, // List of past mentorship partners
     isPartnersLoading, // Whether partner data is currently loading
@@ -139,9 +140,9 @@ const PersonalDashboard = () => {
             registration={registration}
             isRegistrationOpen={isRegistrationOpen}
             isFeedbackEnabled={isFeedbackEnabled}
-            feedbackRoundId={feedbackRoundId}
-            feedbackRoundName={feedbackRoundName}
-            hiredMentorshipRoles={hiredMentorshipRoles}
+            registrationEntries={registrationEntries}
+            registeredRole={registeredRole}
+            loadRegistrationForRole={loadRegistrationForRole}
             onSaveRegistration={saveRegistration}
             pastPartners={pastPartners}
             isPartnersLoading={isPartnersLoading}

@@ -488,13 +488,16 @@ describe("PersonalDashboard", () => {
     });
   });
 
-  it("passes hiredMentorshipRoles through to MentorshipInfoBanner", () => {
-    useMyApplications.mockReturnValue({
-      applications: [],
-      isLoading: false,
-      loadError: false,
-      load: vi.fn(),
-      hiredMentorshipRoles: ["mentor"],
+  it("passes the per-role registration entries through to MentorshipInfoBanner", () => {
+    const registrationEntries = [
+      { role: "mentor", deadlineAt: "2026-09-30T15:59:00Z", isOpen: true },
+    ];
+    const loadRegistrationForRole = vi.fn();
+    useMentorshipData.mockReturnValue({
+      ...mockHookData,
+      registrationEntries,
+      registeredRole: null,
+      loadRegistrationForRole,
     });
 
     render(<PersonalDashboard />);
@@ -503,7 +506,11 @@ describe("PersonalDashboard", () => {
     // expect.anything() rejects that literal undefined second arg, so assert on the
     // first call's props directly instead.
     expect(MentorshipInfoBanner.mock.calls[0][0]).toEqual(
-      expect.objectContaining({ hiredMentorshipRoles: ["mentor"] }),
+      expect.objectContaining({
+        registrationEntries,
+        registeredRole: null,
+        loadRegistrationForRole,
+      }),
     );
   });
 
