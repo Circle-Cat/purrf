@@ -226,6 +226,79 @@ describe("NotificationBell", () => {
       expect(screen.getByText(text)).toBeInTheDocument();
     },
   );
+
+  it("describes an automatic assignment without naming an actor", async () => {
+    // An automatic assignment is the one assignment line that arrives with
+    // actorName null: the pipeline's own default-assignee rule made it, so
+    // the event carries no actor. It must not read through the
+    // `actorName ?? "Someone"` fallback the actor-bearing lines use --
+    // "Someone assigned you" credits the decision to a person nobody can
+    // name. The bell keeps its own copy switch, separate from the email
+    // renderer's, so this invariant needs pinning on both sides.
+    const user = userEvent.setup();
+    api.listNotifications.mockResolvedValue({
+      data: {
+        unreadCount: 1,
+        notifications: [
+          {
+            id: 1,
+            eventType: "recruiting.auto_assigned",
+            details: { stage: "recruiter_screening", round: 1 },
+            jobTitle: "Backend Engineer",
+            jobKind: "employment",
+            applicantName: "Ada Lovelace",
+            actorName: null,
+            createdAt: "2026-08-18T00:00:00Z",
+          },
+        ],
+      },
+    });
+    renderBell();
+
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+
+    expect(
+      screen.getByText(
+        "You were auto-assigned to evaluate Ada Lovelace — Backend Engineer",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Someone/)).not.toBeInTheDocument();
+  });
+
+  it("says Someone for an assignment whose actor no longer resolves", async () => {
+    // An actor id that no longer resolves to a user arrives as an empty
+    // name, which is a third state distinct from the null above: a person
+    // did make this decision, they just cannot be named any more. The copy
+    // has to fall back to "Someone" for it rather than render a blank, and
+    // the email renderer words this case the same way.
+    const user = userEvent.setup();
+    api.listNotifications.mockResolvedValue({
+      data: {
+        unreadCount: 1,
+        notifications: [
+          {
+            id: 1,
+            eventType: "recruiting.reassigned",
+            jobTitle: "Backend Engineer",
+            applicantName: "Ada Lovelace",
+            actorName: "",
+            createdAt: "2026-08-18T00:00:00Z",
+          },
+        ],
+      },
+    });
+    renderBell();
+
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+
+    expect(
+      screen.getByText(
+        "Someone assigned you to evaluate Ada Lovelace — Backend Engineer",
+      ),
+    ).toBeInTheDocument();
+  });
 });
 
 const MENTION = {

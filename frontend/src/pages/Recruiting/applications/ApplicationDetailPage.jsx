@@ -522,10 +522,11 @@ const describeActivity = ({ eventType, details }, jobKind, timezone) => {
  * Read-only owner-facing audit timeline for one application: every
  * submission/stage-change/reassign/round-advance/sub-status-change/
  * evaluation-confirm/blacklist event, newest first, each attributed to its
- * actor's resolved display name.
+ * actor's resolved display name, or to the system for the events the
+ * pipeline's own rules recorded under no actor.
  *
  * @param {{activity: {id: number, eventType: string, details: object,
- *          actorName: string, createdAt: string}[],
+ *          actorName: string|null, createdAt: string}[],
  *          jobKind?: string|null}} props
  */
 const ActivityTimeline = ({ activity, jobKind, timezone }) => (
@@ -539,7 +540,12 @@ const ActivityTimeline = ({ activity, jobKind, timezone }) => (
             <span className="text-slate-500">
               {new Date(entry.createdAt).toLocaleString()}
             </span>{" "}
-            — {describeActivity(entry, jobKind, timezone)}, by {entry.actorName}
+            — {describeActivity(entry, jobKind, timezone)}, by{" "}
+            {/* A null actorName means the pipeline's own rules did this, not
+                a person. `??` and not `||`: this endpoint resolves an actor
+                it cannot name to "User <id>", never to an empty string, so
+                there is no third state to catch here. */}
+            {entry.actorName ?? "the system"}
           </li>
         ))}
       </ul>
