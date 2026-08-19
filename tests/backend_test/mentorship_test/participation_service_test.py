@@ -333,9 +333,14 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.goal, "")
         self.assertEqual(result.max_partners, 1)
 
-    async def test_registered_row_wins_over_a_matching_requested_role(self):
-        """A saved registration's role settles the round when it matches the
-        requested role: its preferences come back as-is."""
+    async def test_registered_row_wins_when_no_role_is_requested(self):
+        """The most-trafficked GET case: a registered user asking only "am I
+        registered, and as what" (no role named). The row still short-
+        circuits and answers with the saved role's preferences, even though
+        participant_role is None — this is the case an ordering mutation
+        (checking participant_role is None before the row lookup) would
+        silently break, since every other row-present test in this file
+        supplies a role."""
         mock_round_id = 1
         mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
         mock_participant.participant_role = ParticipantRole.MENTEE
@@ -358,11 +363,12 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             session=self.mock_session,
             user_id=self.user_context.user_id,
             round_id=mock_round_id,
-            participant_role=ParticipantRole.MENTEE,
+            participant_role=None,
         )
 
         self.assertTrue(is_registered)
-        self.assertEqual(ParticipantRole.MENTEE, result.participant_role)
+        self.assertEqual(expected_dto, result)
+        self.mock_round_participants_repo.get_recent_participant_by_user_id_and_role.assert_not_awaited()
 
     async def test_registered_row_conflicts_with_a_different_requested_role(self):
         """A saved registration under a different role than requested is a
