@@ -689,7 +689,10 @@ describe("registration entries by role", () => {
     );
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    const prefill = { isRegistered: false, roundPreferences: { maxPartners: 2 } };
+    const prefill = {
+      isRegistered: false,
+      roundPreferences: { maxPartners: 2 },
+    };
     getMyMentorshipRegistration.mockResolvedValueOnce({ data: prefill });
 
     let loaded;

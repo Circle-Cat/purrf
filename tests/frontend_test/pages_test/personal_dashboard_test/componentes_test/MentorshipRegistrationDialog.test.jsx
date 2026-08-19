@@ -302,12 +302,7 @@ describe("MentorshipRegistrationDialog Component", () => {
     ).toBeInTheDocument();
 
     // Switch role to Mentor and verify Industry selector is hidden
-    rerender(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        role="mentor"
-      />,
-    );
+    rerender(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     expect(
       screen.queryByText(/Which industry are you interested in/i),
@@ -315,12 +310,7 @@ describe("MentorshipRegistrationDialog Component", () => {
   });
 
   it("should show Capacity RadioGroup for Mentor", async () => {
-    render(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        role="mentor"
-      />,
-    );
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     await user.click(screen.getByText("Toggle Dialog"));
 
@@ -750,12 +740,7 @@ describe("MentorshipRegistrationDialog Component", () => {
   });
 
   it("should render mentor survey questions for mentor role", async () => {
-    render(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        role="mentor"
-      />,
-    );
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     await user.click(screen.getByText("Toggle Dialog"));
 
@@ -806,12 +791,7 @@ describe("MentorshipRegistrationDialog Component", () => {
   });
 
   it("should not render mentee survey questions for mentor role", async () => {
-    render(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        role="mentor"
-      />,
-    );
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     await user.click(screen.getByText("Toggle Dialog"));
 
@@ -830,12 +810,7 @@ describe("MentorshipRegistrationDialog Component", () => {
   });
 
   it("should show careerTransitionOther input when careerTransition is 'other'", async () => {
-    render(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        role="mentor"
-      />,
-    );
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     await user.click(screen.getByText("Toggle Dialog"));
 
@@ -889,12 +864,7 @@ describe("MentorshipRegistrationDialog Component", () => {
       timeUrgency: "",
     });
 
-    render(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        role="mentor"
-      />,
-    );
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     await user.click(screen.getByText("Toggle Dialog"));
 
@@ -928,12 +898,7 @@ describe("MentorshipRegistrationDialog Component", () => {
     const mockPayload = { api: "data" };
     mapFormToApi.mockReturnValue(mockPayload);
 
-    render(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        role="mentor"
-      />,
-    );
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     await user.click(screen.getByText("Toggle Dialog"));
     await user.click(screen.getByText("Register"));
@@ -968,12 +933,7 @@ describe("MentorshipRegistrationDialog Component", () => {
   });
 
   it("should block mentor submit and show errors when required fields are empty", async () => {
-    render(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        role="mentor"
-      />,
-    );
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     await user.click(screen.getByText("Toggle Dialog"));
     await user.click(screen.getByText("Register"));
@@ -1041,12 +1001,7 @@ describe("MentorshipRegistrationDialog Component", () => {
       timeUrgency: "",
     });
 
-    render(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        role="mentor"
-      />,
-    );
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     await user.click(screen.getByText("Toggle Dialog"));
     await user.click(screen.getByText("Register"));
@@ -1090,12 +1045,7 @@ describe("MentorshipRegistrationDialog Component", () => {
   });
 
   it("should clear *Other text when user changes selection away from 'other'", async () => {
-    render(
-      <MentorshipRegistrationDialog
-        {...defaultProps}
-        role="mentor"
-      />,
-    );
+    render(<MentorshipRegistrationDialog {...defaultProps} role="mentor" />);
 
     await user.click(screen.getByText("Toggle Dialog"));
 

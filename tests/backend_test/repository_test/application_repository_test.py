@@ -530,9 +530,7 @@ class TestApplicationRepository(BaseRepositoryTestLib):
             ),
         )
 
-        roles = await repo.list_hired_activity_roles(
-            self.session, user_id=user.user_id
-        )
+        roles = await repo.list_hired_activity_roles(self.session, user_id=user.user_id)
         self.assertEqual([ParticipantRole.MENTOR, ParticipantRole.MENTEE], roles)
 
     async def test_list_hired_activity_roles_deduplicates_repeated_admissions(self):
@@ -559,9 +557,7 @@ class TestApplicationRepository(BaseRepositoryTestLib):
                 ),
             )
 
-        roles = await repo.list_hired_activity_roles(
-            self.session, user_id=user.user_id
-        )
+        roles = await repo.list_hired_activity_roles(self.session, user_id=user.user_id)
         self.assertEqual([ParticipantRole.MENTEE], roles)
 
     async def test_list_hired_activity_roles_ignores_non_hired_and_non_activity(self):
@@ -601,9 +597,7 @@ class TestApplicationRepository(BaseRepositoryTestLib):
             ),
         )
 
-        roles = await repo.list_hired_activity_roles(
-            self.session, user_id=user.user_id
-        )
+        roles = await repo.list_hired_activity_roles(self.session, user_id=user.user_id)
         self.assertEqual([], roles)
 
     async def test_get_hired_activity_application_returns_none_when_not_hired(self):
