@@ -31,6 +31,7 @@ import {
 } from "@/pages/PersonalDashboard/utils/mentorshipRegistration";
 
 const REGISTRATION_SUCCESS_TOAST_ID = "registration-success-toast";
+const REGISTRATION_ERROR_TOAST_ID = "registration-error-toast";
 const POST_REGISTRATION_TOAST_ID = "post-registration-training-toast";
 const POST_REGISTRATION_TOAST_TITLE = "Complete onboarding training";
 const PROFILE_CHECK_TOAST_ID = "post-registration-profile-check-toast";
@@ -50,13 +51,29 @@ const POST_REGISTRATION_MENTEE_MESSAGE =
 /**
  * MentorshipRegistrationDialog
  *
- * Dialog component for creating or viewing mentorship registration preferences.
- * It supports both mentor and mentee flows and handles preference initialization,
- * form state management, and submission.
+ * Dialog component for creating or viewing mentorship registration
+ * preferences under one role. It supports both mentor and mentee flows and
+ * handles preference initialization, form state management, and submission.
+ *
+ * @param {Object} props - Component props.
+ * @param {"mentor"|"mentee"} props.role - The role this dialog registers under.
+ * @param {Object|null} props.currentRegistration - The user's registration for
+ *   the round, or the round-level answer when they have not registered.
+ * @param {(role: string) => Promise<Object|null>} props.loadRegistrationForRole -
+ *   Fetches this role's form prefill for a first-time registrant.
+ * @param {Array<Object>} props.allPastPartners - The user's past partners.
+ * @param {boolean} props.isPartnersLoading - Whether the partner list is loading.
+ * @param {() => Promise<void>} props.loadPastPartners - Loads the partner list.
+ * @param {() => Promise<void>} props.refreshRegistration - Refreshes the registration.
+ * @param {boolean} props.isLocked - Whether this role's window has closed,
+ *   making the form read-only.
+ * @param {(data: Object) => Promise<any>} props.onSave - Submits the registration.
+ * @returns {JSX.Element}
  */
 export default function MentorshipRegistrationDialog({
+  role,
   currentRegistration,
-  hiredMentorshipRole,
+  loadRegistrationForRole,
   allPastPartners = [],
   isPartnersLoading,
   loadPastPartners,
@@ -66,12 +83,14 @@ export default function MentorshipRegistrationDialog({
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
-  // The user's mentor/mentee role comes from their HIRED activity
-  // application, not from `currentRegistration` — a first-time
-  // registrant has no round-preferences yet, so deriving the role from
-  // `currentRegistration` would default them into the wrong form.
-  const isMentor = hiredMentorshipRole === MentorshipParticipantRoles.MENTOR;
+  // The role is the entry point the user pressed, not something derived
+  // from the data: the dialog for "Register as Mentor" asks the mentor
+  // questions and submits a mentor registration, full stop.
+  const isMentor = role === MentorshipParticipantRoles.MENTOR;
   const isUpdating = currentRegistration?.isRegistered;
+  // The data the form was seeded from, carried into the payload so fields
+  // this form does not edit survive the round trip.
+  const [prefill, setPrefill] = useState(null);
 
   // Form state
   const [selectedIndustries, setSelectedIndustries] = useState([]);
@@ -103,36 +122,70 @@ export default function MentorshipRegistrationDialog({
       return rest;
     });
 
-  // Initialize form state when dialog opens
+  // Initialize form state when dialog opens. An existing registration is
+  // its own seed; a first-time registrant is seeded from this role's
+  // prefill, which only the server can produce.
   useEffect(() => {
-    if (!isOpen || !currentRegistration) return;
+    if (!isOpen) return;
     setErrors({});
 
-    const formData = mapRegistrationToForm(
-      currentRegistration,
-      allPastPartners,
-    );
+    let cancelled = false;
+    const seed = async () => {
+      const source = isUpdating
+        ? currentRegistration
+        : await loadRegistrationForRole?.(role);
+      if (cancelled || !source) return;
+      setPrefill(source);
 
-    setSelectedIndustries(formData.industries);
-    setSelectedSkillsets(formData.skillsets);
-    setPartnerCapacity(formData.partnerCapacity);
-    setGoal(formData.goal);
-    setSelectedPartners(formData.selectedPartners);
-    setExcludedPartners(formData.excludedPartners);
-    // Mentor survey
-    setCareerTransition(formData.careerTransition);
-    setCareerTransitionOther(formData.careerTransitionOther);
-    setRegion(formData.region);
-    setRegionOther(formData.regionOther);
-    setExternalMentoringExp(formData.externalMentoringExp);
-    // Mentee survey
-    setCurrentBackground(formData.currentBackground);
-    setCurrentBackgroundOther(formData.currentBackgroundOther);
-    setTargetRegion(formData.targetRegion);
-    setTargetRegionOther(formData.targetRegionOther);
-    setCurrentStage(formData.currentStage);
-    setTimeUrgency(formData.timeUrgency);
-  }, [currentRegistration, allPastPartners, isOpen]);
+      const formData = mapRegistrationToForm(source, allPastPartners);
+
+      setSelectedIndustries(formData.industries);
+      setSelectedSkillsets(formData.skillsets);
+      setPartnerCapacity(formData.partnerCapacity);
+      setGoal(formData.goal);
+      setSelectedPartners(formData.selectedPartners);
+      setExcludedPartners(formData.excludedPartners);
+      // Mentor survey
+      setCareerTransition(formData.careerTransition);
+      setCareerTransitionOther(formData.careerTransitionOther);
+      setRegion(formData.region);
+      setRegionOther(formData.regionOther);
+      setExternalMentoringExp(formData.externalMentoringExp);
+      // Mentee survey
+      setCurrentBackground(formData.currentBackground);
+      setCurrentBackgroundOther(formData.currentBackgroundOther);
+      setTargetRegion(formData.targetRegion);
+      setTargetRegionOther(formData.targetRegionOther);
+      setCurrentStage(formData.currentStage);
+      setTimeUrgency(formData.timeUrgency);
+    };
+
+    // The server refuses a role the user was never admitted into, and a
+    // role that disagrees with a registration made in another tab. Its
+    // messages are user-ready English, so they are shown as written --
+    // there is no global error toast, and an unhandled rejection would
+    // leave a blank form sitting under the button.
+    seed().catch((err) => {
+      if (cancelled) return;
+      setIsOpen(false);
+      showReminderToast({
+        id: REGISTRATION_ERROR_TOAST_ID,
+        type: "error",
+        title: "Registration unavailable",
+        message: err?.message,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isOpen,
+    role,
+    isUpdating,
+    currentRegistration,
+    allPastPartners,
+    loadRegistrationForRole,
+  ]);
 
   /**
    * Handle dialog open/close changes.
@@ -204,10 +257,25 @@ export default function MentorshipRegistrationDialog({
         currentStage,
         timeUrgency,
       },
-      currentRegistration,
+      prefill ?? currentRegistration,
+      role,
     );
 
-    const response = await onSave(payload);
+    let response;
+    try {
+      response = await onSave(payload);
+    } catch (err) {
+      // Same refusals as the prefill, reached here by a save that raced
+      // another tab. The dialog stays open with the form as the user left
+      // it, and nothing announces a registration that did not happen.
+      showReminderToast({
+        id: REGISTRATION_ERROR_TOAST_ID,
+        type: "error",
+        title: "Registration failed",
+        message: err?.message,
+      });
+      return;
+    }
     setIsOpen(false);
 
     // Fire the success toast first so the training reminder, fired
@@ -285,7 +353,13 @@ export default function MentorshipRegistrationDialog({
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button variant="default" disabled={isPartnersLoading}>
-          {isLocked ? "View Registration" : "Register for Next Round"}
+          {isLocked
+            ? "View Registration"
+            : isUpdating
+              ? "Update Registration"
+              : isMentor
+                ? "Register as Mentor"
+                : "Register as Mentee"}
         </Button>
       </DialogTrigger>
 

@@ -29,9 +29,13 @@ export const getMyMentorshipPartners = (roundId) =>
 /**
  * Fetch the mentorship registration information for a specific round.
  * @param {string} roundId - The ID of the mentorship round.
+ * @param {"mentor"|"mentee"} [role] - Which role's form to prefill. Omit to
+ *   ask only whether the user is registered and under what role.
  */
-export const getMyMentorshipRegistration = (roundId) =>
-  request.get(API_ENDPOINTS.MENTORSHIP_REGISTRATION(roundId));
+export const getMyMentorshipRegistration = (roundId, role) =>
+  request.get(API_ENDPOINTS.MENTORSHIP_REGISTRATION(roundId), {
+    params: role ? { role } : undefined,
+  });
 
 /**
  * Fetch the mentorship match result for a specific round.

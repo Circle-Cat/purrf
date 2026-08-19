@@ -86,7 +86,7 @@ describe("PersonalDashboard registration reminder wiring", () => {
             stage: "hired",
           },
         ],
-        lastMentorshipRole: "mentee",
+        mentorshipRoles: ["mentee"],
       },
     });
     profileApi.getMyProfile.mockResolvedValue({

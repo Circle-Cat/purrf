@@ -21,81 +21,86 @@ describe("useMyApplications", () => {
     vi.clearAllMocks();
   });
 
-  it("is null while loading (no fail-open)", () => {
+  it("is empty while loading (no fail-open)", () => {
     api.listMyApplications.mockReturnValue(new Promise(() => {})); // never resolves
     const { result } = renderHook(() => useMyApplications());
 
     expect(result.current.isLoading).toBe(true);
-    expect(result.current.hiredMentorshipRole).toBeNull();
+    expect(result.current.hiredMentorshipRoles).toEqual([]);
   });
 
-  it("is null on load failure (no fail-open)", async () => {
+  it("is empty on load failure (no fail-open)", async () => {
     api.listMyApplications.mockRejectedValue(new Error("network error"));
     const { result } = renderHook(() => useMyApplications());
 
     await waitFor(() => expect(result.current.loadError).toBe(true));
-    expect(result.current.hiredMentorshipRole).toBeNull();
+    expect(result.current.hiredMentorshipRoles).toEqual([]);
   });
 
-  it("is 'mentor' when the response says so", async () => {
+  it("returns every role the response carries", async () => {
     api.listMyApplications.mockResolvedValue({
-      data: { applications: [row()], lastMentorshipRole: "mentor" },
+      data: { applications: [], mentorshipRoles: ["mentor", "mentee"] },
     });
     const { result } = renderHook(() => useMyApplications());
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.hiredMentorshipRole).toBe("mentor");
+    expect(result.current.hiredMentorshipRoles).toEqual(["mentor", "mentee"]);
   });
 
-  it("is 'mentee' when the response says so", async () => {
+  it("returns the single role of a one-admission participant", async () => {
     api.listMyApplications.mockResolvedValue({
       data: {
         applications: [row({ mentorshipRole: "mentee" })],
-        lastMentorshipRole: "mentee",
+        mentorshipRoles: ["mentee"],
       },
     });
     const { result } = renderHook(() => useMyApplications());
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.hiredMentorshipRole).toBe("mentee");
+    expect(result.current.hiredMentorshipRoles).toEqual(["mentee"]);
   });
 
-  // Which of several hired admissions governs is settled server-side. The
-  // hook must not second-guess it from the rows: doing so is what let the
-  // form a user filled in disagree with the registration it saved.
-  it("takes the role from the response, not from the rows", async () => {
+  // Which admissions qualify a user is settled server-side. The hook must
+  // not second-guess it from the rows: doing so is what let the form a user
+  // filled in disagree with the registration it saved.
+  it("takes the roles from the response, not from the rows", async () => {
     api.listMyApplications.mockResolvedValue({
       data: {
         applications: [
           row({ applicationId: 1, mentorshipRole: "mentee" }),
           row({ applicationId: 2, mentorshipRole: "mentor" }),
         ],
-        lastMentorshipRole: "mentor",
+        mentorshipRoles: ["mentor"],
       },
     });
     const { result } = renderHook(() => useMyApplications());
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.hiredMentorshipRole).toBe("mentor");
+    expect(result.current.hiredMentorshipRoles).toEqual(["mentor"]);
   });
 
-  it("is null when the response carries no role, whatever the rows say", async () => {
+  it("returns no roles when the response carries none, whatever the rows say", async () => {
     api.listMyApplications.mockResolvedValue({
-      data: {
-        applications: [row()],
-        lastMentorshipRole: null,
-      },
+      data: { applications: [row()], mentorshipRoles: [] },
     });
     const { result } = renderHook(() => useMyApplications());
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.hiredMentorshipRole).toBeNull();
+    expect(result.current.hiredMentorshipRoles).toEqual([]);
+  });
+
+  it("returns no roles when the response carries no role field at all", async () => {
+    api.listMyApplications.mockResolvedValue({ data: { applications: [] } });
+    const { result } = renderHook(() => useMyApplications());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.hiredMentorshipRoles).toEqual([]);
   });
 
   it("exposes the applications list", async () => {
     const rows = [row({ applicationId: 7 })];
     api.listMyApplications.mockResolvedValue({
-      data: { applications: rows, lastMentorshipRole: "mentor" },
+      data: { applications: rows, mentorshipRoles: ["mentor"] },
     });
     const { result } = renderHook(() => useMyApplications());
 
@@ -103,33 +108,33 @@ describe("useMyApplications", () => {
     expect(result.current.applications).toEqual(rows);
   });
 
-  it("is null for an empty application list", async () => {
+  it("is empty for an empty application list", async () => {
     api.listMyApplications.mockResolvedValue({
-      data: { applications: [], lastMentorshipRole: null },
+      data: { applications: [], mentorshipRoles: [] },
     });
     const { result } = renderHook(() => useMyApplications());
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.hiredMentorshipRole).toBeNull();
+    expect(result.current.hiredMentorshipRoles).toEqual([]);
     expect(result.current.applications).toEqual([]);
   });
 
   // A reload that fails leaves nothing standing: the mentorship section is
-  // gated on this role, and a stale one would keep it rendered against an
-  // answer no response confirms.
-  it("drops a previously loaded role when a reload fails", async () => {
+  // gated on these roles, and stale ones would keep it offering entry
+  // points no response confirms.
+  it("clears previously loaded roles when a reload fails", async () => {
     api.listMyApplications.mockResolvedValue({
-      data: { applications: [row()], lastMentorshipRole: "mentor" },
+      data: { applications: [row()], mentorshipRoles: ["mentor"] },
     });
     const { result } = renderHook(() => useMyApplications());
     await waitFor(() =>
-      expect(result.current.hiredMentorshipRole).toBe("mentor"),
+      expect(result.current.hiredMentorshipRoles).toEqual(["mentor"]),
     );
 
     api.listMyApplications.mockRejectedValue(new Error("network error"));
     result.current.load();
 
     await waitFor(() => expect(result.current.loadError).toBe(true));
-    expect(result.current.hiredMentorshipRole).toBeNull();
+    expect(result.current.hiredMentorshipRoles).toEqual([]);
   });
 });
