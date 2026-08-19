@@ -64,15 +64,15 @@ describe("useRegistrationReminder", () => {
 
     expect(lastToast().title).toBe("Register for 2026 Fall");
     expect(lastToast().message).toBe(
-      "Please complete your registration by Sep 30, 8:59 AM (PT) to get " +
-        "matched with a partner.",
+      "Please complete your registration by 2026-09-30 08:59 " +
+        "America/Los_Angeles to get matched with a partner.",
     );
   });
 
   it("holds the zone steady across the winter change", () => {
     // Standard time, three hours behind the summer offset the case above
-    // exercises. The label stays PT either way rather than flipping
-    // between PDT and PST.
+    // exercises. The label stays the same IANA name either way rather
+    // than flipping between PDT and PST.
     renderHook(() =>
       useRegistrationReminder({
         ...openRound,
@@ -80,7 +80,9 @@ describe("useRegistrationReminder", () => {
       }),
     );
 
-    expect(lastToast().message).toContain("Dec 31, 7:59 AM (PT)");
+    expect(lastToast().message).toContain(
+      "2026-12-31 07:59 America/Los_Angeles",
+    );
   });
 
   it("drops the round from the title when it has no name", () => {

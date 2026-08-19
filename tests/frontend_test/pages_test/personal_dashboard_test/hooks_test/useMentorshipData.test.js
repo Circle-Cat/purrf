@@ -12,6 +12,7 @@ import {
   getMyMentorshipMeetingLog,
 } from "@/api/mentorshipApi";
 import { getMyMentorshipMeetingsV2 } from "@/api/meetingApi";
+import { getMyProfile } from "@/api/profileApi";
 import {
   calculateMentorshipSlots,
   calculateRoundStatus,
@@ -29,6 +30,12 @@ vi.mock("@/api/mentorshipApi", () => ({
 vi.mock("@/api/meetingApi", () => ({
   getMyMentorshipMeetingsV2: vi.fn(),
 }));
+vi.mock("@/api/profileApi", () => ({
+  getMyProfile: vi.fn(),
+}));
+
+const mockProfileTimezone = (timezone = "America/Los_Angeles") =>
+  getMyProfile.mockResolvedValue({ data: { profile: { user: { timezone } } } });
 
 vi.mock("@/pages/PersonalDashboard/utils/mentorshipRounds", () => ({
   calculateMentorshipSlots: vi.fn(),
@@ -42,6 +49,7 @@ vi.mock("@/hooks/useFeatureFlags", () => ({
 describe("useMentorshipData Hook", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockProfileTimezone();
     useFeatureFlags.mockReturnValue({ "create-google-meeting": false });
     calculateRoundStatus.mockReturnValue({
       sortedRounds: [],
@@ -322,6 +330,25 @@ describe("useMentorshipData Hook", () => {
 
     expect(result.current.isLoading).toBe(true);
   });
+
+  it("defaults userTimezone to the org timezone before the profile responds", () => {
+    getMyProfile.mockReturnValue(new Promise(() => {}));
+
+    const { result } = renderHook(() => useMentorshipData());
+
+    expect(result.current.userTimezone).toBe("America/Los_Angeles");
+  });
+
+  it("fetches the profile timezone independent of round selection", async () => {
+    mockProfileTimezone("Asia/Shanghai");
+    getAllMentorshipRounds.mockReturnValue(new Promise(() => {})); // no round ever resolves
+
+    const { result } = renderHook(() => useMentorshipData());
+
+    await waitFor(() =>
+      expect(result.current.userTimezone).toBe("Asia/Shanghai"),
+    );
+  });
 });
 
 describe("saveRegistration", () => {
@@ -329,6 +356,7 @@ describe("saveRegistration", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockProfileTimezone();
     useFeatureFlags.mockReturnValue({ "create-google-meeting": false });
     calculateRoundStatus.mockReturnValue({
       sortedRounds: [],
@@ -498,6 +526,7 @@ describe("registration entries by role", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockProfileTimezone();
     useFeatureFlags.mockReturnValue({ "create-google-meeting": false });
     calculateRoundStatus.mockReturnValue({
       sortedRounds: [],
@@ -836,6 +865,7 @@ describe("refreshMeetings", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockProfileTimezone();
     useFeatureFlags.mockReturnValue({ "create-google-meeting": false });
     getAllMentorshipRounds.mockResolvedValue({ data: [mockRound] });
     calculateMentorshipSlots.mockReturnValue({ regRoundId: null });
@@ -848,7 +878,6 @@ describe("refreshMeetings", () => {
   it("should build partnerMeetingOverview with merged meeting data", async () => {
     getMyMentorshipMeetingLog.mockResolvedValue({
       data: {
-        userTimezone: "Asia/Shanghai",
         meetingInfo: [
           {
             partnerId: 99,
@@ -909,7 +938,6 @@ describe("refreshMeetings", () => {
   it("should set completedRate to 0 when there are no completed meetings", async () => {
     getMyMentorshipMeetingLog.mockResolvedValue({
       data: {
-        userTimezone: "America/New_York",
         meetingInfo: [
           {
             partnerId: 5,
@@ -936,19 +964,20 @@ describe("refreshMeetings", () => {
     expect(overview[0].completedRate).toBe(0);
   });
 
-  it("should set userTimezone from meeting log response", async () => {
+  it("sets userTimezone from the profile response, not the meeting log", async () => {
+    mockProfileTimezone("Asia/Shanghai");
     getMyMentorshipMeetingLog.mockResolvedValue({
-      data: { userTimezone: "America/New_York", meetingInfo: [] },
+      data: { meetingInfo: [] },
     });
     getMyMentorshipPartners.mockResolvedValue({ data: [] });
 
     const { result } = renderHook(() => useMentorshipData());
 
     await waitFor(() =>
-      expect(result.current.participantDetails.roundInfo).not.toBeNull(),
+      expect(result.current.userTimezone).toBe("Asia/Shanghai"),
     );
 
-    expect(result.current.userTimezone).toBe("America/New_York");
+    expect(getMyProfile).toHaveBeenCalledWith();
   });
 
   it("should not call getMyMentorshipPartners again when switching back to a cached round", async () => {
@@ -1084,6 +1113,7 @@ describe("handleRoundChange", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockProfileTimezone();
     useFeatureFlags.mockReturnValue({ "create-google-meeting": false });
     getAllMentorshipRounds.mockResolvedValue({ data: [mockRound] });
     calculateMentorshipSlots.mockReturnValue({ regRoundId: null });

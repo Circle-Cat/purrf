@@ -7,6 +7,7 @@ import {
   getMyMentorshipMeetingLog,
 } from "@/api/mentorshipApi";
 import { getMyMentorshipMeetingsV2 } from "@/api/meetingApi";
+import { getMyProfile } from "@/api/profileApi";
 
 import {
   calculateMentorshipSlots,
@@ -17,6 +18,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { useRequestGuard } from "@/hooks/useRequestGuard";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
+
+// Default profile timezone for newly created users.
+const DEFAULT_TIMEZONE = "America/Los_Angeles";
 
 /**
  * React hook for loading and managing mentorship-related data
@@ -52,7 +56,7 @@ import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
  *   isLoading: boolean,
  *   isPartnersLoading: boolean,
  *   loadPastPartners: () => Promise<void>,
- *   userTimezone: string | null
+ *   userTimezone: string
  * }}
  */
 export const useMentorshipData = ({
@@ -109,7 +113,7 @@ export const useMentorshipData = ({
   const [pastPartners, setPastPartners] = useState([]);
 
   // Loading state for user profile timezone
-  const [userTimezone, setUserTimezone] = useState(null);
+  const [userTimezone, setUserTimezone] = useState(DEFAULT_TIMEZONE);
 
   // Loading state for partners data
   const [isPartnersLoading, setIsPartnersLoading] = useState(false);
@@ -291,6 +295,26 @@ export const useMentorshipData = ({
     [roundStatus.regRoundId],
   );
 
+  // Fetch the profile timezone independently so it's available on mount.
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+
+    getMyProfile()
+      .then(({ data }) => {
+        if (cancelled) return;
+        const timezone = data?.profile?.user?.timezone;
+        if (timezone) setUserTimezone(timezone);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch profile timezone", err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
+
   /**
    * Lazily load the user's past mentorship partners.
    *
@@ -376,7 +400,6 @@ export const useMentorshipData = ({
       if (!isCurrent(seq)) return;
 
       partnersCacheRef.current[selectedRoundId] ??= partnersInfo;
-      setUserTimezone((prev) => prev ?? meetingLog?.userTimezone ?? null);
 
       const currentRound = roundSelectionData.sortedRounds.find(
         (r) => r.id.toString() === selectedRoundId.toString(),

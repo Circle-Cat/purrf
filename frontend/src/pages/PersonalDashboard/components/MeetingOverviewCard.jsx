@@ -10,14 +10,12 @@ import { MeetingStatus } from "@/constants/MeetingStatus";
  * @param {string} startUtc - Start datetime in UTC ISO format.
  * @param {string} endUtc - End datetime in UTC ISO format.
  * @param {string} timezone - IANA timezone string (e.g. "Asia/Shanghai").
- *   Falls back to browser local timezone if null or undefined.
  * @returns {{ date: string, timeRange: string }}
  */
 function formatMeetingTime(startUtc, endUtc, timezone) {
-  const tz = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   return {
-    date: formatInTz(startUtc, tz, "yyyy-MM-dd"),
-    timeRange: `${formatInTz(startUtc, tz, "HH:mm")} - ${formatInTz(endUtc, tz, "HH:mm")}`,
+    date: formatInTz(startUtc, timezone, "yyyy-MM-dd"),
+    timeRange: `${formatInTz(startUtc, timezone, "HH:mm")} - ${formatInTz(endUtc, timezone, "HH:mm")}`,
   };
 }
 
@@ -35,7 +33,7 @@ function formatMeetingTime(startUtc, endUtc, timezone) {
  *   completedCount: number,
  *   completedRate: number,
  *   meetingTimeList: Array,
- * } userTimezone: string | null}} props
+ * } userTimezone: string}} props
  */
 export default function MeetingOverviewCard({
   overview,
@@ -91,8 +89,7 @@ export default function MeetingOverviewCard({
                       <div>
                         <div className="text-sm font-medium">{date}</div>
                         <div className="text-xs text-gray-600">
-                          {timeRange}
-                          {userTimezone ? ` (${userTimezone})` : ""}
+                          {timeRange} ({userTimezone})
                         </div>
                       </div>
                     </div>
