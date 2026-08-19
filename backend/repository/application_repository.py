@@ -407,6 +407,43 @@ class ApplicationRepository:
         )
         return result.scalars().first()
 
+    async def list_hired_activity_roles(
+        self, session: AsyncSession, user_id: int
+    ) -> list[ParticipantRole]:
+        """Return every mentorship role the user holds a HIRED ACTIVITY
+        application in, most recent admission first.
+
+        This is the set a mentorship round registration may be submitted
+        under: the user picks from it, so nothing here decides which one
+        counts. The ordering is for display only — a caller that treats the
+        first element as "the" role has reintroduced the guess this method
+        exists to remove.
+
+        Ordered by ``stage_entered_at`` (the moment of the hire) with
+        ``application_id`` breaking ties, then de-duplicated in Python:
+        Postgres will not accept ``SELECT DISTINCT`` ordered by a column
+        that is not selected.
+        """
+        result = await session.execute(
+            select(JobEntity.mentorship_role)
+            .join(ApplicationEntity, ApplicationEntity.job_id == JobEntity.job_id)
+            .where(
+                ApplicationEntity.user_id == user_id,
+                ApplicationEntity.stage == ApplicationStage.HIRED,
+                JobEntity.kind == JobKind.ACTIVITY,
+                JobEntity.mentorship_role.is_not(None),
+            )
+            .order_by(
+                ApplicationEntity.stage_entered_at.desc(),
+                ApplicationEntity.application_id.desc(),
+            )
+        )
+        roles: list[ParticipantRole] = []
+        for role in result.scalars():
+            if role not in roles:
+                roles.append(role)
+        return roles
+
     async def get_by_id(
         self,
         session: AsyncSession,
