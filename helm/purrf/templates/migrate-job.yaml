@@ -17,9 +17,6 @@ spec:
   backoffLimit: {{ .Values.migrate.backoffLimit }}
   activeDeadlineSeconds: {{ .Values.migrate.activeDeadlineSeconds }}
   template:
-    metadata:
-      labels:
-        {{- include "purrf.selectorLabels" . | nindent 8 }}
     spec:
       restartPolicy: Never
       {{- with .Values.imagePullSecrets }}
