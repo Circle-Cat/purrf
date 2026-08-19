@@ -9,6 +9,13 @@ image:
   # switching to the CI/GHCR image is a follow-up.
   repository: us-docker.pkg.dev/k8s-dev-437501/purrf/purrf
   tag: "20260516-021842"
+# The PreSync migration hook stays off here until a build has pushed a
+# purrf-migrate image carrying the tag pinned above; turning it on before that
+# would fail every sync on a missing image. Enabled per environment in order:
+# test, then staging, then prod.
+migrate:
+  enabled: false
+
 envFrom:
   - secretRef:
       name: purrf-staging
