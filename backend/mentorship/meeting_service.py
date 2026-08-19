@@ -92,9 +92,7 @@ class MeetingService:
                 current_user.user_id,
                 round_id,
             )
-            return MeetingDto(
-                round_id=round_id, user_timezone=current_user.timezone, meeting_info=[]
-            )
+            return MeetingDto(round_id=round_id, meeting_info=[])
 
         grouped_pairs = []
         pair_ids = []
@@ -124,7 +122,6 @@ class MeetingService:
 
         return self.mentorship_mapper.map_to_meeting_dto(
             round_id=round_id,
-            user_timezone=current_user.timezone,
             grouped_pairs=grouped_pairs,
             meetings_by_pair=meetings_by_pair,
         )
@@ -238,7 +235,6 @@ class MeetingService:
 
         return self.mentorship_mapper.map_to_meeting_dto(
             round_id=data.round_id,
-            user_timezone=current_user.timezone,
             grouped_pairs=[(pair_entity, pair_entity.mentor_id)],
             meetings_by_pair={pair_entity.pair_id: updated_manual_meetings},
         )
@@ -682,7 +678,6 @@ class MeetingService:
             )
             return MeetingDto(
                 round_id=round_id,
-                user_timezone=current_user.timezone,
                 meeting_info=[],
             )
 
@@ -706,7 +701,6 @@ class MeetingService:
 
         return self.mentorship_mapper.map_to_meeting_v2_dto(
             round_id=round_id,
-            user_timezone=current_user.timezone,
             grouped_pairs=grouped_pairs,
             meetings_by_pair=meetings_by_pair,
             include_details=is_detail_allowed,

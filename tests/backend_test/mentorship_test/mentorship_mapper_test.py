@@ -303,7 +303,6 @@ class TestMentorshipMapper(unittest.TestCase):
 
         dto = self.mapper.map_to_meeting_dto(
             round_id=1,
-            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
             meetings_by_pair={pair_entity.pair_id: meeting_rows},
         )
@@ -334,7 +333,6 @@ class TestMentorshipMapper(unittest.TestCase):
 
         dto = self.mapper.map_to_meeting_dto(
             round_id=2,
-            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
             meetings_by_pair={},
         )
@@ -374,7 +372,6 @@ class TestMentorshipMapper(unittest.TestCase):
 
         dto = self.mapper.map_to_meeting_dto(
             round_id=1,
-            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
             meetings_by_pair={pair_entity.pair_id: [legacy_row, manual_row]},
         )
@@ -424,7 +421,6 @@ class TestMentorshipMapper(unittest.TestCase):
 
         dto = self.mapper.map_to_meeting_dto(
             round_id=1,
-            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
             meetings_by_pair={pair_entity.pair_id: repository_ordered_rows},
         )
@@ -489,7 +485,6 @@ class TestMentorshipMapper(unittest.TestCase):
 
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=1,
-            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
             meetings_by_pair={pair_entity.pair_id: interleaved_rows},
         )
@@ -549,7 +544,6 @@ class TestMentorshipMapper(unittest.TestCase):
 
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=1,
-            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
             meetings_by_pair={pair_entity.pair_id: [google_row]},
             include_details=False,
@@ -600,7 +594,6 @@ class TestMentorshipMapper(unittest.TestCase):
 
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=1,
-            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
             meetings_by_pair={pair_entity.pair_id: [google_row]},
             include_details=True,
@@ -630,7 +623,6 @@ class TestMentorshipMapper(unittest.TestCase):
 
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=2,
-            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
             meetings_by_pair={},
         )
@@ -717,7 +709,6 @@ class TestMentorshipMapper(unittest.TestCase):
 
         dto = self.mapper.map_to_meeting_v2_dto(
             round_id=1,
-            user_timezone="Asia/Shanghai",
             grouped_pairs=[(pair_entity, partner_id)],
             meetings_by_pair={pair_entity.pair_id: [legacy_row, google_row]},
             include_details=True,
