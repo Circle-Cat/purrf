@@ -33,19 +33,19 @@ const PersonalDashboard = () => {
     isLoading: isApplicationsLoading,
     loadError: applicationsLoadError,
     load: loadApplications,
-    hiredMentorshipRole,
+    hiredMentorshipRoles,
   } = useMyApplications();
 
   // Only show the mentorship section, and only start fetching mentorship
-  // data, once we've actually confirmed a hired mentorship role — not
-  // while the applications fetch is still loading or has errored. This is
-  // a deliberate reversal of the previous fail-open behavior: a slow/failed
-  // fetch now hides the section (the user can retry via My Applications'
-  // own retry button) rather than firing a wasted mentorship-data fetch.
+  // data, once we've actually confirmed at least one mentorship admission
+  // — not while the applications fetch is still loading or has errored.
+  // A slow or failed fetch hides the section (the user can retry via My
+  // Applications' own retry button) rather than firing a wasted
+  // mentorship-data fetch.
   const showMentorshipSection =
     !isApplicationsLoading &&
     !applicationsLoadError &&
-    hiredMentorshipRole !== null;
+    hiredMentorshipRoles.length > 0;
 
   useOnboardingTrainingReminder({ enabled: showMentorshipSection });
 
@@ -75,7 +75,7 @@ const PersonalDashboard = () => {
     userTimezone, // Current user's IANA timezone string from their profile
   } = useMentorshipData({
     enabled: showMentorshipSection,
-    hiredMentorshipRole,
+    hiredMentorshipRoles,
   });
 
   useRegistrationReminder({
@@ -141,7 +141,7 @@ const PersonalDashboard = () => {
             isFeedbackEnabled={isFeedbackEnabled}
             feedbackRoundId={feedbackRoundId}
             feedbackRoundName={feedbackRoundName}
-            hiredMentorshipRole={hiredMentorshipRole}
+            hiredMentorshipRoles={hiredMentorshipRoles}
             onSaveRegistration={saveRegistration}
             pastPartners={pastPartners}
             isPartnersLoading={isPartnersLoading}

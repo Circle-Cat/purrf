@@ -114,7 +114,7 @@ describe("PersonalDashboard", () => {
       isLoading: false,
       loadError: false,
       load: vi.fn(),
-      hiredMentorshipRole: "mentee",
+      hiredMentorshipRoles: ["mentee"],
     });
     useAuth.mockReturnValue({ permissions: [] });
     vi.mocked(useFeatureFlags).mockReturnValue({
@@ -132,7 +132,7 @@ describe("PersonalDashboard", () => {
 
       expect(useMentorshipData).toHaveBeenCalledWith({
         enabled: true,
-        hiredMentorshipRole: "mentee",
+        hiredMentorshipRoles: ["mentee"],
       });
     });
 
@@ -171,7 +171,7 @@ describe("PersonalDashboard", () => {
         isLoading: false,
         loadError: false,
         load: vi.fn(),
-        hiredMentorshipRole: null,
+        hiredMentorshipRoles: [],
       });
 
       render(<PersonalDashboard />);
@@ -185,7 +185,7 @@ describe("PersonalDashboard", () => {
         isLoading: true,
         loadError: false,
         load: vi.fn(),
-        hiredMentorshipRole: null,
+        hiredMentorshipRoles: [],
       });
 
       render(<PersonalDashboard />);
@@ -389,7 +389,7 @@ describe("PersonalDashboard", () => {
         isLoading: false,
         loadError: false,
         load: vi.fn(),
-        hiredMentorshipRole: null,
+        hiredMentorshipRoles: [],
       });
 
       render(<PersonalDashboard />);
@@ -411,7 +411,7 @@ describe("PersonalDashboard", () => {
       isLoading: false,
       loadError: false,
       load: vi.fn(),
-      hiredMentorshipRole: "mentor",
+      hiredMentorshipRoles: ["mentor"],
     });
 
     render(<PersonalDashboard />);
@@ -426,7 +426,7 @@ describe("PersonalDashboard", () => {
       isLoading: true,
       loadError: false,
       load: vi.fn(),
-      hiredMentorshipRole: null,
+      hiredMentorshipRoles: [],
     });
 
     render(<PersonalDashboard />);
@@ -443,7 +443,7 @@ describe("PersonalDashboard", () => {
       isLoading: false,
       loadError: true,
       load: vi.fn(),
-      hiredMentorshipRole: null,
+      hiredMentorshipRoles: [],
     });
 
     render(<PersonalDashboard />);
@@ -460,7 +460,7 @@ describe("PersonalDashboard", () => {
       isLoading: false,
       loadError: false,
       load: vi.fn(),
-      hiredMentorshipRole: null,
+      hiredMentorshipRoles: [],
     });
 
     render(<PersonalDashboard />);
@@ -477,24 +477,24 @@ describe("PersonalDashboard", () => {
       isLoading: false,
       loadError: false,
       load: vi.fn(),
-      hiredMentorshipRole: null,
+      hiredMentorshipRoles: [],
     });
 
     render(<PersonalDashboard />);
 
     expect(useMentorshipData).toHaveBeenCalledWith({
       enabled: false,
-      hiredMentorshipRole: null,
+      hiredMentorshipRoles: [],
     });
   });
 
-  it("passes hiredMentorshipRole through to MentorshipInfoBanner", () => {
+  it("passes hiredMentorshipRoles through to MentorshipInfoBanner", () => {
     useMyApplications.mockReturnValue({
       applications: [],
       isLoading: false,
       loadError: false,
       load: vi.fn(),
-      hiredMentorshipRole: "mentor",
+      hiredMentorshipRoles: ["mentor"],
     });
 
     render(<PersonalDashboard />);
@@ -503,7 +503,7 @@ describe("PersonalDashboard", () => {
     // expect.anything() rejects that literal undefined second arg, so assert on the
     // first call's props directly instead.
     expect(MentorshipInfoBanner.mock.calls[0][0]).toEqual(
-      expect.objectContaining({ hiredMentorshipRole: "mentor" }),
+      expect.objectContaining({ hiredMentorshipRoles: ["mentor"] }),
     );
   });
 

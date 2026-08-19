@@ -97,7 +97,7 @@ describe("Profile Component", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useProfileData.mockReturnValue(mockProfileData);
-    useMyApplications.mockReturnValue({ hiredMentorshipRole: null });
+    useMyApplications.mockReturnValue({ hiredMentorshipRoles: [] });
   });
 
   describe("mentorship completeness reminder", () => {
@@ -105,7 +105,7 @@ describe("Profile Component", () => {
       useProfileCompletenessReminder.mock.calls.at(-1)[0].enabled;
 
     it("enables the reminder for an admitted mentor", () => {
-      useMyApplications.mockReturnValue({ hiredMentorshipRole: "mentor" });
+      useMyApplications.mockReturnValue({ hiredMentorshipRoles: ["mentor"] });
 
       render(<Profile />);
 
@@ -113,7 +113,7 @@ describe("Profile Component", () => {
     });
 
     it("enables the reminder for an admitted mentee", () => {
-      useMyApplications.mockReturnValue({ hiredMentorshipRole: "mentee" });
+      useMyApplications.mockReturnValue({ hiredMentorshipRoles: ["mentee"] });
 
       render(<Profile />);
 
