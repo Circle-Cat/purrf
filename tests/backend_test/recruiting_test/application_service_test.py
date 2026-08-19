@@ -65,7 +65,6 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo.get_by_id = AsyncMock(return_value=None)
         self.app_repo.create = AsyncMock(side_effect=self._create_side_effect)
         self.app_repo.update = AsyncMock(side_effect=lambda s, e: e)
-        self.app_repo.get_recent_hired_activity_role = AsyncMock(return_value=None)
         self.app_repo.list_hired_activity_roles = AsyncMock(return_value=[])
         self.sub_repo = MagicMock()
         self.sub_repo.get_current = AsyncMock(return_value=None)

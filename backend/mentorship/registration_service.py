@@ -15,6 +15,7 @@ from backend.common.mentorship_enums import (
     TrainingCategory,
     TrainingStatus,
 )
+from backend.common.exceptions import ConflictError
 
 
 class RegistrationService:
@@ -57,9 +58,10 @@ class RegistrationService:
                 the moment a deadline first becomes known, so it passes one;
                 admission passes none.
             application_repository: The repository responsible for looking up recruiting
-                                    activity applications. Round registration derives the
-                                    participant role from the user's approved (HIRED)
-                                    activity application, which also gates registration.
+                                    activity applications. Round registration validates
+                                    the submitted participant role against the user's
+                                    approved (HIRED) activity application in that role,
+                                    which gates registration.
         """
         self.logger = logger
         self.preferences_repo = preferences_repository
@@ -82,8 +84,9 @@ class RegistrationService:
 
         This method:
         1. Validates the existence of the mentorship round.
-        2. Resolves the user's participant role from their most recent approved (HIRED)
-            activity application, blocking registration when none exists.
+        2. Validates the submitted participant role: rejects one the user was
+            never admitted into, and one that disagrees with an existing
+            registration row for this round.
         3. Checks if the application deadline has passed. If the round is still open, updates both
             global and round-specific preferences for user.
         4. Stamps the onboarding training deadline on first registration, via
@@ -109,10 +112,22 @@ class RegistrationService:
             )
             raise ValueError(f"Mentorship round {round_id} not found.")
 
-        participant_role = await self._resolve_hired_participant_role(
-            session=session, user_id=user_context.user_id
+        # The role comes from the entry point the user opened. Validate it;
+        # never substitute one. Which role a round is registered under is
+        # the user's choice, and once a registration exists that choice is
+        # settled for the round.
+        participant_role = preferences_data.round_preferences.participant_role
+        await self._assert_admitted_as(
+            session=session, user_id=user_context.user_id, role=participant_role
         )
-        preferences_data.round_preferences.participant_role = participant_role
+        existing = await self.participants_repo.get_by_user_id_and_round_id(
+            session=session, user_id=user_context.user_id, round_id=round_id
+        )
+        if existing and existing.participant_role != participant_role:
+            raise ConflictError(
+                "You are already registered for this round as a "
+                f"{existing.participant_role.value}."
+            )
 
         description = round_entity.description or {}
         if participant_role == ParticipantRole.MENTOR:
@@ -188,40 +203,6 @@ class RegistrationService:
             is_onboarding_training_completed=onboarding_training.status
             == TrainingStatus.DONE,
         )
-
-    async def _resolve_hired_participant_role(
-        self, session: AsyncSession, user_id: int
-    ) -> ParticipantRole:
-        """
-        Resolve the user's participant role from their most recent approved
-        (HIRED) activity application — the single source of truth for a
-        user's mentor/mentee role on the registration POST path, which does
-        not accept a role from the caller.
-
-        Raises ValueError when the user has no such application: they are not
-        eligible to register for a mentorship round until they have been
-        hired into a mentor/mentee activity posting.
-
-        Args:
-            session (AsyncSession): Active SQLAlchemy async session.
-            user_id (int): The ID of the current user.
-
-        Returns:
-            ParticipantRole: The role from the user's most recent HIRED
-                activity application.
-        """
-        participant_role = await self.application_repo.get_recent_hired_activity_role(
-            session=session, user_id=user_id
-        )
-        if participant_role is None:
-            self.logger.error(
-                "[RegistrationService] user %s has no approved activity application; cannot resolve participant role.",
-                user_id,
-            )
-            raise ValueError(
-                "Please complete your mentor or mentee application before registering for a round."
-            )
-        return participant_role
 
     async def _update_skill_and_industry_preferences(
         self, session: AsyncSession, user_id: int, data: RegistrationCreateDto

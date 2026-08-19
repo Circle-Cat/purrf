@@ -369,44 +369,6 @@ class ApplicationRepository:
         )
         return result.scalars().first()
 
-    async def get_recent_hired_activity_role(
-        self, session: AsyncSession, user_id: int
-    ) -> ParticipantRole | None:
-        """Return the mentorship role of the user's most recent HIRED
-        ACTIVITY application, or None when they have none.
-
-        Source of truth for a user's participant role in a round: the role
-        is taken from the activity application they were hired into, not
-        from any prior round-participation record. When a user has been
-        hired into more than one role-bearing activity posting (e.g. both a
-        mentor and a mentee posting), the one they were hired into most
-        recently wins. (Future: allow a user to register under multiple
-        roles.)
-
-        Ordered by ``stage_entered_at``, which on a HIRED row is the moment
-        of that hire, not by application_id: the order someone applied in
-        need not be the order they were admitted in, and it is the later
-        admission that says what they are now. application_id breaks ties,
-        which only arise between two rows predating the stage_entered_at
-        column — those were backfilled to a single migration-time value.
-        """
-        result = await session.execute(
-            select(JobEntity.mentorship_role)
-            .join(ApplicationEntity, ApplicationEntity.job_id == JobEntity.job_id)
-            .where(
-                ApplicationEntity.user_id == user_id,
-                ApplicationEntity.stage == ApplicationStage.HIRED,
-                JobEntity.kind == JobKind.ACTIVITY,
-                JobEntity.mentorship_role.is_not(None),
-            )
-            .order_by(
-                ApplicationEntity.stage_entered_at.desc(),
-                ApplicationEntity.application_id.desc(),
-            )
-            .limit(1)
-        )
-        return result.scalars().first()
-
     async def list_hired_activity_roles(
         self, session: AsyncSession, user_id: int
     ) -> list[ParticipantRole]:
