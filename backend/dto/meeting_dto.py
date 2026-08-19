@@ -25,5 +25,4 @@ class MeetingInfoDto(BaseDto):
 
 class MeetingDto(BaseDto):
     round_id: int
-    user_timezone: str
     meeting_info: list[MeetingInfoDto]

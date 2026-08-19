@@ -135,7 +135,6 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         )
         self.mock_mapper.map_to_meeting_dto.assert_called_once_with(
             round_id=self.round_id,
-            user_timezone=self.mock_current_user.timezone,
             grouped_pairs=[(self.mock_pair_entity, self.partner_id)],
             meetings_by_pair={self.pair_id: [self.existing_manual_meeting]},
         )
@@ -179,7 +178,6 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsInstance(result, MeetingDto)
         self.assertEqual(result.round_id, self.round_id)
-        self.assertEqual(result.user_timezone, "America/New_York")
         self.assertEqual(len(result.meeting_info), 0)
 
         self.mock_mapper.map_to_meeting_dto.assert_not_called()
@@ -758,7 +756,6 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         )
         self.mock_mapper.map_to_meeting_v2_dto.assert_called_once_with(
             round_id=self.round_id,
-            user_timezone=self.mock_current_user.timezone,
             grouped_pairs=[(self.mock_pair_entity, self.partner_id)],
             meetings_by_pair=meetings_by_pair,
             include_details=True,
@@ -781,7 +778,6 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsInstance(result, MeetingDto)
         self.assertEqual(result.round_id, self.round_id)
-        self.assertEqual(result.user_timezone, "America/New_York")
         self.assertEqual(len(result.meeting_info), 0)
 
         self.mock_mapper.map_to_meeting_v2_dto.assert_not_called()
@@ -805,7 +801,6 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
 
         self.mock_mapper.map_to_meeting_v2_dto.assert_called_once_with(
             round_id=self.round_id,
-            user_timezone=self.mock_current_user.timezone,
             grouped_pairs=[(self.mock_pair_entity, self.partner_id)],
             meetings_by_pair={},
             include_details=False,
