@@ -35,6 +35,7 @@ py_library(
 py_binary(
     name = "migrate_db",
     srcs = ["migrate_db.py"],
+    data = ["//:alembic_files"],
     deps = [
         "//backend/common:base",
         "//backend/common:database",
