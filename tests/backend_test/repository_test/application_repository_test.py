@@ -490,7 +490,7 @@ class TestApplicationRepository(BaseRepositoryTestLib):
 
     async def test_get_recent_hired_activity_role_returns_most_recent_role(self):
         """When a user was hired into more than one activity posting, the
-        role of the most recent application (highest application_id) wins."""
+        role of the one hired most recently wins."""
         mentee_job = JobEntity(
             kind=JobKind.ACTIVITY,
             mentorship_role=ParticipantRole.MENTEE,
@@ -508,8 +508,9 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         await self.session.flush()
 
         repo = ApplicationRepository()
-        # Hired as mentee first, then as mentor. The later (mentor) row has
-        # the higher application_id, so the most recent role is MENTOR.
+        # Both rows take the same transaction-time stage_entered_at default,
+        # so this exercises the application_id tiebreak: hired as mentee
+        # first, then as mentor, and MENTOR is the later row.
         await repo.create(
             self.session,
             ApplicationEntity(
@@ -524,6 +525,55 @@ class TestApplicationRepository(BaseRepositoryTestLib):
                 job_id=mentor_job.job_id,
                 user_id=user.user_id,
                 stage=ApplicationStage.HIRED,
+            ),
+        )
+
+        role = await repo.get_recent_hired_activity_role(
+            self.session, user_id=user.user_id
+        )
+        self.assertEqual(role, ParticipantRole.MENTOR)
+
+    async def test_get_recent_hired_activity_role_follows_hire_time_not_apply_order(
+        self,
+    ):
+        """Someone can apply for one role and be admitted to another first.
+        The role that governs is the one they were admitted to last, so the
+        row with the later stage_entered_at wins even when it is the lower
+        application_id."""
+        mentor_job = JobEntity(
+            kind=JobKind.ACTIVITY,
+            mentorship_role=ParticipantRole.MENTOR,
+            title="Mentor Activity",
+            status=JobStatus.PUBLISHED,
+        )
+        mentee_job = JobEntity(
+            kind=JobKind.ACTIVITY,
+            mentorship_role=ParticipantRole.MENTEE,
+            title="Mentee Activity",
+            status=JobStatus.PUBLISHED,
+        )
+        user = _make_user("A", "B", "hire-time@b.com")
+        await self.insert_entities([mentor_job, mentee_job, user])
+        await self.session.flush()
+
+        repo = ApplicationRepository()
+        # Applied to mentor first (lower application_id) but admitted last.
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=mentor_job.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.HIRED,
+                stage_entered_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+            ),
+        )
+        await repo.create(
+            self.session,
+            ApplicationEntity(
+                job_id=mentee_job.job_id,
+                user_id=user.user_id,
+                stage=ApplicationStage.HIRED,
+                stage_entered_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
             ),
         )
 
