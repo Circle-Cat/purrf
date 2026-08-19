@@ -88,10 +88,13 @@ export default function MeetingManagementDialog({
     duration: "30",
     intervalWeeks: "1",
     count: "1",
-    timezone:
-      userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    timezone: userTimezone,
   };
   const [formData, setFormData] = useState(initialFormState);
+
+  useEffect(() => {
+    setFormData((prev) => ({ ...prev, timezone: userTimezone }));
+  }, [userTimezone]);
 
   const upcomingLength = upcomingMeetings.length;
   useEffect(() => {
@@ -591,10 +594,7 @@ export default function MeetingManagementDialog({
                           formatCardDetails(
                             meeting.startDatetime,
                             meeting.endDatetime,
-                            userTimezone ||
-                              Intl.DateTimeFormat().resolvedOptions()
-                                .timeZone ||
-                              "UTC",
+                            userTimezone,
                           );
 
                         return (
@@ -645,14 +645,8 @@ export default function MeetingManagementDialog({
                                     |
                                   </span>
                                   TZ:{" "}
-                                  <span
-                                    className="text-gray-700"
-                                    title={timezoneStr}
-                                  >
-                                    {timezoneStr
-                                      .split("/")
-                                      .pop()
-                                      .replace("_", " ")}
+                                  <span className="text-gray-700">
+                                    {timezoneStr}
                                   </span>
                                 </p>
                               </div>

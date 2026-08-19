@@ -1,17 +1,16 @@
 import { useEffect } from "react";
 
 import { showReminderToast } from "@/components/common/showReminderToast";
-import { formatInTz } from "@/utils/dateTime";
+import { formatDateTimeWithZone } from "@/utils/dateTime";
 
 const SESSION_KEY = "mentorship-registration-toast-shown";
 const TOAST_ID = "mentorship-registration-toast";
 
 // The program runs on Pacific time, and the label is spelled out so the
-// date means one thing wherever it is read. Deliberately "PT" rather than
-// a formatted zone token, which would alternate PDT/PST across the year
-// and read as two different deadlines.
+// date means one thing wherever it is read. Deliberately the full IANA
+// name rather than a derived token like PDT/PST, which would alternate
+// across the year and read as two different deadlines.
 const DEADLINE_ZONE = "America/Los_Angeles";
-const DEADLINE_PATTERN = "MMM d, h:mm a '(PT)'";
 
 const CLOSED_TITLE = "Mentorship registration";
 const CLOSED_MESSAGE =
@@ -69,7 +68,7 @@ export const useRegistrationReminder = ({
     if (sessionStorage.getItem(SESSION_KEY)) return;
 
     const deadline = isRegistrationOpen
-      ? formatInTz(registrationDeadlineAt, DEADLINE_ZONE, DEADLINE_PATTERN)
+      ? formatDateTimeWithZone(registrationDeadlineAt, DEADLINE_ZONE)
       : null;
 
     const trimmedName = roundName?.trim();

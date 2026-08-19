@@ -461,6 +461,30 @@ describe("MeetingManagementDialog Component", () => {
     });
   });
 
+  it("should show the full IANA zone name (not a city fragment) on upcoming meeting cards", async () => {
+    useMeetingManagement.mockReturnValue({
+      partners: mockPartners,
+      bookMeeting: mockBookMeeting,
+      cancelMeetings: mockCancelMeetings,
+      refresh: mockRefresh,
+      upcomingMeetings: mockUpcomingMeetings,
+      upcomingLength: mockUpcomingMeetings.length,
+      isLoading: false,
+    });
+
+    render(
+      <MeetingManagementDialog roundId={2} userTimezone="Asia/Shanghai" />,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /manage meetings/i }),
+    );
+    await userEvent.click(screen.getByRole("tab", { name: /upcoming/i }));
+
+    expect(screen.getAllByText("Asia/Shanghai").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Shanghai")).not.toBeInTheDocument();
+  });
+
   it("should send interval_weeks and count when a recurrence is chosen", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.setSystemTime(new Date("2026-07-15T12:00:00-04:00"));
