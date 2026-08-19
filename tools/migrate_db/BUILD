@@ -36,6 +36,7 @@ py_binary(
     name = "migrate_db",
     srcs = ["migrate_db.py"],
     data = ["//:alembic_files"],
+    visibility = ["//visibility:public"],
     deps = [
         "//backend/common:base",
         "//backend/common:database",
