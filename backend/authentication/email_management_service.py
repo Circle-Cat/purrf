@@ -502,7 +502,15 @@ class EmailManagementService:
         Flips an existing row to confirmed if present; otherwise inserts one,
         making it primary when the user has no primary yet so they always have a
         notification target.
+
+        Any *other* account holding the address unconfirmed is released first:
+        such a row is nobody's proof, ``uq_user_emails_email`` is global, and
+        the caller has just proved the mailbox. The release shares this
+        session, so it and the write land in one transaction.
         """
+        await self._user_emails.delete_unconfirmed_on_other_users(
+            session, email, user_id
+        )
         existing = await self._user_emails.get_by_user_and_email(
             session, user_id, email
         )

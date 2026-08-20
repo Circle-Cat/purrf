@@ -57,7 +57,7 @@ describe("SignInMethodList", () => {
     expect(screen.getByText("No sign-in methods yet.")).toBeInTheDocument();
   });
 
-  it("never shows an Unverified badge or a Verify action", () => {
+  it("leaves a confirmed address unmarked, and offers no Verify action", () => {
     render(
       <SignInMethodList
         emails={[makeEmail({ emailId: 3, email: "backup@x.com" })]}
@@ -69,9 +69,54 @@ describe("SignInMethodList", () => {
     );
 
     expect(screen.queryByText("Unverified")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Verification required/)).not.toBeInTheDocument();
+    // Re-adding the address from "Add email" is the verification path; there
+    // is deliberately no per-row action.
     expect(
       screen.queryByRole("button", { name: "Verify" }),
     ).not.toBeInTheDocument();
+  });
+
+  describe("Unverified addresses", () => {
+    // Legacy backup addresses survive the identity migration unproven. They
+    // grant nothing until verified, so the row has to say so.
+    const unverified = () =>
+      makeEmail({ emailId: 9, email: "legacy@x.com", otpConfirmed: false });
+
+    it("marks an unverified address and says how to verify it", () => {
+      render(
+        <SignInMethodList
+          emails={[unverified()]}
+          internalIdentities={[]}
+          externalIdentities={[]}
+          isLoading={false}
+        />,
+      );
+
+      expect(screen.getByText("Unverified")).toBeInTheDocument();
+      expect(screen.getByText(/Verification required/)).toHaveTextContent(
+        'Verification required: Click "Add email" to re-add and verify this ' +
+          "address. You won't be able to sign in with it or set it as primary " +
+          "until it's verified.",
+      );
+    });
+
+    it("offers an unverified address neither Email OTP nor Set as primary", () => {
+      render(
+        <SignInMethodList
+          emails={[unverified()]}
+          internalIdentities={[]}
+          externalIdentities={[]}
+          isLoading={false}
+          onSetPrimary={vi.fn()}
+        />,
+      );
+
+      expect(screen.queryByText("Email OTP")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Set as primary contact" }),
+      ).not.toBeInTheDocument();
+    });
   });
 
   describe("Address grouping", () => {

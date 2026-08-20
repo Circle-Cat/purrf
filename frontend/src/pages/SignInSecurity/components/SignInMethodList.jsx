@@ -105,12 +105,15 @@ const capabilityChips = (group) => {
 };
 
 /**
- * One address row: the address, its status badges (primary / internal /
- * current session), its capability chips, and the actions that apply to it —
+ * One address row: the address, its status badges (primary / unverified /
+ * internal / current session), its capability chips, and the actions that
+ * apply to it —
  * set the contact email as primary, remove a sign-in identity, or remove the
  * email. When an address grants more than one sign-in path (an identity plus
  * Email OTP) and both are removable, a note explains that removing just one
- * leaves the other live.
+ * leaves the other live. An unverified address is badged and carries a note
+ * naming the only way to verify it — re-adding it from Add email — since no
+ * per-row action exists for that.
  *
  * @param {Object} props
  * @param {object} props.group - one entry from {@link buildAddressGroups}.
@@ -142,6 +145,10 @@ const AddressRow = ({
     (entry) => entry.raw.isCurrentSession,
   );
   const chips = capabilityChips(group);
+  // A legacy backup address survives the identity migration unproven. It grants
+  // nothing until verified, so the row says so rather than looking equivalent
+  // to a confirmed one.
+  const isUnverified = !!emailRow && !emailRow.otpConfirmed;
 
   const removableIdentities = identities.filter(
     (entry) => entry.canUnlink && !entry.raw.isCurrentSession,
@@ -175,6 +182,14 @@ const AddressRow = ({
           <span className="font-medium">{group.address}</span>
           {emailRow?.isPrimary && (
             <Badge variant="secondary">Primary contact</Badge>
+          )}
+          {isUnverified && (
+            <Badge
+              variant="outline"
+              className="font-normal text-muted-foreground"
+            >
+              Unverified
+            </Badge>
           )}
           {isInternal && <Badge>Internal</Badge>}
           {isCurrentSession && <Badge variant="outline">Current session</Badge>}
@@ -232,6 +247,13 @@ const AddressRow = ({
             </Badge>
           ))}
         </div>
+      )}
+      {isUnverified && (
+        <p className="text-xs text-muted-foreground">
+          Verification required: Click &quot;Add email&quot; to re-add and
+          verify this address. You won&apos;t be able to sign in with it or set
+          it as primary until it&apos;s verified.
+        </p>
       )}
       {showMultiPathHint && (
         <p className="text-xs text-muted-foreground">
