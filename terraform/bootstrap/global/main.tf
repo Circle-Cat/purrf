@@ -792,10 +792,11 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_staging" {
   ]
 }
 
-# Notification push gateway, test only for now: the rest of the environments
-# get theirs once this one has run for real.
+# Notification push gateway. Prod gets its own set once staging has run for
+# real; every environment needs a full set of its own, because the Worker
+# reaching one backend must not hold a credential the others honour.
 #
-# test-hook.purrf.io is answered entirely by a Worker. The AAAA record points
+# <env>-hook.purrf.io is answered entirely by a Worker. The AAAA record points
 # at the reserved discard address and is proxied, so the name resolves and
 # Cloudflare terminates it, but there is no origin behind it. The route that
 # actually serves the hostname is declared in
@@ -871,3 +872,55 @@ resource "cloudflare_zero_trust_access_policy" "notification_delivery_test" {
   }]
 }
 
+
+# The staging set. Everything above about why each of these four exists holds
+# here unchanged; only the environment differs.
+
+resource "cloudflare_dns_record" "hook_staging" {
+  zone_id = local.zone_id
+  name    = "staging-hook"
+  type    = "AAAA"
+  content = "100::"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [comment]
+  }
+}
+
+
+resource "cloudflare_zero_trust_access_service_token" "notification_gateway_staging" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf-notification-gateway-staging"
+  duration   = "forever"
+}
+
+
+resource "cloudflare_zero_trust_access_application" "notification_delivery_staging" {
+  account_id = local.cloudflare_account_id
+  name       = "purrf-notification-delivery-staging"
+  type       = "self_hosted"
+  destinations = [
+    { type = "public", uri = "${local.environments.staging.api_host}/api/notifications/deliver" },
+  ]
+  app_launcher_visible = false
+  session_duration     = "0s"
+  policies = [
+    {
+      id         = cloudflare_zero_trust_access_policy.notification_delivery_staging.id
+      precedence = 1
+    },
+  ]
+}
+
+
+resource "cloudflare_zero_trust_access_policy" "notification_delivery_staging" {
+  account_id = local.cloudflare_account_id
+  name       = "gateway-worker-only-staging"
+  decision   = "non_identity"
+  include = [{
+    service_token = {
+      token_id = cloudflare_zero_trust_access_service_token.notification_gateway_staging.id
+    }
+  }]
+}

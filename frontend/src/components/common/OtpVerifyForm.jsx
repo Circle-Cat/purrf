@@ -38,7 +38,7 @@ const OtpVerifyForm = ({ initialEmail = "", onVerified, idPrefix = "otp" }) => {
   const sendCode = async () => {
     const target = email.trim();
     if (!target) {
-      toast.error("Enter an email address first.");
+      toast.error("Please enter your email address.");
       return;
     }
     setBusy(true);
@@ -46,7 +46,7 @@ const OtpVerifyForm = ({ initialEmail = "", onVerified, idPrefix = "otp" }) => {
       const { data } = await initiateEmailVerification(target);
       setStateToken(data.state);
       setStep(STEP_CODE);
-      toast.success(`We sent a 6-digit code to ${target}.`);
+      toast.success(`Verification code sent to ${target}.`);
     } catch (error) {
       toast.error(errorMessage(error));
     } finally {
@@ -56,7 +56,7 @@ const OtpVerifyForm = ({ initialEmail = "", onVerified, idPrefix = "otp" }) => {
 
   const verify = async () => {
     if (!code.trim()) {
-      toast.error("Enter the code from your email.");
+      toast.error("Please enter the 6-digit verification code.");
       return;
     }
     setBusy(true);
@@ -86,7 +86,7 @@ const OtpVerifyForm = ({ initialEmail = "", onVerified, idPrefix = "otp" }) => {
           value={email}
           disabled={busy}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@example.com"
+          placeholder="name@example.com"
         />
         <Button className="w-full" onClick={sendCode} disabled={busy}>
           {busy ? "Sending…" : "Send code"}
@@ -97,7 +97,9 @@ const OtpVerifyForm = ({ initialEmail = "", onVerified, idPrefix = "otp" }) => {
 
   return (
     <div className="space-y-3">
-      <Label htmlFor={`${idPrefix}-code`}>Enter the code sent to {email}</Label>
+      <Label htmlFor={`${idPrefix}-code`}>
+        Enter the 6-digit code sent to {email}
+      </Label>
       <Input
         id={`${idPrefix}-code`}
         inputMode="numeric"
@@ -107,6 +109,9 @@ const OtpVerifyForm = ({ initialEmail = "", onVerified, idPrefix = "otp" }) => {
         onChange={(e) => setCode(e.target.value)}
         placeholder="123456"
       />
+      <p className="text-xs text-muted-foreground">
+        Didn&apos;t get the code? Check your spam folder or resend it.
+      </p>
       <Button className="w-full" onClick={verify} disabled={busy}>
         {busy ? "Verifying…" : "Verify"}
       </Button>
@@ -127,7 +132,7 @@ const OtpVerifyForm = ({ initialEmail = "", onVerified, idPrefix = "otp" }) => {
           onClick={useDifferentEmail}
           disabled={busy}
         >
-          Use a different email
+          Change email
         </Button>
       </div>
     </div>

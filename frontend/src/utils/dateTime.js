@@ -19,6 +19,33 @@ export function formatInTz(iso, tz, pattern) {
 }
 
 /**
+ * Format a UTC instant as "yyyy-MM-dd HH:mm {tz}" using the given IANA timezone.
+ * The timezone name is printed verbatim without converting it to a DST abbreviation.
+ *
+ * @param {string|null|undefined} iso - UTC ISO datetime string.
+ * @param {string|null|undefined} tz - IANA timezone string (e.g. "America/New_York").
+ * @returns {string|null} e.g. "2024-03-10 14:30 America/New_York", or null if input is missing.
+ */
+export function formatDateTimeWithZone(iso, tz) {
+  if (!iso || !tz) return null;
+  return `${formatInTz(iso, tz, "yyyy-MM-dd HH:mm")} ${tz}`;
+}
+
+/**
+ * Format a UTC instant range as "yyyy-MM-dd · HH:mm - HH:mm {tz}" using the given IANA timezone.
+ * The timezone name is printed verbatim without converting it to a DST abbreviation.
+ *
+ * @param {string|null|undefined} startIso - UTC ISO start datetime string.
+ * @param {string|null|undefined} endIso - UTC ISO end datetime string.
+ * @param {string|null|undefined} tz - IANA timezone string (e.g. "America/New_York").
+ * @returns {string|null} e.g. "2024-03-10 · 14:30 - 15:30 America/New_York", or null if input is missing.
+ */
+export function formatDateTimeRangeWithZone(startIso, endIso, tz) {
+  if (!startIso || !endIso || !tz) return null;
+  return `${formatInTz(startIso, tz, "yyyy-MM-dd")} · ${formatInTz(startIso, tz, "HH:mm")} - ${formatInTz(endIso, tz, "HH:mm")} ${tz}`;
+}
+
+/**
  * Format a JS Date object as a YYYY-MM-DD string using the browser's local time.
  * Avoids the UTC/local boundary issue of `.toISOString().split("T")[0]`.
  *

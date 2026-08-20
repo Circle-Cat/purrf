@@ -87,9 +87,16 @@ This connects to the database, compares the current schema against your models, 
 - `DROP COLUMN` / `DROP TABLE` statements — confirm they are intentional.
 
 **3. Apply the migration:**
+
+For a local database:
 ```bash
 bazel run //tools/migrate_db:migrate_db
 ```
+
+Deployed environments (test, staging, prod) do not run this by hand: an ArgoCD
+PreSync hook Job runs `alembic upgrade head` from the `purrf-migrate` image
+before each Deployment rolls out, so a merged migration lands automatically on
+the next sync.
 
 #### Enum value changes (PostgreSQL)
 
@@ -101,7 +108,8 @@ bazel run //tools/migrate_db:migrate_db
 |---|---|
 | First-time setup / reset dev database | `bazel run //tools:init_db` |
 | Schema changed, generate migration | `bazel run //tools/migrate_db:make_migration -- "description"` |
-| Deploy schema changes (no data loss) | `bazel run //tools/migrate_db:migrate_db` |
+| Apply migrations to a local database | `bazel run //tools/migrate_db:migrate_db` |
+| Deploy schema changes (test/staging/prod) | Automatic: ArgoCD PreSync hook Job, on sync |
 
 ####  Running the backend project for development
 
@@ -202,6 +210,17 @@ bazel run //:format
 ```bash
 bazel build //:purrf_image
 bazel run //:purrf_image_push_dynamic --action_env=BE_REPO=xxx --action_env=TAG_1=timestamp --action_env=TAG_2=latest
+```
+
+### Migration
+
+Built from the same commit as the backend image and pushed to its own
+repository (`ghcr.io/circle-cat/purrf-migrate`); one Helm `image.tag` addresses
+both, so the migration always matches the server that follows it. This is the
+image the ArgoCD PreSync hook Job runs.
+```bash
+bazel build //:purrf_migrate_image
+bazel run //:purrf_migrate_image_push_dynamic --action_env=MIGRATE_REPO=xxx --action_env=TAG_1=timestamp --action_env=TAG_2=latest
 ```
 
 > **Deprecated:** We now deploy the frontend dist on a CDN, so these commands are no longer required.

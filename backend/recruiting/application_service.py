@@ -12,11 +12,13 @@ from backend.dto.application_dto import (
     ApplicationDto,
     ApplicationEditDto,
     ApplicationSubmitDto,
+    MyApplicationsDto,
 )
 from backend.dto.job_config_dto import (
     LONG_TEXT_MAX_LENGTH,
     SHORT_TEXT_MAX_LENGTH,
 )
+from backend.dto.job_dto import PublicJobDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
@@ -833,6 +835,48 @@ class ApplicationService:
             "experience": submission.get("experience") or [],
         }
 
+    async def get_job_for_applicant(
+        self, session: AsyncSession, current_user: UserContextDto, job_id: int
+    ) -> PublicJobDto:
+        """Return a posting's candidate-safe projection to someone allowed it.
+
+        Two readers, one lookup. A posting that is live is public to every
+        signed-in candidate, the same as before. A posting that is no longer
+        live is served only to a candidate who already applied to it: the
+        publish gate exists so nobody discovers or applies to a posting that
+        is not on offer, and neither is what an applicant re-reading their
+        own submission is doing. Without this they lost the posting the
+        moment it closed, taking the title and the questions their answers
+        belong to with it, while the dashboard kept linking there.
+
+        Reading is all this grants. ``submit`` still refuses a posting that
+        is not live, and ``_lock_reason`` reports it as CLOSED so the
+        answers cannot be edited either.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            current_user (UserContextDto): The authenticated candidate.
+            job_id (int): The posting to look up.
+
+        Returns:
+            PublicJobDto: The posting's candidate-safe projection.
+
+        Raises:
+            ValueError: If the posting does not exist, or is not live and the
+                caller has no application for it. Both raise the same message
+                so a probe cannot tell a hidden posting from a missing one.
+        """
+        job = await self.job_repository.get_by_job_id(session, job_id)
+        if job is not None and job.status not in PUBLICLY_VISIBLE_JOB_STATUSES:
+            application = await self.application_repository.get_latest_by_job_and_user(
+                session, job_id, current_user.user_id
+            )
+            if application is None:
+                job = None
+        if job is None:
+            raise ValueError(f"Published job {job_id} not found")
+        return self.recruiting_mapper.to_public_job_dto(job)
+
     async def get_mine(
         self, session: AsyncSession, current_user: UserContextDto, job_id: int
     ) -> ApplicationDto | None:
@@ -863,24 +907,41 @@ class ApplicationService:
             lock_reason=lock_reason,
         )
 
-    async def list_mine(self, session, current_user) -> list:
-        """Return every application the caller has ever submitted, any job kind.
+    async def list_mine(self, session, current_user) -> MyApplicationsDto:
+        """Return every application the caller has ever submitted, any job
+        kind, together with every mentorship role those applications earned.
+
+        The roles are resolved here rather than left to the caller: which
+        roles a user may register a mentorship round under is validated by
+        the registration endpoints against the same repository read, and a
+        client filtering the rows itself could reach a different answer than
+        the request it is about to send.
 
         Args:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated applicant.
 
         Returns:
-            list[MyApplicationSummaryDto]: One row per application, in the
-                order `ApplicationRepository.list_by_user` returns them.
+            MyApplicationsDto: One row per application, in the order
+                `ApplicationRepository.list_by_user` returns them, plus every
+                mentorship role the caller holds a HIRED admission in, or an
+                empty list when they have none. That list's order carries no
+                authority — it is most-recent-admission-first for display
+                only, and no code may treat element 0 as "the" role.
         """
         rows = await self.application_repository.list_by_user(
             session, current_user.user_id
         )
-        return [
-            self.recruiting_mapper.to_my_application_summary_dto(application, job)
-            for application, job in rows
-        ]
+        mentorship_roles = await self.application_repository.list_hired_activity_roles(
+            session, current_user.user_id
+        )
+        return MyApplicationsDto(
+            applications=[
+                self.recruiting_mapper.to_my_application_summary_dto(application, job)
+                for application, job in rows
+            ],
+            mentorship_roles=mentorship_roles,
+        )
 
     def _lock_reason(self, application, job, current_submission):
         """Why the candidate can no longer edit, or None while they still can.
@@ -890,7 +951,10 @@ class ApplicationService:
 
         ADVANCED is checked first because it is the more informative answer:
         naming where the application went tells the reader more than saying
-        someone is working on it.
+        someone is working on it. CLOSED is checked last for the same
+        reason from the other end: an application that advanced, or that
+        someone is working on, was not stopped by the posting closing, and
+        saying it was would suggest the application is over when it is not.
 
         Args:
             application (ApplicationEntity): The application container.
@@ -900,8 +964,9 @@ class ApplicationService:
 
         Returns:
             ApplicationLockReason | None: The reason editing is closed, or
-                None while the application sits at the job's first configured
-                stage with a pending sub_status and an unfrozen submission.
+                None while the posting is still live and the application sits
+                at its first configured stage with a pending sub_status and
+                an unfrozen submission.
         """
         if application.stage != stage_machine.first_stage(job.pipeline_config):
             return ApplicationLockReason.ADVANCED
@@ -909,6 +974,8 @@ class ApplicationService:
             return ApplicationLockReason.IN_REVIEW
         if current_submission is not None and current_submission.is_frozen:
             return ApplicationLockReason.IN_REVIEW
+        if job.status not in PUBLICLY_VISIBLE_JOB_STATUSES:
+            return ApplicationLockReason.CLOSED
         return None
 
     async def _load_owned(

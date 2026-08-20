@@ -85,7 +85,10 @@ import {
 } from "@/pages/Recruiting/board/stageFormat";
 import { useAuth } from "@/context/auth/AuthContext";
 import { PERMISSIONS } from "@/constants/Permissions";
-import { formatInTz, resolveViewerTimezone } from "@/utils/dateTime";
+import {
+  formatDateTimeWithZone,
+  resolveViewerTimezone,
+} from "@/utils/dateTime";
 import InterviewMeetingCard from "@/pages/Recruiting/applications/InterviewMeetingCard";
 import InterviewMeetingDialog from "@/pages/Recruiting/applications/InterviewMeetingDialog";
 import BackToBoardLink from "@/pages/Recruiting/applications/BackToBoardLink";
@@ -354,9 +357,7 @@ const EvaluationSummary = ({ evaluations, interviewPool }) => (
  * @returns {string|null}
  */
 const formatInterviewWhen = (startAt, tz) =>
-  startAt && tz
-    ? `${formatInTz(startAt, tz, "yyyy-MM-dd")} ${formatInTz(startAt, tz, "HH:mm")} ${tz}`
-    : null;
+  formatDateTimeWithZone(startAt, tz);
 
 /**
  * The "cancel the meeting this decision would strand" opt-in.
@@ -522,10 +523,11 @@ const describeActivity = ({ eventType, details }, jobKind, timezone) => {
  * Read-only owner-facing audit timeline for one application: every
  * submission/stage-change/reassign/round-advance/sub-status-change/
  * evaluation-confirm/blacklist event, newest first, each attributed to its
- * actor's resolved display name.
+ * actor's resolved display name, or to the system for the events the
+ * pipeline's own rules recorded under no actor.
  *
  * @param {{activity: {id: number, eventType: string, details: object,
- *          actorName: string, createdAt: string}[],
+ *          actorName: string|null, createdAt: string}[],
  *          jobKind?: string|null}} props
  */
 const ActivityTimeline = ({ activity, jobKind, timezone }) => (
@@ -539,7 +541,12 @@ const ActivityTimeline = ({ activity, jobKind, timezone }) => (
             <span className="text-slate-500">
               {new Date(entry.createdAt).toLocaleString()}
             </span>{" "}
-            — {describeActivity(entry, jobKind, timezone)}, by {entry.actorName}
+            — {describeActivity(entry, jobKind, timezone)}, by{" "}
+            {/* A null actorName means the pipeline's own rules did this, not
+                a person. `??` and not `||`: this endpoint resolves an actor
+                it cannot name to "User <id>", never to an empty string, so
+                there is no third state to catch here. */}
+            {entry.actorName ?? "the system"}
           </li>
         ))}
       </ul>
@@ -716,9 +723,24 @@ const EmailMessageBubble = ({ message }) => {
   );
 };
 
+/**
+ * One application's email conversation.
+ *
+ * `canSend` and `canRefresh` are separate gates, not one flag: sending is
+ * owner-only (`send_application_email` refuses `read.all`), while Refresh
+ * triggers a Gmail sync that `read.all` may also run. The read-only reuse
+ * inside an expanded other-application row turns both off, which drops the
+ * toolbar entirely.
+ *
+ * @param {{conversation: {threads: object[]}|null, canSend: boolean,
+ *          canRefresh?: boolean, onCompose?: () => void,
+ *          onReply?: (thread: object) => void, onRefresh?: () => void,
+ *          refreshing?: boolean}} props
+ */
 const EmailsPanel = ({
   conversation,
   canSend,
+  canRefresh = true,
   onCompose,
   onReply,
   onRefresh,
@@ -727,22 +749,26 @@ const EmailsPanel = ({
   const threads = conversation?.threads ?? [];
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        {canSend && (
-          <Button type="button" size="sm" onClick={onCompose}>
-            Send email
-          </Button>
-        )}
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={onRefresh}
-          disabled={refreshing}
-        >
-          Refresh
-        </Button>
-      </div>
+      {(canSend || canRefresh) && (
+        <div className="flex items-center gap-2">
+          {canSend && (
+            <Button type="button" size="sm" onClick={onCompose}>
+              Send email
+            </Button>
+          )}
+          {canRefresh && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onRefresh}
+              disabled={refreshing}
+            >
+              Refresh
+            </Button>
+          )}
+        </div>
+      )}
       {threads.length === 0 ? (
         <p className="text-sm text-slate-400">No emails yet.</p>
       ) : (
@@ -781,6 +807,44 @@ const EmailsPanel = ({
 };
 
 /**
+ * The Emails tab inside an expanded other-application row: read-only, and
+ * three-state rather than two.
+ *
+ * "No emails yet." (rendered by EmailsPanel for an empty thread list) and
+ * "you may not read these" are different facts, so the withheld case gets
+ * its own copy instead of silently looking like an empty inbox. Visibility
+ * is decided by the server per entry (`emailsVisible`, which mirrors the
+ * emails endpoint's own owner/read.all gate), so a viewer without standing
+ * never fires the request that endpoint would reject with a 400.
+ *
+ * @param {{visible: boolean,
+ *          state: {status: "loading"|"ready"|"error",
+ *                  conversation?: object}|undefined}} props
+ */
+const RowEmails = ({ visible, state }) => {
+  if (!visible) {
+    return (
+      <p className="text-sm text-slate-400">
+        You do not have permission to read emails for this application.
+      </p>
+    );
+  }
+  if (state?.status === "error") {
+    return <p className="text-sm text-slate-400">Could not load emails.</p>;
+  }
+  if (state?.status !== "ready") {
+    return <p className="text-sm text-slate-400">Loading emails...</p>;
+  }
+  return (
+    <EmailsPanel
+      conversation={state.conversation}
+      canSend={false}
+      canRefresh={false}
+    />
+  );
+};
+
+/**
  * A candidate's other applications, for the cross-posting aggregation view.
  * Renders nothing when there are none. Each row expands in place — no
  * navigation — into read-only reuse of this page's own snapshot rendering,
@@ -794,26 +858,36 @@ const EmailsPanel = ({
  * while keeping independent expand state (see the two call sites below).
  *
  * Below the snapshot, each expanded row mirrors the main info panel's tab
- * strip — Evaluations | Timeline | Comments — all read-only and all fed
- * from the aggregate payload. The timeline is where a rejected attempt's
- * reason/note surfaces; comments render without a composer (discussion
- * belongs on that application's own page). `activity`/`comments` arrive
- * empty for an assignee-only caller (see
- * BoardService.get_other_applications), but this section only renders in
- * the owner/read.all layout anyway. `jobKind` is the row's OWN job's kind,
- * so activity-posting rows narrate hired as "Admitted" even when viewed
- * from an employment posting's page.
+ * strip — Evaluations | Timeline | Comments | Emails — all read-only. The
+ * timeline is where a rejected attempt's reason/note surfaces; comments
+ * render without a composer (discussion belongs on that application's own
+ * page). `activity`/`comments` arrive empty for an assignee-only caller
+ * (see BoardService.get_other_applications), but this section only renders
+ * in the owner/read.all layout anyway. `jobKind` is the row's OWN job's
+ * kind, so activity-posting rows narrate hired as "Admitted" even when
+ * viewed from an employment posting's page.
+ *
+ * Emails are the one tab NOT fed from the aggregate payload: bodies would
+ * bloat a response fetched eagerly for every row, so the payload carries
+ * only `emailsVisible` and the conversation is fetched on first opening
+ * that tab, then cached here (Radix unmounts inactive tab content, so an
+ * uncached row would refetch on every tab switch). `emailsVisible` is
+ * decided per entry and is stricter than `activity`/`comments`: owning the
+ * posting being viewed does not entitle you to a candidate's
+ * correspondence about a DIFFERENT posting, so a cross-job row can render
+ * the withheld state while its sibling tabs render in full.
  *
  * `showHistoryTabs` (default `true`) controls whether each expanded row's
- * tab strip includes Timeline/Comments alongside Evaluations: the owner/
- * read.all layout shows all three, while the assigned-evaluator layout (see
- * the `showRubric` render branch below) passes `false` to show only the
- * evaluations, since the backend already empties `activity`/`comments` for
- * a pure assignee and those tabs would just render "No … yet." noise.
+ * tab strip includes Timeline/Comments/Emails alongside Evaluations: the
+ * owner/read.all layout shows all four, while the assigned-evaluator
+ * layout (see the `showRubric` render branch below) passes `false` to show
+ * only the evaluations, since the backend already empties
+ * `activity`/`comments` for a pure assignee and never grants them emails,
+ * so those tabs would just render "No … yet." noise.
  *
  * @param {{title: string, otherApplications: {application: object,
  *          jobTitle: string, jobKind: string, resumeAvailable: boolean,
- *          formSchema: {questions: object[]}|null,
+ *          emailsVisible: boolean, formSchema: {questions: object[]}|null,
  *          evaluations: object[], activity: object[],
  *          comments: object[]}[],
  *          interviewPool: {userId: number, name: string}[],
@@ -831,6 +905,33 @@ const OtherApplicationsSection = ({
   showHistoryTabs = true,
   timezone,
 }) => {
+  // Message bodies never ride along in the aggregate payload (they would
+  // bloat a response fetched eagerly for every row), so each row's
+  // conversation is fetched the first time its Emails tab is opened and
+  // cached here — Radix unmounts inactive tab content, so without a cache
+  // every tab switch would refetch. The ref, not the state map, guards
+  // against a double request: the state write is async.
+  const [emailsById, setEmailsById] = useState({});
+  const requestedEmailsRef = useRef(new Set());
+  const loadRowEmails = useCallback((id) => {
+    if (requestedEmailsRef.current.has(id)) return;
+    requestedEmailsRef.current.add(id);
+    setEmailsById((cur) => ({ ...cur, [id]: { status: "loading" } }));
+    getApplicationEmails(id)
+      .then(({ data }) =>
+        setEmailsById((cur) => ({
+          ...cur,
+          [id]: { status: "ready", conversation: data ?? { threads: [] } },
+        })),
+      )
+      .catch(() => {
+        // Let a later re-open retry rather than stranding the row on the
+        // error message for the life of the page.
+        requestedEmailsRef.current.delete(id);
+        setEmailsById((cur) => ({ ...cur, [id]: { status: "error" } }));
+      });
+  }, []);
+
   if (otherApplications.length === 0) return null;
   return (
     <div className="space-y-2">
@@ -882,13 +983,21 @@ const OtherApplicationsSection = ({
                     />
                   )}
                   {showHistoryTabs ? (
-                    <Tabs defaultValue="evaluations">
+                    <Tabs
+                      defaultValue="evaluations"
+                      onValueChange={(value) => {
+                        if (value === "emails" && other.emailsVisible) {
+                          loadRowEmails(other.application.id);
+                        }
+                      }}
+                    >
                       <TabsList>
                         <TabsTrigger value="evaluations">
                           Evaluations
                         </TabsTrigger>
                         <TabsTrigger value="timeline">Timeline</TabsTrigger>
                         <TabsTrigger value="comments">Comments</TabsTrigger>
+                        <TabsTrigger value="emails">Emails</TabsTrigger>
                       </TabsList>
                       <TabsContent value="evaluations">
                         {evaluationSummary}
@@ -902,6 +1011,12 @@ const OtherApplicationsSection = ({
                       </TabsContent>
                       <TabsContent value="comments">
                         <CommentsPanel comments={other.comments ?? []} />
+                      </TabsContent>
+                      <TabsContent value="emails">
+                        <RowEmails
+                          visible={other.emailsVisible}
+                          state={emailsById[other.application.id]}
+                        />
                       </TabsContent>
                     </Tabs>
                   ) : (

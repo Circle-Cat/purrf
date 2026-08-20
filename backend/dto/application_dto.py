@@ -76,3 +76,29 @@ class MyApplicationSummaryDto(BaseDto):
     job_kind: JobKind
     mentorship_role: ParticipantRole | None = None
     stage: ApplicationStage
+
+
+class MyApplicationsDto(BaseDto):
+    """The current user's own application list, plus every mentorship role
+    those applications qualify them to register a round under.
+
+    The set is resolved server-side rather than left for the caller to work
+    out from the rows (see
+    `ApplicationRepository.list_hired_activity_roles`). A client that
+    filtered the rows itself would be free to disagree with the validation
+    the registration endpoints actually apply.
+
+    A set, not a single role: a user admitted to both a mentor and a mentee
+    posting picks which one a given round is registered under, and nothing
+    here decides it for them.
+
+    The order carries no authority: it is most-recent-admission-first for
+    display only, and no code may treat element 0 as "the" role.
+    """
+
+    applications: list[MyApplicationSummaryDto]
+    # Every role the caller holds a HIRED mentor/mentee ACTIVITY application
+    # in, most recent admission first for display only — this order carries
+    # no authority, so no code may treat element 0 as "the" role. Empty when
+    # they are not a participant.
+    mentorship_roles: list[ParticipantRole] = []

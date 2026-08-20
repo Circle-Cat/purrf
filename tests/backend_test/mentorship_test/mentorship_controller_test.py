@@ -13,6 +13,7 @@ from backend.dto.meeting_batch_create_dto import MeetingBatchCreateDto
 from backend.dto.feedback_create_dto import FeedbackCreateDto
 from backend.dto.feedback_dto import FeedbackDto
 from backend.common.permissions import Permission
+from backend.common.mentorship_enums import ParticipantRole
 from backend.common.api_endpoints import MEET_ATTENDANCE_SYNC_ENDPOINT
 from backend.mentorship.mentorship_controller import MentorshipController
 
@@ -226,7 +227,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["data"], mock_data)
 
     async def test_get_registration_info(self):
-        """Test retrieve registration info for a user."""
+        """Test retrieve registration info for a user, with no role named."""
         mock_user = MagicMock(spec=UserContextDto, sub="valid-sub")
         mock_round_id = 1
         mock_data = MagicMock(spec=RegistrationDto)
@@ -237,13 +238,37 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         )
 
         self.mock_registration_service.get_registration_info.assert_awaited_once_with(
-            session=self.mock_session, user_context=mock_user, round_id=mock_round_id
+            session=self.mock_session,
+            user_context=mock_user,
+            round_id=mock_round_id,
+            role=None,
         )
         self.assertEqual(response["data"], mock_data)
         self.mock_api_response.assert_called_once_with(
             message="Successfully fetched mentorship round registration information.",
             data=mock_data,
         )
+
+    async def test_get_registration_info_passes_the_role_query_parameter(self):
+        """The role query parameter reaches the service unchanged."""
+        mock_user = MagicMock(spec=UserContextDto, sub="valid-sub")
+        mock_round_id = 1
+        mock_data = MagicMock(spec=RegistrationDto)
+        self.mock_registration_service.get_registration_info.return_value = mock_data
+
+        response = await self.controller.get_registration_info(
+            current_user=mock_user,
+            round_id=mock_round_id,
+            role=ParticipantRole.MENTOR,
+        )
+
+        self.mock_registration_service.get_registration_info.assert_awaited_once_with(
+            session=self.mock_session,
+            user_context=mock_user,
+            round_id=mock_round_id,
+            role=ParticipantRole.MENTOR,
+        )
+        self.assertEqual(response["data"], mock_data)
 
     async def test_update_registration_info(self):
         """Test update or create registration information for a user."""

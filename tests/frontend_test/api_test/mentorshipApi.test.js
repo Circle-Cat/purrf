@@ -88,7 +88,20 @@ describe("Mentorship Service API", () => {
 
     await getMyMentorshipRegistration(roundId);
 
-    expect(request.get).toHaveBeenCalledWith(expectedUrl);
+    expect(request.get).toHaveBeenCalledWith(expectedUrl, {
+      params: undefined,
+    });
+  });
+
+  it("getMyMentorshipRegistration sends the role when one is named", async () => {
+    const roundId = "999";
+    const expectedUrl = API_ENDPOINTS.MENTORSHIP_REGISTRATION(roundId);
+
+    await getMyMentorshipRegistration(roundId, "mentor");
+
+    expect(request.get).toHaveBeenCalledWith(expectedUrl, {
+      params: { role: "mentor" },
+    });
   });
 
   it("postMyMentorshipRegistration should send a POST request with the payload", async () => {

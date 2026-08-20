@@ -233,13 +233,13 @@ describe("MentorshipParticipantsCard", () => {
     expect(screen.queryByTestId("meeting-modal")).not.toBeInTheDocument();
   });
 
-  it("should display duration as date only", () => {
+  it("should display duration as date only, labelled with the viewer's timezone", () => {
     render(<MentorshipParticipantsCard {...baseProps} />);
     const durationEl = screen
       .getByText("Duration:", { selector: "span" })
       .closest("p");
     expect(durationEl).toHaveTextContent(
-      /\d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2}/,
+      /\d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2} Asia\/Shanghai/,
     );
   });
 
@@ -368,7 +368,7 @@ describe("MentorshipParticipantsCard", () => {
       expect(dialog).toHaveAttribute("data-editable", "true");
       expect(dialog).toHaveAttribute(
         "data-deadline",
-        "Mar 10, 2026 14:59 Asia/Shanghai",
+        "2026-03-10 14:59 Asia/Shanghai",
       );
     });
 
@@ -379,7 +379,7 @@ describe("MentorshipParticipantsCard", () => {
       });
       expect(screen.getByTestId("feedback-dialog")).toHaveAttribute(
         "data-deadline",
-        "May 9, 2026 23:59 Asia/Shanghai",
+        "2026-05-09 23:59 Asia/Shanghai",
       );
     });
 

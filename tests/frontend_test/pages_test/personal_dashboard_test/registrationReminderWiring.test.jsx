@@ -75,16 +75,19 @@ describe("PersonalDashboard registration reminder wiring", () => {
     // start out disabled and are switched on a tick later — the ordering
     // the page actually runs in.
     recruitingApi.listMyApplications.mockResolvedValue({
-      data: [
-        {
-          applicationId: 1,
-          jobId: 2,
-          jobTitle: "Mentorship",
-          jobKind: "activity",
-          mentorshipRole: "mentee",
-          stage: "hired",
-        },
-      ],
+      data: {
+        applications: [
+          {
+            applicationId: 1,
+            jobId: 2,
+            jobTitle: "Mentorship",
+            jobKind: "activity",
+            mentorshipRole: "mentee",
+            stage: "hired",
+          },
+        ],
+        mentorshipRoles: ["mentee"],
+      },
     });
     profileApi.getMyProfile.mockResolvedValue({
       data: { profile: { training: [{ id: 1 }] } },

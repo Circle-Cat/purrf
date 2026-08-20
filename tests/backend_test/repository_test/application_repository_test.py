@@ -488,9 +488,11 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         )
         self.assertEqual(found_mentor.application_id, hired_mentor.application_id)
 
-    async def test_get_recent_hired_activity_role_returns_most_recent_role(self):
-        """When a user was hired into more than one activity posting, the
-        role of the most recent application (highest application_id) wins."""
+    async def test_list_hired_activity_roles_returns_both_roles_most_recent_first(
+        self,
+    ):
+        """When a user was hired into more than one activity posting, every
+        distinct role comes back, most recently admitted first."""
         mentee_job = JobEntity(
             kind=JobKind.ACTIVITY,
             mentorship_role=ParticipantRole.MENTEE,
@@ -503,19 +505,19 @@ class TestApplicationRepository(BaseRepositoryTestLib):
             title="Mentor Activity",
             status=JobStatus.PUBLISHED,
         )
-        user = _make_user("A", "B", "recent-role@b.com")
+        user = _make_user("A", "B", "list-roles@b.com")
         await self.insert_entities([mentee_job, mentor_job, user])
         await self.session.flush()
 
         repo = ApplicationRepository()
-        # Hired as mentee first, then as mentor. The later (mentor) row has
-        # the higher application_id, so the most recent role is MENTOR.
+        # Hired as a mentee first, as a mentor later.
         await repo.create(
             self.session,
             ApplicationEntity(
                 job_id=mentee_job.job_id,
                 user_id=user.user_id,
                 stage=ApplicationStage.HIRED,
+                stage_entered_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
             ),
         )
         await repo.create(
@@ -524,20 +526,44 @@ class TestApplicationRepository(BaseRepositoryTestLib):
                 job_id=mentor_job.job_id,
                 user_id=user.user_id,
                 stage=ApplicationStage.HIRED,
+                stage_entered_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
             ),
         )
 
-        role = await repo.get_recent_hired_activity_role(
-            self.session, user_id=user.user_id
-        )
-        self.assertEqual(role, ParticipantRole.MENTOR)
+        roles = await repo.list_hired_activity_roles(self.session, user_id=user.user_id)
+        self.assertEqual([ParticipantRole.MENTOR, ParticipantRole.MENTEE], roles)
 
-    async def test_get_recent_hired_activity_role_ignores_non_hired_and_non_activity(
-        self,
-    ):
+    async def test_list_hired_activity_roles_deduplicates_repeated_admissions(self):
+        """Being hired twice into the same role only counts once."""
+        user = _make_user("A", "B", "list-roles-dedup@b.com")
+        await self.insert_entities([user])
+
+        repo = ApplicationRepository()
+        for i in range(2):
+            job = JobEntity(
+                kind=JobKind.ACTIVITY,
+                mentorship_role=ParticipantRole.MENTEE,
+                title=f"Mentee Activity {i}",
+                status=JobStatus.PUBLISHED,
+            )
+            await self.insert_entities([job])
+            await self.session.flush()
+            await repo.create(
+                self.session,
+                ApplicationEntity(
+                    job_id=job.job_id,
+                    user_id=user.user_id,
+                    stage=ApplicationStage.HIRED,
+                ),
+            )
+
+        roles = await repo.list_hired_activity_roles(self.session, user_id=user.user_id)
+        self.assertEqual([ParticipantRole.MENTEE], roles)
+
+    async def test_list_hired_activity_roles_ignores_non_hired_and_non_activity(self):
         """Only HIRED applications on ACTIVITY postings count; a non-HIRED
         activity application and a HIRED non-activity application are both
-        ignored, yielding None."""
+        ignored, yielding an empty list."""
         activity_job = JobEntity(
             kind=JobKind.ACTIVITY,
             mentorship_role=ParticipantRole.MENTOR,
@@ -549,7 +575,7 @@ class TestApplicationRepository(BaseRepositoryTestLib):
             title="Some Job",
             status=JobStatus.PUBLISHED,
         )
-        user = _make_user("A", "B", "no-role@b.com")
+        user = _make_user("A", "B", "list-roles-ignore@b.com")
         await self.insert_entities([activity_job, employment_job, user])
         await self.session.flush()
 
@@ -571,10 +597,8 @@ class TestApplicationRepository(BaseRepositoryTestLib):
             ),
         )
 
-        role = await repo.get_recent_hired_activity_role(
-            self.session, user_id=user.user_id
-        )
-        self.assertIsNone(role)
+        roles = await repo.list_hired_activity_roles(self.session, user_id=user.user_id)
+        self.assertEqual([], roles)
 
     async def test_get_hired_activity_application_returns_none_when_not_hired(self):
         job = JobEntity(

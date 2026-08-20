@@ -120,6 +120,12 @@ describe("lockReasonText", () => {
     );
   });
 
+  it("tells the candidate the posting itself closed", () => {
+    expect(lockReasonText("closed", "Recruiter screening")).toBe(
+      "This posting has closed, so it can't be edited any more.",
+    );
+  });
+
   it("returns null for no reason, so an editable application renders nothing", () => {
     expect(lockReasonText(null, "Tech")).toBeNull();
     expect(lockReasonText("not_a_reason", "Tech")).toBeNull();

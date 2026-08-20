@@ -7,6 +7,7 @@ from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RoundPreferencesDto
 from backend.dto.feedback_create_dto import FeedbackCreateDto
 from backend.dto.feedback_dto import FeedbackDto
+from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import ParticipantRole
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.common.mentorship_enums import (
@@ -156,33 +157,41 @@ class ParticipationService:
         session: AsyncSession,
         user_id: int,
         round_id: int,
-        participant_role: ParticipantRole,
-    ) -> tuple[RoundPreferencesDto, bool]:
-        """
-        Retrieves preferences for a specific mentorship round.
+        participant_role: ParticipantRole | None,
+    ) -> tuple[RoundPreferencesDto | None, bool]:
+        """Retrieve preferences for a specific mentorship round.
 
-        The participant role is authoritative and supplied by the caller
-        (resolved from the user's HIRED activity application); this method
-        never infers it. Resolution:
-        1. If the user has already registered for this round, return that
-           round's saved preferences as-is.
+        The role is supplied by the caller — the role the user chose to
+        register this round under — and this method never infers one.
+        Resolution:
+        1. If the user has already registered for this round, that
+           registration's role settles the round: its saved preferences come
+           back as-is, and a request naming a different role is a conflict
+           rather than a silent correction.
         2. Otherwise pre-fill from the user's most recent prior round in the
            SAME role, so a mentee's form is never seeded from a round they
            attended as a mentor (or vice versa).
         3. If there is no prior same-role round, return an empty default
            configuration carrying the supplied role.
+        4. With no role supplied and no registration to show, there is
+           nothing to prefill: return None.
 
         Args:
             session (AsyncSession): Active SQLAlchemy async session.
             user_id (int): The ID of the current user.
             round_id (int): The ID of the mentorship round.
-            participant_role (ParticipantRole): The role resolved from the
-                user's approved activity application.
+            participant_role (ParticipantRole | None): Which role's form to
+                answer for, or None to only report the current registration.
 
         Returns:
-            tuple[RoundPreferencesDto, bool]
-                - RoundPreferencesDto: The resolved round-specific preferences.
+            tuple[RoundPreferencesDto | None, bool]
+                - RoundPreferencesDto | None: The resolved round-specific
+                  preferences, or None when there is nothing to prefill.
                 - bool: Whether the user has registered for this round.
+
+        Raises:
+            ConflictError: The user is registered for this round under a
+                different role than the one requested.
         """
         participant = (
             await self.mentorship_round_participants_repo.get_by_user_id_and_round_id(
@@ -190,9 +199,20 @@ class ParticipationService:
             )
         )
         if participant:
+            if (
+                participant_role is not None
+                and participant.participant_role != participant_role
+            ):
+                raise ConflictError(
+                    "You are already registered for this round as a "
+                    f"{participant.participant_role.value}."
+                )
             return self.mentorship_mapper.map_to_round_preference_dto(
                 participants_entity=participant,
             ), True
+
+        if participant_role is None:
+            return None, False
 
         recent_same_role = await self.mentorship_round_participants_repo.get_recent_participant_by_user_id_and_role(
             session=session, user_id=user_id, participant_role=participant_role

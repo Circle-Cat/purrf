@@ -185,7 +185,9 @@ const QuestionEditor = ({
       )}
       {question.type === "multi_choice" && (
         <div className="space-y-1">
-          <Label htmlFor={`${question.id}-maxsel`}>Max selections</Label>
+          <Label htmlFor={`${question.id}-maxsel`}>
+            Max selections (optional)
+          </Label>
           <Input
             id={`${question.id}-maxsel`}
             className={errorBorder(errors, key("maxSelections")).trim()}
@@ -200,13 +202,23 @@ const QuestionEditor = ({
               })
             }
           />
+          {/* Blank is the common case and a legal one, so the field says
+              what it means rather than leaving the author to infer it from
+              an empty box. */}
+          <p className="text-xs text-slate-500">
+            Blank means candidates can pick every option.
+          </p>
           <FieldError errors={errors} errorKey={key("maxSelections")} />
         </div>
       )}
       {question.type === "long_text" && (
         <div className="flex gap-3">
           <div className="space-y-1">
-            <Label htmlFor={`${question.id}-maxlen`}>Max characters</Label>
+            {/* Marked, unlike the cap above it: clearing this one is what a
+                save rejects. */}
+            <Label htmlFor={`${question.id}-maxlen`}>
+              Max characters (required)
+            </Label>
             <Input
               id={`${question.id}-maxlen`}
               className={errorBorder(errors, key("maxLength")).trim()}

@@ -100,7 +100,7 @@ vi.mock("@/pages/SignInSecurity/components/StepUpConfirmDialog", () => ({
     ) : null,
 }));
 
-const PRIMARY_TITLE = "Set primary contact email";
+const PRIMARY_TITLE = "Change primary contact email";
 const UNLINK_TITLE = "Remove sign-in method";
 
 describe("SignInSecurity page", () => {
@@ -123,9 +123,9 @@ describe("SignInSecurity page", () => {
   it("renders a single card with the merged sign-in and email list", () => {
     render(<SignInSecurity />);
 
-    expect(screen.getByText("Sign-in methods & emails")).toBeInTheDocument();
+    expect(screen.getByText("Emails & sign-in methods")).toBeInTheDocument();
     expect(
-      screen.getByText(/The methods you can use to sign in to Purrf\./),
+      screen.getByText(/Manage the email addresses and sign-in methods/),
     ).toBeInTheDocument();
     expect(screen.getByTestId("sign-in-method-list")).toBeInTheDocument();
     expect(
@@ -205,7 +205,7 @@ describe("SignInSecurity page", () => {
     });
   });
 
-  describe("Set primary contact email", () => {
+  describe("Change primary contact email", () => {
     it("initiates the switch and opens the dialog with the target email", async () => {
       const user = userEvent.setup();
       initiateSetPrimary.mockResolvedValue({ data: { state: "st-1" } });
@@ -381,9 +381,9 @@ describe("SignInSecurity page", () => {
 
       await screen.findByTestId("stepup-dialog");
       expect(screen.getByTestId("stepup-desc")).toHaveTextContent(
-        "This removes only that sign-in. Its email address stays on your " +
-          "account and can still be used to sign in with Email OTP. To fully " +
-          "disconnect this address, also remove its Email OTP.",
+        "This removes only that sign-in method — the address stays on " +
+          "your account and can still be used with Email OTP. To fully " +
+          "disconnect it, remove its Email OTP as well.",
       );
     });
 
