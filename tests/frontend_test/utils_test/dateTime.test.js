@@ -8,7 +8,6 @@ import {
   nowInTz,
   localToUtcIso,
   getDaysSince,
-  formatTimezoneLabel,
 } from "@/utils/dateTime";
 
 describe("formatInTz", () => {
@@ -166,18 +165,6 @@ describe("getDaysSince", () => {
       expect(getDaysSince(date)).toBe(expected);
     },
   );
-});
-
-describe("formatTimezoneLabel", () => {
-  it("formats a timezone label with city and UTC offset", () => {
-    const result = formatTimezoneLabel("America/Los_Angeles");
-    expect(result).toMatch(/Los Angeles \(UTC[-+]?\d+\)/);
-  });
-
-  it("handles city names with underscores", () => {
-    const result = formatTimezoneLabel("America/New_York");
-    expect(result).toContain("New York");
-  });
 });
 
 describe("todayInTz", () => {

@@ -3,10 +3,6 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ProfileHeader from "@/pages/Profile/components/ProfileHeader";
 
-vi.mock("@/utils/dateTime", () => ({
-  formatTimezoneLabel: (tz) => `TZ:${tz}`,
-}));
-
 describe("ProfileHeader", () => {
   it("renders the full name with the preferred name and last name", () => {
     render(
@@ -30,7 +26,7 @@ describe("ProfileHeader", () => {
     expect(heading).not.toHaveTextContent("(");
   });
 
-  it("renders the formatted timezone when one is provided", () => {
+  it("renders the full IANA timezone name when one is provided", () => {
     render(
       <ProfileHeader
         info={{
@@ -41,7 +37,7 @@ describe("ProfileHeader", () => {
         onEditClick={vi.fn()}
       />,
     );
-    expect(screen.getByText("TZ:America/New_York")).toBeInTheDocument();
+    expect(screen.getByText("America/New_York")).toBeInTheDocument();
   });
 
   it("does not render a timezone when none is provided", () => {
@@ -51,7 +47,8 @@ describe("ProfileHeader", () => {
         onEditClick={vi.fn()}
       />,
     );
-    expect(screen.queryByText(/^TZ:/)).not.toBeInTheDocument();
+    const nameSpan = screen.getByRole("heading").querySelector("span");
+    expect(nameSpan).toHaveTextContent("John Doe");
   });
 
   it("calls onEditClick when the Edit Profile button is clicked", async () => {

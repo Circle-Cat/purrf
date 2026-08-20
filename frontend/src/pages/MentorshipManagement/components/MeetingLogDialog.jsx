@@ -39,7 +39,7 @@ const MEETING_TIMEZONE = "America/Los_Angeles";
 
 /**
  * Formats a UTC meeting start/end datetime as a Pacific Time date + time range
- * string, e.g. "2026-04-06 · 15:30 – 16:30".
+ * string, e.g. "2026-04-06 · 15:30 - 16:30".
  *
  * @param {string} startDatetime - UTC ISO-8601 start datetime.
  * @param {string} endDatetime - UTC ISO-8601 end datetime.
@@ -49,7 +49,7 @@ function formatMeetingTimeRange(startDatetime, endDatetime) {
   const date = formatInTz(startDatetime, MEETING_TIMEZONE, "yyyy-MM-dd");
   const start = formatInTz(startDatetime, MEETING_TIMEZONE, "HH:mm");
   const end = formatInTz(endDatetime, MEETING_TIMEZONE, "HH:mm");
-  return `${date} · ${start} – ${end}`;
+  return `${date} · ${start} - ${end}`;
 }
 
 /**
@@ -554,8 +554,9 @@ const MeetingLogDialog = ({
                 Meeting Log — {subjectName} ({ROLE_LABELS[subjectRole]}) with{" "}
                 {partnerName} ({ROLE_LABELS[partnerRole]}) · {roundName}
               </DialogTitle>
-              <DialogDescription className="sr-only">
-                Each meeting's datetime, status, and notes for this pair.
+              <DialogDescription>
+                Meeting details for this pair. All times are in{" "}
+                {MEETING_TIMEZONE}.
               </DialogDescription>
             </DialogHeader>
 
