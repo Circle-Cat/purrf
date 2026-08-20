@@ -9,8 +9,7 @@ import { safeHttpUrl } from "@/utils/url";
 /**
  * Format an API timestamp (ISO 8601) as a calendar date in en-US,
  * interpreted in the viewer's profile timezone (an IANA string like
- * "Asia/Shanghai"). Falls back to UTC so the displayed date still
- * matches the stored value when the user has not picked a timezone.
+ * "Asia/Shanghai").
  *
  * Returns "-" for null/empty/invalid inputs and for the 1970 sentinel
  * the backend stores when a training row hasn't been completed yet.
@@ -20,16 +19,23 @@ const formatTrainingDate = (iso, timezone) => {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "-";
   if (date.getUTCFullYear() < 2000) return "-";
-  return formatInTz(iso, timezone || "UTC", "MMM d, yyyy");
+  return formatInTz(iso, timezone, "MMM d, yyyy");
 };
 
 const TrainingSection = ({ list, timezone }) => {
   return (
     <div className="mb-12">
       <div className="mb-5 flex items-center justify-between">
-        <h3 className="mb-5 mt-0 text-xl font-semibold tracking-[-0.015em] text-foreground">
-          Training
-        </h3>
+        <div>
+          <h3 className="mb-1 mt-0 text-xl font-semibold tracking-[-0.015em] text-foreground">
+            Training
+          </h3>
+          {list && list.length > 0 && (
+            <p className="text-sm text-muted-foreground">
+              Dates shown in {timezone}.
+            </p>
+          )}
+        </div>
       </div>
 
       {list && list.length > 0 ? (

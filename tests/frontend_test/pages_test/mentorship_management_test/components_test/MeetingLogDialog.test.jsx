@@ -65,6 +65,15 @@ describe("MeetingLogDialog", () => {
     expect(screen.getByText("No meetings recorded yet.")).toBeInTheDocument();
   });
 
+  it("notes that all times shown are in America/Los_Angeles", () => {
+    render(<MeetingLogDialog {...baseProps} meetings={[]} />);
+    expect(
+      screen.getByText(
+        "Meeting details for this pair. All times are in America/Los_Angeles.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("renders Time Range and Create Datetime column headers", () => {
     render(
       <MeetingLogDialog
@@ -113,8 +122,8 @@ describe("MeetingLogDialog", () => {
 
     expect(screen.getByText("1")).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
-    expect(screen.getByText("2024-03-01 · 15:30 – 16:30")).toBeInTheDocument();
-    expect(screen.getByText("2024-03-08 · 15:30 – 16:30")).toBeInTheDocument();
+    expect(screen.getByText("2024-03-01 · 15:30 - 16:30")).toBeInTheDocument();
+    expect(screen.getByText("2024-03-08 · 15:30 - 16:30")).toBeInTheDocument();
     expect(screen.getByText("2024-03-01 · 07:30")).toBeInTheDocument();
     expect(screen.getByText("Completed")).toBeInTheDocument();
     expect(screen.getByText("Incomplete")).toBeInTheDocument();
@@ -677,7 +686,7 @@ describe("MeetingLogDialog", () => {
     await userEvent.click(screen.getByRole("button", { name: "Update (1)" }));
 
     expect(
-      screen.getByText("# 3 2024-03-01 · 15:30 – 16:30"),
+      screen.getByText("# 3 2024-03-01 · 15:30 - 16:30"),
     ).toBeInTheDocument();
     expect(screen.queryByText(/^# 1 /)).not.toBeInTheDocument();
     expect(screen.getByText("Complete Status:").closest("p")).toHaveTextContent(
@@ -725,7 +734,7 @@ describe("MeetingLogDialog", () => {
     await userEvent.click(screen.getByRole("button", { name: "Delete (1)" }));
 
     expect(
-      screen.getByText("# 2 2024-03-01 · 15:30 – 16:30"),
+      screen.getByText("# 2 2024-03-01 · 15:30 - 16:30"),
     ).toBeInTheDocument();
     expect(screen.queryByText(/^# 1 /)).not.toBeInTheDocument();
     expect(screen.queryByText(/^# 3 /)).not.toBeInTheDocument();
