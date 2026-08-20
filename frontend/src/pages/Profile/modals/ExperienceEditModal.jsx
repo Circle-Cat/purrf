@@ -213,7 +213,7 @@ const ExperienceEditModal = ({ isOpen, onClose, initialData, onSave }) => {
 
       <ClearAllConfirmDialog
         open={isConfirmingClear}
-        sectionName="experience"
+        sectionName="work experience"
         isSaving={isSaving}
         onConfirm={persist}
         onCancel={() => setIsConfirmingClear(false)}

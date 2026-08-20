@@ -254,7 +254,12 @@ describe("ExperienceEditModal", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(
-      screen.getByRole("heading", { name: "Remove all experience?" }),
+      screen.getByRole("heading", { name: "Remove all work experience?" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "This will remove all work experience entries from your profile. You can add them back anytime.",
+      ),
     ).toBeInTheDocument();
     expect(mockOnSave).not.toHaveBeenCalled();
   });

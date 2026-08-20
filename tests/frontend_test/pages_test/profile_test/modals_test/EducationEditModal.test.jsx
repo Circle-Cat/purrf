@@ -249,6 +249,11 @@ describe("EducationEditModal", () => {
     expect(
       screen.getByRole("heading", { name: "Remove all education?" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "This will remove all education entries from your profile. You can add them back anytime.",
+      ),
+    ).toBeInTheDocument();
     expect(mockOnSave).not.toHaveBeenCalled();
   });
 

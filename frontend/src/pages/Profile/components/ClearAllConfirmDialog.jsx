@@ -1,4 +1,4 @@
-import React from "react";
+import { useId } from "react";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
  * @param {Object} props
  * @param {boolean} props.open - Whether the confirmation is showing.
  * @param {string} props.sectionName - The section being cleared, lowercase, as
- *   it reads in the copy (e.g. "education").
+ *   it reads mid-sentence in the copy (e.g. "work experience").
  * @param {boolean} [props.isSaving] - Disables both buttons while the save runs.
  * @param {() => void} props.onConfirm - Go ahead with the save.
  * @param {() => void} props.onCancel - Dismiss and return to the edit modal.
@@ -25,9 +25,11 @@ const ClearAllConfirmDialog = ({
   onConfirm,
   onCancel,
 }) => {
-  if (!open) return null;
+  // Not derived from `sectionName`: a section reads as a phrase in the copy,
+  // and an id cannot contain the space.
+  const titleId = useId();
 
-  const titleId = `clear-all-${sectionName}-title`;
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-[1100] flex h-full w-full items-center justify-center bg-black/40 backdrop-blur-[4px] animate-in fade-in duration-200">
@@ -41,8 +43,8 @@ const ClearAllConfirmDialog = ({
           Remove all {sectionName}?
         </h4>
         <p className="mt-3 text-sm text-muted-foreground">
-          This clears the {sectionName} section of your profile. You can add
-          entries again later.
+          This will remove all {sectionName} entries from your profile. You can
+          add them back anytime.
         </p>
         <div className="mt-8 flex justify-end gap-3">
           <Button variant="outline" onClick={onCancel} disabled={isSaving}>
