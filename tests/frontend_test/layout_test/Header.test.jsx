@@ -104,6 +104,28 @@ describe("Header Component", () => {
     expect(screen.getByText("A")).toBeInTheDocument();
   });
 
+  test("outlines the avatar so a light picture still reads against the header", () => {
+    getCookie.mockReturnValue("some-jwt-cookie-string");
+    extractCloudflareUserName.mockReturnValue("Alice");
+    extractCloudflareUserPicture.mockReturnValue("https://example.com/me.png");
+
+    render(
+      <MemoryRouter>
+        <Header />
+      </MemoryRouter>,
+    );
+
+    // The header is `bg-background`, which is pure white in the light theme, so
+    // a picture on a white background has no edge without this outline. The
+    // colour has to be named: Tailwind v4 defaults `border-color` to
+    // `currentColor`, which on this button is the near-white
+    // `text-primary-foreground`.
+    expect(screen.getByRole("button", { name: "User menu" })).toHaveClass(
+      "border",
+      "border-border",
+    );
+  });
+
   test("renders the logo and title correctly", () => {
     render(
       <MemoryRouter>
