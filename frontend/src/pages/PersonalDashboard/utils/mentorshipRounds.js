@@ -24,8 +24,6 @@
  * @param {Array<Object>} allRounds - All mentorship rounds.
  * @param {Object} allRounds[].timeline - Timeline information of a round.
  * @returns {{
- *   feedbackRoundId: string | null,
- *   feedbackRoundName: string,
  *   isFeedbackEnabled: boolean,
  *   regRoundId: string | null,
  *   matchResultRoundName: string,
@@ -93,9 +91,9 @@ export const calculateMentorshipSlots = (allRounds) => {
   );
 
   return {
-    // Controls the "Feedback" button
-    feedbackRoundId: feedbackRound?.id || null,
-    feedbackRoundName: feedbackRound?.name || "",
+    // Whether a round is in its feedback phase at all. The round's identity
+    // is not reported: the feedback dialog lives on the participants card,
+    // which resolves its own round.
     isFeedbackEnabled: Boolean(feedbackRound),
 
     // Controls the "Register" / "View" button

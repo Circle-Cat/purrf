@@ -145,7 +145,6 @@ describe("useMentorshipData Hook", () => {
 
     const mockStatus = {
       regRoundId: "round-1",
-      feedbackRoundId: null,
       isFeedbackEnabled: false,
     };
     calculateMentorshipSlots.mockReturnValue(mockStatus);
