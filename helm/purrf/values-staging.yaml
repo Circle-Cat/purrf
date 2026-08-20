@@ -20,3 +20,16 @@ ingress:
       paths:
         - path: /
           pathType: Prefix
+
+# Run `alembic upgrade head` as an ArgoCD PreSync hook before every staging
+# deploy, so a release carrying a schema change no longer needs a manual
+# `bazel run //tools/migrate_db`. A failed migration fails the sync and leaves
+# the running Deployment untouched.
+#
+# This switch lives on the staging branch, not on main: promote.yml skips a
+# commit that touches only helm/purrf/values-<env>.yaml, so main cannot carry
+# it here, and a promote that did touch this file would re-assert main's value.
+# Kept at the end of the file so the deploy-staging image-pin commits, which
+# rewrite image.tag above, never conflict with it.
+migrate:
+  enabled: true
