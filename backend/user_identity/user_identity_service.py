@@ -406,6 +406,13 @@ class UserIdentityService:
             without a redundant re-fetch; None only if nothing could be
             resolved (defensive — the repos never actually return that here).
         """
+        # A per-user lookup cannot see an unproven row on a *different*
+        # account, and uq_user_emails_email is global, so the seed below would
+        # collide with one. The swap is a trusted assertion, so release it:
+        # proof beats reservation.
+        await self.user_emails_repository.delete_unconfirmed_on_other_users(
+            session=session, email=email, user_id=user_id
+        )
         row = await self.user_emails_repository.get_by_user_and_email(
             session=session, user_id=user_id, email=email
         )
@@ -509,6 +516,11 @@ class UserIdentityService:
         # email row IS its credential. Google/social first-logins record
         # last_login_at on the identity row above instead (leave this None
         # so the two methods' clocks never cross-update).
+        # Same collision as the swap path: an address another account holds
+        # unproven is released to the login that just proved the mailbox.
+        await self.user_emails_repository.delete_unconfirmed_on_other_users(
+            session=session, email=email, user_id=created_user.user_id
+        )
         new_email_row = UserEmailsEntity(
             user_id=created_user.user_id,
             email=email,
