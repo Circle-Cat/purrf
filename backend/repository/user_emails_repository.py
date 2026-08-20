@@ -142,11 +142,14 @@ class UserEmailsRepository:
         self, session: AsyncSession, email: str, user_id: int
     ) -> bool:
         """
-        Whether `email` is claimed by a *different* account, confirmed or not —
-        the guard that stops one user from claiming an address another account
-        already holds. Addresses are globally exclusive (unique index
-        ``uq_user_emails_email``), so even an unverified claim makes the
-        address unavailable to everyone else.
+        Whether `email` is *confirmed* on a different account — the guard that
+        stops one user from claiming an address another account has proved.
+
+        An unconfirmed row on another account does not count. Addresses are
+        globally exclusive (unique index ``uq_user_emails_email``), so such a
+        row would otherwise reserve an address indefinitely against whoever can
+        actually receive its OTP; the claim path releases it instead. Every
+        capability an address grants reads ``otp_confirmed``, never presence.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -154,17 +157,46 @@ class UserEmailsRepository:
             user_id (int): The caller's user_id, excluded from the match.
 
         Returns:
-            bool: True when another account has any row for the address.
+            bool: True when another account holds the address confirmed.
         """
         result = await session.execute(
             select(UserEmailsEntity.email_id)
             .where(
                 UserEmailsEntity.email == email,
                 UserEmailsEntity.user_id != user_id,
+                UserEmailsEntity.otp_confirmed.is_(True),
             )
             .limit(1)
         )
         return result.first() is not None
+
+    async def delete_unconfirmed_on_other_users(
+        self, session: AsyncSession, email: str, user_id: int
+    ) -> None:
+        """
+        Release `email` from any *other* account holding it unconfirmed.
+
+        Called on the path that is about to confirm the address for `user_id`.
+        ``uq_user_emails_email`` is global, so the stale row has to go before
+        the confirmed one can be written — in the same transaction, or the
+        write races the release. The caller's own rows are left alone; those are
+        promoted in place rather than replaced.
+
+        Flushes but does not commit; the caller owns the transaction boundary.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            email (str): Normalized (lowercased) address being confirmed.
+            user_id (int): The account confirming it, whose rows are kept.
+        """
+        await session.execute(
+            delete(UserEmailsEntity).where(
+                UserEmailsEntity.email == email,
+                UserEmailsEntity.user_id != user_id,
+                UserEmailsEntity.otp_confirmed.is_(False),
+            )
+        )
+        await session.flush()
 
     async def get_by_email(
         self, session: AsyncSession, email: str
