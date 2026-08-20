@@ -44,7 +44,6 @@ const DEFAULT_TIMEZONE = "America/Los_Angeles";
  * @returns {{
  *   regRoundId: string | null,
  *   regRoundName: string,
- *   feedbackRoundId: string | null,
  *   registrationEntries: Array<{role: string, deadlineAt: string|null, isOpen: boolean}>,
  *   registeredRole: "mentor" | "mentee" | null,
  *   isRegistrationOpen: boolean,
@@ -68,7 +67,6 @@ export const useMentorshipData = ({
 
   const [roundStatus, setRoundStatus] = useState({
     regRoundId: null,
-    feedbackRoundId: null,
     isFeedbackEnabled: false,
     matchResultRoundName: "",
     canViewMatch: false,
