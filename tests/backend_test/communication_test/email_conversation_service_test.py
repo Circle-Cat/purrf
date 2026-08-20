@@ -362,14 +362,15 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
     async def test_sync_thread_fetches_bodies_only_for_new_messages(self):
         self.gmail.list_thread_message_ids.return_value = ["g1", "g2"]
         self.message_repo.list_gmail_message_ids_by_thread.return_value = {"g1"}
-        self.gmail.get_message.return_value = self._fetched("g2", "cand@example.com")
+        self.gmail.get_messages.return_value = [self._fetched("g2", "cand@example.com")]
         self.message_repo.create.return_value = SimpleNamespace(message_id=2)
 
         created = await self.service.sync_thread(self.session, self._thread())
 
         self.gmail.list_thread_message_ids.assert_called_once_with("gt1")
-        # The already-stored g1 costs nothing: no body fetch, no insert.
-        self.gmail.get_message.assert_called_once_with("g2")
+        # The already-stored g1 costs nothing: it is not in the batch, and no
+        # insert follows.
+        self.gmail.get_messages.assert_called_once_with(["g2"])
         self.message_repo.create.assert_awaited_once()
         _, mkw = self.message_repo.create.call_args
         self.assertEqual(mkw["thread_id"], 10)
@@ -400,7 +401,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         created = await self.service.sync_thread(self.session, self._thread())
 
         self.assertEqual(self.gmail.list_thread_message_ids.call_count, 1)
-        self.gmail.get_message.assert_not_called()
+        self.gmail.get_messages.assert_not_called()
         self.message_repo.create.assert_not_awaited()
         self.thread_repo.mark_synced.assert_awaited_once_with(self.session, 10)
         self.assertEqual(created, [])
@@ -410,7 +411,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         # never one per message.
         self.gmail.list_thread_message_ids.return_value = ["g1", "g2", "g3"]
         self.message_repo.list_gmail_message_ids_by_thread.return_value = set()
-        self.gmail.get_message.side_effect = [
+        self.gmail.get_messages.return_value = [
             self._fetched("g1", "cand@example.com"),
             self._fetched("g2", "cand@example.com"),
             self._fetched("g3", "cand@example.com"),
@@ -430,7 +431,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
     async def test_sync_thread_preserves_gmail_order(self):
         self.gmail.list_thread_message_ids.return_value = ["g1", "g2", "g3"]
         self.message_repo.list_gmail_message_ids_by_thread.return_value = {"g2"}
-        self.gmail.get_message.side_effect = [
+        self.gmail.get_messages.return_value = [
             self._fetched("g1", "cand@example.com"),
             self._fetched("g3", "cand@example.com"),
         ]
@@ -441,10 +442,8 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
 
         created = await self.service.sync_thread(self.session, self._thread())
 
-        self.assertEqual(
-            [call.args[0] for call in self.gmail.get_message.call_args_list],
-            ["g1", "g3"],
-        )
+        # One batch, carrying exactly the missing ids in Gmail's order.
+        self.gmail.get_messages.assert_called_once_with(["g1", "g3"])
         self.assertEqual([entity.message_id for entity in created], [1, 3])
 
     async def test_sync_thread_classifies_outbound_by_sender_even_with_display_name(
@@ -452,9 +451,9 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
     ):
         self.gmail.list_thread_message_ids.return_value = ["g9"]
         self.message_repo.list_gmail_message_ids_by_thread.return_value = set()
-        self.gmail.get_message.return_value = self._fetched(
-            "g9", f"Circle Cat Recruiting <{SENDER}>"
-        )
+        self.gmail.get_messages.return_value = [
+            self._fetched("g9", f"Circle Cat Recruiting <{SENDER}>")
+        ]
         self.message_repo.create.return_value = SimpleNamespace(message_id=3)
 
         await self.service.sync_thread(self.session, self._thread())
@@ -469,9 +468,9 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         # owns that question, and this service must take its answer.
         self.gmail.list_thread_message_ids.return_value = ["g9"]
         self.message_repo.list_gmail_message_ids_by_thread.return_value = set()
-        self.gmail.get_message.return_value = self._fetched(
-            "g9", "notification@circlecat.org"
-        )
+        self.gmail.get_messages.return_value = [
+            self._fetched("g9", "notification@circlecat.org")
+        ]
         self.gmail.owns_address.side_effect = None
         self.gmail.owns_address.return_value = True
         self.message_repo.create.return_value = SimpleNamespace(message_id=4)
@@ -490,7 +489,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         # is gone from the next listing.
         self.gmail.list_thread_message_ids.return_value = ["g1"]
         self.message_repo.list_gmail_message_ids_by_thread.return_value = set()
-        self.gmail.get_message.side_effect = RuntimeError("Gmail API error")
+        self.gmail.get_messages.side_effect = RuntimeError("Gmail API error")
 
         with self.assertRaises(RuntimeError):
             await self.service.sync_thread(self.session, self._thread())
@@ -505,9 +504,9 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         ]
         self.gmail.list_thread_message_ids.side_effect = [["gA1"], ["gB1"]]
         self.message_repo.list_gmail_message_ids_by_thread.return_value = set()
-        self.gmail.get_message.side_effect = [
-            self._fetched("gA1", "cand-a@example.com"),
-            self._fetched("gB1", "cand-b@example.com"),
+        self.gmail.get_messages.side_effect = [
+            [self._fetched("gA1", "cand-a@example.com")],
+            [self._fetched("gB1", "cand-b@example.com")],
         ]
         self.message_repo.create.side_effect = [
             SimpleNamespace(message_id=201),
