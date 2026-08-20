@@ -633,6 +633,7 @@ resource "cloudflare_zero_trust_access_identity_provider" "mentorship_login_test
       "given_name",
       "family_name",
       "email_verified",
+      "picture",
     ]
 
     email_claim_name = "aud"
@@ -665,6 +666,7 @@ resource "cloudflare_zero_trust_access_identity_provider" "mentorship_login_stag
       "given_name",
       "family_name",
       "email_verified",
+      "picture",
     ]
 
     email_claim_name = "aud"
