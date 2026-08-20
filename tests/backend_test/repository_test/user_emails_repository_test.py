@@ -164,24 +164,100 @@ class TestUserEmailsRepository(BaseRepositoryTestLib):
         )
         self.assertIsNone(found)
 
-    async def test_exists_on_other_user_counts_unconfirmed_claim(self):
-        # user_emails.email is globally unique, so even an unverified claim on
-        # another account makes the address unavailable.
+    async def test_exists_on_other_user_ignores_unconfirmed_claim(self):
+        # An unconfirmed row is nobody's proof of anything, so it must not lock
+        # the address away from whoever can actually receive its OTP.
         other = _make_user()
         await self.insert_entities([other])
         await self.insert_entities([
             UserEmailsEntity(
                 user_id=other.user_id,
-                email="taken@example.com",
+                email="unproven@example.com",
                 otp_confirmed=False,
                 is_primary=False,
             )
         ])
 
+        self.assertFalse(
+            await self.repo.exists_on_other_user(
+                self.session, "unproven@example.com", self.user.user_id
+            )
+        )
+
+    async def test_exists_on_other_user_counts_confirmed_claim(self):
+        other = _make_user()
+        await self.insert_entities([other])
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=other.user_id,
+                email="proven@example.com",
+                otp_confirmed=True,
+                is_primary=True,
+            )
+        ])
+
         self.assertTrue(
             await self.repo.exists_on_other_user(
-                self.session, "taken@example.com", self.user.user_id
+                self.session, "proven@example.com", self.user.user_id
             )
+        )
+
+    async def test_delete_unconfirmed_on_other_users_releases_the_row(self):
+        other = _make_user()
+        await self.insert_entities([other])
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=other.user_id,
+                email="contested@example.com",
+                otp_confirmed=False,
+                is_primary=False,
+            )
+        ])
+
+        await self.repo.delete_unconfirmed_on_other_users(
+            self.session, "contested@example.com", self.user.user_id
+        )
+
+        self.assertIsNone(
+            await self.repo.get_by_email(self.session, "contested@example.com")
+        )
+
+    async def test_delete_unconfirmed_on_other_users_keeps_a_confirmed_row(self):
+        other = _make_user()
+        await self.insert_entities([other])
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=other.user_id,
+                email="proven@example.com",
+                otp_confirmed=True,
+                is_primary=True,
+            )
+        ])
+
+        await self.repo.delete_unconfirmed_on_other_users(
+            self.session, "proven@example.com", self.user.user_id
+        )
+
+        self.assertIsNotNone(
+            await self.repo.get_by_email(self.session, "proven@example.com")
+        )
+
+    async def test_delete_unconfirmed_on_other_users_keeps_the_callers_own_row(self):
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=self.user.user_id,
+                email="mine-unproven@example.com",
+                otp_confirmed=False,
+                is_primary=False,
+            )
+        ])
+
+        await self.repo.delete_unconfirmed_on_other_users(
+            self.session, "mine-unproven@example.com", self.user.user_id
+        )
+
+        self.assertIsNotNone(
+            await self.repo.get_by_email(self.session, "mine-unproven@example.com")
         )
 
     async def test_exists_on_other_user_ignores_own_claim(self):

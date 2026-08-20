@@ -269,6 +269,59 @@ class TestUserIdentityService(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(seeded.otp_confirmed)
         self.assertTrue(seeded.is_primary)
 
+    def _release_ran_before_write(self) -> bool:
+        """Whether the unproven-claim release was issued before the email write.
+
+        uq_user_emails_email is global, so the order is the whole point: writing
+        first just trips the constraint.
+        """
+        names = [call[0] for call in self.emails_repo.mock_calls]
+        return names.index("delete_unconfirmed_on_other_users") < names.index(
+            "upsert_email"
+        )
+
+    async def test_swap_releases_an_unproven_claim_held_by_another_account(self):
+        """Swapping in on an address some *other* account holds unproven takes
+        the address: the swap is a trusted assertion, and an unconfirmed row is
+        nobody's proof."""
+        self._arrange_swap_hit()
+        # The other account's row is invisible to a per-user lookup, so without
+        # the release the seed below collides on uq_user_emails_email.
+        self.emails_repo.get_by_user_and_email.return_value = None
+        self.emails_repo.has_primary.return_value = False
+
+        await self.service.create_or_swap_user(
+            self.session, self._swap_passwordless_user_info()
+        )
+
+        self.emails_repo.delete_unconfirmed_on_other_users.assert_awaited_once_with(
+            session=self.session, email="alice@example.com", user_id=10
+        )
+        self.assertTrue(self._release_ran_before_write())
+
+    async def test_first_login_releases_an_unproven_claim_held_by_another_account(
+        self,
+    ):
+        """Same for a brand-new account: a trusted first login for an address
+        another account merely reserved unproven gets the address."""
+        user_info = UserContextDto(
+            sub="google-oauth2|newcomer",
+            primary_email="contested@gmail.com",
+            identity_type=IdentityType.EXTERNAL,
+            email_verified=True,
+        )
+        self.identities_repo.find_swappable_by_email.return_value = None
+        self.emails_repo.get_confirmed_by_email.return_value = None
+        created = MagicMock(spec=UsersEntity, user_id=91)
+        self.users_repo.upsert_users.return_value = created
+
+        await self.service.create_or_swap_user(self.session, user_info)
+
+        self.emails_repo.delete_unconfirmed_on_other_users.assert_awaited_once_with(
+            session=self.session, email="contested@gmail.com", user_id=91
+        )
+        self.assertTrue(self._release_ran_before_write())
+
     async def test_create_or_swap_swap_passwordless_already_confirmed_noop(self):
         """Swap-confirm on an already-confirmed primary row: nothing to change,
         no write issued."""

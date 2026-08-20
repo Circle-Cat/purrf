@@ -123,13 +123,6 @@ export function getDaysSince(dateString) {
 }
 
 /**
- * Format an IANA timezone string as a human-readable label.
- * e.g. "Asia/Shanghai" → "Shanghai (UTC+8)"
- *
- * @param {string} tz - IANA timezone string.
- * @returns {string}
- */
-/**
  * The IANA zone to render times in for the person currently looking.
  *
  * Their profile zone when they have set one, otherwise whatever their browser
@@ -143,20 +136,4 @@ export function getDaysSince(dateString) {
  */
 export function resolveViewerTimezone(profileTimezone) {
   return profileTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
-}
-
-export function formatTimezoneLabel(tz) {
-  const city = tz.split("/")[1].replace(/_/g, " ");
-
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    timeZoneName: "shortOffset",
-  }).formatToParts(new Date());
-
-  const offset =
-    parts
-      .find((p) => p.type === "timeZoneName")
-      ?.value?.replace("GMT", "UTC") ?? "";
-
-  return `${city} (${offset})`;
 }
