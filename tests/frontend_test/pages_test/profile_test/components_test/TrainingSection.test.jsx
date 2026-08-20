@@ -88,14 +88,6 @@ describe("TrainingSection Component", () => {
     ).toBeInTheDocument();
   });
 
-  it("notes America/Los_Angeles when no timezone prop is provided", () => {
-    render(<TrainingSection list={TRAINING_FIXTURES.single} />);
-
-    expect(
-      screen.getByText("Dates shown in America/Los_Angeles."),
-    ).toBeInTheDocument();
-  });
-
   it("does not show a timezone note when there are no training records", () => {
     render(<TrainingSection list={[]} />);
 
@@ -111,7 +103,12 @@ describe("TrainingSection Component", () => {
   });
 
   it("renders the friendly category label and the actual day for each timestamp", () => {
-    render(<TrainingSection list={TRAINING_FIXTURES.single} />);
+    render(
+      <TrainingSection
+        list={TRAINING_FIXTURES.single}
+        timezone="America/Los_Angeles"
+      />,
+    );
 
     expect(screen.getByText("Name")).toBeInTheDocument();
     expect(
@@ -121,9 +118,9 @@ describe("TrainingSection Component", () => {
       screen.queryByText("mentorship_mentor_onboarding"),
     ).not.toBeInTheDocument();
 
-    // Full calendar day, not just month/year. No timezone prop given, so
-    // this falls back to America/Los_Angeles (UTC-8 in January),
-    // shifting the UTC midnight timestamps back a day.
+    // Full calendar day, not just month/year. 2023-01-15T00:00:00Z is
+    // midnight UTC, which in Los Angeles (UTC-8 in January) is still
+    // the previous day.
     expect(screen.getByText("Jan 14, 2023")).toBeInTheDocument();
     expect(screen.getByText("Feb 14, 2023")).toBeInTheDocument();
   });
@@ -230,15 +227,6 @@ describe("TrainingSection Component", () => {
     expect(screen.getByText("Feb 14, 2023")).toBeInTheDocument();
   });
 
-  it("falls back to America/Los_Angeles when no timezone prop is provided", () => {
-    // Same input as above; without a timezone the same UTC midnight
-    // displays as Jan 14 in America/Los_Angeles (UTC-8 in January).
-    render(<TrainingSection list={TRAINING_FIXTURES.single} />);
-
-    expect(screen.getByText("Jan 14, 2023")).toBeInTheDocument();
-    expect(screen.getByText("Feb 14, 2023")).toBeInTheDocument();
-  });
-
   it('renders "-" for the 1970 sentinel completedTimestamp', () => {
     render(
       <TrainingSection
@@ -254,11 +242,12 @@ describe("TrainingSection Component", () => {
             deadline: "2026-05-18T06:59:00Z",
           },
         ]}
+        timezone="America/Los_Angeles"
       />,
     );
 
     // Sentinel completed_timestamp → "-"; real deadline → actual day in
-    // America/Los_Angeles (UTC-7 in May), the fallback.
+    // America/Los_Angeles (UTC-7 in May).
     expect(screen.getByText("-")).toBeInTheDocument();
     expect(screen.getByText("May 17, 2026")).toBeInTheDocument();
   });

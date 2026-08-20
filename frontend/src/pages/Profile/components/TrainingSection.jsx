@@ -6,14 +6,10 @@ import { formatInTz } from "@/utils/dateTime";
 import { isIncompleteOnboarding } from "@/utils/training";
 import { safeHttpUrl } from "@/utils/url";
 
-// Default profile timezone for newly created users.
-const DEFAULT_TIMEZONE = "America/Los_Angeles";
-
 /**
  * Format an API timestamp (ISO 8601) as a calendar date in en-US,
  * interpreted in the viewer's profile timezone (an IANA string like
- * "Asia/Shanghai"). Falls back to America/Los_Angeles so the displayed
- * date still resolves to a real zone when the user has not picked one.
+ * "Asia/Shanghai").
  *
  * Returns "-" for null/empty/invalid inputs and for the 1970 sentinel
  * the backend stores when a training row hasn't been completed yet.
@@ -23,7 +19,7 @@ const formatTrainingDate = (iso, timezone) => {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "-";
   if (date.getUTCFullYear() < 2000) return "-";
-  return formatInTz(iso, timezone || DEFAULT_TIMEZONE, "MMM d, yyyy");
+  return formatInTz(iso, timezone, "MMM d, yyyy");
 };
 
 const TrainingSection = ({ list, timezone }) => {
@@ -36,7 +32,7 @@ const TrainingSection = ({ list, timezone }) => {
           </h3>
           {list && list.length > 0 && (
             <p className="text-sm text-muted-foreground">
-              Dates shown in {timezone || DEFAULT_TIMEZONE}.
+              Dates shown in {timezone}.
             </p>
           )}
         </div>
