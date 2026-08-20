@@ -212,6 +212,34 @@ class TestProfileService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, self.profile_dto)
 
+    async def test_update_profile_empty_lists_clear_sections(self):
+        """A section present but empty is a deletion, and must reach the command service."""
+        mock_user_entity = MagicMock()
+        mock_user_entity.user_id = 1
+        self.users_repository.get_user_by_user_id.return_value = mock_user_entity
+        self.query_service.get_profile.return_value = self.profile_dto
+
+        update_dto = ProfileCreateDto(education=[], work_history=[])
+
+        await self.service.update_profile(
+            session=self.session,
+            user_context=self.user_context,
+            profile=update_dto,
+        )
+
+        self.command_service.update_education.assert_awaited_once_with(
+            session=self.session,
+            latest_profile=update_dto,
+            user_id=1,
+        )
+        self.command_service.update_work_history.assert_awaited_once_with(
+            session=self.session,
+            latest_profile=update_dto,
+            user_id=1,
+        )
+        self.command_service.update_users.assert_not_awaited()
+        self.session.commit.assert_awaited_once()
+
 
 if __name__ == "__main__":
     unittest.main()

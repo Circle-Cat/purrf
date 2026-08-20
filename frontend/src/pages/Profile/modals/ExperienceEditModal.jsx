@@ -4,6 +4,7 @@ import { formatDateFromParts } from "@/pages/Profile/utils";
 import { validateExperienceRow } from "@/pages/Profile/profileValidation";
 import { Button } from "@/components/ui/button";
 import ExperienceFormItem from "@/pages/Profile/components/ExperienceFormItem";
+import ClearAllConfirmDialog from "@/pages/Profile/components/ClearAllConfirmDialog";
 
 /**
  * Modal for editing the experience list.
@@ -18,6 +19,10 @@ const ExperienceEditModal = ({ isOpen, onClose, initialData, onSave }) => {
   const [list, setList] = useState([]);
   const [errors, setErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isConfirmingClear, setIsConfirmingClear] = useState(false);
+  // Snapshot taken when the modal opens, so a successful save refreshing
+  // `initialData` cannot change what the user started from.
+  const [hadEntries, setHadEntries] = useState(false);
 
   // Initialize state when modal opens
   useEffect(() => {
@@ -25,6 +30,8 @@ const ExperienceEditModal = ({ isOpen, onClose, initialData, onSave }) => {
       setList(structuredClone(initialData));
       setErrors({});
       setIsSaving(false);
+      setIsConfirmingClear(false);
+      setHadEntries(initialData.length > 0);
     }
   }, [isOpen, initialData]);
 
@@ -125,10 +132,24 @@ const ExperienceEditModal = ({ isOpen, onClose, initialData, onSave }) => {
   };
 
   /**
-   * Submit form after validation.
+   * Validate, then either save or ask the user to confirm first.
+   *
+   * Emptying the whole section is confirmed because it is a deletion of
+   * everything stored. Removing some of the rows is not.
    */
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!validate()) return;
+    if (list.length === 0 && hadEntries) {
+      setIsConfirmingClear(true);
+      return;
+    }
+    persist();
+  };
+
+  /**
+   * Send the current list to the server.
+   */
+  const persist = async () => {
     setIsSaving(true);
     try {
       const payload = {
@@ -148,6 +169,7 @@ const ExperienceEditModal = ({ isOpen, onClose, initialData, onSave }) => {
     } catch (e) {
       console.error("Save failed", e);
       toast.error("Couldn't save your changes. Please try again.");
+      setIsConfirmingClear(false);
     } finally {
       setIsSaving(false);
     }
@@ -188,6 +210,14 @@ const ExperienceEditModal = ({ isOpen, onClose, initialData, onSave }) => {
           </Button>
         </div>
       </div>
+
+      <ClearAllConfirmDialog
+        open={isConfirmingClear}
+        sectionName="work experience"
+        isSaving={isSaving}
+        onConfirm={persist}
+        onCancel={() => setIsConfirmingClear(false)}
+      />
     </div>
   );
 };
