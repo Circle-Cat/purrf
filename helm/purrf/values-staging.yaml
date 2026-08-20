@@ -8,7 +8,7 @@ image:
   # Kept on the current Terraform-built image (image path unchanged for now);
   # switching to the CI/GHCR image is a follow-up.
   repository: ghcr.io/circle-cat/purrf
-  tag: "4c9b6831b98c4d0ba09d60ababd299f296d25aac"
+  tag: "4893cb4cf044f71b4d9ff01391d34adb6ad8d9ba"
 envFrom:
   - secretRef:
       name: purrf-staging
@@ -20,7 +20,6 @@ ingress:
       paths:
         - path: /
           pathType: Prefix
-
 # Run `alembic upgrade head` as an ArgoCD PreSync hook before every staging
 # deploy, so a release carrying a schema change no longer needs a manual
 # `bazel run //tools/migrate_db`. A failed migration fails the sync and leaves
