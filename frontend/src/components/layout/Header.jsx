@@ -91,7 +91,11 @@ const Header = ({ onToggleSidebar, sidebarCollapsed }) => {
               variant="ghost"
               size="icon"
               aria-label="User menu"
-              className="overflow-hidden rounded-full bg-primary text-base font-bold text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground"
+              // The outline keeps a picture on a light background from
+              // dissolving into the header. `border-border` is named
+              // explicitly because an unqualified `border` inherits
+              // `currentColor`, which here is near-white.
+              className="overflow-hidden rounded-full border border-border bg-primary text-base font-bold text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground"
             >
               {pictureUrl ? (
                 <img
