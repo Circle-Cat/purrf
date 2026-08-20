@@ -8,7 +8,7 @@ image:
   # Kept on the current Terraform-built image (image path unchanged for now);
   # switching to the CI/GHCR image is a follow-up.
   repository: ghcr.io/circle-cat/purrf
-  tag: "359d6ed9196739657e45cf1d804a02758bf6a657"
+  tag: "4c9b6831b98c4d0ba09d60ababd299f296d25aac"
 envFrom:
   - secretRef:
       name: purrf-staging
