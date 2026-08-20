@@ -459,6 +459,23 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
             )
         self.auth0.link_identity.assert_not_called()
 
+    async def test_verify_releases_an_unproven_claim_held_by_another_account(self):
+        """Proof beats reservation: an address reserved by an unconfirmed row on
+        some other account is released to the caller who just proved it.
+
+        uq_user_emails_email is global, so the stale row has to go before the
+        confirmed one can be written, and both must land in this one
+        transaction -- the service commits exactly once at the end.
+        """
+        await self.service.verify(
+            self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
+        )
+
+        self.user_emails.delete_unconfirmed_on_other_users.assert_awaited_once_with(
+            self.session, _TARGET_EMAIL, _USER_ID
+        )
+        self.session.commit.assert_awaited_once()
+
     async def test_verify_promotes_existing_unconfirmed_row_without_new_identity(self):
         existing_email = UserEmailsEntity(
             user_id=_USER_ID, email=_TARGET_EMAIL, otp_confirmed=False, is_primary=False
