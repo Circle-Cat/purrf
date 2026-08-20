@@ -287,6 +287,23 @@ class TestProfileCommandService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result.work_history), 0)
         self.assertIsNotNone(result.updated_timestamp)
 
+    async def test_update_education_already_empty_skips_upsert(self):
+        """Saving an empty section that is already empty writes nothing."""
+        user_id = 1
+        existing_entity = ExperienceEntity(user_id=user_id)
+        existing_entity.education = []
+        self.experience_repository.get_experience_by_user_id.return_value = (
+            existing_entity
+        )
+
+        profile_dto = self._create_profile_dto(education=[])
+
+        result = await self.service.update_education(self.session, profile_dto, user_id)
+
+        self.experience_repository.upsert_experience.assert_not_awaited()
+        self.assertIsNone(result.updated_timestamp)
+        self.assertEqual(result, existing_entity)
+
 
 if __name__ == "__main__":
     unittest.main()
