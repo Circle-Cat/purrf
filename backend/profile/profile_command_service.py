@@ -125,10 +125,12 @@ class ProfileCommandService:
             - Compares the incoming data with the current stored data
               while ignoring order.
             - If the content is identical, the database update is skipped to
-              avoid unnecessary writes.
+              avoid unnecessary writes. Two empty lists count as identical, so
+              clearing an already-empty section writes nothing.
         - If no ExperienceEntity exists for the user, a new one is created.
         - Otherwise, the specified experience field is fully replaced with the
-          incoming data (full overwrite semantics).
+          incoming data (full overwrite semantics). An empty list therefore
+          clears the section.
 
         Args:
             session: Active SQLAlchemy async session.
@@ -149,7 +151,7 @@ class ProfileCommandService:
 
         new_data_dicts = [item.to_db_dict() for item in data]
 
-        if experience_entity and data and not has_new_items:
+        if experience_entity and not has_new_items:
             current_data_dicts = getattr(experience_entity, field_name) or []
 
             if len(current_data_dicts) == len(new_data_dicts):
