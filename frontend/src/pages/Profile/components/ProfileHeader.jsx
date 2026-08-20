@@ -1,4 +1,3 @@
-import { formatTimezoneLabel } from "@/utils/dateTime";
 import { Button } from "@/components/ui/button";
 
 const ProfileHeader = ({ info, onEditClick }) => {
@@ -11,7 +10,7 @@ const ProfileHeader = ({ info, onEditClick }) => {
           {` ${info.lastName}`}
           {info.timezone && (
             <span className="ml-3 whitespace-nowrap rounded-md bg-muted px-3 py-1 text-[0.35em] font-medium text-muted-foreground">
-              {formatTimezoneLabel(info.timezone)}
+              {info.timezone}
             </span>
           )}
         </span>
