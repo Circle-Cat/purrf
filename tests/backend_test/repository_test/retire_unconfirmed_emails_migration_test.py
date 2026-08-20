@@ -19,22 +19,43 @@ _MIGRATION_PATH = Path(
 )
 
 
-def _seed_sql() -> str:
-    """The migration's seeding statement, read out of the migration itself.
+def _sql(name: str) -> str:
+    """One named SQL constant, read out of the migration itself.
 
     Reading the constant rather than restating it here means the SQL these
-    tests exercise is byte-for-byte the SQL that ships.
+    tests exercise is byte-for-byte the SQL that ships. `{_NAME}` placeholders
+    are resolved from the migration's own constants, the same substitution its
+    f-strings perform at import.
     """
     source = _MIGRATION_PATH.read_text(encoding="utf-8")
-    match = re.search(r'SEED_CONFIRMED_EMAIL_SQL = """(.*?)"""', source, re.DOTALL)
+    match = re.search(name + r' = f?"""(.*?)"""', source, re.DOTALL)
     if match is None:
-        raise AssertionError(f"SEED_CONFIRMED_EMAIL_SQL not found in {_MIGRATION_PATH}")
-    return match.group(1)
+        raise AssertionError(f"{name} not found in {_MIGRATION_PATH}")
+    statement = match.group(1)
+    for placeholder in set(re.findall(r"\{([A-Za-z_]+)\}", statement)):
+        statement = statement.replace("{" + placeholder + "}", _sql(placeholder))
+    return statement
 
 
 def _seed_sql_statement():
     """The migration's seeding statement, ready to execute."""
-    return text(_seed_sql())
+    return text(_sql("SEED_CONFIRMED_EMAIL_SQL"))
+
+
+def _upgrade_statements() -> list:
+    """Every statement upgrade() runs, in the order UPGRADE_SQL lists them.
+
+    Taking both the names and their order from the migration means a statement
+    added, removed or reordered there changes what these tests run.
+    """
+    source = _MIGRATION_PATH.read_text(encoding="utf-8")
+    match = re.search(r"UPGRADE_SQL = \((.*?)\)", source, re.DOTALL)
+    if match is None:
+        raise AssertionError(f"UPGRADE_SQL not found in {_MIGRATION_PATH}")
+    names = re.findall(r"([A-Z_]+)\s*,?", match.group(1))
+    if not names:
+        raise AssertionError(f"UPGRADE_SQL in {_MIGRATION_PATH} lists no statements")
+    return [text(_sql(name)) for name in names]
 
 
 def _make_user() -> UsersEntity:
@@ -220,6 +241,103 @@ class RetireUnconfirmedEmailsMigrationTest(BaseRepositoryTestLib):
         await self.session.execute(_seed_sql_statement())
 
         self.assertEqual([], await self._emails_of(user.user_id))
+
+    async def _run_upgrade(self) -> None:
+        """Run every statement upgrade() runs, in order."""
+        for statement in _upgrade_statements():
+            await self.session.execute(statement)
+
+    async def test_unconfirmed_alternative_survives_and_claim_is_still_seeded(self):
+        # A backup address added under the retired add-then-verify-later flow
+        # is the user's own record of a mailbox they use. It stays, unproven,
+        # and the account still gets its claim address as a confirmed primary.
+        user = _make_user()
+        await self.insert_entities([user])
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=user.user_id,
+                email="legacy-backup@example.com",
+                otp_confirmed=False,
+                is_primary=False,
+            ),
+            UserIdentitiesEntity(
+                user_id=user.user_id,
+                subject_identifier=f"google-oauth2|keeps-{user.user_id}",
+                email_claim="claim@circlecat.org",
+            ),
+        ])
+
+        await self._run_upgrade()
+
+        rows = await self._emails_of(user.user_id)
+        by_email = {row.email: row for row in rows}
+        self.assertEqual(
+            {"legacy-backup@example.com", "claim@circlecat.org"}, set(by_email)
+        )
+        backup = by_email["legacy-backup@example.com"]
+        self.assertFalse(backup.otp_confirmed)
+        self.assertFalse(backup.is_primary)
+        claim = by_email["claim@circlecat.org"]
+        self.assertTrue(claim.otp_confirmed)
+        self.assertTrue(claim.is_primary)
+
+    async def test_claim_already_present_unproven_is_promoted_in_place(self):
+        # Promoting the existing row rather than deleting and re-inserting it
+        # keeps added_at, the date the user actually recorded the address.
+        user = _make_user()
+        await self.insert_entities([user])
+        recorded_at = datetime.now(timezone.utc) - timedelta(days=400)
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=user.user_id,
+                email="claim@circlecat.org",
+                otp_confirmed=False,
+                is_primary=False,
+                added_at=recorded_at,
+            ),
+            UserIdentitiesEntity(
+                user_id=user.user_id,
+                subject_identifier=f"google-oauth2|promote-{user.user_id}",
+                email_claim="claim@circlecat.org",
+            ),
+        ])
+
+        await self._run_upgrade()
+
+        rows = await self._emails_of(user.user_id)
+        self.assertEqual(1, len(rows))
+        self.assertTrue(rows[0].otp_confirmed)
+        self.assertTrue(rows[0].is_primary)
+        self.assertEqual(recorded_at, rows[0].added_at)
+
+    async def test_unproven_row_on_another_account_is_released_to_the_claimant(self):
+        # user_emails.email is globally unique, so an unproven row held by a
+        # different account would make the claimant's seed a no-op and leave
+        # them with no confirmed email -- back behind the hard wall. Proof
+        # beats reservation: the unproven row goes.
+        squatter = _make_user()
+        claimant = _make_user()
+        await self.insert_entities([squatter, claimant])
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=squatter.user_id,
+                email="contested@circlecat.org",
+                otp_confirmed=False,
+                is_primary=False,
+            ),
+            UserIdentitiesEntity(
+                user_id=claimant.user_id,
+                subject_identifier=f"google-oauth2|claims-{claimant.user_id}",
+                email_claim="contested@circlecat.org",
+            ),
+        ])
+
+        await self._run_upgrade()
+
+        self.assertEqual([], await self._emails_of(squatter.user_id))
+        rows = await self._emails_of(claimant.user_id)
+        self.assertEqual(["contested@circlecat.org"], [row.email for row in rows])
+        self.assertTrue(rows[0].otp_confirmed)
 
 
 if __name__ == "__main__":
