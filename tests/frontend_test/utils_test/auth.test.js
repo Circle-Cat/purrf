@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   getCookie,
   extractCloudflareUserName,
+  extractCloudflareUserPicture,
   performGlobalLogout,
 } from "@/utils/auth";
 
@@ -10,12 +11,17 @@ vi.stubEnv("VITE_AUTH0_CLIENT_ID", "MOCK_CLIENT_ID");
 vi.stubEnv("VITE_CF_ACCESS_TENANT_DOMAIN", "tenant.cloudflareaccess.com");
 
 /**
- * Helper function: Mock JWT generation (URL-safe Base64)
+ * Helper function: Mock JWT generation (URL-safe Base64).
+ *
+ * Encodes the payload as UTF-8 bytes before base64, the way a real issuer
+ * does -- `btoa(JSON.stringify(...))` throws on any non-ASCII character.
  */
 const createMockJwt = (payload) => {
   const header = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"; // {"alg":"HS256","typ":"JWT"}
   const signature = "signature";
-  const payloadBase64 = btoa(JSON.stringify(payload))
+  const bytes = new TextEncoder().encode(JSON.stringify(payload));
+  const binary = Array.from(bytes, (b) => String.fromCharCode(b)).join("");
+  const payloadBase64 = btoa(binary)
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=/g, "");
@@ -182,6 +188,65 @@ describe("auth utils", () => {
       const signature = "signature";
       const jwt = `${header}.${invalidPayload}.${signature}`;
       expect(extractCloudflareUserName(jwt)).toBeNull();
+    });
+  });
+
+  describe("getJwtPayload base64url handling", () => {
+    it("decodes a payload whose encoding uses the base64url alphabet", () => {
+      // This payload encodes to a "/" in standard base64, which createMockJwt
+      // turns into "_". A bare atob rejects it.
+      const jwt = createMockJwt({ custom: { picture: "https://x/?s=96" } });
+      expect(extractCloudflareUserPicture(jwt)).toBe("https://x/?s=96");
+    });
+
+    it("decodes a payload carrying non-ASCII characters", () => {
+      const jwt = createMockJwt({ custom: { upn: "\u5f20\u4e09" } });
+      expect(extractCloudflareUserName(jwt)).toBe("\u5f20\u4e09");
+    });
+  });
+
+  describe("extractCloudflareUserPicture", () => {
+    it("returns the picture from custom", () => {
+      const jwt = createMockJwt({
+        custom: { picture: "https://lh3.googleusercontent.com/a/abc=s96-c" },
+      });
+      expect(extractCloudflareUserPicture(jwt)).toBe(
+        "https://lh3.googleusercontent.com/a/abc=s96-c",
+      );
+    });
+
+    it("falls back to a top-level picture claim", () => {
+      const jwt = createMockJwt({ picture: "https://example.com/me.png" });
+      expect(extractCloudflareUserPicture(jwt)).toBe(
+        "https://example.com/me.png",
+      );
+    });
+
+    it("prefers custom.picture over a top-level one", () => {
+      const jwt = createMockJwt({
+        custom: { picture: "https://example.com/custom.png" },
+        picture: "https://example.com/top.png",
+      });
+      expect(extractCloudflareUserPicture(jwt)).toBe(
+        "https://example.com/custom.png",
+      );
+    });
+
+    it("returns null when the claim is absent", () => {
+      const jwt = createMockJwt({ custom: { email: "a@b.com" } });
+      expect(extractCloudflareUserPicture(jwt)).toBeNull();
+    });
+
+    it("returns null for a missing or malformed token", () => {
+      expect(extractCloudflareUserPicture(null)).toBeNull();
+      expect(extractCloudflareUserPicture("invalid.jwt")).toBeNull();
+    });
+
+    it("ignores a picture claim that is not an http(s) URL", () => {
+      const jwt = createMockJwt({
+        custom: { picture: "javascript:alert(1)" },
+      });
+      expect(extractCloudflareUserPicture(jwt)).toBeNull();
     });
   });
 

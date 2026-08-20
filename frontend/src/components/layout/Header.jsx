@@ -8,6 +8,7 @@ import logo from "@/assets/logo.png";
 import {
   getCookie,
   extractCloudflareUserName,
+  extractCloudflareUserPicture,
   performGlobalLogout,
 } from "@/utils/auth";
 import {
@@ -31,6 +32,7 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
 const Header = ({ onToggleSidebar, sidebarCollapsed }) => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [char, setChar] = useState("");
+  const [pictureUrl, setPictureUrl] = useState(null);
   const navigate = useNavigate();
 
   const goToProfile = () => {
@@ -56,6 +58,7 @@ const Header = ({ onToggleSidebar, sidebarCollapsed }) => {
       if (extractedName && extractedName.length > 0) {
         setChar(extractedName.charAt(0).toUpperCase());
       }
+      setPictureUrl(extractCloudflareUserPicture(cloudflareJwtCookie));
     }
   }, []);
 
@@ -88,9 +91,23 @@ const Header = ({ onToggleSidebar, sidebarCollapsed }) => {
               variant="ghost"
               size="icon"
               aria-label="User menu"
-              className="rounded-full bg-primary text-base font-bold text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground"
+              className="overflow-hidden rounded-full bg-primary text-base font-bold text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground"
             >
-              <span>{char}</span>
+              {pictureUrl ? (
+                <img
+                  data-testid="user-avatar"
+                  src={pictureUrl}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  // The URL comes from an identity-provider claim and those
+                  // rotate, so a load failure drops back to the initial
+                  // rather than leaving an empty circle.
+                  onError={() => setPictureUrl(null)}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <span>{char}</span>
+              )}
             </Button>
           </Trigger>
           <Content
