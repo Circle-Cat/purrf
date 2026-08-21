@@ -152,3 +152,12 @@ py_library(
         "@pypi//fastapi",
     ],
 )
+
+py_library(
+    name = "leave_workdays",
+    srcs = ["leave_workdays.py"],
+    deps = [
+        ":leave_policy",
+        "//backend/common:leave_enums",
+    ],
+)
