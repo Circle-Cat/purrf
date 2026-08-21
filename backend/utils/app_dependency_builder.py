@@ -390,11 +390,28 @@ class AppDependencyBuilder:
             microsoft_service=self.microsoft_service,
             retry_utils=self.retry_utils,
         )
+        # Hoisted above the employment sync, which records a level change on
+        # the ledger and so needs both a session and a way to resolve an ldap to
+        # an account. Database() validates the URL and builds the engine;
+        # connections are opened lazily, so its position here costs nothing, and
+        # the repositories are stateless.
+        self.database = Database(echo=False)
+        self.users_repository = UsersRepository()
+        self.user_emails_repository = UserEmailsRepository()
+        self.leave_ledger_repository = LeaveLedgerRepository()
+        self.leave_participant_resolver = LeaveParticipantResolver(
+            logger=self.logger,
+            user_emails_repository=self.user_emails_repository,
+            users_repository=self.users_repository,
+        )
         self.employment_sync_service = EmploymentSyncService(
             logger=self.logger,
             redis_client=self.redis_client,
             microsoft_service=self.microsoft_service,
             retry_utils=self.retry_utils,
+            database=self.database,
+            leave_ledger_repository=self.leave_ledger_repository,
+            participant_resolver=self.leave_participant_resolver,
         )
         self.microsoft_chat_history_sync_service = MicrosoftChatHistorySyncService(
             logger=self.logger,
@@ -509,9 +526,7 @@ class AppDependencyBuilder:
             summary_service=self.summary_service,
             launchdarkly_service=self.launchdarkly_service,
         )
-        self.users_repository = UsersRepository()
         self.user_identities_repository = UserIdentitiesRepository()
-        self.user_emails_repository = UserEmailsRepository()
         self.user_permissions_repository = UserPermissionsRepository()
         self.training_repository = TrainingRepository()
         # Built here, next to its repository, because both ApplicationService
@@ -520,7 +535,6 @@ class AppDependencyBuilder:
             logger=self.logger,
             training_repository=self.training_repository,
         )
-        self.database = Database(echo=False)
         self.user_identity_service = UserIdentityService(
             logger=self.logger,
             users_repository=self.users_repository,
@@ -884,7 +898,6 @@ class AppDependencyBuilder:
             self.leave_calendar_service,
             self.database,
         )
-        self.leave_ledger_repository = LeaveLedgerRepository()
         self.leave_adjustment_service = LeaveAdjustmentService(
             logger=self.logger,
             leave_ledger_repository=self.leave_ledger_repository,
@@ -893,11 +906,6 @@ class AppDependencyBuilder:
         self.leave_admin_controller = LeaveAdminController(
             self.leave_adjustment_service,
             self.database,
-        )
-        self.leave_participant_resolver = LeaveParticipantResolver(
-            logger=self.logger,
-            user_emails_repository=self.user_emails_repository,
-            users_repository=self.users_repository,
         )
         self.leave_engine_service = LeaveEngineService(
             logger=self.logger,

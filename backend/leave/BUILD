@@ -21,7 +21,12 @@ py_library(
     deps = [
         ":coverage_report",
         ":employment_profile",
+        ":leave_clock",
+        ":leave_participants",
         "//backend/common:constants",
+        "//backend/common:leave_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
     ],
 )
 

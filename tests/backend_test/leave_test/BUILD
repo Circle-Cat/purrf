@@ -20,7 +20,9 @@ py_test(
     name = "employment_sync_service_test",
     srcs = ["employment_sync_service_test.py"],
     deps = [
+        "//backend/common:leave_enums",
         "//backend/leave:employment_sync_service",
+        "//backend/leave:leave_participants",
     ],
 )
 
