@@ -33,6 +33,53 @@ def _http_error(status: int) -> HttpError:
     return HttpError(resp=resp, content=b"{}")
 
 
+class _FakeBatch:
+    """Stand-in for googleapiclient's BatchHttpRequest.
+
+    Replays a canned outcome per request id through the callback. Deliberately
+    in REVERSE insertion order: Gmail documents that a batch's calls may run in
+    any order, so a test that only passes when the client re-sorts its results
+    is the one worth having.
+    """
+
+    def __init__(self, callback, outcomes, on_execute=None):
+        self._callback = callback
+        self._outcomes = outcomes
+        self._on_execute = on_execute
+        self.request_ids = []
+
+    def add(self, request, request_id):
+        self.request_ids.append(request_id)
+
+    def execute(self):
+        if self._on_execute is not None:
+            raise self._on_execute
+        for request_id in reversed(self.request_ids):
+            outcome = self._outcomes[request_id]
+            if isinstance(outcome, Exception):
+                self._callback(request_id, None, outcome)
+            else:
+                self._callback(request_id, outcome, None)
+
+
+def _message(message_id: str, sender: str = "alice@example.com") -> dict:
+    """A minimal Gmail Message resource, enough for _parse_message."""
+    return {
+        "id": message_id,
+        "threadId": "THREAD",
+        "snippet": message_id,
+        "internalDate": "1700000000000",
+        "payload": {
+            "mimeType": "text/plain",
+            "headers": [
+                {"name": "From", "value": sender},
+                {"name": "Subject", "value": f"Subject {message_id}"},
+            ],
+            "body": {"data": _b64(f"body {message_id}")},
+        },
+    }
+
+
 def _b64(text: str) -> str:
     """URL-safe base64 encode a body part the way the Gmail API returns it."""
     return base64.urlsafe_b64encode(text.encode("utf-8")).decode("ascii")
@@ -661,6 +708,115 @@ class TestGmailClient(TestCase):
         )
         with self.assertRaises(RateLimitedError):
             self.client.list_recent_message_thread_ids(2)
+
+    # ---- get_messages (batched) ----------------------------------------
+
+    def _stub_batches(self, outcomes, on_execute=None):
+        """Hand back a fresh _FakeBatch per new_batch_http_request call."""
+        self.batches = []
+
+        def _new_batch(callback):
+            batch = _FakeBatch(callback, outcomes, on_execute)
+            self.batches.append(batch)
+            return batch
+
+        self.mock_service.new_batch_http_request.side_effect = _new_batch
+
+    def test_get_messages_empty_input_never_touches_gmail(self):
+        self._stub_batches({})
+        self.assertEqual(self.client.get_messages([]), [])
+        self.mock_service.new_batch_http_request.assert_not_called()
+
+    def test_get_messages_returns_input_order_not_batch_order(self):
+        # The fake replays callbacks in reverse, mirroring Gmail's "any order".
+        ids = ["g1", "g2", "g3"]
+        self._stub_batches({i: _message(i) for i in ids})
+
+        messages = self.client.get_messages(ids)
+
+        self.assertEqual([m["gmail_message_id"] for m in messages], ids)
+
+    def test_get_messages_parses_each_message(self):
+        self._stub_batches({"g1": _message("g1", "cand@example.com")})
+
+        message = self.client.get_messages(["g1"])[0]
+
+        self.assertEqual(message["gmail_message_id"], "g1")
+        self.assertEqual(message["gmail_thread_id"], "THREAD")
+        self.assertEqual(message["from_address"], "cand@example.com")
+        self.assertEqual(message["subject"], "Subject g1")
+        self.assertEqual(message["plain"], "body g1")
+
+    def test_get_messages_sends_one_request_for_the_whole_batch(self):
+        ids = [f"g{n}" for n in range(10)]
+        self._stub_batches({i: _message(i) for i in ids})
+
+        self.client.get_messages(ids)
+
+        # The point of the change: ten messages, one HTTP request.
+        self.assertEqual(self.mock_service.new_batch_http_request.call_count, 1)
+        self.assertEqual(self.batches[0].request_ids, ids)
+
+    def test_get_messages_chunks_at_fifty(self):
+        # 50 is Google's recommended ceiling; past it, batches are what trips
+        # rate limiting.
+        ids = [f"g{n}" for n in range(51)]
+        self._stub_batches({i: _message(i) for i in ids})
+
+        messages = self.client.get_messages(ids)
+
+        self.assertEqual(self.mock_service.new_batch_http_request.call_count, 2)
+        self.assertEqual(len(self.batches[0].request_ids), 50)
+        self.assertEqual(len(self.batches[1].request_ids), 1)
+        self.assertEqual([m["gmail_message_id"] for m in messages], ids)
+
+    def test_get_messages_requests_full_format_per_id(self):
+        self._stub_batches({"g1": _message("g1")})
+
+        self.client.get_messages(["g1"])
+
+        kwargs = self.mock_service.users().messages().get.call_args.kwargs
+        self.assertEqual(kwargs["id"], "g1")
+        self.assertEqual(kwargs["format"], "full")
+
+    def test_get_messages_inner_rate_limit_raises_rate_limited(self):
+        # An inner call's error never reaches _execute — it arrives through the
+        # callback — so the 429 translation has to be applied there too, or the
+        # caller loses its retry.
+        self._stub_batches({"g1": _message("g1"), "g2": _http_error(429)})
+
+        with self.assertRaises(RateLimitedError):
+            self.client.get_messages(["g1", "g2"])
+
+    def test_get_messages_inner_not_found_raises_runtime_error(self):
+        # A message deleted between listing and fetching: same outcome as the
+        # single-message path, so sync_thread's behaviour is unchanged.
+        self._stub_batches({"g1": _http_error(404)})
+
+        with self.assertRaises(RuntimeError) as caught:
+            self.client.get_messages(["g1"])
+        self.assertNotIsInstance(caught.exception, RateLimitedError)
+
+    def test_get_messages_batch_level_rate_limit_raises_rate_limited(self):
+        # The batch request itself being throttled, as opposed to one of its
+        # inner calls.
+        self._stub_batches({}, on_execute=_http_error(429))
+
+        with self.assertRaises(RateLimitedError):
+            self.client.get_messages(["g1"])
+
+    def test_get_messages_stops_at_the_failing_chunk(self):
+        ids = [f"g{n}" for n in range(51)]
+        outcomes = {i: _message(i) for i in ids}
+        outcomes["g0"] = _http_error(500)
+        self._stub_batches(outcomes)
+
+        with self.assertRaises(RuntimeError):
+            self.client.get_messages(ids)
+
+        # The second chunk is never sent: no point paying for it once the
+        # caller is going to see a failure anyway.
+        self.assertEqual(self.mock_service.new_batch_http_request.call_count, 1)
 
 
 if __name__ == "__main__":
