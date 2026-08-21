@@ -2,6 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import ApplicantCard from "@/pages/Recruiting/board/ApplicantCard";
 
+vi.mock("@/utils/dateTime", async (importOriginal) => ({
+  ...(await importOriginal()),
+  resolveViewerTimezone: () => "Asia/Shanghai",
+}));
+
 const baseCard = {
   id: 1,
   applicantName: "Ada Lovelace",
@@ -12,6 +17,15 @@ const baseCard = {
   appliedAt: "2026-06-01T00:00:00Z",
   reviewerName: null,
 };
+
+describe("ApplicantCard applied date", () => {
+  it("shows the applied date with the viewer's timezone name", () => {
+    render(
+      <ApplicantCard card={baseCard} showStatus={false} onOpen={vi.fn()} />,
+    );
+    expect(screen.getByText("2026-06-01 Asia/Shanghai")).toBeInTheDocument();
+  });
+});
 
 describe("ApplicantCard blacklist tag", () => {
   it("shows a red Blacklisted badge when the applicant is still currently blocked", () => {

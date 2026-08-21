@@ -19,6 +19,19 @@ export function formatInTz(iso, tz, pattern) {
 }
 
 /**
+ * Format a UTC instant as "yyyy-MM-dd {tz}" using the given IANA timezone.
+ * The timezone name is printed verbatim without converting it to a DST abbreviation.
+ *
+ * @param {string|null|undefined} iso - UTC ISO datetime string.
+ * @param {string|null|undefined} tz - IANA timezone string (e.g. "America/New_York").
+ * @returns {string|null} e.g. "2024-03-10 America/New_York", or null if input is missing.
+ */
+export function formatDateWithZone(iso, tz) {
+  if (!iso || !tz) return null;
+  return `${formatInTz(iso, tz, "yyyy-MM-dd")} ${tz}`;
+}
+
+/**
  * Format a UTC instant as "yyyy-MM-dd HH:mm {tz}" using the given IANA timezone.
  * The timezone name is printed verbatim without converting it to a DST abbreviation.
  *

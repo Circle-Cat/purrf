@@ -14,6 +14,10 @@ import * as api from "@/api/recruitingApi";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 vi.mock("@/api/recruitingApi");
+vi.mock("@/utils/dateTime", async (importOriginal) => ({
+  ...(await importOriginal()),
+  resolveViewerTimezone: () => "Asia/Shanghai",
+}));
 // Bazel-sandbox module resolution: `vi.mock("sonner", factory)` doesn't
 // intercept the module the component resolved at import time. Spy on the
 // real toast instead, matching the rest of the recruiting page tests.
@@ -705,6 +709,46 @@ describe("PostingDetailPage", () => {
       screen.getByText(
         /Yanpei Wang rejected the review.*Fix the title.*sent back to draft/,
       ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows each activity entry's timestamp with the viewer's timezone name", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+      },
+    });
+    api.listApprovers.mockResolvedValue({ data: [] });
+    api.listJobActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "recruiting.job_created",
+          details: {},
+          actorId: 3,
+          actorName: "Yuanyuan Huang",
+          createdAt: "2026-07-11T09:19:32Z",
+        },
+      ],
+    });
+    authState.permissions = ["recruiting.job.write"];
+    renderAt(1);
+
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("tab", { name: "Review history" }),
+    );
+
+    expect(
+      await screen.findByText("2026-07-11 17:19 Asia/Shanghai"),
     ).toBeInTheDocument();
   });
 

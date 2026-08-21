@@ -5,6 +5,10 @@ import Blacklist from "@/pages/Recruiting/Blacklist";
 import * as api from "@/api/recruitingApi";
 
 vi.mock("@/api/recruitingApi");
+vi.mock("@/utils/dateTime", async (importOriginal) => ({
+  ...(await importOriginal()),
+  resolveViewerTimezone: () => "Asia/Shanghai",
+}));
 vi.spyOn(toast, "success").mockImplementation(() => {});
 vi.spyOn(toast, "error").mockImplementation(() => {});
 
@@ -27,6 +31,13 @@ describe("Blacklist page", () => {
     render(<Blacklist />);
     expect(await screen.findByText("Sam Rivera")).toBeInTheDocument();
     expect(api.listBlacklist).toHaveBeenCalledWith(undefined);
+  });
+
+  it("shows the blocked date with the viewer's timezone name", async () => {
+    render(<Blacklist />);
+    expect(
+      await screen.findByText("Blocked 2026-06-10 Asia/Shanghai"),
+    ).toBeInTheDocument();
   });
 
   it("shows the empty state when there are no blocked users", async () => {
