@@ -301,47 +301,141 @@ class TestCarryoverEffectiveDate(unittest.TestCase):
         self.assertEqual(carryover_effective_date(date(2027, 1, 2)), date(2026, 12, 31))
 
 
-@unittest.skip("No agreed answer yet -- the expected values below are a proposal.")
-class TestDecisionsStillOpen(unittest.TestCase):
-    def test_a_promotion_does_not_pay_out_the_months_before_it(self):
-        """An L1 promoted to L3 on 7/1. The target formula reads their level as
-        it is now and applies it to the whole year, so the next run hands over
-        40h covering six months at an entitlement they did not have. The design
-        says a promotion only affects accrual after it, which would be 1.54h.
+class TestALevelChange(unittest.TestCase):
+    """An L1 has no entitlement at all, so the only level move that changes any
+    number is the one across that line -- L2, L3 and L4 all sit at 80h. The
+    target formula reads the level as it is now and applies it to the whole
+    year, so without being told when the level changed it cannot tell a
+    promotion apart from a run that never happened: both look like "owed more
+    than granted"."""
 
-        Satisfying this needs an input the function does not currently take:
-        when the level changed. Azure keeps only the current value, so the
-        choice is between purrf recording level changes as it observes them and
-        accepting the windfall and writing it down.
-        """
-        self.assertEqual(
-            weekly_accrual_hours(
-                L3_ANNUAL_HOURS,
-                date(2026, 1, 1),
-                date(2026, 7, 8),
-                Decimal("0.00"),
-            ),
-            Decimal("1.54"),
+    def test_a_promotion_pays_from_the_promotion_and_not_before(self):
+        """An L1 promoted to L3 on 7/1, first run a week later. 40h would be
+        six months of an entitlement they did not hold."""
+        owed = weekly_accrual_hours(
+            L3_ANNUAL_HOURS,
+            date(2026, 1, 1),
+            date(2026, 7, 8),
+            Decimal("0.00"),
+            level_since=date(2026, 7, 1),
+            granted_before_level_since=Decimal("0.00"),
         )
 
-    def test_a_run_missed_over_new_year_still_settles_the_old_year(self):
-        """Catch-up stops at the year boundary. Last run 12/24 left the year at
-        78.46 of 80; the run on 1/5 computes against the new year's target and
-        owes nothing, so the last 1.54h is lost with nothing raised.
+        self.assertEqual(owed, Decimal("1.54"))
+        self.assertNotEqual(owed, Decimal("40.00"))
 
-        The annual job already runs on 1/1 and already writes rows dated to
-        12/31, so settling the old year there is the cheap fix -- but it has to
-        happen before the ceiling is applied, or the hours it just paid get cut.
-        """
+    def test_hours_earned_before_the_change_are_kept_not_recomputed(self):
+        """An L3 who has been accruing all year and changes level in July keeps
+        what the ledger already holds; only the weeks after the change are
+        computed at the new rate."""
+        owed = weekly_accrual_hours(
+            L3_ANNUAL_HOURS,
+            date(2026, 1, 1),
+            date(2026, 7, 8),
+            Decimal("40.00"),
+            level_since=date(2026, 7, 1),
+            granted_before_level_since=Decimal("40.00"),
+        )
+
+        self.assertEqual(owed, Decimal("1.54"))
+
+    def test_a_demotion_stops_accrual_without_clawing_anything_back(self):
+        """L3 down to L1 on 7/1. The target freezes at what was already
+        granted, so the run owes nothing -- and never a negative number."""
+        owed = weekly_accrual_hours(
+            L1_ANNUAL_HOURS,
+            date(2026, 1, 1),
+            date(2026, 9, 2),
+            Decimal("40.00"),
+            level_since=date(2026, 7, 1),
+            granted_before_level_since=Decimal("40.00"),
+        )
+
+        self.assertEqual(owed, Decimal("0.00"))
+
+    def test_someone_who_never_changed_level_is_unaffected(self):
+        """No level_change row means no arguments, and the arithmetic has to be
+        identical to the plain formula -- this is almost everybody."""
+        with_defaults = weekly_accrual_hours(
+            L3_ANNUAL_HOURS, date(2026, 1, 1), date(2026, 7, 8), Decimal("0.00")
+        )
+
+        self.assertEqual(with_defaults, Decimal("40.00"))
+
+    def test_a_change_observed_before_the_accrual_start_is_not_a_split(self):
+        """A change dated in a previous year, or before go-live, is simply how
+        this year begins: the whole year is already at that entitlement. The
+        hours passed for "before the change" are not part of this year and must
+        not be added on top of it -- doing so would pay them twice."""
+        owed = weekly_accrual_hours(
+            L3_ANNUAL_HOURS,
+            date(2026, 1, 1),
+            date(2026, 7, 8),
+            Decimal("0.00"),
+            level_since=date(2025, 11, 3),
+            granted_before_level_since=Decimal("60.00"),
+        )
+
+        self.assertEqual(owed, Decimal("40.00"))
+
+
+class TestSettlingTheOldYear(unittest.TestCase):
+    """Week 52 needs 364 elapsed days -- 31 December, or the 30th in a leap
+    year -- and the weekly job runs on one fixed weekday, so it reaches that
+    week about one year in seven. Every other year its last run stops at week
+    51 and the reset on 1 January puts the rest out of reach. The annual job
+    settles the closing year by running the same arithmetic at 31 December."""
+
+    def test_an_ordinary_year_is_short_until_it_is_settled(self):
+        """The last weekly run of 2026 lands on the 27th at the latest, which
+        is week 51 of 52: 78.46 of 80. Nothing raises."""
+        last_weekly_run = weekly_accrual_hours(
+            L3_ANNUAL_HOURS,
+            date(2026, 1, 1),
+            date(2026, 12, 27),
+            Decimal("76.92"),
+        )
+
+        self.assertEqual(last_weekly_run, Decimal("1.54"))
+        self.assertEqual(Decimal("76.92") + last_weekly_run, Decimal("78.46"))
+
+    def test_settling_at_december_31st_closes_the_gap(self):
+        settlement = weekly_accrual_hours(
+            L3_ANNUAL_HOURS,
+            date(2026, 1, 1),
+            date(2026, 12, 31),
+            Decimal("78.46"),
+        )
+
+        self.assertEqual(settlement, Decimal("1.54"))
+        self.assertEqual(Decimal("78.46") + settlement, Decimal("80.00"))
+
+    def test_settling_a_year_already_settled_owes_nothing(self):
+        """The annual job runs unconditionally rather than looking for a year
+        that was missed, so the ordinary case has to be a no-op."""
         self.assertEqual(
             weekly_accrual_hours(
                 L3_ANNUAL_HOURS,
                 date(2026, 1, 1),
                 date(2026, 12, 31),
-                Decimal("78.46"),
+                Decimal("80.00"),
             ),
-            Decimal("1.54"),
+            Decimal("0.00"),
         )
+
+    def test_a_settlement_respects_a_level_change_in_the_closing_year(self):
+        """Someone promoted in July closes the year on the weeks they held the
+        higher level, not on the whole year."""
+        settlement = weekly_accrual_hours(
+            L3_ANNUAL_HOURS,
+            date(2026, 1, 1),
+            date(2026, 12, 31),
+            Decimal("0.00"),
+            level_since=date(2026, 7, 1),
+            granted_before_level_since=Decimal("0.00"),
+        )
+
+        self.assertEqual(settlement, Decimal("40.00"))
 
 
 if __name__ == "__main__":

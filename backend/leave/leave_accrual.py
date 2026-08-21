@@ -104,6 +104,8 @@ def weekly_accrual_hours(
     start_date: date,
     today: date,
     granted_this_year: Decimal,
+    level_since: date | None = None,
+    granted_before_level_since: Decimal = NO_HOURS,
 ) -> Decimal:
     """What this run owes one person, or zero when it owes nothing.
 
@@ -126,18 +128,53 @@ def weekly_accrual_hours(
     something a scheduled job should do unattended.
 
     Args:
-        annual_hours: Their level's annual entitlement.
+        annual_hours: Their level's annual entitlement, as it stands now.
         start_date: From :func:`accrual_start_date`.
         today: The Beijing date this run is accruing for.
         granted_this_year: Sum of their ``weekly_accrual`` hours dated in the
             year of ``today``.
+        level_since: The date their annual entitlement last changed, if it
+            has. Defaults to None, which is almost everybody.
+        granted_before_level_since: Of ``granted_this_year``, the part dated
+            before ``level_since``. Ignored without one.
 
     Returns:
         Hours to write, or zero to write nothing.
     """
-    target = accrual_target_hours(annual_hours, weeks_passed(start_date, today))
+    target = accrual_target_hours(
+        annual_hours, weeks_passed(_proportion_from(start_date, level_since), today)
+    )
+    if level_since is not None and level_since > start_date:
+        target += granted_before_level_since
     owed = target - granted_this_year
     return owed if owed > NO_HOURS else NO_HOURS
+
+
+def _proportion_from(start_date: date, level_since: date | None) -> date:
+    """Where the proportion of the annual entitlement starts counting.
+
+    A level change splits the year: hours earned before it stand as the ledger
+    recorded them, and the weeks after it are counted at the new entitlement.
+    Without that split the formula reads the current level and applies it to
+    the whole year, which pays an L1 promoted in July for the six months they
+    spent on no entitlement at all -- it cannot otherwise tell a promotion
+    apart from a run that never happened, since both look like "owed more than
+    granted".
+
+    A change dated at or before the start of accrual is not a split: it is
+    simply how this year begins, and the whole year is already at that
+    entitlement.
+
+    Args:
+        start_date: From :func:`accrual_start_date`.
+        level_since: The date the entitlement changed, or None.
+
+    Returns:
+        The later of the two dates, or ``start_date`` when there was no change.
+    """
+    if level_since is None:
+        return start_date
+    return max(start_date, level_since)
 
 
 def carryover_forfeit_hours(balance: Decimal, cap: Decimal | None) -> Decimal:
