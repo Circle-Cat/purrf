@@ -138,6 +138,9 @@ from backend.leave.leave_adjustment_service import LeaveAdjustmentService
 from backend.leave.leave_admin_controller import LeaveAdminController
 from backend.leave.leave_engine_service import LeaveEngineService
 from backend.leave.leave_job_controller import LeaveJobController
+from backend.leave.leave_request_service import LeaveRequestService
+from backend.leave.leave_request_controller import LeaveRequestController
+from backend.repository.leave_request_repository import LeaveRequestRepository
 from backend.leave.leave_participants import LeaveParticipantResolver
 from backend.repository.leave_ledger_repository import LeaveLedgerRepository
 from backend.recruiting.notification_service import RecruitingNotificationService
@@ -918,6 +921,22 @@ class AppDependencyBuilder:
             self.leave_engine_service,
             self.database,
         )
+        self.leave_request_repository = LeaveRequestRepository()
+        self.leave_request_service = LeaveRequestService(
+            logger=self.logger,
+            leave_request_repository=self.leave_request_repository,
+            leave_ledger_repository=self.leave_ledger_repository,
+            leave_holiday_repository=self.leave_holiday_repository,
+            user_emails_repository=self.user_emails_repository,
+            users_repository=self.users_repository,
+            redis_client=self.redis_client,
+            retry_utils=self.retry_utils,
+            participant_resolver=self.leave_participant_resolver,
+        )
+        self.leave_request_controller = LeaveRequestController(
+            self.leave_request_service,
+            self.database,
+        )
         self.fast_app_factory = FastAppFactory(
             authentication_controller=self.authentication_controller,
             authentication_service=self.authentication_service,
@@ -941,6 +960,7 @@ class AppDependencyBuilder:
             recruiting_notification_controller=self.recruiting_notification_controller,
             leave_admin_controller=self.leave_admin_controller,
             leave_job_controller=self.leave_job_controller,
+            leave_request_controller=self.leave_request_controller,
             leave_calendar_controller=self.leave_calendar_controller,
             notification_delivery_controller=self.notification_delivery_controller,
             notification_publisher=self.notification_publisher_client,

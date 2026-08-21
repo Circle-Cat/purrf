@@ -35,6 +35,7 @@ class TestFastAppFactory(unittest.TestCase):
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
@@ -64,6 +65,7 @@ class TestFastAppFactory(unittest.TestCase):
         self.assertEqual(self.factory.leave_calendar_controller, self.mock_controller)
         self.assertEqual(self.factory.leave_admin_controller, self.mock_controller)
         self.assertEqual(self.factory.leave_job_controller, self.mock_controller)
+        self.assertEqual(self.factory.leave_request_controller, self.mock_controller)
 
     def test_create_app_returns_fastapi_instance(self):
         """Test that create_app returns a FastAPI application instance."""
@@ -116,6 +118,7 @@ class TestFastAppFactory(unittest.TestCase):
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
@@ -162,6 +165,7 @@ class TestFastAppFactory(unittest.TestCase):
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
@@ -211,6 +215,7 @@ class TestFastAppFactory(unittest.TestCase):
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=leave_admin,
             leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
@@ -257,6 +262,7 @@ class TestFastAppFactory(unittest.TestCase):
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
             leave_calendar_controller=leave_calendar,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
@@ -303,6 +309,7 @@ class TestFastAppFactory(unittest.TestCase):
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
@@ -351,6 +358,7 @@ class TestFastAppFactory(unittest.TestCase):
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
@@ -400,6 +408,7 @@ class TestFastAppFactory(unittest.TestCase):
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
@@ -448,6 +457,7 @@ class TestFastAppFactory(unittest.TestCase):
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
@@ -505,6 +515,7 @@ class TestFastAppFactory(unittest.TestCase):
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=delivery_controller,
             notification_publisher=MagicMock(),
@@ -563,6 +574,7 @@ class TestFastAppFactory(unittest.TestCase):
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
@@ -644,6 +656,7 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
             leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),

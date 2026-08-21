@@ -161,3 +161,33 @@ py_library(
         "//backend/common:leave_enums",
     ],
 )
+
+py_library(
+    name = "leave_request_service",
+    srcs = ["leave_request_service.py"],
+    deps = [
+        ":leave_clock",
+        ":leave_participants",
+        ":leave_workdays",
+        "//backend/common:constants",
+        "//backend/common:leave_enums",
+        "//backend/common:name_utils",
+        "//backend/dto",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "leave_request_controller",
+    srcs = ["leave_request_controller.py"],
+    deps = [
+        ":leave_request_service",
+        "//backend/common:api_endpoints",
+        "//backend/common:fast_api_response_wrapper",
+        "//backend/dto",
+        "//backend/utils:permission_decorators",
+        "@pypi//fastapi",
+    ],
+)

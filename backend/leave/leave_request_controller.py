@@ -1,0 +1,124 @@
+"""FastAPI routes for filing and deciding leave requests."""
+
+from backend.common.api_endpoints import (
+    LEAVE_REQUEST_DECISION_ENDPOINT,
+    LEAVE_REQUEST_WITHDRAW_ENDPOINT,
+    LEAVE_REQUESTS_ENDPOINT,
+    LEAVE_REQUESTS_PENDING_ENDPOINT,
+)
+from backend.common.fast_api_response_wrapper import api_response
+from backend.dto.leave_request_dto import LeaveDecisionDto, LeaveRequestSubmitDto
+from backend.dto.user_context_dto import UserContextDto
+from backend.utils.permission_decorators import authenticate
+from fastapi import APIRouter
+
+
+class LeaveRequestController:
+    """Requests: filing, taking back, and deciding.
+
+    Every route is open to any signed-in employee, and none carries a
+    permission. Leave is not an administered feature -- everybody files their
+    own and managers decide for their own reports -- so a permission here would
+    have to be granted to every employee, which is the same as not having one.
+    Who may act on which request is decided by ownership inside the service:
+    only the person who filed it may take it back, and only the approver it was
+    filed against may decide it.
+
+    The acting user always comes from the token, never from the body. A user id
+    in a payload would let anybody file leave against somebody else's balance.
+    """
+
+    def __init__(self, leave_request_service, database):
+        """
+        Args:
+            leave_request_service (LeaveRequestService): Request lifecycle.
+            database: Async session provider.
+        """
+        self.leave_request_service = leave_request_service
+        self.database = database
+        self.router = APIRouter(tags=["leave-requests"])
+
+        self.router.add_api_route(
+            LEAVE_REQUESTS_ENDPOINT,
+            endpoint=authenticate()(self.submit),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            LEAVE_REQUESTS_ENDPOINT,
+            endpoint=authenticate()(self.list_own),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            LEAVE_REQUESTS_PENDING_ENDPOINT,
+            endpoint=authenticate()(self.list_pending),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            LEAVE_REQUEST_WITHDRAW_ENDPOINT,
+            endpoint=authenticate()(self.withdraw),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            LEAVE_REQUEST_DECISION_ENDPOINT,
+            endpoint=authenticate()(self.decide),
+            methods=["POST"],
+            response_model=None,
+        )
+
+    async def submit(
+        self, payload: LeaveRequestSubmitDto, current_user: UserContextDto
+    ):
+        """File a leave or exchange request for the signed-in employee."""
+        async with self.database.session() as session:
+            request = await self.leave_request_service.submit(
+                session,
+                user_id=current_user.user_id,
+                request_type=payload.type,
+                start_date=payload.start_date,
+                end_date=payload.end_date,
+                start_time=payload.start_time,
+                end_time=payload.end_time,
+                reason=payload.reason,
+            )
+        return api_response(message="Leave request filed.", data=request)
+
+    async def list_own(self, current_user: UserContextDto):
+        """Return the signed-in employee's own requests, newest first."""
+        async with self.database.session() as session:
+            requests = await self.leave_request_service.list_own(
+                session, current_user.user_id
+            )
+        return api_response(message="Leave requests fetched.", data=requests)
+
+    async def list_pending(self, current_user: UserContextDto):
+        """Return the requests waiting on the signed-in employee to decide."""
+        async with self.database.session() as session:
+            requests = await self.leave_request_service.list_pending_for_approver(
+                session, current_user.user_id
+            )
+        return api_response(message="Pending leave requests fetched.", data=requests)
+
+    async def withdraw(self, request_id: int, current_user: UserContextDto):
+        """Take back one of the signed-in employee's undecided requests."""
+        async with self.database.session() as session:
+            request = await self.leave_request_service.withdraw(
+                session, request_id, current_user.user_id
+            )
+        return api_response(message="Leave request withdrawn.", data=request)
+
+    async def decide(
+        self,
+        request_id: int,
+        payload: LeaveDecisionDto,
+        current_user: UserContextDto,
+    ):
+        """Approve or reject a request filed against the signed-in employee."""
+        async with self.database.session() as session:
+            request = await self.leave_request_service.decide(
+                session, request_id, current_user.user_id, approve=payload.approve
+            )
+        return api_response(message="Leave request decided.", data=request)

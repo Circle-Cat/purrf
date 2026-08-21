@@ -146,6 +146,8 @@ py_library(
         "//backend/leave:leave_engine_service",
         "//backend/leave:leave_job_controller",
         "//backend/leave:leave_participants",
+        "//backend/leave:leave_request_controller",
+        "//backend/leave:leave_request_service",
         "//backend/mentorship",
         "//backend/notification_management:delivery_controller",
         "//backend/notification_management:delivery_service",
