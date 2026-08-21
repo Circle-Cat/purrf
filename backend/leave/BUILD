@@ -24,3 +24,56 @@ py_library(
         "//backend/common:constants",
     ],
 )
+
+py_library(
+    name = "leave_calendar_segments",
+    srcs = ["leave_calendar_segments.py"],
+    deps = [
+        "//backend/dto",
+        "//backend/entity:entities",
+    ],
+)
+
+py_library(
+    name = "leave_policy",
+    srcs = ["leave_policy.py"],
+    deps = [
+        ":employment_profile",
+        "//backend/dto",
+    ],
+)
+
+py_library(
+    name = "leave_calendar_service",
+    srcs = ["leave_calendar_service.py"],
+    deps = [
+        ":leave_calendar_segments",
+        ":leave_clock",
+        ":leave_policy",
+        "//backend/dto",
+        "//backend/repository:repositories",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "leave_clock",
+    srcs = ["leave_clock.py"],
+    deps = [
+        ":employment_profile",
+    ],
+)
+
+py_library(
+    name = "leave_calendar_controller",
+    srcs = ["leave_calendar_controller.py"],
+    deps = [
+        ":leave_calendar_service",
+        "//backend/common:api_endpoints",
+        "//backend/common:fast_api_response_wrapper",
+        "//backend/common:permissions",
+        "//backend/dto",
+        "//backend/utils:permission_decorators",
+        "@pypi//fastapi",
+    ],
+)
