@@ -1,6 +1,6 @@
 import logging
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
@@ -28,10 +28,23 @@ from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
 
-# Verbatim as the admin API writes them into the round's JSONB description.
-_PROMOTION = "2026-08-01T07:00:00+00:00"
-_DEADLINE = "2026-09-30T15:59:00+00:00"
-_MATCHING = "2026-10-15T00:00:00+00:00"
+# Offsets from now, not fixed dates: `get_open_mentor_registration_round`
+# compares these against the real wall clock, so a hard-coded deadline stops
+# being open the moment it passes and takes this file red with it.
+_NOW = datetime.now(timezone.utc).replace(microsecond=0)
+
+
+def _at(days: int) -> str:
+    """A round timestamp `days` from now, in the shape the admin API writes
+    into the round's JSONB description -- stored and asserted verbatim."""
+    return (_NOW + timedelta(days=days)).isoformat()
+
+
+_PROMOTION = _at(-20)
+_DEADLINE = _at(40)
+_MATCHING = _at(55)
+# Open too, but closing before `_DEADLINE`, so it is the one to register for.
+_SOONER_DEADLINE = _at(5)
 
 
 class MentorshipAdmissionServiceTest(BaseRepositoryTestLib):
@@ -147,7 +160,7 @@ class MentorshipAdmissionServiceTest(BaseRepositoryTestLib):
             required_meetings=5,
             description={
                 "promotion_start_at": _PROMOTION,
-                "mentor_application_deadline_at": "2026-08-20T15:59:00+00:00",
+                "mentor_application_deadline_at": _SOONER_DEADLINE,
                 "match_notification_at": _MATCHING,
             },
         )
