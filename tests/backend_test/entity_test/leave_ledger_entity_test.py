@@ -29,14 +29,33 @@ class TestLeaveLedgerEntity(unittest.TestCase):
         self.assertEqual(entry.hours, Decimal("-8.00"))
         self.assertEqual(entry.effective_date, datetime.date(2026, 3, 2))
 
-    def test_the_double_write_guard_covers_only_what_a_job_writes(self):
-        """The test is "did a cron write it", not "was it automatic"."""
+    def test_the_double_write_guard_covers_only_what_a_job_pays_out(self):
+        """The test is "does a cron pay hours with it", not "did a cron write
+        it". LEVEL_CHANGE is cron-written and stays outside: a level raised and
+        put back on one day is two real events, and uniqueness would reject the
+        second instead of deduplicating it."""
         where = str(_job_written_index().dialect_options["postgresql"]["where"])
 
         self.assertIn(LeaveEntryType.WEEKLY_ACCRUAL.value, where)
         self.assertIn(LeaveEntryType.CARRYOVER_FORFEIT.value, where)
         self.assertNotIn(LeaveEntryType.MANUAL_ADJUSTMENT.value, where)
         self.assertNotIn(LeaveEntryType.REVERSAL.value, where)
+        self.assertNotIn(LeaveEntryType.LEVEL_CHANGE.value, where)
+
+    def test_a_level_change_marks_a_date_and_moves_no_hours(self):
+        """The accrual engine reads the date; the note is for people to read.
+        Zero hours is what keeps a balance the plain sum of every row."""
+        entry = LeaveLedgerEntity(
+            user_id=1,
+            entry_type=LeaveEntryType.LEVEL_CHANGE,
+            hours=Decimal("0.00"),
+            effective_date=datetime.date(2026, 7, 1),
+            note="L1 -> L3",
+        )
+
+        self.assertEqual(entry.entry_type.value, "level_change")
+        self.assertEqual(entry.hours, Decimal("0.00"))
+        self.assertEqual(entry.effective_date, datetime.date(2026, 7, 1))
 
     def test_the_double_write_guard_is_keyed_on_user_type_and_date(self):
         index = _job_written_index()
@@ -57,9 +76,9 @@ class TestLeaveLedgerEntity(unittest.TestCase):
 
 
 class TestLeaveEntryType(unittest.TestCase):
-    def test_the_entry_types_are_exactly_the_six_the_design_settled_on(self):
-        """The set is closed: a seventh value is an enum migration, not an
-        edit here."""
+    def test_the_entry_types_are_exactly_the_seven_the_design_settled_on(self):
+        """The set is closed: an eighth value is an enum migration, not an edit
+        here."""
         self.assertEqual(
             {entry.value for entry in LeaveEntryType},
             {
@@ -69,6 +88,7 @@ class TestLeaveEntryType(unittest.TestCase):
                 "manual_adjustment",
                 "reversal",
                 "carryover_forfeit",
+                "level_change",
             },
         )
 

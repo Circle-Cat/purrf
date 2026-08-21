@@ -41,6 +41,7 @@ def upgrade() -> None:
         "manual_adjustment",
         "reversal",
         "carryover_forfeit",
+        "level_change",
         name="leave_entry_type_enum",
     ).create(op.get_bind())
     op.create_table(
@@ -168,6 +169,7 @@ def upgrade() -> None:
                 "manual_adjustment",
                 "reversal",
                 "carryover_forfeit",
+                "level_change",
                 name="leave_entry_type_enum",
                 create_type=False,
             ),
@@ -249,6 +251,7 @@ def downgrade() -> None:
         "manual_adjustment",
         "reversal",
         "carryover_forfeit",
+        "level_change",
         name="leave_entry_type_enum",
     ).drop(op.get_bind())
     sa.Enum("paid", "sick", "exchange", name="leave_request_type_enum").drop(

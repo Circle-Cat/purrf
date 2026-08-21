@@ -4,10 +4,12 @@ from enum import StrEnum
 class LeaveEntryType(StrEnum):
     """What produced a ledger row.
 
-    Every type is a reason attached to a number, with one asymmetry:
-    ``WEEKLY_ACCRUAL`` is the only type the accrual engine counts as "already
-    granted" when it works out what this week still owes. Counting a second
-    type there would quietly change everyone's entitlement rather than fail.
+    Every type is a reason attached to a number, with two asymmetries. The
+    accrual engine counts only ``WEEKLY_ACCRUAL`` as "already granted" when it
+    works out what this week still owes, so counting a second type there would
+    quietly change everyone's entitlement rather than fail. And
+    ``LEVEL_CHANGE`` is the one type that carries no hours: it is read for its
+    date, not its amount.
     """
 
     WEEKLY_ACCRUAL = "weekly_accrual"
@@ -16,10 +18,16 @@ class LeaveEntryType(StrEnum):
     MANUAL_ADJUSTMENT = "manual_adjustment"
     REVERSAL = "reversal"
     CARRYOVER_FORFEIT = "carryover_forfeit"
+    # Always zero hours. It marks the day an annual entitlement changed, which
+    # is where the accrual engine restarts its proportion from; carrying no
+    # hours is what lets a balance stay the plain sum of every row, with no
+    # type filter that a reader could forget.
+    LEVEL_CHANGE = "level_change"
 
 
-# Types written by a scheduled job rather than by a person. The partial unique
-# index on leave_ledger covers exactly these; the entity explains why.
+# The types a job pays hours out with. The partial unique index on
+# leave_ledger covers exactly these; the entity explains why LEVEL_CHANGE,
+# which a job also writes, stays outside it.
 JOB_WRITTEN_ENTRY_TYPES = (
     LeaveEntryType.WEEKLY_ACCRUAL,
     LeaveEntryType.CARRYOVER_FORFEIT,

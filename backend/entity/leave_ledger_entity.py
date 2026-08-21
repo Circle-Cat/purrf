@@ -38,11 +38,13 @@ class LeaveLedgerEntity(Base):
 
     __tablename__ = "leave_ledger"
     __table_args__ = (
-        # Deliberately partial. Both job-written types come from crons that can
-        # run twice -- a retried pod, a manual re-trigger -- and either would
-        # double-grant or double-forfeit. Manual adjustments are outside the
-        # index on purpose: an admin may book several corrections for the same
-        # person on the same day, and each one is a real entry.
+        # Deliberately partial. It covers the two types a cron pays hours out
+        # with, and a cron can run twice -- a retried pod, a manual re-trigger
+        # -- so either would double-grant or double-forfeit. Every other type
+        # is outside it on purpose, because for those a second row on the same
+        # day is a second real event: an admin may book several corrections for
+        # one person in a day, and a level may be raised and put back inside
+        # one day. Rejecting those would drop the event rather than dedupe it.
         Index(
             "uq_leave_ledger_job_written_entry",
             "user_id",
@@ -66,7 +68,8 @@ class LeaveLedgerEntity(Base):
         nullable=False,
     )
     # Signed: grants are positive, deductions negative. A reversal takes the
-    # opposite sign of whatever it undoes.
+    # opposite sign of whatever it undoes, and a level change carries zero --
+    # it is a marker, not money, so a balance needs no type filter.
     hours: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
     # The Beijing calendar day the entry counts for, which is not necessarily
     # the day it was written: the annual trim runs on 1 January and dates its
