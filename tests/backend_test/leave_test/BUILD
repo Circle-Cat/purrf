@@ -72,3 +72,45 @@ py_test(
         "//backend/leave:leave_clock",
     ],
 )
+
+py_test(
+    name = "leave_adjustment_service_test",
+    srcs = ["leave_adjustment_service_test.py"],
+    deps = [
+        "//backend/common:leave_enums",
+        "//backend/leave:leave_adjustment_service",
+    ],
+)
+
+py_test(
+    name = "leave_admin_controller_test",
+    srcs = ["leave_admin_controller_test.py"],
+    deps = [
+        "//backend/leave:leave_admin_controller",
+    ],
+)
+
+py_test(
+    name = "leave_participants_test",
+    srcs = ["leave_participants_test.py"],
+    deps = [
+        "//backend/leave:leave_participants",
+    ],
+)
+
+py_test(
+    name = "leave_engine_service_test",
+    srcs = ["leave_engine_service_test.py"],
+    deps = [
+        "//backend/common:leave_enums",
+        "//backend/leave:leave_engine_service",
+    ],
+)
+
+py_test(
+    name = "leave_job_controller_test",
+    srcs = ["leave_job_controller_test.py"],
+    deps = [
+        "//backend/leave:leave_job_controller",
+    ],
+)

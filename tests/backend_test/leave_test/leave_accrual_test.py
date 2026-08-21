@@ -32,8 +32,6 @@ from backend.leave.leave_clock import business_today
 L1_ANNUAL_HOURS = 0
 L3_ANNUAL_HOURS = 80
 
-GO_LIVE = date(2026, 9, 1)
-
 
 def _clock_fixed_at(instant):
     """Stands in for a wall clock stopped at one UTC instant.
@@ -68,26 +66,22 @@ class TestTheClockAgainstTheForfeitDate(unittest.TestCase):
 
 class TestAccrualStartDate(unittest.TestCase):
     def test_a_long_serving_employee_starts_at_january_first(self):
-        self.assertEqual(
-            accrual_start_date(2027, date(2024, 3, 5), GO_LIVE), date(2027, 1, 1)
-        )
+        self.assertEqual(accrual_start_date(2027, date(2024, 3, 5)), date(2027, 1, 1))
+
+    def test_someone_hired_on_january_first_starts_that_day(self):
+        self.assertEqual(accrual_start_date(2026, date(2026, 1, 1)), date(2026, 1, 1))
 
     def test_someone_hired_mid_year_starts_on_their_hire_date(self):
-        self.assertEqual(
-            accrual_start_date(2026, date(2026, 9, 2), date(2025, 1, 1)),
-            date(2026, 9, 2),
-        )
+        self.assertEqual(accrual_start_date(2026, date(2026, 9, 2)), date(2026, 9, 2))
 
-    def test_go_live_wins_over_an_older_hire_date(self):
-        """Otherwise the first run after launch pays the year to date to
-        everyone already employed, on top of the opening balance that already
-        covers it."""
-        self.assertEqual(accrual_start_date(2026, date(2024, 3, 5), GO_LIVE), GO_LIVE)
-
-    def test_go_live_stops_mattering_the_following_year(self):
-        self.assertEqual(
-            accrual_start_date(2027, date(2024, 3, 5), GO_LIVE), date(2027, 1, 1)
-        )
+    def test_the_year_the_system_launches_is_not_treated_specially(self):
+        """Launching in September does not shorten 2026 for someone employed
+        since 2024: the engine computes this year from 1 January and pays the
+        difference on its first run. That is deliberate. What an admin keys in
+        by hand at launch is the balance carried in from the previous year, and
+        nothing of this year's accrual, so there is nothing for this to land on
+        top of."""
+        self.assertEqual(accrual_start_date(2026, date(2024, 3, 5)), date(2026, 1, 1))
 
 
 class TestWeeksPassed(unittest.TestCase):
@@ -150,17 +144,20 @@ class TestWeeklyAccrualHours(unittest.TestCase):
 
         self.assertEqual(granted, Decimal("80.00"))
 
-    def test_the_first_run_after_go_live_pays_one_week_not_the_year_to_date(self):
-        """Someone hired in 2024, launched on 9/1, first run a week later."""
+    def test_the_first_run_pays_the_year_to_date_in_one_go(self):
+        """Someone hired in 2024, the engine's first run ever landing on 9/8.
+        It owes 35 weeks because it owes the year, not because a run was
+        missed -- the two are the same thing to this formula, and here they are
+        the same thing in fact. The opening balance beside it carries only what
+        came in from the previous year."""
         owed = weekly_accrual_hours(
             L3_ANNUAL_HOURS,
-            accrual_start_date(2026, date(2024, 3, 5), GO_LIVE),
+            accrual_start_date(2026, date(2024, 3, 5)),
             date(2026, 9, 8),
             Decimal("0.00"),
         )
 
-        self.assertEqual(owed, Decimal("1.54"))
-        self.assertNotEqual(owed, Decimal("53.85"))
+        self.assertEqual(owed, Decimal("53.85"))
 
     def test_the_new_year_starts_paying_again_from_week_one(self):
         """They finished the previous year on the full 80h. The count that

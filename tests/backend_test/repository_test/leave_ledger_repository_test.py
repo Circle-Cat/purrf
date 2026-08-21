@@ -205,6 +205,32 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
 
         self.assertEqual(level_since, datetime.date(2026, 7, 1))
 
+    async def test_the_level_change_date_can_be_bounded(self):
+        """The annual job closes out last year, so it must not see a change
+        that happened after that year ended -- it would split the closing year
+        at a date outside it and pay the wrong proportion."""
+        await self.insert_entities([
+            self._entry(LeaveEntryType.LEVEL_CHANGE, "0.00", datetime.date(2026, 7, 1)),
+            self._entry(LeaveEntryType.LEVEL_CHANGE, "0.00", datetime.date(2027, 2, 3)),
+        ])
+
+        level_since = await self.repository.latest_level_change_date(
+            self.session, self.user.user_id, on_or_before=datetime.date(2026, 12, 31)
+        )
+
+        self.assertEqual(level_since, datetime.date(2026, 7, 1))
+
+    async def test_a_bound_on_the_change_date_is_inclusive(self):
+        await self.insert_entities([
+            self._entry(LeaveEntryType.LEVEL_CHANGE, "0.00", datetime.date(2026, 7, 1))
+        ])
+
+        level_since = await self.repository.latest_level_change_date(
+            self.session, self.user.user_id, on_or_before=datetime.date(2026, 7, 1)
+        )
+
+        self.assertEqual(level_since, datetime.date(2026, 7, 1))
+
     async def test_no_level_change_reads_as_none(self):
         """Almost everybody. The arithmetic treats None as "the whole year at
         the current entitlement", which is the plain formula."""

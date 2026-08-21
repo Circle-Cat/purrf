@@ -90,25 +90,34 @@ class LeaveLedgerRepository:
         return result.scalar_one()
 
     async def latest_level_change_date(
-        self, session: AsyncSession, user_id: int
+        self,
+        session: AsyncSession,
+        user_id: int,
+        on_or_before: datetime.date | None = None,
     ) -> datetime.date | None:
         """The date this person's annual entitlement last changed.
 
         Args:
             session: Active async session.
             user_id: Whose ledger.
+            on_or_before: Latest date to consider, inclusive. The annual job
+                closes out the previous year and passes its 31 December: a
+                change made after that year ended would otherwise split the
+                closing year at a date outside it and pay the wrong
+                proportion.
 
         Returns:
             The most recent ``level_change`` date, or None when there is none
             -- almost everybody. The arithmetic reads None as "the whole year
             at the current entitlement", which is the plain formula.
         """
-        result = await session.execute(
-            select(func.max(LeaveLedgerEntity.effective_date)).where(
-                LeaveLedgerEntity.user_id == user_id,
-                LeaveLedgerEntity.entry_type == LeaveEntryType.LEVEL_CHANGE,
-            )
+        query = select(func.max(LeaveLedgerEntity.effective_date)).where(
+            LeaveLedgerEntity.user_id == user_id,
+            LeaveLedgerEntity.entry_type == LeaveEntryType.LEVEL_CHANGE,
         )
+        if on_or_before is not None:
+            query = query.where(LeaveLedgerEntity.effective_date <= on_or_before)
+        result = await session.execute(query)
         return result.scalar_one()
 
     async def add_entries(

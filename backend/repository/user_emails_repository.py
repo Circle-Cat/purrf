@@ -219,6 +219,35 @@ class UserEmailsRepository:
         )
         return result.scalar_one_or_none()
 
+    async def list_by_emails(
+        self, session: AsyncSession, emails: list[str]
+    ) -> list[UserEmailsEntity]:
+        """Fetch the rows claiming any of `emails`, confirmed or not.
+
+        One query for a whole directory. The leave accrual job has to try both
+        internal domains for every employee, and per-address lookups would mean
+        two round trips each.
+
+        Whether an address is proven is left to the caller: a corporate address
+        that arrived through SSO may carry no OTP, and filtering it out here
+        would silently drop that person from accrual.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            emails (list[str]): Normalized (lowercased) addresses.
+
+        Returns:
+            list[UserEmailsEntity]: The claiming rows. Addresses absent from
+            the table are simply absent from the result.
+        """
+        if not emails:
+            return []
+
+        result = await session.execute(
+            select(UserEmailsEntity).where(UserEmailsEntity.email.in_(emails))
+        )
+        return list(result.scalars().all())
+
     async def get_confirmed_by_email(
         self, session: AsyncSession, email: str
     ) -> UserEmailsEntity | None:

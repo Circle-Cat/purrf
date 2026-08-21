@@ -18,6 +18,7 @@ def make_graph_user(
     hire_date="2024-03-01T00:00:00Z",
     leave_date=None,
     manager_mail="bob@circlecat.org",
+    account_enabled=True,
 ):
     user = MagicMock()
     user.id = user_id
@@ -27,6 +28,7 @@ def make_graph_user(
     user.job_title = job_title
     user.employee_hire_date = hire_date
     user.employee_leave_date_time = leave_date
+    user.account_enabled = account_enabled
     if manager_mail is None:
         user.manager = None
     else:
@@ -87,9 +89,29 @@ class EmploymentSyncServiceTest(IsolatedAsyncioTestCase):
                 "hire_date": "2024-03-01",
                 "leave_date": None,
                 "manager_ldap": "bob",
+                "account_enabled": True,
                 "problems": [],
             },
         )
+
+    async def test_a_disabled_account_reaches_the_profile_as_disabled(self):
+        """The accrual engine's only fallback for "has left" when Azure carries
+        no leave date -- which is the state one of the five China full-timers is
+        actually in. It has to survive the whole path into Redis."""
+        self.microsoft_service.get_all_microsoft_members = AsyncMock(
+            return_value=[
+                make_graph_user(
+                    "id-alice", "alice@circlecat.org", account_enabled=False
+                )
+            ]
+        )
+        self._stub_redis(employee_ldaps=["alice"], cached_profiles={})
+        pipe = self.redis_client.pipeline.return_value
+
+        await self.service.sync_employment_profiles_to_redis()
+
+        written = json.loads(pipe.hset.call_args.kwargs["mapping"]["alice"])
+        self.assertFalse(written["account_enabled"])
 
     async def test_removes_people_who_left_the_scope(self):
         self.microsoft_service.get_all_microsoft_members = AsyncMock(
@@ -114,6 +136,7 @@ class EmploymentSyncServiceTest(IsolatedAsyncioTestCase):
                 "hire_date": "2024-03-01",
                 "leave_date": None,
                 "manager_ldap": "bob",
+                "account_enabled": True,
                 "problems": [],
             },
             sort_keys=True,

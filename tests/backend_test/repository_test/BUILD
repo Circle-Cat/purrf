@@ -290,3 +290,15 @@ py_test(
         "//backend/repository:repositories",
     ],
 )
+
+py_test(
+    name = "user_emails_bulk_lookup_test",
+    srcs = ["user_emails_bulk_lookup_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)

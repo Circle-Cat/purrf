@@ -50,6 +50,12 @@ class EmploymentProfile:
     hire_date: str | None
     leave_date: str | None
     manager_ldap: str | None
+    # The accrual engine's fallback for "has left". A leaver is supposed to
+    # carry a leave date and one of the five China full-timers is disabled
+    # without one, so on the leave date alone that person would accrue for
+    # good. A payload missing the field counts as enabled: stopping accrual by
+    # accident is invisible in a balance, and over-paying is not.
+    account_enabled: bool = True
     problems: tuple[ProfileProblem, ...] = field(default=())
 
 
@@ -128,6 +134,7 @@ def build_employment_profile(raw: dict) -> EmploymentProfile:
         hire_date=hire_date,
         leave_date=leave_date,
         manager_ldap=manager_ldap,
+        account_enabled=raw.get("accountEnabled") is not False,
         problems=tuple(problems),
     )
 

@@ -38,27 +38,30 @@ HOURS_QUANTUM = Decimal("0.01")
 NO_HOURS = Decimal("0.00")
 
 
-def accrual_start_date(year: int, hire_date: date, system_start_date: date) -> date:
+def accrual_start_date(year: int, hire_date: date) -> date:
     """Where the accrual clock starts for one person in one year.
 
-    The go-live date has to be in this maximum. Without it, the first run after
-    launch pays out the whole year to date for everyone who was already
-    employed -- and that stretch is already covered by the opening balance an
-    admin keyed in by hand, so it lands twice. "We do not backfill" is enforced
-    here, not by holding the job back.
+    The year the system launches is not treated specially, and there is no
+    go-live date in this maximum. The engine computes the whole year from 1
+    January and pays the difference on its first run, which for someone already
+    employed is most of a year in one entry. That is the intended behaviour: it
+    makes this year's figure something the engine derives and can reproduce,
+    rather than something an admin works out by hand.
 
-    It expires on its own: from the following January the year start is always
-    the later date.
+    What is keyed in by hand at launch is the balance carried in from the
+    previous year, and none of this year's accrual -- so there is nothing here
+    to land on top of. Adding a go-live date back into this maximum without
+    changing that convention at the same time turns a double payment into a
+    missing one.
 
     Args:
         year: The year being accrued for.
         hire_date: Their Beijing hire date.
-        system_start_date: The global go-live date.
 
     Returns:
-        The latest of the three.
+        The later of the year's start and their hire date.
     """
-    return max(date(year, 1, 1), hire_date, system_start_date)
+    return max(date(year, 1, 1), hire_date)
 
 
 def weeks_passed(start_date: date, today: date) -> int:

@@ -82,3 +82,68 @@ py_library(
     name = "leave_accrual",
     srcs = ["leave_accrual.py"],
 )
+
+py_library(
+    name = "leave_adjustment_service",
+    srcs = ["leave_adjustment_service.py"],
+    deps = [
+        ":leave_clock",
+        "//backend/common:leave_enums",
+        "//backend/dto",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "leave_admin_controller",
+    srcs = ["leave_admin_controller.py"],
+    deps = [
+        ":leave_adjustment_service",
+        "//backend/common:api_endpoints",
+        "//backend/common:fast_api_response_wrapper",
+        "//backend/common:permissions",
+        "//backend/dto",
+        "//backend/utils:permission_decorators",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
+    name = "leave_participants",
+    srcs = ["leave_participants.py"],
+    deps = [
+        "//backend/common:constants",
+        "//backend/repository:repositories",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "leave_engine_service",
+    srcs = ["leave_engine_service.py"],
+    deps = [
+        ":leave_accrual",
+        ":leave_clock",
+        ":leave_participants",
+        ":leave_policy",
+        "//backend/common:leave_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "leave_job_controller",
+    srcs = ["leave_job_controller.py"],
+    deps = [
+        ":leave_engine_service",
+        "//backend/common:api_endpoints",
+        "//backend/common:fast_api_response_wrapper",
+        "//backend/common:permissions",
+        "//backend/utils:permission_decorators",
+        "@pypi//fastapi",
+    ],
+)
