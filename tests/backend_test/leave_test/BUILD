@@ -69,5 +69,6 @@ py_test(
     srcs = ["leave_accrual_test.py"],
     deps = [
         "//backend/leave:leave_accrual",
+        "//backend/leave:leave_clock",
     ],
 )

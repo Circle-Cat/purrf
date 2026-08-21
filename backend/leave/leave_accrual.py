@@ -1,8 +1,9 @@
 """Pure arithmetic behind the two leave accrual jobs.
 
-Everything here is a function of its arguments alone: no database, no clock
-except :func:`business_today`, no Graph. The jobs that call these are thin
-loops, which is deliberate -- every way this module can be wrong produces a
+Everything here is a function of its arguments alone: no database, no clock, no
+Graph. "Today" is passed in, from
+:func:`backend.leave.leave_clock.business_today`. The jobs that call these are
+thin loops, which is deliberate -- every way this module can be wrong produces a
 silently wrong number rather than an error, so the arithmetic is the part that
 has to be pinned by tests.
 
@@ -11,37 +12,30 @@ Accrual is target-based, not incremental::
     owed now = target(today) - what the engine has already granted this year
 
 That buys two properties worth protecting: 80h over 52 weeks does not divide
-evenly, and the final week closes the gap exactly; and a job run that never
-happened is made up by the next one instead of being lost forever.
+evenly, and week 52 closes the gap exactly; and a job run that never happened is
+made up by the next one instead of being lost forever.
 
-Both properties depend on "already granted" being counted correctly, and it has
-two limits that are each easy to drop -- see :func:`weekly_accrual_hours`.
+Both stop at 31 December. Week 52 is only reached once 364 days have elapsed --
+31 December, or the 30th in a leap year -- and the weekly job runs on one fixed
+weekday, so it lands there roughly one year in seven. Every other year the last
+run of the year stops at week 51, and the reset on 1 January puts the remaining
+1.54h out of reach: the catch-up property does not cross the year boundary.
+Closing the old year out is the annual job's first step, before it applies the
+carryover ceiling.
+
+Both properties also depend on "already granted" being counted correctly, and
+that count has two limits which are each easy to drop -- see
+:func:`weekly_accrual_hours`.
 """
 
-from datetime import date, datetime
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
-
-from backend.leave.employment_profile import BUSINESS_TIMEZONE
 
 WEEKS_PER_YEAR = 52
 
 HOURS_QUANTUM = Decimal("0.01")
 
 NO_HOURS = Decimal("0.00")
-
-
-def business_today() -> date:
-    """The current Beijing calendar day.
-
-    The single source of "today" for anything leave-related. Business dates are
-    Beijing civil days while the pods run on UTC, so between 00:00 and 08:00
-    Beijing time the two disagree -- and the cron schedules in helm are written
-    in UTC, which makes that window easy to land in.
-
-    Returns:
-        Today's date in Asia/Shanghai.
-    """
-    return datetime.now(BUSINESS_TIMEZONE).date()
 
 
 def accrual_start_date(year: int, hire_date: date, system_start_date: date) -> date:

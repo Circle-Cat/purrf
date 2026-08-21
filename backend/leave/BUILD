@@ -81,7 +81,4 @@ py_library(
 py_library(
     name = "leave_accrual",
     srcs = ["leave_accrual.py"],
-    deps = [
-        ":employment_profile",
-    ],
 )

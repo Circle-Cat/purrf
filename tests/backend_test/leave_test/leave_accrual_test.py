@@ -22,12 +22,12 @@ from unittest.mock import patch
 from backend.leave.leave_accrual import (
     accrual_start_date,
     accrual_target_hours,
-    business_today,
     carryover_effective_date,
     carryover_forfeit_hours,
     weekly_accrual_hours,
     weeks_passed,
 )
+from backend.leave.leave_clock import business_today
 
 L1_ANNUAL_HOURS = 0
 L3_ANNUAL_HOURS = 80
@@ -46,19 +46,12 @@ def _clock_fixed_at(instant):
     )
 
 
-class TestBusinessToday(unittest.TestCase):
-    @patch("backend.leave.leave_accrual.datetime")
-    def test_today_is_the_beijing_day_not_the_utc_day(self, mock_datetime):
-        """17:00 UTC is already tomorrow in Beijing. A job scheduled in that
-        window accrues under yesterday's date and collides with the row it
-        already wrote."""
-        mock_datetime.now.side_effect = _clock_fixed_at(
-            datetime(2026, 8, 12, 17, 0, tzinfo=timezone.utc)
-        )
+class TestTheClockAgainstTheForfeitDate(unittest.TestCase):
+    """business_today itself is covered in leave_clock_test. What this class is
+    for is the pair: the annual job's schedule sits in the window where the two
+    dates disagree, and the date it stamps is derived from "today"."""
 
-        self.assertEqual(business_today(), date(2026, 8, 13))
-
-    @patch("backend.leave.leave_accrual.datetime")
+    @patch("backend.leave.leave_clock.datetime")
     def test_the_forfeit_lands_on_december_31st_when_the_job_runs_in_that_window(
         self, mock_datetime
     ):
