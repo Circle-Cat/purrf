@@ -155,6 +155,31 @@ cronjobs:
     schedule: "50 10 * * *"   # 10:50 UTC
     url: "/api/google/calendar/history/pull"
     body: {}
+  - name: leave-weekly-accrual
+    schedule: "10 20 * * 0"   # Sun 20:10 UTC = Mon 04:10 Beijing
+    url: "/api/leave/jobs/weekly-accrual"
+    # Suspended until the leave system goes live. Flipping this to false is
+    # what starts accrual; the engine then pays the year to date on its first
+    # run, because it computes the year from 1 January rather than from the day
+    # it was switched on. Enter the carried-over balances before or after --
+    # they are separate rows and neither depends on the other's timing.
+    #
+    # The weekday is not load-bearing. Whichever day this runs, week 52 needs
+    # 364 elapsed days, so the last run of most years falls a week short and
+    # the annual close settles the difference.
+    suspend: true
+  - name: leave-annual-close
+    schedule: "10 0 1 1 *"   # 1 Jan 00:10 UTC = 1 Jan 08:10 Beijing
+    url: "/api/leave/jobs/annual-close"
+    # Must land on 1 January in Beijing, not in UTC: the job closes the year
+    # before "today", and 31 December 20:00 UTC is already 1 January there,
+    # which would close the wrong year. 00:10 UTC is safely inside the Beijing
+    # day.
+    #
+    # Suspended with the accrual job. Unsuspend it in the same change -- if
+    # accrual runs for a year without this, every one of those years ends about
+    # 1.54h short per person and nothing reports it.
+    suspend: true
   - name: pubsub-sync-hourly
     schedule: "0 * * * *"   # every hour at minute 00
     url: "/api/pubsub/sync"
