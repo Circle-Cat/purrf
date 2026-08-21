@@ -72,7 +72,6 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
             self._entry(
                 LeaveEntryType.LEAVE_DEDUCTION, "-8.00", datetime.date(2026, 3, 4)
             ),
-            self._entry(LeaveEntryType.REVERSAL, "8.00", datetime.date(2026, 3, 5)),
             self._entry(
                 LeaveEntryType.CARRYOVER_FORFEIT, "-20.00", datetime.date(2026, 3, 6)
             ),

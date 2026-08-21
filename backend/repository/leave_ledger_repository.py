@@ -30,8 +30,8 @@ class LeaveLedgerRepository:
         Two filters, both essential and both quiet when dropped:
 
         * **``weekly_accrual`` only.** An opening balance, a manual correction,
-          an exchange credit, a deduction, a reversal and a forfeit are all
-          balance rather than entitlement. Counting an opening balance here
+          an exchange credit, a deduction and a forfeit are all balance
+          rather than entitlement. Counting an opening balance here
           would cancel out the accrual it was keyed in alongside.
         * **Rows dated inside ``year`` only.** The target resets every January
           while the ledger keeps accumulating, so a sum taken across years

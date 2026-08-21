@@ -116,8 +116,8 @@ def weekly_accrual_hours(
     the caller supplies it, so this is where they are written down:
 
     * **Only ``weekly_accrual`` rows.** Manual adjustments, opening balances,
-      exchange credits, deductions, reversals and carryover forfeits are all
-      balance, not entitlement. Counting an opening balance here would cancel
+      exchange credits, deductions and carryover forfeits are all balance,
+      not entitlement. Counting an opening balance here would cancel
       out the accrual it was supposed to sit alongside.
     * **Only rows dated inside the year of** ``today``. The target resets every
       January while the ledger keeps accumulating, so a sum taken across years
