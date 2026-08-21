@@ -8,6 +8,7 @@ import {
   humanize,
   INTERVIEW_STAGES,
 } from "@/pages/Recruiting/board/stageFormat";
+import { formatDateWithZone, resolveViewerTimezone } from "@/utils/dateTime";
 
 /**
  * One applicant card on the board: applicant name, an optional sub-status
@@ -110,7 +111,7 @@ const ApplicantCard = ({ card, showStatus, highlighted = false, onOpen }) => {
       ) : null}
       {card.appliedAt && (
         <p className="text-xs text-slate-500">
-          {new Date(card.appliedAt).toLocaleDateString()}
+          {formatDateWithZone(card.appliedAt, resolveViewerTimezone())}
         </p>
       )}
     </button>

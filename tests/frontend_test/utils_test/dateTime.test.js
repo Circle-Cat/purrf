@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   formatInTz,
+  formatDateWithZone,
   formatDateTimeWithZone,
   formatDateTimeRangeWithZone,
   formatLocalYmd,
@@ -69,6 +70,19 @@ describe("formatInTz", () => {
     expect(
       formatInTz("2024-01-01T20:00:00Z", "Asia/Shanghai", "yyyy-MM-dd"),
     ).toBe("2024-01-02");
+  });
+});
+
+describe("formatDateWithZone", () => {
+  it("returns null for missing iso or tz", () => {
+    expect(formatDateWithZone(null, "America/New_York")).toBeNull();
+    expect(formatDateWithZone("2024-03-15T12:00:00Z", null)).toBeNull();
+  });
+
+  it("appends the IANA zone name to the formatted date, with no time-of-day", () => {
+    expect(formatDateWithZone("2024-03-15T12:00:00Z", "America/New_York")).toBe(
+      "2024-03-15 America/New_York",
+    );
   });
 });
 

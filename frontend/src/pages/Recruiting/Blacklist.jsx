@@ -13,6 +13,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { listBlacklist, unblockUser } from "@/api/recruitingApi";
+import { formatDateWithZone, resolveViewerTimezone } from "@/utils/dateTime";
 
 /** Org-wide blacklist admin page: view and clear blocked users. */
 const Blacklist = () => {
@@ -96,7 +97,8 @@ const Blacklist = () => {
                     variant="outline"
                     className="border-slate-300 text-xs text-slate-500"
                   >
-                    Blocked {new Date(e.blockedAt).toLocaleDateString()}
+                    Blocked{" "}
+                    {formatDateWithZone(e.blockedAt, resolveViewerTimezone())}
                   </Badge>
                 </div>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
