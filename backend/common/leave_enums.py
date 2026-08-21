@@ -16,7 +16,6 @@ class LeaveEntryType(StrEnum):
     LEAVE_DEDUCTION = "leave_deduction"
     EXCHANGE_CREDIT = "exchange_credit"
     MANUAL_ADJUSTMENT = "manual_adjustment"
-    REVERSAL = "reversal"
     CARRYOVER_FORFEIT = "carryover_forfeit"
     # Always zero hours. It marks the day an annual entitlement changed, which
     # is where the accrual engine restarts its proportion from; carrying no
@@ -49,15 +48,17 @@ class LeaveRequestType(StrEnum):
 class LeaveRequestStatus(StrEnum):
     """Where a request sits in its lifecycle.
 
-    ``PENDING`` requests may be withdrawn by the employee alone -- nothing has
-    reached the ledger yet. Once approved, undoing it needs the manager again,
-    which is what ``CANCEL_PENDING`` is for: approving that transition writes a
-    reversal, rejecting it returns the request to ``APPROVED`` untouched.
+    ``PENDING`` may be withdrawn by the employee alone -- nothing has reached
+    the ledger yet. Approval is the end of the line: an approved request cannot
+    be taken back, by either side. Somebody who does not end up taking approved
+    leave has spent the hours, and putting them back is an admin adjustment
+    with a note on it.
+
+    There is deliberately no state for cancelling an approved request. Leaving
+    one in the enum would read as a feature that exists.
     """
 
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
     WITHDRAWN = "withdrawn"
-    CANCEL_PENDING = "cancel_pending"
-    CANCELLED = "cancelled"

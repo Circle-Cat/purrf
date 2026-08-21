@@ -68,17 +68,11 @@ class TestLeaveRequestEnums(unittest.TestCase):
         )
 
     def test_the_status_values_cover_the_whole_state_machine(self):
-        """cancel_pending is the one that reads as redundant and is not."""
+        """There is no state for cancelling an approved request: approval is
+        the end of the line, and a value for it would read as a feature."""
         self.assertEqual(
             {status.value for status in LeaveRequestStatus},
-            {
-                "pending",
-                "approved",
-                "rejected",
-                "withdrawn",
-                "cancel_pending",
-                "cancelled",
-            },
+            {"pending", "approved", "rejected", "withdrawn"},
         )
 
 

@@ -39,7 +39,6 @@ class TestLeaveLedgerEntity(unittest.TestCase):
         self.assertIn(LeaveEntryType.WEEKLY_ACCRUAL.value, where)
         self.assertIn(LeaveEntryType.CARRYOVER_FORFEIT.value, where)
         self.assertNotIn(LeaveEntryType.MANUAL_ADJUSTMENT.value, where)
-        self.assertNotIn(LeaveEntryType.REVERSAL.value, where)
         self.assertNotIn(LeaveEntryType.LEVEL_CHANGE.value, where)
 
     def test_a_level_change_marks_a_date_and_moves_no_hours(self):
@@ -76,8 +75,8 @@ class TestLeaveLedgerEntity(unittest.TestCase):
 
 
 class TestLeaveEntryType(unittest.TestCase):
-    def test_the_entry_types_are_exactly_the_seven_the_design_settled_on(self):
-        """The set is closed: an eighth value is an enum migration, not an edit
+    def test_the_entry_types_are_exactly_the_six_the_design_settled_on(self):
+        """The set is closed: a seventh value is an enum migration, not an edit
         here."""
         self.assertEqual(
             {entry.value for entry in LeaveEntryType},
@@ -86,7 +85,6 @@ class TestLeaveEntryType(unittest.TestCase):
                 "leave_deduction",
                 "exchange_credit",
                 "manual_adjustment",
-                "reversal",
                 "carryover_forfeit",
                 "level_change",
             },

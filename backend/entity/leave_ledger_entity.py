@@ -27,9 +27,9 @@ class LeaveLedgerEntity(Base):
     anywhere and no second source of truth, so nothing can disagree with the
     history.
 
-    Nothing here is ever edited or deleted. Cancelling an approved request
-    writes a REVERSAL row against the original rather than removing it, which
-    is what keeps "why is this number what it is" answerable months later.
+    Nothing here is ever edited or deleted. A number that turned out wrong is
+    corrected by appending a row that says so, which is what keeps "why is this
+    number what it is" answerable months later.
 
     ``created_by`` is NULL when a scheduled job wrote the row rather than a
     person. Readers have to keep that meaning distinct from "a person did it
@@ -67,9 +67,8 @@ class LeaveLedgerEntity(Base):
         ),
         nullable=False,
     )
-    # Signed: grants are positive, deductions negative. A reversal takes the
-    # opposite sign of whatever it undoes, and a level change carries zero --
-    # it is a marker, not money, so a balance needs no type filter.
+    # Signed: grants are positive, deductions negative. A level change carries
+    # zero -- it is a marker, not money, so a balance needs no type filter.
     hours: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
     # The Beijing calendar day the entry counts for, which is not necessarily
     # the day it was written: the annual trim runs on 1 January and dates its
