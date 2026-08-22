@@ -83,14 +83,15 @@ class LeaveRequestController:
         )
 
     async def coverage(self, current_user: UserContextDto):
-        """Whether the leave feature applies to the signed-in account."""
+        """Where the signed-in account stands: whether leave applies, and the
+        three figures a dashboard answers "what can I spend" with."""
         async with self.database.session() as session:
-            is_covered = await self.leave_request_service.coverage(
+            standing = await self.leave_request_service.standing(
                 session, current_user.user_id
             )
         return api_response(
-            message="Leave coverage fetched.",
-            data=LeaveCoverageDto(is_covered=is_covered),
+            message="Leave standing fetched.",
+            data=LeaveCoverageDto.of(standing),
         )
 
     async def submit(

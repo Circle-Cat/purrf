@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
-import FileLeaveDialog from "@/pages/Leave/RequestsPage/components/FileLeaveDialog";
+import FileLeaveDialog from "@/pages/Leave/components/FileLeaveDialog";
 
 const open = (props = {}) => {
   const onSubmit = vi.fn().mockResolvedValue(true);

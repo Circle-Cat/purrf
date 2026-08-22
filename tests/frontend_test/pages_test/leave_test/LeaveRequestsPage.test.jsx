@@ -123,38 +123,17 @@ describe("LeaveRequestsPage", () => {
     );
   });
 
-  it("opens the company holidays for the year the server calls current", async () => {
-    api.getLeaveHolidayYears.mockResolvedValue(
-      envelope({ years: [2026], currentYear: 2026, nextYear: 2027 }),
-    );
-    api.getLeaveHolidays.mockResolvedValue(
-      envelope({
-        year: 2026,
-        totalDays: 3,
-        segments: [
-          {
-            name: "National Day",
-            startDate: "2026-10-01",
-            endDate: "2026-10-03",
-            dayCount: 3,
-            isExchangeable: true,
-          },
-        ],
-      }),
-    );
-
+  it("offers no way to start an action, which belongs on the card", () => {
+    // Asking for leave and looking up holidays are things you do rather than
+    // things you read. Offering them here too would be two places to start the
+    // same action.
     renderPage();
-    await waitFor(() =>
-      expect(screen.getByText(/24\.00 h/)).toBeInTheDocument(),
-    );
 
-    fireEvent.click(screen.getByRole("button", { name: "Company holidays" }));
-
-    await waitFor(() =>
-      expect(screen.getByText("National Day")).toBeInTheDocument(),
-    );
-    expect(api.getLeaveHolidays).toHaveBeenCalledWith(2026);
-    expect(screen.getByText(/Oct 1 – Oct 3, 2026/)).toBeInTheDocument();
-    expect(screen.getByText("Exchangeable")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Company holidays" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /request/i }),
+    ).not.toBeInTheDocument();
   });
 });

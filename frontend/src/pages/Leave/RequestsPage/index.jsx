@@ -1,13 +1,10 @@
-import { useState } from "react";
 import { Navigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
-import CompanyHolidaysDialog from "@/pages/Leave/RequestsPage/components/CompanyHolidaysDialog";
-import FileLeaveDialog from "@/pages/Leave/RequestsPage/components/FileLeaveDialog";
 import MyRequestRow from "@/pages/Leave/RequestsPage/components/MyRequestRow";
-import { useLeaveCoverage } from "@/pages/Leave/hooks/useLeaveCoverage";
+import { useLeaveStanding } from "@/pages/Leave/hooks/useLeaveStanding";
 import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
 import {
   isWithdrawable,
@@ -18,8 +15,12 @@ import { LEAVE_CALENDAR_ZONE_LABEL } from "@/pages/Leave/utils/leaveDates";
 /**
  * LeaveRequestsPage
  *
- * The signed-in employee's own leave: what they have asked for, and the two
- * ways in to asking for more.
+ * Everything the signed-in employee has asked for.
+ *
+ * A list and nothing else. Asking for leave and looking up company holidays
+ * both live on the dashboard card, because they are things you do rather than
+ * things you read, and putting them here too would be two places to start the
+ * same action.
  *
  * Behind the leave feature flag, and the address is covered as well as the
  * entry point. Somebody the feature does not apply to is sent away rather than
@@ -30,23 +31,18 @@ import { LEAVE_CALENDAR_ZONE_LABEL } from "@/pages/Leave/utils/leaveDates";
  */
 const LeaveRequestsPage = () => {
   const isEnabled = useLeaveEnabled();
-  const { isCovered, isLoading: isCoverageLoading } = useLeaveCoverage({
+  const { isCovered, isLoading: isCoverageLoading } = useLeaveStanding({
     enabled: isEnabled,
   });
   const {
     requests,
     isLoading,
     loadError,
-    isSaving,
     saveError,
     withdrawingId,
     load,
-    file,
     withdraw,
   } = useMyLeaveRequests({ enabled: isEnabled });
-
-  const [isFiling, setIsFiling] = useState(false);
-  const [isViewingHolidays, setIsViewingHolidays] = useState(false);
 
   if (!isEnabled) {
     return <Navigate to={ROUTE_PATHS.PERSONAL_DASHBOARD} replace />;
@@ -73,20 +69,12 @@ const LeaveRequestsPage = () => {
     <div className="space-y-5">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <h2 className="m-0 text-lg font-medium">My Leave</h2>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">
-            {LEAVE_CALENDAR_ZONE_LABEL}
-          </span>
-          <Button variant="outline" onClick={() => setIsViewingHolidays(true)}>
-            Company holidays
-          </Button>
-          <Button onClick={() => setIsFiling(true)}>Request leave</Button>
-        </div>
+        <span className="text-sm text-muted-foreground">
+          {LEAVE_CALENDAR_ZONE_LABEL}
+        </span>
       </div>
 
-      {saveError && !isFiling && (
-        <p className="text-sm text-red-700">{saveError}</p>
-      )}
+      {saveError && <p className="text-sm text-red-700">{saveError}</p>}
 
       <Card className="border-gray-200 shadow-sm">
         <CardHeader>
@@ -127,18 +115,6 @@ const LeaveRequestsPage = () => {
           )}
         </CardContent>
       </Card>
-
-      <FileLeaveDialog
-        isOpen={isFiling}
-        isSaving={isSaving}
-        saveError={saveError}
-        onClose={() => setIsFiling(false)}
-        onSubmit={file}
-      />
-      <CompanyHolidaysDialog
-        isOpen={isViewingHolidays}
-        onClose={() => setIsViewingHolidays(false)}
-      />
     </div>
   );
 };

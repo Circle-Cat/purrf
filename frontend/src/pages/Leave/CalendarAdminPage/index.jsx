@@ -1,6 +1,4 @@
 import { useState } from "react";
-import { Navigate } from "react-router-dom";
-
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -11,10 +9,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import SegmentRow from "@/pages/Leave/CalendarAdminPage/components/SegmentRow";
 import { useLeaveCalendarAdmin } from "@/pages/Leave/hooks/useLeaveCalendarAdmin";
-import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
 import { LEAVE_CALENDAR_ZONE_LABEL } from "@/pages/Leave/utils/leaveDates";
 
 /**
@@ -39,7 +35,6 @@ import { LEAVE_CALENDAR_ZONE_LABEL } from "@/pages/Leave/utils/leaveDates";
  * @returns {JSX.Element}
  */
 const LeaveCalendarAdminPage = () => {
-  const isEnabled = useLeaveEnabled();
   const {
     years,
     year,
@@ -55,13 +50,9 @@ const LeaveCalendarAdminPage = () => {
     add,
     remove,
     save,
-  } = useLeaveCalendarAdmin({ enabled: isEnabled });
+  } = useLeaveCalendarAdmin();
 
   const [isConfirming, setIsConfirming] = useState(false);
-
-  if (!isEnabled) {
-    return <Navigate to={ROUTE_PATHS.PERSONAL_DASHBOARD} replace />;
-  }
 
   const totalDays = segments.reduce((running, segment) => {
     if (!segment.startDate || !segment.endDate) return running;
@@ -84,8 +75,7 @@ const LeaveCalendarAdminPage = () => {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h2 className="m-0 text-lg font-medium">Company holiday calendar</h2>
+      <div className="flex justify-end">
         <span className="text-sm text-muted-foreground">
           {LEAVE_CALENDAR_ZONE_LABEL}
         </span>

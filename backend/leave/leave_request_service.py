@@ -19,6 +19,7 @@ putting them back is an admin adjustment carrying a note.
 
 import datetime
 import json
+from dataclasses import dataclass
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,6 +71,20 @@ def _balance_delta(request_type: LeaveRequestType, hours: Decimal) -> Decimal:
     if request_type is LeaveRequestType.EXCHANGE:
         return hours
     return -hours
+
+
+@dataclass(frozen=True)
+class LeaveStanding:
+    """Whether leave applies to somebody, and what they can spend.
+
+    Every figure is None when it does not apply. Zero is a real balance and
+    would be read as one.
+    """
+
+    is_covered: bool
+    available: Decimal | None
+    pending: Decimal | None
+    used: Decimal | None
 
 
 def _ldap_from_addresses(addresses) -> str | None:
@@ -413,6 +428,48 @@ class LeaveRequestService:
             )
             for request in requests
         ]
+
+    async def standing(self, session: AsyncSession, user_id: int) -> "LeaveStanding":
+        """Where this person stands: whether leave applies, and the three
+        figures a dashboard answers "what can I spend" with.
+
+        All three are computed here. Available is the balance less the hours
+        already held by undecided requests, which is the same definition the
+        overdraft mark uses -- so a card cannot say somebody can afford leave
+        that filing would then flag. Used is this year only: a figure summed
+        across years would say somebody spent this year what they spent over
+        their whole employment.
+
+        The figures are None for somebody the feature does not apply to. Zero
+        would read as an entitlement of nothing rather than as a feature with
+        nothing to do with them.
+
+        Args:
+            session: Active async session.
+            user_id: Whose standing.
+
+        Returns:
+            The standing.
+        """
+        if not await self.coverage(session, user_id):
+            return LeaveStanding(
+                is_covered=False, available=None, pending=None, used=None
+            )
+
+        balance = await self.leave_ledger_repository.balance(session, user_id)
+        pending = await self.leave_request_repository.sum_pending_paid_hours(
+            session, user_id
+        )
+        deducted = await self.leave_ledger_repository.sum_deductions_for_year(
+            session, user_id, business_today().year
+        )
+        return LeaveStanding(
+            is_covered=True,
+            available=balance - pending,
+            pending=pending,
+            # Stored negative; shown as an amount spent.
+            used=-deducted,
+        )
 
     async def coverage(self, session: AsyncSession, user_id: int) -> bool:
         """Whether the leave system has anything to do with this account.

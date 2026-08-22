@@ -1,9 +1,7 @@
 import { useState } from "react";
-import { Navigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import AdjustBalanceDialog from "@/pages/Leave/BalancesPage/components/AdjustBalanceDialog";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -12,7 +10,6 @@ import {
   negativeByLevel,
 } from "@/pages/Leave/BalancesPage/problems";
 import { useLeaveBalances } from "@/pages/Leave/hooks/useLeaveBalances";
-import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
 
 /** Each way of being left out, and what it takes to fix it. */
 const EXCLUSION_GROUPS = [
@@ -58,7 +55,6 @@ const EXCLUSION_GROUPS = [
  * @returns {JSX.Element}
  */
 const LeaveBalancesPage = () => {
-  const isEnabled = useLeaveEnabled();
   const {
     people,
     excluded,
@@ -71,7 +67,7 @@ const LeaveBalancesPage = () => {
     clearResult,
     load,
     adjust,
-  } = useLeaveBalances({ enabled: isEnabled });
+  } = useLeaveBalances();
 
   const [adjusting, setAdjusting] = useState(null);
 
@@ -80,10 +76,6 @@ const LeaveBalancesPage = () => {
   const problemGroups = byProblem(people);
   const negativeGroups = negativeByLevel(people);
 
-  if (!isEnabled) {
-    return <Navigate to={ROUTE_PATHS.PERSONAL_DASHBOARD} replace />;
-  }
-
   const closeDialog = () => {
     setAdjusting(null);
     clearResult();
@@ -91,8 +83,6 @@ const LeaveBalancesPage = () => {
 
   return (
     <div className="space-y-5">
-      <h2 className="m-0 text-lg font-medium">Leave balances</h2>
-
       {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
 
       {!isLoading && loadError && (
