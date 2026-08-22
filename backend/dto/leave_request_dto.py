@@ -34,9 +34,11 @@ class LeaveRequestDto(BaseDto):
     encoder turns a Decimal into a float, and 78.46 comes back as
     78.45999999999999.
 
-    ``employee_name`` is filled in only where somebody is looking at another
-    person's request -- a manager's queue. It is None on your own list, where
-    the name would be your own.
+    ``employee_name`` and ``employee_ldap`` are filled in only where somebody
+    is looking at another person's request -- a manager's queue. They are None
+    on your own list, where they would be your own. Either can be None on its
+    own: a name comes from the account and an ldap from its corporate address,
+    and one can be missing while the other is not.
 
     ``decided_by`` empty on an approved request means nobody decided it: that
     is sick leave of three days or less, approved on submission.
@@ -45,6 +47,7 @@ class LeaveRequestDto(BaseDto):
     request_id: int
     user_id: int
     employee_name: str | None
+    employee_ldap: str | None
     type: str
     status: str
     start_date: datetime.date
@@ -60,13 +63,19 @@ class LeaveRequestDto(BaseDto):
     decided_at: datetime.datetime | None
 
     @classmethod
-    def of(cls, request, employee_name: str | None = None) -> "LeaveRequestDto":
+    def of(
+        cls,
+        request,
+        employee_name: str | None = None,
+        employee_ldap: str | None = None,
+    ) -> "LeaveRequestDto":
         """Builds one from a stored request.
 
         Args:
             request (LeaveRequestEntity): The stored row.
             employee_name: Whose request it is, when the reader is somebody
                 else.
+            employee_ldap: That person's Azure ldap, when known.
 
         Returns:
             The read model.
@@ -75,6 +84,7 @@ class LeaveRequestDto(BaseDto):
             request_id=request.leave_request_id,
             user_id=request.user_id,
             employee_name=employee_name,
+            employee_ldap=employee_ldap,
             type=request.type.value,
             status=request.status.value,
             start_date=request.start_date,

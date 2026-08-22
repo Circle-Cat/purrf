@@ -49,6 +49,28 @@ NO_HOURS = Decimal("0.00")
 SICK_AUTO_APPROVE_HOURS = Decimal("24.00")
 
 
+def _ldap_from_addresses(addresses) -> str | None:
+    """The Azure ldap an account carries, or None if it carries none.
+
+    Azure knows people by ldap and purrf knows them by account; the corporate
+    address is the whole of the join, so the ldap is read off it rather than
+    stored a second time. Sorted, so that an account somehow holding two
+    corporate addresses still reads the same way every time -- the directory
+    join says that cannot happen, and if it does the answer must at least not
+    move around between requests.
+
+    Args:
+        addresses: The account's email addresses, in any order.
+
+    Returns:
+        The local part of its corporate address, or None.
+    """
+    for address in sorted(addresses):
+        if address.endswith(INTERNAL_GOOGLE_ACCOUNT_DOMAIN):
+            return address.split("@")[0]
+    return None
+
+
 class LeaveRequestService:
     """The request lifecycle."""
 
@@ -326,9 +348,8 @@ class LeaveRequestService:
         requests = await self.leave_request_repository.list_for_approver(
             session, approver_user_id, list(LeaveRequestStatus)
         )
-        people = await self.users_repository.get_all_by_ids(
-            session, sorted({request.user_id for request in requests})
-        )
+        user_ids = sorted({request.user_id for request in requests})
+        people = await self.users_repository.get_all_by_ids(session, user_ids)
         name_by_id = {
             person.user_id: partner_display_name(
                 first_name=person.first_name,
@@ -337,8 +358,19 @@ class LeaveRequestService:
             )
             for person in people
         }
+        addresses_by_id = await self.user_emails_repository.get_emails_by_user_ids(
+            session, user_ids
+        )
+        ldap_by_id = {
+            user_id: _ldap_from_addresses(addresses)
+            for user_id, addresses in addresses_by_id.items()
+        }
         return [
-            LeaveRequestDto.of(request, employee_name=name_by_id.get(request.user_id))
+            LeaveRequestDto.of(
+                request,
+                employee_name=name_by_id.get(request.user_id),
+                employee_ldap=ldap_by_id.get(request.user_id),
+            )
             for request in requests
         ]
 
@@ -497,13 +529,13 @@ class LeaveRequestService:
     async def _ldap_of(self, session: AsyncSession, user_id: int) -> str:
         """This account's Azure ldap, taken from its corporate address."""
         rows = await self.user_emails_repository.list_by_user_id(session, user_id)
-        for row in rows:
-            if row.email.endswith(INTERNAL_GOOGLE_ACCOUNT_DOMAIN):
-                return row.email.split("@")[0]
-        raise ValueError(
-            "This account has no corporate address, so its Azure record "
-            "cannot be found."
-        )
+        ldap = _ldap_from_addresses(row.email for row in rows)
+        if ldap is None:
+            raise ValueError(
+                "This account has no corporate address, so its Azure record "
+                "cannot be found."
+            )
+        return ldap
 
     async def _calendar(
         self,

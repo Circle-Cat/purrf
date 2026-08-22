@@ -56,6 +56,7 @@ class LeaveRequestServiceTest(IsolatedAsyncioTestCase):
         self.emails.list_by_user_id = AsyncMock(
             return_value=[_email("ann@circlecat.org")]
         )
+        self.emails.get_emails_by_user_ids = AsyncMock(return_value={})
         self.users = MagicMock()
         self.users.get_all_by_ids = AsyncMock(return_value=[])
         self.redis_client = MagicMock()
@@ -598,6 +599,43 @@ class TestLists(LeaveRequestServiceTest):
         listed = await self.service.list_for_approver(self.session, MANAGER)
 
         self.assertEqual([entry.status for entry in listed], ["approved"])
+
+    async def test_the_queue_carries_the_ldap_off_the_corporate_address(self):
+        """Azure knows people by ldap and purrf knows them by account; the
+        corporate address is the whole of the join, so the ldap is read off it
+        rather than stored a second time."""
+        self.requests.list_for_approver.return_value = [self._row()]
+        self.emails.get_emails_by_user_ids.return_value = {
+            EMPLOYEE: ["ann.personal@gmail.com", "aemployee@circlecat.org"]
+        }
+
+        queue = await self.service.list_for_approver(self.session, MANAGER)
+
+        self.assertEqual(queue[0].employee_ldap, "aemployee")
+
+    async def test_an_ldap_that_cannot_be_resolved_does_not_break_the_queue(self):
+        """Same discipline as the name: somebody with no corporate address is
+        shown without one rather than taking a manager's whole queue down."""
+        self.requests.list_for_approver.return_value = [self._row()]
+        self.emails.get_emails_by_user_ids.return_value = {
+            EMPLOYEE: ["ann.personal@gmail.com"]
+        }
+
+        queue = await self.service.list_for_approver(self.session, MANAGER)
+
+        self.assertIsNone(queue[0].employee_ldap)
+
+    async def test_two_corporate_addresses_resolve_the_same_way_every_time(self):
+        """The directory join says this cannot happen. If it does, two reads of
+        the same account must still agree."""
+        self.requests.list_for_approver.return_value = [self._row()]
+        self.emails.get_emails_by_user_ids.return_value = {
+            EMPLOYEE: ["zzz@circlecat.org", "aaa@circlecat.org"]
+        }
+
+        queue = await self.service.list_for_approver(self.session, MANAGER)
+
+        self.assertEqual(queue[0].employee_ldap, "aaa")
 
     async def test_a_name_that_cannot_be_resolved_does_not_break_the_queue(self):
         """A deleted account should not take a manager's whole queue down."""
