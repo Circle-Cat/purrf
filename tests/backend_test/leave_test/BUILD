@@ -20,7 +20,9 @@ py_test(
     name = "employment_sync_service_test",
     srcs = ["employment_sync_service_test.py"],
     deps = [
+        "//backend/common:leave_enums",
         "//backend/leave:employment_sync_service",
+        "//backend/leave:leave_participants",
     ],
 )
 
@@ -61,5 +63,56 @@ py_test(
     srcs = ["leave_calendar_controller_test.py"],
     deps = [
         "//backend/leave:leave_calendar_controller",
+    ],
+)
+
+py_test(
+    name = "leave_accrual_test",
+    srcs = ["leave_accrual_test.py"],
+    deps = [
+        "//backend/leave:leave_accrual",
+        "//backend/leave:leave_clock",
+    ],
+)
+
+py_test(
+    name = "leave_adjustment_service_test",
+    srcs = ["leave_adjustment_service_test.py"],
+    deps = [
+        "//backend/common:leave_enums",
+        "//backend/leave:leave_adjustment_service",
+    ],
+)
+
+py_test(
+    name = "leave_admin_controller_test",
+    srcs = ["leave_admin_controller_test.py"],
+    deps = [
+        "//backend/leave:leave_admin_controller",
+    ],
+)
+
+py_test(
+    name = "leave_participants_test",
+    srcs = ["leave_participants_test.py"],
+    deps = [
+        "//backend/leave:leave_participants",
+    ],
+)
+
+py_test(
+    name = "leave_engine_service_test",
+    srcs = ["leave_engine_service_test.py"],
+    deps = [
+        "//backend/common:leave_enums",
+        "//backend/leave:leave_engine_service",
+    ],
+)
+
+py_test(
+    name = "leave_job_controller_test",
+    srcs = ["leave_job_controller_test.py"],
+    deps = [
+        "//backend/leave:leave_job_controller",
     ],
 )
