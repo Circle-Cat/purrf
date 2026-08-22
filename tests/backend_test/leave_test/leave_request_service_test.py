@@ -704,6 +704,46 @@ class TestLists(LeaveRequestServiceTest):
         self.assertIsNone(queue[0].balance_before)
         self.assertIsNone(queue[0].balance_after)
 
+    async def test_a_request_says_how_much_notice_it_owed(self):
+        """The flag alone says only "not enough". What the rule asked for is
+        the number a reader needs, and computing it in the browser would put
+        the notice rule in two places."""
+        self.requests.list_for_approver.return_value = [self._row()]
+
+        queue = await self.service.list_for_approver(self.session, MANAGER)
+
+        # 24 hours is three days, and the rule asks twice the days.
+        self.assertEqual(queue[0].required_notice_workdays, 6)
+
+    async def test_part_of_a_day_still_owes_a_whole_days_notice(self):
+        """Four hours off and eight ask for the same notice: the day has to be
+        covered either way."""
+        row = self._row()
+        row.hours = Decimal("4.00")
+        self.requests.list_for_approver.return_value = [row]
+
+        queue = await self.service.list_for_approver(self.session, MANAGER)
+
+        self.assertEqual(queue[0].required_notice_workdays, 2)
+
+    async def test_sick_leave_owes_no_notice_at_all(self):
+        """Nobody schedules illness, so there is no requirement to state."""
+        row = self._row()
+        row.type = LeaveRequestType.SICK
+        self.requests.list_for_approver.return_value = [row]
+
+        queue = await self.service.list_for_approver(self.session, MANAGER)
+
+        self.assertIsNone(queue[0].required_notice_workdays)
+
+    async def test_your_own_list_states_the_same_requirement(self):
+        """Two views of one request must not disagree about what it owed."""
+        self.requests.list_for_user.return_value = [self._row()]
+
+        own = await self.service.list_own(self.session, EMPLOYEE)
+
+        self.assertEqual(own[0].required_notice_workdays, 6)
+
     async def test_a_name_that_cannot_be_resolved_does_not_break_the_queue(self):
         """A deleted account should not take a manager's whole queue down."""
         self.requests.list_for_approver.return_value = [self._row()]

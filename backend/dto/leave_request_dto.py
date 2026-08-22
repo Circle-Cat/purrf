@@ -53,6 +53,12 @@ class LeaveRequestDto(BaseDto):
     ``decided_by`` empty on an approved request means nobody decided it: that
     is sick leave of three days or less, approved on submission.
 
+    ``required_notice_workdays`` is the notice the rule asked of this request,
+    in working days. The late-notice flag says only that it fell short; the
+    number is what a reader needs, and it is sent rather than derived on screen
+    so the notice rule lives in one place. None for sick leave, which owes no
+    notice at all.
+
     ``balance_before`` and ``balance_after`` are the pair an approver decides
     on: where this person's balance stands and where approving would leave it.
     They are filled in only while a request is still waiting. Once it has been
@@ -77,6 +83,7 @@ class LeaveRequestDto(BaseDto):
     approver_user_id: int
     decided_by: int | None
     decided_at: datetime.datetime | None
+    required_notice_workdays: int | None
     balance_before: str | None
     balance_after: str | None
 
@@ -86,6 +93,7 @@ class LeaveRequestDto(BaseDto):
         request,
         employee_name: str | None = None,
         employee_ldap: str | None = None,
+        required_notice_workdays: int | None = None,
         balance_before: Decimal | None = None,
         balance_after: Decimal | None = None,
     ) -> "LeaveRequestDto":
@@ -96,6 +104,8 @@ class LeaveRequestDto(BaseDto):
             employee_name: Whose request it is, when the reader is somebody
                 else.
             employee_ldap: That person's Azure ldap, when known.
+            required_notice_workdays: Working days of notice the rule asked
+                of it, or None where none was owed.
             balance_before: Their balance now, for a request still waiting.
             balance_after: Where approving it would leave that balance.
 
@@ -120,6 +130,7 @@ class LeaveRequestDto(BaseDto):
             approver_user_id=request.approver_user_id,
             decided_by=request.decided_by,
             decided_at=request.decided_at,
+            required_notice_workdays=required_notice_workdays,
             balance_before=_hours(balance_before),
             balance_after=_hours(balance_after),
         )

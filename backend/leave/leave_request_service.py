@@ -341,7 +341,12 @@ class LeaveRequestService:
             Their requests. No name on them: it would be the reader's own.
         """
         requests = await self.leave_request_repository.list_for_user(session, user_id)
-        return [LeaveRequestDto.of(request) for request in requests]
+        return [
+            LeaveRequestDto.of(
+                request, required_notice_workdays=self._required_notice(request)
+            )
+            for request in requests
+        ]
 
     async def list_for_approver(
         self, session: AsyncSession, approver_user_id: int
@@ -403,10 +408,23 @@ class LeaveRequestService:
                 request,
                 employee_name=name_by_id.get(request.user_id),
                 employee_ldap=ldap_by_id.get(request.user_id),
+                required_notice_workdays=self._required_notice(request),
                 **self._balance_pair(request, balance_by_id),
             )
             for request in requests
         ]
+
+    @staticmethod
+    def _required_notice(request: LeaveRequestEntity) -> int | None:
+        """Working days of notice the rule asked of this request.
+
+        Stated on every view of a request, not only where it fell short, so
+        two views of one request cannot disagree about what it owed. Sick leave
+        owes none: nobody schedules illness.
+        """
+        if request.type is LeaveRequestType.SICK:
+            return None
+        return required_notice_workdays(request.hours)
 
     @staticmethod
     def _balance_pair(
