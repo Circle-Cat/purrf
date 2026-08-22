@@ -106,6 +106,12 @@ const Sidebar = () => {
       permissions: [PERMISSIONS.RECRUITING_AUDIT_READ],
     },
     {
+      label: "Leave Balances",
+      to: ROUTE_PATHS.LEAVE_BALANCES_ADMIN,
+      permissions: [PERMISSIONS.LEAVE_ADMIN],
+      flag: FEATURE_FLAGS.LEAVE_MANAGEMENT,
+    },
+    {
       // The employee-facing leave screens are not here: whether the feature
       // applies to somebody is not a permission, and this sidebar is driven
       // entirely by permissions. Entering the calendar is a permission.

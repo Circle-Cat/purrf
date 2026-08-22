@@ -134,3 +134,33 @@ export async function replaceLeaveHolidays(year, segments) {
     segments,
   });
 }
+
+/**
+ * Fetches everybody the accrual engine pays, with their balances.
+ *
+ * Also carries everybody the engine cannot pay, grouped by reason. Somebody
+ * left out of every run is invisible in their own balance -- it stays wherever
+ * it was -- so the groups are the point of the page as much as the figures.
+ *
+ * @returns {Promise<object>} The API envelope; `data` holds `people`,
+ *   `excluded` and `profileCount`.
+ */
+export async function getLeaveBalances() {
+  return await request.get(API_ENDPOINTS.LEAVE_BALANCES);
+}
+
+/**
+ * Writes one hand-made correction to somebody's ledger.
+ *
+ * Nothing on the server dedupes these -- an administrator may legitimately
+ * book several for one person on one day -- so a form that submits twice
+ * writes twice. The balance that comes back is what the caller checks against.
+ *
+ * @param {{userId: number, hours: string, effectiveDate: string,
+ *          note: string}} payload - The correction.
+ * @returns {Promise<object>} The API envelope; `data.balanceHours` is the
+ *   balance the correction produced.
+ */
+export async function adjustLeaveBalance(payload) {
+  return await request.post(API_ENDPOINTS.LEAVE_ADJUSTMENTS, payload);
+}

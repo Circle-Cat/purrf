@@ -35,6 +35,7 @@ import Audit from "@/pages/Recruiting/audit/Audit";
 import LeaveApprovalsPage from "@/pages/Leave/ApprovalsPage";
 import LeaveRequestsPage from "@/pages/Leave/RequestsPage";
 import LeaveCalendarAdminPage from "@/pages/Leave/CalendarAdminPage";
+import LeaveBalancesPage from "@/pages/Leave/BalancesPage";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
 import { PERMISSIONS } from "@/constants/Permissions";
@@ -120,6 +121,16 @@ function App() {
                     {/* Unlike the employee-facing leave routes, entering
                         the calendar is a real permission: it decides what
                         every leave request in a year is measured against. */}
+                    <Route
+                      path={ROUTE_PATHS.LEAVE_BALANCES_ADMIN}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[PERMISSIONS.LEAVE_ADMIN]}
+                        >
+                          <LeaveBalancesPage />
+                        </ProtectedRoute>
+                      }
+                    />
                     <Route
                       path={ROUTE_PATHS.LEAVE_CALENDAR_ADMIN}
                       element={
