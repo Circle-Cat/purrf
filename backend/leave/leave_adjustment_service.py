@@ -8,14 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.common.leave_enums import LeaveEntryType
 from backend.dto.leave_adjustment_dto import LeaveAdjustmentResultDto
 from backend.entity.leave_ledger_entity import LeaveLedgerEntity
+from backend.leave.leave_accrual import NO_HOURS, format_hours
 from backend.leave.leave_clock import business_today
-
-NO_HOURS = Decimal("0.00")
-
-
-def _as_hours(value: Decimal) -> str:
-    """Formats hours for the wire: fixed two decimals, never a float."""
-    return f"{value:.2f}"
 
 
 class LeaveAdjustmentService:
@@ -102,13 +96,13 @@ class LeaveAdjustmentService:
             "Leave balance adjusted by %s: user %s, %s hours on %s",
             author_user_id,
             user_id,
-            _as_hours(hours),
+            format_hours(hours),
             effective_date,
         )
         return LeaveAdjustmentResultDto(
             user_id=user_id,
-            hours=_as_hours(hours),
+            hours=format_hours(hours),
             effective_date=effective_date,
             note=reason,
-            balance_hours=_as_hours(balance),
+            balance_hours=format_hours(balance),
         )
