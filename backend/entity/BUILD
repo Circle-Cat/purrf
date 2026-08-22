@@ -7,6 +7,7 @@ py_library(
     srcs = glob(["*.py"]),
     deps = [
         "//backend/common:base",
+        "//backend/common:leave_enums",
         "//backend/common:mentorship_enums",
         "//backend/common:recruiting_enums",
         "@pypi//sqlalchemy",
