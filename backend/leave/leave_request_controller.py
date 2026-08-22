@@ -4,7 +4,7 @@ from backend.common.api_endpoints import (
     LEAVE_REQUEST_DECISION_ENDPOINT,
     LEAVE_REQUEST_WITHDRAW_ENDPOINT,
     LEAVE_REQUESTS_ENDPOINT,
-    LEAVE_REQUESTS_PENDING_ENDPOINT,
+    LEAVE_REQUESTS_APPROVALS_ENDPOINT,
 )
 from backend.common.fast_api_response_wrapper import api_response
 from backend.dto.leave_request_dto import LeaveDecisionDto, LeaveRequestSubmitDto
@@ -51,8 +51,8 @@ class LeaveRequestController:
             response_model=None,
         )
         self.router.add_api_route(
-            LEAVE_REQUESTS_PENDING_ENDPOINT,
-            endpoint=authenticate()(self.list_pending),
+            LEAVE_REQUESTS_APPROVALS_ENDPOINT,
+            endpoint=authenticate()(self.list_approvals),
             methods=["GET"],
             response_model=None,
         )
@@ -94,13 +94,18 @@ class LeaveRequestController:
             )
         return api_response(message="Leave requests fetched.", data=requests)
 
-    async def list_pending(self, current_user: UserContextDto):
-        """Return the requests waiting on the signed-in employee to decide."""
+    async def list_approvals(self, current_user: UserContextDto):
+        """Return every request ever filed against the signed-in employee.
+
+        Decided ones included: an empty list is the only thing that says
+        somebody does not approve for anybody, so the callers that decide
+        whether to offer an approvals view at all read it off this.
+        """
         async with self.database.session() as session:
-            requests = await self.leave_request_service.list_pending_for_approver(
+            requests = await self.leave_request_service.list_for_approver(
                 session, current_user.user_id
             )
-        return api_response(message="Pending leave requests fetched.", data=requests)
+        return api_response(message="Leave approvals fetched.", data=requests)
 
     async def withdraw(self, request_id: int, current_user: UserContextDto):
         """Take back one of the signed-in employee's undecided requests."""

@@ -30,7 +30,7 @@ class TestLeaveRequestController(unittest.IsolatedAsyncioTestCase):
         self.service.withdraw = AsyncMock(return_value=MagicMock())
         self.service.decide = AsyncMock(return_value=MagicMock())
         self.service.list_own = AsyncMock(return_value=[])
-        self.service.list_pending_for_approver = AsyncMock(return_value=[])
+        self.service.list_for_approver = AsyncMock(return_value=[])
         self.controller = LeaveRequestController(self.service, self.database)
 
         patcher = patch("backend.leave.leave_request_controller.api_response")
@@ -91,11 +91,9 @@ class TestLeaveRequestController(unittest.IsolatedAsyncioTestCase):
         self.service.list_own.assert_awaited_once_with(self.session, 10)
 
     async def test_the_queue_is_the_callers_queue(self):
-        await self.controller.list_pending(self.ctx)
+        await self.controller.list_approvals(self.ctx)
 
-        self.service.list_pending_for_approver.assert_awaited_once_with(
-            self.session, 10
-        )
+        self.service.list_for_approver.assert_awaited_once_with(self.session, 10)
 
     def test_every_route_is_open_to_any_signed_in_employee(self):
         """Leave is not an administered feature: everybody files their own and
@@ -106,7 +104,7 @@ class TestLeaveRequestController(unittest.IsolatedAsyncioTestCase):
         for path, method in (
             ("/leave/requests", "POST"),
             ("/leave/requests", "GET"),
-            ("/leave/requests/pending", "GET"),
+            ("/leave/requests/approvals", "GET"),
             ("/leave/requests/{request_id}/withdraw", "POST"),
             ("/leave/requests/{request_id}/decision", "POST"),
         ):

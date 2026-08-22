@@ -573,23 +573,37 @@ class TestLists(LeaveRequestServiceTest):
         self.users.get_all_by_ids.return_value = [person]
         self.requests.list_for_approver.return_value = [self._row()]
 
-        queue = await self.service.list_pending_for_approver(self.session, MANAGER)
+        queue = await self.service.list_for_approver(self.session, MANAGER)
 
         self.assertEqual(queue[0].employee_name, "Ann Employee")
 
-    async def test_the_queue_holds_only_what_is_waiting(self):
-        await self.service.list_pending_for_approver(self.session, MANAGER)
+    async def test_the_queue_holds_every_status_not_only_what_is_waiting(self):
+        """Being an approver is read off this list: nobody carries a manager
+        flag, so the entry point exists exactly when somebody has filed against
+        you. Narrowing this to pending would take the entry away the moment a
+        manager finished deciding, and with it any way to look up what they
+        decided."""
+        await self.service.list_for_approver(self.session, MANAGER)
 
         self.assertEqual(
             self.requests.list_for_approver.await_args.args[2],
-            [LeaveRequestStatus.PENDING],
+            list(LeaveRequestStatus),
         )
+
+    async def test_a_decided_request_stays_in_the_approver_list(self):
+        row = self._row()
+        row.status = LeaveRequestStatus.APPROVED
+        self.requests.list_for_approver.return_value = [row]
+
+        listed = await self.service.list_for_approver(self.session, MANAGER)
+
+        self.assertEqual([entry.status for entry in listed], ["approved"])
 
     async def test_a_name_that_cannot_be_resolved_does_not_break_the_queue(self):
         """A deleted account should not take a manager's whole queue down."""
         self.requests.list_for_approver.return_value = [self._row()]
 
-        queue = await self.service.list_pending_for_approver(self.session, MANAGER)
+        queue = await self.service.list_for_approver(self.session, MANAGER)
 
         self.assertIsNone(queue[0].employee_name)
 

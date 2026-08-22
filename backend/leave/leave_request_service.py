@@ -298,10 +298,18 @@ class LeaveRequestService:
         requests = await self.leave_request_repository.list_for_user(session, user_id)
         return [LeaveRequestDto.of(request) for request in requests]
 
-    async def list_pending_for_approver(
+    async def list_for_approver(
         self, session: AsyncSession, approver_user_id: int
     ) -> list[LeaveRequestDto]:
-        """What is waiting on one approver, oldest first.
+        """Everything ever filed against one approver, oldest first.
+
+        Every status, not just the ones waiting. Nobody carries a manager flag
+        -- being an approver is not a permission, and a manager who gets no
+        leave themselves has no employment profile to read it off -- so this
+        list is what says somebody approves for others at all: it is non-empty
+        exactly when somebody has filed against them. Narrowing it to pending
+        would take that away the moment a manager finished deciding, and would
+        leave nowhere to look up what they had decided.
 
         Each carries the name of whoever asked: a queue of user ids is
         unusable. A name that cannot be resolved is left empty rather than
@@ -313,10 +321,10 @@ class LeaveRequestService:
             approver_user_id: The approver.
 
         Returns:
-            The pending requests.
+            The requests, decided ones included.
         """
         requests = await self.leave_request_repository.list_for_approver(
-            session, approver_user_id, [LeaveRequestStatus.PENDING]
+            session, approver_user_id, list(LeaveRequestStatus)
         )
         people = await self.users_repository.get_all_by_ids(
             session, sorted({request.user_id for request in requests})
