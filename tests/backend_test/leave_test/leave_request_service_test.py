@@ -431,6 +431,19 @@ class TestDecisions(LeaveRequestServiceTest):
         self.assertEqual(row.source_request_id, 501)
         self.assertEqual(row.created_by, MANAGER)
 
+    async def test_deciding_holds_the_row_it_decides(self):
+        """Read without the lock, a second decider sees the same pending row,
+        passes the same check, and writes a second deduction onto a ledger that
+        cannot be edited. Nothing about a single decision looks wrong, so the
+        lock is asserted rather than the outcome."""
+        self._pending()
+
+        await self.service.decide(self.session, 501, MANAGER, approve=True)
+
+        self.requests.get_by_id.assert_awaited_once_with(
+            self.session, 501, for_update=True
+        )
+
     async def test_approving_an_exchange_credits_it(self):
         self._pending(request_type=LeaveRequestType.EXCHANGE, hours="16.00")
 
@@ -509,6 +522,17 @@ class TestWithdraw(LeaveRequestServiceTest):
 
         self.assertEqual(request.status, LeaveRequestStatus.WITHDRAWN)
         self.session.commit.assert_awaited_once()
+
+    async def test_withdrawing_holds_the_row_too(self):
+        """Withdrawing and deciding race against each other on one row, so the
+        lock belongs to the read they share rather than to either caller."""
+        self._pending()
+
+        await self.service.withdraw(self.session, 501, EMPLOYEE)
+
+        self.requests.get_by_id.assert_awaited_once_with(
+            self.session, 501, for_update=True
+        )
 
     async def test_only_its_owner_may_withdraw_it(self):
         self._pending()

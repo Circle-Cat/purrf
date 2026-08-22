@@ -451,8 +451,23 @@ class LeaveRequestService:
     async def _pending_request(
         self, session: AsyncSession, request_id: int
     ) -> LeaveRequestEntity:
-        """Loads a request that is still awaiting a decision."""
-        request = await self.leave_request_repository.get_by_id(session, request_id)
+        """Loads a request that is still awaiting a decision, holding its row.
+
+        The row is locked rather than merely read. Both callers -- deciding and
+        withdrawing -- read the status, judge it, and then write; without the
+        lock a second caller reads the same pending row before the first has
+        written, passes the same check, and the request is settled twice. An
+        approval settled twice writes a second deduction, and the ledger is
+        append-only: the extra hours cannot be edited away, only argued back
+        with a further row that somebody has to notice is needed.
+
+        With the lock, the second caller waits and then reads the decided
+        status, so the check below refuses it. The check itself is unchanged --
+        it was always right, and was only ever being read too early.
+        """
+        request = await self.leave_request_repository.get_by_id(
+            session, request_id, for_update=True
+        )
         if request is None:
             raise ValueError(f"No leave request {request_id}.")
         if request.status is not LeaveRequestStatus.PENDING:
