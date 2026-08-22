@@ -753,5 +753,77 @@ class TestLists(LeaveRequestServiceTest):
         self.assertIsNone(queue[0].employee_name)
 
 
+class TestCoverage(LeaveRequestServiceTest):
+    """Whether the leave system has anything to do with one account.
+
+    Nothing in the feature should offer somebody a screen it cannot serve, and
+    nothing should tell somebody outside the population that they hold a
+    balance of zero -- that reads as an entitlement of nothing rather than as
+    "this does not apply to you".
+    """
+
+    async def test_somebody_the_nightly_sync_knows_is_covered(self):
+        covered = await self.service.coverage(self.session, EMPLOYEE)
+
+        self.assertTrue(covered)
+
+    async def test_somebody_the_sync_has_never_seen_is_not_covered(self):
+        self.redis_client.hgetall.return_value = {}
+        self.ledger.balances_by_user_ids.return_value = {}
+
+        covered = await self.service.coverage(self.session, EMPLOYEE)
+
+        self.assertFalse(covered)
+
+    async def test_a_ledger_row_covers_somebody_the_sync_has_dropped(self):
+        """Somebody who has left the population keeps their history. Their
+        profile is deleted the next night, and hiding the record with it would
+        make the hours they were granted unaccountable."""
+        self.redis_client.hgetall.return_value = {}
+        self.ledger.balances_by_user_ids.return_value = {EMPLOYEE: Decimal("8.00")}
+
+        covered = await self.service.coverage(self.session, EMPLOYEE)
+
+        self.assertTrue(covered)
+
+    async def test_a_zero_balance_still_counts_as_a_row(self):
+        """A balance summing to zero is not an absent one. Falling back to the
+        figure rather than to the presence of rows would drop exactly the
+        people whose credits and deductions cancel out."""
+        self.redis_client.hgetall.return_value = {}
+        self.ledger.balances_by_user_ids.return_value = {EMPLOYEE: Decimal("0.00")}
+
+        covered = await self.service.coverage(self.session, EMPLOYEE)
+
+        self.assertTrue(covered)
+
+    async def test_an_account_with_no_corporate_address_is_not_covered(self):
+        """The corporate address is the whole of the join onto Azure, so
+        without one there is no profile to find."""
+        self.emails.list_by_user_id.return_value = [_email("ann@gmail.com")]
+        self.ledger.balances_by_user_ids.return_value = {}
+
+        covered = await self.service.coverage(self.session, EMPLOYEE)
+
+        self.assertFalse(covered)
+
+    async def test_the_cache_is_not_consulted_without_an_ldap(self):
+        """There is no key to ask about, so the round trip is skipped."""
+        self.emails.list_by_user_id.return_value = [_email("ann@gmail.com")]
+        self.ledger.balances_by_user_ids.return_value = {}
+
+        await self.service.coverage(self.session, EMPLOYEE)
+
+        self.redis_client.hgetall.assert_not_called()
+
+    async def test_no_corporate_address_but_a_ledger_row_is_still_covered(self):
+        self.emails.list_by_user_id.return_value = [_email("ann@gmail.com")]
+        self.ledger.balances_by_user_ids.return_value = {EMPLOYEE: Decimal("8.00")}
+
+        covered = await self.service.coverage(self.session, EMPLOYEE)
+
+        self.assertTrue(covered)
+
+
 if __name__ == "__main__":
     main()

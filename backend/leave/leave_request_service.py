@@ -414,6 +414,52 @@ class LeaveRequestService:
             for request in requests
         ]
 
+    async def coverage(self, session: AsyncSession, user_id: int) -> bool:
+        """Whether the leave system has anything to do with this account.
+
+        Two ways of being covered, taken as an or. The nightly sync writes an
+        employment profile for the people in scope -- full-time and based in
+        China -- and deletes everybody else's, so being in that cache is the
+        live answer. A ledger row is the second: rows are only ever written for
+        people who were covered, so somebody who has since left the population
+        keeps their history rather than having it vanish the night their
+        profile is dropped.
+
+        The second half is also the degradation path. Reading Redis alone means
+        that while the cache is cold, or before the sync has ever run, *nobody*
+        looks covered and the whole feature disappears for everyone. With the
+        ledger in the or, what disappears is only somebody in scope who has
+        never been granted an hour.
+
+        The corporate address is the whole of the join onto Azure, so an account
+        without one has no profile to look for and the cache is not consulted at
+        all -- there is no key to ask about, and the answer can only come from
+        the ledger.
+
+        Args:
+            session: Active async session.
+            user_id: Whose standing.
+
+        Returns:
+            True when the feature applies to them.
+        """
+        rows = await self.user_emails_repository.list_by_user_id(session, user_id)
+        ldap = _ldap_from_addresses(row.email for row in rows)
+        if ldap is not None:
+            profiles = self.retry_utils.get_retry_on_transient(
+                self.redis_client.hgetall, LEAVE_EMPLOYMENT_KEY
+            )
+            if ldap in (profiles or {}):
+                return True
+
+        # Presence of rows, never the figure they sum to: a balance of zero is
+        # a real balance, and testing the total would drop exactly the people
+        # whose credits and deductions cancel out.
+        balances = await self.leave_ledger_repository.balances_by_user_ids(
+            session, [user_id]
+        )
+        return user_id in balances
+
     @staticmethod
     def _required_notice(request: LeaveRequestEntity) -> int | None:
         """Working days of notice the rule asked of this request.
