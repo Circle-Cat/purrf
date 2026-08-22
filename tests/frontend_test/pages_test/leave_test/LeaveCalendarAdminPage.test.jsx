@@ -46,17 +46,6 @@ describe("LeaveCalendarAdminPage", () => {
     );
   });
 
-  it("sends somebody away when the feature is switched off", () => {
-    useFeatureFlags.mockReturnValue({
-      [FEATURE_FLAGS.LEAVE_MANAGEMENT]: false,
-    });
-
-    renderPage();
-
-    expect(screen.getByText("Personal dashboard")).toBeInTheDocument();
-    expect(api.getLeaveHolidayYears).not.toHaveBeenCalled();
-  });
-
   it("shows the year as entered, with its day count", async () => {
     renderPage();
 

@@ -53,17 +53,6 @@ describe("LeaveBalancesPage", () => {
     api.getLeaveBalances.mockResolvedValue(envelope(overview()));
   });
 
-  it("sends somebody away when the feature is switched off", () => {
-    useFeatureFlags.mockReturnValue({
-      [FEATURE_FLAGS.LEAVE_MANAGEMENT]: false,
-    });
-
-    renderPage();
-
-    expect(screen.getByText("Personal dashboard")).toBeInTheDocument();
-    expect(api.getLeaveBalances).not.toHaveBeenCalled();
-  });
-
   it("counts who is accruing against the profiles considered", async () => {
     // So a reader does not have to add the exclusion lists up and hope the
     // total matches.

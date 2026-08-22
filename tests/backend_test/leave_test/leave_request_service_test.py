@@ -58,6 +58,7 @@ class LeaveRequestServiceTest(IsolatedAsyncioTestCase):
         )
         self.emails.get_emails_by_user_ids = AsyncMock(return_value={})
         self.ledger.balances_by_user_ids = AsyncMock(return_value={})
+        self.ledger.sum_deductions_for_year = AsyncMock(return_value=Decimal("0.00"))
         self.users = MagicMock()
         self.users.get_all_by_ids = AsyncMock(return_value=[])
         self.redis_client = MagicMock()
@@ -823,6 +824,73 @@ class TestCoverage(LeaveRequestServiceTest):
         covered = await self.service.coverage(self.session, EMPLOYEE)
 
         self.assertTrue(covered)
+
+
+class TestStanding(LeaveRequestServiceTest):
+    """The three figures a dashboard answers "what can I spend" with."""
+
+    async def test_available_holds_back_what_is_already_requested(self):
+        """Same definition the overdraft mark uses, so a card cannot say
+        somebody can afford leave that filing would then flag."""
+        self.ledger.balance.return_value = Decimal("80.00")
+        self.requests.sum_pending_paid_hours.return_value = Decimal("24.00")
+
+        standing = await self.service.standing(self.session, EMPLOYEE)
+
+        self.assertTrue(standing.is_covered)
+        self.assertEqual(standing.available, Decimal("56.00"))
+        self.assertEqual(standing.pending, Decimal("24.00"))
+
+    async def test_used_is_shown_as_spent_though_stored_negative(self):
+        self.ledger.balance.return_value = Decimal("56.00")
+        self.ledger.sum_deductions_for_year.return_value = Decimal("-24.00")
+
+        standing = await self.service.standing(self.session, EMPLOYEE)
+
+        self.assertEqual(standing.used, Decimal("24.00"))
+
+    async def test_used_covers_this_year_only(self):
+        """A figure summed across years would say somebody spent this year
+        what they spent over their whole employment."""
+        self.ledger.balance.return_value = Decimal("56.00")
+
+        await self.service.standing(self.session, EMPLOYEE)
+
+        self.assertEqual(
+            self.ledger.sum_deductions_for_year.await_args.args[2], TODAY.year
+        )
+
+    async def test_available_may_be_negative(self):
+        """An L1 has no entitlement and may still take paid leave."""
+        self.ledger.balance.return_value = Decimal("0.00")
+        self.requests.sum_pending_paid_hours.return_value = Decimal("8.00")
+
+        standing = await self.service.standing(self.session, EMPLOYEE)
+
+        self.assertEqual(standing.available, Decimal("-8.00"))
+
+    async def test_nothing_is_quoted_to_somebody_the_feature_misses(self):
+        """Zero would read as an entitlement of nothing rather than as a
+        feature with nothing to do with them."""
+        self.redis_client.hgetall.return_value = {}
+        self.ledger.balances_by_user_ids.return_value = {}
+
+        standing = await self.service.standing(self.session, EMPLOYEE)
+
+        self.assertFalse(standing.is_covered)
+        self.assertIsNone(standing.available)
+        self.assertIsNone(standing.pending)
+        self.assertIsNone(standing.used)
+
+    async def test_no_ledger_is_read_for_somebody_it_misses(self):
+        """Nothing to compute, so nothing is asked."""
+        self.redis_client.hgetall.return_value = {}
+        self.ledger.balances_by_user_ids.return_value = {}
+        self.ledger.balance.reset_mock()
+
+        await self.service.standing(self.session, EMPLOYEE)
+
+        self.ledger.balance.assert_not_awaited()
 
 
 if __name__ == "__main__":

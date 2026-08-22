@@ -18,17 +18,17 @@ const renderSidebar = () =>
     </MemoryRouter>,
   );
 
-describe("Sidebar leave calendar entry", () => {
+describe("Sidebar leave administration entry", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAuth.mockReturnValue({ permissions: [PERMISSIONS.LEAVE_ADMIN] });
     useFeatureFlags.mockReturnValue({ [FEATURE_FLAGS.LEAVE_MANAGEMENT]: true });
   });
 
-  it("is shown to somebody who may enter the calendar", () => {
+  it("is shown to somebody who administers leave", () => {
     renderSidebar();
 
-    expect(screen.getByText("Leave Calendar")).toBeInTheDocument();
+    expect(screen.getByText("Leave Administration")).toBeInTheDocument();
   });
 
   it("is hidden while the feature is switched off", () => {
@@ -38,7 +38,7 @@ describe("Sidebar leave calendar entry", () => {
 
     renderSidebar();
 
-    expect(screen.queryByText("Leave Calendar")).not.toBeInTheDocument();
+    expect(screen.queryByText("Leave Administration")).not.toBeInTheDocument();
   });
 
   it("is hidden from somebody without the permission", () => {
@@ -46,7 +46,7 @@ describe("Sidebar leave calendar entry", () => {
 
     renderSidebar();
 
-    expect(screen.queryByText("Leave Calendar")).not.toBeInTheDocument();
+    expect(screen.queryByText("Leave Administration")).not.toBeInTheDocument();
   });
 
   it("keeps the employee-facing leave screens out of the sidebar", () => {
@@ -55,7 +55,8 @@ describe("Sidebar leave calendar entry", () => {
     // dashboard instead.
     renderSidebar();
 
-    expect(screen.queryByText("My Leave")).not.toBeInTheDocument();
+    expect(screen.queryByText("Time off")).not.toBeInTheDocument();
     expect(screen.queryByText("Leave Approvals")).not.toBeInTheDocument();
+    expect(screen.queryByText("Leave Balances")).not.toBeInTheDocument();
   });
 });

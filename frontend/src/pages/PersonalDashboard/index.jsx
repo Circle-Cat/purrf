@@ -14,8 +14,8 @@ import { GoogleMeetingControl } from "@/pages/PersonalDashboard/components/Googl
 import LeaveApprovalsCard from "@/pages/PersonalDashboard/components/LeaveApprovalsCard";
 import { useLeaveApprovals } from "@/pages/Leave/hooks/useLeaveApprovals";
 import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
-import { useLeaveCoverage } from "@/pages/Leave/hooks/useLeaveCoverage";
-import LeaveCard from "@/pages/PersonalDashboard/components/LeaveCard";
+import { useLeaveStanding } from "@/pages/Leave/hooks/useLeaveStanding";
+import TimeOffCard from "@/pages/PersonalDashboard/components/TimeOffCard";
 
 /**
  * PersonalDashboard
@@ -112,7 +112,8 @@ const PersonalDashboard = () => {
   // Whether the feature applies to the viewer at all. Independent of the line
   // above: a manager outside the leave population decides their reports'
   // requests and has no leave of their own.
-  const { isCovered } = useLeaveCoverage({ enabled: isLeaveEnabled });
+  const { isCovered, availableHours, pendingHours, usedHours } =
+    useLeaveStanding({ enabled: isLeaveEnabled });
 
   const currentSelectedRound = roundSelectionData?.sortedRounds?.find(
     (round) => Number(round.id) === Number(selectedRoundId),
@@ -187,7 +188,13 @@ const PersonalDashboard = () => {
       {/* Leave approvals. A sibling of the employee-facing leave blocks,
           never nested inside them: a manager outside the leave population
           decides their reports' requests and has no balance of their own. */}
-      {isCovered && <LeaveCard />}
+      {isCovered && (
+        <TimeOffCard
+          availableHours={availableHours}
+          pendingHours={pendingHours}
+          usedHours={usedHours}
+        />
+      )}
       {isApprover && <LeaveApprovalsCard pendingCount={pendingCount} />}
 
       {/* Work Activity Data Card */}
