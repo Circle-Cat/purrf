@@ -23,3 +23,43 @@ py_test(
         "//backend/leave:employment_sync_service",
     ],
 )
+
+py_test(
+    name = "leave_calendar_segments_test",
+    srcs = ["leave_calendar_segments_test.py"],
+    deps = [
+        "//backend/leave:leave_calendar_segments",
+    ],
+)
+
+py_test(
+    name = "leave_policy_test",
+    srcs = ["leave_policy_test.py"],
+    deps = [
+        "//backend/leave:leave_policy",
+    ],
+)
+
+py_test(
+    name = "leave_calendar_service_test",
+    srcs = ["leave_calendar_service_test.py"],
+    deps = [
+        "//backend/leave:leave_calendar_service",
+    ],
+)
+
+py_test(
+    name = "leave_clock_test",
+    srcs = ["leave_clock_test.py"],
+    deps = [
+        "//backend/leave:leave_clock",
+    ],
+)
+
+py_test(
+    name = "leave_calendar_controller_test",
+    srcs = ["leave_calendar_controller_test.py"],
+    deps = [
+        "//backend/leave:leave_calendar_controller",
+    ],
+)

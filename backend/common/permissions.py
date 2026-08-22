@@ -29,6 +29,11 @@ class Permission(StrEnum):
     RECRUITING_APPLICATION_READ_ALL = "recruiting.application.read.all"
     RECRUITING_BLACKLIST_WRITE = "recruiting.blacklist.write"
     RECRUITING_AUDIT_READ = "recruiting.audit.read"
+    # Entering the company holiday calendar and adjusting balances by hand.
+    # Reading the calendar needs no permission -- it is reference information
+    # the whole company works from. Managers are not a role here either: what a
+    # manager may see follows the Azure manager relationship, not a grant.
+    LEAVE_ADMIN = "leave.admin"
     PERMISSION_MANAGE = "permission.manage"
     SUPER_ADMIN_REVOKE = "super_admin.revoke"
 

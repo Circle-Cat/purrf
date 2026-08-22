@@ -140,6 +140,8 @@ py_library(
         "//backend/internal_activity_service:microsoft_meeting_chat_topic_cache_service",
         "//backend/internal_activity_service:summary_service",
         "//backend/leave:employment_sync_service",
+        "//backend/leave:leave_calendar_controller",
+        "//backend/leave:leave_calendar_service",
         "//backend/mentorship",
         "//backend/notification_management:delivery_controller",
         "//backend/notification_management:delivery_service",
