@@ -49,6 +49,29 @@ NO_HOURS = Decimal("0.00")
 SICK_AUTO_APPROVE_HOURS = Decimal("24.00")
 
 
+def _balance_delta(request_type: LeaveRequestType, hours: Decimal) -> Decimal:
+    """What approving a request of this type does to a balance.
+
+    Three answers, not two: an exchange credits the hours, paid leave spends
+    them, and sick leave moves the balance not at all -- it has no allowance
+    and deducts nothing. The ledger row an approval writes and the figure an
+    approver is shown both come from here, so the screen cannot promise one
+    thing and the ledger record another.
+
+    Args:
+        request_type: Which kind of request.
+        hours: The hours it covers, always positive.
+
+    Returns:
+        The signed change, zero for sick leave.
+    """
+    if request_type is LeaveRequestType.SICK:
+        return NO_HOURS
+    if request_type is LeaveRequestType.EXCHANGE:
+        return hours
+    return -hours
+
+
 def _ldap_from_addresses(addresses) -> str | None:
     """The Azure ldap an account carries, or None if it carries none.
 
@@ -365,14 +388,47 @@ class LeaveRequestService:
             user_id: _ldap_from_addresses(addresses)
             for user_id, addresses in addresses_by_id.items()
         }
+        # Only for what is still waiting: a decided request has already moved
+        # the ledger, so there is no "would" left to answer.
+        pending_user_ids = sorted({
+            request.user_id
+            for request in requests
+            if request.status is LeaveRequestStatus.PENDING
+        })
+        balance_by_id = await self.leave_ledger_repository.balances_by_user_ids(
+            session, pending_user_ids
+        )
         return [
             LeaveRequestDto.of(
                 request,
                 employee_name=name_by_id.get(request.user_id),
                 employee_ldap=ldap_by_id.get(request.user_id),
+                **self._balance_pair(request, balance_by_id),
             )
             for request in requests
         ]
+
+    @staticmethod
+    def _balance_pair(
+        request: LeaveRequestEntity, balance_by_id: dict[int, Decimal]
+    ) -> dict[str, Decimal | None]:
+        """Where this person's balance stands, and where approving would put it.
+
+        Both empty unless the request is still waiting. An empty ledger means a
+        balance of zero rather than an unknown one: the person is covered -- they
+        filed this -- they simply have no rows yet.
+
+        Two requests from the same person are each measured against the same
+        balance, since neither has reached the ledger. Deciding one reloads the
+        list, so the next is measured against the balance it actually faces.
+        """
+        if request.status is not LeaveRequestStatus.PENDING:
+            return {"balance_before": None, "balance_after": None}
+        before = balance_by_id.get(request.user_id, NO_HOURS)
+        return {
+            "balance_before": before,
+            "balance_after": before + _balance_delta(request.type, request.hours),
+        }
 
     async def _pending_request(
         self, session: AsyncSession, request_id: int
@@ -397,12 +453,12 @@ class LeaveRequestService:
         if request.type is LeaveRequestType.SICK:
             return None
 
-        if request.type is LeaveRequestType.EXCHANGE:
-            entry_type = LeaveEntryType.EXCHANGE_CREDIT
-            hours = request.hours
-        else:
-            entry_type = LeaveEntryType.LEAVE_DEDUCTION
-            hours = -request.hours
+        entry_type = (
+            LeaveEntryType.EXCHANGE_CREDIT
+            if request.type is LeaveRequestType.EXCHANGE
+            else LeaveEntryType.LEAVE_DEDUCTION
+        )
+        hours = _balance_delta(request.type, request.hours)
 
         return LeaveLedgerEntity(
             user_id=request.user_id,

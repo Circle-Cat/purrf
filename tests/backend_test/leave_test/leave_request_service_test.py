@@ -57,6 +57,7 @@ class LeaveRequestServiceTest(IsolatedAsyncioTestCase):
             return_value=[_email("ann@circlecat.org")]
         )
         self.emails.get_emails_by_user_ids = AsyncMock(return_value={})
+        self.ledger.balances_by_user_ids = AsyncMock(return_value={})
         self.users = MagicMock()
         self.users.get_all_by_ids = AsyncMock(return_value=[])
         self.redis_client = MagicMock()
@@ -636,6 +637,72 @@ class TestLists(LeaveRequestServiceTest):
         queue = await self.service.list_for_approver(self.session, MANAGER)
 
         self.assertEqual(queue[0].employee_ldap, "aaa")
+
+    async def test_a_pending_request_says_where_the_balance_lands(self):
+        """The number an approver is actually deciding on. Paid leave spends
+        the balance, so approving takes it down by the hours asked for."""
+        self.requests.list_for_approver.return_value = [self._row()]
+        self.ledger.balances_by_user_ids.return_value = {EMPLOYEE: Decimal("30.00")}
+
+        queue = await self.service.list_for_approver(self.session, MANAGER)
+
+        self.assertEqual(queue[0].balance_before, "30.00")
+        self.assertEqual(queue[0].balance_after, "6.00")
+
+    async def test_an_exchange_puts_hours_back_rather_than_taking_them(self):
+        row = self._row()
+        row.type = LeaveRequestType.EXCHANGE
+        self.requests.list_for_approver.return_value = [row]
+        self.ledger.balances_by_user_ids.return_value = {EMPLOYEE: Decimal("30.00")}
+
+        queue = await self.service.list_for_approver(self.session, MANAGER)
+
+        self.assertEqual(queue[0].balance_after, "54.00")
+
+    async def test_sick_leave_leaves_the_balance_where_it_was(self):
+        """It has no allowance and deducts nothing, so approving moves nothing
+        -- and the pair of numbers has to say so rather than imply a cost."""
+        row = self._row()
+        row.type = LeaveRequestType.SICK
+        self.requests.list_for_approver.return_value = [row]
+        self.ledger.balances_by_user_ids.return_value = {EMPLOYEE: Decimal("30.00")}
+
+        queue = await self.service.list_for_approver(self.session, MANAGER)
+
+        self.assertEqual(queue[0].balance_before, "30.00")
+        self.assertEqual(queue[0].balance_after, "30.00")
+
+    async def test_the_balance_may_land_below_zero(self):
+        """An L1 has no entitlement and may still take paid leave, so this is
+        a real answer rather than something to clamp."""
+        self.requests.list_for_approver.return_value = [self._row()]
+        self.ledger.balances_by_user_ids.return_value = {EMPLOYEE: Decimal("12.00")}
+
+        queue = await self.service.list_for_approver(self.session, MANAGER)
+
+        self.assertEqual(queue[0].balance_after, "-12.00")
+
+    async def test_somebody_with_no_ledger_rows_starts_from_zero(self):
+        self.requests.list_for_approver.return_value = [self._row()]
+        self.ledger.balances_by_user_ids.return_value = {}
+
+        queue = await self.service.list_for_approver(self.session, MANAGER)
+
+        self.assertEqual(queue[0].balance_before, "0.00")
+        self.assertEqual(queue[0].balance_after, "-24.00")
+
+    async def test_a_decided_request_carries_no_hypothetical_balance(self):
+        """The ledger has already moved, so "where would this land" has no
+        answer -- and a number here would be read as the balance today."""
+        row = self._row()
+        row.status = LeaveRequestStatus.APPROVED
+        self.requests.list_for_approver.return_value = [row]
+        self.ledger.balances_by_user_ids.return_value = {EMPLOYEE: Decimal("30.00")}
+
+        queue = await self.service.list_for_approver(self.session, MANAGER)
+
+        self.assertIsNone(queue[0].balance_before)
+        self.assertIsNone(queue[0].balance_after)
 
     async def test_a_name_that_cannot_be_resolved_does_not_break_the_queue(self):
         """A deleted account should not take a manager's whole queue down."""

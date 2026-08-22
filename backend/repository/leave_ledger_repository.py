@@ -89,6 +89,38 @@ class LeaveLedgerRepository:
         )
         return result.scalar_one()
 
+    async def balances_by_user_ids(
+        self, session: AsyncSession, user_ids: list[int]
+    ) -> dict[int, Decimal]:
+        """Balances for several people at once, one read.
+
+        Same rule as :meth:`balance` -- every row, whatever its type -- but for
+        a whole queue. An approver's list needs one per row, and a query per row
+        would grow with the queue.
+
+        Somebody with no ledger rows is left out of the map rather than given a
+        zero: absent and zero are different questions, and only the caller knows
+        which answer it wants.
+
+        Args:
+            session: Active async session.
+            user_ids: Whose balances. An empty list short-circuits.
+
+        Returns:
+            ``{user_id: balance}`` for the people who have rows.
+        """
+        if not user_ids:
+            return {}
+        result = await session.execute(
+            select(
+                LeaveLedgerEntity.user_id,
+                func.coalesce(func.sum(LeaveLedgerEntity.hours), Decimal("0.00")),
+            )
+            .where(LeaveLedgerEntity.user_id.in_(user_ids))
+            .group_by(LeaveLedgerEntity.user_id)
+        )
+        return {user_id: total for user_id, total in result.all()}
+
     async def latest_level_change_date(
         self,
         session: AsyncSession,

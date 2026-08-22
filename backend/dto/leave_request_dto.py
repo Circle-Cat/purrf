@@ -5,6 +5,16 @@ from backend.common.leave_enums import LeaveRequestType
 from backend.dto.base_dto import BaseDto
 
 
+def _hours(value: Decimal | None) -> str | None:
+    """Two decimals as text, or nothing.
+
+    Never a number: the encoder turns a Decimal into a float and 78.46 comes
+    back as 78.45999999999999. A balance is a money-shaped figure and must not
+    be touched by floating point on the way out.
+    """
+    return None if value is None else f"{Decimal(value):.2f}"
+
+
 class LeaveRequestSubmitDto(BaseDto):
     """One request as it is filed.
 
@@ -42,6 +52,12 @@ class LeaveRequestDto(BaseDto):
 
     ``decided_by`` empty on an approved request means nobody decided it: that
     is sick leave of three days or less, approved on submission.
+
+    ``balance_before`` and ``balance_after`` are the pair an approver decides
+    on: where this person's balance stands and where approving would leave it.
+    They are filled in only while a request is still waiting. Once it has been
+    decided the ledger has already moved, so "where would this land" has no
+    answer, and a number there would be read as the balance today.
     """
 
     request_id: int
@@ -61,6 +77,8 @@ class LeaveRequestDto(BaseDto):
     approver_user_id: int
     decided_by: int | None
     decided_at: datetime.datetime | None
+    balance_before: str | None
+    balance_after: str | None
 
     @classmethod
     def of(
@@ -68,6 +86,8 @@ class LeaveRequestDto(BaseDto):
         request,
         employee_name: str | None = None,
         employee_ldap: str | None = None,
+        balance_before: Decimal | None = None,
+        balance_after: Decimal | None = None,
     ) -> "LeaveRequestDto":
         """Builds one from a stored request.
 
@@ -76,6 +96,8 @@ class LeaveRequestDto(BaseDto):
             employee_name: Whose request it is, when the reader is somebody
                 else.
             employee_ldap: That person's Azure ldap, when known.
+            balance_before: Their balance now, for a request still waiting.
+            balance_after: Where approving it would leave that balance.
 
         Returns:
             The read model.
@@ -98,4 +120,6 @@ class LeaveRequestDto(BaseDto):
             approver_user_id=request.approver_user_id,
             decided_by=request.decided_by,
             decided_at=request.decided_at,
+            balance_before=_hours(balance_before),
+            balance_after=_hours(balance_after),
         )
