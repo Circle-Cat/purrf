@@ -132,22 +132,36 @@ def request_hours(
         request worth nothing rather than storing one.
 
     Raises:
-        ValueError: An exchange carries times; or a single day's times run
-            backwards, exceed a working day, or fall off the half hour. Times
-            are never rounded: rounding a request nobody meant to make is
-            worse than refusing it.
+        ValueError: Times were sent where they have no reading -- on an
+            exchange, on a range of days, or with only one end given; or a
+            single day's times run backwards, exceed a working day, or fall
+            off the half hour. Nothing here is rounded or dropped: acting on a
+            request nobody meant to make is worse than refusing it.
     """
     days = (end_date - start_date).days + 1
+    has_times = start_time is not None or end_time is not None
 
     if request_type is LeaveRequestType.EXCHANGE:
-        if start_time is not None or end_time is not None:
+        if has_times:
             raise ValueError(
                 "An exchange covers whole days: half a day back at work is not "
                 "on offer."
             )
         return Decimal(days * HOURS_PER_DAY).quantize(NO_HOURS)
 
-    if days > 1 or start_time is None or end_time is None:
+    if has_times:
+        if days > 1:
+            raise ValueError(
+                "A range of days is taken whole. Times describe one day, so a "
+                "part day has to be asked for on its own."
+            )
+        if start_time is None or end_time is None:
+            raise ValueError(
+                "A part day needs both ends. One time on its own says when it "
+                "starts or when it stops, never how long it lasts."
+            )
+
+    if not has_times:
         return Decimal(
             count_workdays(start_date, end_date, holidays) * HOURS_PER_DAY
         ).quantize(NO_HOURS)
