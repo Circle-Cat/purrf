@@ -17,6 +17,8 @@ from backend.common.leave_enums import (
     LeaveRequestType,
 )
 from backend.entity.leave_holiday_entity import LeaveHolidayEntity
+from backend.dto.leave_request_dto import LeaveRequestDto
+from backend.entity.leave_request_entity import LeaveRequestEntity
 from backend.leave.leave_participants import ResolvedParticipants
 from backend.leave.leave_request_service import LeaveRequestService
 
@@ -28,6 +30,9 @@ LEAVE_END = datetime.date(2026, 8, 15)
 EMPLOYEE = 10
 MANAGER = 20
 
+# The id a flush hands back, so a filed request has one to be read by.
+FILED_REQUEST_ID = 900
+
 
 def _holiday(day, is_exchangeable=False, name="Company holiday"):
     return LeaveHolidayEntity(
@@ -35,11 +40,45 @@ def _holiday(day, is_exchangeable=False, name="Company holiday"):
     )
 
 
+def _stored_request(
+    request_type=LeaveRequestType.PAID,
+    hours="24.00",
+    status=LeaveRequestStatus.PENDING,
+):
+    """A request as the database holds it.
+
+    A MagicMock stood here, which no read model can be built from -- and the
+    shape a decision answers with is exactly what the read model fixes.
+    """
+    return LeaveRequestEntity(
+        leave_request_id=501,
+        user_id=EMPLOYEE,
+        type=request_type,
+        start_date=LEAVE_START,
+        end_date=LEAVE_END,
+        hours=Decimal(hours),
+        status=status,
+        approver_user_id=MANAGER,
+        is_overdraft=False,
+        is_late_notice=False,
+    )
+
+
 class LeaveRequestServiceTest(IsolatedAsyncioTestCase):
     def setUp(self):
         self.logger = MagicMock()
         self.requests = MagicMock()
-        self.requests.add = AsyncMock(side_effect=lambda session, request: request)
+
+        def _stored(session, request):
+            """add() flushes in production, so the row comes back with an id.
+
+            Leaving it None let a read model be built from a row that had
+            never been written.
+            """
+            request.leave_request_id = FILED_REQUEST_ID
+            return request
+
+        self.requests.add = AsyncMock(side_effect=_stored)
         self.requests.list_overlapping = AsyncMock(return_value=[])
         self.requests.sum_pending_paid_hours = AsyncMock(return_value=Decimal("0.00"))
         self.requests.get_by_id = AsyncMock()
@@ -121,12 +160,70 @@ def _email(address):
     return row
 
 
+class TestTheShapeADecisionAnswersWith(LeaveRequestServiceTest):
+    """Filing, taking back and deciding answer with the read model.
+
+    They used to answer with the stored row. FastAPI's encoder falls through to
+    ``vars()`` for an ORM object, so the same resource came back in snake_case
+    from these three and camelCase from the two lists, and ``hours`` went
+    through the Decimal encoder into a float -- which is the one thing
+    LeaveRequestDto exists to prevent.
+    """
+
+    async def test_filing_answers_with_a_read_model(self):
+        filed = await self._submit()
+
+        self.assertIsInstance(filed, LeaveRequestDto)
+        self.assertEqual(filed.request_id, FILED_REQUEST_ID)
+
+    async def test_hours_come_back_as_text_fixed_to_two_decimals(self):
+        """A float would show 78.46 as 78.45999999999999. A balance is a
+        money-shaped figure and must not be touched by floating point."""
+        filed = await self._submit()
+
+        self.assertEqual(filed.hours, "24.00")
+
+    async def test_the_keys_are_the_ones_the_lists_send(self):
+        """One resource, one shape. The employee's own list and the response to
+        filing it describe the same request."""
+        filed = await self._submit()
+
+        self.assertIn("requestId", filed.model_dump(by_alias=True))
+        self.assertNotIn("leave_request_id", filed.model_dump(by_alias=True))
+
+    async def test_the_notice_the_rule_asked_for_comes_back_too(self):
+        """Three days of paid leave owe six working days of notice. Sending it
+        from the lists but not from here would make one request read as two."""
+        filed = await self._submit()
+
+        self.assertEqual(filed.required_notice_workdays, 6)
+
+    async def test_deciding_answers_with_a_read_model(self):
+        request = _stored_request()
+        self.requests.get_by_id.return_value = request
+
+        decided = await self.service.decide(self.session, 501, MANAGER, approve=True)
+
+        self.assertIsInstance(decided, LeaveRequestDto)
+        self.assertEqual(decided.status, LeaveRequestStatus.APPROVED.value)
+        self.assertEqual(decided.hours, "24.00")
+
+    async def test_withdrawing_answers_with_a_read_model(self):
+        request = _stored_request()
+        self.requests.get_by_id.return_value = request
+
+        withdrawn = await self.service.withdraw(self.session, 501, EMPLOYEE)
+
+        self.assertIsInstance(withdrawn, LeaveRequestDto)
+        self.assertEqual(withdrawn.status, LeaveRequestStatus.WITHDRAWN.value)
+
+
 class TestSubmit(LeaveRequestServiceTest):
     async def test_a_request_is_stored_pending_with_its_hours(self):
         request = await self._submit()
 
         self.assertEqual(request.status, LeaveRequestStatus.PENDING)
-        self.assertEqual(request.hours, Decimal("24.00"))
+        self.assertEqual(request.hours, "24.00")
         self.assertEqual(request.user_id, EMPLOYEE)
         self.session.commit.assert_awaited_once()
 
@@ -311,7 +408,7 @@ class TestSickLeave(LeaveRequestServiceTest):
             end_date=datetime.date(2026, 8, 18),
         )
 
-        self.assertEqual(four_days.hours, Decimal("32.00"))
+        self.assertEqual(four_days.hours, "32.00")
         self.assertEqual(four_days.status, LeaveRequestStatus.PENDING)
         self.assertIsNone(four_days.decided_at)
 
@@ -346,7 +443,7 @@ class TestExchange(LeaveRequestServiceTest):
             end_date=datetime.date(2026, 10, 2),
         )
 
-        self.assertEqual(request.hours, Decimal("16.00"))
+        self.assertEqual(request.hours, "16.00")
 
     async def test_a_day_that_cannot_be_exchanged_refuses_the_whole_request(self):
         """Not "credit the two that qualify": somebody would come in on the
@@ -394,16 +491,7 @@ class TestExchange(LeaveRequestServiceTest):
 
 class TestDecisions(LeaveRequestServiceTest):
     def _pending(self, request_type=LeaveRequestType.PAID, hours="24.00"):
-        request = MagicMock()
-        request.leave_request_id = 501
-        request.user_id = EMPLOYEE
-        request.approver_user_id = MANAGER
-        request.type = request_type
-        request.status = LeaveRequestStatus.PENDING
-        request.hours = Decimal(hours)
-        request.start_date = LEAVE_START
-        request.end_date = LEAVE_END
-        request.decided_by = None
+        request = _stored_request(request_type=request_type, hours=hours)
         self.requests.get_by_id.return_value = request
         return request
 
@@ -491,13 +579,7 @@ class TestDecisions(LeaveRequestServiceTest):
 
 class TestWithdraw(LeaveRequestServiceTest):
     def _pending(self):
-        request = MagicMock()
-        request.leave_request_id = 501
-        request.user_id = EMPLOYEE
-        request.approver_user_id = MANAGER
-        request.type = LeaveRequestType.PAID
-        request.status = LeaveRequestStatus.PENDING
-        request.hours = Decimal("24.00")
+        request = _stored_request()
         self.requests.get_by_id.return_value = request
         return request
 
