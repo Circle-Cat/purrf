@@ -116,3 +116,21 @@ export async function getLeaveHolidays(year) {
 export async function getLeaveHolidayYears() {
   return await request.get(API_ENDPOINTS.LEAVE_HOLIDAY_YEARS);
 }
+
+/**
+ * Replaces one whole year of company holidays.
+ *
+ * A year at a time, not a segment at a time. A segment is a way of reading the
+ * rows rather than an entity -- it has no id, so there is nothing to address --
+ * and anything absent from the payload is deleted.
+ *
+ * @param {number} year - The calendar year being replaced.
+ * @param {Array<{name: string, startDate: string, endDate: string,
+ *                isExchangeable: boolean}>} segments - The whole year.
+ * @returns {Promise<object>} The API envelope; `data` is the stored year.
+ */
+export async function replaceLeaveHolidays(year, segments) {
+  return await request.put(API_ENDPOINTS.LEAVE_HOLIDAYS_YEAR(year), {
+    segments,
+  });
+}
