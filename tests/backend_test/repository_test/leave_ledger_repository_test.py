@@ -179,6 +179,45 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
 
         self.assertEqual(balance, Decimal("92.00"))
 
+    async def test_balances_come_back_per_person_in_one_read(self):
+        """An approver's queue needs a balance for everybody in it, and one
+        query per row would grow with the queue."""
+        await self.insert_entities([
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL, "80.00", datetime.date(2026, 3, 1)
+            ),
+            self._entry(
+                LeaveEntryType.LEAVE_DEDUCTION, "-8.00", datetime.date(2026, 5, 6)
+            ),
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL,
+                "40.00",
+                datetime.date(2026, 3, 1),
+                user=self.other_user,
+            ),
+        ])
+
+        balances = await self.repository.balances_by_user_ids(
+            self.session, [self.user.user_id, self.other_user.user_id]
+        )
+
+        self.assertEqual(balances[self.user.user_id], Decimal("72.00"))
+        self.assertEqual(balances[self.other_user.user_id], Decimal("40.00"))
+
+    async def test_a_person_with_no_rows_is_left_out_rather_than_guessed_at(self):
+        """Absent and zero are different questions, and only the caller knows
+        which answer it wants."""
+        balances = await self.repository.balances_by_user_ids(
+            self.session, [self.user.user_id]
+        )
+
+        self.assertEqual(balances, {})
+
+    async def test_asking_for_nobody_does_not_query(self):
+        balances = await self.repository.balances_by_user_ids(self.session, [])
+
+        self.assertEqual(balances, {})
+
     async def test_a_balance_may_be_negative(self):
         """An L1 has no entitlement and may still take paid leave, so sitting
         in the red is expected rather than a fault to clamp away."""

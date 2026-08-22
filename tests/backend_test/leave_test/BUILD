@@ -116,3 +116,31 @@ py_test(
         "//backend/leave:leave_job_controller",
     ],
 )
+
+py_test(
+    name = "leave_workdays_test",
+    srcs = ["leave_workdays_test.py"],
+    deps = [
+        "//backend/common:leave_enums",
+        "//backend/leave:leave_workdays",
+    ],
+)
+
+py_test(
+    name = "leave_request_service_test",
+    srcs = ["leave_request_service_test.py"],
+    deps = [
+        "//backend/common:leave_enums",
+        "//backend/entity:entities",
+        "//backend/leave:leave_request_service",
+    ],
+)
+
+py_test(
+    name = "leave_request_controller_test",
+    srcs = ["leave_request_controller_test.py"],
+    deps = [
+        "//backend/common:leave_enums",
+        "//backend/leave:leave_request_controller",
+    ],
+)
