@@ -129,7 +129,7 @@ class LeaveEngineService:
             The run's report, including everyone left out and why.
         """
         on = today or business_today()
-        participants, excluded, considered = await self._participants(session, on, on)
+        participants, excluded, considered = await self._participants(session, on)
 
         entries = []
         for participant in participants:
@@ -190,7 +190,7 @@ class LeaveEngineService:
         closing_year = on.year - 1
         closing_day = datetime.date(closing_year, 12, 31)
         participants, excluded, considered = await self._participants(
-            session, on, closing_day
+            session, closing_day
         )
 
         settlements = []
@@ -211,7 +211,7 @@ class LeaveEngineService:
         forfeits = []
         for participant in participants:
             balance = await self.leave_ledger_repository.balance(
-                session, participant.user_id
+                session, participant.user_id, on_or_before=closing_day
             )
             forfeit = carryover_forfeit_hours(balance, cap)
             if forfeit < NO_HOURS:
@@ -253,15 +253,22 @@ class LeaveEngineService:
         return report
 
     async def _participants(
-        self, session: AsyncSession, on: datetime.date, until: datetime.date
+        self, session: AsyncSession, as_of: datetime.date
     ) -> tuple[list[_Participant], _Excluded, int]:
         """Reads the directory and works out who this run can act on.
 
+        There was a second date here, the day the job is running on, and it was
+        what decided who had left -- so who the annual close settled depended on
+        the day it happened to run rather than on the year it was closing.
+        Somebody whose last day was 1 January was dropped from the close of a
+        year they had worked in full. The weekly job passed the same value
+        twice, which is the sign that there was only ever one date.
+
         Args:
             session: Active async session.
-            on: The date the job is running on, for judging who has left.
-            until: The last date the run accounts for. The annual close passes
-                31 December of the year it is closing.
+            as_of: The last date this run accounts for. The weekly job passes
+                the day it is accruing for; the annual close passes 31 December
+                of the year it is closing.
 
         Returns:
             The participants, everyone excluded with the reason, and how many
@@ -287,11 +294,15 @@ class LeaveEngineService:
                 unreadable.append(ldap)
                 continue
 
-            if self._has_left(profile, on):
-                left.append(ldap)
+            try:
+                if self._has_left(profile, as_of):
+                    left.append(ldap)
+                    continue
+                hire_date = _profile_date(profile.get("hire_date"))
+            except ValueError:
+                unreadable.append(ldap)
                 continue
 
-            hire_date = _profile_date(profile.get("hire_date"))
             if hire_date is None:
                 no_hire_date.append(ldap)
                 continue
@@ -321,18 +332,31 @@ class LeaveEngineService:
         )
         return participants, excluded, len(profiles)
 
-    def _has_left(self, profile: dict, on: datetime.date) -> bool:
-        """Whether this person has stopped accruing by ``on``.
+    def _has_left(self, profile: dict, as_of: datetime.date) -> bool:
+        """Whether this person had stopped accruing by ``as_of``.
+
+        The comparison includes the leave date itself: leaving stops the
+        calculation from that day, so somebody whose last day is 31 December
+        has not completed the year the annual close is settling, and somebody
+        whose last day is 1 January has. Neither is settled for a part year --
+        a mid-year leaver keeps whatever the weekly job had already granted
+        them and gets nothing further.
 
         A leaver is meant to carry a leave date, and one of the five China
         full-timers is a disabled account without one, so the disabled flag has
         to count as well. Both are checked because a leave date can also be set
         ahead of time, before the account is turned off.
+
+        The flag carries no date, so it cannot be read as at ``as_of``: an
+        account turned off after the year ended but before the close runs still
+        reads as gone, and that person is not settled. Closing that requires a
+        rule for which of the two wins, which is a question for HR rather than
+        one to settle here.
         """
         if profile.get("account_enabled") is False:
             return True
         leave_date = _profile_date(profile.get("leave_date"))
-        return leave_date is not None and leave_date <= on
+        return leave_date is not None and leave_date <= as_of
 
     async def _owed(
         self,
