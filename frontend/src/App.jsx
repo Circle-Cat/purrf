@@ -33,6 +33,7 @@ import ApplicationDetailPage from "@/pages/Recruiting/applications/ApplicationDe
 import MyEvaluations from "@/pages/Recruiting/MyEvaluations";
 import Audit from "@/pages/Recruiting/audit/Audit";
 import LeaveApprovalsPage from "@/pages/Leave/ApprovalsPage";
+import LeaveRequestsPage from "@/pages/Leave/RequestsPage";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
 import { PERMISSIONS } from "@/constants/Permissions";
@@ -110,6 +111,10 @@ function App() {
                     <Route
                       path={ROUTE_PATHS.LEAVE_APPROVALS}
                       element={<LeaveApprovalsPage />}
+                    />
+                    <Route
+                      path={ROUTE_PATHS.LEAVE_REQUESTS}
+                      element={<LeaveRequestsPage />}
                     />
                     <Route
                       path={ROUTE_PATHS.MENTORSHIP_MANAGEMENT}
