@@ -24,6 +24,7 @@ from backend.leave.leave_accrual import (
     accrual_target_hours,
     carryover_effective_date,
     carryover_forfeit_hours,
+    format_hours,
     weekly_accrual_hours,
     weeks_passed,
 )
@@ -433,6 +434,24 @@ class TestSettlingTheOldYear(unittest.TestCase):
         )
 
         self.assertEqual(settlement, Decimal("40.00"))
+
+
+class TestFormatHours(unittest.TestCase):
+    """How an hour figure is written down wherever it leaves the module."""
+
+    def test_a_whole_number_of_hours_keeps_both_decimals(self):
+        """80 reads as 80.00, not 80 -- a balance is a money-shaped figure and
+        a dropped decimal reads as a different kind of number."""
+        self.assertEqual(format_hours(Decimal("80")), "80.00")
+
+    def test_an_exponent_is_written_out_rather_than_shown(self):
+        """``str`` on this Decimal yields ``1E+2``. A report is read by people
+        and a wire value is parsed by a page, and neither wants that."""
+        self.assertEqual(format_hours(Decimal("1E+2")), "100.00")
+
+    def test_a_forfeit_keeps_its_sign(self):
+        """Forfeits are negative rows, and the report shows them as such."""
+        self.assertEqual(format_hours(Decimal("-1.54")), "-1.54")
 
 
 if __name__ == "__main__":

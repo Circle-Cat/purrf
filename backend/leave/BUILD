@@ -92,6 +92,7 @@ py_library(
     name = "leave_adjustment_service",
     srcs = ["leave_adjustment_service.py"],
     deps = [
+        ":leave_accrual",
         ":leave_clock",
         "//backend/common:leave_enums",
         "//backend/dto",

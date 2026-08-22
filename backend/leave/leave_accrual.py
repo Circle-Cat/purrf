@@ -38,6 +38,17 @@ HOURS_QUANTUM = Decimal("0.01")
 NO_HOURS = Decimal("0.00")
 
 
+def format_hours(value: Decimal) -> str:
+    """Writes an hour count down: fixed two decimals, never a float.
+
+    Every hour figure that leaves this module -- a run's report, a wire
+    response -- goes through here, so a balance reads the same wherever it is
+    shown. Formatting a Decimal keeps the trailing zero that ``str`` would drop
+    and never introduces the binary rounding a float would.
+    """
+    return f"{value:.2f}"
+
+
 def accrual_start_date(year: int, hire_date: date) -> date:
     """Where the accrual clock starts for one person in one year.
 
