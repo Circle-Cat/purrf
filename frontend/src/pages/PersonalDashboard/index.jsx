@@ -11,6 +11,9 @@ import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
 import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
 import { GoogleMeetingControl } from "@/pages/PersonalDashboard/components/GoogleMeetingControl";
+import LeaveApprovalsCard from "@/pages/PersonalDashboard/components/LeaveApprovalsCard";
+import { useLeaveApprovals } from "@/pages/Leave/hooks/useLeaveApprovals";
+import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
 
 /**
  * PersonalDashboard
@@ -96,6 +99,15 @@ const PersonalDashboard = () => {
   const { summary, isPersonalSummaryLoading, fetchPersonalSummary } =
     useWorkActivityData({ enabled: canViewActivitySummary });
 
+  // Whether the viewer decides anybody else's leave is only knowable by
+  // asking: it is not a permission, and a manager who is outside the leave
+  // population has no employment profile to read it off. So this fetch is
+  // unconditional, unlike the sections gated on data we already hold.
+  const isLeaveEnabled = useLeaveEnabled();
+  const { isApprover, pendingCount } = useLeaveApprovals({
+    enabled: isLeaveEnabled,
+  });
+
   const currentSelectedRound = roundSelectionData?.sortedRounds?.find(
     (round) => Number(round.id) === Number(selectedRoundId),
   );
@@ -165,6 +177,11 @@ const PersonalDashboard = () => {
           />
         </>
       )}
+
+      {/* Leave approvals. A sibling of the employee-facing leave blocks,
+          never nested inside them: a manager outside the leave population
+          decides their reports' requests and has no balance of their own. */}
+      {isApprover && <LeaveApprovalsCard pendingCount={pendingCount} />}
 
       {/* Work Activity Data Card */}
       {canViewActivitySummary && (
