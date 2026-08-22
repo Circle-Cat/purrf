@@ -5,6 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import AdjustBalanceDialog from "@/pages/Leave/BalancesPage/components/AdjustBalanceDialog";
+import { Badge } from "@/components/ui/badge";
+import {
+  PROFILE_PROBLEMS,
+  byProblem,
+  negativeByLevel,
+} from "@/pages/Leave/BalancesPage/problems";
 import { useLeaveBalances } from "@/pages/Leave/hooks/useLeaveBalances";
 import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
 
@@ -69,6 +75,11 @@ const LeaveBalancesPage = () => {
 
   const [adjusting, setAdjusting] = useState(null);
 
+  // Grouped for reading, not recomputed: every figure and flag below is one
+  // the server sent on the row it belongs to.
+  const problemGroups = byProblem(people);
+  const negativeGroups = negativeByLevel(people);
+
   if (!isEnabled) {
     return <Navigate to={ROUTE_PATHS.PERSONAL_DASHBOARD} replace />;
   }
@@ -124,6 +135,17 @@ const LeaveBalancesPage = () => {
                         <p className="m-0 text-sm text-muted-foreground">
                           {`${person.level ?? "No level"} · ${person.annualHours} h a year`}
                         </p>
+                        {(person.problems ?? []).length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {person.problems.map((problem) => (
+                              <Badge key={problem} variant="outline">
+                                {PROFILE_PROBLEMS.find(
+                                  (known) => known.key === problem,
+                                )?.label ?? problem}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-3">
                         <span
@@ -148,6 +170,67 @@ const LeaveBalancesPage = () => {
               )}
             </CardContent>
           </Card>
+
+          {/* Paid every week and broken anyway. Nothing about the run itself
+              mentions these people, which is why they get their own section
+              rather than a line in the exclusion lists. */}
+          {PROFILE_PROBLEMS.map(({ key, label, consequence }) =>
+            (problemGroups[key] ?? []).length === 0 ? null : (
+              <Card key={key} className="border-gray-200 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="text-lg font-semibold">
+                    {`${label} — ${problemGroups[key].length}`}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <p className="m-0 text-sm text-muted-foreground">
+                    {consequence}
+                  </p>
+                  <p className="m-0 text-sm">
+                    {problemGroups[key]
+                      .map((person) => person.name || person.ldap)
+                      .join(", ")}
+                  </p>
+                </CardContent>
+              </Card>
+            ),
+          )}
+
+          {/* Split by level, never one list. An L1 has no entitlement and may
+              still take paid leave, so sitting in the red is their expected
+              state -- together they would bury everybody whose negative
+              balance is a surprise. */}
+          {negativeGroups.length > 0 && (
+            <Card className="border-gray-200 shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold">
+                  Below zero
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {negativeGroups.map(({ level, people: group }) => (
+                  <div key={level}>
+                    <p className="m-0 text-sm font-medium">
+                      {`${level} — ${group.length}`}
+                      {level === "L1" && (
+                        <span className="font-normal text-muted-foreground">
+                          {" · expected: no annual entitlement"}
+                        </span>
+                      )}
+                    </p>
+                    <p className="m-0 text-sm text-muted-foreground tabular-nums">
+                      {group
+                        .map(
+                          (person) =>
+                            `${person.name || person.ldap} ${person.balanceHours} h`,
+                        )
+                        .join(" · ")}
+                    </p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
           {EXCLUSION_GROUPS.map(({ key, label, fix }) =>
             (excluded[key] ?? []).length === 0 ? null : (
