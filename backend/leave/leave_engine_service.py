@@ -30,6 +30,7 @@ from backend.leave.leave_accrual import (
     accrual_start_date,
     carryover_effective_date,
     carryover_forfeit_hours,
+    format_hours,
     weekly_accrual_hours,
 )
 from backend.leave.leave_clock import business_today
@@ -144,7 +145,7 @@ class LeaveEngineService:
         report = AccrualRunReport(
             considered=considered,
             paid=len(entries),
-            hours=_as_hours(sum((entry.hours for entry in entries), NO_HOURS)),
+            hours=format_hours(sum((entry.hours for entry in entries), NO_HOURS)),
             skipped_left=excluded.left,
             skipped_no_hire_date=excluded.no_hire_date,
             unreadable=excluded.unreadable,
@@ -228,11 +229,11 @@ class LeaveEngineService:
             closing_year=closing_year,
             considered=considered,
             settled=len(settlements),
-            settled_hours=_as_hours(
+            settled_hours=format_hours(
                 sum((entry.hours for entry in settlements), NO_HOURS)
             ),
             forfeited=len(forfeits),
-            forfeited_hours=_as_hours(
+            forfeited_hours=format_hours(
                 sum((entry.hours for entry in forfeits), NO_HOURS)
             ),
             skipped_left=excluded.left,
@@ -290,7 +291,7 @@ class LeaveEngineService:
                 left.append(ldap)
                 continue
 
-            hire_date = _as_date(profile.get("hire_date"))
+            hire_date = _profile_date(profile.get("hire_date"))
             if hire_date is None:
                 no_hire_date.append(ldap)
                 continue
@@ -330,7 +331,7 @@ class LeaveEngineService:
         """
         if profile.get("account_enabled") is False:
             return True
-        leave_date = _as_date(profile.get("leave_date"))
+        leave_date = _profile_date(profile.get("leave_date"))
         return leave_date is not None and leave_date <= on
 
     async def _owed(
@@ -398,13 +399,13 @@ class LeaveEngineService:
             await session.commit()
 
 
-def _as_hours(value: Decimal) -> str:
-    """Formats hours for a report: fixed two decimals, never a float."""
-    return f"{value:.2f}"
+def _profile_date(value: str | None) -> datetime.date | None:
+    """Reads a date field off a cached profile.
 
-
-def _as_date(value: str | None) -> datetime.date | None:
-    """Reads a profile's date field, which is a Beijing calendar day or None."""
+    The value is already a Beijing calendar day: ``employment_profile`` reduced
+    the Graph instant to one before it was cached. Named for what it reads
+    rather than what it returns, so it cannot be mistaken for that reduction.
+    """
     if not value:
         return None
     return datetime.date.fromisoformat(value)
