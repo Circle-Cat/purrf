@@ -26,4 +26,5 @@ export const ROUTE_PATHS = {
   LEAVE_APPROVALS: "/leave/approvals",
   LEAVE_REQUESTS: "/leave/requests",
   LEAVE_CALENDAR_ADMIN: "/leave/calendar",
+  LEAVE_BALANCES_ADMIN: "/leave/balances",
 };

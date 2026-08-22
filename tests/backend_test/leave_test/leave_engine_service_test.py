@@ -53,12 +53,16 @@ class LeaveEngineServiceTest(IsolatedAsyncioTestCase):
         self.repository.balance = AsyncMock(return_value=Decimal("0.00"))
         self.session = MagicMock()
         self.session.commit = AsyncMock()
+        self.repository.balances_by_user_ids = AsyncMock(return_value={})
+        self.users = MagicMock()
+        self.users.get_all_by_ids = AsyncMock(return_value=[])
         self.service = LeaveEngineService(
             logger=self.logger,
             redis_client=self.redis_client,
             retry_utils=self.retry_utils,
             participant_resolver=self.resolver,
             leave_ledger_repository=self.repository,
+            users_repository=self.users,
         )
 
     def _directory(self, profiles, resolved=None):
@@ -324,6 +328,98 @@ class TestAnnualClose(LeaveEngineServiceTest):
 
         self.assertEqual(self._written(), [])
         self.assertEqual((report.settled, report.forfeited), (0, 0))
+
+
+def _person(user_id, first, last, preferred=None):
+    row = MagicMock()
+    row.user_id = user_id
+    row.first_name = first
+    row.last_name = last
+    row.preferred_name = preferred
+    return row
+
+
+class TestOverview(LeaveEngineServiceTest):
+    """What an administrator is shown, and why it is built on the run itself.
+
+    An overview assembled from its own query could disagree with what the job
+    actually pays, and noticing that kind of gap is the whole point of the page.
+    """
+
+    async def test_it_lists_the_people_this_run_would_pay(self):
+        self._directory({"ann": _profile(), "bob": _profile()})
+        self.users.get_all_by_ids.return_value = [
+            _person(10, "Ann", "Employee"),
+            _person(11, "Bob", "Report"),
+        ]
+        self.repository.balances_by_user_ids.return_value = {
+            10: Decimal("72.00"),
+            11: Decimal("8.00"),
+        }
+
+        overview = await self.service.overview(self.session)
+
+        self.assertEqual([held.ldap for held in overview.people], ["ann", "bob"])
+        self.assertEqual(
+            [held.balance for held in overview.people],
+            [Decimal("72.00"), Decimal("8.00")],
+        )
+
+    async def test_somebody_with_no_rows_holds_zero_rather_than_nothing(self):
+        """The engine has them, so they have a balance -- it is zero."""
+        self._directory({"ann": _profile()})
+        self.users.get_all_by_ids.return_value = [_person(10, "Ann", "Employee")]
+        self.repository.balances_by_user_ids.return_value = {}
+
+        overview = await self.service.overview(self.session)
+
+        self.assertEqual(overview.people[0].balance, Decimal("0.00"))
+
+    async def test_it_carries_the_level_for_grouping(self):
+        self._directory({"ann": _profile(level="L1", annual_hours=0)})
+        self.users.get_all_by_ids.return_value = [_person(10, "Ann", "Employee")]
+        self.repository.balances_by_user_ids.return_value = {}
+
+        overview = await self.service.overview(self.session)
+
+        self.assertEqual(overview.people[0].level, "L1")
+        self.assertEqual(overview.people[0].annual_hours, 0)
+
+    async def test_it_names_everybody_the_run_cannot_pay(self):
+        """Somebody left out of every run is invisible in their own balance,
+        which simply stays where it was. Each group names a different fix, so
+        they stay apart rather than being counted together."""
+        self._directory(
+            {"ann": _profile(), "carol": _profile(hire_date=None)},
+            resolved=ResolvedParticipants(
+                by_ldap={"ann": 10}, unresolved=("dave",), not_internal=("erin",)
+            ),
+        )
+        self.users.get_all_by_ids.return_value = [_person(10, "Ann", "Employee")]
+        self.repository.balances_by_user_ids.return_value = {}
+
+        overview = await self.service.overview(self.session)
+
+        self.assertEqual(overview.excluded.no_hire_date, ("carol",))
+        self.assertEqual(overview.excluded.unresolved, ("dave",))
+        self.assertEqual(overview.excluded.not_internal, ("erin",))
+        self.assertEqual(overview.profile_count, 2)
+
+    async def test_names_are_ordered_here_not_by_the_database(self):
+        """The production collation is byte-order, which files every
+        capitalised name ahead of every lower-case one."""
+        self._directory({"ann": _profile(), "bob": _profile()})
+        self.users.get_all_by_ids.return_value = [
+            _person(10, "zoe", "Adams"),
+            _person(11, "Alice", "Brown"),
+        ]
+        self.repository.balances_by_user_ids.return_value = {}
+
+        overview = await self.service.overview(self.session)
+
+        self.assertEqual(
+            [held.name for held in overview.people], ["Alice Brown", "zoe Adams"]
+        )
 
 
 if __name__ == "__main__":

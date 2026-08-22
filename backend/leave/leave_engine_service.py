@@ -33,6 +33,7 @@ from backend.leave.leave_accrual import (
     format_hours,
     weekly_accrual_hours,
 )
+from backend.common.name_utils import partner_display_name
 from backend.leave.leave_clock import business_today
 from backend.leave.leave_policy import MAX_CARRYOVER_HOURS
 
@@ -47,6 +48,9 @@ class _Participant:
     user_id: int
     annual_hours: int
     hire_date: datetime.date
+    # Reporting only. The accrual reads the annual figure, never the label:
+    # a level that cannot be parsed still accrues on whatever hours it has.
+    level: str | None = None
 
 
 @dataclass(frozen=True)
@@ -91,6 +95,27 @@ class AnnualCloseReport:
     not_internal: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class _Held:
+    """One person the engine pays, and the balance they are holding."""
+
+    ldap: str
+    user_id: int
+    name: str | None
+    level: str | None
+    annual_hours: int
+    balance: Decimal
+
+
+@dataclass(frozen=True)
+class LeaveOverview:
+    """What an administrator sees: who is paid, and who is being missed."""
+
+    people: tuple[_Held, ...]
+    excluded: "_Excluded"
+    profile_count: int
+
+
 class LeaveEngineService:
     """Runs the weekly accrual and the annual close."""
 
@@ -101,6 +126,7 @@ class LeaveEngineService:
         retry_utils,
         participant_resolver,
         leave_ledger_repository,
+        users_repository,
     ):
         """
         Args:
@@ -109,12 +135,14 @@ class LeaveEngineService:
             retry_utils: Transient-failure retry wrapper.
             participant_resolver (LeaveParticipantResolver): ldap to account.
             leave_ledger_repository (LeaveLedgerRepository): Ledger access.
+            users_repository (UsersRepository): Names, for the overview.
         """
         self.logger = logger
         self.redis_client = redis_client
         self.retry_utils = retry_utils
         self.participant_resolver = participant_resolver
         self.leave_ledger_repository = leave_ledger_repository
+        self.users_repository = users_repository
 
     async def run_weekly_accrual(
         self, session: AsyncSession, today: datetime.date | None = None
@@ -252,6 +280,71 @@ class LeaveEngineService:
         )
         return report
 
+    async def overview(
+        self, session: AsyncSession, today: datetime.date | None = None
+    ) -> "LeaveOverview":
+        """Everybody the engine pays, what they hold, and who it cannot pay.
+
+        Deliberately built on the same population the accrual walks. An
+        overview assembled from its own query could disagree with what the job
+        actually pays, and the whole point of the page is to notice that kind of
+        gap -- so there is nothing here for it to disagree with.
+
+        The exclusions come along for the same reason: somebody left out of
+        every run is invisible in their own balance, which stays at whatever it
+        was. Each group names a different fix, so they are kept apart rather
+        than counted together.
+
+        Sorted here rather than by the database. Names are sorted in Python
+        because the production collation is byte-order, which files every
+        capitalised name ahead of every lower-case one.
+
+        Args:
+            session: Active async session.
+            today: The Beijing date to judge leavers against. Defaults to today.
+
+        Returns:
+            The people, their balances, and the exclusions.
+        """
+        on = today or business_today()
+        participants, excluded, profile_count = await self._participants(
+            session, on, on
+        )
+
+        user_ids = [participant.user_id for participant in participants]
+        balances = await self.leave_ledger_repository.balances_by_user_ids(
+            session, user_ids
+        )
+        people_rows = await self.users_repository.get_all_by_ids(
+            session, sorted(user_ids)
+        )
+        name_by_id = {
+            person.user_id: partner_display_name(
+                first_name=person.first_name,
+                last_name=person.last_name,
+                preferred_name=person.preferred_name,
+            )
+            for person in people_rows
+        }
+
+        people = [
+            _Held(
+                ldap=participant.ldap,
+                user_id=participant.user_id,
+                name=name_by_id.get(participant.user_id),
+                level=participant.level,
+                annual_hours=participant.annual_hours,
+                # Absent rows mean nothing granted yet, which is a balance of
+                # zero rather than an unknown one: the engine has them.
+                balance=balances.get(participant.user_id, NO_HOURS),
+            )
+            for participant in participants
+        ]
+        people.sort(key=lambda held: ((held.name or "").casefold(), held.ldap))
+        return LeaveOverview(
+            people=tuple(people), excluded=excluded, profile_count=profile_count
+        )
+
     async def _participants(
         self, session: AsyncSession, on: datetime.date, until: datetime.date
     ) -> tuple[list[_Participant], _Excluded, int]:
@@ -279,7 +372,7 @@ class LeaveEngineService:
             )
 
         left, no_hire_date, unreadable = [], [], []
-        eligible: dict[str, tuple[int, datetime.date]] = {}
+        eligible: dict[str, tuple[int, datetime.date, str | None]] = {}
         for ldap in sorted(profiles):
             try:
                 profile = json.loads(profiles[ldap])
@@ -296,7 +389,11 @@ class LeaveEngineService:
                 no_hire_date.append(ldap)
                 continue
 
-            eligible[ldap] = (int(profile.get("annual_hours") or 0), hire_date)
+            eligible[ldap] = (
+                int(profile.get("annual_hours") or 0),
+                hire_date,
+                profile.get("level"),
+            )
 
         resolved = await self.participant_resolver.resolve(session, sorted(eligible))
         # Driven by the eligible set rather than by what came back, so that a
@@ -308,6 +405,7 @@ class LeaveEngineService:
                 user_id=resolved.by_ldap[ldap],
                 annual_hours=eligible[ldap][0],
                 hire_date=eligible[ldap][1],
+                level=eligible[ldap][2],
             )
             for ldap in sorted(eligible)
             if ldap in resolved.by_ldap
