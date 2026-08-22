@@ -32,6 +32,7 @@ import BoardPage from "@/pages/Recruiting/board/BoardPage";
 import ApplicationDetailPage from "@/pages/Recruiting/applications/ApplicationDetailPage";
 import MyEvaluations from "@/pages/Recruiting/MyEvaluations";
 import Audit from "@/pages/Recruiting/audit/Audit";
+import LeaveApprovalsPage from "@/pages/Leave/ApprovalsPage";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
 import { PERMISSIONS } from "@/constants/Permissions";
@@ -100,6 +101,15 @@ function App() {
                     <Route
                       path={ROUTE_PATHS.PERSONAL_DASHBOARD}
                       element={<PersonalDashboard />}
+                    />
+                    {/* No permission gate: approving leave is not a
+                        permission -- the manager relationship comes from Azure
+                        and no role is built from it. The page shows only what
+                        was filed against the caller, so somebody who approves
+                        for nobody sees an empty page. */}
+                    <Route
+                      path={ROUTE_PATHS.LEAVE_APPROVALS}
+                      element={<LeaveApprovalsPage />}
                     />
                     <Route
                       path={ROUTE_PATHS.MENTORSHIP_MANAGEMENT}

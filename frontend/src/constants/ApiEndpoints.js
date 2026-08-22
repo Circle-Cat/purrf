@@ -25,6 +25,9 @@ export const API_ENDPOINTS = {
     `/mentorship/admin/pairs/${pairId}/meetings`,
   MENTORSHIP_MEETINGS_ENDPOINT: "/mentorship/v1/meetings",
   MY_INTERNAL_ACTIVITY_SUMMARY: "/summary/me",
+  LEAVE_APPROVALS: "/leave/requests/approvals",
+  LEAVE_REQUEST_DECISION: (requestId) =>
+    `/leave/requests/${requestId}/decision`,
   MENTORSHIP_MEETINGS_V2: "/mentorship/v2/meetings",
   MENTORSHIP_MEETING_V2_SINGLE: (meetingId) =>
     `/mentorship/v2/meetings/${meetingId}`,
