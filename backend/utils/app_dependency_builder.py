@@ -906,16 +906,21 @@ class AppDependencyBuilder:
             leave_ledger_repository=self.leave_ledger_repository,
             users_repository=self.users_repository,
         )
-        self.leave_admin_controller = LeaveAdminController(
-            self.leave_adjustment_service,
-            self.database,
-        )
+        # Built before the admin controller, which reads the population this
+        # service walks so that the overview cannot disagree with what the
+        # accrual actually pays.
         self.leave_engine_service = LeaveEngineService(
             logger=self.logger,
             redis_client=self.redis_client,
             retry_utils=self.retry_utils,
             participant_resolver=self.leave_participant_resolver,
             leave_ledger_repository=self.leave_ledger_repository,
+            users_repository=self.users_repository,
+        )
+        self.leave_admin_controller = LeaveAdminController(
+            self.leave_adjustment_service,
+            self.leave_engine_service,
+            self.database,
         )
         self.leave_job_controller = LeaveJobController(
             self.leave_engine_service,

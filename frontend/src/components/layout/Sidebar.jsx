@@ -1,10 +1,13 @@
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/context/auth";
+import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { PERMISSIONS } from "@/constants/Permissions";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 
 const Sidebar = () => {
   const { permissions } = useAuth();
+  const flags = useFeatureFlags();
 
   /**
    * Checks if the user may access a page. An empty list means the item is open
@@ -20,6 +23,19 @@ const Sidebar = () => {
       permissions.some((p) => requiredPermissions.includes(p))
     );
   };
+
+  /**
+   * Whether a nav item is on for this viewer at all.
+   *
+   * An item behind an unreleased feature needs both: the permission to use it
+   * and the flag that says the feature exists. Reading an absent flag as false
+   * is what keeps something unreleased out of the sidebar.
+   *
+   * @param {{permissions: Array<string>, flag?: string}} item - The nav item.
+   * @returns {boolean} Whether to render it.
+   */
+  const isVisible = (item) =>
+    hasAccess(item.permissions) && (!item.flag || Boolean(flags[item.flag]));
 
   const navItems = [
     {
@@ -89,6 +105,15 @@ const Sidebar = () => {
       to: ROUTE_PATHS.RECRUITING_AUDIT,
       permissions: [PERMISSIONS.RECRUITING_AUDIT_READ],
     },
+    {
+      // Only the administrative side. Whether leave applies to somebody is not
+      // a permission and this sidebar is driven entirely by permissions, so
+      // the employee-facing screens live on the dashboard instead.
+      label: "Leave Administration",
+      to: ROUTE_PATHS.LEAVE_ADMIN,
+      permissions: [PERMISSIONS.LEAVE_ADMIN],
+      flag: FEATURE_FLAGS.LEAVE_MANAGEMENT,
+    },
   ];
 
   return (
@@ -97,7 +122,7 @@ const Sidebar = () => {
         <ul className="m-0 list-none p-0">
           {navItems.map(
             (item) =>
-              hasAccess(item.permissions) && (
+              isVisible(item) && (
                 <li key={item.to} className="mb-[5px]">
                   <NavLink
                     to={item.to}

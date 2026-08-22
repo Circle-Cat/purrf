@@ -107,6 +107,7 @@ py_library(
     srcs = ["leave_admin_controller.py"],
     deps = [
         ":leave_adjustment_service",
+        ":leave_engine_service",
         "//backend/common:api_endpoints",
         "//backend/common:fast_api_response_wrapper",
         "//backend/common:permissions",
@@ -135,6 +136,7 @@ py_library(
         ":leave_participants",
         ":leave_policy",
         "//backend/common:leave_enums",
+        "//backend/common:name_utils",
         "//backend/entity:entities",
         "//backend/repository:repositories",
         "@pypi//sqlalchemy",

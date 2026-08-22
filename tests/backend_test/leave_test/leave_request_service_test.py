@@ -58,6 +58,7 @@ class LeaveRequestServiceTest(IsolatedAsyncioTestCase):
         )
         self.emails.get_emails_by_user_ids = AsyncMock(return_value={})
         self.ledger.balances_by_user_ids = AsyncMock(return_value={})
+        self.ledger.sum_deductions_for_year = AsyncMock(return_value=Decimal("0.00"))
         self.users = MagicMock()
         self.users.get_all_by_ids = AsyncMock(return_value=[])
         self.redis_client = MagicMock()
@@ -751,6 +752,145 @@ class TestLists(LeaveRequestServiceTest):
         queue = await self.service.list_for_approver(self.session, MANAGER)
 
         self.assertIsNone(queue[0].employee_name)
+
+
+class TestCoverage(LeaveRequestServiceTest):
+    """Whether the leave system has anything to do with one account.
+
+    Nothing in the feature should offer somebody a screen it cannot serve, and
+    nothing should tell somebody outside the population that they hold a
+    balance of zero -- that reads as an entitlement of nothing rather than as
+    "this does not apply to you".
+    """
+
+    async def test_somebody_the_nightly_sync_knows_is_covered(self):
+        covered = await self.service.coverage(self.session, EMPLOYEE)
+
+        self.assertTrue(covered)
+
+    async def test_somebody_the_sync_has_never_seen_is_not_covered(self):
+        self.redis_client.hgetall.return_value = {}
+        self.ledger.balances_by_user_ids.return_value = {}
+
+        covered = await self.service.coverage(self.session, EMPLOYEE)
+
+        self.assertFalse(covered)
+
+    async def test_a_ledger_row_covers_somebody_the_sync_has_dropped(self):
+        """Somebody who has left the population keeps their history. Their
+        profile is deleted the next night, and hiding the record with it would
+        make the hours they were granted unaccountable."""
+        self.redis_client.hgetall.return_value = {}
+        self.ledger.balances_by_user_ids.return_value = {EMPLOYEE: Decimal("8.00")}
+
+        covered = await self.service.coverage(self.session, EMPLOYEE)
+
+        self.assertTrue(covered)
+
+    async def test_a_zero_balance_still_counts_as_a_row(self):
+        """A balance summing to zero is not an absent one. Falling back to the
+        figure rather than to the presence of rows would drop exactly the
+        people whose credits and deductions cancel out."""
+        self.redis_client.hgetall.return_value = {}
+        self.ledger.balances_by_user_ids.return_value = {EMPLOYEE: Decimal("0.00")}
+
+        covered = await self.service.coverage(self.session, EMPLOYEE)
+
+        self.assertTrue(covered)
+
+    async def test_an_account_with_no_corporate_address_is_not_covered(self):
+        """The corporate address is the whole of the join onto Azure, so
+        without one there is no profile to find."""
+        self.emails.list_by_user_id.return_value = [_email("ann@gmail.com")]
+        self.ledger.balances_by_user_ids.return_value = {}
+
+        covered = await self.service.coverage(self.session, EMPLOYEE)
+
+        self.assertFalse(covered)
+
+    async def test_the_cache_is_not_consulted_without_an_ldap(self):
+        """There is no key to ask about, so the round trip is skipped."""
+        self.emails.list_by_user_id.return_value = [_email("ann@gmail.com")]
+        self.ledger.balances_by_user_ids.return_value = {}
+
+        await self.service.coverage(self.session, EMPLOYEE)
+
+        self.redis_client.hgetall.assert_not_called()
+
+    async def test_no_corporate_address_but_a_ledger_row_is_still_covered(self):
+        self.emails.list_by_user_id.return_value = [_email("ann@gmail.com")]
+        self.ledger.balances_by_user_ids.return_value = {EMPLOYEE: Decimal("8.00")}
+
+        covered = await self.service.coverage(self.session, EMPLOYEE)
+
+        self.assertTrue(covered)
+
+
+class TestStanding(LeaveRequestServiceTest):
+    """The three figures a dashboard answers "what can I spend" with."""
+
+    async def test_available_holds_back_what_is_already_requested(self):
+        """Same definition the overdraft mark uses, so a card cannot say
+        somebody can afford leave that filing would then flag."""
+        self.ledger.balance.return_value = Decimal("80.00")
+        self.requests.sum_pending_paid_hours.return_value = Decimal("24.00")
+
+        standing = await self.service.standing(self.session, EMPLOYEE)
+
+        self.assertTrue(standing.is_covered)
+        self.assertEqual(standing.available, Decimal("56.00"))
+        self.assertEqual(standing.pending, Decimal("24.00"))
+
+    async def test_used_is_shown_as_spent_though_stored_negative(self):
+        self.ledger.balance.return_value = Decimal("56.00")
+        self.ledger.sum_deductions_for_year.return_value = Decimal("-24.00")
+
+        standing = await self.service.standing(self.session, EMPLOYEE)
+
+        self.assertEqual(standing.used, Decimal("24.00"))
+
+    async def test_used_covers_this_year_only(self):
+        """A figure summed across years would say somebody spent this year
+        what they spent over their whole employment."""
+        self.ledger.balance.return_value = Decimal("56.00")
+
+        await self.service.standing(self.session, EMPLOYEE)
+
+        self.assertEqual(
+            self.ledger.sum_deductions_for_year.await_args.args[2], TODAY.year
+        )
+
+    async def test_available_may_be_negative(self):
+        """An L1 has no entitlement and may still take paid leave."""
+        self.ledger.balance.return_value = Decimal("0.00")
+        self.requests.sum_pending_paid_hours.return_value = Decimal("8.00")
+
+        standing = await self.service.standing(self.session, EMPLOYEE)
+
+        self.assertEqual(standing.available, Decimal("-8.00"))
+
+    async def test_nothing_is_quoted_to_somebody_the_feature_misses(self):
+        """Zero would read as an entitlement of nothing rather than as a
+        feature with nothing to do with them."""
+        self.redis_client.hgetall.return_value = {}
+        self.ledger.balances_by_user_ids.return_value = {}
+
+        standing = await self.service.standing(self.session, EMPLOYEE)
+
+        self.assertFalse(standing.is_covered)
+        self.assertIsNone(standing.available)
+        self.assertIsNone(standing.pending)
+        self.assertIsNone(standing.used)
+
+    async def test_no_ledger_is_read_for_somebody_it_misses(self):
+        """Nothing to compute, so nothing is asked."""
+        self.redis_client.hgetall.return_value = {}
+        self.ledger.balances_by_user_ids.return_value = {}
+        self.ledger.balance.reset_mock()
+
+        await self.service.standing(self.session, EMPLOYEE)
+
+        self.ledger.balance.assert_not_awaited()
 
 
 if __name__ == "__main__":

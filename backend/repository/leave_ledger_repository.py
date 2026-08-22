@@ -63,6 +63,40 @@ class LeaveLedgerRepository:
         result = await session.execute(query)
         return result.scalar_one()
 
+    async def sum_deductions_for_year(
+        self, session: AsyncSession, user_id: int, year: int
+    ) -> Decimal:
+        """What leave this person has actually spent inside one year.
+
+        Deductions only, and dated inside the year. Both filters matter for the
+        same reason the accrual sum needs them: an exchange credit and an
+        opening balance are not leave taken, and a figure summed across years
+        would say somebody spent this year what they spent over their whole
+        employment.
+
+        Returned as stored, which is negative or zero. The caller decides how
+        to present it -- negating here would hide the sign from a reader of the
+        query and invite a second negation somewhere else.
+
+        Args:
+            session: Active async session.
+            user_id: Whose ledger.
+            year: The year to total.
+
+        Returns:
+            The signed sum, or ``0.00`` when there are none.
+        """
+        result = await session.execute(
+            select(
+                func.coalesce(func.sum(LeaveLedgerEntity.hours), Decimal("0.00"))
+            ).where(
+                LeaveLedgerEntity.user_id == user_id,
+                LeaveLedgerEntity.entry_type == LeaveEntryType.LEAVE_DEDUCTION,
+                extract("year", LeaveLedgerEntity.effective_date) == year,
+            )
+        )
+        return result.scalar_one()
+
     async def balance(self, session: AsyncSession, user_id: int) -> Decimal:
         """This person's balance: every row they have, whatever its type.
 
