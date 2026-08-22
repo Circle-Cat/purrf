@@ -151,5 +151,49 @@ class IsInLeaveScopeTest(unittest.TestCase):
         self.assertFalse(is_in_leave_scope(self._raw(officeLocation="CN")))
 
 
+class TestAccountEnabled(unittest.TestCase):
+    """The accrual engine's fallback for "has left".
+
+    A leaver is supposed to carry employeeLeaveDateTime, and one of the five
+    China full-timers in the directory is disabled with that field empty. On
+    the leave date alone that person would keep accruing for good.
+    """
+
+    def test_a_disabled_account_is_carried_onto_the_profile(self):
+        profile = build_employment_profile({
+            "mail": "ann@circlecat.org",
+            "jobTitle": "Software Engineer (L3)",
+            "employeeHireDate": "2024-03-01T00:00:00Z",
+            "managerLdap": "bob",
+            "accountEnabled": False,
+        })
+
+        self.assertFalse(profile.account_enabled)
+
+    def test_an_enabled_account_is_carried_onto_the_profile(self):
+        profile = build_employment_profile({
+            "mail": "ann@circlecat.org",
+            "jobTitle": "Software Engineer (L3)",
+            "employeeHireDate": "2024-03-01T00:00:00Z",
+            "managerLdap": "bob",
+            "accountEnabled": True,
+        })
+
+        self.assertTrue(profile.account_enabled)
+
+    def test_a_payload_without_the_field_counts_as_enabled(self):
+        """Erring the other way would stop accrual for the entire directory
+        the moment the field went missing, and stopping is invisible in a
+        balance while over-paying is not."""
+        profile = build_employment_profile({
+            "mail": "ann@circlecat.org",
+            "jobTitle": "Software Engineer (L3)",
+            "employeeHireDate": "2024-03-01T00:00:00Z",
+            "managerLdap": "bob",
+        })
+
+        self.assertTrue(profile.account_enabled)
+
+
 if __name__ == "__main__":
     unittest.main()
