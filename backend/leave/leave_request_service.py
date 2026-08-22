@@ -143,7 +143,7 @@ class LeaveRequestService:
         start_time: datetime.time | None,
         end_time: datetime.time | None,
         reason: str | None,
-    ) -> LeaveRequestEntity:
+    ) -> LeaveRequestDto:
         """Files one request, or refuses it with a reason.
 
         Args:
@@ -241,7 +241,7 @@ class LeaveRequestService:
             hours,
             stored.status.value,
         )
-        return stored
+        return self._read_model(stored)
 
     async def decide(
         self,
@@ -249,7 +249,7 @@ class LeaveRequestService:
         request_id: int,
         approver_user_id: int,
         approve: bool,
-    ) -> LeaveRequestEntity:
+    ) -> LeaveRequestDto:
         """Approves or rejects a pending request, writing the ledger row.
 
         Approving is the only thing that moves hours. One row per request,
@@ -297,11 +297,11 @@ class LeaveRequestService:
             request.status.value,
             approver_user_id,
         )
-        return request
+        return self._read_model(request)
 
     async def withdraw(
         self, session: AsyncSession, request_id: int, user_id: int
-    ) -> LeaveRequestEntity:
+    ) -> LeaveRequestDto:
         """Takes back a request nobody has decided yet.
 
         No manager needed: nothing has reached the ledger. Once approved a
@@ -326,7 +326,7 @@ class LeaveRequestService:
         request.status = LeaveRequestStatus.WITHDRAWN
         await session.commit()
         self.logger.info("Leave request %s withdrawn by %s.", request_id, user_id)
-        return request
+        return self._read_model(request)
 
     async def list_own(
         self, session: AsyncSession, user_id: int
@@ -413,6 +413,26 @@ class LeaveRequestService:
             )
             for request in requests
         ]
+
+    def _read_model(self, request: LeaveRequestEntity) -> LeaveRequestDto:
+        """One request as it is read back, in the shape the lists use.
+
+        Returning the stored row instead sent a different shape from the same
+        resource: FastAPI's encoder falls through to ``vars()`` for an ORM
+        object, so the keys came back in snake_case where every list endpoint
+        sends camelCase, and ``hours`` went through the Decimal encoder into a
+        float -- 78.46 as 78.45999999999999, which is the one thing
+        LeaveRequestDto exists to prevent.
+
+        No name or ldap: whoever filed, took back or decided this is looking at
+        a request they are already party to. No balance pair either -- that is
+        the "where would approving leave me" figure an approver reads while a
+        request is still waiting, and it has no answer once the ledger has
+        moved.
+        """
+        return LeaveRequestDto.of(
+            request, required_notice_workdays=self._required_notice(request)
+        )
 
     @staticmethod
     def _required_notice(request: LeaveRequestEntity) -> int | None:
