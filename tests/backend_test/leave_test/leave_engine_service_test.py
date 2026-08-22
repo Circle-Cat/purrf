@@ -26,6 +26,7 @@ def _profile(
     hire_date="2024-03-01",
     leave_date=None,
     account_enabled=True,
+    problems=None,
 ):
     return json.dumps({
         "level": level,
@@ -34,7 +35,7 @@ def _profile(
         "leave_date": leave_date,
         "manager_ldap": "bob",
         "account_enabled": account_enabled,
-        "problems": [],
+        "problems": problems or [],
     })
 
 
@@ -384,6 +385,55 @@ class TestOverview(LeaveEngineServiceTest):
 
         self.assertEqual(overview.people[0].level, "L1")
         self.assertEqual(overview.people[0].annual_hours, 0)
+
+    async def test_it_carries_the_data_gaps_of_people_it_does_pay(self):
+        """A different class of person from the excluded ones: these accrue
+        normally and still cannot use the feature, or accrue nothing while
+        looking fine. Nothing else reports them."""
+        self._directory({
+            "ann": _profile(
+                level=None, annual_hours=0, problems=["unparseable_job_title"]
+            ),
+        })
+        self.users.get_all_by_ids.return_value = [_person(10, "Ann", "Employee")]
+
+        overview = await self.service.overview(self.session)
+
+        self.assertEqual(overview.people[0].problems, ("unparseable_job_title",))
+
+    async def test_zero_hours_alone_cannot_tell_an_l1_from_a_broken_title(self):
+        """L1's annual figure is legitimately zero, so the figure says nothing.
+        Only the recorded problem separates the two."""
+        self._directory({
+            "ann": _profile(level="L1", annual_hours=0),
+            "bob": _profile(
+                level=None, annual_hours=0, problems=["unparseable_job_title"]
+            ),
+        })
+        self.users.get_all_by_ids.return_value = [
+            _person(10, "Ann", "Employee"),
+            _person(11, "Bob", "Report"),
+        ]
+
+        overview = await self.service.overview(self.session)
+
+        by_ldap = {held.ldap: held for held in overview.people}
+        self.assertEqual(by_ldap["ann"].annual_hours, 0)
+        self.assertEqual(by_ldap["ann"].problems, ())
+        self.assertEqual(by_ldap["bob"].annual_hours, 0)
+        self.assertEqual(by_ldap["bob"].problems, ("unparseable_job_title",))
+
+    async def test_somebody_with_no_manager_still_accrues_and_is_still_flagged(self):
+        """They are paid every week and cannot file a single request. Being
+        absent from the exclusion lists is exactly why they are invisible."""
+        self._directory({"ann": _profile(problems=["missing_manager"])})
+        self.users.get_all_by_ids.return_value = [_person(10, "Ann", "Employee")]
+
+        overview = await self.service.overview(self.session)
+
+        self.assertEqual(overview.people[0].problems, ("missing_manager",))
+        self.assertEqual(overview.excluded.no_hire_date, ())
+        self.assertEqual(overview.excluded.unresolved, ())
 
     async def test_it_names_everybody_the_run_cannot_pay(self):
         """Somebody left out of every run is invisible in their own balance,

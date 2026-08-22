@@ -19,6 +19,7 @@ const person = (overrides = {}) => ({
   level: "L3",
   annualHours: 80,
   balanceHours: "72.00",
+  problems: [],
   ...overrides,
 });
 
@@ -104,6 +105,85 @@ describe("LeaveBalancesPage", () => {
     expect(screen.getByText(/No hire date in Azure — 1/)).toBeInTheDocument();
     expect(screen.getByText(/Left — 1/)).toBeInTheDocument();
     expect(screen.queryByText(/Unreadable profile/)).not.toBeInTheDocument();
+  });
+
+  it("flags somebody who accrues normally and still cannot file", async () => {
+    // Absent from every exclusion list, because the run pays them. That is
+    // exactly why nothing else reports them.
+    api.getLeaveBalances.mockResolvedValue(
+      envelope(
+        overview({
+          people: [person({ problems: ["missing_manager"] })],
+        }),
+      ),
+    );
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText(/No manager in Azure — 1/)).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText(/cannot file a single request/i),
+    ).toBeInTheDocument();
+  });
+
+  it("separates a broken job title from a legitimate L1", async () => {
+    // Both accrue zero hours a year, so the figure says nothing. Only the
+    // recorded problem tells them apart.
+    api.getLeaveBalances.mockResolvedValue(
+      envelope(
+        overview({
+          people: [
+            person({ ldap: "ann", level: "L1", annualHours: 0 }),
+            person({
+              userId: 11,
+              ldap: "bob",
+              name: "Bob Report",
+              level: null,
+              annualHours: 0,
+              problems: ["unparseable_job_title"],
+            }),
+          ],
+          profileCount: 2,
+        }),
+      ),
+    );
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText(/carries no level — 1/i)).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/Accruing zero hours a year/i)).toBeInTheDocument();
+  });
+
+  it("splits the negative balances by level", async () => {
+    api.getLeaveBalances.mockResolvedValue(
+      envelope(
+        overview({
+          people: [
+            person({ ldap: "ann", level: "L1", balanceHours: "-24.00" }),
+            person({
+              userId: 11,
+              ldap: "bob",
+              name: "Bob Report",
+              level: "L3",
+              balanceHours: "-8.00",
+            }),
+          ],
+          profileCount: 2,
+        }),
+      ),
+    );
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Below zero")).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/no annual entitlement/i)).toBeInTheDocument();
+    expect(screen.getByText(/L3 — 1/)).toBeInTheDocument();
   });
 
   it("says so when nobody is accruing, and names the likely cause", async () => {

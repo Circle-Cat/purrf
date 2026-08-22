@@ -51,6 +51,10 @@ class _Participant:
     # Reporting only. The accrual reads the annual figure, never the label:
     # a level that cannot be parsed still accrues on whatever hours it has.
     level: str | None = None
+    # Data gaps the nightly sync recorded. A different class from the exclusion
+    # lists: these people are paid every week and are still broken, so nothing
+    # about the run itself mentions them.
+    problems: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -105,6 +109,9 @@ class _Held:
     level: str | None
     annual_hours: int
     balance: Decimal
+    # Kept on the row rather than gathered into its own list: these people are
+    # already here, and a second list would be two places to read.
+    problems: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -337,6 +344,7 @@ class LeaveEngineService:
                 # Absent rows mean nothing granted yet, which is a balance of
                 # zero rather than an unknown one: the engine has them.
                 balance=balances.get(participant.user_id, NO_HOURS),
+                problems=participant.problems,
             )
             for participant in participants
         ]
@@ -372,7 +380,7 @@ class LeaveEngineService:
             )
 
         left, no_hire_date, unreadable = [], [], []
-        eligible: dict[str, tuple[int, datetime.date, str | None]] = {}
+        eligible: dict[str, tuple[int, datetime.date, str | None, tuple]] = {}
         for ldap in sorted(profiles):
             try:
                 profile = json.loads(profiles[ldap])
@@ -393,6 +401,7 @@ class LeaveEngineService:
                 int(profile.get("annual_hours") or 0),
                 hire_date,
                 profile.get("level"),
+                tuple(profile.get("problems") or ()),
             )
 
         resolved = await self.participant_resolver.resolve(session, sorted(eligible))
@@ -406,6 +415,7 @@ class LeaveEngineService:
                 annual_hours=eligible[ldap][0],
                 hire_date=eligible[ldap][1],
                 level=eligible[ldap][2],
+                problems=eligible[ldap][3],
             )
             for ldap in sorted(eligible)
             if ldap in resolved.by_ldap
