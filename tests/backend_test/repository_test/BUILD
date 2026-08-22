@@ -266,3 +266,14 @@ py_test(
         "//backend/entity:entities",
     ],
 )
+
+py_test(
+    name = "leave_holiday_repository_test",
+    srcs = ["leave_holiday_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)

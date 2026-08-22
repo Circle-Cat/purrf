@@ -131,6 +131,9 @@ from backend.recruiting.evaluation_service import EvaluationService
 from backend.recruiting.evaluation_controller import EvaluationController
 from backend.recruiting.audit_service import AuditService
 from backend.recruiting.audit_controller import AuditController
+from backend.repository.leave_holiday_repository import LeaveHolidayRepository
+from backend.leave.leave_calendar_service import LeaveCalendarService
+from backend.leave.leave_calendar_controller import LeaveCalendarController
 from backend.recruiting.notification_service import RecruitingNotificationService
 from backend.recruiting.notification_controller import RecruitingNotificationController
 from backend.communication.notification_email_service import NotificationEmailService
@@ -866,6 +869,15 @@ class AppDependencyBuilder:
             self.recruiting_notification_service,
             self.database,
         )
+        self.leave_holiday_repository = LeaveHolidayRepository()
+        self.leave_calendar_service = LeaveCalendarService(
+            logger=self.logger,
+            leave_holiday_repository=self.leave_holiday_repository,
+        )
+        self.leave_calendar_controller = LeaveCalendarController(
+            self.leave_calendar_service,
+            self.database,
+        )
         self.fast_app_factory = FastAppFactory(
             authentication_controller=self.authentication_controller,
             authentication_service=self.authentication_service,
@@ -887,6 +899,7 @@ class AppDependencyBuilder:
             evaluation_controller=self.evaluation_controller,
             audit_controller=self.audit_controller,
             recruiting_notification_controller=self.recruiting_notification_controller,
+            leave_calendar_controller=self.leave_calendar_controller,
             notification_delivery_controller=self.notification_delivery_controller,
             notification_publisher=self.notification_publisher_client,
             notification_topic_path=self.notification_topic_path,
