@@ -63,14 +63,27 @@ class LeaveLedgerRepository:
         result = await session.execute(query)
         return result.scalar_one()
 
-    async def balance(self, session: AsyncSession, user_id: int) -> Decimal:
+    async def balance(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        *,
+        on_or_before: datetime.date | None = None,
+    ) -> Decimal:
         """This person's balance: every row they have, whatever its type.
 
-        Deliberately unfiltered. There is no balance column and no second
-        source of truth, so excluding a type here would make the number
-        disagree with the history it is derived from. It is also why a level
-        change carries no hours -- a marker that moved the balance would force
-        every caller of this to remember an exclusion.
+        Never filtered by type. There is no balance column and no second source
+        of truth, so excluding a type here would make the number disagree with
+        the history it is derived from. It is also why a level change carries
+        no hours -- a marker that moved the balance would force every caller of
+        this to remember an exclusion.
+
+        ``on_or_before`` is a different axis, and the only caller that needs it
+        is the carryover trim: what it cuts is the overshoot a year ended with,
+        so it has to ask what the balance was on 31 December rather than what
+        it is now. Two rows can already sit between the two answers by the time
+        the close runs -- the new year's first weekly accrual, and leave
+        approved in December for a January date -- and the cut is irreversible.
 
         A negative result is ordinary: an L1 has no annual entitlement and may
         still take paid leave.
@@ -78,15 +91,18 @@ class LeaveLedgerRepository:
         Args:
             session: Active async session.
             user_id: Whose ledger.
+            on_or_before: Count only rows effective on or before this date.
+                Defaults to counting everything, which is the balance now.
 
         Returns:
             The signed sum, or ``0.00`` for an empty ledger.
         """
-        result = await session.execute(
-            select(
-                func.coalesce(func.sum(LeaveLedgerEntity.hours), Decimal("0.00"))
-            ).where(LeaveLedgerEntity.user_id == user_id)
-        )
+        stmt = select(
+            func.coalesce(func.sum(LeaveLedgerEntity.hours), Decimal("0.00"))
+        ).where(LeaveLedgerEntity.user_id == user_id)
+        if on_or_before is not None:
+            stmt = stmt.where(LeaveLedgerEntity.effective_date <= on_or_before)
+        result = await session.execute(stmt)
         return result.scalar_one()
 
     async def balances_by_user_ids(
