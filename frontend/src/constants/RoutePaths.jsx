@@ -25,4 +25,5 @@ export const ROUTE_PATHS = {
   RECRUITING_AUDIT: "/recruiting/audit",
   LEAVE_APPROVALS: "/leave/approvals",
   LEAVE_REQUESTS: "/leave/requests",
+  LEAVE_CALENDAR_ADMIN: "/leave/calendar",
 };
