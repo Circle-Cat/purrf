@@ -211,6 +211,27 @@ class TestWeeklyAccrual(LeaveEngineServiceTest):
         self.assertEqual([entry.user_id for entry in self._written()], [11])
         self.assertEqual(report.unreadable, ("ann",))
 
+    async def test_a_date_that_will_not_parse_skips_that_person_only(self):
+        """employment_profile stores a Graph value it could not read verbatim,
+        so a malformed hire date reaches the cache as a non-ISO string. Parsed
+        without a guard it escaped the loop and the whole run ended with no one
+        paid -- the one failure this module is built to make impossible."""
+        self._directory({"ann": _profile(hire_date="not-a-date"), "bob": _profile()})
+
+        report = await self.service.run_weekly_accrual(self.session, today=MID_YEAR)
+
+        self.assertEqual(report.unreadable, ("ann",))
+        self.assertEqual(report.paid, 1)
+
+    async def test_an_unparseable_leave_date_is_reported_rather_than_fatal(self):
+        """The other of the two dates read off a profile."""
+        self._directory({"ann": _profile(leave_date="31/12/2026"), "bob": _profile()})
+
+        report = await self.service.run_weekly_accrual(self.session, today=MID_YEAR)
+
+        self.assertEqual(report.unreadable, ("ann",))
+        self.assertEqual(report.paid, 1)
+
 
 class TestAnnualClose(LeaveEngineServiceTest):
     async def test_the_closing_year_is_the_one_that_just_ended(self):
@@ -260,6 +281,61 @@ class TestAnnualClose(LeaveEngineServiceTest):
             [LeaveEntryType.WEEKLY_ACCRUAL, LeaveEntryType.CARRYOVER_FORFEIT],
         )
         self.assertEqual(self.repository.balance.await_args_list[0].args[1:], (10,))
+
+    async def test_a_last_day_of_1_january_is_settled_for_the_year_it_worked(self):
+        """They were still accruing on 31 December, so the year the close is
+        settling is one they completed. Judging this on the day the job runs
+        instead dropped them, and the hours they were owed became unreachable
+        when the new year reset the count."""
+        self._directory({"ann": _profile(leave_date="2027-01-01")})
+        self.repository.sum_weekly_accrual.return_value = Decimal("78.46")
+
+        report = await self.service.run_annual_close(self.session, today=NEW_YEAR)
+
+        self.assertEqual(report.skipped_left, ())
+        self.assertEqual(report.settled, 1)
+        self.assertEqual(report.settled_hours, "1.54")
+
+    async def test_a_last_day_of_31_december_is_not_settled(self):
+        """Leaving stops the calculation from that day, so they did not
+        complete the year. This is the boundary the rule turns on, and it sits
+        one day from the case above."""
+        self._directory({"ann": _profile(leave_date="2026-12-31")})
+        self.repository.sum_weekly_accrual.return_value = Decimal("78.46")
+
+        report = await self.service.run_annual_close(self.session, today=NEW_YEAR)
+
+        self.assertEqual(report.skipped_left, ("ann",))
+        self.assertEqual(report.settled, 0)
+
+    async def test_who_is_settled_does_not_depend_on_the_day_the_job_runs(self):
+        """A close run late -- a missed cron, a rerun -- settles the same
+        people. The date it judges by is the year it is closing."""
+        self._directory({"ann": _profile(leave_date="2027-01-01")})
+        self.repository.sum_weekly_accrual.return_value = Decimal("78.46")
+
+        report = await self.service.run_annual_close(
+            self.session, today=datetime.date(2027, 1, 20)
+        )
+
+        self.assertEqual(report.skipped_left, ())
+        self.assertEqual(report.settled, 1)
+
+    async def test_the_ceiling_is_measured_on_the_balance_the_year_ended_with(self):
+        """Not on the balance today. By the time the close runs the ledger can
+        already hold the new year's first weekly accrual and leave approved in
+        December for a January date, and the cut is irreversible."""
+        self._directory({"ann": _profile()})
+        self.repository.sum_weekly_accrual.return_value = Decimal("80.00")
+        self.repository.balance.return_value = Decimal("60.00")
+
+        with patch("backend.leave.leave_engine_service.MAX_CARRYOVER_HOURS", 40):
+            await self.service.run_annual_close(self.session, today=NEW_YEAR)
+
+        self.assertEqual(
+            self.repository.balance.await_args_list[0].kwargs,
+            {"on_or_before": datetime.date(2026, 12, 31)},
+        )
 
     async def test_no_ceiling_means_no_forfeit_but_the_settlement_still_runs(self):
         self._directory({"ann": _profile()})
