@@ -179,6 +179,41 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
 
         self.assertEqual(balance, Decimal("92.00"))
 
+    async def test_only_deductions_inside_the_year_count_as_taken(self):
+        """An exchange credit and an opening balance are not leave taken, and a
+        figure summed across years would say somebody spent this year what they
+        spent over their whole employment."""
+        await self.insert_entities([
+            self._entry(
+                LeaveEntryType.LEAVE_DEDUCTION, "-8.00", datetime.date(2026, 5, 6)
+            ),
+            self._entry(
+                LeaveEntryType.LEAVE_DEDUCTION, "-16.00", datetime.date(2026, 7, 1)
+            ),
+            self._entry(
+                LeaveEntryType.LEAVE_DEDUCTION, "-40.00", datetime.date(2025, 3, 2)
+            ),
+            self._entry(
+                LeaveEntryType.EXCHANGE_CREDIT, "8.00", datetime.date(2026, 6, 1)
+            ),
+            self._entry(
+                LeaveEntryType.MANUAL_ADJUSTMENT, "-8.00", datetime.date(2026, 2, 1)
+            ),
+        ])
+
+        taken = await self.repository.sum_deductions_for_year(
+            self.session, self.user.user_id, 2026
+        )
+
+        self.assertEqual(taken, Decimal("-24.00"))
+
+    async def test_a_year_with_nothing_taken_is_zero_not_none(self):
+        taken = await self.repository.sum_deductions_for_year(
+            self.session, self.user.user_id, 2026
+        )
+
+        self.assertEqual(taken, Decimal("0.00"))
+
     async def test_balances_come_back_per_person_in_one_read(self):
         """An approver's queue needs a balance for everybody in it, and one
         query per row would grow with the queue."""

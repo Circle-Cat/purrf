@@ -1,12 +1,14 @@
 """FastAPI routes for filing and deciding leave requests."""
 
 from backend.common.api_endpoints import (
+    LEAVE_ME_ENDPOINT,
     LEAVE_REQUEST_DECISION_ENDPOINT,
     LEAVE_REQUEST_WITHDRAW_ENDPOINT,
     LEAVE_REQUESTS_ENDPOINT,
     LEAVE_REQUESTS_APPROVALS_ENDPOINT,
 )
 from backend.common.fast_api_response_wrapper import api_response
+from backend.dto.leave_coverage_dto import LeaveCoverageDto
 from backend.dto.leave_request_dto import LeaveDecisionDto, LeaveRequestSubmitDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.utils.permission_decorators import authenticate
@@ -38,6 +40,17 @@ class LeaveRequestController:
         self.database = database
         self.router = APIRouter(tags=["leave-requests"])
 
+        # The signed-in account's own standing, alongside its own requests.
+        # The rule behind it needs the corporate address, the nightly sync's
+        # cache and the ledger, all of which this service already holds; giving
+        # it a service of its own would copy four dependencies to answer one
+        # boolean.
+        self.router.add_api_route(
+            LEAVE_ME_ENDPOINT,
+            endpoint=authenticate()(self.coverage),
+            methods=["GET"],
+            response_model=None,
+        )
         self.router.add_api_route(
             LEAVE_REQUESTS_ENDPOINT,
             endpoint=authenticate()(self.submit),
@@ -67,6 +80,18 @@ class LeaveRequestController:
             endpoint=authenticate()(self.decide),
             methods=["POST"],
             response_model=None,
+        )
+
+    async def coverage(self, current_user: UserContextDto):
+        """Where the signed-in account stands: whether leave applies, and the
+        three figures a dashboard answers "what can I spend" with."""
+        async with self.database.session() as session:
+            standing = await self.leave_request_service.standing(
+                session, current_user.user_id
+            )
+        return api_response(
+            message="Leave standing fetched.",
+            data=LeaveCoverageDto.of(standing),
         )
 
     async def submit(

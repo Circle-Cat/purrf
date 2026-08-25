@@ -24,4 +24,6 @@ export const ROUTE_PATHS = {
   RECRUITING_MY_EVALUATIONS: "/recruiting/my-evaluations",
   RECRUITING_AUDIT: "/recruiting/audit",
   LEAVE_APPROVALS: "/leave/approvals",
+  LEAVE_REQUESTS: "/leave/requests",
+  LEAVE_ADMIN: "/leave/admin",
 };

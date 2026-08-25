@@ -3,6 +3,7 @@
 import datetime
 import unittest
 from http import HTTPStatus
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.common.leave_enums import LeaveRequestType
@@ -95,6 +96,19 @@ class TestLeaveRequestController(unittest.IsolatedAsyncioTestCase):
 
         self.service.list_for_approver.assert_awaited_once_with(self.session, 10)
 
+    async def test_coverage_answers_for_the_caller_and_nobody_else(self):
+        """No identity in the path or the query: a user id there would let
+        anybody read somebody else's standing."""
+        self.service.standing = AsyncMock(
+            return_value=SimpleNamespace(
+                is_covered=True, available=None, pending=None, used=None
+            )
+        )
+
+        await self.controller.coverage(self.ctx)
+
+        self.service.standing.assert_awaited_once_with(self.session, 10)
+
     def test_every_route_is_open_to_any_signed_in_employee(self):
         """Leave is not an administered feature: everybody files their own and
         managers decide for their own reports. Who may do what is decided by
@@ -102,6 +116,7 @@ class TestLeaveRequestController(unittest.IsolatedAsyncioTestCase):
         would have to be granted to every employee, which is the same as not
         having one."""
         for path, method in (
+            ("/leave/me", "GET"),
             ("/leave/requests", "POST"),
             ("/leave/requests", "GET"),
             ("/leave/requests/approvals", "GET"),
