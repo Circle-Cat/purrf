@@ -87,8 +87,7 @@ class TestRequestHours(unittest.TestCase):
         self.assertEqual(hours, Decimal("16.00"))
 
     def test_a_range_is_always_whole_days(self):
-        """Times are greyed out for a range in the interface, and ignored here
-        rather than half-applied."""
+        """A range carries no times at all, so there is nothing to apply."""
         hours = request_hours(
             LeaveRequestType.PAID,
             datetime.date(2026, 6, 17),
@@ -123,6 +122,45 @@ class TestRequestHours(unittest.TestCase):
         )
 
         self.assertEqual(hours, Decimal("4.50"))
+
+    def test_a_range_carrying_times_is_refused(self):
+        """Ignoring them stored a whole-day figure alongside times the entity's
+        CHECK constraint forbids, so the write failed at flush and the caller
+        got a 500 rather than an answer."""
+        with self.assertRaises(ValueError):
+            request_hours(
+                LeaveRequestType.PAID,
+                datetime.date(2026, 6, 17),
+                datetime.date(2026, 6, 19),
+                datetime.time(9, 0),
+                datetime.time(13, 0),
+                NO_HOLIDAYS,
+            )
+
+    def test_a_start_time_without_an_end_is_refused(self):
+        """One time says when, never how long. Treating it as a whole day both
+        overstates the request and leaves a stray time on the row."""
+        with self.assertRaises(ValueError):
+            request_hours(
+                LeaveRequestType.PAID,
+                datetime.date(2026, 6, 18),
+                datetime.date(2026, 6, 18),
+                datetime.time(9, 0),
+                None,
+                NO_HOLIDAYS,
+            )
+
+    def test_an_end_time_without_a_start_is_refused(self):
+        """The mirror image, and the likelier of the two to be a client bug."""
+        with self.assertRaises(ValueError):
+            request_hours(
+                LeaveRequestType.PAID,
+                datetime.date(2026, 6, 18),
+                datetime.date(2026, 6, 18),
+                None,
+                datetime.time(13, 0),
+                NO_HOLIDAYS,
+            )
 
     def test_a_day_that_is_not_a_working_day_is_worth_nothing(self):
         """Nothing to deduct: the office is shut. The caller refuses a request
