@@ -11,3 +11,15 @@ py_test(
     srcs = ["export_mentorship_records_test.py"],
     deps = ["//backend/backfill:export_mentorship_records_lib"],
 )
+
+py_test(
+    name = "export_ineligible_mentees_test",
+    srcs = ["export_ineligible_mentees_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/backfill:export_mentorship_records_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)

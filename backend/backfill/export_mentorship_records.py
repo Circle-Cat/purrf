@@ -3,7 +3,7 @@ import asyncio
 import json
 import os
 from datetime import timedelta
-from sqlalchemy import false, select, update, or_
+from sqlalchemy import func, select, update, or_
 from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.users_entity import UsersEntity
 from backend.entity.experience_entity import ExperienceEntity
@@ -190,16 +190,49 @@ async def compute_ineligible_mentee_ids(
     Returns user_ids of mentees in the round who fail one of two eligibility checks:
 
     1. Did not complete mentee onboarding training by training.deadline + 1 day.
-    2. Participated in the previous round with completed_count < prev_round.required_meetings
-       (unless the user_id appears in exemption_user_ids).
+    2. Participated in the previous round with fewer completed meetings than
+       prev_round.required_meetings (unless the user_id appears in
+       exemption_user_ids).
 
     Already-rejected participants are excluded from evaluation.
+
+    Rule 2 counts a mentee's completed meetings across ALL the pairs they held
+    in the previous round, summed. A mentee who changed mentor mid-round holds
+    two pairs there -- the one they left and the one they finished under -- and
+    the meetings under each were all really held, so the mentee's engagement is
+    the total. Reading `completed_count` off one pair at a time would reject
+    them for the abandoned relationship's share even when they cleared the bar
+    overall, and would also count them twice in the returned list.
     """
+    prev_completed_by_mentee: dict[int, int] = {}
+    if prev_round is not None:
+        prev_rows = await session.execute(
+            select(
+                MentorshipPairsEntity.mentee_id,
+                func.sum(MentorshipPairsEntity.completed_count),
+                func.count(),
+            )
+            .where(MentorshipPairsEntity.round_id == prev_round.round_id)
+            .group_by(MentorshipPairsEntity.mentee_id)
+        )
+        for mentee_id, total_completed, pair_count in prev_rows.all():
+            prev_completed_by_mentee[mentee_id] = total_completed
+            if pair_count > 1:
+                # Worth saying out loud: the operator is about to approve
+                # rejections, and this mentee's figure is a total rather than
+                # one pairing's count.
+                logger.info(
+                    "Mentee user_id=%s held %d pairs in the previous round; "
+                    "counting %d completed meetings in total",
+                    mentee_id,
+                    pair_count,
+                    total_completed,
+                )
+
     stmt = (
         select(
             MentorshipRoundParticipantsEntity.user_id,
             TrainingEntity,
-            MentorshipPairsEntity,
         )
         .outerjoin(
             TrainingEntity,
@@ -207,18 +240,6 @@ async def compute_ineligible_mentee_ids(
             & (
                 TrainingEntity.category == TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING
             ),
-        )
-        .outerjoin(
-            MentorshipPairsEntity,
-            (
-                (
-                    MentorshipPairsEntity.mentee_id
-                    == MentorshipRoundParticipantsEntity.user_id
-                )
-                & (MentorshipPairsEntity.round_id == prev_round.round_id)
-            )
-            if prev_round
-            else false(),
         )
         .where(
             MentorshipRoundParticipantsEntity.round_id == round_id,
@@ -233,7 +254,7 @@ async def compute_ineligible_mentee_ids(
     )
 
     ineligible: list[int] = []
-    for user_id, training, prev_pair in (await session.execute(stmt)).all():
+    for user_id, training in (await session.execute(stmt)).all():
         # Rule 1: training must be completed by application deadline + 3 days.
         is_trained = completed_on_time(training)
         if not is_trained:
@@ -243,17 +264,20 @@ async def compute_ineligible_mentee_ids(
             ineligible.append(user_id)
             continue
 
-        # Rule 2: if in the previous round, completed_count must meet the minimum required completed meetings.
+        # Rule 2: whoever took part in the previous round must have completed
+        # at least the minimum number of meetings there. Absent from the map
+        # means they did not take part, which rule 2 does not judge.
+        prev_completed = prev_completed_by_mentee.get(user_id)
         if (
             prev_round is not None
-            and prev_pair is not None
+            and prev_completed is not None
             and user_id not in exemption_user_ids
-            and prev_pair.completed_count < prev_round.required_meetings
+            and prev_completed < prev_round.required_meetings
         ):
             logger.info(
-                "Ineligible mentee user_id=%s: prev-round completed_count=%d < %d",
+                "Ineligible mentee user_id=%s: prev-round completed meetings=%d < %d",
                 user_id,
-                prev_pair.completed_count,
+                prev_completed,
                 prev_round.required_meetings,
             )
             ineligible.append(user_id)
