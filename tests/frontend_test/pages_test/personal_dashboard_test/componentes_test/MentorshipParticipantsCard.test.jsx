@@ -12,9 +12,13 @@ vi.mock("@/hooks/useFeatureFlags", () => ({
 }));
 
 vi.mock("@/pages/PersonalDashboard/components/MeetingSubmissionModal", () => ({
-  default: ({ open, onSuccess, userTimezone }) =>
+  default: ({ open, onSuccess, userTimezone, partnerId }) =>
     open ? (
-      <div data-testid="meeting-modal" data-user-timezone={userTimezone}>
+      <div
+        data-testid="meeting-modal"
+        data-user-timezone={userTimezone}
+        data-partner-id={String(partnerId)}
+      >
         <button onClick={onSuccess}>mock-success</button>
       </div>
     ) : null,
@@ -174,6 +178,48 @@ describe("MentorshipParticipantsCard", () => {
       "data-user-timezone",
       "Asia/Shanghai",
     );
+  });
+
+  it("should pass the partner to the modal", () => {
+    render(<MentorshipParticipantsCard {...baseProps} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: /Submit Meeting Info/ }),
+    );
+    expect(screen.getByTestId("meeting-modal")).toHaveAttribute(
+      "data-partner-id",
+      "1",
+    );
+  });
+
+  it("should disable submitting while more than one partner is shown", () => {
+    // The modal is one per round, so it can only name a partner while there
+    // is exactly one to name. Two would leave the target pair ambiguous, and
+    // submitting against the wrong one is worse than not submitting.
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        participantDetails={{
+          ...baseProps.participantDetails,
+          partnerMeetingOverview: [
+            ...baseProps.participantDetails.partnerMeetingOverview,
+            {
+              partnerId: 2,
+              preferredName: "Bob",
+              requiredMeetings: 3,
+              completedCount: 0,
+              completedRate: 0,
+              meetingTimeList: [],
+              participantRole: "mentee",
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /Submit Meeting Info/ }),
+    ).toBeDisabled();
+    expect(screen.queryByTestId("meeting-modal")).not.toBeInTheDocument();
   });
 
   it("should render a MeetingOverviewCard for each partner", () => {

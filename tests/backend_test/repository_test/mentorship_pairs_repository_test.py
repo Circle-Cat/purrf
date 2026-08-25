@@ -255,6 +255,136 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
 
         self.assertEqual(result, [])
 
+    async def test_get_pairs_with_partner_info_status_filter(self):
+        """Test that passing a status keeps only pairs in that status."""
+        # Alice (users[0]) has two pairs in round[0]: mentor to Bob (ACTIVE)
+        # and mentee to Charlie (INACTIVE).
+        unfiltered = await self.repo.get_pairs_with_partner_info(
+            self.session, self.users[0].user_id, self.rounds[0].round_id
+        )
+        self.assertEqual(len(unfiltered), 2)
+
+        result = await self.repo.get_pairs_with_partner_info(
+            self.session,
+            self.users[0].user_id,
+            self.rounds[0].round_id,
+            status=PairStatus.ACTIVE,
+        )
+
+        self.assertEqual(len(result), 1)
+        pair, partner = result[0]
+        self.assertEqual(pair.status, PairStatus.ACTIVE)
+        self.assertEqual(partner.user_id, self.users[1].user_id)
+
+    async def test_get_pairs_with_partner_info_status_filter_no_match(self):
+        """Test that a status matching no pair returns an empty list."""
+        result = await self.repo.get_pairs_with_partner_info(
+            self.session,
+            self.users[0].user_id,
+            self.rounds[1].round_id,
+            status=PairStatus.INACTIVE,
+        )
+
+        self.assertEqual(result, [])
+
+    async def test_get_active_pair_by_mentee_and_mentor_picks_the_named_mentor(self):
+        """Test that a mentee holding two pairs in one round resolves per mentor."""
+        # Bob (users[1]) is the mentee of both Alice (users[0]) and Charlie
+        # (users[2]) in round[2]. Filtering on (mentee, round) alone would
+        # match both rows; naming the mentor is what makes each lookup
+        # single-valued.
+        with_alice = await self.repo.get_active_pair_by_mentee_and_mentor(
+            session=self.session,
+            mentee_id=self.users[1].user_id,
+            mentor_id=self.users[0].user_id,
+            round_id=self.rounds[2].round_id,
+        )
+        with_charlie = await self.repo.get_active_pair_by_mentee_and_mentor(
+            session=self.session,
+            mentee_id=self.users[1].user_id,
+            mentor_id=self.users[2].user_id,
+            round_id=self.rounds[2].round_id,
+        )
+
+        self.assertIsNotNone(with_alice)
+        self.assertIsNotNone(with_charlie)
+        self.assertNotEqual(with_alice.pair_id, with_charlie.pair_id)
+        self.assertEqual(with_alice.mentor_id, self.users[0].user_id)
+        self.assertEqual(with_charlie.mentor_id, self.users[2].user_id)
+
+    async def test_get_active_pair_by_mentee_and_mentor_after_mentor_change(self):
+        """Test a mid-round mentor change: the ended pair is not returned."""
+        # Bob (users[1]) is already Alice's (users[0]) mentee in round[1].
+        # Add the pair he holds with the mentor he had before the change,
+        # which is left behind as INACTIVE.
+        previous_pair = MentorshipPairsEntity(
+            round_id=self.rounds[1].round_id,
+            mentor_id=self.users[2].user_id,
+            mentee_id=self.users[1].user_id,
+            completed_count=1,
+            status=PairStatus.INACTIVE,
+            mentor_action_status=MentorActionStatus.CONFIRMED,
+            mentee_action_status=MenteeActionStatus.CONFIRMED,
+            recommendation_reason="",
+        )
+        await self.insert_entities([previous_pair])
+
+        current = await self.repo.get_active_pair_by_mentee_and_mentor(
+            session=self.session,
+            mentee_id=self.users[1].user_id,
+            mentor_id=self.users[0].user_id,
+            round_id=self.rounds[1].round_id,
+        )
+        previous = await self.repo.get_active_pair_by_mentee_and_mentor(
+            session=self.session,
+            mentee_id=self.users[1].user_id,
+            mentor_id=self.users[2].user_id,
+            round_id=self.rounds[1].round_id,
+        )
+
+        self.assertIsNotNone(current)
+        self.assertEqual(current.mentor_id, self.users[0].user_id)
+        self.assertEqual(current.status, PairStatus.ACTIVE)
+        self.assertIsNone(previous)
+
+    async def test_get_active_pair_by_mentee_and_mentor_skips_inactive(self):
+        """Test that an inactive pair is not returned even when it is the only one."""
+        # Alice (users[0]) is Charlie's (users[2]) mentee in round[0], INACTIVE.
+        result = await self.repo.get_active_pair_by_mentee_and_mentor(
+            session=self.session,
+            mentee_id=self.users[0].user_id,
+            mentor_id=self.users[2].user_id,
+            round_id=self.rounds[0].round_id,
+        )
+
+        self.assertIsNone(result)
+
+    async def test_get_active_pair_by_mentee_and_mentor_is_side_specific(self):
+        """Test that the two user IDs are not interchangeable."""
+        # pairs[0]: Alice (users[0]) mentors Bob (users[1]) in round[0]. Asking
+        # for it with the sides swapped must not match -- callers use this to
+        # require that the current user holds the mentee side.
+        pair = self.pairs[0]
+        result = await self.repo.get_active_pair_by_mentee_and_mentor(
+            session=self.session,
+            mentee_id=pair.mentor_id,
+            mentor_id=pair.mentee_id,
+            round_id=pair.round_id,
+        )
+
+        self.assertIsNone(result)
+
+    async def test_get_active_pair_by_mentee_and_mentor_no_pair(self):
+        """Test that two users with no pair in the round return None."""
+        result = await self.repo.get_active_pair_by_mentee_and_mentor(
+            session=self.session,
+            mentee_id=self.users[1].user_id,
+            mentor_id=self.users[0].user_id,
+            round_id=9999,
+        )
+
+        self.assertIsNone(result)
+
     async def test_get_pair_with_partner_by_round_and_users_and_status_as_mentor(self):
         """Test retrieving a active pair and partner when user is the mentor."""
         pair = self.pairs[0]
