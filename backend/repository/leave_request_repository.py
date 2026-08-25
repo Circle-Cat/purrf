@@ -36,22 +36,28 @@ class LeaveRequestRepository:
         return request
 
     async def get_by_id(
-        self, session: AsyncSession, request_id: int
+        self, session: AsyncSession, request_id: int, *, for_update: bool = False
     ) -> LeaveRequestEntity | None:
         """One request, or None.
 
         Args:
             session: Active async session.
             request_id: Its id.
+            for_update: Take a row lock, held until this transaction commits.
+                Anyone else reading the same row this way waits, and reads the
+                decided status rather than the pending one they would otherwise
+                still see. Required of everything that decides a request; a
+                plain read must not ask for it.
 
         Returns:
             The request, or None when there is no such row.
         """
-        result = await session.execute(
-            select(LeaveRequestEntity).where(
-                LeaveRequestEntity.leave_request_id == request_id
-            )
+        stmt = select(LeaveRequestEntity).where(
+            LeaveRequestEntity.leave_request_id == request_id
         )
+        if for_update:
+            stmt = stmt.with_for_update()
+        result = await session.execute(stmt)
         return result.scalars().one_or_none()
 
     async def list_overlapping(
