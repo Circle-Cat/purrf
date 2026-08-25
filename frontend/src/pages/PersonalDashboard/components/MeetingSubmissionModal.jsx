@@ -55,6 +55,9 @@ const timeOptions = Array.from({ length: 48 }, (_, i) => {
  * @param {boolean} props.open - Whether the modal is visible.
  * @param {(open: boolean) => void} props.onOpenChange - Called when the modal open state should change.
  * @param {number | string} props.roundId - The mentorship round to log the meeting under.
+ * @param {number} props.partnerId - The partner the meeting was held with. Required: a
+ *   participant may hold more than one pair in a round, so the round alone does not
+ *   identify which pair the meeting belongs to.
  * @param {string} props.userTimezone - IANA timezone string from the user's profile (e.g. "Asia/Shanghai").
  *   Must be non-null; the parent component is responsible for not mounting this modal until the timezone is loaded.
  * @param {() => void} [props.onSuccess] - Called after the meeting is successfully submitted.
@@ -64,6 +67,7 @@ export default function MeetingSubmissionModal({
   open,
   onOpenChange,
   roundId,
+  partnerId,
   userTimezone,
   onSuccess,
 }) {
@@ -152,6 +156,7 @@ export default function MeetingSubmissionModal({
     try {
       await postMyMentorshipMeetingLog({
         roundId: Number(roundId),
+        partnerId: Number(partnerId),
         startDatetime: toUtcIso(selectedDate, startTime),
         endDatetime: toUtcIso(selectedDate, endTime, isOvernight ? 1 : 0),
         isCompleted: true,

@@ -121,7 +121,11 @@ class MentorshipPairsRepository:
         return merged
 
     async def get_pairs_with_partner_info(
-        self, session: AsyncSession, user_id: int, round_id: int
+        self,
+        session: AsyncSession,
+        user_id: int,
+        round_id: int,
+        status: PairStatus | None = None,
     ) -> list[tuple[MentorshipPairsEntity, UsersEntity]]:
         """
         Retrieve all mentorship pairs for a given user in a specific round,
@@ -135,6 +139,12 @@ class MentorshipPairsRepository:
             session (AsyncSession): The SQLAlchemy async session used to execute the query.
             user_id (int): The ID of the current user (mentor or mentee).
             round_id (int): The mentorship round ID to filter pairs.
+            status (PairStatus | None): When given, keep only pairs in this
+                status. Callers that present partners as the user's current
+                counterparts pass `PairStatus.ACTIVE`: a user can hold both an
+                ended and a live pair in one round, and filtering here rather
+                than in the caller keeps the ended partner's row -- contact
+                email included -- from being read at all.
 
         Returns:
             list[tuple[MentorshipPairsEntity, UsersEntity]]:
@@ -162,6 +172,9 @@ class MentorshipPairsRepository:
                 ),
             )
         )
+        if status is not None:
+            stmt = stmt.where(MentorshipPairsEntity.status == status)
+
         result = await session.execute(stmt)
         return result.all()
 
@@ -206,13 +219,41 @@ class MentorshipPairsRepository:
         result = await session.execute(stmt)
         return result.scalars().one_or_none()
 
-    async def get_pair_by_mentee_and_round(
-        self, session: AsyncSession, mentee_id: int, round_id: int
+    async def get_active_pair_by_mentee_and_mentor(
+        self,
+        session: AsyncSession,
+        mentee_id: int,
+        mentor_id: int,
+        round_id: int,
     ) -> MentorshipPairsEntity | None:
+        """
+        Fetch the active pair joining a specific mentee and mentor in a round.
+
+        Naming the mentor is what makes this lookup single-valued: a mentee
+        may hold several pairs in one round -- when the mentor changes
+        mid-round the earlier pair stays behind as INACTIVE -- so filtering
+        on (mentee, round) alone can match more than one row. All three of
+        `round_id`, `mentor_id` and `mentee_id` together are the table's
+        unique key, so at most one row can match and `one_or_none()` cannot
+        raise.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            mentee_id (int): ID of the user holding the mentee side.
+            mentor_id (int): ID of the user holding the mentor side.
+            round_id (int): The mentorship round ID.
+
+        Returns:
+            MentorshipPairsEntity | None: The active pair, or None when these
+                two users have no active pair in this round -- including when
+                the only pair between them has ended.
+        """
         result = await session.execute(
             select(MentorshipPairsEntity).where(
                 MentorshipPairsEntity.round_id == round_id,
                 MentorshipPairsEntity.mentee_id == mentee_id,
+                MentorshipPairsEntity.mentor_id == mentor_id,
+                MentorshipPairsEntity.status == PairStatus.ACTIVE,
             )
         )
 

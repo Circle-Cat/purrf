@@ -150,20 +150,31 @@ class MeetingService:
             session=session, user_id=user_context.user_id
         )
 
+        # Keyed on the mentor the request names, not on (mentee, round)
+        # alone: a mentee can hold several pairs in one round, so the pair to
+        # write against is only well-defined once the partner is known. The
+        # current user must hold the MENTEE side -- this endpoint is the
+        # mentee's own submission path, and passing `mentee_id` explicitly is
+        # what keeps a mentor from writing through it.
         pair_entity = (
-            await self.mentorship_pairs_repository.get_pair_by_mentee_and_round(
-                session=session, mentee_id=current_user.user_id, round_id=data.round_id
+            await self.mentorship_pairs_repository.get_active_pair_by_mentee_and_mentor(
+                session=session,
+                mentee_id=current_user.user_id,
+                mentor_id=data.partner_id,
+                round_id=data.round_id,
             )
         )
 
         if not pair_entity:
             self.logger.error(
-                "[MeetingService] Upsert failed: no pair record found for mentee_id=%s in round_id=%s",
+                "[MeetingService] Upsert failed: no active pair for mentee_id=%s "
+                "with mentor_id=%s in round_id=%s",
                 current_user.user_id,
+                data.partner_id,
                 data.round_id,
             )
             raise ValueError(
-                "The current user is not matched as a mentee in this round."
+                "The current user is not actively matched as a mentee with this partner in this round."
             )
 
         # Conflict-check against this pair's existing MANUAL meetings only --
