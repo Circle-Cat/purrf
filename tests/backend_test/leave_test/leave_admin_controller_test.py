@@ -39,7 +39,9 @@ class TestLeaveAdminController(unittest.IsolatedAsyncioTestCase):
                 balance_hours="40.00",
             )
         )
-        self.controller = LeaveAdminController(self.service, self.database)
+        self.engine = MagicMock()
+        self.engine.overview = AsyncMock()
+        self.controller = LeaveAdminController(self.service, self.engine, self.database)
 
         patcher = patch("backend.leave.leave_admin_controller.api_response")
         self.mock_api_response = patcher.start()
@@ -58,6 +60,25 @@ class TestLeaveAdminController(unittest.IsolatedAsyncioTestCase):
             effective_date=datetime.date(2025, 12, 31),
             note="Carried over from Lattice",
         )
+
+    def test_reading_every_balance_needs_the_leave_admin_permission(self):
+        """It is the whole company's balances. Nothing else on the leave
+        feature is gated, which is exactly why this one has to be."""
+        routes = {
+            (route.path, method): route
+            for route in self.controller.router.routes
+            for method in route.methods
+        }
+        route = routes[("/leave/balances", "GET")]
+
+        self.assertEqual(_route_permissions(route), [Permission.LEAVE_ADMIN])
+
+    async def test_the_overview_comes_from_the_run_itself(self):
+        """Not a query of its own: an overview that could disagree with what
+        the accrual pays would hide the gap the page exists to show."""
+        await self.controller.balances()
+
+        self.engine.overview.assert_awaited_once_with(self.session)
 
     async def test_the_caller_is_recorded_as_the_author(self):
         """Not taken from the body: whoever signed in is who did it."""

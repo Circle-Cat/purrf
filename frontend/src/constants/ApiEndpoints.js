@@ -26,6 +26,15 @@ export const API_ENDPOINTS = {
   MENTORSHIP_MEETINGS_ENDPOINT: "/mentorship/v1/meetings",
   MY_INTERNAL_ACTIVITY_SUMMARY: "/summary/me",
   LEAVE_APPROVALS: "/leave/requests/approvals",
+  LEAVE_ME: "/leave/me",
+  LEAVE_REQUESTS: "/leave/requests",
+  LEAVE_REQUEST_WITHDRAW: (requestId) =>
+    `/leave/requests/${requestId}/withdraw`,
+  LEAVE_POLICY: "/leave/policy",
+  LEAVE_HOLIDAYS_YEAR: (year) => `/leave/holidays/${year}`,
+  LEAVE_HOLIDAY_YEARS: "/leave/holiday-years",
+  LEAVE_BALANCES: "/leave/balances",
+  LEAVE_ADJUSTMENTS: "/leave/adjustments",
   LEAVE_REQUEST_DECISION: (requestId) =>
     `/leave/requests/${requestId}/decision`,
   MENTORSHIP_MEETINGS_V2: "/mentorship/v2/meetings",
