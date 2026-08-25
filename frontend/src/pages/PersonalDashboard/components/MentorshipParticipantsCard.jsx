@@ -66,9 +66,20 @@ export default function MentorshipParticipantsCard({
     partnerMeetingOverview?.length > 0 &&
     participantRole;
 
+  // The submission modal is one per round rather than one per partner, so it
+  // can only name a partner while there is exactly one to name -- a mentee and
+  // their current mentor. Any other count leaves the target pair ambiguous, so
+  // submission is withheld rather than guessing which partner the meeting was
+  // held with.
+  const submissionPartnerId =
+    partnerMeetingOverview?.length === 1
+      ? partnerMeetingOverview[0].partnerId
+      : null;
+
   const deadline = roundInfo?.timeline?.meetingsCompletionDeadlineAt;
   const isSubmitDisabled =
     !hasParticipation ||
+    submissionPartnerId == null ||
     (deadline
       ? isAfter(new Date(), addDays(new Date(deadline), 1))
       : roundInfo?.status === MentorshipRoundStatus.COMPLETED);
@@ -250,11 +261,12 @@ export default function MentorshipParticipantsCard({
         )}
       </CardContent>
 
-      {canSubmitMeeting && (
+      {canSubmitMeeting && submissionPartnerId != null && (
         <MeetingSubmissionModal
           open={isMeetingModalOpen}
           onOpenChange={setIsMeetingModalOpen}
           roundId={selectedRoundId}
+          partnerId={submissionPartnerId}
           userTimezone={userTimezone}
           onSuccess={() => {
             setIsMeetingModalOpen(false);

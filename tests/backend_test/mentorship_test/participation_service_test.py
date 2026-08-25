@@ -133,15 +133,23 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             session=self.mock_session,
             user_id=self.user_context.user_id,
             round_id=mock_round_id,
+            status=PairStatus.ACTIVE,
         )
         self.mock_pairs_repo.get_all_partner_ids.assert_not_awaited()
         self.mock_session.commit.assert_not_awaited()
 
-    async def test_get_partners_for_user_excludes_partner_email_for_inactive_pair(self):
-        """Test that primary_email is None when user is MATCHED but pair is INACTIVE."""
+    async def test_get_partners_for_user_reads_contact_email_for_live_pairs_only(self):
+        """A partner whose pair has ended is left out by the query, so no
+        contact email is read for them.
+
+        The exclusion is not a downstream filter on a wider result -- an ended
+        partner's row, contact email included, is never fetched. This pins the
+        one thing the service still controls: the lookup list is derived from
+        the pairs that came back.
+        """
         mock_round_id = 1
 
-        mock_pair = MagicMock(spec=MentorshipPairsEntity, status=PairStatus.INACTIVE)
+        mock_pair = MagicMock(spec=MentorshipPairsEntity, status=PairStatus.ACTIVE)
         self.mock_pairs_repo.get_pairs_with_partner_info.return_value = [
             (mock_pair, self.mock_specific_partner_user)
         ]
@@ -152,13 +160,21 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        result = await self.participation_service.get_partners_for_user(
+        await self.participation_service.get_partners_for_user(
             session=self.mock_session,
             user_context=self.user_context,
             round_id=mock_round_id,
         )
 
-        self.assertIsNone(result[0].primary_email)
+        self.mock_pairs_repo.get_pairs_with_partner_info.assert_awaited_once_with(
+            session=self.mock_session,
+            user_id=self.user_context.user_id,
+            round_id=mock_round_id,
+            status=PairStatus.ACTIVE,
+        )
+        self.mock_user_emails_repo.get_contact_emails_by_user_ids.assert_awaited_once_with(
+            self.mock_session, [self.mock_specific_partner_user.user_id]
+        )
 
     async def test_get_partners_for_user_excludes_partner_email_without_participant(
         self,
@@ -501,6 +517,15 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.current_status, MatchStatus.MATCHED)
         self.assertEqual(len(result.partners), 2)
+
+        # A counterpart whose pair has ended is not a match result, so the
+        # query is asked for live pairs rather than filtered afterwards.
+        self.mock_pairs_repo.get_pairs_with_partner_info.assert_awaited_once_with(
+            session=self.mock_session,
+            user_id=self.user_context.user_id,
+            round_id=mock_round_id,
+            status=PairStatus.ACTIVE,
+        )
 
         # Check Partner A (Mentee)
         partner_a = next(p for p in result.partners if p.id == 456)

@@ -23,7 +23,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.mock_logger = MagicMock()
         self.mock_pairs_repo = MagicMock()
         self.mock_pairs_repo.get_pairs_by_user_and_round = AsyncMock()
-        self.mock_pairs_repo.get_pair_by_mentee_and_round = AsyncMock()
+        self.mock_pairs_repo.get_active_pair_by_mentee_and_mentor = AsyncMock()
         self.mock_pairs_repo.upsert_pairs = AsyncMock()
 
         self.mock_mapper = MagicMock()
@@ -185,7 +185,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
     async def test_upsert_meetings_success(self):
         """New meeting slots are validated, inserted as a row, and counted via
         the repository -- not by rewriting meeting_log."""
-        self.mock_pairs_repo.get_pair_by_mentee_and_round.return_value = (
+        self.mock_pairs_repo.get_active_pair_by_mentee_and_mentor.return_value = (
             self.mock_pair_entity
         )
         # First call: pre-insert conflict check finds no overlap. Second call:
@@ -198,6 +198,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
 
         payload = MeetingCreateDto(
             round_id=self.round_id,
+            partner_id=self.partner_id,
             start_datetime=datetime(2025, 10, 1, 14, 0, tzinfo=timezone.utc),
             end_datetime=datetime(2025, 10, 1, 15, 0, tzinfo=timezone.utc),
             is_completed=True,
@@ -236,7 +237,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
 
     async def test_upsert_meetings_conflict(self):
         """Test overlapping meeting times trigger a validation error."""
-        self.mock_pairs_repo.get_pair_by_mentee_and_round.return_value = (
+        self.mock_pairs_repo.get_active_pair_by_mentee_and_mentor.return_value = (
             self.mock_pair_entity
         )
         self.mock_meeting_repo.get_meetings_by_pair.return_value = [
@@ -244,6 +245,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         ]
         payload = MeetingCreateDto(
             round_id=self.round_id,
+            partner_id=self.partner_id,
             start_datetime=datetime(2025, 10, 1, 10, 30, tzinfo=timezone.utc),
             end_datetime=datetime(2025, 10, 1, 11, 30, tzinfo=timezone.utc),
             is_completed=True,
@@ -272,7 +274,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
             end_datetime=datetime(2025, 10, 1, 15, 0, tzinfo=timezone.utc),
             is_completed=False,
         )
-        self.mock_pairs_repo.get_pair_by_mentee_and_round.return_value = (
+        self.mock_pairs_repo.get_active_pair_by_mentee_and_mentor.return_value = (
             self.mock_pair_entity
         )
         self.mock_meeting_repo.get_meetings_by_pair.side_effect = [
@@ -284,6 +286,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         # Exactly overlaps the GOOGLE meeting above; must NOT raise.
         payload = MeetingCreateDto(
             round_id=self.round_id,
+            partner_id=self.partner_id,
             start_datetime=datetime(2025, 10, 1, 14, 0, tzinfo=timezone.utc),
             end_datetime=datetime(2025, 10, 1, 15, 0, tzinfo=timezone.utc),
             is_completed=True,
@@ -314,7 +317,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         # shallow copy would share the inner lists with the live entity and
         # miss an in-place `.append()` regression.
         untouched_snapshot = copy.deepcopy(self.mock_pair_entity.meeting_log)
-        self.mock_pairs_repo.get_pair_by_mentee_and_round.return_value = (
+        self.mock_pairs_repo.get_active_pair_by_mentee_and_mentor.return_value = (
             self.mock_pair_entity
         )
         self.mock_meeting_repo.get_meetings_by_pair.side_effect = [[], []]
@@ -322,6 +325,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
 
         payload = MeetingCreateDto(
             round_id=self.round_id,
+            partner_id=self.partner_id,
             start_datetime=datetime(2025, 10, 2, 14, 0, tzinfo=timezone.utc),
             end_datetime=datetime(2025, 10, 2, 15, 0, tzinfo=timezone.utc),
             is_completed=True,
@@ -333,6 +337,71 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.mock_pair_entity.meeting_log, untouched_snapshot)
         self.mock_pairs_repo.upsert_pairs.assert_not_awaited()
+
+    async def test_upsert_meetings_resolves_the_pair_by_the_named_partner(self):
+        """The pair is looked up by the partner the payload names, with the
+        current user pinned to the mentee side -- a mentee can hold several
+        pairs in one round, so the round alone does not identify one."""
+        self.mock_pairs_repo.get_active_pair_by_mentee_and_mentor.return_value = (
+            self.mock_pair_entity
+        )
+        self.mock_meeting_repo.get_meetings_by_pair.side_effect = [[], []]
+        self.mock_meeting_repo.recalculate_completed_count.return_value = 1
+
+        payload = MeetingCreateDto(
+            round_id=self.round_id,
+            partner_id=self.partner_id,
+            start_datetime=datetime(2025, 10, 3, 14, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2025, 10, 3, 15, 0, tzinfo=timezone.utc),
+            is_completed=True,
+        )
+
+        await self.meeting_service.upsert_meetings(
+            self.mock_session, self.user_context, payload
+        )
+
+        self.mock_pairs_repo.get_active_pair_by_mentee_and_mentor.assert_awaited_once_with(
+            session=self.mock_session,
+            mentee_id=self.user_id,
+            mentor_id=self.partner_id,
+            round_id=self.round_id,
+        )
+
+    async def test_upsert_meetings_no_active_pair(self):
+        """No active pair with the named partner is rejected before any write.
+
+        This is the path a partner whose pair has ended takes: the lookup
+        returns None rather than matching the ended pair.
+        """
+        self.mock_pairs_repo.get_active_pair_by_mentee_and_mentor.return_value = None
+
+        payload = MeetingCreateDto(
+            round_id=self.round_id,
+            partner_id=self.partner_id,
+            start_datetime=datetime(2025, 10, 4, 14, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2025, 10, 4, 15, 0, tzinfo=timezone.utc),
+            is_completed=True,
+        )
+
+        with self.assertRaisesRegex(ValueError, "not actively matched"):
+            await self.meeting_service.upsert_meetings(
+                self.mock_session, self.user_context, payload
+            )
+
+        self.mock_meeting_repo.insert_meeting.assert_not_awaited()
+        self.mock_meeting_repo.recalculate_completed_count.assert_not_awaited()
+        self.mock_session.commit.assert_not_awaited()
+
+    async def test_upsert_meetings_requires_partner_id(self):
+        """The v1 payload cannot omit the partner: without it the request
+        cannot say which pair the meeting belongs to."""
+        with self.assertRaises(ValueError):
+            MeetingCreateDto(
+                round_id=self.round_id,
+                start_datetime=datetime(2025, 10, 5, 14, 0, tzinfo=timezone.utc),
+                end_datetime=datetime(2025, 10, 5, 15, 0, tzinfo=timezone.utc),
+                is_completed=True,
+            )
 
 
 class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
