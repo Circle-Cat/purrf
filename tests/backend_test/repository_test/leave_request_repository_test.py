@@ -280,6 +280,78 @@ class TestLeaveRequestRepository(BaseRepositoryTestLib):
         )
 
 
+class TestGetByIdLocking(BaseRepositoryTestLib):
+    """Whether the read that precedes a decision holds the row.
+
+    The lock is what stops one request being settled twice, and a missing one
+    is invisible: every test that runs a decision on its own still passes. So
+    the SQL actually sent is what is asserted here, rather than the outcome.
+    """
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.repository = LeaveRequestRepository()
+        self.employee = _make_user()
+        self.manager = _make_user()
+        await self.insert_entities([self.employee, self.manager])
+        self.request = LeaveRequestEntity(
+            user_id=self.employee.user_id,
+            type=LeaveRequestType.PAID,
+            start_date=datetime.date(2026, 8, 13),
+            end_date=datetime.date(2026, 8, 13),
+            hours=Decimal("8.00"),
+            status=LeaveRequestStatus.PENDING,
+            approver_user_id=self.manager.user_id,
+            is_overdraft=False,
+            is_late_notice=False,
+        )
+        await self.insert_entities([self.request])
+
+    async def _sql_of_get_by_id(self, **kwargs) -> list[str]:
+        """Every statement the call sends, compiled for Postgres."""
+        from sqlalchemy import event
+        from sqlalchemy.dialects import postgresql
+
+        captured = []
+
+        def capture(conn, clauseelement, multiparams, params, execution_options):
+            captured.append(clauseelement)
+
+        event.listen(self.connection.sync_connection, "before_execute", capture)
+        try:
+            await self.repository.get_by_id(
+                self.session, self.request.leave_request_id, **kwargs
+            )
+        finally:
+            event.remove(self.connection.sync_connection, "before_execute", capture)
+
+        return [
+            str(statement.compile(dialect=postgresql.dialect()))
+            for statement in captured
+        ]
+
+    async def test_the_read_a_decision_makes_locks_the_row(self):
+        """Without FOR UPDATE a second decider reads the same pending row and
+        passes the same check, and an approval writes a second deduction onto
+        an append-only ledger."""
+        sqls = await self._sql_of_get_by_id(for_update=True)
+
+        self.assertTrue(
+            any("FOR UPDATE" in sql for sql in sqls),
+            f"Expected FOR UPDATE when for_update=True. Got: {sqls}",
+        )
+
+    async def test_a_plain_read_takes_no_lock(self):
+        """Locking by default would make every reader of a request wait behind
+        whoever is deciding it."""
+        sqls = await self._sql_of_get_by_id()
+
+        self.assertFalse(
+            any("FOR UPDATE" in sql for sql in sqls),
+            f"Expected no FOR UPDATE by default. Got: {sqls}",
+        )
+
+
 if __name__ == "__main__":
     import unittest
 
