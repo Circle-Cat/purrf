@@ -179,6 +179,32 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
 
         self.assertEqual(balance, Decimal("92.00"))
 
+    async def test_a_balance_can_be_asked_for_as_it_stood_on_a_date(self):
+        """What the carryover trim cuts is the overshoot a year ended with, so
+        it has to ask what the balance was on 31 December. Two rows can already
+        sit between that and the balance now by the time the close runs: the
+        new year's first weekly accrual, and leave approved in December for a
+        January date."""
+        await self.insert_entities([
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL, "80.00", datetime.date(2026, 12, 31)
+            ),
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL, "1.54", datetime.date(2027, 1, 1)
+            ),
+            self._entry(
+                LeaveEntryType.LEAVE_DEDUCTION, "-8.00", datetime.date(2027, 1, 4)
+            ),
+        ])
+
+        at_year_end = await self.repository.balance(
+            self.session, self.user.user_id, on_or_before=datetime.date(2026, 12, 31)
+        )
+        now = await self.repository.balance(self.session, self.user.user_id)
+
+        self.assertEqual(at_year_end, Decimal("80.00"))
+        self.assertEqual(now, Decimal("73.54"))
+
     async def test_only_deductions_inside_the_year_count_as_taken(self):
         """An exchange credit and an opening balance are not leave taken, and a
         figure summed across years would say somebody spent this year what they
