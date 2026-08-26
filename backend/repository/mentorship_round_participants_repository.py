@@ -2,6 +2,7 @@ from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
+from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.users_entity import UsersEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
@@ -17,7 +18,7 @@ from backend.common.mentorship_enums import (
 from backend.common.recruiting_enums import ApplicationStage, JobKind
 from backend.dto.participant_search_row_dto import ParticipantSearchRow
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
-from sqlalchemy import TIMESTAMP, Float, cast, func, select, and_, or_, not_
+from sqlalchemy import TIMESTAMP, Float, case, cast, func, select, and_, or_, not_
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -318,7 +319,30 @@ class MentorshipRoundParticipantsRepository:
                 "participant_role"
             ),
             MentorshipRoundParticipantsEntity.approval_status.label("approval_status"),
-            MentorshipPairsEntity.completed_count.label("completed_count"),
+            # Counted from the meeting rows rather than read off
+            # mentorship_pairs.completed_count, which is on its way out
+            # (PUR-608). LEGACY rows are included on purpose: historical
+            # rounds have nothing else, so filtering them would report 0 for
+            # every pre-Purrf pairing. The CASE keeps the outer join's NULL:
+            # a bare correlated COUNT returns 0 when there is no pair, which
+            # would turn "never paired" into "paired, met nobody" in the admin
+            # table and the CSV export.
+            case(
+                (
+                    MentorshipPairsEntity.pair_id.is_(None),
+                    None,
+                ),
+                else_=(
+                    select(func.count())
+                    .select_from(MentorshipMeetingEntity)
+                    .where(
+                        MentorshipMeetingEntity.pair_id
+                        == MentorshipPairsEntity.pair_id,
+                        MentorshipMeetingEntity.is_completed.is_(True),
+                    )
+                    .scalar_subquery()
+                ),
+            ).label("completed_count"),
             MentorshipPairsEntity.mentor_id.label("mentor_id"),
             MentorshipPairsEntity.mentee_id.label("mentee_id"),
         ]

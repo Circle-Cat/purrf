@@ -305,6 +305,7 @@ class TestMentorshipMapper(unittest.TestCase):
             round_id=1,
             grouped_pairs=[(pair_entity, partner_id)],
             meetings_by_pair={pair_entity.pair_id: meeting_rows},
+            completed_counts={pair_entity.pair_id: 1},
         )
         info = dto.meeting_info[0]
 
@@ -320,11 +321,42 @@ class TestMentorshipMapper(unittest.TestCase):
             info.meeting_time_list[0].start_datetime.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "2025-09-01T22:30:00Z",
         )
-        # completed_meetings_count still comes from the denormalized column
-        # on the pair, not from counting the rows handed in here -- that
-        # column's count includes LEGACY rows, which never appear as
-        # meeting rows at all.
+        # completed_meetings_count comes from the counts handed in, not from
+        # counting the rows in meetings_by_pair -- that mapping excludes
+        # LEGACY rows, which are all a historical pairing has.
         self.assertEqual(info.completed_meetings_count, 1)
+
+    def test_map_to_meeting_dto_takes_completed_count_from_the_caller(self):
+        """completed_meetings_count comes from the counts handed in, not from
+        mentorship_pairs.completed_count. Seeded so the two disagree: the
+        column says 9, the caller counted 2. The counts cannot be derived from
+        meetings_by_pair here -- that mapping excludes LEGACY rows, which are
+        all a historical pairing has."""
+        pair_entity = self.pair_entities[0]
+        pair_entity.completed_count = 9
+
+        dto = self.mapper.map_to_meeting_dto(
+            round_id=1,
+            grouped_pairs=[(pair_entity, 456)],
+            meetings_by_pair={},
+            completed_counts={pair_entity.pair_id: 2},
+        )
+
+        self.assertEqual(dto.meeting_info[0].completed_meetings_count, 2)
+
+    def test_map_to_meeting_dto_reports_zero_when_the_pair_was_not_counted(self):
+        """A pair missing from the counts reports 0 rather than raising."""
+        pair_entity = self.pair_entities[0]
+        pair_entity.completed_count = 9
+
+        dto = self.mapper.map_to_meeting_dto(
+            round_id=1,
+            grouped_pairs=[(pair_entity, 456)],
+            meetings_by_pair={},
+            completed_counts={},
+        )
+
+        self.assertEqual(dto.meeting_info[0].completed_meetings_count, 0)
 
     def test_meeting_dto_no_meeting_log(self):
         """Test mapping pair entities absent from meetings_by_pair returns an empty meeting list."""
@@ -335,6 +367,7 @@ class TestMentorshipMapper(unittest.TestCase):
             round_id=2,
             grouped_pairs=[(pair_entity, partner_id)],
             meetings_by_pair={},
+            completed_counts={pair_entity.pair_id: 0},
         )
 
         self.assertIsInstance(dto, MeetingDto)
@@ -374,6 +407,7 @@ class TestMentorshipMapper(unittest.TestCase):
             round_id=1,
             grouped_pairs=[(pair_entity, partner_id)],
             meetings_by_pair={pair_entity.pair_id: [legacy_row, manual_row]},
+            completed_counts={pair_entity.pair_id: 5},
         )
         info = dto.meeting_info[0]
 
@@ -423,6 +457,7 @@ class TestMentorshipMapper(unittest.TestCase):
             round_id=1,
             grouped_pairs=[(pair_entity, partner_id)],
             meetings_by_pair={pair_entity.pair_id: repository_ordered_rows},
+            completed_counts={pair_entity.pair_id: 0},
         )
         info = dto.meeting_info[0]
 
@@ -487,6 +522,7 @@ class TestMentorshipMapper(unittest.TestCase):
             round_id=1,
             grouped_pairs=[(pair_entity, partner_id)],
             meetings_by_pair={pair_entity.pair_id: interleaved_rows},
+            completed_counts={pair_entity.pair_id: 2},
         )
         info = dto.meeting_info[0]
 
@@ -547,6 +583,7 @@ class TestMentorshipMapper(unittest.TestCase):
             grouped_pairs=[(pair_entity, partner_id)],
             meetings_by_pair={pair_entity.pair_id: [google_row]},
             include_details=False,
+            completed_counts={pair_entity.pair_id: 1},
         )
         info = dto.meeting_info[0]
         google_meeting = info.meeting_time_list[0]
@@ -597,6 +634,7 @@ class TestMentorshipMapper(unittest.TestCase):
             grouped_pairs=[(pair_entity, partner_id)],
             meetings_by_pair={pair_entity.pair_id: [google_row]},
             include_details=True,
+            completed_counts={pair_entity.pair_id: 1},
         )
         info = dto.meeting_info[0]
         google_meeting = info.meeting_time_list[0]
@@ -625,6 +663,7 @@ class TestMentorshipMapper(unittest.TestCase):
             round_id=2,
             grouped_pairs=[(pair_entity, partner_id)],
             meetings_by_pair={},
+            completed_counts={pair_entity.pair_id: 0},
         )
 
         self.assertIsInstance(dto, MeetingDto)
@@ -712,6 +751,7 @@ class TestMentorshipMapper(unittest.TestCase):
             grouped_pairs=[(pair_entity, partner_id)],
             meetings_by_pair={pair_entity.pair_id: [legacy_row, google_row]},
             include_details=True,
+            completed_counts={pair_entity.pair_id: 5},
         )
 
         info = dto.meeting_info[0]

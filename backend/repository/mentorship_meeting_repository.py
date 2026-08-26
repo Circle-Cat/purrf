@@ -241,6 +241,55 @@ class MentorshipMeetingRepository:
         result = await session.execute(stmt)
         return result.rowcount
 
+    async def count_completed_by_pairs(
+        self, session: AsyncSession, pair_ids: list[int]
+    ) -> dict[int, int]:
+        """Count each pair's completed meetings.
+
+        Counts every source, LEGACY included: historical rounds recorded only
+        a number, and the split migration stands one LEGACY row in for each of
+        those meetings, so excluding them would report zero for every pairing
+        that predates Purrf. This is the same rule
+        ``mentorship_pairs.completed_count`` was maintained under, which is
+        what lets this replace reads of that column.
+
+        Flushes first, for the same reason ``recalculate_completed_count``
+        does: production sessions are built with ``autoflush=False``
+        (``backend/common/database.py``), so a caller that just set
+        ``is_completed`` on a loaded row has written nothing the database can
+        count yet.
+
+        Args:
+            session (AsyncSession): The active DB session. Pending changes on
+                it are flushed before the count is taken.
+            pair_ids (list[int]): The pairs to count. An empty list short-
+                circuits without a query.
+
+        Returns:
+            dict[int, int]: pair_id -> completed meeting count. Every
+                requested pair_id is present, 0 when nothing is completed
+                (an id with no pair at all included), so no call site needs a
+                KeyError guard.
+        """
+        if not pair_ids:
+            return {}
+        await session.flush()
+        stmt = (
+            select(
+                MentorshipMeetingEntity.pair_id,
+                func.count().label("completed"),
+            )
+            .where(
+                MentorshipMeetingEntity.pair_id.in_(pair_ids),
+                MentorshipMeetingEntity.is_completed.is_(True),
+            )
+            .group_by(MentorshipMeetingEntity.pair_id)
+        )
+        result = await session.execute(stmt)
+        counts = {pair_id: 0 for pair_id in pair_ids}
+        counts.update({row.pair_id: row.completed for row in result.all()})
+        return counts
+
     async def recalculate_completed_count(
         self, session: AsyncSession, pair_id: int
     ) -> int:
