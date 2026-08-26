@@ -1,9 +1,10 @@
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
+from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.users_entity import UsersEntity
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
@@ -16,6 +17,7 @@ from backend.repository.mentorship_round_participants_repository import (
 )
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
 from backend.common.mentorship_enums import (
+    MeetingSource,
     ApprovalStatus,
     CommunicationMethod,
     MenteeActionStatus,
@@ -958,6 +960,22 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             recommendation_reason="test",
         )
         await self.insert_entities([pair])
+        # completed_count is read from the meeting rows, so the two completed
+        # ones below are what the assertion further down is about; the column
+        # stays at 2 only so this fixture keeps saying the same thing.
+        meeting_start = datetime.now(timezone.utc)
+        await self.insert_entities([
+            MentorshipMeetingEntity(
+                meeting_id=f"row-fields-{index}",
+                pair_id=pair.pair_id,
+                source=MeetingSource.MANUAL,
+                start_datetime=meeting_start,
+                end_datetime=meeting_start + timedelta(minutes=30),
+                is_completed=True,
+                created_datetime=meeting_start,
+            )
+            for index in range(2)
+        ])
 
         rows, _ = await self.repo.search_participants_for_admin(
             self.session,
@@ -1041,6 +1059,99 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         rows = await self.repo.list_distinct_user_roles(self.session)
 
         self.assertEqual(rows, [(mentee_user.user_id, ParticipantRole.MENTEE)])
+
+    async def test_search_completed_count_comes_from_meeting_rows(self):
+        """The search reports the number of completed meeting rows, not the
+        denormalised mentorship_pairs.completed_count. Seeded here so the two
+        disagree: a stale column would return 9, the meeting rows say 2 (one
+        MANUAL, one LEGACY -- historical rounds only have LEGACY rows, so
+        skipping them would report 0 for every pre-Purrf pairing)."""
+        user2 = self._make_user(
+            first_name="Pat", last_name="Meeting", email="pat.meeting@example.com"
+        )
+        await self.insert_entities([user2])
+        await self.insert_entities([
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=self.rounds[0].round_id,
+                participant_role=ParticipantRole.MENTOR,
+                approval_status=ApprovalStatus.MATCHED,
+            ),
+        ])
+        pair = MentorshipPairsEntity(
+            round_id=self.rounds[0].round_id,
+            mentor_id=self.user.user_id,
+            mentee_id=user2.user_id,
+            completed_count=9,
+            status=PairStatus.ACTIVE,
+            mentor_action_status=MentorActionStatus.CONFIRMED,
+            mentee_action_status=MenteeActionStatus.CONFIRMED,
+            recommendation_reason="test",
+        )
+        await self.insert_entities([pair])
+        now = datetime.now(timezone.utc)
+        later = now + timedelta(minutes=30)
+        await self.insert_entities([
+            MentorshipMeetingEntity(
+                meeting_id="m-done",
+                pair_id=pair.pair_id,
+                source=MeetingSource.MANUAL,
+                start_datetime=now,
+                end_datetime=later,
+                is_completed=True,
+                created_datetime=now,
+            ),
+            MentorshipMeetingEntity(
+                meeting_id="m-legacy",
+                pair_id=pair.pair_id,
+                source=MeetingSource.LEGACY,
+                is_completed=True,
+                created_datetime=now,
+            ),
+            MentorshipMeetingEntity(
+                meeting_id="m-pending",
+                pair_id=pair.pair_id,
+                source=MeetingSource.MANUAL,
+                start_datetime=now,
+                end_datetime=later,
+                is_completed=False,
+                created_datetime=now,
+            ),
+        ])
+
+        rows, _ = await self.repo.search_participants_for_admin(
+            self.session,
+            ParticipantSearchFilterDto(round_id=self.rounds[0].round_id),
+            limit=50,
+            offset=0,
+        )
+
+        row = next(r for r in rows if r.user_id == self.user.user_id)
+        self.assertEqual(row.completed_count, 2)
+
+    async def test_search_completed_count_is_none_without_a_pair(self):
+        """A registered participant who was never paired has no meeting count
+        at all, which the row reports as None. A plain correlated COUNT would
+        say 0 here and quietly turn "never paired" into "paired, met nobody"
+        in the admin table and the CSV export."""
+        await self.insert_entities([
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=self.rounds[0].round_id,
+                participant_role=ParticipantRole.MENTEE,
+                approval_status=ApprovalStatus.UN_MATCHED,
+            ),
+        ])
+
+        rows, _ = await self.repo.search_participants_for_admin(
+            self.session,
+            ParticipantSearchFilterDto(user_id=self.user.user_id),
+            limit=50,
+            offset=0,
+        )
+
+        self.assertIsNone(rows[0].pair_id)
+        self.assertIsNone(rows[0].completed_count)
 
 
 if __name__ == "__main__":
