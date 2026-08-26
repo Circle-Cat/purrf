@@ -40,6 +40,7 @@ describe("MeetingSubmissionModal", () => {
         open={false}
         onOpenChange={vi.fn()}
         roundId="1"
+        partnerId={7}
         userTimezone="Asia/Shanghai"
         onSuccess={vi.fn()}
       />,
@@ -53,6 +54,7 @@ describe("MeetingSubmissionModal", () => {
         open={true}
         onOpenChange={vi.fn()}
         roundId="1"
+        partnerId={7}
         userTimezone="Asia/Shanghai"
         onSuccess={vi.fn()}
       />,
@@ -73,6 +75,7 @@ describe("MeetingSubmissionModal", () => {
         open={true}
         onOpenChange={vi.fn()}
         roundId="42"
+        partnerId={7}
         userTimezone="Asia/Shanghai"
         onSuccess={onSuccess}
       />,
@@ -86,6 +89,7 @@ describe("MeetingSubmissionModal", () => {
       expect(postMyMentorshipMeetingLog).toHaveBeenCalledWith(
         expect.objectContaining({
           roundId: 42,
+          partnerId: 7,
           startDatetime: expect.stringContaining("T"),
           endDatetime: expect.stringContaining("T"),
           isCompleted: true,
@@ -102,6 +106,7 @@ describe("MeetingSubmissionModal", () => {
         open={true}
         onOpenChange={vi.fn()}
         roundId="1"
+        partnerId={7}
         userTimezone="Asia/Shanghai"
         onSuccess={vi.fn()}
       />,
@@ -123,6 +128,7 @@ describe("MeetingSubmissionModal", () => {
         open={true}
         onOpenChange={vi.fn()}
         roundId="1"
+        partnerId={7}
         userTimezone="Asia/Shanghai"
         onSuccess={vi.fn()}
       />,
@@ -151,6 +157,7 @@ describe("MeetingSubmissionModal", () => {
         open={true}
         onOpenChange={vi.fn()}
         roundId="1"
+        partnerId={7}
         userTimezone="Asia/Shanghai"
         onSuccess={vi.fn()}
       />,
@@ -176,6 +183,7 @@ describe("MeetingSubmissionModal", () => {
         open={true}
         onOpenChange={vi.fn()}
         roundId="1"
+        partnerId={7}
         userTimezone="Asia/Shanghai"
         onSuccess={vi.fn()}
       />,
@@ -265,6 +273,7 @@ describe("MeetingSubmissionModal", () => {
         open={true}
         onOpenChange={vi.fn()}
         roundId="1"
+        partnerId={7}
         userTimezone="Asia/Shanghai"
         onSuccess={vi.fn()}
       />,

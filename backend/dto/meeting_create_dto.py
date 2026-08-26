@@ -5,6 +5,7 @@ from pydantic import field_validator, model_validator
 
 class MeetingCreateDto(BaseRequestDto):
     round_id: int
+    partner_id: int
     start_datetime: datetime
     end_datetime: datetime
     is_completed: bool

@@ -87,6 +87,7 @@ import { useAuth } from "@/context/auth/AuthContext";
 import { PERMISSIONS } from "@/constants/Permissions";
 import {
   formatDateTimeWithZone,
+  formatDateWithZone,
   resolveViewerTimezone,
 } from "@/utils/dateTime";
 import InterviewMeetingCard from "@/pages/Recruiting/applications/InterviewMeetingCard";
@@ -539,7 +540,7 @@ const ActivityTimeline = ({ activity, jobKind, timezone }) => (
         {activity.map((entry) => (
           <li key={entry.id} className="text-sm text-slate-700">
             <span className="text-slate-500">
-              {new Date(entry.createdAt).toLocaleString()}
+              {formatDateTimeWithZone(entry.createdAt, timezone)}
             </span>{" "}
             — {describeActivity(entry, jobKind, timezone)}, by{" "}
             {/* A null actorName means the pipeline's own rules did this, not
@@ -568,9 +569,16 @@ const ActivityTimeline = ({ activity, jobKind, timezone }) => (
  * @param {{comments: {id: number, authorName: string, body: string,
  *          createdAt: string, mentions: {userId: number, name: string}[]}[],
  *          onPost?: (body: string) => void, posting?: boolean,
- *          mentionableUsers?: {userId: number, name: string}[]}} props
+ *          mentionableUsers?: {userId: number, name: string}[],
+ *          timezone: string}} props
  */
-const CommentsPanel = ({ comments, onPost, posting, mentionableUsers }) => {
+const CommentsPanel = ({
+  comments,
+  onPost,
+  posting,
+  mentionableUsers,
+  timezone,
+}) => {
   const [draft, setDraft] = useState("");
   const [mentionQuery, setMentionQuery] = useState(null);
   const textareaRef = useRef(null);
@@ -626,7 +634,7 @@ const CommentsPanel = ({ comments, onPost, posting, mentionableUsers }) => {
           {comments.map((comment) => (
             <li key={comment.id} className="text-sm text-slate-700">
               <span className="text-slate-500">
-                {new Date(comment.createdAt).toLocaleString()}
+                {formatDateTimeWithZone(comment.createdAt, timezone)}
               </span>{" "}
               — {comment.authorName}:{" "}
               {renderCommentBody(comment.body, comment.mentions)}
@@ -690,7 +698,7 @@ const CommentsPanel = ({ comments, onPost, posting, mentionableUsers }) => {
 
 const EMAIL_DIRECTION_LABELS = { outbound: "Sent", inbound: "Received" };
 
-const EmailMessageBubble = ({ message }) => {
+const EmailMessageBubble = ({ message, timezone }) => {
   const html =
     message.bodyHtml != null && message.bodyHtml !== ""
       ? DOMPurify.sanitize(message.bodyHtml)
@@ -703,7 +711,7 @@ const EmailMessageBubble = ({ message }) => {
           {EMAIL_DIRECTION_LABELS[message.direction] ?? message.direction}
         </span>{" "}
         · {message.fromAddress}
-        {when ? ` · ${new Date(when).toLocaleString()}` : ""}
+        {when ? ` · ${formatDateTimeWithZone(when, timezone)}` : ""}
       </div>
       {html != null ? (
         // Mail bodies are foreign HTML, and Tailwind's preflight zeroes <p>
@@ -735,7 +743,7 @@ const EmailMessageBubble = ({ message }) => {
  * @param {{conversation: {threads: object[]}|null, canSend: boolean,
  *          canRefresh?: boolean, onCompose?: () => void,
  *          onReply?: (thread: object) => void, onRefresh?: () => void,
- *          refreshing?: boolean}} props
+ *          refreshing?: boolean, timezone: string}} props
  */
 const EmailsPanel = ({
   conversation,
@@ -745,6 +753,7 @@ const EmailsPanel = ({
   onReply,
   onRefresh,
   refreshing,
+  timezone,
 }) => {
   const threads = conversation?.threads ?? [];
   return (
@@ -795,6 +804,7 @@ const EmailsPanel = ({
                   <EmailMessageBubble
                     key={message.messageId}
                     message={message}
+                    timezone={timezone}
                   />
                 ))}
               </ul>
@@ -819,9 +829,10 @@ const EmailsPanel = ({
  *
  * @param {{visible: boolean,
  *          state: {status: "loading"|"ready"|"error",
- *                  conversation?: object}|undefined}} props
+ *                  conversation?: object}|undefined,
+ *          timezone: string}} props
  */
-const RowEmails = ({ visible, state }) => {
+const RowEmails = ({ visible, state, timezone }) => {
   if (!visible) {
     return (
       <p className="text-sm text-slate-400">
@@ -840,6 +851,7 @@ const RowEmails = ({ visible, state }) => {
       conversation={state.conversation}
       canSend={false}
       canRefresh={false}
+      timezone={timezone}
     />
   );
 };
@@ -1010,12 +1022,16 @@ const OtherApplicationsSection = ({
                         />
                       </TabsContent>
                       <TabsContent value="comments">
-                        <CommentsPanel comments={other.comments ?? []} />
+                        <CommentsPanel
+                          comments={other.comments ?? []}
+                          timezone={timezone}
+                        />
                       </TabsContent>
                       <TabsContent value="emails">
                         <RowEmails
                           visible={other.emailsVisible}
                           state={emailsById[other.application.id]}
+                          timezone={timezone}
                         />
                       </TabsContent>
                     </Tabs>
@@ -1958,6 +1974,7 @@ const ApplicationDetailPage = () => {
                     onPost={handlePostComment}
                     posting={postingComment}
                     mentionableUsers={mentionableUsers}
+                    timezone={viewerTimezone}
                   />
                 </TabsContent>
                 <TabsContent value="emails">
@@ -1968,6 +1985,7 @@ const ApplicationDetailPage = () => {
                     onReply={openReply}
                     onRefresh={handleRefreshEmails}
                     refreshing={refreshingEmails}
+                    timezone={viewerTimezone}
                   />
                   <ComposeEmailDialog
                     open={composeOpen}
@@ -1994,9 +2012,10 @@ const ApplicationDetailPage = () => {
                 labelFor={(other) =>
                   `Applied ${
                     other.application.current?.submittedAt
-                      ? new Date(
+                      ? formatDateWithZone(
                           other.application.current.submittedAt,
-                        ).toLocaleDateString()
+                          viewerTimezone,
+                        )
                       : "earlier"
                   } — ${humanize(other.application.stage)}`
                 }
@@ -2049,6 +2068,7 @@ const ApplicationDetailPage = () => {
                       onPost={handlePostComment}
                       posting={postingComment}
                       mentionableUsers={mentionableUsers}
+                      timezone={viewerTimezone}
                     />
                   </TabsContent>
                 </Tabs>
@@ -2066,9 +2086,10 @@ const ApplicationDetailPage = () => {
                   labelFor={(other) =>
                     `Applied ${
                       other.application.current?.submittedAt
-                        ? new Date(
+                        ? formatDateWithZone(
                             other.application.current.submittedAt,
-                          ).toLocaleDateString()
+                            viewerTimezone,
+                          )
                         : "earlier"
                     } — ${humanize(other.application.stage)}`
                   }

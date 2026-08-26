@@ -61,7 +61,9 @@ export const getMyMentorshipMeetingLog = (roundId) =>
   });
 
 /** Submit the mentorship meeting log for a specific round
- * @param {object} data - The meeting log data
+ * @param {object} data - The meeting log data. Must carry `partnerId` alongside
+ *   `roundId`: the round alone does not identify a pair, since a participant can
+ *   hold more than one pair in the same round.
  */
 export const postMyMentorshipMeetingLog = (data) =>
   request.post(API_ENDPOINTS.MENTORSHIP_MEETINGS_ENDPOINT, data);

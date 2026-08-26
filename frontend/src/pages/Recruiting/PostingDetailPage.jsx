@@ -39,6 +39,10 @@ import {
   OPERABLE_STATUSES,
   PENDING_HEADLINE,
 } from "@/pages/Recruiting/components/jobStatus";
+import {
+  formatDateTimeWithZone,
+  resolveViewerTimezone,
+} from "@/utils/dateTime";
 
 /** Title and dispatch fn per review action kind. */
 const REVIEW_ACTION = {
@@ -619,7 +623,10 @@ const PostingDetailPage = () => {
               {activity.map((entry) => (
                 <li key={entry.id} className="text-sm text-slate-700">
                   <span className="text-slate-500">
-                    {new Date(entry.createdAt).toLocaleString()}
+                    {formatDateTimeWithZone(
+                      entry.createdAt,
+                      resolveViewerTimezone(),
+                    )}
                   </span>{" "}
                   — {formatActivity(entry)}
                 </li>

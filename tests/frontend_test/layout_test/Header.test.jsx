@@ -1,10 +1,17 @@
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  cleanup,
+  waitFor,
+  fireEvent,
+} from "@testing-library/react";
 import { describe, test, expect, afterEach, vi } from "vitest";
 import Header from "@/components/layout/Header";
 import Profile from "@/pages/Profile";
 import {
   getCookie,
   extractCloudflareUserName,
+  extractCloudflareUserPicture,
   performGlobalLogout,
 } from "@/utils/auth";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
@@ -16,6 +23,7 @@ import "@testing-library/jest-dom/vitest";
 vi.mock("@/utils/auth", () => ({
   getCookie: vi.fn(),
   extractCloudflareUserName: vi.fn(),
+  extractCloudflareUserPicture: vi.fn(),
   performGlobalLogout: vi.fn(),
 }));
 
@@ -42,6 +50,80 @@ describe("Header Component", () => {
   afterEach(() => {
     cleanup();
     vi.resetAllMocks();
+  });
+
+  test("shows the avatar image when the token carries a picture", () => {
+    getCookie.mockReturnValue("some-jwt-cookie-string");
+    extractCloudflareUserName.mockReturnValue("Alice");
+    extractCloudflareUserPicture.mockReturnValue("https://example.com/me.png");
+
+    render(
+      <MemoryRouter>
+        <Header />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId("user-avatar")).toHaveAttribute(
+      "src",
+      "https://example.com/me.png",
+    );
+    expect(screen.queryByText("A")).not.toBeInTheDocument();
+  });
+
+  test("falls back to the initial when the avatar image fails to load", () => {
+    getCookie.mockReturnValue("some-jwt-cookie-string");
+    extractCloudflareUserName.mockReturnValue("Alice");
+    extractCloudflareUserPicture.mockReturnValue(
+      "https://example.com/gone.png",
+    );
+
+    render(
+      <MemoryRouter>
+        <Header />
+      </MemoryRouter>,
+    );
+
+    fireEvent.error(screen.getByTestId("user-avatar"));
+
+    expect(screen.queryByTestId("user-avatar")).not.toBeInTheDocument();
+    expect(screen.getByText("A")).toBeInTheDocument();
+  });
+
+  test("shows only the initial when the token carries no picture", () => {
+    getCookie.mockReturnValue("some-jwt-cookie-string");
+    extractCloudflareUserName.mockReturnValue("Alice");
+    extractCloudflareUserPicture.mockReturnValue(null);
+
+    render(
+      <MemoryRouter>
+        <Header />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByTestId("user-avatar")).not.toBeInTheDocument();
+    expect(screen.getByText("A")).toBeInTheDocument();
+  });
+
+  test("outlines the avatar so a light picture still reads against the header", () => {
+    getCookie.mockReturnValue("some-jwt-cookie-string");
+    extractCloudflareUserName.mockReturnValue("Alice");
+    extractCloudflareUserPicture.mockReturnValue("https://example.com/me.png");
+
+    render(
+      <MemoryRouter>
+        <Header />
+      </MemoryRouter>,
+    );
+
+    // The header is `bg-background`, which is pure white in the light theme, so
+    // a picture on a white background has no edge without this outline. The
+    // colour has to be named: Tailwind v4 defaults `border-color` to
+    // `currentColor`, which on this button is the near-white
+    // `text-primary-foreground`.
+    expect(screen.getByRole("button", { name: "User menu" })).toHaveClass(
+      "border",
+      "border-border",
+    );
   });
 
   test("renders the logo and title correctly", () => {

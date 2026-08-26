@@ -238,9 +238,14 @@ class EmailConversationService:
 
         Incremental by construction: we list the thread's message ids (cheap,
         no bodies), ask the DB in one query which of them we already have, and
-        fetch a body only for the ids that are genuinely new. A re-sync of an
+        fetch bodies only for the ids that are genuinely new. A re-sync of an
         unchanged thread therefore costs one Gmail call and one query, however
         long the conversation has grown.
+
+        The bodies are fetched in batches rather than one call each, so a
+        thread with a backlog costs a handful of requests instead of one per
+        message. Quota is per inner call either way; what this saves is
+        round-trips.
 
         If a message is deleted between the listing and its fetch, the fetch
         raises and the whole sync fails rather than silently persisting a
@@ -265,11 +270,17 @@ class EmailConversationService:
         known = await self._message_repo.list_gmail_message_ids_by_thread(
             session, thread.thread_id
         )
+        missing = [gmail_id for gmail_id in gmail_ids if gmail_id not in known]
+        # Nothing new is the common case, and it must stay free: no batch, and
+        # no executor hop to discover there is nothing to fetch.
+        messages = (
+            await asyncio.to_thread(self._gmail.get_messages, missing)
+            if missing
+            else []
+        )
+
         created = []
-        for gmail_id in gmail_ids:
-            if gmail_id in known:
-                continue
-            message = await asyncio.to_thread(self._gmail.get_message, gmail_id)
+        for message in messages:
             entity = await self._message_repo.create(
                 session,
                 thread_id=thread.thread_id,

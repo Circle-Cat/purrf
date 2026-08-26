@@ -20,8 +20,6 @@ describe("calculateMentorshipSlots", () => {
   it("should return default initial state when the list is empty", () => {
     const result = calculateMentorshipSlots([]);
     expect(result).toEqual({
-      feedbackRoundId: null,
-      feedbackRoundName: "",
       isFeedbackEnabled: false,
       regRoundId: null,
       matchResultRoundName: "",
@@ -150,7 +148,6 @@ describe("calculateMentorshipSlots", () => {
     ];
 
     const result = calculateMentorshipSlots(rounds);
-    expect(result.feedbackRoundId).toBe("round-old");
     expect(result.isFeedbackEnabled).toBe(true);
   });
 
@@ -233,7 +230,6 @@ describe("calculateMentorshipSlots", () => {
     ];
 
     const result = calculateMentorshipSlots(rounds);
-    expect(result.feedbackRoundId).toBe("in-feedback");
     expect(result.isFeedbackEnabled).toBe(true);
     expect(result.regRoundId).toBe("active-reg");
   });

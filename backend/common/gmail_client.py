@@ -66,6 +66,13 @@ _TOKEN_URI = "https://oauth2.googleapis.com/token"
 # "me" resolves to the authenticated account — the mailbox the refresh token
 # belongs to, which is not necessarily the address a message is sent as.
 _GMAIL_USER = "me"
+
+# Messages per batched ``users.messages.get``. Google allows 100 per batch but
+# recommends no more than 50, because larger batches are the thing that
+# triggers rate limiting. Batching buys HTTP round-trips, never quota: a batch
+# of n counts as n requests, so the only reason to grow it is latency, and
+# past 50 that trade turns against us.
+_MESSAGE_BATCH_SIZE = 50
 # An anchor carrying an href, captured as (href, label). A link's URL lives in
 # the tag, not between the tags, so the plain-text fallback has to pull it out
 # before markup is stripped or it is lost with the tag.
@@ -272,6 +279,99 @@ class GmailClient:
             .get(userId=_GMAIL_USER, id=message_id, format="full")
         )
         return self._parse_message(self._execute(request, "get_message"))
+
+    def get_messages(self, message_ids):
+        """
+        Fetch and parse many messages, batching the Gmail calls.
+
+        One HTTP request carries up to ``_MESSAGE_BATCH_SIZE`` inner
+        ``users.messages.get`` calls, which is the whole point: a per-message
+        loop pays a round-trip each time and, run concurrently instead, trips
+        Gmail's per-user concurrency limit. A batch is one request on one
+        thread, so it does neither.
+
+        Quota is unaffected — a batch of n counts as n requests — so this is a
+        latency change, not a cost one.
+
+        Failure behaviour matches ``get_message`` exactly: the first inner call
+        that failed raises, and nothing is returned for the batch. Gmail may
+        execute a batch's calls in any order, so results are re-ordered to
+        match ``message_ids`` before returning.
+
+        Args:
+            message_ids (list[str]): Gmail message ids, in the order the
+                caller wants them back.
+
+        Returns:
+            list[dict]: One parsed message per id, in ``message_ids`` order.
+                Same shape as ``get_message``. Empty list for empty input.
+
+        Raises:
+            RateLimitedError: If Gmail throttles the batch, or reports 429 for
+                one of its inner calls.
+            RuntimeError: For any other Gmail API failure, including a 404 when
+                a message was deleted after its id was listed.
+        """
+        if not message_ids:
+            return []
+
+        parsed = {}
+        failures = []
+
+        def _collect(request_id, response, exception):
+            if exception is not None:
+                failures.append(exception)
+                return
+            parsed[request_id] = self._parse_message(response)
+
+        service = self._get_service()
+        for start in range(0, len(message_ids), _MESSAGE_BATCH_SIZE):
+            chunk = message_ids[start : start + _MESSAGE_BATCH_SIZE]
+            batch = service.new_batch_http_request(callback=_collect)
+            for message_id in chunk:
+                batch.add(
+                    service.users()
+                    .messages()
+                    .get(userId=_GMAIL_USER, id=message_id, format="full"),
+                    request_id=message_id,
+                )
+            # A batch object exposes ``execute`` like a single request, so the
+            # same retry and error translation applies. This covers the batch
+            # request itself; an inner call's failure arrives via the callback.
+            self._execute(batch, "get_messages")
+            if failures:
+                self._raise_batch_failure(failures[0])
+
+        return [parsed[message_id] for message_id in message_ids]
+
+    def _raise_batch_failure(self, exception):
+        """Translate an inner batch failure the way ``_execute`` would.
+
+        Inner calls never reach ``_execute`` — googleapiclient hands their
+        errors to the batch callback instead — so the mapping from HTTP status
+        to domain error has to be applied here too, or a rate-limited message
+        inside a batch would surface as a generic RuntimeError and lose its
+        retry.
+
+        Args:
+            exception (Exception): The error googleapiclient reported for one
+                inner call.
+
+        Raises:
+            RateLimitedError: The inner call was rate limited (HTTP 429).
+            RuntimeError: Any other inner-call failure.
+        """
+        status = None
+        if isinstance(exception, HttpError):
+            status = getattr(exception.resp, "status", None)
+        self._logger.error(
+            "[GmailClient] get_messages failed for one message (status=%s)", status
+        )
+        if status == HTTPStatus.TOO_MANY_REQUESTS:
+            raise RateLimitedError(
+                "Gmail rate limited during get_messages"
+            ) from exception
+        raise RuntimeError("Gmail API error during get_messages") from exception
 
     def list_recent_message_thread_ids(self, lookback_days):
         """

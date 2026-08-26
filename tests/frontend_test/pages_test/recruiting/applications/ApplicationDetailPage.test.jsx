@@ -110,6 +110,7 @@ const makeOtherApplication = ({
   evaluations = [],
   activity = [],
   comments = [],
+  submittedAt,
 } = {}) => ({
   application: {
     id,
@@ -119,7 +120,12 @@ const makeOtherApplication = ({
     subStatus: "pending",
     tags: null,
     currentRound: 1,
-    current: { version: 1, isFrozen: true, submission: OTHER_SUBMISSION },
+    current: {
+      version: 1,
+      isFrozen: true,
+      submission: OTHER_SUBMISSION,
+      submittedAt,
+    },
     editable: false,
   },
   jobTitle,
@@ -1497,6 +1503,35 @@ describe("ApplicationDetailPage — activity timeline", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows each timeline entry's timestamp with the viewer's timezone name", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "recruiting.stage_changed",
+          details: { fromStage: "recruiter_screening", toStage: "tech" },
+          actorId: OWNER_ID,
+          actorName: "Owen Owner",
+          createdAt: "2026-07-04T12:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Timeline" }));
+
+    // Noon UTC is early morning in America/Los_Angeles (PDT, UTC-7 in July).
+    expect(
+      screen.getByText("2026-07-04 05:00 America/Los_Angeles"),
+    ).toBeInTheDocument();
+  });
+
   it("narrates email_sent and email_received timeline entries", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
@@ -1822,6 +1857,34 @@ describe("ApplicationDetailPage — comments", () => {
 
     expect(
       screen.getByText(/Owen Owner: Strong candidate\./),
+    ).toBeInTheDocument();
+  });
+
+  it("shows each comment's timestamp with the viewer's timezone name", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationComments.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          authorId: OWNER_ID,
+          authorName: "Owen Owner",
+          body: "Strong candidate.",
+          createdAt: "2026-07-07T12:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Comments" }));
+
+    // Noon UTC is early morning in America/Los_Angeles (PDT, UTC-7 in July).
+    expect(
+      screen.getByText("2026-07-07 05:00 America/Los_Angeles"),
     ).toBeInTheDocument();
   });
 
@@ -2439,6 +2502,34 @@ describe("ApplicationDetailPage — candidate aggregation", () => {
       await screen.findByText("Previous applications for this posting"),
     ).toBeInTheDocument();
     expect(screen.getByText(/Applied .* — Rejected/)).toBeInTheDocument();
+  });
+
+  it("shows the previous application's date with the viewer's timezone name", async () => {
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true }),
+    });
+    api.getOtherApplications.mockResolvedValue({
+      data: {
+        otherJobs: [],
+        previousSameJob: [
+          makeOtherApplication({
+            id: 301,
+            stage: "rejected",
+            submittedAt: "2026-06-10T00:00:00Z",
+          }),
+        ],
+      },
+    });
+    renderPage();
+    await waitLoaded();
+
+    // Midnight UTC is still the previous evening in America/Los_Angeles (PDT).
+    expect(
+      await screen.findByText(
+        "Applied 2026-06-09 America/Los_Angeles — Rejected",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("still shows other-job applications alongside same-posting history", async () => {
@@ -3373,6 +3464,40 @@ describe("ApplicationDetailPage — Emails tab", () => {
     await user.click(screen.getByRole("tab", { name: "Emails" }));
     expect(screen.getByText("Interview Availability")).toBeInTheDocument();
     expect(screen.getByText("Hello there")).toBeInTheDocument();
+  });
+
+  it("shows each message's timestamp with the viewer's timezone name", async () => {
+    ownerViewing();
+    api.getApplicationEmails.mockResolvedValue({
+      data: {
+        defaultTo: "cand@x.com",
+        threads: [
+          {
+            threadId: 1,
+            subject: "Interview Availability",
+            messages: [
+              {
+                messageId: 11,
+                direction: "outbound",
+                fromAddress: "recruiting@circlecat.org",
+                bodyHtml: "<p>Hello there</p>",
+                bodyText: "Hello there",
+                createdAt: "2026-07-23T00:00:00Z",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+
+    // Midnight UTC is still the previous evening in America/Los_Angeles (PDT).
+    expect(
+      screen.getByText(/· 2026-07-22 17:00 America\/Los_Angeles/),
+    ).toBeInTheDocument();
   });
 
   it("styles a received body so paragraphs, lists and links stay readable", async () => {

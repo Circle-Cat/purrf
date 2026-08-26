@@ -78,7 +78,8 @@ class ProfileService:
 
         This method performs a **partial update** on the user's profile.
         Only the sections present in the incoming `ProfileCreateDto` will be updated;
-        omitted sections will remain unchanged.
+        omitted sections will remain unchanged. A section present but empty is a
+        deletion: the stored section is replaced with nothing.
 
         Supported update sections:
         - user: Basic user information (name, timezone, communication preferences, etc.)
@@ -107,12 +108,15 @@ class ProfileService:
                 session=session, latest_profile=profile, users=users_entity
             )
 
-        if profile.education:
+        # `is not None`, not truthiness: an empty list is the user clearing the
+        # section, which has to reach the command service. Only an absent
+        # section means "leave this alone".
+        if profile.education is not None:
             await self.command_service.update_education(
                 session=session, latest_profile=profile, user_id=users_entity.user_id
             )
 
-        if profile.work_history:
+        if profile.work_history is not None:
             await self.command_service.update_work_history(
                 session=session, latest_profile=profile, user_id=users_entity.user_id
             )
