@@ -836,6 +836,53 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
         with self.assertRaises(NoResultFound):
             await repo.recalculate_completed_count(self.session, -1)
 
+    # --- count_completed_by_pairs ---
+
+    async def test_count_completed_by_pairs_counts_every_source(self):
+        """LEGACY rows must be counted. Historical rounds recorded only a
+        number, and the split migration stands one LEGACY row in for each of
+        those meetings, so excluding them reports zero for every pre-Purrf
+        pairing."""
+        repo = MentorshipMeetingRepository()
+        pair_a = await self._seed_pair()
+        pair_b = await self._seed_pair()
+        await self.insert_entities([
+            self._manual_meeting(pair_a.pair_id, is_completed=True),
+            self._google_meeting(pair_a.pair_id, is_completed=True),
+            self._legacy_meeting(pair_a.pair_id),
+            self._manual_meeting(pair_a.pair_id, is_completed=False),
+            self._legacy_meeting(pair_b.pair_id),
+        ])
+
+        counts = await repo.count_completed_by_pairs(
+            self.session, [pair_a.pair_id, pair_b.pair_id]
+        )
+
+        self.assertEqual(counts[pair_a.pair_id], 3)
+        self.assertEqual(counts[pair_b.pair_id], 1)
+
+    async def test_count_completed_by_pairs_reports_zero_for_a_pair_with_none(self):
+        """Every requested pair_id comes back, 0 when nothing is completed, so
+        no caller has to tell "no meetings" apart from "not asked for". A
+        pair_id that does not exist is 0 by the same rule -- callers pass ids
+        they read off pairs, and inventing a distinction here would only push
+        a KeyError guard into every call site."""
+        repo = MentorshipMeetingRepository()
+        pair = await self._seed_pair()
+        await self.insert_entities([
+            self._manual_meeting(pair.pair_id, is_completed=False),
+        ])
+
+        counts = await repo.count_completed_by_pairs(self.session, [pair.pair_id, -1])
+
+        self.assertEqual(counts[pair.pair_id], 0)
+        self.assertEqual(counts[-1], 0)
+
+    async def test_count_completed_by_pairs_empty_input_returns_empty(self):
+        repo = MentorshipMeetingRepository()
+
+        self.assertEqual(await repo.count_completed_by_pairs(self.session, []), {})
+
 
 if __name__ == "__main__":
     unittest.main()

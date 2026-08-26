@@ -1,3 +1,4 @@
+from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.users_entity import UsersEntity
 from sqlalchemy import select, or_, case, func
@@ -19,6 +20,22 @@ class MentorshipPairsRepository:
             dict[int, dict]: Mapping of round_id to
                 {"active_pairs": int, "matched_participants": int, "total_completed_meetings": int}.
         """
+        # Completed meetings are counted from the meeting rows rather than
+        # summed off mentorship_pairs.completed_count, which is on its way out
+        # (PUR-608). LEGACY rows count: historical rounds have nothing else,
+        # so filtering them would report 0 meetings for every pre-Purrf round.
+        # Grouped into a subquery first so the outer join adds at most one row
+        # per pair -- joining the meeting rows directly would multiply the
+        # pair rows and inflate active_pairs.
+        completed_per_pair = (
+            select(
+                MentorshipMeetingEntity.pair_id.label("pair_id"),
+                func.count().label("completed"),
+            )
+            .where(MentorshipMeetingEntity.is_completed.is_(True))
+            .group_by(MentorshipMeetingEntity.pair_id)
+            .subquery()
+        )
         result = await session.execute(
             select(
                 MentorshipPairsEntity.round_id,
@@ -27,9 +44,13 @@ class MentorshipPairsRepository:
                     func.count(func.distinct(MentorshipPairsEntity.mentor_id))
                     + func.count(func.distinct(MentorshipPairsEntity.mentee_id))
                 ).label("matched_participants"),
-                func.sum(MentorshipPairsEntity.completed_count).label(
+                func.sum(func.coalesce(completed_per_pair.c.completed, 0)).label(
                     "total_completed_meetings"
                 ),
+            )
+            .outerjoin(
+                completed_per_pair,
+                completed_per_pair.c.pair_id == MentorshipPairsEntity.pair_id,
             )
             .where(MentorshipPairsEntity.status == PairStatus.ACTIVE)
             .group_by(MentorshipPairsEntity.round_id)

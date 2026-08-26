@@ -34,6 +34,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.mock_meeting_repo = MagicMock()
         self.mock_meeting_repo.get_meetings_by_pair = AsyncMock()
         self.mock_meeting_repo.get_meetings_by_pairs = AsyncMock()
+        self.mock_meeting_repo.count_completed_by_pairs = AsyncMock(return_value={})
         self.mock_meeting_repo.insert_meeting = AsyncMock()
         self.mock_meeting_repo.recalculate_completed_count = AsyncMock()
 
@@ -137,6 +138,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
             round_id=self.round_id,
             grouped_pairs=[(self.mock_pair_entity, self.partner_id)],
             meetings_by_pair={self.pair_id: [self.existing_manual_meeting]},
+            completed_counts={},
         )
 
     async def test_get_meetings_by_user_and_round_v1_read_is_manual_only(self):
@@ -442,6 +444,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
         self.mock_meeting_repo.insert_meeting = AsyncMock()
         self.mock_meeting_repo.get_meetings_by_pair = AsyncMock(return_value=[])
         self.mock_meeting_repo.get_meetings_by_pairs = AsyncMock(return_value={})
+        self.mock_meeting_repo.count_completed_by_pairs = AsyncMock(return_value={})
         self.mock_meeting_repo.delete_meetings = AsyncMock()
         self.mock_meeting_repo.recalculate_completed_count = AsyncMock()
 
@@ -827,6 +830,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             round_id=self.round_id,
             grouped_pairs=[(self.mock_pair_entity, self.partner_id)],
             meetings_by_pair=meetings_by_pair,
+            completed_counts={},
             include_details=True,
         )
         self.user_context.has_permission.assert_called_once_with(
@@ -872,6 +876,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             round_id=self.round_id,
             grouped_pairs=[(self.mock_pair_entity, self.partner_id)],
             meetings_by_pair={},
+            completed_counts={},
             include_details=False,
         )
 
