@@ -138,6 +138,7 @@ class MentorshipMapper:
         round_id: int,
         grouped_pairs: list[tuple[MentorshipPairsEntity, int]],
         meetings_by_pair: dict[int, list[MentorshipMeetingEntity]],
+        completed_counts: dict[int, int],
     ) -> MeetingDto:
         """Map (MentorshipPairsEntity, partner_id) tuples to MeetingDto.
 
@@ -145,6 +146,13 @@ class MentorshipMapper:
             round_id (int): The mentorship round ID.
             grouped_pairs (list[tuple[MentorshipPairsEntity, int]]): Each pair
                 paired with the partner's user id.
+            completed_counts (dict[int, int]): pair_id -> completed meeting
+                count, from
+                ``MentorshipMeetingRepository.count_completed_by_pairs``. Not
+                derived from ``meetings_by_pair``: that mapping excludes
+                LEGACY rows, which are all a pre-Purrf pairing has, so
+                counting it would report 0 for every historical pair. A pair
+                absent from this mapping counts as 0.
             meetings_by_pair (dict[int, list[MentorshipMeetingEntity]]):
                 Meeting rows keyed by ``pair_id``, e.g. from
                 ``MentorshipMeetingRepository.get_meetings_by_pair`` /
@@ -178,7 +186,7 @@ class MentorshipMapper:
                         for m in meetings_by_pair.get(pair.pair_id, [])
                         if m.source != MeetingSource.LEGACY
                     ],
-                    completed_meetings_count=pair.completed_count or 0,
+                    completed_meetings_count=completed_counts.get(pair.pair_id, 0),
                 )
                 for pair, partner_id in grouped_pairs
             ],
@@ -189,6 +197,7 @@ class MentorshipMapper:
         round_id: int,
         grouped_pairs: list[tuple[MentorshipPairsEntity, int]],
         meetings_by_pair: dict[int, list[MentorshipMeetingEntity]],
+        completed_counts: dict[int, int],
         include_details: bool = False,
     ) -> MeetingDto:
         """Map (MentorshipPairsEntity, partner_id) tuples to MeetingDto, merging
@@ -206,6 +215,13 @@ class MentorshipMapper:
             round_id (int): The mentorship round ID.
             grouped_pairs (list[tuple[MentorshipPairsEntity, int]]): Each pair
                 paired with the partner's user id.
+            completed_counts (dict[int, int]): pair_id -> completed meeting
+                count, from
+                ``MentorshipMeetingRepository.count_completed_by_pairs``. Not
+                derived from ``meetings_by_pair``: that mapping excludes
+                LEGACY rows, which are all a pre-Purrf pairing has, so
+                counting it would report 0 for every historical pair. A pair
+                absent from this mapping counts as 0.
             meetings_by_pair (dict[int, list[MentorshipMeetingEntity]]):
                 Meeting rows keyed by `pair_id`, e.g. from
                 `MentorshipMeetingRepository.get_meetings_by_pairs`. A pair
@@ -224,7 +240,7 @@ class MentorshipMapper:
                     meeting_time_list=self._build_meeting_time_list(
                         meetings_by_pair.get(pair.pair_id, []), include_details
                     ),
-                    completed_meetings_count=pair.completed_count or 0,
+                    completed_meetings_count=completed_counts.get(pair.pair_id, 0),
                 )
                 for pair, partner_id in grouped_pairs
             ],

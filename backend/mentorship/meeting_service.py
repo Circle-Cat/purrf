@@ -120,10 +120,20 @@ class MeetingService:
             for pair_id, meetings in meetings_by_pair_id.items()
         }
 
+        # Counted separately rather than from meetings_by_pair: that mapping
+        # is MANUAL-only here, and the count has to include GOOGLE and LEGACY
+        # rows -- a historical pairing has nothing but LEGACY.
+        completed_counts = (
+            await self.mentorship_meeting_repository.count_completed_by_pairs(
+                session=session, pair_ids=pair_ids
+            )
+        )
+
         return self.mentorship_mapper.map_to_meeting_dto(
             round_id=round_id,
             grouped_pairs=grouped_pairs,
             meetings_by_pair=meetings_by_pair,
+            completed_counts=completed_counts,
         )
 
     async def upsert_meetings(
@@ -215,17 +225,23 @@ class MeetingService:
             session=session, meeting=new_meeting
         )
 
+        # Keeps `mentorship_pairs.completed_count` current. Nothing on this
+        # response path reads it any more -- the mapper is handed counted
+        # values -- but `backend/backfill/export_mentorship_records.py` still
+        # reads the column for eligibility rule 2, so it has to stay true
+        # until that script is rewritten (PUR-608).
+        #
         # Assigned directly rather than left for the ORM to refresh: the
         # UPDATE above sets `completed_count` from a scalar subquery, which
         # `synchronize_session="auto"` cannot handle via the cheap "evaluate"
         # strategy, so it falls back to "fetch" -- which EXPIRES
         # `completed_count` on this loaded pair rather than repopulating it.
-        # The mapper reads `pair.completed_count` after `session.commit()`
-        # below; an expired attribute read there would trigger an implicit
-        # lazy load and raise MissingGreenlet under async. Assigning the
-        # value we already have sidesteps that. (Known, accepted cost: this
-        # also marks the attribute dirty, so the flush at commit re-issues an
-        # UPDATE with the same value on an already-locked row.)
+        # Assigning the value we already have keeps the attribute populated
+        # for anything downstream that touches it after `session.commit()`,
+        # where an expired read would lazy-load and raise MissingGreenlet
+        # under async. (Known, accepted cost: this also marks the attribute
+        # dirty, so the flush at commit re-issues an UPDATE with the same
+        # value on an already-locked row.)
         pair_entity.completed_count = (
             await self.mentorship_meeting_repository.recalculate_completed_count(
                 session=session, pair_id=pair_entity.pair_id
@@ -242,12 +258,19 @@ class MeetingService:
             m for m in updated_meetings if m.source == MeetingSource.MANUAL
         ]
 
+        completed_counts = (
+            await self.mentorship_meeting_repository.count_completed_by_pairs(
+                session=session, pair_ids=[pair_entity.pair_id]
+            )
+        )
+
         await session.commit()
 
         return self.mentorship_mapper.map_to_meeting_dto(
             round_id=data.round_id,
             grouped_pairs=[(pair_entity, pair_entity.mentor_id)],
             meetings_by_pair={pair_entity.pair_id: updated_manual_meetings},
+            completed_counts=completed_counts,
         )
 
     async def create_google_meeting(
@@ -710,9 +733,18 @@ class MeetingService:
             )
         )
 
+        # Counted separately: meetings_by_pair leaves out the LEGACY rows,
+        # which are all a pre-Purrf pairing has to be counted by.
+        completed_counts = (
+            await self.mentorship_meeting_repository.count_completed_by_pairs(
+                session=session, pair_ids=pair_ids
+            )
+        )
+
         return self.mentorship_mapper.map_to_meeting_v2_dto(
             round_id=round_id,
             grouped_pairs=grouped_pairs,
             meetings_by_pair=meetings_by_pair,
+            completed_counts=completed_counts,
             include_details=is_detail_allowed,
         )

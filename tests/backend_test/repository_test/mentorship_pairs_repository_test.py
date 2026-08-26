@@ -1,5 +1,6 @@
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.entity.users_entity import UsersEntity
@@ -8,6 +9,7 @@ from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
 from backend.common.mentorship_enums import (
+    MeetingSource,
     PairStatus,
     CommunicationMethod,
     MentorActionStatus,
@@ -638,7 +640,12 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         # rounds[0]: pairs[2] is INACTIVE and excluded; only pairs[0] counts
         self.assertEqual(result[self.rounds[0].round_id]["active_pairs"], 1)
         self.assertEqual(result[self.rounds[0].round_id]["matched_participants"], 2)
-        self.assertEqual(result[self.rounds[0].round_id]["total_completed_meetings"], 5)
+        # The shared fixture seeds no meeting rows, and the count comes from
+        # those rather than from mentorship_pairs.completed_count -- which
+        # this fixture still sets to 5. The number itself is exercised by
+        # test_get_pair_stats_counts_completed_meetings_from_meeting_rows;
+        # this test is about which pairs are counted, not how many meetings.
+        self.assertEqual(result[self.rounds[0].round_id]["total_completed_meetings"], 0)
 
         # rounds[2]: users[0] appears as mentor in pairs[3] and pairs[4] → deduped to 1
         self.assertEqual(result[self.rounds[2].round_id]["active_pairs"], 3)
@@ -677,6 +684,54 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
 
         self.assertIsNotNone(result)
         self.assertEqual(result.pair_id, pair.pair_id)
+
+    async def test_get_pair_stats_counts_completed_meetings_from_meeting_rows(self):
+        """total_completed_meetings comes from the meeting rows, not from the
+        denormalised mentorship_pairs.completed_count. Seeded so the two
+        disagree: the stale column says 5, the rows say 3 (one of them LEGACY,
+        which historical rounds have nothing but)."""
+        pair = self.pairs[0]
+        start = datetime.now(timezone.utc)
+        await self.insert_entities([
+            MentorshipMeetingEntity(
+                meeting_id="stats-done-1",
+                pair_id=pair.pair_id,
+                source=MeetingSource.MANUAL,
+                start_datetime=start,
+                end_datetime=start + timedelta(minutes=30),
+                is_completed=True,
+                created_datetime=start,
+            ),
+            MentorshipMeetingEntity(
+                meeting_id="stats-done-2",
+                pair_id=pair.pair_id,
+                source=MeetingSource.MANUAL,
+                start_datetime=start,
+                end_datetime=start + timedelta(minutes=30),
+                is_completed=True,
+                created_datetime=start,
+            ),
+            MentorshipMeetingEntity(
+                meeting_id="stats-legacy",
+                pair_id=pair.pair_id,
+                source=MeetingSource.LEGACY,
+                is_completed=True,
+                created_datetime=start,
+            ),
+            MentorshipMeetingEntity(
+                meeting_id="stats-pending",
+                pair_id=pair.pair_id,
+                source=MeetingSource.MANUAL,
+                start_datetime=start,
+                end_datetime=start + timedelta(minutes=30),
+                is_completed=False,
+                created_datetime=start,
+            ),
+        ])
+
+        result = await self.repo.get_pair_stats(self.session)
+
+        self.assertEqual(result[self.rounds[0].round_id]["total_completed_meetings"], 3)
 
 
 if __name__ == "__main__":
