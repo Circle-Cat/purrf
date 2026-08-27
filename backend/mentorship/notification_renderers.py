@@ -110,11 +110,11 @@ def _format_matching_date(instant: datetime, zone: ZoneInfo) -> str:
 async def _recipient(session: AsyncSession, application_id: int):
     """The admitted person's greeting name and timezone.
 
-    First name, not the full name ``partner_display_name`` resolves: this
+    First name, not the full name ``user_display_name`` resolves: this
     email greets the recipient directly, where "Dear Ada Lovelace," reads
     like a form letter. A preferred name still wins over the legal one --
     that is the whole point of the field -- so the rule is
-    ``partner_display_name``'s first half with ``first_name`` as the
+    ``user_display_name``'s first half with ``first_name`` as the
     fallback instead of "first last".
 
     Args:

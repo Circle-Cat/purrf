@@ -31,6 +31,7 @@ from types import SimpleNamespace
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.common.name_utils import user_display_name
 from backend.common.recruiting_enums import ApplicationStage
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.event_entity import EventEntity
@@ -44,12 +45,15 @@ from backend.repository.user_emails_repository import UserEmailsRepository
 _user_emails_repository = UserEmailsRepository()
 
 
-async def _display_name(session: AsyncSession, user_id: int) -> str:
-    """Resolve a user id to "First Last", or "" if the row is gone.
+async def _candidate_name(session: AsyncSession, user_id: int) -> str:
+    """Resolve a candidate id to their legal "First Last", or "".
+
+    A candidate is named the way their application names them, so a preferred
+    name on their profile does not apply to mail about them.
 
     Args:
         session (AsyncSession): Session inside the caller's open transaction.
-        user_id (int): The user to resolve.
+        user_id (int): The candidate to resolve.
 
     Returns:
         str: "First Last" (whitespace-trimmed), or "" if no such user.
@@ -61,6 +65,32 @@ async def _display_name(session: AsyncSession, user_id: int) -> str:
     )
     row = result.first()
     return f"{row[0]} {row[1]}".strip() if row is not None else ""
+
+
+async def _actor_name(session: AsyncSession, user_id: int) -> str:
+    """Resolve an acting colleague's id to their display name, or "".
+
+    The actor is internal, so the shared rule applies: preferred name first,
+    full name as the fallback.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        user_id (int): The actor to resolve.
+
+    Returns:
+        str: The resolved display name, or "" if no such user.
+    """
+    result = await session.execute(
+        select(
+            UsersEntity.first_name,
+            UsersEntity.last_name,
+            UsersEntity.preferred_name,
+        ).where(UsersEntity.user_id == user_id)
+    )
+    row = result.first()
+    if row is None:
+        return ""
+    return user_display_name(first_name=row[0], last_name=row[1], preferred_name=row[2])
 
 
 async def _application_context(session: AsyncSession, application_id: int):
@@ -88,7 +118,7 @@ async def _application_context(session: AsyncSession, application_id: int):
     return (
         job_title,
         job_kind,
-        await _display_name(session, candidate_id),
+        await _candidate_name(session, candidate_id),
         await _user_emails_repository.get_contact_email(session, candidate_id),
     )
 
@@ -125,7 +155,7 @@ async def _base_dto(session: AsyncSession, event: EventEntity) -> SimpleNamespac
     # docstring). Resolving NULL here would answer "" for it as well and
     # report the pipeline's own rule as a person nobody can name.
     actor_name = (
-        None if event.actor_id is None else await _display_name(session, event.actor_id)
+        None if event.actor_id is None else await _actor_name(session, event.actor_id)
     )
     if event.subject_type == "application":
         (

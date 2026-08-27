@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { User, Mail, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MatchStatus } from "@/constants/matchStatus";
-import { partnerDisplayName } from "@/utils/partnerName";
+import { userDisplayName } from "@/utils/userName";
 
 /**
  * MatchingResultDialog
@@ -128,7 +128,7 @@ export default function MatchingResultDialog({
                     </div>
                     <div>
                       <h4 className="font-semibold text-foreground">
-                        {partnerDisplayName(partner)}
+                        {userDisplayName(partner)}
                       </h4>
                       <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                         <Mail className="h-3.5 w-3.5" />

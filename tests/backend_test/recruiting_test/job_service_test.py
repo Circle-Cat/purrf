@@ -118,11 +118,19 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         ]
 
     def _make_users(self, *ids):
-        """Build lightweight user mocks exposing only ``user_id``."""
+        """Build lightweight user mocks exposing ``user_id`` and the name columns.
+
+        The three name attributes are explicit because a bare ``MagicMock``
+        auto-creates them as mocks, which reads as "this person has a preferred
+        name" and lets a display-name assertion pass on a mock repr.
+        """
         users = []
         for uid in ids:
             u = MagicMock()
             u.user_id = uid
+            u.first_name = None
+            u.last_name = None
+            u.preferred_name = None
             users.append(u)
         return users
 
@@ -1926,10 +1934,8 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         row.details = {}
         row.created_at = datetime(2026, 7, 4, 12, 0, 0)
         self.event_repo.list_by_subject.return_value = [row]
-        actor = MagicMock()
+        actor = UsersEntity(first_name="Ada", last_name="Lovelace")
         actor.user_id = 7
-        actor.first_name = "Ada"
-        actor.last_name = "Lovelace"
         self.users_repo.get_all_by_ids.return_value = [actor]
 
         result = await self.service.get_job_activity(self.session, 9)
@@ -1938,6 +1944,27 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].actor_name, "Ada Lovelace")
         self.assertEqual(result[0].event_type, "recruiting.job_created")
+
+    async def test_get_job_activity_names_the_actor_by_their_preferred_name(self):
+        """A job's activity log names internal colleagues by the shared rule."""
+        row = MagicMock()
+        row.event_id = 1
+        row.subject_type = "job"
+        row.subject_id = 9
+        row.actor_id = 7
+        row.event_type = "recruiting.job_created"
+        row.details = {}
+        row.created_at = datetime(2026, 7, 4, 12, 0, 0)
+        self.event_repo.list_by_subject.return_value = [row]
+        actor = UsersEntity(
+            first_name="Ada", last_name="Lovelace", preferred_name="Addy"
+        )
+        actor.user_id = 7
+        self.users_repo.get_all_by_ids.return_value = [actor]
+
+        result = await self.service.get_job_activity(self.session, 9)
+
+        self.assertEqual(result[0].actor_name, "Addy")
 
     async def test_get_job_activity_falls_back_for_unresolved_actor(self):
         """A since-removed actor resolves to a 'User {id}' fallback."""

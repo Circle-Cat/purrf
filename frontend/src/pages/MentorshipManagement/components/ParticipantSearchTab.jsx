@@ -19,7 +19,7 @@ import { useParticipantSearch } from "@/pages/MentorshipManagement/hooks/usePart
 import { getParticipantExportUrl } from "@/api/mentorshipApi";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
 import { MentorshipApprovalStatus } from "@/constants/MentorshipApprovalStatus";
-import { partnerDisplayName } from "@/utils/partnerName";
+import { userDisplayName } from "@/utils/userName";
 import MeetingLogDialog from "@/pages/MentorshipManagement/components/MeetingLogDialog";
 import { useMeetingLog } from "@/pages/MentorshipManagement/hooks/useMeetingLog";
 
@@ -104,17 +104,6 @@ function triggerDownload(url) {
   const link = document.createElement("a");
   link.href = url;
   link.click();
-}
-
-/**
- * Resolves the display name for the row's subject.
- * Separate from `partnerDisplayName`, which only applies to the partner.
- */
-function subjectDisplayName(row) {
-  return (
-    row.preferredName?.trim() ||
-    `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim()
-  );
 }
 
 /**
@@ -218,9 +207,9 @@ const ParticipantSearchTab = ({ participationStatus, rounds }) => {
     setActivePair({
       pairId: row.pairId,
       roundName: row.roundName,
-      subjectName: subjectDisplayName(row),
+      subjectName: userDisplayName(row),
       subjectRole: row.participantRole,
-      partnerName: row.matchedUser ? partnerDisplayName(row.matchedUser) : null,
+      partnerName: row.matchedUser ? userDisplayName(row.matchedUser) : null,
       partnerRole:
         row.participantRole === MentorshipParticipantRoles.MENTEE
           ? MentorshipParticipantRoles.MENTOR
@@ -289,9 +278,7 @@ const ParticipantSearchTab = ({ participationStatus, rounds }) => {
             (row.participantRole === MentorshipParticipantRoles.MENTEE
               ? row.menteeOnboardingStatus
               : row.mentorOnboardingStatus) ?? "—",
-          matchedUser: row.matchedUser
-            ? partnerDisplayName(row.matchedUser)
-            : "—",
+          matchedUser: row.matchedUser ? userDisplayName(row.matchedUser) : "—",
           meetings: (
             <MeetingsCell
               pairId={row.pairId}

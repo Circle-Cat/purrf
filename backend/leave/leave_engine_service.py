@@ -33,7 +33,7 @@ from backend.leave.leave_accrual import (
     format_hours,
     weekly_accrual_hours,
 )
-from backend.common.name_utils import partner_display_name
+from backend.common.name_utils import user_display_name
 from backend.leave.leave_clock import business_today
 from backend.leave.leave_policy import MAX_CARRYOVER_HOURS
 
@@ -324,7 +324,7 @@ class LeaveEngineService:
             session, sorted(user_ids)
         )
         name_by_id = {
-            person.user_id: partner_display_name(
+            person.user_id: user_display_name(
                 first_name=person.first_name,
                 last_name=person.last_name,
                 preferred_name=person.preferred_name,

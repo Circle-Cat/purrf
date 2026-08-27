@@ -30,7 +30,7 @@ from backend.common.leave_enums import (
     LeaveRequestStatus,
     LeaveRequestType,
 )
-from backend.common.name_utils import partner_display_name
+from backend.common.name_utils import user_display_name
 from backend.dto.leave_request_dto import LeaveRequestDto
 from backend.entity.leave_ledger_entity import LeaveLedgerEntity
 from backend.entity.leave_request_entity import LeaveRequestEntity
@@ -394,7 +394,7 @@ class LeaveRequestService:
         user_ids = sorted({request.user_id for request in requests})
         people = await self.users_repository.get_all_by_ids(session, user_ids)
         name_by_id = {
-            person.user_id: partner_display_name(
+            person.user_id: user_display_name(
                 first_name=person.first_name,
                 last_name=person.last_name,
                 preferred_name=person.preferred_name,
