@@ -70,6 +70,7 @@ const baseProps = {
         completedRate: 33,
         meetingTimeList: [],
         participantRole: "mentee",
+        isActive: true,
       },
     ],
     participantRole: "mentee",
@@ -210,6 +211,7 @@ describe("MentorshipParticipantsCard", () => {
               completedRate: 0,
               meetingTimeList: [],
               participantRole: "mentee",
+              isActive: true,
             },
           ],
         }}
@@ -220,6 +222,85 @@ describe("MentorshipParticipantsCard", () => {
       screen.getByRole("button", { name: /Submit Meeting Info/ }),
     ).toBeDisabled();
     expect(screen.queryByTestId("meeting-modal")).not.toBeInTheDocument();
+  });
+
+  const endedPairing = {
+    partnerId: 2,
+    preferredName: "Bob",
+    requiredMeetings: 3,
+    completedCount: 3,
+    completedRate: 100,
+    meetingTimeList: [],
+    participantRole: "mentee",
+    isActive: false,
+  };
+
+  it("should label a pairing that has ended", () => {
+    // The partner left the round. The meetings held with them are still this
+    // user's participation, so the row stays and says why it is not current.
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        participantDetails={{
+          ...baseProps.participantDetails,
+          partnerMeetingOverview: [endedPairing],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Bob")).toBeInTheDocument();
+    expect(screen.getByText("Ended")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/have not participated/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("should not label a live pairing", () => {
+    render(<MentorshipParticipantsCard {...baseProps} />);
+
+    expect(screen.queryByText("Ended")).not.toBeInTheDocument();
+  });
+
+  it("should disable submitting when the only pairing has ended", () => {
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        participantDetails={{
+          ...baseProps.participantDetails,
+          partnerMeetingOverview: [endedPairing],
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /Submit Meeting Info/ }),
+    ).toBeDisabled();
+  });
+
+  it("should submit against the live pairing when an ended one is also shown", () => {
+    // Changing mentor mid-round leaves both pairings on the card. Only one of
+    // them is current, so the target is not ambiguous and submitting stays
+    // available.
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        participantDetails={{
+          ...baseProps.participantDetails,
+          partnerMeetingOverview: [
+            ...baseProps.participantDetails.partnerMeetingOverview,
+            endedPairing,
+          ],
+        }}
+      />,
+    );
+
+    const submit = screen.getByRole("button", { name: /Submit Meeting Info/ });
+    expect(submit).not.toBeDisabled();
+    fireEvent.click(submit);
+    expect(screen.getByTestId("meeting-modal")).toHaveAttribute(
+      "data-partner-id",
+      "1",
+    );
   });
 
   it("should render a MeetingOverviewCard for each partner", () => {

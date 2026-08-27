@@ -543,6 +543,29 @@ describe("MentorshipFeedbackDialog", () => {
     ).toBeInTheDocument();
   });
 
+  it("asks about a partner whose pairing has ended", async () => {
+    // The mentorship happened; that the partner has since left the round
+    // does not take it back, so it is still theirs to reflect on.
+    getMyMentorshipPartners.mockResolvedValue({
+      data: [
+        {
+          id: 23,
+          firstName: "Bob",
+          lastName: "Left",
+          preferredName: null,
+          isActive: false,
+        },
+      ],
+    });
+    render(<MentorshipFeedbackDialog {...defaultProps} />);
+    await waitFor(() => screen.getByText("Submit Feedback"));
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    expect(
+      screen.getByPlaceholderText("Share feedback about Bob Left..."),
+    ).toBeInTheDocument();
+  });
+
   it("names a partner by their full name when they have no preferred name", async () => {
     getMyMentorshipPartners.mockResolvedValue({
       data: [

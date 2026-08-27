@@ -1,4 +1,10 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { toast } from "sonner";
@@ -38,11 +44,18 @@ const mockPartners = new Map([
       name: "John Doe",
       preferredName: "Johnny",
       email: "john@test.com",
+      isActive: true,
     },
   ],
   [
     2,
-    { id: 2, name: "Alice Smith", preferredName: "", email: "alice@test.com" },
+    {
+      id: 2,
+      name: "Alice Smith",
+      preferredName: "",
+      email: "alice@test.com",
+      isActive: true,
+    },
   ],
 ]);
 
@@ -112,6 +125,42 @@ describe("MeetingManagementDialog Component", () => {
     expect(
       screen.getByRole("button", { name: /manage meetings/i }),
     ).not.toBeDisabled();
+  });
+
+  it("should not offer a partner whose pairing has ended", async () => {
+    // The partner list doubles as the name lookup for meetings already held,
+    // so it carries pairings that have ended. Booking against one is refused
+    // by the backend, so it is not offered here.
+    useMeetingManagement.mockReturnValue({
+      partners: new Map([
+        ...mockPartners,
+        [
+          3,
+          {
+            id: 3,
+            preferredName: "Bob Ended",
+            email: "bob@test.com",
+            isActive: false,
+          },
+        ],
+      ]),
+      bookMeeting: mockBookMeeting,
+      cancelMeetings: mockCancelMeetings,
+      refresh: mockRefresh,
+      upcomingMeetings: [],
+      isLoading: false,
+    });
+
+    render(<MeetingManagementDialog roundId="1" />);
+    fireEvent.click(screen.getByRole("button", { name: /Manage Meetings/ }));
+
+    const select = await screen.findByLabelText("Select Partner");
+    expect(
+      within(select).getByRole("option", { name: /Johnny/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(select).queryByRole("option", { name: /Bob Ended/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("should open the dialog and switch tabs correctly when interactions occur", async () => {

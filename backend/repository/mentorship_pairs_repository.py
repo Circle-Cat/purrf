@@ -146,7 +146,6 @@ class MentorshipPairsRepository:
         session: AsyncSession,
         user_id: int,
         round_id: int,
-        status: PairStatus | None = None,
     ) -> list[tuple[MentorshipPairsEntity, UsersEntity]]:
         """
         Retrieve all mentorship pairs for a given user in a specific round,
@@ -156,16 +155,16 @@ class MentorshipPairsRepository:
         either as a mentor or a mentee, and joins the UsersEntity table to fetch
         the *other* participant (i.e., the partner) in the pair.
 
+        A user can hold both an ended and a live pair in one round -- the
+        mentor changed mid-round, or the counterpart quit. Both come back, and
+        each pair carries its own status for the caller to tell them apart.
+        Live pairs are ordered first, then by pair id, so a list that mixes
+        them reads current-first and keeps its order between requests.
+
         Args:
             session (AsyncSession): The SQLAlchemy async session used to execute the query.
             user_id (int): The ID of the current user (mentor or mentee).
             round_id (int): The mentorship round ID to filter pairs.
-            status (PairStatus | None): When given, keep only pairs in this
-                status. Callers that present partners as the user's current
-                counterparts pass `PairStatus.ACTIVE`: a user can hold both an
-                ended and a live pair in one round, and filtering here rather
-                than in the caller keeps the ended partner's row -- contact
-                email included -- from being read at all.
 
         Returns:
             list[tuple[MentorshipPairsEntity, UsersEntity]]:
@@ -173,6 +172,9 @@ class MentorshipPairsRepository:
                 - The first element is a MentorshipPairsEntity representing the pairing.
                 - The second element is a UsersEntity representing the partner user.
         """
+        live_pairs_first = case(
+            (MentorshipPairsEntity.status == PairStatus.ACTIVE, 0), else_=1
+        )
         stmt = (
             select(MentorshipPairsEntity, UsersEntity)
             .join(
@@ -192,9 +194,8 @@ class MentorshipPairsRepository:
                     MentorshipPairsEntity.mentee_id == user_id,
                 ),
             )
+            .order_by(live_pairs_first, MentorshipPairsEntity.pair_id)
         )
-        if status is not None:
-            stmt = stmt.where(MentorshipPairsEntity.status == status)
 
         result = await session.execute(stmt)
         return result.all()

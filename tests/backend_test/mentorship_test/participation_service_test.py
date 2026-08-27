@@ -133,25 +133,31 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             session=self.mock_session,
             user_id=self.user_context.user_id,
             round_id=mock_round_id,
-            status=PairStatus.ACTIVE,
         )
         self.mock_pairs_repo.get_all_partner_ids.assert_not_awaited()
         self.mock_session.commit.assert_not_awaited()
 
     async def test_get_partners_for_user_reads_contact_email_for_live_pairs_only(self):
-        """A partner whose pair has ended is left out by the query, so no
-        contact email is read for them.
+        """A partner whose pair has ended is listed without a contact email.
 
-        The exclusion is not a downstream filter on a wider result -- an ended
-        partner's row, contact email included, is never fetched. This pins the
-        one thing the service still controls: the lookup list is derived from
-        the pairs that came back.
+        Both counterparts come back -- an ended pairing is still the user's
+        participation -- but only the live one is looked up in user_emails, so
+        the ended partner's contact row is never read.
         """
         mock_round_id = 1
 
-        mock_pair = MagicMock(spec=MentorshipPairsEntity, status=PairStatus.ACTIVE)
+        live_pair = MagicMock(spec=MentorshipPairsEntity, status=PairStatus.ACTIVE)
+        ended_pair = MagicMock(spec=MentorshipPairsEntity, status=PairStatus.INACTIVE)
+        ended_partner = MagicMock(
+            spec=UsersEntity,
+            user_id=789,
+            first_name="Carol",
+            last_name="Jones",
+            preferred_name=None,
+        )
         self.mock_pairs_repo.get_pairs_with_partner_info.return_value = [
-            (mock_pair, self.mock_specific_partner_user)
+            (live_pair, self.mock_specific_partner_user),
+            (ended_pair, ended_partner),
         ]
         self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
             MagicMock(
@@ -160,20 +166,59 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        await self.participation_service.get_partners_for_user(
+        result = await self.participation_service.get_partners_for_user(
             session=self.mock_session,
             user_context=self.user_context,
             round_id=mock_round_id,
         )
 
+        self.mock_user_emails_repo.get_contact_emails_by_user_ids.assert_awaited_once_with(
+            self.mock_session, [self.mock_specific_partner_user.user_id]
+        )
+        self.assertEqual(result[0].primary_email, "partner@example.com")
+        self.assertTrue(result[0].is_active)
+        self.assertIsNone(result[1].primary_email)
+        self.assertFalse(result[1].is_active)
+
+    async def test_get_partners_for_user_keeps_the_partner_of_an_ended_pair(self):
+        """A pairing that ended is still this user's participation in the round.
+
+        Pair status says whether the counterpart is the current one, not
+        whether the user took part, so the ended pairing comes back marked
+        rather than dropped -- dropping it leaves a user whose partner quit
+        with an empty partner list and no way to tell they participated at
+        all. Their contact email is not offered: the pairing is over.
+        """
+        mock_round_id = 1
+
+        ended_pair = MagicMock(spec=MentorshipPairsEntity, status=PairStatus.INACTIVE)
+        self.mock_pairs_repo.get_pairs_with_partner_info.return_value = [
+            (ended_pair, self.mock_specific_partner_user)
+        ]
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            MagicMock(
+                spec=MentorshipRoundParticipantsEntity,
+                approval_status=ApprovalStatus.MATCHED,
+            )
+        )
+
+        result = await self.participation_service.get_partners_for_user(
+            session=self.mock_session,
+            user_context=self.user_context,
+            round_id=mock_round_id,
+        )
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].id, self.mock_specific_partner_user.user_id)
+        self.assertFalse(result[0].is_active)
+        self.assertIsNone(result[0].primary_email)
+        self.mock_user_emails_repo.get_contact_emails_by_user_ids.assert_not_awaited()
+        # The round's pairs are asked for whole: narrowing the query to the
+        # live ones is what made an ended pairing vanish.
         self.mock_pairs_repo.get_pairs_with_partner_info.assert_awaited_once_with(
             session=self.mock_session,
             user_id=self.user_context.user_id,
             round_id=mock_round_id,
-            status=PairStatus.ACTIVE,
-        )
-        self.mock_user_emails_repo.get_contact_emails_by_user_ids.assert_awaited_once_with(
-            self.mock_session, [self.mock_specific_partner_user.user_id]
         )
 
     async def test_get_partners_for_user_excludes_partner_email_without_participant(
@@ -482,7 +527,11 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         # Mock pairs data (PairEntity, PartnerUserEntity)
         # Case A: Current user (123) is Mentor, Partner (456) is Mentee
         mock_pair_a = MagicMock(
-            mentor_id=123, mentee_id=456, recommendation_reason="Expertise"
+            spec=MentorshipPairsEntity,
+            status=PairStatus.ACTIVE,
+            mentor_id=123,
+            mentee_id=456,
+            recommendation_reason="Expertise",
         )
         mock_partner_a = MagicMock(
             spec=UsersEntity,
@@ -494,7 +543,11 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
 
         # Case B: Current user (123) is Mentee, Partner (789) is Mentor
         mock_pair_b = MagicMock(
-            mentor_id=789, mentee_id=123, recommendation_reason="Guidance"
+            spec=MentorshipPairsEntity,
+            status=PairStatus.ACTIVE,
+            mentor_id=789,
+            mentee_id=123,
+            recommendation_reason="Guidance",
         )
         mock_partner_b = MagicMock(
             spec=UsersEntity,
@@ -517,14 +570,12 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.current_status, MatchStatus.MATCHED)
         self.assertEqual(len(result.partners), 2)
+        self.assertTrue(all(p.is_active for p in result.partners))
 
-        # A counterpart whose pair has ended is not a match result, so the
-        # query is asked for live pairs rather than filtered afterwards.
         self.mock_pairs_repo.get_pairs_with_partner_info.assert_awaited_once_with(
             session=self.mock_session,
             user_id=self.user_context.user_id,
             round_id=mock_round_id,
-            status=PairStatus.ACTIVE,
         )
 
         # Check Partner A (Mentee)
@@ -536,6 +587,57 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         partner_b = next(p for p in result.partners if p.id == 789)
         self.assertEqual(partner_b.participant_role, ParticipantRole.MENTOR)
         self.assertEqual(partner_b.recommendation_reason, "Guidance")
+
+    async def test_get_my_match_result_marks_an_ended_pairing(self):
+        """The match result records who this user was matched with.
+
+        A pairing that has since ended is still that record, so it is
+        reported and marked rather than left out -- otherwise a matched user
+        whose partner quit is told "here is your partner" over an empty list.
+        The ended counterpart's contact email is withheld.
+        """
+        mock_round_id = 1
+
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            MagicMock(
+                spec=MentorshipRoundParticipantsEntity,
+                approval_status=ApprovalStatus.MATCHED,
+            )
+        )
+        ended_pair = MagicMock(
+            spec=MentorshipPairsEntity,
+            status=PairStatus.INACTIVE,
+            mentor_id=789,
+            mentee_id=123,
+            recommendation_reason="Guidance",
+        )
+        partner = MagicMock(
+            spec=UsersEntity,
+            user_id=789,
+            first_name="Alice",
+            last_name="W",
+            preferred_name="Alice",
+        )
+        self.mock_pairs_repo.get_pairs_with_partner_info.return_value = [
+            (ended_pair, partner)
+        ]
+
+        result = await self.participation_service.get_my_match_result_by_round_id(
+            session=self.mock_session,
+            user_context=self.user_context,
+            round_id=mock_round_id,
+        )
+
+        self.assertEqual(result.current_status, MatchStatus.MATCHED)
+        self.assertEqual(len(result.partners), 1)
+        self.assertEqual(result.partners[0].id, 789)
+        self.assertFalse(result.partners[0].is_active)
+        self.assertIsNone(result.partners[0].primary_email)
+        self.mock_pairs_repo.get_pairs_with_partner_info.assert_awaited_once_with(
+            session=self.mock_session,
+            user_id=self.user_context.user_id,
+            round_id=mock_round_id,
+        )
 
     async def test_get_program_feedback_with_existing_submission(self):
         """Returns has_submitted=True and populates fields when feedback dict exists."""
