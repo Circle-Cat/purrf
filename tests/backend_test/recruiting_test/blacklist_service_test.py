@@ -14,8 +14,16 @@ class TestBlacklistService(unittest.IsolatedAsyncioTestCase):
         self.session = AsyncMock()
         self.service = BlacklistService(self.users_repo, self.user_emails_repo)
 
-    def _user(self, user_id=1, first="A", last="B", email="a@b.com", reason="cheated"):
-        u = UsersEntity(first_name=first, last_name=last)
+    def _user(
+        self,
+        user_id=1,
+        first="A",
+        last="B",
+        email="a@b.com",
+        reason="cheated",
+        preferred=None,
+    ):
+        u = UsersEntity(first_name=first, last_name=last, preferred_name=preferred)
         u.user_id = user_id
         u.is_blocked = True
         u.blocked_reason = reason
@@ -40,6 +48,18 @@ class TestBlacklistService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result[0].name, "A B")
         self.assertEqual(result[0].email, "a@b.com")
         self.assertEqual(result[0].reason, "cheated")
+
+    async def test_list_blacklist_names_the_candidate_by_their_legal_name(self):
+        """A blacklist entry is a record of a candidate, named legally."""
+        user = self._user(first="Ada", last="Lovelace", preferred="Addy")
+        self.users_repo.list_blocked_users = AsyncMock(return_value=[user])
+        self.user_emails_repo.get_contact_emails_by_user_ids.return_value = {
+            user.user_id: "ada@b.com"
+        }
+
+        result = await self.service.list_blacklist(self.session)
+
+        self.assertEqual(result[0].name, "Ada Lovelace")
 
     async def test_list_blacklist_passes_search_through(self):
         self.users_repo.list_blocked_users = AsyncMock(return_value=[])

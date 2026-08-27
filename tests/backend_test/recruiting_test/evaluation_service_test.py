@@ -77,8 +77,8 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
             job.pipeline_config = {"ownerIds": list(owner_ids)}
         return job
 
-    def _user(self, user_id=3, first="A", last="B", email="a@b.com"):
-        u = UsersEntity(first_name=first, last_name=last)
+    def _user(self, user_id=3, first="A", last="B", email="a@b.com", preferred=None):
+        u = UsersEntity(first_name=first, last_name=last, preferred_name=preferred)
         u.user_id = user_id
         return u
 
@@ -473,6 +473,38 @@ class TestEvaluationService(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result[0].is_confirmed)
         self.assertEqual(result[0].job_title, "Engineer")
         self.assertEqual(result[0].applicant_name, "C D")
+
+    async def test_get_mine_names_the_candidate_by_their_legal_name(self):
+        """An evaluation queue lists candidates, so it names them legally."""
+        self.assignment_repo.list_by_assignee = AsyncMock(return_value=[])
+        self.app_repo.get_by_id = AsyncMock(
+            return_value=self._application(
+                application_id=10, stage=ApplicationStage.TECH, current_round=1
+            )
+        )
+        self.job_repo.get_by_job_id = AsyncMock(
+            return_value=self._job(job_id=1, title="Engineer")
+        )
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(
+                user_id=3, first="Ada", last="Lovelace", preferred="Addy"
+            )
+        )
+        self.evaluation_repo.list_by_assignee = AsyncMock(
+            return_value=[
+                self._evaluation(
+                    application_id=10,
+                    stage=ApplicationStage.TECH,
+                    round=1,
+                    evaluator_id=2,
+                    is_confirmed=True,
+                )
+            ]
+        )
+
+        result = await self.service.get_mine(self.session, self._ctx(user_id=2))
+
+        self.assertEqual(result[0].applicant_name, "Ada Lovelace")
 
     async def test_get_mine_excludes_unconfirmed_draft_after_reassignment(self):
         self.assignment_repo.list_by_assignee = AsyncMock(return_value=[])
