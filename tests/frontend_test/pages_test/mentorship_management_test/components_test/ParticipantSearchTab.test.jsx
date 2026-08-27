@@ -49,6 +49,7 @@ const participantRow = (overrides = {}) => ({
     firstName: "Bob",
     lastName: "Smith",
     preferredName: "Bob Smith",
+    isActive: true,
   },
   completedMeetingCount: 2,
   requiredMeetings: 5,
@@ -185,6 +186,98 @@ describe("ParticipantSearchTab", () => {
     expect(screen.getByText("Bob Smith")).toBeInTheDocument(); // matchedUser
     expect(screen.getByText("2/5")).toBeInTheDocument(); // completedMeetingCount / requiredMeetings
     expect(screen.getByText("alice@x.com")).toBeInTheDocument();
+  });
+
+  it("names a rejected participant who holds a pairing as ended", async () => {
+    // `rejected` is stored both for an application that was turned down and
+    // for someone who took part and then left. The pairing is what tells them
+    // apart, so the column says which one this row is.
+    searchParticipants.mockResolvedValue({
+      data: {
+        participantRows: [
+          participantRow({
+            approvalStatus: "rejected",
+            matchedUser: {
+              id: 2,
+              firstName: "Bob",
+              lastName: "Smith",
+              preferredName: "Bob Smith",
+              isActive: false,
+            },
+          }),
+        ],
+        total: 1,
+      },
+    });
+    renderTab("participant");
+    await userEvent.type(screen.getByPlaceholderText("Name"), "Alice");
+    await search();
+
+    expect(await screen.findByText("ended")).toBeInTheDocument();
+    expect(screen.queryByText("rejected")).not.toBeInTheDocument();
+  });
+
+  it("keeps rejected for a participant who was never paired", async () => {
+    // No pairing means the application was turned down. The data cannot tell
+    // this apart from quitting before being paired, so it is not guessed at.
+    searchParticipants.mockResolvedValue({
+      data: {
+        participantRows: [
+          participantRow({
+            approvalStatus: "rejected",
+            matchedUser: null,
+            pairId: null,
+          }),
+        ],
+        total: 1,
+      },
+    });
+    renderTab("participant");
+    await userEvent.type(screen.getByPlaceholderText("Name"), "Alice");
+    await search();
+
+    expect(await screen.findByText("rejected")).toBeInTheDocument();
+    expect(screen.queryByText("ended")).not.toBeInTheDocument();
+  });
+
+  it("marks the partner of a pairing that has ended", async () => {
+    // Rows are one per pair, so someone who changed mentor mid-round gets two
+    // rows with the same approval status. The mark is what says which mentor
+    // is the current one.
+    searchParticipants.mockResolvedValue({
+      data: {
+        participantRows: [
+          participantRow({
+            matchedUser: {
+              id: 2,
+              firstName: "Bob",
+              lastName: "Smith",
+              preferredName: "Bob Smith",
+              isActive: false,
+            },
+          }),
+        ],
+        total: 1,
+      },
+    });
+    renderTab("participant");
+    await userEvent.type(screen.getByPlaceholderText("Name"), "Alice");
+    await search();
+
+    expect(await screen.findByText("Bob Smith")).toBeInTheDocument();
+    expect(screen.getByText("Ended")).toBeInTheDocument();
+  });
+
+  it("does not mark a partner whose pairing is live", async () => {
+    searchParticipants.mockResolvedValue({
+      data: { participantRows: [participantRow()], total: 1 },
+    });
+    renderTab("participant");
+    await userEvent.type(screen.getByPlaceholderText("Name"), "Alice");
+    await search();
+
+    expect(await screen.findByText("Bob Smith")).toBeInTheDocument();
+    expect(screen.queryByText("Ended")).not.toBeInTheDocument();
   });
 
   it("searches non-participants and renders the results", async () => {

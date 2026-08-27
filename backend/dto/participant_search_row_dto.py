@@ -1,5 +1,9 @@
 from backend.dto.base_internal_dto import BaseInternalDTO
-from backend.common.mentorship_enums import ApprovalStatus, ParticipantRole
+from backend.common.mentorship_enums import (
+    ApprovalStatus,
+    PairStatus,
+    ParticipantRole,
+)
 
 
 class ParticipantSearchRow(BaseInternalDTO):
@@ -11,3 +15,4 @@ class ParticipantSearchRow(BaseInternalDTO):
     completed_count: int | None
     mentor_id: int | None
     mentee_id: int | None
+    pair_status: PairStatus | None

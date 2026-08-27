@@ -249,6 +249,11 @@ class ParticipationService:
         determines the user's participation and matching status for the given
         mentorship round, and returns the corresponding match result.
 
+        A `rejected` status is reported with its pairings too, when there are
+        any: the same status is stored for an application that was turned down
+        and for someone who took part and then left, and only the pairing
+        tells them apart.
+
         If the user is not in a MATCHED state, an empty partners list is returned
         along with the current match status. If the user is MATCHED, this method
         retrieves the user's mentorship pairs for the round and constructs
@@ -290,7 +295,12 @@ class ParticipationService:
 
         partners: list[PartnerDto] = []
 
-        if current_status != MatchStatus.MATCHED:
+        # A pairing is reported for the two statuses that can have produced
+        # one: the user is matched, or they took part and left -- `rejected`
+        # covers quitting, being removed, and a mentor being suspended. The
+        # remaining statuses never had a pairing, so the pairs table is not
+        # touched for them.
+        if current_status not in (MatchStatus.MATCHED, MatchStatus.REJECTED):
             return MatchesDto(
                 round_id=round_id, current_status=current_status, partners=partners
             )

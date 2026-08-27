@@ -19,6 +19,7 @@ from backend.common.mentorship_enums import (
     ParticipantRole,
     TrainingCategory,
     TrainingStatus,
+    PairStatus,
 )
 
 
@@ -32,6 +33,7 @@ def _make_row(**kwargs):
         completed_count=None,
         mentor_id=None,
         mentee_id=None,
+        pair_status=None,
     )
     row_fields.update(kwargs)
     return ParticipantSearchRow(**row_fields)
@@ -197,6 +199,59 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
 
         _, called_ids = self.mock_users_repo.get_users_and_emails_by_ids.call_args[0]
         self.assertEqual(set(called_ids), {1, 2})
+
+    async def test_matched_user_carries_whether_the_pairing_is_live(self):
+        """A row whose pair has ended says so, so the table can mark it.
+
+        Rows are one per pair, so someone who changed mentor mid-round gets
+        two rows with the same approval status. Which mentor is the current
+        one is only answerable from the pair.
+        """
+        self.mock_participants_repo.search_participants_for_admin.return_value = (
+            [
+                _make_row(
+                    user_id=1,
+                    pair_id=99,
+                    mentor_id=2,
+                    mentee_id=1,
+                    participant_role=ParticipantRole.MENTEE,
+                    pair_status=PairStatus.INACTIVE,
+                ),
+                _make_row(
+                    user_id=1,
+                    pair_id=100,
+                    mentor_id=3,
+                    mentee_id=1,
+                    participant_role=ParticipantRole.MENTEE,
+                    pair_status=PairStatus.ACTIVE,
+                ),
+            ],
+            2,
+        )
+        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
+            {
+                uid: MagicMock(
+                    user_id=uid,
+                    first_name=f"User{uid}",
+                    last_name="X",
+                    preferred_name=None,
+                )
+                for uid in (1, 2, 3)
+            },
+            {},
+        )
+
+        self.mock_training_repo.get_training_by_user_ids_and_categories.return_value = []
+
+        result = await self.service.search_participants(
+            self.mock_session, ParticipantSearchFilterDto()
+        )
+
+        ended, live = result.participant_rows
+        self.assertEqual(ended.matched_user.id, 2)
+        self.assertFalse(ended.matched_user.is_active)
+        self.assertEqual(live.matched_user.id, 3)
+        self.assertTrue(live.matched_user.is_active)
 
     async def test_matched_user_resolves_partner_correctly(self):
         """matched_user always refers to the other participant in the pair."""
@@ -566,7 +621,11 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(common, [1, "Alice", "Doe", None, "alice@example.com", ""])
 
     def test_build_participant_export_columns_approval_status_raw_enum(self):
-        """Approval Status column is the raw enum value, not a display string."""
+        """Approval Status is the raw enum value for every status but one.
+
+        Only `rejected` is rewritten, and only when a pair says the person
+        took part -- see the two tests below.
+        """
         row = _make_row(user_id=1, approval_status=ApprovalStatus.UN_MATCHED)
 
         participant = self.service._build_participant_export_columns(
@@ -574,6 +633,42 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(participant[2], "un_matched")
+
+    def test_build_participant_export_columns_names_a_leaver(self):
+        """`rejected` plus a pair in the round is someone who left, not someone
+        who was never accepted.
+
+        The two share one stored value, so the export says which it is rather
+        than making the reader cross-reference the Matched User column.
+        """
+        row = _make_row(
+            user_id=1,
+            pair_id=10,
+            mentor_id=1,
+            mentee_id=2,
+            approval_status=ApprovalStatus.REJECTED,
+            pair_status=PairStatus.INACTIVE,
+        )
+
+        participant = self.service._build_participant_export_columns(
+            row, users_map={}, trainings_map={}, rounds_map={}
+        )
+
+        self.assertEqual(participant[2], "ended")
+
+    def test_build_participant_export_columns_keeps_rejected_without_a_pair(self):
+        """No pair in the round means the application was turned down.
+
+        The data cannot tell this apart from someone who quit before being
+        paired, and reading it as "not accepted" is what the data says.
+        """
+        row = _make_row(user_id=1, approval_status=ApprovalStatus.REJECTED)
+
+        participant = self.service._build_participant_export_columns(
+            row, users_map={}, trainings_map={}, rounds_map={}
+        )
+
+        self.assertEqual(participant[2], "rejected")
 
     def test_build_participant_export_columns_no_pair_leaves_matched_user_blank(self):
         """A row with no pair_id has blank Matched User columns."""

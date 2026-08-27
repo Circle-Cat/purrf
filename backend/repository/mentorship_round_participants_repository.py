@@ -345,6 +345,7 @@ class MentorshipRoundParticipantsRepository:
             ).label("completed_count"),
             MentorshipPairsEntity.mentor_id.label("mentor_id"),
             MentorshipPairsEntity.mentee_id.label("mentee_id"),
+            MentorshipPairsEntity.status.label("pair_status"),
         ]
 
         stmt = (
@@ -526,6 +527,7 @@ class MentorshipRoundParticipantsRepository:
                 completed_count=row.completed_count,
                 mentor_id=row.mentor_id,
                 mentee_id=row.mentee_id,
+                pair_status=row.pair_status,
             )
             for row in result.all()
         ]
@@ -569,6 +571,7 @@ class MentorshipRoundParticipantsRepository:
                 completed_count=row.completed_count,
                 mentor_id=row.mentor_id,
                 mentee_id=row.mentee_id,
+                pair_status=row.pair_status,
             )
             for row in result.all()
         ]

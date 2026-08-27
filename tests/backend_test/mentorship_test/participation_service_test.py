@@ -492,12 +492,12 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result.partners), 0)
 
     async def test_get_my_match_result_not_matched_status(self):
-        """Test result when user is registered but status is not MATCHED (e.g., REJECTED)."""
+        """A status that cannot have produced a pairing is answered without
+        touching the pairs table."""
         mock_round_id = 1
 
-        # Mock participant with REJECTED status
         mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
-        mock_participant.approval_status = ApprovalStatus.REJECTED
+        mock_participant.approval_status = ApprovalStatus.UN_MATCHED
         self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
             mock_participant
         )
@@ -508,10 +508,74 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             round_id=mock_round_id,
         )
 
+        self.assertEqual(result.current_status, MatchStatus.UNMATCHED)
+        self.assertEqual(len(result.partners), 0)
+        self.mock_pairs_repo.get_pairs_with_partner_info.assert_not_awaited()
+
+    async def test_get_my_match_result_reports_a_pairing_the_user_left(self):
+        """Someone who left the round was matched first, and is told so.
+
+        `rejected` is also the status of an application that was turned down,
+        and the two read identically without the pairing. Reporting it is what
+        lets the answer say which one this is.
+        """
+        mock_round_id = 1
+
+        mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
+        mock_participant.approval_status = ApprovalStatus.REJECTED
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            mock_participant
+        )
+        ended_pair = MagicMock(
+            spec=MentorshipPairsEntity,
+            status=PairStatus.INACTIVE,
+            mentor_id=789,
+            mentee_id=123,
+            recommendation_reason="Guidance",
+        )
+        partner = MagicMock(
+            spec=UsersEntity,
+            user_id=789,
+            first_name="Alice",
+            last_name="W",
+            preferred_name=None,
+        )
+        self.mock_pairs_repo.get_pairs_with_partner_info.return_value = [
+            (ended_pair, partner)
+        ]
+
+        result = await self.participation_service.get_my_match_result_by_round_id(
+            session=self.mock_session,
+            user_context=self.user_context,
+            round_id=mock_round_id,
+        )
+
+        self.assertEqual(result.current_status, MatchStatus.REJECTED)
+        self.assertEqual(len(result.partners), 1)
+        self.assertEqual(result.partners[0].id, 789)
+        self.assertFalse(result.partners[0].is_active)
+        self.assertIsNone(result.partners[0].primary_email)
+
+    async def test_get_my_match_result_for_an_application_never_accepted(self):
+        """No pairing behind a `rejected` status means the application was
+        turned down, and the answer stays empty."""
+        mock_round_id = 1
+
+        mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
+        mock_participant.approval_status = ApprovalStatus.REJECTED
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            mock_participant
+        )
+        self.mock_pairs_repo.get_pairs_with_partner_info.return_value = []
+
+        result = await self.participation_service.get_my_match_result_by_round_id(
+            session=self.mock_session,
+            user_context=self.user_context,
+            round_id=mock_round_id,
+        )
+
         self.assertEqual(result.current_status, MatchStatus.REJECTED)
         self.assertEqual(len(result.partners), 0)
-        # Ensure pairs repo was NOT called because status isn't MATCHED
-        self.mock_pairs_repo.get_pairs_with_partner_info.assert_not_awaited()
 
     async def test_get_my_match_result_success(self):
         """Test successful match result including partner DTO construction."""

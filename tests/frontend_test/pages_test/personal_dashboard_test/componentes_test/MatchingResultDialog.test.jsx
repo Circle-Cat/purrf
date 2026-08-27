@@ -144,6 +144,52 @@ describe("MatchingResultDialog", () => {
     expect(screen.getByText("john@example.com")).toBeInTheDocument();
   });
 
+  it("should say the participation ended for someone who left the round", async () => {
+    // `rejected` also covers quitting, being removed, and a mentor being
+    // suspended. Telling those people they were not eligible is wrong; the
+    // pairing they hold is what says they took part.
+    render(
+      <MatchingResultDialog
+        {...defaultProps}
+        matchData={{
+          currentStatus: MatchStatus.REJECTED,
+          partners: [endedPartner],
+        }}
+        canViewMatch
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /view matching result/i }),
+    );
+
+    expect(screen.getByText("Participation Ended")).toBeInTheDocument();
+    expect(screen.queryByText("Application Update")).not.toBeInTheDocument();
+    expect(screen.getByText("Jane Roe")).toBeInTheDocument();
+    expect(screen.getByText("This pairing has ended.")).toBeInTheDocument();
+  });
+
+  it("should keep the not-eligible copy for an application that was turned down", async () => {
+    // No pairing behind the same status means the application was refused.
+    // This copy is correct there and must not move.
+    render(
+      <MatchingResultDialog
+        {...defaultProps}
+        matchData={{ currentStatus: MatchStatus.REJECTED, partners: [] }}
+        canViewMatch
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /view matching result/i }),
+    );
+
+    expect(screen.getByText("Application Update")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Thank you for applying. Unfortunately, you are not eligible for this round.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("should display placeholder content when no partner information is available", () => {
     const unmatchedProps = {
       ...defaultProps,
