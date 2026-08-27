@@ -992,6 +992,36 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         self.assertEqual(row.completed_count, 2)
         self.assertEqual(row.mentor_id, self.user.user_id)
         self.assertEqual(row.mentee_id, user2.user_id)
+        # Rows are one per pair, so whether that pair is still the live one is
+        # the row's own fact -- the approval status is the person's and repeats
+        # across their rows.
+        self.assertEqual(row.pair_status, PairStatus.ACTIVE)
+
+    async def test_search_participants_for_admin_reports_an_ended_pair(self):
+        """A participant with no pair at all reports no pair status.
+
+        The pair is outer-joined, so someone who was never paired still gets a
+        row; `pair_status` being None is how that row says so.
+        """
+        await self.insert_entities([
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=self.rounds[0].round_id,
+                participant_role=ParticipantRole.MENTEE,
+                approval_status=ApprovalStatus.REJECTED,
+            )
+        ])
+
+        rows, _ = await self.repo.search_participants_for_admin(
+            self.session,
+            ParticipantSearchFilterDto(user_id=self.user.user_id),
+            limit=50,
+            offset=0,
+        )
+
+        self.assertEqual(len(rows), 1)
+        self.assertIsNone(rows[0].pair_id)
+        self.assertIsNone(rows[0].pair_status)
 
     async def test_iter_search_participants_for_admin_respects_limit_and_offset(self):
         """limit/offset paginate the same way search_participants_for_admin does."""

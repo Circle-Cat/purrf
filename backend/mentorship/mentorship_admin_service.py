@@ -11,8 +11,10 @@ from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
 from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import (
     MENTORSHIP_ONBOARDING_CATEGORIES,
+    ApprovalStatus,
     MeetingNoteTag,
     MeetingSource,
+    PairStatus,
     ParticipantRole,
     TrainingCategory,
 )
@@ -42,6 +44,27 @@ def _sanitize_csv_field(value: str | None) -> str | None:
     if value and value.lstrip().startswith(_CSV_FORMULA_PREFIXES):
         return f"'{value}"
     return value
+
+
+def _participation_status_label(
+    approval_status: ApprovalStatus | None, has_pair: bool
+) -> str:
+    """The participation outcome as an admin should read it.
+
+    ``rejected`` is stored for two different outcomes: the person applied and
+    was not accepted, or they took part and then left -- quit, removed, or a
+    mentor suspended mid-round. Holding a pair in that round is what tells
+    them apart, since a pairing only exists once they took part.
+
+    Someone who left after registering but before being paired is
+    indistinguishable and reads as not accepted. The data genuinely does not
+    say which, so it is not guessed at.
+    """
+    if approval_status is None:
+        return ""
+    if approval_status == ApprovalStatus.REJECTED and has_pair:
+        return "ended"
+    return approval_status.value
 
 
 _EXPORT_COMMON_COLUMNS = [
@@ -268,7 +291,7 @@ class MentorshipAdminService:
         return [
             _sanitize_csv_field(round_entity.name) if round_entity else "",
             row.participant_role.value if row.participant_role else "",
-            row.approval_status.value if row.approval_status else "",
+            _participation_status_label(row.approval_status, row.pair_id is not None),
             onboarding_status.value if onboarding_status else "",
             matched_user_id,
             _sanitize_csv_field(matched_user_name),
@@ -419,6 +442,7 @@ class MentorshipAdminService:
                     primary_email=None,
                     participant_role=None,
                     recommendation_reason=None,
+                    is_active=row.pair_status == PairStatus.ACTIVE,
                 )
 
             round_entity = rounds_map.get(row.round_id) if row.round_id else None

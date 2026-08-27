@@ -92,6 +92,12 @@ export default function MatchingResultDialog({
     partners.length > 0 &&
     partners.every((partner) => partner.isActive === false);
 
+  // The same rejected status is stored for an application that was turned
+  // down and for someone who took part and then left. A pairing only exists
+  // once they took part, so it is what picks the copy apart.
+  const hasLeftTheRound =
+    currentStatus === MatchStatus.REJECTED && partners.length > 0;
+
   const currentConfig = isEveryPairingEnded
     ? {
         title: "Pairing Ended",
@@ -99,7 +105,14 @@ export default function MatchingResultDialog({
           "You were matched this round. That pairing has since ended.",
         color: "text-amber-600",
       }
-    : statusConfig[currentStatus] || statusConfig[MatchStatus.UNKNOWN];
+    : hasLeftTheRound
+      ? {
+          title: "Participation Ended",
+          description:
+            "You took part in this round, and your participation has since ended.",
+          color: "text-amber-600",
+        }
+      : statusConfig[currentStatus] || statusConfig[MatchStatus.UNKNOWN];
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
