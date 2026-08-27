@@ -257,37 +257,67 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
 
         self.assertEqual(result, [])
 
-    async def test_get_pairs_with_partner_info_status_filter(self):
-        """Test that passing a status keeps only pairs in that status."""
+    async def test_get_pairs_with_partner_info_returns_ended_pairs_too(self):
+        """Test that a pair which has ended still comes back, carrying its status."""
         # Alice (users[0]) has two pairs in round[0]: mentor to Bob (ACTIVE)
-        # and mentee to Charlie (INACTIVE).
-        unfiltered = await self.repo.get_pairs_with_partner_info(
+        # and mentee to Charlie (INACTIVE). An ended pairing is still her
+        # participation in that round, so both are reported.
+        result = await self.repo.get_pairs_with_partner_info(
             self.session, self.users[0].user_id, self.rounds[0].round_id
         )
-        self.assertEqual(len(unfiltered), 2)
 
-        result = await self.repo.get_pairs_with_partner_info(
-            self.session,
-            self.users[0].user_id,
-            self.rounds[0].round_id,
-            status=PairStatus.ACTIVE,
+        self.assertEqual(len(result), 2)
+        self.assertEqual(
+            {(pair.status, partner.user_id) for pair, partner in result},
+            {
+                (PairStatus.ACTIVE, self.users[1].user_id),
+                (PairStatus.INACTIVE, self.users[2].user_id),
+            },
         )
 
-        self.assertEqual(len(result), 1)
-        pair, partner = result[0]
-        self.assertEqual(pair.status, PairStatus.ACTIVE)
-        self.assertEqual(partner.user_id, self.users[1].user_id)
+    async def test_get_pairs_with_partner_info_orders_live_pairs_first(self):
+        """Test that a round mixing an ended and a live pair reads current-first.
 
-    async def test_get_pairs_with_partner_info_status_filter_no_match(self):
-        """Test that a status matching no pair returns an empty list."""
-        result = await self.repo.get_pairs_with_partner_info(
-            self.session,
-            self.users[0].user_id,
-            self.rounds[1].round_id,
+        The ended pair is inserted first and so holds the lower pair id:
+        ordering by id alone would put the partner who is gone above the
+        current one.
+        """
+        later_round = MentorshipRoundEntity(name="2026-fall", required_meetings=5)
+        await self.insert_entities([later_round])
+        ended = MentorshipPairsEntity(
+            round_id=later_round.round_id,
+            mentor_id=self.users[2].user_id,
+            mentee_id=self.users[1].user_id,
+            completed_count=1,
             status=PairStatus.INACTIVE,
+            mentor_action_status=MentorActionStatus.CONFIRMED,
+            mentee_action_status=MenteeActionStatus.CONFIRMED,
+            recommendation_reason="",
+        )
+        live = MentorshipPairsEntity(
+            round_id=later_round.round_id,
+            mentor_id=self.users[0].user_id,
+            mentee_id=self.users[1].user_id,
+            completed_count=0,
+            status=PairStatus.ACTIVE,
+            mentor_action_status=MentorActionStatus.CONFIRMED,
+            mentee_action_status=MenteeActionStatus.CONFIRMED,
+            recommendation_reason="",
+        )
+        await self.insert_entities([ended, live])
+        self.assertLess(ended.pair_id, live.pair_id)
+
+        result = await self.repo.get_pairs_with_partner_info(
+            self.session, self.users[1].user_id, later_round.round_id
         )
 
-        self.assertEqual(result, [])
+        self.assertEqual(
+            [(pair.pair_id, partner.user_id) for pair, partner in result],
+            [
+                (live.pair_id, self.users[0].user_id),
+                (ended.pair_id, self.users[2].user_id),
+            ],
+        )
 
     async def test_get_active_pair_by_mentee_and_mentor_picks_the_named_mentor(self):
         """Test that a mentee holding two pairs in one round resolves per mentor."""

@@ -919,6 +919,46 @@ describe("refreshMeetings", () => {
     expect(getMyMentorshipPartners).toHaveBeenCalledWith("round-1");
   });
 
+  it("should carry the pairing status into the partner overview", async () => {
+    // A partner whose pairing ended is still reported by the API, marked.
+    // The card needs the mark to label the row and to keep meeting
+    // submission pointed at the live pairing.
+    getMyMentorshipMeetingLog.mockResolvedValue({
+      data: {
+        meetingInfo: [
+          {
+            partnerId: 99,
+            participantRole: "Mentee",
+            completedMeetingsCount: 3,
+          },
+          {
+            partnerId: 88,
+            participantRole: "Mentee",
+            completedMeetingsCount: 1,
+          },
+        ],
+      },
+    });
+    getMyMentorshipPartners.mockResolvedValue({
+      data: [
+        { id: 99, preferredName: "Alice", isActive: true },
+        { id: 88, preferredName: "Bob", isActive: false },
+      ],
+    });
+
+    const { result } = renderHook(() => useMentorshipData());
+
+    await waitFor(() => {
+      expect(result.current.participantDetails.roundInfo).not.toBeNull();
+    });
+
+    const overview = result.current.participantDetails.partnerMeetingOverview;
+    expect(overview.map((o) => [o.partnerId, o.isActive])).toEqual([
+      [99, true],
+      [88, false],
+    ]);
+  });
+
   it("should set empty partnerMeetingOverview when no partners are found", async () => {
     getMyMentorshipMeetingLog.mockResolvedValue({ data: { meetingInfo: [] } });
     getMyMentorshipPartners.mockResolvedValue({ data: [] });

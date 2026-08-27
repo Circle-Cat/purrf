@@ -84,8 +84,22 @@ export default function MatchingResultDialog({
     },
   };
 
-  const currentConfig =
-    statusConfig[currentStatus] || statusConfig[MatchStatus.UNKNOWN];
+  // Being matched and having a current partner are two different facts: a
+  // pairing ends when the counterpart leaves the round, and the user stays
+  // matched. The round's own copy only fits while one of them is live.
+  const isEveryPairingEnded =
+    isMatched &&
+    partners.length > 0 &&
+    partners.every((partner) => partner.isActive === false);
+
+  const currentConfig = isEveryPairingEnded
+    ? {
+        title: "Pairing Ended",
+        description:
+          "You were matched this round. That pairing has since ended.",
+        color: "text-amber-600",
+      }
+    : statusConfig[currentStatus] || statusConfig[MatchStatus.UNKNOWN];
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -130,10 +144,16 @@ export default function MatchingResultDialog({
                       <h4 className="font-semibold text-foreground">
                         {userDisplayName(partner)}
                       </h4>
-                      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                        <Mail className="h-3.5 w-3.5" />
-                        <span>{partner.primaryEmail}</span>
-                      </div>
+                      {partner.isActive === false ? (
+                        <p className="text-sm text-muted-foreground">
+                          This pairing has ended.
+                        </p>
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                          <Mail className="h-3.5 w-3.5" />
+                          <span>{partner.primaryEmail}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <Badge variant="secondary" className="capitalize">
