@@ -282,7 +282,15 @@ export default function MeetingManagementDialog({
     }
   };
 
-  const partnerList = partners ? Array.from(partners.values()) : [];
+  // The map doubles as the name lookup for meetings already held, so it
+  // carries pairings that have ended. Those are not somewhere a new meeting
+  // can be booked -- the backend refuses one without a live pair -- so only
+  // current partners are offered.
+  const partnerList = partners
+    ? Array.from(partners.values()).filter(
+        (partner) => partner.isActive !== false,
+      )
+    : [];
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>

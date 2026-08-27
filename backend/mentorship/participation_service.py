@@ -72,12 +72,14 @@ class ParticipationService:
               across all mentorship rounds.
             - If round_id is provided, returns partners associated with the current user
               in the specified mentorship round.
-        3. Returns partner information mapped to PartnerDto objects. Only the
-           user's ACTIVE pairs count as partners: a round the user finished
-           with one counterpart and continued with another reports just the
-           live one. The primary_email field is populated only when round_id
-           is provided and the user's approval status is MATCHED; otherwise
-           None.
+        3. Returns partner information mapped to PartnerDto objects. Every
+           pair the user holds in the round counts as a partner, each carrying
+           `is_active`: a pairing that ended -- the mentor changed mid-round,
+           or the counterpart quit -- is still the user's participation, and
+           dropping it would leave them with an empty partner list. The
+           primary_email field is populated only for a live pair, and only
+           when round_id is provided and the user's approval status is
+           MATCHED; otherwise None.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -119,7 +121,6 @@ class ParticipationService:
             session=session,
             user_id=current_user_id,
             round_id=round_id,
-            status=PairStatus.ACTIVE,
         )
         if not pairs_data:
             self.logger.info(
@@ -133,11 +134,18 @@ class ParticipationService:
                 session=session, user_id=current_user_id, round_id=round_id
             )
         )
+        live_partner_ids = [
+            p_user.user_id
+            for pair, p_user in pairs_data
+            if pair.status == PairStatus.ACTIVE
+        ]
         contact_by_user_id = (
             await self.user_emails_repository.get_contact_emails_by_user_ids(
-                session, [p_user.user_id for _, p_user in pairs_data]
+                session, live_partner_ids
             )
-            if participant and participant.approval_status == ApprovalStatus.MATCHED
+            if live_partner_ids
+            and participant
+            and participant.approval_status == ApprovalStatus.MATCHED
             else {}
         )
 
@@ -147,14 +155,10 @@ class ParticipationService:
                 first_name=p_user.first_name,
                 last_name=p_user.last_name,
                 preferred_name=p_user.preferred_name,
-                primary_email=(
-                    contact_by_user_id.get(p_user.user_id)
-                    if participant
-                    and participant.approval_status == ApprovalStatus.MATCHED
-                    else None
-                ),
+                primary_email=contact_by_user_id.get(p_user.user_id),
+                is_active=pair.status == PairStatus.ACTIVE,
             )
-            for _, p_user in pairs_data
+            for pair, p_user in pairs_data
         ]
 
     async def get_user_round_preferences(
@@ -247,9 +251,10 @@ class ParticipationService:
 
         If the user is not in a MATCHED state, an empty partners list is returned
         along with the current match status. If the user is MATCHED, this method
-        retrieves the user's ACTIVE mentorship pairs and constructs partner
-        details for each current counterpart. A counterpart whose pair has
-        ended is not a match result and is left out, contact email included.
+        retrieves the user's mentorship pairs for the round and constructs
+        partner details for each counterpart. A pairing that has since ended is
+        still who the user was matched with, so it is reported with
+        `is_active` false rather than left out; its contact email is withheld.
 
         Args:
             session (AsyncSession): The SQLAlchemy async session used for database operations.
@@ -291,12 +296,19 @@ class ParticipationService:
             )
 
         pairs_data = await self.mentorship_pairs_repository.get_pairs_with_partner_info(
-            session=session, user_id=uid, round_id=round_id, status=PairStatus.ACTIVE
+            session=session, user_id=uid, round_id=round_id
         )
+        live_partner_ids = [
+            p_user.user_id
+            for pair, p_user in pairs_data
+            if pair.status == PairStatus.ACTIVE
+        ]
         contact_by_user_id = (
             await self.user_emails_repository.get_contact_emails_by_user_ids(
-                session, [p_user.user_id for _, p_user in pairs_data]
+                session, live_partner_ids
             )
+            if live_partner_ids
+            else {}
         )
 
         for pair, p_user in pairs_data:
@@ -311,6 +323,7 @@ class ParticipationService:
                     if pair.mentor_id == uid
                     else ParticipantRole.MENTOR,
                     recommendation_reason=pair.recommendation_reason,
+                    is_active=pair.status == PairStatus.ACTIVE,
                 )
             )
 

@@ -55,6 +55,7 @@ describe("MatchingResultDialog", () => {
           primaryEmail: "john@example.com",
           participantRole: "mentor",
           recommendationReason: "Similar tech stack",
+          isActive: true,
         },
       ],
     };
@@ -75,6 +76,72 @@ describe("MatchingResultDialog", () => {
     expect(screen.getByText("john@example.com")).toBeInTheDocument();
     expect(screen.getByText("mentor")).toBeInTheDocument();
     expect(screen.getByText(/Similar tech stack/i)).toBeInTheDocument();
+  });
+
+  const endedPartner = {
+    id: "p2",
+    firstName: "Jane",
+    lastName: "Roe",
+    primaryEmail: null,
+    participantRole: "mentor",
+    isActive: false,
+  };
+
+  it("should say the pairing ended when the only pairing has ended", async () => {
+    // The user was matched and their partner has since left the round.
+    // Congratulating them over an empty list is what the round-scoped
+    // filter used to produce.
+    render(
+      <MatchingResultDialog
+        {...defaultProps}
+        matchData={{
+          currentStatus: MatchStatus.MATCHED,
+          partners: [endedPartner],
+        }}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /view matching result/i }),
+    );
+
+    expect(screen.getByText("Pairing Ended")).toBeInTheDocument();
+    expect(screen.queryByText("Congratulations!")).not.toBeInTheDocument();
+    expect(screen.getByText("Jane Roe")).toBeInTheDocument();
+    expect(screen.getByText("This pairing has ended.")).toBeInTheDocument();
+    expect(
+      screen.queryByText("No matching details available."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("should keep the congratulations copy while a live pairing remains", async () => {
+    // Changing mentor mid-round leaves both pairings in the result. One of
+    // them is current, so the round's own copy still holds.
+    render(
+      <MatchingResultDialog
+        {...defaultProps}
+        matchData={{
+          currentStatus: MatchStatus.MATCHED,
+          partners: [
+            endedPartner,
+            {
+              id: "p3",
+              firstName: "John",
+              lastName: "Doe",
+              primaryEmail: "john@example.com",
+              participantRole: "mentor",
+              isActive: true,
+            },
+          ],
+        }}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /view matching result/i }),
+    );
+
+    expect(screen.getByText("Congratulations!")).toBeInTheDocument();
+    expect(screen.getByText("This pairing has ended.")).toBeInTheDocument();
+    expect(screen.getByText("john@example.com")).toBeInTheDocument();
   });
 
   it("should display placeholder content when no partner information is available", () => {
