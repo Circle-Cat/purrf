@@ -16,7 +16,7 @@ from backend.common.mentorship_enums import (
     ParticipantRole,
     TrainingCategory,
 )
-from backend.common.name_utils import partner_display_name
+from backend.common.name_utils import user_display_name
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 
 _EXPORT_BATCH_SIZE = 500
@@ -259,7 +259,7 @@ class MentorshipAdminService:
         partner = self._get_partner_user(row, users_map)
         if partner:
             matched_user_id = partner.user_id
-            matched_user_name = partner_display_name(
+            matched_user_name = user_display_name(
                 first_name=partner.first_name,
                 last_name=partner.last_name,
                 preferred_name=partner.preferred_name,

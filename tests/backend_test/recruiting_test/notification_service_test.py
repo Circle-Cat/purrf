@@ -98,6 +98,44 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(item.applicant_name, "Ada Lovelace")
         self.assertEqual(item.actor_name, "Grace Hopper")
 
+    async def test_list_for_user_names_the_actor_by_preferred_and_applicant_legally(
+        self,
+    ):
+        """The bell names a colleague by preference, the candidate legally."""
+        row = self._notification()
+        self.notification_repo.list_by_user = AsyncMock(return_value=[row])
+        self.notification_repo.count_by_user = AsyncMock(return_value=1)
+        job = JobEntity(
+            kind=JobKind.ACTIVITY, title="Backend Engineer", status=JobStatus.PUBLISHED
+        )
+        job.job_id = 1
+        application = ApplicationEntity(
+            job_id=1, user_id=3, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        application.application_id = 10
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        applicant = UsersEntity(
+            first_name="Ada", last_name="Lovelace", preferred_name="Addy"
+        )
+        applicant.user_id = 3
+        actor = UsersEntity(
+            first_name="Grace", last_name="Hopper", preferred_name="Amazing Grace"
+        )
+        actor.user_id = 9
+
+        async def get_user(session, user_id):
+            return {3: applicant, 9: actor}[user_id]
+
+        self.users_repo.get_user_by_user_id = AsyncMock(side_effect=get_user)
+
+        item = (
+            await self.service.list_for_user(self.session, user_id=2)
+        ).notifications[0]
+
+        self.assertEqual(item.applicant_name, "Ada Lovelace")
+        self.assertEqual(item.actor_name, "Amazing Grace")
+
     async def test_list_for_user_resolves_job_scoped_display_fields(self):
         row = self._notification(
             event=self._event(

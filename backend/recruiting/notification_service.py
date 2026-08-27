@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.common.name_utils import display_name_of
 from backend.entity.event_entity import EventEntity
 from backend.dto.notification_dto import (
     NotificationDto,
@@ -43,12 +44,27 @@ class RecruitingNotificationService:
         self.job_repository = job_repository
         self.users_repository = users_repository
 
-    async def _display_name(self, session: AsyncSession, user_id: int | None) -> str:
-        """Resolve a user id to "First Last", or "" if missing/None."""
+    async def _candidate_name(self, session: AsyncSession, user_id: int | None) -> str:
+        """Resolve a candidate id to their legal "First Last", or "".
+
+        A candidate is named the way their application names them, so a
+        preferred name on their profile does not apply here.
+        """
         if user_id is None:
             return ""
         user = await self.users_repository.get_user_by_user_id(session, user_id)
         return f"{user.first_name} {user.last_name}".strip() if user is not None else ""
+
+    async def _actor_name(self, session: AsyncSession, user_id: int | None) -> str:
+        """Resolve an acting colleague's id to their display name, or "".
+
+        The actor is internal, so the shared rule applies: preferred name
+        first, full name as the fallback.
+        """
+        if user_id is None:
+            return ""
+        user = await self.users_repository.get_user_by_user_id(session, user_id)
+        return display_name_of(user)
 
     async def _to_dto(self, session: AsyncSession, row) -> NotificationDto:
         """Resolve one notification row into what the bell renders.
@@ -80,14 +96,16 @@ class RecruitingNotificationService:
                 )
                 job_title = job.title if job is not None else ""
                 job_kind = job.kind if job is not None else None
-                applicant_name = await self._display_name(session, application.user_id)
+                applicant_name = await self._candidate_name(
+                    session, application.user_id
+                )
         elif event is not None and event.subject_type == "job":
             job = await self.job_repository.get_by_job_id(session, event.subject_id)
             job_title = job.title if job is not None else ""
             job_kind = job.kind if job is not None else None
 
         actor_name = (
-            await self._display_name(session, event.actor_id)
+            await self._actor_name(session, event.actor_id)
             if event is not None and event.actor_id is not None
             else None
         )

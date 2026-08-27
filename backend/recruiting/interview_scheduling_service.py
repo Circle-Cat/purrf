@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exceptions import MeetingGoneError
+from backend.common.name_utils import display_name_of
 from backend.common.recruiting_enums import ApplicationStage, RecruitingEvent
 from backend.dto.interview_dto import InterviewDto, InterviewScheduleRequestDto
 from backend.dto.user_context_dto import UserContextDto
@@ -65,10 +66,15 @@ def _meeting_title(candidate_first_name: str, stage: ApplicationStage) -> str:
     return f"{candidate_first_name}/{_COMPANY_NAME}, {_STAGE_TITLES[stage]}"
 
 
-def _full_name(user) -> str | None:
+def _staff_name(user) -> str | None:
+    """The interviewer/scheduler name, or None when the row is gone.
+
+    They are colleagues, so the preferred name wins. The candidate is named
+    separately by ``_meeting_title``, which keeps their legal first name.
+    """
     if user is None:
         return None
-    return f"{user.first_name} {user.last_name}".strip()
+    return display_name_of(user)
 
 
 class InterviewSchedulingService:
@@ -282,8 +288,8 @@ class InterviewSchedulingService:
         return self.recruiting_mapper.to_interview_dto(
             interview,
             assignee_id=dto.assignee_id,
-            assignee_name=_full_name(assignee),
-            scheduled_by_name=_full_name(scheduler),
+            assignee_name=_staff_name(assignee),
+            scheduled_by_name=_staff_name(scheduler),
         )
 
     async def update(
@@ -413,8 +419,8 @@ class InterviewSchedulingService:
         return self.recruiting_mapper.to_interview_dto(
             interview,
             assignee_id=dto.assignee_id,
-            assignee_name=_full_name(assignee),
-            scheduled_by_name=_full_name(scheduler),
+            assignee_name=_staff_name(assignee),
+            scheduled_by_name=_staff_name(scheduler),
         )
 
     async def cancel(

@@ -14,6 +14,7 @@ from backend.dto.job_activity_dto import JobActivityDto
 from backend.dto.job_config_dto import question_seq_floor
 from backend.dto.job_dto import JobCreateDto, JobDto, PublicJobSummaryDto
 from backend.dto.job_review_dto import ApproverDto, JobReviewDto
+from backend.common.name_utils import display_name_of
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import (
     JobReviewKind,
@@ -1126,9 +1127,7 @@ class JobService:
         rows = await self.event_repository.list_by_subject(session, "job", job_id)
         actor_ids = {row.actor_id for row in rows if row.actor_id is not None}
         users = await self.users_repository.get_all_by_ids(session, list(actor_ids))
-        names_by_id = {
-            u.user_id: f"{u.first_name} {u.last_name}".strip() for u in users
-        }
+        names_by_id = {u.user_id: display_name_of(u) for u in users}
         return [
             JobActivityDto(
                 id=row.event_id,

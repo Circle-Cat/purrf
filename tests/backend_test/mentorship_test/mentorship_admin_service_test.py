@@ -607,7 +607,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             row, users_map, trainings_map={}, rounds_map={}
         )
 
-        # partner's preferred_name ("@pref") wins per partner_display_name and
+        # partner's preferred_name ("@pref") wins per user_display_name and
         # gets sanitized after combining.
         self.assertEqual(participant[5], "'@pref")  # matched_user_name
 
