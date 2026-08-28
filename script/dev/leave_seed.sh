@@ -42,9 +42,19 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
     exit 2
 fi
 
-# SQLAlchemy names its driver in the URL and psql does not understand that
-# spelling, so postgresql+asyncpg:// has to come back down to postgresql://.
+# DATABASE_URL is written for SQLAlchemy and asyncpg, and psql understands
+# neither dialect of it. Two things have to be translated:
+#
+#   postgresql+asyncpg://  ->  postgresql://    the driver is not part of a URI
+#   ?ssl=                  ->  ?sslmode=        libpq's name for the same thing,
+#                                               and it takes require/disable
+#                                               rather than true/false
 DB_URL="${DATABASE_URL/+asyncpg/}"
+DB_URL="$(printf '%s' "$DB_URL" | sed -E '
+    s/([?&])ssl=true/\1sslmode=require/I
+    s/([?&])ssl=false/\1sslmode=disable/I
+    s/([?&])ssl=/\1sslmode=/I
+')"
 
 # ON_ERROR_STOP matters: without it a failure halfway leaves half the fixture
 # behind and still exits 0.
