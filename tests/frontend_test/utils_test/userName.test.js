@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { partnerDisplayName } from "@/utils/partnerName";
+import { userDisplayName } from "@/utils/userName";
 
-describe("partnerDisplayName", () => {
+describe("userDisplayName", () => {
   it("uses the preferred name when present", () => {
     expect(
-      partnerDisplayName({
+      userDisplayName({
         preferredName: "Ali",
         firstName: "Alice",
         lastName: "Anderson",
@@ -14,7 +14,7 @@ describe("partnerDisplayName", () => {
 
   it("falls back to the full name when preferred name is missing", () => {
     expect(
-      partnerDisplayName({
+      userDisplayName({
         preferredName: "",
         firstName: "Alice",
         lastName: "Anderson",
@@ -24,7 +24,7 @@ describe("partnerDisplayName", () => {
 
   it("falls back to the full name when preferred name is null", () => {
     expect(
-      partnerDisplayName({
+      userDisplayName({
         preferredName: null,
         firstName: "Alice",
         lastName: "Anderson",
@@ -33,12 +33,12 @@ describe("partnerDisplayName", () => {
   });
 
   it("trims whitespace and tolerates a missing last name", () => {
-    expect(
-      partnerDisplayName({ firstName: "Alice", lastName: undefined }),
-    ).toBe("Alice");
+    expect(userDisplayName({ firstName: "Alice", lastName: undefined })).toBe(
+      "Alice",
+    );
   });
 
   it("returns an empty string when given nothing", () => {
-    expect(partnerDisplayName(undefined)).toBe("");
+    expect(userDisplayName(undefined)).toBe("");
   });
 });

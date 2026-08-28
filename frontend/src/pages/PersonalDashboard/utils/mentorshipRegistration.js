@@ -1,4 +1,4 @@
-import { partnerDisplayName } from "@/utils/partnerName";
+import { userDisplayName } from "@/utils/userName";
 
 export const CAREER_TRANSITION_OPTIONS = [
   {
@@ -144,13 +144,13 @@ export const mapRegistrationToForm = (registration, allPastPartners) => {
       .filter((p) => roundPref.expectedPartnerIds?.includes(p.id))
       .map((p) => ({
         id: p.id,
-        name: partnerDisplayName(p),
+        name: userDisplayName(p),
       })),
     excludedPartners: allPastPartners
       .filter((p) => roundPref.unexpectedPartnerIds?.includes(p.id))
       .map((p) => ({
         id: p.id,
-        name: partnerDisplayName(p),
+        name: userDisplayName(p),
       })),
     // Mentor survey fields
     careerTransition: survey.careerTransition || "",

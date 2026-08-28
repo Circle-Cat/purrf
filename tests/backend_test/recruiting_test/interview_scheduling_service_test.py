@@ -101,10 +101,16 @@ class _BaseTest(unittest.IsolatedAsyncioTestCase):
         # recruiter silently inherit the candidate's name, so this is
         # keyed by id (mirrors board_service_test.py's `_users_by_id`).
         self._users_by_id({
-            CANDIDATE_ID: SimpleNamespace(first_name="Ana", last_name="Lopez"),
-            ASSIGNEE_ID: SimpleNamespace(first_name="Ivy", last_name="Interviewer"),
-            OWNER_ID: SimpleNamespace(first_name="Rae", last_name="Recruiter"),
+            CANDIDATE_ID: self._person("Ana", "Lopez"),
+            ASSIGNEE_ID: self._person("Ivy", "Interviewer"),
+            OWNER_ID: self._person("Rae", "Recruiter"),
         })
+
+    def _person(self, first, last, preferred=None):
+        """A users row as the service reads it: three name columns."""
+        return SimpleNamespace(
+            first_name=first, last_name=last, preferred_name=preferred
+        )
 
     def _users_by_id(self, rows):
         async def lookup(_session, user_id):
@@ -233,6 +239,38 @@ class ScheduleTest(_BaseTest):
         )
         passed_summary = self.meeting_svc.schedule.call_args.args[1]
         self.assertEqual(passed_summary, "Ana/Circle Cat, Behavioral")
+
+    async def test_names_interview_staff_by_their_preferred_name(self):
+        """Interviewer and scheduler are colleagues, named by the shared rule."""
+        self._users_by_id({
+            CANDIDATE_ID: self._person("Ana", "Lopez"),
+            ASSIGNEE_ID: self._person("Ivy", "Interviewer", preferred="Iv"),
+            OWNER_ID: self._person("Rae", "Recruiter", preferred="Ray"),
+        })
+
+        result = await self.service.schedule(
+            self.session, self._ctx(), APPLICATION_ID, self._dto()
+        )
+
+        self.assertEqual(result.assignee_name, "Iv")
+        self.assertEqual(result.scheduled_by_name, "Ray")
+
+    async def test_calendar_title_uses_the_candidates_legal_first_name(self):
+        """The invitation a candidate receives names them legally."""
+        self._users_by_id({
+            CANDIDATE_ID: self._person("Ana", "Lopez", preferred="Annie"),
+            ASSIGNEE_ID: self._person("Ivy", "Interviewer"),
+            OWNER_ID: self._person("Rae", "Recruiter"),
+        })
+
+        await self.service.schedule(
+            self.session, self._ctx(), APPLICATION_ID, self._dto()
+        )
+
+        self.assertEqual(
+            self.meeting_svc.schedule.call_args.args[1],
+            "Ana/Circle Cat, Behavioral",
+        )
 
     async def test_tech_stage_title_says_technical(self):
         self.application.stage = ApplicationStage.TECH
@@ -471,10 +509,18 @@ class UpdateTest(_BaseTest):
     async def test_swaps_the_interviewer_and_overwrites_the_assignment(self):
         new_assignee = 55
         self._users_by_id({
-            CANDIDATE_ID: SimpleNamespace(first_name="Ana", last_name="Lopez"),
-            ASSIGNEE_ID: SimpleNamespace(first_name="Ivy", last_name="Interviewer"),
-            OWNER_ID: SimpleNamespace(first_name="Rae", last_name="Recruiter"),
-            new_assignee: SimpleNamespace(first_name="Sam", last_name="Sub"),
+            CANDIDATE_ID: SimpleNamespace(
+                first_name="Ana", last_name="Lopez", preferred_name=None
+            ),
+            ASSIGNEE_ID: SimpleNamespace(
+                first_name="Ivy", last_name="Interviewer", preferred_name=None
+            ),
+            OWNER_ID: SimpleNamespace(
+                first_name="Rae", last_name="Recruiter", preferred_name=None
+            ),
+            new_assignee: SimpleNamespace(
+                first_name="Sam", last_name="Sub", preferred_name=None
+            ),
         })
         dto = self._dto(assignee_id=new_assignee)
         result = await self.service.update(
@@ -540,10 +586,18 @@ class UpdateTest(_BaseTest):
         # _ASSIGNEE_NAME_FIELDS, which resolves it from this same dict.
         new_assignee = 55
         self._users_by_id({
-            CANDIDATE_ID: SimpleNamespace(first_name="Ana", last_name="Lopez"),
-            ASSIGNEE_ID: SimpleNamespace(first_name="Ivy", last_name="Interviewer"),
-            OWNER_ID: SimpleNamespace(first_name="Rae", last_name="Recruiter"),
-            new_assignee: SimpleNamespace(first_name="Sam", last_name="Sub"),
+            CANDIDATE_ID: SimpleNamespace(
+                first_name="Ana", last_name="Lopez", preferred_name=None
+            ),
+            ASSIGNEE_ID: SimpleNamespace(
+                first_name="Ivy", last_name="Interviewer", preferred_name=None
+            ),
+            OWNER_ID: SimpleNamespace(
+                first_name="Rae", last_name="Recruiter", preferred_name=None
+            ),
+            new_assignee: SimpleNamespace(
+                first_name="Sam", last_name="Sub", preferred_name=None
+            ),
         })
         dto = self._dto(
             assignee_id=new_assignee, day=date(2026, 8, 6), start_time="15:00"

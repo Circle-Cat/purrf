@@ -16,10 +16,11 @@ from tests.backend_test.repository_test.base_repository_test_lib import (
 )
 
 
-def _make_user(first_name="U", last_name="Ser") -> UsersEntity:
+def _make_user(first_name="U", last_name="Ser", preferred_name=None) -> UsersEntity:
     return UsersEntity(
         first_name=first_name,
         last_name=last_name,
+        preferred_name=preferred_name,
         timezone="America/Los_Angeles",
         timezone_updated_at=datetime.now(timezone.utc),
         communication_channel=CommunicationMethod.EMAIL,
@@ -219,6 +220,28 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
 
         self.assertEqual(
             subject, "Grace Hopper mentioned you: Ada Lovelace (Backend Engineer)"
+        )
+
+    async def test_mentioned_names_the_actor_by_preference_the_candidate_legally(self):
+        """One line, two rules: the colleague acting and the candidate named.
+
+        Both go through the same renderer, so a single resolver applied to
+        both would silently pull the candidate's preferred name into mail
+        that is a record of their application.
+        """
+        actor = _make_user("Grace", "Hopper", preferred_name="Amazing Grace")
+        candidate = _make_user("Ada", "Lovelace", preferred_name="Addy")
+        await self.insert_entities([actor, candidate])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        event = await self._make_event(
+            "recruiting.mentioned", "application", application.application_id, actor
+        )
+
+        subject, _ = await render_registry.render(self.session, event)
+
+        self.assertEqual(
+            subject, "Amazing Grace mentioned you: Ada Lovelace (Backend Engineer)"
         )
 
     async def test_auto_assigned_reads_as_automatic_when_the_event_has_no_actor(self):

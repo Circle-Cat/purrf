@@ -266,3 +266,52 @@ py_test(
         "//backend/entity:entities",
     ],
 )
+
+py_test(
+    name = "leave_holiday_repository_test",
+    srcs = ["leave_holiday_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "leave_ledger_repository_test",
+    srcs = ["leave_ledger_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:leave_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "user_emails_bulk_lookup_test",
+    srcs = ["user_emails_bulk_lookup_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "leave_request_repository_test",
+    srcs = ["leave_request_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:leave_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)

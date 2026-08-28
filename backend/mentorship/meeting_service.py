@@ -9,7 +9,7 @@ from backend.common.mentorship_enums import (
     MeetingSource,
     PairStatus,
 )
-from backend.common.name_utils import partner_display_name
+from backend.common.name_utils import user_display_name
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.dto.meeting_dto import MeetingDto
 from backend.dto.meeting_create_dto import MeetingCreateDto
@@ -332,12 +332,12 @@ class MeetingService:
         pair, partner = pair_result
 
         # Build summary
-        current_user_name = partner_display_name(
+        current_user_name = user_display_name(
             first_name=current_user.first_name,
             last_name=current_user.last_name,
             preferred_name=current_user.preferred_name,
         )
-        partner_name = partner_display_name(
+        partner_name = user_display_name(
             first_name=partner.first_name,
             last_name=partner.last_name,
             preferred_name=partner.preferred_name,

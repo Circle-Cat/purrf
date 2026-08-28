@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Calendar } from "@/components/ui/calendar";
-import { partnerDisplayName } from "@/utils/partnerName";
+import { userDisplayName } from "@/utils/userName";
 import {
   Popover,
   PopoverContent,
@@ -282,7 +282,15 @@ export default function MeetingManagementDialog({
     }
   };
 
-  const partnerList = partners ? Array.from(partners.values()) : [];
+  // The map doubles as the name lookup for meetings already held, so it
+  // carries pairings that have ended. Those are not somewhere a new meeting
+  // can be booked -- the backend refuses one without a live pair -- so only
+  // current partners are offered.
+  const partnerList = partners
+    ? Array.from(partners.values()).filter(
+        (partner) => partner.isActive !== false,
+      )
+    : [];
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
@@ -348,7 +356,7 @@ export default function MeetingManagementDialog({
                       <option value="">Choose a partner</option>
                       {partnerList.map((partner) => (
                         <option key={partner.id} value={partner.id}>
-                          {partnerDisplayName(partner)}
+                          {userDisplayName(partner)}
                         </option>
                       ))}
                     </select>

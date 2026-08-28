@@ -10,3 +10,6 @@ class PartnerDto(BaseDto):
     primary_email: str | None = None
     participant_role: ParticipantRole | None = None
     recommendation_reason: str | None = None
+    # Whether this pairing is the user's current one. None when partners were
+    # read across rounds, where no single pairing answers it.
+    is_active: bool | None = None

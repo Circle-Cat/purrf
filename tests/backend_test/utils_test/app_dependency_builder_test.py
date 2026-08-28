@@ -369,6 +369,9 @@ class TestAppDependencyBuilder(TestCase):
             redis_client=mock_redis_client,
             microsoft_service=mock_microsoft_service.return_value,
             retry_utils=mock_retry_utils_instance,
+            database=mock_database_cls.return_value,
+            leave_ledger_repository=ANY,
+            participant_resolver=ANY,
         )
         mock_microsoft_chat_history_sync_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -614,6 +617,10 @@ class TestAppDependencyBuilder(TestCase):
             evaluation_controller=ANY,
             audit_controller=ANY,
             recruiting_notification_controller=ANY,
+            leave_admin_controller=ANY,
+            leave_job_controller=ANY,
+            leave_request_controller=ANY,
+            leave_calendar_controller=ANY,
             notification_delivery_controller=ANY,
             notification_publisher=mock_notification_publisher_client,
             notification_topic_path="projects/test-project/topics/notifications",

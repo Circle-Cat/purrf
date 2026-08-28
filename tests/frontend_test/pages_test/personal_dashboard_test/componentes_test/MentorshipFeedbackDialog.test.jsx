@@ -109,8 +109,18 @@ const defaultProps = {
 };
 
 const multiplePartners = [
-  { id: 20, preferredName: "Bob Smith" },
-  { id: 21, preferredName: "Jennifer Martinez" },
+  {
+    id: 20,
+    firstName: "Robert",
+    lastName: "Smith",
+    preferredName: "Bob Smith",
+  },
+  {
+    id: 21,
+    firstName: "Jennifer",
+    lastName: "Martinez",
+    preferredName: "Jennifer Martinez",
+  },
 ];
 
 describe("MentorshipFeedbackDialog", () => {
@@ -530,6 +540,54 @@ describe("MentorshipFeedbackDialog", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByPlaceholderText("Share feedback about Jennifer Martinez..."),
+    ).toBeInTheDocument();
+  });
+
+  it("asks about a partner whose pairing has ended", async () => {
+    // The mentorship happened; that the partner has since left the round
+    // does not take it back, so it is still theirs to reflect on.
+    getMyMentorshipPartners.mockResolvedValue({
+      data: [
+        {
+          id: 23,
+          firstName: "Bob",
+          lastName: "Left",
+          preferredName: null,
+          isActive: false,
+        },
+      ],
+    });
+    render(<MentorshipFeedbackDialog {...defaultProps} />);
+    await waitFor(() => screen.getByText("Submit Feedback"));
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    expect(
+      screen.getByPlaceholderText("Share feedback about Bob Left..."),
+    ).toBeInTheDocument();
+  });
+
+  it("names a partner by their full name when they have no preferred name", async () => {
+    getMyMentorshipPartners.mockResolvedValue({
+      data: [
+        { id: 22, firstName: "Robert", lastName: "Smith", preferredName: null },
+      ],
+    });
+    render(<MentorshipFeedbackDialog {...defaultProps} />);
+    await waitFor(() => screen.getByText("Submit Feedback"));
+    await user.click(screen.getByText("Toggle Dialog"));
+
+    expect(
+      screen.getByText(
+        /How was your overall experience working with your mentor Robert Smith\?/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /What feedback would you like to share about your mentor Robert Smith\?/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("Share feedback about Robert Smith..."),
     ).toBeInTheDocument();
   });
 

@@ -15,7 +15,7 @@ import { showReminderToast } from "@/components/common/showReminderToast";
 import { Info } from "lucide-react";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
 import SurveyRadioQuestion from "@/pages/PersonalDashboard/components/SurveyRadioQuestion";
-import { partnerDisplayName } from "@/utils/partnerName";
+import { userDisplayName } from "@/utils/userName";
 import {
   INDUSTRY_CONFIG,
   SKILLSET_CONFIG,
@@ -330,7 +330,7 @@ export default function MentorshipRegistrationDialog({
     return allPastPartners
       .map((p) => ({
         id: p.id,
-        name: partnerDisplayName(p),
+        name: userDisplayName(p),
       }))
       .filter((opt) => !excludedIds.includes(opt.id));
   }, [allPastPartners, excludedPartners]);
@@ -344,7 +344,7 @@ export default function MentorshipRegistrationDialog({
     return allPastPartners
       .map((p) => ({
         id: p.id,
-        name: partnerDisplayName(p),
+        name: userDisplayName(p),
       }))
       .filter((opt) => !selectedIds.includes(opt.id));
   }, [allPastPartners, selectedPartners]);

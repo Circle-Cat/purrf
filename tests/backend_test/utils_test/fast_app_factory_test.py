@@ -33,6 +33,10 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            leave_admin_controller=self.mock_controller,
+            leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
+            leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -58,6 +62,10 @@ class TestFastAppFactory(unittest.TestCase):
         self.assertEqual(self.factory.board_controller, self.mock_controller)
         self.assertEqual(self.factory.evaluation_controller, self.mock_controller)
         self.assertEqual(self.factory.audit_controller, self.mock_controller)
+        self.assertEqual(self.factory.leave_calendar_controller, self.mock_controller)
+        self.assertEqual(self.factory.leave_admin_controller, self.mock_controller)
+        self.assertEqual(self.factory.leave_job_controller, self.mock_controller)
+        self.assertEqual(self.factory.leave_request_controller, self.mock_controller)
 
     def test_create_app_returns_fastapi_instance(self):
         """Test that create_app returns a FastAPI application instance."""
@@ -108,6 +116,10 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            leave_admin_controller=self.mock_controller,
+            leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
+            leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -151,6 +163,10 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            leave_admin_controller=self.mock_controller,
+            leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
+            leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -165,6 +181,100 @@ class TestFastAppFactory(unittest.TestCase):
             "/api/recruiting/applications/ping",
             {route.path for route in app.routes},
         )
+
+    def test_leave_admin_routes_are_mounted(self):
+        """The leave admin controller's router is mounted under /api."""
+        leave_admin = MagicMock()
+        router = APIRouter()
+
+        @router.post("/leave/admin-ping")
+        def _ping():
+            return {}
+
+        leave_admin.router = router
+        factory = FastAppFactory(
+            authentication_controller=self.mock_controller,
+            authentication_service=self.mock_service,
+            user_identity_service=MagicMock(),
+            user_permissions_repository=MagicMock(),
+            notification_controller=self.mock_controller,
+            historical_controller=self.mock_controller,
+            consumer_controller=self.mock_controller,
+            internal_activity_controller=self.mock_controller,
+            profile_controller=self.mock_profile_controller,
+            mentorship_controller=self.mock_controller,
+            mentorship_admin_controller=self.mock_controller,
+            email_management_controller=self.mock_controller,
+            permission_admin_controller=self.mock_controller,
+            recruiting_controller=self.mock_controller,
+            application_controller=self.mock_controller,
+            board_controller=self.mock_controller,
+            blacklist_controller=self.mock_controller,
+            evaluation_controller=self.mock_controller,
+            audit_controller=self.mock_controller,
+            recruiting_notification_controller=self.mock_controller,
+            leave_admin_controller=leave_admin,
+            leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
+            leave_calendar_controller=self.mock_controller,
+            notification_delivery_controller=self.mock_controller,
+            notification_publisher=MagicMock(),
+            notification_topic_path="projects/p/topics/t",
+            launchdarkly_client=MagicMock(),
+            database=MagicMock(),
+            logger=MagicMock(),
+        )
+
+        app = factory.create_app()
+
+        self.assertIn("/api/leave/admin-ping", {route.path for route in app.routes})
+
+    def test_leave_calendar_routes_are_mounted(self):
+        """The leave calendar controller's router is mounted under /api."""
+        leave_calendar = MagicMock()
+        router = APIRouter()
+
+        @router.get("/leave/ping")
+        def _ping():
+            return {}
+
+        leave_calendar.router = router
+        factory = FastAppFactory(
+            authentication_controller=self.mock_controller,
+            authentication_service=self.mock_service,
+            user_identity_service=MagicMock(),
+            user_permissions_repository=MagicMock(),
+            notification_controller=self.mock_controller,
+            historical_controller=self.mock_controller,
+            consumer_controller=self.mock_controller,
+            internal_activity_controller=self.mock_controller,
+            profile_controller=self.mock_profile_controller,
+            mentorship_controller=self.mock_controller,
+            mentorship_admin_controller=self.mock_controller,
+            email_management_controller=self.mock_controller,
+            permission_admin_controller=self.mock_controller,
+            recruiting_controller=self.mock_controller,
+            application_controller=self.mock_controller,
+            board_controller=self.mock_controller,
+            blacklist_controller=self.mock_controller,
+            evaluation_controller=self.mock_controller,
+            audit_controller=self.mock_controller,
+            recruiting_notification_controller=self.mock_controller,
+            leave_admin_controller=self.mock_controller,
+            leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
+            leave_calendar_controller=leave_calendar,
+            notification_delivery_controller=self.mock_controller,
+            notification_publisher=MagicMock(),
+            notification_topic_path="projects/p/topics/t",
+            launchdarkly_client=MagicMock(),
+            database=MagicMock(),
+            logger=MagicMock(),
+        )
+
+        app = factory.create_app()
+
+        self.assertIn("/api/leave/ping", {route.path for route in app.routes})
 
     def test_audit_routes_are_mounted(self):
         """The audit controller's router is mounted under /api."""
@@ -197,6 +307,10 @@ class TestFastAppFactory(unittest.TestCase):
             evaluation_controller=self.mock_controller,
             audit_controller=audit,
             recruiting_notification_controller=self.mock_controller,
+            leave_admin_controller=self.mock_controller,
+            leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
+            leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -242,6 +356,10 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            leave_admin_controller=self.mock_controller,
+            leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
+            leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -288,6 +406,10 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=blacklist,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            leave_admin_controller=self.mock_controller,
+            leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
+            leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -333,6 +455,10 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=evaluation,
             recruiting_notification_controller=self.mock_controller,
+            leave_admin_controller=self.mock_controller,
+            leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
+            leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -387,6 +513,10 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            leave_admin_controller=self.mock_controller,
+            leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
+            leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=delivery_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -442,6 +572,10 @@ class TestFastAppFactory(unittest.TestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            leave_admin_controller=self.mock_controller,
+            leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
+            leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -520,6 +654,10 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
             blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
+            leave_admin_controller=self.mock_controller,
+            leave_job_controller=self.mock_controller,
+            leave_request_controller=self.mock_controller,
+            leave_calendar_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",

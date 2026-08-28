@@ -438,6 +438,7 @@ export const useMentorshipData = ({
           completedRate,
           meetingTimeList: info?.meetingTimeList || [],
           participantRole: info?.participantRole,
+          isActive: partner.isActive,
         };
       });
 

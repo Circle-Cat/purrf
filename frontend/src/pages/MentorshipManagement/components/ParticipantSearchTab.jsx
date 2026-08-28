@@ -14,12 +14,13 @@ import {
 } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import Table from "@/components/common/Table";
 import { useParticipantSearch } from "@/pages/MentorshipManagement/hooks/useParticipantSearch";
 import { getParticipantExportUrl } from "@/api/mentorshipApi";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
 import { MentorshipApprovalStatus } from "@/constants/MentorshipApprovalStatus";
-import { partnerDisplayName } from "@/utils/partnerName";
+import { userDisplayName } from "@/utils/userName";
 import MeetingLogDialog from "@/pages/MentorshipManagement/components/MeetingLogDialog";
 import { useMeetingLog } from "@/pages/MentorshipManagement/hooks/useMeetingLog";
 
@@ -46,6 +47,24 @@ const BASE_COLUMNS = [
   { header: "Primary Email", accessor: "primaryEmail" },
   { header: "Alternative Email(s)", accessor: "alternativeEmails" },
 ];
+
+/**
+ * The participation outcome as an admin should read it.
+ *
+ * `rejected` is stored for two different outcomes: the person applied and was
+ * not accepted, or they took part and then left -- quit, removed, or a mentor
+ * suspended mid-round. Holding a pair in that round is what tells them apart,
+ * since a pairing only exists once they took part. Someone who left before
+ * being paired is indistinguishable and reads as not accepted, which is what
+ * the data says.
+ *
+ * @param {{approvalStatus: string|null, pairId: number|null}} row - A search row.
+ * @returns {string|null} The status to display, or the raw value unchanged.
+ */
+const participationStatusLabel = (row) =>
+  row.approvalStatus === MentorshipApprovalStatus.REJECTED && row.pairId != null
+    ? "ended"
+    : row.approvalStatus;
 
 const PARTICIPANT_EXTRA_COLUMNS = [
   { header: "Round", accessor: "round" },
@@ -104,17 +123,6 @@ function triggerDownload(url) {
   const link = document.createElement("a");
   link.href = url;
   link.click();
-}
-
-/**
- * Resolves the display name for the row's subject.
- * Separate from `partnerDisplayName`, which only applies to the partner.
- */
-function subjectDisplayName(row) {
-  return (
-    row.preferredName?.trim() ||
-    `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim()
-  );
 }
 
 /**
@@ -218,9 +226,9 @@ const ParticipantSearchTab = ({ participationStatus, rounds }) => {
     setActivePair({
       pairId: row.pairId,
       roundName: row.roundName,
-      subjectName: subjectDisplayName(row),
+      subjectName: userDisplayName(row),
       subjectRole: row.participantRole,
-      partnerName: row.matchedUser ? partnerDisplayName(row.matchedUser) : null,
+      partnerName: row.matchedUser ? userDisplayName(row.matchedUser) : null,
       partnerRole:
         row.participantRole === MentorshipParticipantRoles.MENTEE
           ? MentorshipParticipantRoles.MENTOR
@@ -284,14 +292,23 @@ const ParticipantSearchTab = ({ participationStatus, rounds }) => {
         ...(isParticipant && {
           round: row.roundName ?? "—",
           role: row.participantRole ?? "—",
-          approvalStatus: row.approvalStatus ?? "—",
+          approvalStatus: participationStatusLabel(row) ?? "—",
           onboardingStatus:
             (row.participantRole === MentorshipParticipantRoles.MENTEE
               ? row.menteeOnboardingStatus
               : row.mentorOnboardingStatus) ?? "—",
-          matchedUser: row.matchedUser
-            ? partnerDisplayName(row.matchedUser)
-            : "—",
+          matchedUser: row.matchedUser ? (
+            <span className="inline-flex items-center gap-2">
+              {userDisplayName(row.matchedUser)}
+              {row.matchedUser.isActive === false && (
+                <Badge variant="secondary" className="font-normal">
+                  Ended
+                </Badge>
+              )}
+            </span>
+          ) : (
+            "—"
+          ),
           meetings: (
             <MeetingsCell
               pairId={row.pairId}

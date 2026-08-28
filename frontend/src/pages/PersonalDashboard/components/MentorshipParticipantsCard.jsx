@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import MeetingSubmissionModal from "@/pages/PersonalDashboard/components/MeetingSubmissionModal";
-import { partnerDisplayName } from "@/utils/partnerName";
+import { userDisplayName } from "@/utils/userName";
 import MeetingOverviewCard from "@/pages/PersonalDashboard/components/MeetingOverviewCard";
 import MentorshipFeedbackDialog from "@/pages/PersonalDashboard/components/MentorshipFeedbackDialog";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
@@ -66,15 +66,21 @@ export default function MentorshipParticipantsCard({
     partnerMeetingOverview?.length > 0 &&
     participantRole;
 
+  // A pairing that ended -- the mentor changed mid-round, or the partner left
+  // the program -- still belongs on the card: the meetings held with them are
+  // this user's participation. It is not somewhere new meetings can go, so
+  // only the live pairings are candidates for submission.
+  const livePairings = (partnerMeetingOverview || []).filter(
+    (overview) => overview.isActive !== false,
+  );
+
   // The submission modal is one per round rather than one per partner, so it
   // can only name a partner while there is exactly one to name -- a mentee and
   // their current mentor. Any other count leaves the target pair ambiguous, so
   // submission is withheld rather than guessing which partner the meeting was
   // held with.
   const submissionPartnerId =
-    partnerMeetingOverview?.length === 1
-      ? partnerMeetingOverview[0].partnerId
-      : null;
+    livePairings.length === 1 ? livePairings[0].partnerId : null;
 
   const deadline = roundInfo?.timeline?.meetingsCompletionDeadlineAt;
   const isSubmitDisabled =
@@ -241,10 +247,18 @@ export default function MentorshipParticipantsCard({
                         href={`mailto:${overview.partnerEmail}`}
                         className="text-primary underline hover:opacity-80"
                       >
-                        {partnerDisplayName(overview)}
+                        {userDisplayName(overview)}
                       </a>
                     ) : (
-                      partnerDisplayName(overview)
+                      userDisplayName(overview)
+                    )}
+                    {overview.isActive === false && (
+                      <Badge
+                        variant="secondary"
+                        className="ml-2 font-normal align-middle"
+                      >
+                        Ended
+                      </Badge>
                     )}
                   </p>
                   <MeetingOverviewCard

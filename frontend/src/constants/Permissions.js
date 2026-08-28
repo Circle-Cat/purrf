@@ -17,4 +17,5 @@ export const PERMISSIONS = {
   RECRUITING_INTERVIEW_EVALUATE: "recruiting.interview.evaluate",
   RECRUITING_BLACKLIST_WRITE: "recruiting.blacklist.write",
   RECRUITING_AUDIT_READ: "recruiting.audit.read",
+  LEAVE_ADMIN: "leave.admin",
 };
