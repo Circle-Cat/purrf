@@ -31,6 +31,7 @@ import { isWithinJoinWindow } from "@/utils/meetingStatusCalculator";
 import { cn } from "@/lib/utils";
 
 import TimezoneSelector from "@/components/common/TimezoneSelector";
+import MeetingLogForm from "@/pages/PersonalDashboard/components/MeetingLogForm";
 import { useMeetingManagement } from "@/pages/PersonalDashboard/hooks/useMeetingManagement";
 import {
   formatLocalYmd,
@@ -64,20 +65,73 @@ const TIME_SLOTS = Array.from({ length: 48 }, (_, i) => {
   return { value: timeStr, label: timeStr };
 });
 
+/**
+ * Placeholder shown inside a tab that exists for this viewer but cannot be
+ * used right now, in place of the form it would otherwise hold.
+ */
+function UnavailableNotice({ reason }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-gray-100 rounded-xl bg-gray-50/50">
+      <CalendarDays className="w-12 h-12 text-gray-200 mb-2" />
+      <p className="text-gray-400 font-medium">{reason}</p>
+    </div>
+  );
+}
+
 export default function MeetingManagementDialog({
   roundId,
+  canSchedule = true,
+  scheduleUnavailableReason = null,
+  canLogPast = false,
+  logPartnerId = null,
+  logUnavailableReason = null,
   onBooked,
+  onLogged,
   userTimezone,
 }) {
+  // Booking a meeting and cancelling one both need a round that is open for
+  // scheduling; logging a meeting already held does not, which is why it reads
+  // `roundId` directly. Passing null here also keeps the hook from fetching
+  // for a round nothing on this side can act on.
+  const scheduleRoundId =
+    canSchedule && !scheduleUnavailableReason ? roundId : null;
+
   const {
     partners,
     bookMeeting,
     uncompletedMeetings = [],
     cancelMeetings,
     isLoading,
-  } = useMeetingManagement(roundId);
+  } = useMeetingManagement(scheduleRoundId);
+
+  // Which tabs this viewer is offered at all, and which of those can be acted
+  // on right now. Both the trigger button and the tab the dialog opens on are
+  // read off this one list, so they cannot disagree.
+  const tabs = [];
+  if (canSchedule) {
+    tabs.push({
+      value: "schedule",
+      label: "Schedule Meeting",
+      unavailableReason: scheduleUnavailableReason,
+    });
+    tabs.push({
+      value: "uncompleted",
+      label: "Uncompleted",
+      unavailableReason: scheduleUnavailableReason,
+    });
+  }
+  if (canLogPast) {
+    tabs.push({
+      value: "log",
+      label: "Log Past Meeting",
+      unavailableReason: logUnavailableReason,
+    });
+  }
+  const usableTabs = tabs.filter((tab) => !tab.unavailableReason);
+  const defaultTab = usableTabs[0]?.value;
+
   const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("schedule");
+  const [activeTab, setActiveTab] = useState(defaultTab);
 
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedTime, setSelectedTime] = useState("");
@@ -201,8 +255,10 @@ export default function MeetingManagementDialog({
     setFormData((prev) => ({ ...prev, timezone: tzValue }));
   };
 
-  const isDisabled = roundId === null || roundId === undefined;
-  const tooltipText = isDisabled ? "No active mentorship round" : undefined;
+  // Nothing behind the button can be acted on, so it opens onto a wall of
+  // placeholders -- say why on the button instead of letting it be clicked.
+  const isDisabled = usableTabs.length === 0;
+  const tooltipText = isDisabled ? tabs[0]?.unavailableReason : undefined;
 
   const closeAndResetDialog = () => {
     setIsOpen(false);
@@ -211,7 +267,7 @@ export default function MeetingManagementDialog({
       setFormData(initialFormState);
       setSelectedDate(null);
       setSelectedTime("");
-      setActiveTab("schedule");
+      setActiveTab(defaultTab);
       setCalendarOpen(false);
     }, 200);
   };
@@ -220,6 +276,7 @@ export default function MeetingManagementDialog({
     if (!open) {
       closeAndResetDialog();
     } else {
+      setActiveTab(defaultTab);
       setIsOpen(true);
     }
   };
@@ -227,7 +284,7 @@ export default function MeetingManagementDialog({
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (isDisabled) {
+    if (scheduleRoundId == null) {
       toast.error("Current round is inactive.");
       return;
     }
@@ -249,7 +306,7 @@ export default function MeetingManagementDialog({
       }
 
       const cleanedPayload = {
-        round_id: Number(roundId),
+        round_id: Number(scheduleRoundId),
         partner_id: Number(formData.partnerId),
         timezone: formData.timezone,
         start_date: formatLocalYmd(selectedDate),
@@ -294,11 +351,13 @@ export default function MeetingManagementDialog({
       )
     : [];
 
+  if (tabs.length === 0) return null;
+
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <div key={roundId} title={tooltipText} className="inline-block">
         <DialogTrigger asChild>
-          <Button variant="default" disabled={isDisabled}>
+          <Button variant="default" size="sm" disabled={isDisabled}>
             <CalendarIcon className="w-4 h-4 mr-2" />
             Manage Meetings
           </Button>
@@ -317,391 +376,438 @@ export default function MeetingManagementDialog({
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <div className="px-6 mt-4">
-            <TabsList className="grid w-full grid-cols-2 p-1.5 h-12 bg-gray-100 rounded-lg">
-              <TabsTrigger
-                value="schedule"
-                className="h-full text-sm font-medium rounded-md text-gray-500 transition-all data-[state=active]:bg-white data-[state=active]:text-[#6035F3] data-[state=active]:shadow-sm"
-              >
-                Schedule Meeting
-              </TabsTrigger>
-              <TabsTrigger
-                value="uncompleted"
-                className="h-full text-sm font-medium rounded-md text-gray-500 transition-all data-[state=active]:bg-white data-[state=active]:text-[#6035F3] data-[state=active]:shadow-sm"
-              >
-                Uncompleted
-              </TabsTrigger>
+            <TabsList
+              className="grid w-full p-1.5 h-12 bg-gray-100 rounded-lg"
+              style={{
+                gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))`,
+              }}
+            >
+              {tabs.map((tab) => (
+                <TabsTrigger
+                  key={tab.value}
+                  value={tab.value}
+                  className="h-full text-sm font-medium rounded-md text-gray-500 transition-all data-[state=active]:bg-white data-[state=active]:text-[#6035F3] data-[state=active]:shadow-sm"
+                >
+                  {tab.label}
+                </TabsTrigger>
+              ))}
             </TabsList>
           </div>
 
           {/* Content Area */}
           <div className="p-4 sm:p-5">
-            {/* Schedule Meeting Form */}
-            <TabsContent
-              value="schedule"
-              className="mt-0 focus-visible:outline-none"
-            >
-              <form onSubmit={handleSubmit} className="space-y-3.5">
-                {/* Mentor / Mentee Selection Dropdown */}
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-gray-700">
-                    Select Partner *
-                  </label>
-                  <div className="relative">
-                    <select
-                      name="partnerId"
-                      aria-label="Select Partner"
-                      value={formData.partnerId}
-                      onChange={handleInputChange}
-                      className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-gray-900 focus:border-[#6035F3] focus:ring-2 focus:ring-[#6035F3]/20 outline-none transition-all"
-                      required
-                    >
-                      <option value="">Choose a partner</option>
-                      {partnerList.map((partner) => (
-                        <option key={partner.id} value={partner.id}>
-                          {userDisplayName(partner)}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-                      <ChevronDown className="w-4 h-4" />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  {/* Timezone */}
-                  <div className="space-y-1.5 min-w-0">
-                    <label className="text-sm font-medium text-gray-700">
-                      Timezone
-                    </label>
-                    <div className="w-full">
-                      <TimezoneSelector
-                        value={formData.timezone}
-                        onChange={handleTimezoneChange}
-                        labelSource="value"
-                        menuPlacement="auto"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Date Picker (Popover + Calendar) */}
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-gray-700">
-                      Start Date *
-                    </label>
-                    <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={cn(
-                            "w-full justify-start text-left font-normal h-[42px] rounded-lg border-gray-300 px-4",
-                            !selectedDate && "text-gray-400",
-                          )}
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4 text-gray-400" />
-                          {selectedDate ? (
-                            format(selectedDate, "PPP")
-                          ) : (
-                            <span>Pick a date</span>
-                          )}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={selectedDate}
-                          onSelect={(date) => {
-                            if (date) {
-                              setSelectedDate(date);
-                              setCalendarOpen(false);
-                            }
-                          }}
-                          disabled={{ before: disableBeforeDate }}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                </div>
-
-                {/* Time Picker and Meeting Duration*/}
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-gray-700">
-                      Start Time *
-                    </label>
-                    <div className="w-full min-w-0 relative">
-                      <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 z-10 pointer-events-none" />
-                      <Select
-                        aria-label="Start Time"
-                        options={TIME_SLOTS}
-                        value={
-                          selectedTime && !isPastTime(selectedTime)
-                            ? TIME_SLOTS.find(
-                                (opt) => opt.value === selectedTime,
-                              )
-                            : null
-                        }
-                        onChange={(opt) => setSelectedTime(opt.value)}
-                        isOptionDisabled={(opt) => isPastTime(opt.value)}
-                        placeholder="Pick a start time"
-                        menuPlacement="auto"
-                        styles={{
-                          control: (provided) => ({
-                            ...provided,
-                            height: "42px",
-                            borderRadius: "8px",
-                            borderColor: "#d1d5db",
-                            boxShadow: "none",
-                            paddingLeft: "26px",
-                            "&:hover": { borderColor: "#d1d5db" },
-                          }),
-                          menu: (provided) => ({
-                            ...provided,
-                            zIndex: 50,
-                          }),
-                          menuList: (provided) => ({
-                            ...provided,
-                            maxHeight: "180px",
-                          }),
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-gray-700">
-                      Duration *
-                    </label>
-                    <div className="relative">
-                      <select
-                        name="duration"
-                        aria-label="Duration"
-                        value={formData.duration}
-                        onChange={handleInputChange}
-                        className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-gray-900 focus:border-[#6035F3] focus:ring-2 focus:ring-[#6035F3]/20 outline-none transition-all"
-                        required
-                      >
-                        {DURATION_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-                        <ChevronDown className="w-4 h-4" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Recurrence: interval + number of sessions */}
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-gray-700">
-                      Repeat every
-                    </label>
-                    <div className="relative">
-                      <select
-                        name="intervalWeeks"
-                        aria-label="Repeat every"
-                        value={formData.intervalWeeks}
-                        onChange={handleInputChange}
-                        className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-gray-900 focus:border-[#6035F3] focus:ring-2 focus:ring-[#6035F3]/20 outline-none transition-all"
-                      >
-                        {INTERVAL_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-                        <ChevronDown className="w-4 h-4" />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-gray-700">
-                      Number of sessions
-                    </label>
-                    <div className="relative">
-                      <select
-                        name="count"
-                        aria-label="Number of sessions"
-                        value={formData.count}
-                        onChange={handleInputChange}
-                        className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-gray-900 focus:border-[#6035F3] focus:ring-2 focus:ring-[#6035F3]/20 outline-none transition-all"
-                      >
-                        {SESSION_COUNT_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-                        <ChevronDown className="w-4 h-4" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Confirm Booking Button */}
-                <div className="flex justify-end pt-4 border-t">
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="flex items-center gap-2 rounded-lg bg-[#6035F3] hover:bg-[#4d2ac2] px-6 py-2.5 font-medium text-white shadow-md transition-all active:scale-95 disabled:bg-gray-400 disabled:active:scale-100"
-                  >
-                    {isLoading ? (
-                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    ) : (
-                      <Plus className="w-5 h-5" />
-                    )}
-                    Confirm Booking
-                  </button>
-                </div>
-              </form>
-            </TabsContent>
-
-            {/* Uncompleted Tab */}
-            <TabsContent
-              value="uncompleted"
-              className="mt-0 focus-visible:outline-none"
-            >
-              {uncompletedLength === 0 ? (
-                /* Empty state placeholder text preserved */
-                <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-gray-100 rounded-xl bg-gray-50/50 my-auto">
-                  <CalendarDays className="w-12 h-12 text-gray-200 mb-2" />
-                  <p className="text-gray-400 font-medium">
-                    No uncompleted meetings found
-                  </p>
-                </div>
-              ) : (
-                <div className="flex flex-col min-h-0 justify-between flex-1 overflow-hidden">
-                  <div className="overflow-hidden">
-                    {/* Top Control Bar: Select All Checkbox */}
-                    <div className="flex items-center space-x-3 pb-3 mb-4 border-b border-gray-100 flex-shrink-0">
-                      <Checkbox
-                        id="select-all-uncompleted"
-                        checked={isAllChecked}
-                        onCheckedChange={handleToggleAll}
-                        disabled={isLoading}
-                      />
-                      <label
-                        htmlFor="select-all-uncompleted"
-                        className="text-sm font-semibold text-gray-700 cursor-pointer select-none"
-                      >
-                        Select All
-                      </label>
-                    </div>
-
-                    {/* Card List */}
-                    <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-200">
-                      {uncompletedMeetings.map((meeting) => {
-                        const isChecked = selectedIds.has(meeting.meetingId);
-                        const { dateStr, timeStr, durationStr, timezoneStr } =
-                          formatCardDetails(
-                            meeting.startDatetime,
-                            meeting.endDatetime,
-                            userTimezone,
-                          );
-
-                        return (
-                          <div
-                            key={meeting.meetingId}
-                            className={cn(
-                              "flex items-center p-4 border rounded-xl transition-all duration-200",
-                              isChecked
-                                ? "border-[#6035F3] bg-[#6035F3]/5 shadow-sm"
-                                : "border-gray-200 bg-white hover:border-gray-300",
-                            )}
+            {canSchedule && (
+              <>
+                {/* Schedule Meeting Form */}
+                <TabsContent
+                  value="schedule"
+                  className="mt-0 focus-visible:outline-none"
+                >
+                  {scheduleUnavailableReason ? (
+                    <UnavailableNotice reason={scheduleUnavailableReason} />
+                  ) : (
+                    <form onSubmit={handleSubmit} className="space-y-3.5">
+                      {/* Mentor / Mentee Selection Dropdown */}
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-gray-700">
+                          Select Partner *
+                        </label>
+                        <div className="relative">
+                          <select
+                            name="partnerId"
+                            aria-label="Select Partner"
+                            value={formData.partnerId}
+                            onChange={handleInputChange}
+                            className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-gray-900 focus:border-[#6035F3] focus:ring-2 focus:ring-[#6035F3]/20 outline-none transition-all"
+                            required
                           >
-                            {/* Single Selection Checkbox */}
-                            <div className="mr-4 flex items-center">
-                              <Checkbox
-                                id={`check-${meeting.meetingId}`}
-                                checked={isChecked}
-                                onCheckedChange={() =>
-                                  handleToggleItem(meeting.meetingId)
-                                }
-                                disabled={isLoading}
+                            <option value="">Choose a partner</option>
+                            {partnerList.map((partner) => (
+                              <option key={partner.id} value={partner.id}>
+                                {userDisplayName(partner)}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                            <ChevronDown className="w-4 h-4" />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        {/* Timezone */}
+                        <div className="space-y-1.5 min-w-0">
+                          <label className="text-sm font-medium text-gray-700">
+                            Timezone
+                          </label>
+                          <div className="w-full">
+                            <TimezoneSelector
+                              value={formData.timezone}
+                              onChange={handleTimezoneChange}
+                              labelSource="value"
+                              menuPlacement="auto"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Date Picker (Popover + Calendar) */}
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium text-gray-700">
+                            Start Date *
+                          </label>
+                          <Popover
+                            open={calendarOpen}
+                            onOpenChange={setCalendarOpen}
+                          >
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="outline"
+                                className={cn(
+                                  "w-full justify-start text-left font-normal h-[42px] rounded-lg border-gray-300 px-4",
+                                  !selectedDate && "text-gray-400",
+                                )}
+                              >
+                                <CalendarIcon className="mr-2 h-4 w-4 text-gray-400" />
+                                {selectedDate ? (
+                                  format(selectedDate, "PPP")
+                                ) : (
+                                  <span>Pick a date</span>
+                                )}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              className="w-auto p-0"
+                              align="start"
+                            >
+                              <Calendar
+                                mode="single"
+                                selected={selectedDate}
+                                onSelect={(date) => {
+                                  if (date) {
+                                    setSelectedDate(date);
+                                    setCalendarOpen(false);
+                                  }
+                                }}
+                                disabled={{ before: disableBeforeDate }}
+                                initialFocus
                               />
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                      </div>
+
+                      {/* Time Picker and Meeting Duration*/}
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium text-gray-700">
+                            Start Time *
+                          </label>
+                          <div className="w-full min-w-0 relative">
+                            <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 z-10 pointer-events-none" />
+                            <Select
+                              aria-label="Start Time"
+                              options={TIME_SLOTS}
+                              value={
+                                selectedTime && !isPastTime(selectedTime)
+                                  ? TIME_SLOTS.find(
+                                      (opt) => opt.value === selectedTime,
+                                    )
+                                  : null
+                              }
+                              onChange={(opt) => setSelectedTime(opt.value)}
+                              isOptionDisabled={(opt) => isPastTime(opt.value)}
+                              placeholder="Pick a start time"
+                              menuPlacement="auto"
+                              styles={{
+                                control: (provided) => ({
+                                  ...provided,
+                                  height: "42px",
+                                  borderRadius: "8px",
+                                  borderColor: "#d1d5db",
+                                  boxShadow: "none",
+                                  paddingLeft: "26px",
+                                  "&:hover": { borderColor: "#d1d5db" },
+                                }),
+                                menu: (provided) => ({
+                                  ...provided,
+                                  zIndex: 50,
+                                }),
+                                menuList: (provided) => ({
+                                  ...provided,
+                                  maxHeight: "180px",
+                                }),
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium text-gray-700">
+                            Duration *
+                          </label>
+                          <div className="relative">
+                            <select
+                              name="duration"
+                              aria-label="Duration"
+                              value={formData.duration}
+                              onChange={handleInputChange}
+                              className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-gray-900 focus:border-[#6035F3] focus:ring-2 focus:ring-[#6035F3]/20 outline-none transition-all"
+                              required
+                            >
+                              {DURATION_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                              <ChevronDown className="w-4 h-4" />
                             </div>
+                          </div>
+                        </div>
+                      </div>
 
-                            {/* Core Card Content Display */}
-                            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                              {/* Left Side: Partner Info */}
-                              <div className="flex flex-col justify-center">
-                                <h4 className="font-semibold text-gray-900 flex items-center gap-2 flex-wrap">
-                                  {meeting.partnerName}
-                                </h4>
-                              </div>
+                      {/* Recurrence: interval + number of sessions */}
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium text-gray-700">
+                            Repeat every
+                          </label>
+                          <div className="relative">
+                            <select
+                              name="intervalWeeks"
+                              aria-label="Repeat every"
+                              value={formData.intervalWeeks}
+                              onChange={handleInputChange}
+                              className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-gray-900 focus:border-[#6035F3] focus:ring-2 focus:ring-[#6035F3]/20 outline-none transition-all"
+                            >
+                              {INTERVAL_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                              <ChevronDown className="w-4 h-4" />
+                            </div>
+                          </div>
+                        </div>
 
-                              {/* Right Side: Formatted Date/Time & Duration in User's Timezone */}
-                              <div className="sm:text-right flex flex-col justify-center space-y-0.5">
-                                <p className="font-medium text-gray-800">
-                                  {dateStr}
-                                </p>
-                                <p className="text-xs font-mono text-[#6035F3] font-semibold">
-                                  {timeStr}
-                                </p>
-                                <p className="text-[11px] text-gray-400">
-                                  Duration:{" "}
-                                  <span className="text-gray-700 font-medium">
-                                    {durationStr}
-                                  </span>
-                                  <span className="mx-1.5 text-gray-300">
-                                    |
-                                  </span>
-                                  TZ:{" "}
-                                  <span className="text-gray-700">
-                                    {timezoneStr}
-                                  </span>
-                                </p>
-                                {/* No completion check needed: this list is
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-medium text-gray-700">
+                            Number of sessions
+                          </label>
+                          <div className="relative">
+                            <select
+                              name="count"
+                              aria-label="Number of sessions"
+                              value={formData.count}
+                              onChange={handleInputChange}
+                              className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-gray-900 focus:border-[#6035F3] focus:ring-2 focus:ring-[#6035F3]/20 outline-none transition-all"
+                            >
+                              {SESSION_COUNT_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                              <ChevronDown className="w-4 h-4" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Confirm Booking Button */}
+                      <div className="flex justify-end pt-4 border-t">
+                        <button
+                          type="submit"
+                          disabled={isLoading}
+                          className="flex items-center gap-2 rounded-lg bg-[#6035F3] hover:bg-[#4d2ac2] px-6 py-2.5 font-medium text-white shadow-md transition-all active:scale-95 disabled:bg-gray-400 disabled:active:scale-100"
+                        >
+                          {isLoading ? (
+                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          ) : (
+                            <Plus className="w-5 h-5" />
+                          )}
+                          Confirm Booking
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </TabsContent>
+
+                {/* Uncompleted Tab */}
+                <TabsContent
+                  value="uncompleted"
+                  className="mt-0 focus-visible:outline-none"
+                >
+                  {scheduleUnavailableReason ? (
+                    <UnavailableNotice reason={scheduleUnavailableReason} />
+                  ) : uncompletedLength === 0 ? (
+                    /* Empty state placeholder text preserved */
+                    <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-gray-100 rounded-xl bg-gray-50/50 my-auto">
+                      <CalendarDays className="w-12 h-12 text-gray-200 mb-2" />
+                      <p className="text-gray-400 font-medium">
+                        No uncompleted meetings found
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col min-h-0 justify-between flex-1 overflow-hidden">
+                      <div className="overflow-hidden">
+                        {/* Top Control Bar: Select All Checkbox */}
+                        <div className="flex items-center space-x-3 pb-3 mb-4 border-b border-gray-100 flex-shrink-0">
+                          <Checkbox
+                            id="select-all-uncompleted"
+                            checked={isAllChecked}
+                            onCheckedChange={handleToggleAll}
+                            disabled={isLoading}
+                          />
+                          <label
+                            htmlFor="select-all-uncompleted"
+                            className="text-sm font-semibold text-gray-700 cursor-pointer select-none"
+                          >
+                            Select All
+                          </label>
+                        </div>
+
+                        {/* Card List */}
+                        <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-200">
+                          {uncompletedMeetings.map((meeting) => {
+                            const isChecked = selectedIds.has(
+                              meeting.meetingId,
+                            );
+                            const {
+                              dateStr,
+                              timeStr,
+                              durationStr,
+                              timezoneStr,
+                            } = formatCardDetails(
+                              meeting.startDatetime,
+                              meeting.endDatetime,
+                              userTimezone,
+                            );
+
+                            return (
+                              <div
+                                key={meeting.meetingId}
+                                className={cn(
+                                  "flex items-center p-4 border rounded-xl transition-all duration-200",
+                                  isChecked
+                                    ? "border-[#6035F3] bg-[#6035F3]/5 shadow-sm"
+                                    : "border-gray-200 bg-white hover:border-gray-300",
+                                )}
+                              >
+                                {/* Single Selection Checkbox */}
+                                <div className="mr-4 flex items-center">
+                                  <Checkbox
+                                    id={`check-${meeting.meetingId}`}
+                                    checked={isChecked}
+                                    onCheckedChange={() =>
+                                      handleToggleItem(meeting.meetingId)
+                                    }
+                                    disabled={isLoading}
+                                  />
+                                </div>
+
+                                {/* Core Card Content Display */}
+                                <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                  {/* Left Side: Partner Info */}
+                                  <div className="flex flex-col justify-center">
+                                    <h4 className="font-semibold text-gray-900 flex items-center gap-2 flex-wrap">
+                                      {meeting.partnerName}
+                                    </h4>
+                                  </div>
+
+                                  {/* Right Side: Formatted Date/Time & Duration in User's Timezone */}
+                                  <div className="sm:text-right flex flex-col justify-center space-y-0.5">
+                                    <p className="font-medium text-gray-800">
+                                      {dateStr}
+                                    </p>
+                                    <p className="text-xs font-mono text-[#6035F3] font-semibold">
+                                      {timeStr}
+                                    </p>
+                                    <p className="text-[11px] text-gray-400">
+                                      Duration:{" "}
+                                      <span className="text-gray-700 font-medium">
+                                        {durationStr}
+                                      </span>
+                                      <span className="mx-1.5 text-gray-300">
+                                        |
+                                      </span>
+                                      TZ:{" "}
+                                      <span className="text-gray-700">
+                                        {timezoneStr}
+                                      </span>
+                                    </p>
+                                    {/* No completion check needed: this list is
                                     already filtered to uncompleted meetings.
                                     It is NOT filtered by time, though, so a
                                     meeting nobody attended lingers here --
                                     hence the join window. A manually logged
                                     meeting has no link and so gets no
                                     button. */}
-                                {meeting.meetLink &&
-                                  isWithinJoinWindow(meeting.endDatetime) && (
-                                    <a
-                                      href={meeting.meetLink}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1 self-start sm:self-end mt-1.5 rounded border border-[#6035F3] px-2 py-1 text-xs font-medium text-[#6035F3] transition-colors hover:bg-[#6035F3] hover:text-white"
-                                    >
-                                      <Video className="w-3.5 h-3.5" />
-                                      Join
-                                    </a>
-                                  )}
+                                    {meeting.meetLink &&
+                                      isWithinJoinWindow(
+                                        meeting.endDatetime,
+                                      ) && (
+                                        <a
+                                          href={meeting.meetLink}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="inline-flex items-center gap-1 self-start sm:self-end mt-1.5 rounded border border-[#6035F3] px-2 py-1 text-xs font-medium text-[#6035F3] transition-colors hover:bg-[#6035F3] hover:text-white"
+                                        >
+                                          <Video className="w-3.5 h-3.5" />
+                                          Join
+                                        </a>
+                                      )}
+                                  </div>
+                                </div>
                               </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                            );
+                          })}
+                        </div>
+                      </div>
 
-                  {/* Delete Button */}
-                  <div className="flex justify-end mt-2 pt-2 border-t border-gray-50 bg-white flex-shrink-0">
-                    <Button
-                      variant="destructive"
-                      size="lg"
-                      className="px-6 font-medium text-white shadow-md transition-all active:scale-95 disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none disabled:active:scale-100"
-                      disabled={selectedIds.size === 0 || isLoading}
-                      onClick={handleDeleteSelected}
-                    >
-                      <TrashIcon className="w-4 h-4" />
-                      Delete ({selectedIds.size})
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </TabsContent>
+                      {/* Delete Button */}
+                      <div className="flex justify-end mt-2 pt-2 border-t border-gray-50 bg-white flex-shrink-0">
+                        <Button
+                          variant="destructive"
+                          size="lg"
+                          className="px-6 font-medium text-white shadow-md transition-all active:scale-95 disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none disabled:active:scale-100"
+                          disabled={selectedIds.size === 0 || isLoading}
+                          onClick={handleDeleteSelected}
+                        >
+                          <TrashIcon className="w-4 h-4" />
+                          Delete ({selectedIds.size})
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+              </>
+            )}
+
+            {canLogPast && (
+              <TabsContent
+                value="log"
+                className="mt-0 focus-visible:outline-none"
+              >
+                {logUnavailableReason ? (
+                  <UnavailableNotice reason={logUnavailableReason} />
+                ) : (
+                  <MeetingLogForm
+                    roundId={roundId}
+                    partnerId={logPartnerId}
+                    userTimezone={userTimezone}
+                    onSuccess={async () => {
+                      await onLogged?.();
+                      closeAndResetDialog();
+                    }}
+                  />
+                )}
+              </TabsContent>
+            )}
           </div>
         </Tabs>
       </DialogContent>
