@@ -266,6 +266,12 @@ class MentorshipMapper:
                 attendance fields (`has_unknown_absent`, `absent_user_id`,
                 `has_unknown_late`, `late_user_ids`, `has_insufficient_duration`).
                 These are always null on a MANUAL row regardless of this flag.
+                `meet_link` is deliberately NOT among them: that flag gates
+                admin-only attendance results, while the Meet link belongs to
+                the caller's own meeting -- this endpoint returns only the
+                caller's own pairs -- and the UI needs it to offer a join
+                entry point. It is null on a MANUAL row for the same reason
+                the attendance fields are: no Google event ever backed it.
 
         Returns:
             list[MeetingTimeDto]: One DTO per non-LEGACY input row, in the
@@ -278,6 +284,7 @@ class MentorshipMapper:
                 end_datetime=m.end_datetime,
                 is_completed=m.is_completed,
                 created_datetime=m.created_datetime,
+                meet_link=m.meet_link,
                 has_unknown_absent=m.has_unknown_absent if include_details else None,
                 absent_user_id=m.absent_user_id if include_details else None,
                 has_unknown_late=m.has_unknown_late if include_details else None,

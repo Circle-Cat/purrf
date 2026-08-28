@@ -13,14 +13,16 @@ import {
  * for a specific mentorship round.
  *
  * Responsibilities:
- * - Fetch and filter upcoming (uncompleted) meetings for the active round.
+ * - Fetch and filter the round's uncompleted meetings. The filter is on
+ *   completion only, never on time: a meeting nobody attended is never
+ *   marked completed and so stays in this list indefinitely.
  * - Maintain a map of available mentorship partners.
  * - Provide wrappers for booking, canceling, and batch-canceling meetings.
  * - Safe state management to guard against updates after unmounting.
  *
  * @param {string | number} roundId - The ID of the targeted mentorship round.
  * @returns {{
- *   upcomingMeetings: Array<Object>,
+ *   uncompletedMeetings: Array<Object>,
  *   partners: Map<string, Object>,
  *   isLoading: boolean,
  *   bookMeeting: (payload: Object) => Promise<{created: Array, failed: Array}|undefined>,
@@ -29,7 +31,7 @@ import {
  * }}
  */
 export function useMeetingManagement(roundId) {
-  const [upcomingMeetings, setUpcomingMeetings] = useState([]);
+  const [uncompletedMeetings, setUncompletedMeetings] = useState([]);
   const [partners, setPartners] = useState(new Map());
   const [isLoading, setIsLoading] = useState(false);
 
@@ -44,13 +46,13 @@ export function useMeetingManagement(roundId) {
 
   /**
    * Fetches meetings and partners data from the APIs, processes the information,
-   * and populates the upcoming meetings list and partners map.
+   * and populates the uncompleted meetings list and partners map.
    *
    * @returns {Promise<void>}
    */
   const fetchPageData = useCallback(async () => {
     if (!roundId) {
-      setUpcomingMeetings([]);
+      setUncompletedMeetings([]);
       setPartners(new Map());
       return;
     }
@@ -76,8 +78,8 @@ export function useMeetingManagement(roundId) {
       }
       setPartners(partnerMap);
 
-      // 2. Filter and extract upcoming (uncompleted) meetings
-      const upcoming = [];
+      // 2. Filter and extract the uncompleted meetings
+      const uncompleted = [];
       const meetingInfoList = meetingLog?.meetingInfo ?? [];
 
       for (const partnerEntry of meetingInfoList) {
@@ -89,7 +91,7 @@ export function useMeetingManagement(roundId) {
         for (const m of timeList) {
           if (!m || m.isCompleted) continue;
 
-          upcoming.push({
+          uncompleted.push({
             meetingId: m.meetingId,
             partnerId: partnerEntry.partnerId,
             partnerRole: partnerEntry.participantRole,
@@ -97,11 +99,14 @@ export function useMeetingManagement(roundId) {
             partnerEmail: pInfo.email || "",
             startDatetime: m.startDatetime,
             endDatetime: m.endDatetime,
+            // Undefined for a manually logged meeting -- only a Google-created
+            // one has a Meet link to join.
+            meetLink: m.meetLink,
           });
         }
       }
 
-      setUpcomingMeetings(upcoming);
+      setUncompletedMeetings(uncompleted);
     } catch (error) {
       console.error("Failed to fetch meeting log", error);
     } finally {
@@ -198,7 +203,7 @@ export function useMeetingManagement(roundId) {
   );
 
   return {
-    upcomingMeetings,
+    uncompletedMeetings,
     partners,
     isLoading,
     bookMeeting,
