@@ -653,6 +653,74 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertEqual(google_meeting.late_user_ids, [456])
         self.assertTrue(google_meeting.has_insufficient_duration)
 
+    def test_map_to_meeting_v2_dto_exposes_meet_link_without_details(self):
+        """Test meet_link is returned even when include_details=False.
+
+        `include_details` gates the ADMIN-only attendance fields. The Meet
+        link is not one of them: this endpoint only ever returns the caller's
+        own pairs, so withholding the link would hide a participant's own
+        meeting from them. Pinned with include_details=False precisely
+        because that is the value the two meeting lists in the UI send.
+        """
+        pair_entity = self.pair_entities[0]
+        partner_id = pair_entity.mentor_id
+        pair_entity.meeting_log = None
+
+        google_row = MentorshipMeetingEntity(
+            meeting_id="google-1",
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.GOOGLE,
+            start_datetime=datetime.fromisoformat("2025-09-02T22:30:00+00:00"),
+            end_datetime=datetime.fromisoformat("2025-09-02T23:00:00+00:00"),
+            is_completed=False,
+            created_datetime=datetime.fromisoformat("2025-08-31T10:00:00+00:00"),
+            meet_link="https://meet.google.com/abc-defg-hij",
+        )
+
+        dto = self.mapper.map_to_meeting_v2_dto(
+            round_id=1,
+            grouped_pairs=[(pair_entity, partner_id)],
+            meetings_by_pair={pair_entity.pair_id: [google_row]},
+            include_details=False,
+            completed_counts={pair_entity.pair_id: 0},
+        )
+
+        self.assertEqual(
+            dto.meeting_info[0].meeting_time_list[0].meet_link,
+            "https://meet.google.com/abc-defg-hij",
+        )
+
+    def test_map_to_meeting_v2_dto_manual_row_has_no_meet_link(self):
+        """Test a MANUAL row reports meet_link as None.
+
+        A manually logged meeting was never created through Google, and the
+        entity's `google_fields` CHECK constraint forbids it from carrying a
+        link. The UI keys the Join button off this being null.
+        """
+        pair_entity = self.pair_entities[0]
+        partner_id = pair_entity.mentor_id
+        pair_entity.meeting_log = None
+
+        manual_row = MentorshipMeetingEntity(
+            meeting_id="manual-1",
+            pair_id=pair_entity.pair_id,
+            source=MeetingSource.MANUAL,
+            start_datetime=datetime.fromisoformat("2025-09-01T22:30:00+00:00"),
+            end_datetime=datetime.fromisoformat("2025-09-01T23:00:00+00:00"),
+            is_completed=False,
+            created_datetime=datetime.fromisoformat("2025-08-30T07:42:00+00:00"),
+        )
+
+        dto = self.mapper.map_to_meeting_v2_dto(
+            round_id=1,
+            grouped_pairs=[(pair_entity, partner_id)],
+            meetings_by_pair={pair_entity.pair_id: [manual_row]},
+            include_details=True,
+            completed_counts={pair_entity.pair_id: 0},
+        )
+
+        self.assertIsNone(dto.meeting_info[0].meeting_time_list[0].meet_link)
+
     def test_map_to_meeting_v2_dto_no_meetings(self):
         """Test mapping a pair absent from meetings_by_pair returns an empty list."""
         pair_entity = self.pair_entities[1]

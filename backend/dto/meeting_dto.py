@@ -8,6 +8,10 @@ class MeetingTimeDto(BaseDto):
     start_datetime: datetime
     end_datetime: datetime
     is_completed: bool
+    # Null on a MANUAL row, which was never created through Google. Unlike the
+    # attendance fields below, this is NOT gated by `include_details`: see
+    # MentorshipMapper._build_meeting_time_list.
+    meet_link: str | None = None
     has_unknown_absent: bool | None = None
     absent_user_id: int | None = None
     has_unknown_late: bool | None = None

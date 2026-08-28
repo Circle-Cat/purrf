@@ -109,4 +109,142 @@ describe("MeetingOverviewCard", () => {
     expect(screen.getByText("INCOMPLETE")).toBeInTheDocument();
     expect(screen.queryByText("SCHEDULED")).not.toBeInTheDocument();
   });
+
+  it("should render a Join link pointing at the meet link for a scheduled meeting", () => {
+    render(
+      <MeetingOverviewCard
+        overview={{
+          ...mockOverview,
+          meetingTimeList: [
+            {
+              meetingId: "m-google",
+              startDatetime: "2026-03-02T23:30:00Z",
+              endDatetime: "2026-03-03T00:30:00Z",
+              isCompleted: false,
+              meetLink: "https://meet.google.com/abc-defg-hij",
+            },
+          ],
+        }}
+      />,
+    );
+    const join = screen.getByRole("link", { name: /join/i });
+    expect(join).toHaveAttribute(
+      "href",
+      "https://meet.google.com/abc-defg-hij",
+    );
+    expect(join).toHaveAttribute("target", "_blank");
+    expect(join).toHaveAttribute("rel", expect.stringContaining("noopener"));
+  });
+
+  it("should not render a Join link for a meeting that has no meet link", () => {
+    render(
+      <MeetingOverviewCard
+        overview={{
+          ...mockOverview,
+          meetingTimeList: [
+            {
+              meetingId: "m-manual",
+              startDatetime: "2026-03-02T23:30:00Z",
+              endDatetime: "2026-03-03T00:30:00Z",
+              isCompleted: false,
+            },
+          ],
+        }}
+      />,
+    );
+    expect(
+      screen.queryByRole("link", { name: /join/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("should not render a Join link for a completed meeting", () => {
+    render(
+      <MeetingOverviewCard
+        overview={{
+          ...mockOverview,
+          meetingTimeList: [
+            {
+              meetingId: "m-done",
+              startDatetime: "2026-02-20T23:30:00Z",
+              endDatetime: "2026-02-21T00:30:00Z",
+              isCompleted: true,
+              meetLink: "https://meet.google.com/abc-defg-hij",
+            },
+          ],
+        }}
+      />,
+    );
+    expect(
+      screen.queryByRole("link", { name: /join/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("should still render a Join link for a meeting that has started but is not marked completed", () => {
+    // A meeting whose start time has passed is INCOMPLETE, not COMPLETED --
+    // and that is exactly the moment someone running late needs the link.
+    render(
+      <MeetingOverviewCard
+        overview={{
+          ...mockOverview,
+          meetingTimeList: [
+            {
+              meetingId: "m-running-late",
+              startDatetime: "2026-02-28T23:30:00Z",
+              endDatetime: "2026-03-01T00:30:00Z",
+              isCompleted: false,
+              meetLink: "https://meet.google.com/abc-defg-hij",
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText("INCOMPLETE")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /join/i })).toBeInTheDocument();
+  });
+
+  it("should still render a Join link shortly after a meeting ended without being marked completed", () => {
+    // Ended 30 minutes before the mocked now -- inside the grace window.
+    render(
+      <MeetingOverviewCard
+        overview={{
+          ...mockOverview,
+          meetingTimeList: [
+            {
+              meetingId: "m-just-ended",
+              startDatetime: "2026-02-28T22:30:00Z",
+              endDatetime: "2026-02-28T23:30:00Z",
+              isCompleted: false,
+              meetLink: "https://meet.google.com/abc-defg-hij",
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByRole("link", { name: /join/i })).toBeInTheDocument();
+  });
+
+  it("should not render a Join link for a meeting that ended long ago and was never marked completed", () => {
+    // A meeting nobody attended is never marked completed, so completion
+    // alone would leave this button up forever.
+    render(
+      <MeetingOverviewCard
+        overview={{
+          ...mockOverview,
+          meetingTimeList: [
+            {
+              meetingId: "m-no-show",
+              startDatetime: "2026-02-20T23:30:00Z",
+              endDatetime: "2026-02-21T00:30:00Z",
+              isCompleted: false,
+              meetLink: "https://meet.google.com/abc-defg-hij",
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText("INCOMPLETE")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /join/i }),
+    ).not.toBeInTheDocument();
+  });
 });

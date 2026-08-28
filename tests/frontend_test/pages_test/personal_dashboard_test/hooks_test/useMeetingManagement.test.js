@@ -54,6 +54,7 @@ describe("useMeetingManagement Hook Unit Tests", () => {
               startDatetime: "2026-06-01T10:00:00Z",
               endDatetime: "2026-06-01T11:00:00Z",
               isCompleted: false,
+              meetLink: "https://meet.google.com/abc-defg-hij",
             },
             {
               meetingId: "m-2",
@@ -89,7 +90,7 @@ describe("useMeetingManagement Hook Unit Tests", () => {
     it("should return empty arrays and not trigger any API requests when roundId is missing", async () => {
       const { result } = renderHook(() => useMeetingManagement(null));
 
-      expect(result.current.upcomingMeetings).toEqual([]);
+      expect(result.current.uncompletedMeetings).toEqual([]);
       expect(result.current.partners).toBeInstanceOf(Map);
       expect(result.current.partners.size).toBe(0);
       expect(getMyMentorshipMeetingsV2).not.toHaveBeenCalled();
@@ -116,9 +117,9 @@ describe("useMeetingManagement Hook Unit Tests", () => {
         mockPartnersResponse.data[0],
       );
 
-      expect(result.current.upcomingMeetings).toHaveLength(2);
+      expect(result.current.uncompletedMeetings).toHaveLength(2);
 
-      expect(result.current.upcomingMeetings[0]).toEqual({
+      expect(result.current.uncompletedMeetings[0]).toEqual({
         meetingId: "m-1",
         partnerId: 99,
         partnerRole: "Mentor",
@@ -126,9 +127,10 @@ describe("useMeetingManagement Hook Unit Tests", () => {
         partnerEmail: "zhangsan@example.com",
         startDatetime: "2026-06-01T10:00:00Z",
         endDatetime: "2026-06-01T11:00:00Z",
+        meetLink: "https://meet.google.com/abc-defg-hij",
       });
 
-      expect(result.current.upcomingMeetings[1]).toEqual({
+      expect(result.current.uncompletedMeetings[1]).toEqual({
         meetingId: "m-3",
         partnerId: 100,
         partnerRole: "Mentee",
@@ -136,6 +138,7 @@ describe("useMeetingManagement Hook Unit Tests", () => {
         partnerEmail: "lisi@example.com",
         startDatetime: "2026-06-02T14:00:00Z",
         endDatetime: "2026-06-02T15:00:00Z",
+        meetLink: undefined,
       });
     });
 
@@ -160,8 +163,8 @@ describe("useMeetingManagement Hook Unit Tests", () => {
       const { result } = renderHook(() => useMeetingManagement(mockRoundId));
       await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-      expect(result.current.upcomingMeetings).toHaveLength(1);
-      expect(result.current.upcomingMeetings[0].meetingId).toBe("m-valid");
+      expect(result.current.uncompletedMeetings).toHaveLength(1);
+      expect(result.current.uncompletedMeetings[0].meetingId).toBe("m-valid");
     });
 
     it("should gracefully degrade partnerName to 'Unknown' if no matching partner info is found", async () => {
@@ -170,8 +173,8 @@ describe("useMeetingManagement Hook Unit Tests", () => {
       const { result } = renderHook(() => useMeetingManagement(mockRoundId));
       await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-      expect(result.current.upcomingMeetings[0].partnerName).toBe("Unknown");
-      expect(result.current.upcomingMeetings[0].partnerEmail).toBe("");
+      expect(result.current.uncompletedMeetings[0].partnerName).toBe("Unknown");
+      expect(result.current.uncompletedMeetings[0].partnerEmail).toBe("");
     });
 
     it("should gracefully stop loading and log an error when API request fails", async () => {
@@ -214,7 +217,7 @@ describe("useMeetingManagement Hook Unit Tests", () => {
         triggerResolution(mockMeetingsResponse);
       });
 
-      expect(result.current.upcomingMeetings).toEqual([]);
+      expect(result.current.uncompletedMeetings).toEqual([]);
     });
   });
 
