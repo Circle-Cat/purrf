@@ -38,10 +38,6 @@ vi.mock(
   "@/pages/PersonalDashboard/components/MentorshipParticipantsCard",
   () => ({ default: () => <div data-testid="mock-participants-card" /> }),
 );
-vi.mock("@/pages/PersonalDashboard/components/GoogleMeetingControl", () => ({
-  GoogleMeetingControl: () => <div data-testid="mock-manage-meetings-btn" />,
-}));
-
 const OPEN_ROUND = {
   id: 7,
   name: "2026 Fall",

@@ -11,17 +11,30 @@ vi.mock("@/hooks/useFeatureFlags", () => ({
   useFeatureFlags: mockUseFlags,
 }));
 
-vi.mock("@/pages/PersonalDashboard/components/MeetingSubmissionModal", () => ({
-  default: ({ open, onSuccess, userTimezone, partnerId }) =>
-    open ? (
-      <div
-        data-testid="meeting-modal"
-        data-user-timezone={userTimezone}
-        data-partner-id={String(partnerId)}
-      >
-        <button onClick={onSuccess}>mock-success</button>
-      </div>
-    ) : null,
+vi.mock("@/pages/PersonalDashboard/components/MeetingManagementDialog", () => ({
+  default: ({
+    roundId,
+    canSchedule,
+    scheduleUnavailableReason,
+    canLogPast,
+    logPartnerId,
+    logUnavailableReason,
+    userTimezone,
+    onLogged,
+  }) => (
+    <div
+      data-testid="meeting-dialog"
+      data-round-id={String(roundId)}
+      data-can-schedule={String(canSchedule)}
+      data-schedule-unavailable={scheduleUnavailableReason ?? ""}
+      data-can-log-past={String(canLogPast)}
+      data-log-partner-id={String(logPartnerId)}
+      data-log-unavailable={logUnavailableReason ?? ""}
+      data-user-timezone={userTimezone}
+    >
+      <button onClick={onLogged}>mock-logged</button>
+    </div>
+  ),
 }));
 
 vi.mock("@/pages/PersonalDashboard/components/MeetingOverviewCard", () => ({
@@ -87,7 +100,10 @@ describe("MentorshipParticipantsCard", () => {
     // meetingsCompletionDeadlineAt and hide the meeting modal.
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-01T00:00:00Z"));
-    mockUseFlags.mockReturnValue({ "manual-submit-meeting": true });
+    mockUseFlags.mockReturnValue({
+      "manual-submit-meeting": true,
+      "create-google-meeting": true,
+    });
   });
 
   afterEach(() => {
@@ -137,14 +153,15 @@ describe("MentorshipParticipantsCard", () => {
     ).toBeInTheDocument();
   });
 
-  it("should show the submit meeting button for mentees", () => {
+  it("should offer logging a past meeting to mentees", () => {
     render(<MentorshipParticipantsCard {...baseProps} />);
-    expect(
-      screen.getByRole("button", { name: /Submit Meeting Info/ }),
-    ).toBeInTheDocument();
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-can-log-past",
+      "true",
+    );
   });
 
-  it("should NOT show the submit meeting button for mentors", () => {
+  it("should NOT offer logging to mentors", () => {
     render(
       <MentorshipParticipantsCard
         {...baseProps}
@@ -154,9 +171,10 @@ describe("MentorshipParticipantsCard", () => {
         }}
       />,
     );
-    expect(
-      screen.queryByRole("button", { name: /Submit Meeting Info/ }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-can-log-past",
+      "false",
+    );
   });
 
   it("should display 'Mentor:' when the user is a mentee", () => {
@@ -170,30 +188,32 @@ describe("MentorshipParticipantsCard", () => {
     expect(roleLabel.closest("p")).toHaveTextContent("Role: Mentee");
   });
 
-  it("should pass userTimezone from the first partner to the modal", () => {
+  it("should pass the viewer's timezone to the meeting dialog", () => {
     render(<MentorshipParticipantsCard {...baseProps} />);
-    fireEvent.click(
-      screen.getByRole("button", { name: /Submit Meeting Info/ }),
-    );
-    expect(screen.getByTestId("meeting-modal")).toHaveAttribute(
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
       "data-user-timezone",
       "Asia/Shanghai",
     );
   });
 
-  it("should pass the partner to the modal", () => {
+  it("should pass the partner to log against", () => {
     render(<MentorshipParticipantsCard {...baseProps} />);
-    fireEvent.click(
-      screen.getByRole("button", { name: /Submit Meeting Info/ }),
-    );
-    expect(screen.getByTestId("meeting-modal")).toHaveAttribute(
-      "data-partner-id",
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-log-partner-id",
       "1",
     );
   });
 
-  it("should disable submitting while more than one partner is shown", () => {
-    // The modal is one per round, so it can only name a partner while there
+  it("should pass the selected round to the meeting dialog", () => {
+    render(<MentorshipParticipantsCard {...baseProps} />);
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-round-id",
+      "1",
+    );
+  });
+
+  it("should withhold logging while more than one partner is shown", () => {
+    // The log form is one per round, so it can only name a partner while there
     // is exactly one to name. Two would leave the target pair ambiguous, and
     // submitting against the wrong one is worse than not submitting.
     render(
@@ -218,10 +238,10 @@ describe("MentorshipParticipantsCard", () => {
       />,
     );
 
-    expect(
-      screen.getByRole("button", { name: /Submit Meeting Info/ }),
-    ).toBeDisabled();
-    expect(screen.queryByTestId("meeting-modal")).not.toBeInTheDocument();
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-log-unavailable",
+      "No single active pairing to log a meeting against.",
+    );
   });
 
   const endedPairing = {
@@ -261,7 +281,7 @@ describe("MentorshipParticipantsCard", () => {
     expect(screen.queryByText("Ended")).not.toBeInTheDocument();
   });
 
-  it("should disable submitting when the only pairing has ended", () => {
+  it("should withhold logging when the only pairing has ended", () => {
     render(
       <MentorshipParticipantsCard
         {...baseProps}
@@ -272,12 +292,13 @@ describe("MentorshipParticipantsCard", () => {
       />,
     );
 
-    expect(
-      screen.getByRole("button", { name: /Submit Meeting Info/ }),
-    ).toBeDisabled();
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-log-unavailable",
+      "No single active pairing to log a meeting against.",
+    );
   });
 
-  it("should submit against the live pairing when an ended one is also shown", () => {
+  it("should log against the live pairing when an ended one is also shown", () => {
     // Changing mentor mid-round leaves both pairings on the card. Only one of
     // them is current, so the target is not ambiguous and submitting stays
     // available.
@@ -294,13 +315,9 @@ describe("MentorshipParticipantsCard", () => {
       />,
     );
 
-    const submit = screen.getByRole("button", { name: /Submit Meeting Info/ });
-    expect(submit).not.toBeDisabled();
-    fireEvent.click(submit);
-    expect(screen.getByTestId("meeting-modal")).toHaveAttribute(
-      "data-partner-id",
-      "1",
-    );
+    const dialog = screen.getByTestId("meeting-dialog");
+    expect(dialog).toHaveAttribute("data-log-unavailable", "");
+    expect(dialog).toHaveAttribute("data-log-partner-id", "1");
   });
 
   it("should render a MeetingOverviewCard for each partner", () => {
@@ -308,15 +325,7 @@ describe("MentorshipParticipantsCard", () => {
     expect(screen.getByTestId("overview-1")).toBeInTheDocument();
   });
 
-  it("should open the meeting modal when the submit button is clicked", () => {
-    render(<MentorshipParticipantsCard {...baseProps} />);
-    fireEvent.click(
-      screen.getByRole("button", { name: /Submit Meeting Info/ }),
-    );
-    expect(screen.getByTestId("meeting-modal")).toBeInTheDocument();
-  });
-
-  it("should call refreshMeetings after successful meeting submission", () => {
+  it("should call refreshMeetings after a meeting is logged", () => {
     const refreshMeetings = vi.fn();
 
     render(
@@ -326,38 +335,79 @@ describe("MentorshipParticipantsCard", () => {
       />,
     );
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /Submit Meeting Info/ }),
-    );
-    expect(screen.getByTestId("meeting-modal")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "mock-success" }));
+    fireEvent.click(screen.getByRole("button", { name: "mock-logged" }));
     expect(refreshMeetings).toHaveBeenCalled();
   });
 
-  it("should NOT show submit button when flag is off", () => {
-    mockUseFlags.mockReturnValue({ "manual-submit-meeting": false });
+  it("should NOT offer logging when the manual submit flag is off", () => {
+    mockUseFlags.mockReturnValue({
+      "manual-submit-meeting": false,
+      "create-google-meeting": true,
+    });
     render(<MentorshipParticipantsCard {...baseProps} />);
 
-    expect(
-      screen.queryByRole("button", { name: /Submit Meeting Info/ }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-can-log-past",
+      "false",
+    );
   });
 
-  it("should show submit button when flag is on", () => {
-    mockUseFlags.mockReturnValue({ "manual-submit-meeting": true });
+  it("should offer scheduling when the google meeting flag is on", () => {
     render(<MentorshipParticipantsCard {...baseProps} />);
 
-    expect(
-      screen.getByRole("button", { name: /Submit Meeting Info/ }),
-    ).toBeInTheDocument();
+    const dialog = screen.getByTestId("meeting-dialog");
+    expect(dialog).toHaveAttribute("data-can-schedule", "true");
+    expect(dialog).toHaveAttribute("data-schedule-unavailable", "");
   });
 
-  it("should not render meeting modal when user cannot submit", () => {
-    mockUseFlags.mockReturnValue({ "manual-submit-meeting": false });
+  it("should NOT offer scheduling when the google meeting flag is off", () => {
+    mockUseFlags.mockReturnValue({
+      "manual-submit-meeting": true,
+      "create-google-meeting": false,
+    });
     render(<MentorshipParticipantsCard {...baseProps} />);
 
-    expect(screen.queryByTestId("meeting-modal")).not.toBeInTheDocument();
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-can-schedule",
+      "false",
+    );
+  });
+
+  it("should match the selected round regardless of whether the id is a string or a number", () => {
+    // The round selector hands back a string; the round list carries numbers.
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        selectedRoundId="20"
+        roundSelectionData={{
+          sortedRounds: [
+            { id: 10, name: "2025 Fall", status: "completed" },
+            { id: 20, name: "2026 Spring", status: "active" },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-schedule-unavailable",
+      "",
+    );
+  });
+
+  it("should say why scheduling is unavailable when the selected round is not active", () => {
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        roundSelectionData={{
+          sortedRounds: [{ id: "1", name: "2026 Spring", status: "completed" }],
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-schedule-unavailable",
+      "No active mentorship round",
+    );
   });
 
   it("should display duration as date only, labelled with the viewer's timezone", () => {
@@ -370,7 +420,7 @@ describe("MentorshipParticipantsCard", () => {
     );
   });
 
-  it("should keep submit enabled when deadline is in the future", () => {
+  it("should keep logging available when the deadline is in the future", () => {
     render(
       <MentorshipParticipantsCard
         {...baseProps}
@@ -384,12 +434,13 @@ describe("MentorshipParticipantsCard", () => {
         }}
       />,
     );
-    expect(
-      screen.getByRole("button", { name: /Submit Meeting Info/ }),
-    ).not.toBeDisabled();
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-log-unavailable",
+      "",
+    );
   });
 
-  it("should disable submit when deadline is well in the past", () => {
+  it("should close logging when the deadline is well in the past", () => {
     render(
       <MentorshipParticipantsCard
         {...baseProps}
@@ -403,9 +454,10 @@ describe("MentorshipParticipantsCard", () => {
         }}
       />,
     );
-    expect(
-      screen.getByRole("button", { name: /Submit Meeting Info/ }),
-    ).toBeDisabled();
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-log-unavailable",
+      "Logging meetings for this round has closed.",
+    );
   });
 
   // "now" is pinned to 2026-03-01T00:00:00Z by the beforeEach above.
@@ -528,7 +580,7 @@ describe("MentorshipParticipantsCard", () => {
     });
   });
 
-  it("should disable submit when round is completed without deadline", () => {
+  it("should close logging when the round is completed without a deadline", () => {
     render(
       <MentorshipParticipantsCard
         {...baseProps}
@@ -543,8 +595,9 @@ describe("MentorshipParticipantsCard", () => {
       />,
     );
 
-    expect(
-      screen.getByRole("button", { name: /Submit Meeting Info/ }),
-    ).toBeDisabled();
+    expect(screen.getByTestId("meeting-dialog")).toHaveAttribute(
+      "data-log-unavailable",
+      "Logging meetings for this round has closed.",
+    );
   });
 });
