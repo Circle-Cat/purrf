@@ -9,7 +9,9 @@
 # empty: the accrual engine walks this hash, the all-hands table is built from
 # it, and filing a request looks the approver up in it.
 #
-# Run it against your local Redis after leave_seed.sql.
+# Run it against your Redis after leave_seed.sh.
+#
+#   ./script/dev/leave_seed_redis.sh you@circlecat.org
 #
 # NEVER run this against staging or production. On any environment where the
 # nightly ldap sync actually runs, these rows are deleted the next time it
@@ -17,12 +19,22 @@
 
 set -euo pipefail
 
-# CHANGE THIS to the local part of your @circlecat.org address -- the same
-# account leave_seed.sql was pointed at. The hash is keyed by Azure ldap, and
-# the join between an ldap and a purrf account is that corporate address.
-ME=yuji
+# The same account leave_seed.sh was pointed at. A full address is accepted and
+# cut down to its local part: the hash is keyed by Azure ldap, and the join
+# between an ldap and a purrf account is that corporate address.
+ME="${1:-${LEAVE_SEED_EMAIL:-}}"
 
-REDIS=(redis-cli)          # e.g. (redis-cli -h localhost -p 6379)
+if [[ -z "$ME" ]]; then
+    echo "usage: $0 <your-address@circlecat.org>" >&2
+    echo "       (or set LEAVE_SEED_EMAIL)" >&2
+    exit 2
+fi
+
+ME="${ME%%@*}"
+
+# Override for a Redis that is not on this machine, e.g.
+#   REDIS_CLI="redis-cli -h host -p 6379 -a secret --tls"
+read -r -a REDIS <<< "${REDIS_CLI:-redis-cli}"
 KEY=leave:employment
 
 # level      -- L1 has no annual entitlement, L2 to L4 get 80 hours a year.

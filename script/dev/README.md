@@ -1,15 +1,26 @@
 # Fake leave data for local development
 
-Two halves of one fixture. Run both, in this order:
+Two halves of one fixture. Run both, in this order, with the `@circlecat.org`
+address you sign in with:
 
 ```bash
-psql "$DATABASE_URL" -f script/dev/leave_seed.sql
-./script/dev/leave_seed_redis.sh
+export DATABASE_URL='postgresql+asyncpg://user:pass@host:5432/db'
+
+./script/dev/leave_seed.sh       you@circlecat.org
+./script/dev/leave_seed_redis.sh you@circlecat.org
 ```
 
-Each has one line to change first — the `@circlecat.org` address you sign in
-with. It has to be the same account in both files: the join between an Azure
-ldap and a purrf account is that address, and nothing else connects them.
+It has to be the same address both times: the join between an Azure ldap and a
+purrf account is that address, and nothing else connects them.
+
+`leave_seed.sh` reads `DATABASE_URL` and drops the `+asyncpg` from it — that
+spelling is SQLAlchemy's and psql does not understand it. For a Redis that is
+not on this machine, give the second one a client to use:
+
+```bash
+REDIS_CLI="redis-cli -h host -p 6379 -a secret --tls" \
+    ./script/dev/leave_seed_redis.sh you@circlecat.org
+```
 
 **Never run either against staging or production.**
 

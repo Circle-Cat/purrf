@@ -1,22 +1,59 @@
--- Fake leave data for local development.
---
--- Seeds five people, the 2026 company holidays, a ledger with all six entry
--- types and enough weekly accruals to page through, and six requests covering
--- every status a screen can show.
---
--- Safe to re-run: it looks people up by their corporate address before
--- creating them, and clears its own ledger and request rows first.
---
--- NEVER run this against staging or production.
---
---   psql "$DATABASE_URL" -f leave_seed.sql
---
--- One thing to change: MY_EMAIL, three lines below the next comment. Use the
--- @circlecat.org address you sign in with -- the seed hangs your own balance,
--- your own requests and the LEAVE_ADMIN grant off that account, and Azure
--- ldaps are matched to purrf accounts by exactly this address.
+#!/usr/bin/env bash
+#
+# Fake leave data for local development: the postgres half. Run
+# leave_seed_redis.sh afterwards -- the database alone leaves every leave
+# screen empty, because level, hire date and manager live only in Redis.
+#
+# Seeds five people, the 2026 company holidays, a ledger with all six entry
+# types and enough weekly accruals to page through, and six requests covering
+# every status a screen can show.
+#
+# Safe to re-run: it looks people up by their corporate address before creating
+# them, and clears its own ledger and request rows first.
+#
+# NEVER run this against staging or production.
+#
+#   ./script/dev/leave_seed.sh you@circlecat.org
+#
+# The address is the account everything is hung off -- your balance, your
+# requests, the LEAVE_ADMIN grant. It has to be the @circlecat.org address you
+# sign in with: an Azure ldap is matched to a purrf account by that address and
+# by nothing else.
+#
+# The database comes from DATABASE_URL.
 
+set -euo pipefail
+
+EMAIL="${1:-${LEAVE_SEED_EMAIL:-}}"
+
+if [[ -z "$EMAIL" ]]; then
+    echo "usage: $0 <your-address@circlecat.org>" >&2
+    echo "       (or set LEAVE_SEED_EMAIL)" >&2
+    exit 2
+fi
+
+if [[ "$EMAIL" != *@* ]]; then
+    echo "'$EMAIL' is not an address. Pass the full @circlecat.org one." >&2
+    exit 2
+fi
+
+if [[ -z "${DATABASE_URL:-}" ]]; then
+    echo "DATABASE_URL is not set." >&2
+    exit 2
+fi
+
+# SQLAlchemy names its driver in the URL and psql does not understand that
+# spelling, so postgresql+asyncpg:// has to come back down to postgresql://.
+DB_URL="${DATABASE_URL/+asyncpg/}"
+
+# ON_ERROR_STOP matters: without it a failure halfway leaves half the fixture
+# behind and still exits 0.
+psql "$DB_URL" -v ON_ERROR_STOP=1 -v seed_email="$EMAIL" <<'SQL'
 BEGIN;
+
+-- Park the address where the DO block below can read it back.
+SELECT set_config('purrf.seed_email', :'seed_email', false);
+
 
 -- Creates a user with a corporate address if that address is not already
 -- taken, and returns the account id either way. Temporary: it disappears when
@@ -59,10 +96,9 @@ $fn$ LANGUAGE plpgsql;
 
 DO $seed$
 DECLARE
-    ------------------------------------------------------------------
-    -- CHANGE THIS to your own @circlecat.org address.
-    ------------------------------------------------------------------
-    MY_EMAIL   text := 'ldap@circlecat.org';
+    -- Passed in on the command line. psql does not substitute variables
+    -- inside a dollar-quoted body, so it travels as a setting instead.
+    MY_EMAIL   text := current_setting('purrf.seed_email');
 
     me         int;
     bob        int;
@@ -286,3 +322,4 @@ END;
 $seed$;
 
 COMMIT;
+SQL
