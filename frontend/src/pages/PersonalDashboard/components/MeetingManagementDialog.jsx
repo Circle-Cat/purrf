@@ -34,11 +34,15 @@ import TimezoneSelector from "@/components/common/TimezoneSelector";
 import MeetingLogForm from "@/pages/PersonalDashboard/components/MeetingLogForm";
 import { useMeetingManagement } from "@/pages/PersonalDashboard/hooks/useMeetingManagement";
 import {
-  formatLocalYmd,
-  todayInTz,
+  HALF_HOUR_SLOTS,
   formatInTz,
-  nowInTz,
+  formatLocalYmd,
+  hhMmToMinutes,
+  isSameLocalDay,
   localToUtcIso,
+  minutesIntoLocalDay,
+  nowInTz,
+  todayInTz,
 } from "@/utils/dateTime";
 
 const DURATION_OPTIONS = [
@@ -58,12 +62,10 @@ const SESSION_COUNT_OPTIONS = Array.from({ length: 12 }, (_, i) => ({
   label: String(i + 1),
 }));
 
-const TIME_SLOTS = Array.from({ length: 48 }, (_, i) => {
-  const hour = String(Math.floor(i / 2)).padStart(2, "0");
-  const min = i % 2 === 0 ? "00" : "30";
-  const timeStr = `${hour}:${min}`;
-  return { value: timeStr, label: timeStr };
-});
+const TIME_SLOTS = HALF_HOUR_SLOTS.map((timeStr) => ({
+  value: timeStr,
+  label: timeStr,
+}));
 
 /**
  * Placeholder shown inside a tab that exists for this viewer but cannot be
@@ -233,18 +235,14 @@ export default function MeetingManagementDialog({
   const tzNow = nowInTz(formData.timezone);
   const isPastDate =
     !!selectedDate &&
-    format(selectedDate, "yyyy-MM-dd") <
-      format(disableBeforeDate, "yyyy-MM-dd");
-  const isTodayInTz =
-    !!selectedDate &&
-    format(selectedDate, "yyyy-MM-dd") === format(tzNow, "yyyy-MM-dd");
-  const currentMinutesInTz = tzNow.getHours() * 60 + tzNow.getMinutes();
+    formatLocalYmd(selectedDate) < formatLocalYmd(disableBeforeDate);
+  const isTodayInTz = !!selectedDate && isSameLocalDay(selectedDate, tzNow);
+  const currentMinutesInTz = minutesIntoLocalDay(tzNow);
 
   const isPastTime = (timeStr) => {
     if (isPastDate) return true;
     if (!isTodayInTz) return false;
-    const [h, m] = timeStr.split(":").map(Number);
-    return h * 60 + m < currentMinutesInTz;
+    return hhMmToMinutes(timeStr) < currentMinutesInTz;
   };
 
   const handleTimezoneChange = (timezoneOption) => {
