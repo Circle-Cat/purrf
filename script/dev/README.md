@@ -13,12 +13,18 @@ export DATABASE_URL='postgresql+asyncpg://user:pass@host:5432/db'
 It has to be the same address both times: the join between an Azure ldap and a
 purrf account is that address, and nothing else connects them.
 
-`leave_seed.sh` reads `DATABASE_URL` and drops the `+asyncpg` from it — that
-spelling is SQLAlchemy's and psql does not understand it. For a Redis that is
-not on this machine, give the second one a client to use:
+Both read the environment the backend already uses. `leave_seed.sh` takes
+`DATABASE_URL` and translates it for psql, which understands neither
+SQLAlchemy's `+asyncpg` nor asyncpg's `ssl=` parameter. `leave_seed_redis.sh`
+takes `REDIS_HOST`, `REDIS_PORT` and `REDIS_PASSWORD`, and connects with TLS —
+the backend hardcodes `ssl=True`, so any Redis it can use speaks TLS. With no
+`REDIS_HOST` set it falls back to a plain local `redis-cli`.
+
+Two escape hatches: `REDIS_TLS=false` for a Redis without TLS, and `REDIS_CLI`
+to replace the whole command for anything else — a CA file, a socket:
 
 ```bash
-REDIS_CLI="redis-cli -h host -p 6379 -a secret --tls" \
+REDIS_CLI="redis-cli -h host -p 6379 -a secret --tls --cacert ca.pem" \
     ./script/dev/leave_seed_redis.sh you@circlecat.org
 ```
 

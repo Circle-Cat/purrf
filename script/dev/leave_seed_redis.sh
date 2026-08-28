@@ -32,9 +32,32 @@ fi
 
 ME="${ME%%@*}"
 
-# Override for a Redis that is not on this machine, e.g.
-#   REDIS_CLI="redis-cli -h host -p 6379 -a secret --tls"
-read -r -a REDIS <<< "${REDIS_CLI:-redis-cli}"
+# Which Redis, and how to reach it.
+#
+# REDIS_HOST, REDIS_PORT and REDIS_PASSWORD are the same three the backend
+# reads, so an environment already configured for the app needs nothing more.
+# TLS is on by default whenever a host is given: the backend connects with
+# ssl=True and no way to turn it off, so a Redis it can use is a Redis that
+# speaks TLS. Set REDIS_TLS=false for one that does not.
+#
+# With no host at all this falls back to a plain local redis-cli. REDIS_CLI
+# overrides the lot -- for a client needing a CA file, a socket, or anything
+# else this does not spell:
+#
+#   REDIS_CLI="redis-cli -h host -p 6379 -a secret --tls --cacert ca.pem"
+if [[ -n "${REDIS_CLI:-}" ]]; then
+    read -r -a REDIS <<< "$REDIS_CLI"
+elif [[ -n "${REDIS_HOST:-}" ]]; then
+    REDIS=(redis-cli -h "$REDIS_HOST" -p "${REDIS_PORT:-6379}")
+    if [[ -n "${REDIS_PASSWORD:-}" ]]; then
+        REDIS+=(-a "$REDIS_PASSWORD" --no-auth-warning)
+    fi
+    if [[ "${REDIS_TLS:-true}" != "false" ]]; then
+        REDIS+=(--tls)
+    fi
+else
+    REDIS=(redis-cli)
+fi
 KEY=leave:employment
 
 # level      -- L1 has no annual entitlement, L2 to L4 get 80 hours a year.
