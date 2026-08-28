@@ -1,4 +1,4 @@
-import { Calendar } from "lucide-react";
+import { Calendar, Video } from "lucide-react";
 import { formatInTz } from "@/utils/dateTime";
 import { getMeetingStatus } from "@/utils/meetingStatusCalculator";
 import { MeetingStatus } from "@/constants/MeetingStatus";
@@ -28,11 +28,14 @@ function formatMeetingTime(startUtc, endUtc, timezone) {
  *
  * All datetimes are displayed in the user's profile timezone (`userTimezone`).
  *
+ * A meeting created through Google carries a `meetLink`, which is rendered as
+ * a Join entry point; a manually logged meeting has none and shows no button.
+ *
  * @param {{ overview: {
  *   requiredMeetings: number,
  *   completedCount: number,
  *   completedRate: number,
- *   meetingTimeList: Array,
+ *   meetingTimeList: Array<{ meetLink?: string }>,
  * } userTimezone: string}} props
  */
 export default function MeetingOverviewCard({
@@ -93,21 +96,39 @@ export default function MeetingOverviewCard({
                         </div>
                       </div>
                     </div>
-                    {status === MeetingStatus.COMPLETED && (
-                      <span className="text-xs font-bold px-2 py-1 rounded text-green-700">
-                        DONE
-                      </span>
-                    )}
-                    {status === MeetingStatus.PAST_INCOMPLETE && (
-                      <span className="text-xs font-bold px-2 py-1 rounded text-gray-700">
-                        INCOMPLETE
-                      </span>
-                    )}
-                    {status === MeetingStatus.SCHEDULED && (
-                      <span className="text-xs font-bold px-2 py-1 rounded text-amber-700">
-                        SCHEDULED
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {/* Google-created meetings carry a Meet link; manually
+                          logged ones never do. A finished meeting drops the
+                          button, but one that merely started without being
+                          marked complete keeps it -- that is when someone
+                          running late still needs to get in. */}
+                      {m.meetLink && status !== MeetingStatus.COMPLETED && (
+                        <a
+                          href={m.meetLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded border border-[#6035F3] px-2 py-1 text-xs font-medium text-[#6035F3] transition-colors hover:bg-[#6035F3] hover:text-white"
+                        >
+                          <Video className="h-3.5 w-3.5" />
+                          Join
+                        </a>
+                      )}
+                      {status === MeetingStatus.COMPLETED && (
+                        <span className="text-xs font-bold px-2 py-1 rounded text-green-700">
+                          DONE
+                        </span>
+                      )}
+                      {status === MeetingStatus.PAST_INCOMPLETE && (
+                        <span className="text-xs font-bold px-2 py-1 rounded text-gray-700">
+                          INCOMPLETE
+                        </span>
+                      )}
+                      {status === MeetingStatus.SCHEDULED && (
+                        <span className="text-xs font-bold px-2 py-1 rounded text-amber-700">
+                          SCHEDULED
+                        </span>
+                      )}
+                    </div>
                   </div>
                 );
               })

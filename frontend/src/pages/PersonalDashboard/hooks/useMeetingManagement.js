@@ -97,6 +97,9 @@ export function useMeetingManagement(roundId) {
             partnerEmail: pInfo.email || "",
             startDatetime: m.startDatetime,
             endDatetime: m.endDatetime,
+            // Undefined for a manually logged meeting -- only a Google-created
+            // one has a Meet link to join.
+            meetLink: m.meetLink,
           });
         }
       }

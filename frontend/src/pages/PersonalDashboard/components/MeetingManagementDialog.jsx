@@ -7,6 +7,7 @@ import {
   CalendarDays,
   ChevronDown,
   Trash2 as TrashIcon,
+  Video,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -657,6 +658,21 @@ export default function MeetingManagementDialog({
                                     {timezoneStr}
                                   </span>
                                 </p>
+                                {/* No completion check needed: this list is
+                                    already filtered to uncompleted meetings.
+                                    A manually logged meeting has no link and
+                                    so gets no button. */}
+                                {meeting.meetLink && (
+                                  <a
+                                    href={meeting.meetLink}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 self-start sm:self-end mt-1.5 rounded border border-[#6035F3] px-2 py-1 text-xs font-medium text-[#6035F3] transition-colors hover:bg-[#6035F3] hover:text-white"
+                                  >
+                                    <Video className="w-3.5 h-3.5" />
+                                    Join
+                                  </a>
+                                )}
                               </div>
                             </div>
                           </div>

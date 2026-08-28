@@ -54,6 +54,7 @@ describe("useMeetingManagement Hook Unit Tests", () => {
               startDatetime: "2026-06-01T10:00:00Z",
               endDatetime: "2026-06-01T11:00:00Z",
               isCompleted: false,
+              meetLink: "https://meet.google.com/abc-defg-hij",
             },
             {
               meetingId: "m-2",
@@ -126,6 +127,7 @@ describe("useMeetingManagement Hook Unit Tests", () => {
         partnerEmail: "zhangsan@example.com",
         startDatetime: "2026-06-01T10:00:00Z",
         endDatetime: "2026-06-01T11:00:00Z",
+        meetLink: "https://meet.google.com/abc-defg-hij",
       });
 
       expect(result.current.upcomingMeetings[1]).toEqual({
@@ -136,6 +138,7 @@ describe("useMeetingManagement Hook Unit Tests", () => {
         partnerEmail: "lisi@example.com",
         startDatetime: "2026-06-02T14:00:00Z",
         endDatetime: "2026-06-02T15:00:00Z",
+        meetLink: undefined,
       });
     });
 

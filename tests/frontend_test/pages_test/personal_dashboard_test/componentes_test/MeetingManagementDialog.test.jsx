@@ -640,4 +640,46 @@ describe("MeetingManagementDialog Component", () => {
 
     vi.useRealTimers();
   });
+
+  it("should render a Join link only for an upcoming meeting that has a meet link", async () => {
+    // m-1 was created through Google and carries a link; m-2 stands in for a
+    // manually logged meeting, which never has one.
+    const meetings = [
+      {
+        ...mockUpcomingMeetings[0],
+        meetLink: "https://meet.google.com/abc-defg-hij",
+      },
+      mockUpcomingMeetings[1],
+    ];
+    useMeetingManagement.mockReturnValue({
+      partners: mockPartners,
+      bookMeeting: mockBookMeeting,
+      cancelMeetings: mockCancelMeetings,
+      refresh: mockRefresh,
+      upcomingMeetings: meetings,
+      upcomingLength: meetings.length,
+      isLoading: false,
+    });
+
+    render(
+      <MeetingManagementDialog roundId={2} userTimezone="Asia/Shanghai" />,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /manage meetings/i }),
+    );
+    await userEvent.click(screen.getByRole("tab", { name: /upcoming/i }));
+
+    const joinLinks = screen.getAllByRole("link", { name: /join/i });
+    expect(joinLinks).toHaveLength(1);
+    expect(joinLinks[0]).toHaveAttribute(
+      "href",
+      "https://meet.google.com/abc-defg-hij",
+    );
+    expect(joinLinks[0]).toHaveAttribute("target", "_blank");
+    expect(joinLinks[0]).toHaveAttribute(
+      "rel",
+      expect.stringContaining("noopener"),
+    );
+  });
 });
