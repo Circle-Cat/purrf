@@ -27,6 +27,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { isWithinJoinWindow } from "@/utils/meetingStatusCalculator";
 import { cn } from "@/lib/utils";
 
 import TimezoneSelector from "@/components/common/TimezoneSelector";
@@ -660,19 +661,23 @@ export default function MeetingManagementDialog({
                                 </p>
                                 {/* No completion check needed: this list is
                                     already filtered to uncompleted meetings.
-                                    A manually logged meeting has no link and
-                                    so gets no button. */}
-                                {meeting.meetLink && (
-                                  <a
-                                    href={meeting.meetLink}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 self-start sm:self-end mt-1.5 rounded border border-[#6035F3] px-2 py-1 text-xs font-medium text-[#6035F3] transition-colors hover:bg-[#6035F3] hover:text-white"
-                                  >
-                                    <Video className="w-3.5 h-3.5" />
-                                    Join
-                                  </a>
-                                )}
+                                    It is NOT filtered by time, though, so a
+                                    meeting nobody attended lingers here --
+                                    hence the join window. A manually logged
+                                    meeting has no link and so gets no
+                                    button. */}
+                                {meeting.meetLink &&
+                                  isWithinJoinWindow(meeting.endDatetime) && (
+                                    <a
+                                      href={meeting.meetLink}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 self-start sm:self-end mt-1.5 rounded border border-[#6035F3] px-2 py-1 text-xs font-medium text-[#6035F3] transition-colors hover:bg-[#6035F3] hover:text-white"
+                                    >
+                                      <Video className="w-3.5 h-3.5" />
+                                      Join
+                                    </a>
+                                  )}
                               </div>
                             </div>
                           </div>

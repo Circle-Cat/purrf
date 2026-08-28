@@ -642,6 +642,11 @@ describe("MeetingManagementDialog Component", () => {
   });
 
   it("should render a Join link only for an upcoming meeting that has a meet link", async () => {
+    // Pin the clock inside m-1's slot (2026-07-15T09:00-09:30Z); the join
+    // window is time-bounded, so this must not ride the wall clock.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-07-15T09:15:00Z"));
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     // m-1 was created through Google and carries a link; m-2 stands in for a
     // manually logged meeting, which never has one.
     const meetings = [
@@ -665,10 +670,8 @@ describe("MeetingManagementDialog Component", () => {
       <MeetingManagementDialog roundId={2} userTimezone="Asia/Shanghai" />,
     );
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /manage meetings/i }),
-    );
-    await userEvent.click(screen.getByRole("tab", { name: /upcoming/i }));
+    await user.click(screen.getByRole("button", { name: /manage meetings/i }));
+    await user.click(screen.getByRole("tab", { name: /upcoming/i }));
 
     const joinLinks = screen.getAllByRole("link", { name: /join/i });
     expect(joinLinks).toHaveLength(1);
@@ -681,5 +684,42 @@ describe("MeetingManagementDialog Component", () => {
       "rel",
       expect.stringContaining("noopener"),
     );
+    vi.useRealTimers();
+  });
+
+  it("should not render a Join link for a meeting whose slot is long past", async () => {
+    // This list filters on completion, not on time, so a meeting nobody
+    // attended stays here indefinitely. The join window is what keeps a
+    // months-old slot from still offering a way in.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-09-01T00:00:00Z"));
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const meetings = [
+      {
+        ...mockUpcomingMeetings[0],
+        meetLink: "https://meet.google.com/abc-defg-hij",
+      },
+    ];
+    useMeetingManagement.mockReturnValue({
+      partners: mockPartners,
+      bookMeeting: mockBookMeeting,
+      cancelMeetings: mockCancelMeetings,
+      refresh: mockRefresh,
+      upcomingMeetings: meetings,
+      upcomingLength: meetings.length,
+      isLoading: false,
+    });
+
+    render(
+      <MeetingManagementDialog roundId={2} userTimezone="Asia/Shanghai" />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /manage meetings/i }));
+    await user.click(screen.getByRole("tab", { name: /upcoming/i }));
+
+    expect(
+      screen.queryByRole("link", { name: /join/i }),
+    ).not.toBeInTheDocument();
+    vi.useRealTimers();
   });
 });

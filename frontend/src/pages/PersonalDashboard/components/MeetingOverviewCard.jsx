@@ -1,6 +1,9 @@
 import { Calendar, Video } from "lucide-react";
 import { formatInTz } from "@/utils/dateTime";
-import { getMeetingStatus } from "@/utils/meetingStatusCalculator";
+import {
+  getMeetingStatus,
+  isWithinJoinWindow,
+} from "@/utils/meetingStatusCalculator";
 import { MeetingStatus } from "@/constants/MeetingStatus";
 
 /**
@@ -98,21 +101,23 @@ export default function MeetingOverviewCard({
                     </div>
                     <div className="flex items-center gap-2">
                       {/* Google-created meetings carry a Meet link; manually
-                          logged ones never do. A finished meeting drops the
-                          button, but one that merely started without being
-                          marked complete keeps it -- that is when someone
-                          running late still needs to get in. */}
-                      {m.meetLink && status !== MeetingStatus.COMPLETED && (
-                        <a
-                          href={m.meetLink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 rounded border border-[#6035F3] px-2 py-1 text-xs font-medium text-[#6035F3] transition-colors hover:bg-[#6035F3] hover:text-white"
-                        >
-                          <Video className="h-3.5 w-3.5" />
-                          Join
-                        </a>
-                      )}
+                          logged ones never do. Completion alone cannot bound
+                          this: a meeting nobody attended is never marked
+                          completed, so the join window is what stops a
+                          months-old slot from still offering a way in. */}
+                      {m.meetLink &&
+                        status !== MeetingStatus.COMPLETED &&
+                        isWithinJoinWindow(m.endDatetime) && (
+                          <a
+                            href={m.meetLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded border border-[#6035F3] px-2 py-1 text-xs font-medium text-[#6035F3] transition-colors hover:bg-[#6035F3] hover:text-white"
+                          >
+                            <Video className="h-3.5 w-3.5" />
+                            Join
+                          </a>
+                        )}
                       {status === MeetingStatus.COMPLETED && (
                         <span className="text-xs font-bold px-2 py-1 rounded text-green-700">
                           DONE
