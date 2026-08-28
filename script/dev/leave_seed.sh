@@ -1,34 +1,63 @@
 #!/usr/bin/env bash
 #
-# Fake leave data for local development: the postgres half. Run
-# leave_seed_redis.sh afterwards -- the database alone leaves every leave
-# screen empty, because level, hire date and manager live only in Redis.
+# Fake leave data for local development.
 #
 # Seeds five people, the 2026 company holidays, a ledger with all six entry
 # types and enough weekly accruals to page through, and six requests covering
 # every status a screen can show.
 #
-# Safe to re-run: it looks people up by their corporate address before creating
-# them, and clears its own ledger and request rows first.
-#
-# NEVER run this against staging or production.
-#
 #   ./script/dev/leave_seed.sh you@circlecat.org
 #
 # The address is the account everything is hung off -- your balance, your
-# requests, the LEAVE_ADMIN grant. It has to be the @circlecat.org address you
-# sign in with: an Azure ldap is matched to a purrf account by that address and
-# by nothing else.
+# requests, the LEAVE_ADMIN grant, your employment profile. It has to be the
+# @circlecat.org address you sign in with: an Azure ldap is matched to a purrf
+# account by that address and by nothing else.
 #
-# The database comes from DATABASE_URL.
+# It writes to two places because the feature reads from two. The ledger, the
+# requests and the holidays are rows in postgres; level, hire date and manager
+# are not stored there at all -- they live only in the Redis hash the nightly
+# Azure sync writes. Seed one without the other and every leave screen is still
+# empty: the accrual engine walks that hash to find people, the all-hands table
+# is built from it, and filing a request looks the approver up in it.
+#
+# Postgres comes from DATABASE_URL; Redis from REDIS_HOST, REDIS_PORT and
+# REDIS_PASSWORD -- the same variables the backend reads. --db-only and
+# --redis-only run one half, for when the two are not reachable from the same
+# place.
+#
+# Safe to re-run: it looks people up by their corporate address before creating
+# them, and clears its own ledger and request rows first.
+#
+# NEVER run this against staging or production. On any environment where the
+# nightly ldap sync actually runs, the Redis profiles are deleted the next time
+# it fires -- it drops every ldap Azure did not return.
 
 set -euo pipefail
 
-EMAIL="${1:-${LEAVE_SEED_EMAIL:-}}"
+EMAIL=""
+DO_DB=true
+DO_REDIS=true
+
+usage() {
+    echo "usage: $0 [--db-only|--redis-only] <your-address@circlecat.org>" >&2
+    echo "       (the address may also come from LEAVE_SEED_EMAIL)" >&2
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --db-only)    DO_REDIS=false ;;
+        --redis-only) DO_DB=false ;;
+        -h|--help)    usage; exit 0 ;;
+        -*)           echo "unknown option: $1" >&2; usage; exit 2 ;;
+        *)            EMAIL="$1" ;;
+    esac
+    shift
+done
+
+EMAIL="${EMAIL:-${LEAVE_SEED_EMAIL:-}}"
 
 if [[ -z "$EMAIL" ]]; then
-    echo "usage: $0 <your-address@circlecat.org>" >&2
-    echo "       (or set LEAVE_SEED_EMAIL)" >&2
+    usage
     exit 2
 fi
 
@@ -37,28 +66,29 @@ if [[ "$EMAIL" != *@* ]]; then
     exit 2
 fi
 
-if [[ -z "${DATABASE_URL:-}" ]]; then
-    echo "DATABASE_URL is not set." >&2
-    exit 2
-fi
+seed_database() {
+    if [[ -z "${DATABASE_URL:-}" ]]; then
+        echo "DATABASE_URL is not set." >&2
+        exit 2
+    fi
 
-# DATABASE_URL is written for SQLAlchemy and asyncpg, and psql understands
-# neither dialect of it. Two things have to be translated:
-#
-#   postgresql+asyncpg://  ->  postgresql://    the driver is not part of a URI
-#   ?ssl=                  ->  ?sslmode=        libpq's name for the same thing,
-#                                               and it takes require/disable
-#                                               rather than true/false
-DB_URL="${DATABASE_URL/+asyncpg/}"
-DB_URL="$(printf '%s' "$DB_URL" | sed -E '
-    s/([?&])ssl=true/\1sslmode=require/I
-    s/([?&])ssl=false/\1sslmode=disable/I
-    s/([?&])ssl=/\1sslmode=/I
-')"
+    # DATABASE_URL is written for SQLAlchemy and asyncpg, and psql understands
+    # neither dialect of it. Two things have to be translated:
+    #
+    #   postgresql+asyncpg://  ->  postgresql://    the driver is not part of a URI
+    #   ?ssl=                  ->  ?sslmode=        libpq's name for the same thing,
+    #                                               and it takes require/disable
+    #                                               rather than true/false
+    local DB_URL="${DATABASE_URL/+asyncpg/}"
+    DB_URL="$(printf '%s' "$DB_URL" | sed -E '
+        s/([?&])ssl=true/\1sslmode=require/I
+        s/([?&])ssl=false/\1sslmode=disable/I
+        s/([?&])ssl=/\1sslmode=/I
+    ')"
 
-# ON_ERROR_STOP matters: without it a failure halfway leaves half the fixture
-# behind and still exits 0.
-psql "$DB_URL" -v ON_ERROR_STOP=1 -v seed_email="$EMAIL" <<'SQL'
+    # ON_ERROR_STOP matters: without it a failure halfway leaves half the fixture
+    # behind and still exits 0.
+    psql "$DB_URL" -v ON_ERROR_STOP=1 -v seed_email="$EMAIL" <<'SQL'
 BEGIN;
 
 -- Park the address where the DO block below can read it back.
@@ -333,3 +363,79 @@ $seed$;
 
 COMMIT;
 SQL
+}
+
+seed_redis() {
+    # The hash is keyed by Azure ldap, so the address comes down to its local
+    # part -- the join between an ldap and a purrf account is that address.
+    local ME="${EMAIL%%@*}"
+    local -a REDIS
+
+    # Which Redis, and how to reach it.
+    #
+    # REDIS_HOST, REDIS_PORT and REDIS_PASSWORD are the same three the backend
+    # reads, so an environment already configured for the app needs nothing more.
+    # TLS is on by default whenever a host is given: the backend connects with
+    # ssl=True and no way to turn it off, so a Redis it can use is a Redis that
+    # speaks TLS. Set REDIS_TLS=false for one that does not.
+    #
+    # With no host at all this falls back to a plain local redis-cli. REDIS_CLI
+    # overrides the lot -- for a client needing a CA file, a socket, or anything
+    # else this does not spell:
+    #
+    #   REDIS_CLI="redis-cli -h host -p 6379 -a secret --tls --cacert ca.pem"
+    if [[ -n "${REDIS_CLI:-}" ]]; then
+        read -r -a REDIS <<< "$REDIS_CLI"
+    elif [[ -n "${REDIS_HOST:-}" ]]; then
+        REDIS=(redis-cli -h "$REDIS_HOST" -p "${REDIS_PORT:-6379}")
+        if [[ -n "${REDIS_PASSWORD:-}" ]]; then
+            REDIS+=(-a "$REDIS_PASSWORD" --no-auth-warning)
+        fi
+        if [[ "${REDIS_TLS:-true}" != "false" ]]; then
+            REDIS+=(--tls)
+        fi
+    else
+        REDIS=(redis-cli)
+    fi
+    KEY=leave:employment
+
+    # level      -- L1 has no annual entitlement, L2 to L4 get 80 hours a year.
+    # annual_hours -- what the engine pays towards; it does not re-derive it.
+    # hire_date  -- where accrual starts counting, as a Beijing calendar date.
+    # leave_date -- null while they are still here.
+    # manager_ldap -- who approves for them. Missing means they cannot file
+    #                 anything at all, sick leave included.
+    # problems   -- what the data-health page lists them under.
+
+    # You: an L3 with a manager, so you can file requests.
+    "${REDIS[@]}" HSET "$KEY" "$ME" '{"account_enabled": true, "annual_hours": 80, "hire_date": "2024-03-04", "leave_date": null, "level": "L3", "manager_ldap": "bob.li", "problems": []}'
+
+    # Your manager. He is at the top of the tree with nobody above him, which is
+    # what the "No manager in Azure" column on the data-health page is for -- and
+    # it means Bob himself cannot file a request.
+    "${REDIS[@]}" HSET "$KEY" bob.li '{"account_enabled": true, "annual_hours": 80, "hire_date": "2021-06-01", "leave_date": null, "level": "L4", "manager_ldap": null, "problems": ["missing_manager"]}'
+
+    # Reports to you. An L1: no entitlement, so no accrual rows and a permanently
+    # negative balance once he takes paid leave. Expected, not broken.
+    "${REDIS[@]}" HSET "$KEY" dan.zhao '{"account_enabled": true, "annual_hours": 0, "hire_date": "2025-09-15", "leave_date": null, "level": "L1", "manager_ldap": "'"$ME"'", "problems": []}'
+
+    # Reports to you. Ordinary L2.
+    "${REDIS[@]}" HSET "$KEY" frank.sun '{"account_enabled": true, "annual_hours": 80, "hire_date": "2023-01-10", "leave_date": null, "level": "L2", "manager_ldap": "'"$ME"'", "problems": []}'
+
+    # Reports to you, but her Azure job title does not parse into a level, so she
+    # accrues nothing while looking exactly like an L1 in the figures. The
+    # data-health page exists to tell those two apart.
+    "${REDIS[@]}" HSET "$KEY" erin.guo '{"account_enabled": true, "annual_hours": 0, "hire_date": "2024-11-04", "leave_date": null, "level": null, "manager_ldap": "'"$ME"'", "problems": ["unparseable_job_title"]}'
+
+    echo
+    echo "Profiles now in $KEY:"
+    "${REDIS[@]}" HKEYS "$KEY"
+}
+
+if [[ "$DO_DB" == true ]]; then
+    seed_database
+fi
+
+if [[ "$DO_REDIS" == true ]]; then
+    seed_redis
+fi

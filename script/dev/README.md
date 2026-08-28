@@ -1,36 +1,38 @@
 # Fake leave data for local development
 
-Two halves of one fixture. Run both, in this order, with the `@circlecat.org`
-address you sign in with:
+One command, two halves:
 
 ```bash
 export DATABASE_URL='postgresql+asyncpg://user:pass@host:5432/db'
 
-./script/dev/leave_seed.sh       you@circlecat.org
-./script/dev/leave_seed_redis.sh you@circlecat.org
+./script/dev/leave_seed.sh you@circlecat.org
 ```
 
-It has to be the same address both times: the join between an Azure ldap and a
-purrf account is that address, and nothing else connects them.
+The address is the account everything is hung off — your balance, your
+requests, the `leave.admin` grant, your employment profile. Use the
+`@circlecat.org` address you sign in with: an Azure ldap is matched to a purrf
+account by that address and by nothing else.
 
-Both read the environment the backend already uses. `leave_seed.sh` takes
-`DATABASE_URL` and translates it for psql, which understands neither
-SQLAlchemy's `+asyncpg` nor asyncpg's `ssl=` parameter. `leave_seed_redis.sh`
-takes `REDIS_HOST`, `REDIS_PORT` and `REDIS_PASSWORD`, and connects with TLS —
-the backend hardcodes `ssl=True`, so any Redis it can use speaks TLS. With no
-`REDIS_HOST` set it falls back to a plain local `redis-cli`.
+It reads the environment the backend already uses. `DATABASE_URL` for postgres,
+translated on the way to psql, which understands neither SQLAlchemy's
+`+asyncpg` nor asyncpg's `ssl=` parameter; `REDIS_HOST`, `REDIS_PORT` and
+`REDIS_PASSWORD` for Redis, connecting with TLS because the backend hardcodes
+`ssl=True` and offers no way to turn it off. With no `REDIS_HOST` set it falls
+back to a plain local `redis-cli`.
 
-Two escape hatches: `REDIS_TLS=false` for a Redis without TLS, and `REDIS_CLI`
-to replace the whole command for anything else — a CA file, a socket:
+`--db-only` and `--redis-only` run one half, for when the two are not reachable
+from the same place. Two escape hatches for Redis: `REDIS_TLS=false` for one
+without TLS, and `REDIS_CLI` to replace the command entirely — a CA file, a
+socket, anything this does not spell:
 
 ```bash
 REDIS_CLI="redis-cli -h host -p 6379 -a secret --tls --cacert ca.pem" \
-    ./script/dev/leave_seed_redis.sh you@circlecat.org
+    ./script/dev/leave_seed.sh --redis-only you@circlecat.org
 ```
 
-**Never run either against staging or production.**
+**Never run it against staging or production.**
 
-## Why both
+## Why two halves
 
 Employment facts — level, hire date, manager — live only in the Redis cache the
 nightly Azure sync writes. Postgres holds no column for any of them. Seed the
@@ -56,8 +58,8 @@ one waiting on your decision), three approved — including sick leave with
 `decided_by` empty, which is what "approved by rule, not by a person" looks
 like — and one rejected.
 
-Both scripts can be run again. They look people up by address before creating
-them, and clear their own ledger and request rows first.
+It can be run again. It looks people up by address before creating them, and
+clears its own ledger and request rows first.
 
 ## Before any of it shows up
 
