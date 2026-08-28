@@ -35,6 +35,17 @@ vi.mock("@/components/common/TimezoneSelector", () => ({
   ),
 }));
 
+// The log form is exercised in its own suite; here only its presence matters.
+vi.mock("@/pages/PersonalDashboard/components/MeetingLogForm", () => ({
+  default: ({ roundId, partnerId }) => (
+    <div data-testid="meeting-log-form">
+      <span data-testid="log-form-round">{String(roundId)}</span>
+      <span data-testid="log-form-partner">{String(partnerId)}</span>
+      <button>Log Meeting</button>
+    </div>
+  ),
+}));
+
 // Mock static datasets
 const mockPartners = new Map([
   [
@@ -109,8 +120,13 @@ describe("MeetingManagementDialog Component", () => {
     document.body.removeAttribute("data-scroll-locked");
   });
 
-  it("should disable the button and show correct tooltip when roundId is invalid", () => {
-    const { rerender } = render(<MeetingManagementDialog roundId={null} />);
+  it("should disable the trigger and surface the reason when no tab is usable", () => {
+    const { rerender } = render(
+      <MeetingManagementDialog
+        roundId={2}
+        scheduleUnavailableReason="No active mentorship round"
+      />,
+    );
 
     const triggerButton = screen.getByRole("button", {
       name: /manage meetings/i,
@@ -120,7 +136,7 @@ describe("MeetingManagementDialog Component", () => {
     const wrapperDiv = triggerButton.closest("div");
     expect(wrapperDiv).toHaveAttribute("title", "No active mentorship round");
 
-    // Re-render with valid roundId to verify enablement
+    // Re-render with the round schedulable to verify enablement
     rerender(<MeetingManagementDialog roundId={2} />);
     expect(
       screen.getByRole("button", { name: /manage meetings/i }),
@@ -723,5 +739,132 @@ describe("MeetingManagementDialog Component", () => {
       screen.queryByRole("link", { name: /join/i }),
     ).not.toBeInTheDocument();
     vi.useRealTimers();
+  });
+});
+
+describe("MeetingManagementDialog entry point", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    useMeetingManagement.mockReturnValue({
+      partners: mockPartners,
+      bookMeeting: mockBookMeeting,
+      cancelMeetings: mockCancelMeetings,
+      refresh: mockRefresh,
+      uncompletedMeetings: [],
+      isLoading: false,
+    });
+    document.body.style.pointerEvents = "auto";
+    document.body.removeAttribute("data-scroll-locked");
+  });
+
+  it("should render nothing when neither scheduling nor logging is offered", () => {
+    const { container } = render(
+      <MeetingManagementDialog
+        roundId={2}
+        canSchedule={false}
+        canLogPast={false}
+      />,
+    );
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("should not offer the log tab when logging is not available to this viewer", async () => {
+    render(<MeetingManagementDialog roundId={2} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /manage meetings/i }),
+    );
+
+    expect(
+      screen.queryByRole("tab", { name: /log past meeting/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("should open straight to the log tab when logging is the only thing offered", async () => {
+    render(
+      <MeetingManagementDialog
+        roundId={7}
+        canSchedule={false}
+        canLogPast={true}
+        logPartnerId={9}
+      />,
+    );
+
+    const trigger = screen.getByRole("button", { name: /manage meetings/i });
+    expect(trigger).not.toBeDisabled();
+    await userEvent.click(trigger);
+
+    expect(
+      screen.queryByRole("tab", { name: /schedule meeting/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("meeting-log-form")).toBeInTheDocument();
+    expect(screen.getByTestId("log-form-round")).toHaveTextContent("7");
+    expect(screen.getByTestId("log-form-partner")).toHaveTextContent("9");
+  });
+
+  it("should open on the log tab when the round cannot be scheduled in but can still be logged against", async () => {
+    // A round that has ended still accepts meetings held before it closed, so
+    // the entry point stays reachable rather than following the schedule tab
+    // into being disabled.
+    render(
+      <MeetingManagementDialog
+        roundId={2}
+        scheduleUnavailableReason="No active mentorship round"
+        canLogPast={true}
+        logPartnerId={9}
+      />,
+    );
+
+    const trigger = screen.getByRole("button", { name: /manage meetings/i });
+    expect(trigger).not.toBeDisabled();
+    await userEvent.click(trigger);
+
+    expect(screen.getByTestId("meeting-log-form")).toBeInTheDocument();
+  });
+
+  it("should show the reason in place of the schedule form when the round is not active", async () => {
+    render(
+      <MeetingManagementDialog
+        roundId={2}
+        scheduleUnavailableReason="No active mentorship round"
+        canLogPast={true}
+        logPartnerId={9}
+      />,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /manage meetings/i }),
+    );
+    await userEvent.click(
+      screen.getByRole("tab", { name: /schedule meeting/i }),
+    );
+
+    expect(screen.getByText("No active mentorship round")).toBeInTheDocument();
+    expect(
+      document.querySelector('select[name="partnerId"]'),
+    ).not.toBeInTheDocument();
+  });
+
+  it("should show the reason in place of the log form when logging is unavailable", async () => {
+    render(
+      <MeetingManagementDialog
+        roundId={2}
+        canLogPast={true}
+        logUnavailableReason="Logging meetings for this round has closed."
+      />,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /manage meetings/i }),
+    );
+    await userEvent.click(
+      screen.getByRole("tab", { name: /log past meeting/i }),
+    );
+
+    expect(
+      screen.getByText("Logging meetings for this round has closed."),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("meeting-log-form")).not.toBeInTheDocument();
   });
 });
