@@ -72,7 +72,7 @@ export default function MeetingManagementDialog({
   const {
     partners,
     bookMeeting,
-    upcomingMeetings = [],
+    uncompletedMeetings = [],
     cancelMeetings,
     isLoading,
   } = useMeetingManagement(roundId);
@@ -98,20 +98,20 @@ export default function MeetingManagementDialog({
     setFormData((prev) => ({ ...prev, timezone: userTimezone }));
   }, [userTimezone]);
 
-  const upcomingLength = upcomingMeetings.length;
+  const uncompletedLength = uncompletedMeetings.length;
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [isOpen, activeTab, upcomingMeetings.length]);
+  }, [isOpen, activeTab, uncompletedMeetings.length]);
 
   const isAllChecked = useMemo(() => {
-    return upcomingLength > 0 && selectedIds.size === upcomingLength;
-  }, [selectedIds, upcomingLength]);
+    return uncompletedLength > 0 && selectedIds.size === uncompletedLength;
+  }, [selectedIds, uncompletedLength]);
 
   const handleToggleAll = () => {
     if (isAllChecked) {
       setSelectedIds(new Set());
     } else {
-      const allIds = upcomingMeetings.map((m) => m.meetingId);
+      const allIds = uncompletedMeetings.map((m) => m.meetingId);
       setSelectedIds(new Set(allIds));
     }
   };
@@ -134,7 +134,7 @@ export default function MeetingManagementDialog({
     if (selectedIds.size === 0) return;
 
     // Construct the full selected meeting objects for processing in cancelMeetings
-    const selectedMeetings = upcomingMeetings.filter((m) =>
+    const selectedMeetings = uncompletedMeetings.filter((m) =>
       selectedIds.has(m.meetingId),
     );
 
@@ -325,10 +325,10 @@ export default function MeetingManagementDialog({
                 Schedule Meeting
               </TabsTrigger>
               <TabsTrigger
-                value="upcoming"
+                value="uncompleted"
                 className="h-full text-sm font-medium rounded-md text-gray-500 transition-all data-[state=active]:bg-white data-[state=active]:text-[#6035F3] data-[state=active]:shadow-sm"
               >
-                Upcoming
+                Uncompleted
               </TabsTrigger>
             </TabsList>
           </div>
@@ -564,17 +564,17 @@ export default function MeetingManagementDialog({
               </form>
             </TabsContent>
 
-            {/* Upcoming Tab */}
+            {/* Uncompleted Tab */}
             <TabsContent
-              value="upcoming"
+              value="uncompleted"
               className="mt-0 focus-visible:outline-none"
             >
-              {upcomingLength === 0 ? (
+              {uncompletedLength === 0 ? (
                 /* Empty state placeholder text preserved */
                 <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-gray-100 rounded-xl bg-gray-50/50 my-auto">
                   <CalendarDays className="w-12 h-12 text-gray-200 mb-2" />
                   <p className="text-gray-400 font-medium">
-                    No upcoming meetings found
+                    No uncompleted meetings found
                   </p>
                 </div>
               ) : (
@@ -583,13 +583,13 @@ export default function MeetingManagementDialog({
                     {/* Top Control Bar: Select All Checkbox */}
                     <div className="flex items-center space-x-3 pb-3 mb-4 border-b border-gray-100 flex-shrink-0">
                       <Checkbox
-                        id="select-all-upcoming"
+                        id="select-all-uncompleted"
                         checked={isAllChecked}
                         onCheckedChange={handleToggleAll}
                         disabled={isLoading}
                       />
                       <label
-                        htmlFor="select-all-upcoming"
+                        htmlFor="select-all-uncompleted"
                         className="text-sm font-semibold text-gray-700 cursor-pointer select-none"
                       >
                         Select All
@@ -598,7 +598,7 @@ export default function MeetingManagementDialog({
 
                     {/* Card List */}
                     <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-200">
-                      {upcomingMeetings.map((meeting) => {
+                      {uncompletedMeetings.map((meeting) => {
                         const isChecked = selectedIds.has(meeting.meetingId);
                         const { dateStr, timeStr, durationStr, timezoneStr } =
                           formatCardDetails(

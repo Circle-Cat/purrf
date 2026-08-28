@@ -59,7 +59,7 @@ const mockPartners = new Map([
   ],
 ]);
 
-const mockUpcomingMeetings = [
+const mockUncompletedMeetings = [
   {
     meetingId: "m-1",
     partnerId: 1,
@@ -101,7 +101,7 @@ describe("MeetingManagementDialog Component", () => {
       bookMeeting: mockBookMeeting,
       cancelMeetings: mockCancelMeetings,
       refresh: mockRefresh,
-      upcomingMeetings: [],
+      uncompletedMeetings: [],
       isLoading: false,
     });
 
@@ -147,7 +147,7 @@ describe("MeetingManagementDialog Component", () => {
       bookMeeting: mockBookMeeting,
       cancelMeetings: mockCancelMeetings,
       refresh: mockRefresh,
-      upcomingMeetings: [],
+      uncompletedMeetings: [],
       isLoading: false,
     });
 
@@ -177,12 +177,14 @@ describe("MeetingManagementDialog Component", () => {
     const partnerSelect = document.querySelector('select[name="partnerId"]');
     expect(partnerSelect).toBeInTheDocument();
 
-    // Switch to the 'Upcoming' tab
-    const upcomingTab = screen.getByRole("tab", { name: /upcoming/i });
-    await userEvent.click(upcomingTab);
+    // Switch to the 'Uncompleted' tab
+    const uncompletedTab = screen.getByRole("tab", { name: /uncompleted/i });
+    await userEvent.click(uncompletedTab);
 
     // Verify the empty state placeholder text is visible
-    expect(screen.getByText("No upcoming meetings found")).toBeInTheDocument();
+    expect(
+      screen.getByText("No uncompleted meetings found"),
+    ).toBeInTheDocument();
   });
 
   it("should handle submission validation if required fields are missing", async () => {
@@ -248,8 +250,8 @@ describe("MeetingManagementDialog Component", () => {
       bookMeeting: mockBookMeeting,
       cancelMeetings: mockCancelMeetings,
       refresh: mockRefresh,
-      upcomingMeetings: activeMeetings,
-      upcomingLength: 1,
+      uncompletedMeetings: activeMeetings,
+      uncompletedLength: 1,
       isLoading: false,
     });
 
@@ -260,9 +262,9 @@ describe("MeetingManagementDialog Component", () => {
       screen.getByRole("button", { name: /manage meetings/i }),
     );
 
-    // Switch to the Upcoming Tab
-    const upcomingTab = screen.getByRole("tab", { name: /upcoming/i });
-    await userEvent.click(upcomingTab);
+    // Switch to the Uncompleted Tab
+    const uncompletedTab = screen.getByRole("tab", { name: /uncompleted/i });
+    await userEvent.click(uncompletedTab);
 
     // Wait asynchronously to retrieve the specific checkbox
     const checkbox = await waitFor(() => {
@@ -300,8 +302,8 @@ describe("MeetingManagementDialog Component", () => {
       bookMeeting: mockBookMeeting,
       cancelMeetings: mockCancelMeetings,
       refresh: mockRefresh,
-      upcomingMeetings: mockUpcomingMeetings,
-      upcomingLength: mockUpcomingMeetings.length,
+      uncompletedMeetings: mockUncompletedMeetings,
+      uncompletedLength: mockUncompletedMeetings.length,
       isLoading: false,
     });
 
@@ -311,14 +313,14 @@ describe("MeetingManagementDialog Component", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /manage meetings/i }),
     );
-    await userEvent.click(screen.getByRole("tab", { name: /upcoming/i }));
+    await userEvent.click(screen.getByRole("tab", { name: /uncompleted/i }));
 
     // Locate the "Select All" target element
     const selectAllCheckbox = await waitFor(() => {
-      const el = document.getElementById("select-all-upcoming");
+      const el = document.getElementById("select-all-uncompleted");
       if (!el)
         throw new Error(
-          "Timeout: select-all-upcoming master checkbox element not found",
+          "Timeout: select-all-uncompleted master checkbox element not found",
         );
       return el;
     });
@@ -328,7 +330,7 @@ describe("MeetingManagementDialog Component", () => {
 
     // Wait for batch delete confirmation control to become interactive
     const deleteButton = await screen.findByRole("button", {
-      name: new RegExp(`delete \\(${mockUpcomingMeetings.length}\\)`, "i"),
+      name: new RegExp(`delete \\(${mockUncompletedMeetings.length}\\)`, "i"),
     });
 
     // Perform final deletion click
@@ -336,7 +338,7 @@ describe("MeetingManagementDialog Component", () => {
 
     // Validation: Ensure full collection transmission and state synchandlers run successfully
     await waitFor(() => {
-      expect(mockCancelMeetings).toHaveBeenCalledWith(mockUpcomingMeetings);
+      expect(mockCancelMeetings).toHaveBeenCalledWith(mockUncompletedMeetings);
       expect(mockOnBooked).toHaveBeenCalled();
     });
   });
@@ -347,8 +349,8 @@ describe("MeetingManagementDialog Component", () => {
       bookMeeting: mockBookMeeting,
       cancelMeetings: mockCancelMeetings,
       refresh: mockRefresh,
-      upcomingMeetings: mockUpcomingMeetings,
-      upcomingLength: mockUpcomingMeetings.length,
+      uncompletedMeetings: mockUncompletedMeetings,
+      uncompletedLength: mockUncompletedMeetings.length,
       isLoading: false,
     });
 
@@ -357,10 +359,10 @@ describe("MeetingManagementDialog Component", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /manage meetings/i }),
     );
-    await userEvent.click(screen.getByRole("tab", { name: /upcoming/i }));
+    await userEvent.click(screen.getByRole("tab", { name: /uncompleted/i }));
 
     const selectAllCheckbox = await waitFor(() =>
-      document.getElementById("select-all-upcoming"),
+      document.getElementById("select-all-uncompleted"),
     );
 
     // First interaction: Select All
@@ -439,8 +441,8 @@ describe("MeetingManagementDialog Component", () => {
       bookMeeting: mockBookMeeting,
       cancelMeetings: mockCancelMeetings,
       refresh: mockRefresh,
-      upcomingMeetings: mockUpcomingMeetings,
-      upcomingLength: mockUpcomingMeetings.length,
+      uncompletedMeetings: mockUncompletedMeetings,
+      uncompletedLength: mockUncompletedMeetings.length,
       isLoading: false,
     });
 
@@ -449,7 +451,7 @@ describe("MeetingManagementDialog Component", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /manage meetings/i }),
     );
-    await userEvent.click(screen.getByRole("tab", { name: /upcoming/i }));
+    await userEvent.click(screen.getByRole("tab", { name: /uncompleted/i }));
 
     const checkbox = await waitFor(() => document.getElementById("check-m-1"));
     await userEvent.click(checkbox);
@@ -462,7 +464,7 @@ describe("MeetingManagementDialog Component", () => {
       screen.getByRole("tab", { name: /schedule meeting/i }),
     );
     // Return back to tracking panel
-    await userEvent.click(screen.getByRole("tab", { name: /upcoming/i }));
+    await userEvent.click(screen.getByRole("tab", { name: /uncompleted/i }));
 
     // Assertions: Side-effects should clear prior cached selections to prevent dangling reference deletes
     expect(
@@ -470,12 +472,12 @@ describe("MeetingManagementDialog Component", () => {
     ).toBeDisabled();
   });
 
-  it("should reset selection when upcomingMeetings length changes from outside", async () => {
+  it("should reset selection when uncompletedMeetings length changes from outside", async () => {
     // Initialize list with multiple items
     useMeetingManagement.mockReturnValue({
       partners: mockPartners,
-      upcomingMeetings: mockUpcomingMeetings,
-      upcomingLength: mockUpcomingMeetings.length,
+      uncompletedMeetings: mockUncompletedMeetings,
+      uncompletedLength: mockUncompletedMeetings.length,
       isLoading: false,
     });
 
@@ -484,7 +486,7 @@ describe("MeetingManagementDialog Component", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /manage meetings/i }),
     );
-    await userEvent.click(screen.getByRole("tab", { name: /upcoming/i }));
+    await userEvent.click(screen.getByRole("tab", { name: /uncompleted/i }));
 
     const checkbox = await waitFor(() => document.getElementById("check-m-1"));
     await userEvent.click(checkbox);
@@ -495,8 +497,8 @@ describe("MeetingManagementDialog Component", () => {
     // Simulate upstream sync modifications
     useMeetingManagement.mockReturnValue({
       partners: mockPartners,
-      upcomingMeetings: [mockUpcomingMeetings[0]],
-      upcomingLength: 1,
+      uncompletedMeetings: [mockUncompletedMeetings[0]],
+      uncompletedLength: 1,
       isLoading: false,
     });
 
@@ -510,14 +512,14 @@ describe("MeetingManagementDialog Component", () => {
     });
   });
 
-  it("should show the full IANA zone name (not a city fragment) on upcoming meeting cards", async () => {
+  it("should show the full IANA zone name (not a city fragment) on uncompleted meeting cards", async () => {
     useMeetingManagement.mockReturnValue({
       partners: mockPartners,
       bookMeeting: mockBookMeeting,
       cancelMeetings: mockCancelMeetings,
       refresh: mockRefresh,
-      upcomingMeetings: mockUpcomingMeetings,
-      upcomingLength: mockUpcomingMeetings.length,
+      uncompletedMeetings: mockUncompletedMeetings,
+      uncompletedLength: mockUncompletedMeetings.length,
       isLoading: false,
     });
 
@@ -528,7 +530,7 @@ describe("MeetingManagementDialog Component", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /manage meetings/i }),
     );
-    await userEvent.click(screen.getByRole("tab", { name: /upcoming/i }));
+    await userEvent.click(screen.getByRole("tab", { name: /uncompleted/i }));
 
     expect(screen.getAllByText("Asia/Shanghai").length).toBeGreaterThan(0);
     expect(screen.queryByText("Shanghai")).not.toBeInTheDocument();
@@ -641,7 +643,7 @@ describe("MeetingManagementDialog Component", () => {
     vi.useRealTimers();
   });
 
-  it("should render a Join link only for an upcoming meeting that has a meet link", async () => {
+  it("should render a Join link only for an uncompleted meeting that has a meet link", async () => {
     // Pin the clock inside m-1's slot (2026-07-15T09:00-09:30Z); the join
     // window is time-bounded, so this must not ride the wall clock.
     vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -651,18 +653,18 @@ describe("MeetingManagementDialog Component", () => {
     // manually logged meeting, which never has one.
     const meetings = [
       {
-        ...mockUpcomingMeetings[0],
+        ...mockUncompletedMeetings[0],
         meetLink: "https://meet.google.com/abc-defg-hij",
       },
-      mockUpcomingMeetings[1],
+      mockUncompletedMeetings[1],
     ];
     useMeetingManagement.mockReturnValue({
       partners: mockPartners,
       bookMeeting: mockBookMeeting,
       cancelMeetings: mockCancelMeetings,
       refresh: mockRefresh,
-      upcomingMeetings: meetings,
-      upcomingLength: meetings.length,
+      uncompletedMeetings: meetings,
+      uncompletedLength: meetings.length,
       isLoading: false,
     });
 
@@ -671,7 +673,7 @@ describe("MeetingManagementDialog Component", () => {
     );
 
     await user.click(screen.getByRole("button", { name: /manage meetings/i }));
-    await user.click(screen.getByRole("tab", { name: /upcoming/i }));
+    await user.click(screen.getByRole("tab", { name: /uncompleted/i }));
 
     const joinLinks = screen.getAllByRole("link", { name: /join/i });
     expect(joinLinks).toHaveLength(1);
@@ -696,7 +698,7 @@ describe("MeetingManagementDialog Component", () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     const meetings = [
       {
-        ...mockUpcomingMeetings[0],
+        ...mockUncompletedMeetings[0],
         meetLink: "https://meet.google.com/abc-defg-hij",
       },
     ];
@@ -705,8 +707,8 @@ describe("MeetingManagementDialog Component", () => {
       bookMeeting: mockBookMeeting,
       cancelMeetings: mockCancelMeetings,
       refresh: mockRefresh,
-      upcomingMeetings: meetings,
-      upcomingLength: meetings.length,
+      uncompletedMeetings: meetings,
+      uncompletedLength: meetings.length,
       isLoading: false,
     });
 
@@ -715,7 +717,7 @@ describe("MeetingManagementDialog Component", () => {
     );
 
     await user.click(screen.getByRole("button", { name: /manage meetings/i }));
-    await user.click(screen.getByRole("tab", { name: /upcoming/i }));
+    await user.click(screen.getByRole("tab", { name: /uncompleted/i }));
 
     expect(
       screen.queryByRole("link", { name: /join/i }),
