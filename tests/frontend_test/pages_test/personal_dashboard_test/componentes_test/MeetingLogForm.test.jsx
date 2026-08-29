@@ -75,6 +75,46 @@ describe("MeetingLogForm", () => {
     expect(onSuccess).toHaveBeenCalled();
   });
 
+  it("should carry an overnight meeting's end into the next day", async () => {
+    // 23:00 to 01:00 is a two-hour meeting that crosses midnight, not a
+    // twenty-two-hour one running backwards.
+    postMyMentorshipMeetingLog.mockResolvedValue({});
+
+    render(<MeetingLogForm {...defaultProps} />);
+
+    selectTimes("23:00", "01:00");
+    fireEvent.click(screen.getByRole("button", { name: "Log Meeting" }));
+
+    await waitFor(() => {
+      expect(postMyMentorshipMeetingLog).toHaveBeenCalled();
+    });
+
+    const { startDatetime, endDatetime } =
+      postMyMentorshipMeetingLog.mock.calls[0][0];
+    expect(new Date(endDatetime) - new Date(startDatetime)).toBe(
+      2 * 60 * 60 * 1000,
+    );
+  });
+
+  it("should keep a same-day meeting's end on the same day", async () => {
+    postMyMentorshipMeetingLog.mockResolvedValue({});
+
+    render(<MeetingLogForm {...defaultProps} />);
+
+    selectTimes("10:00", "11:00");
+    fireEvent.click(screen.getByRole("button", { name: "Log Meeting" }));
+
+    await waitFor(() => {
+      expect(postMyMentorshipMeetingLog).toHaveBeenCalled();
+    });
+
+    const { startDatetime, endDatetime } =
+      postMyMentorshipMeetingLog.mock.calls[0][0];
+    expect(new Date(endDatetime) - new Date(startDatetime)).toBe(
+      60 * 60 * 1000,
+    );
+  });
+
   it("should show an error when no time is selected", async () => {
     render(<MeetingLogForm {...defaultProps} />);
 

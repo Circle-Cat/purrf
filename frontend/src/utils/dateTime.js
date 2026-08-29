@@ -2,6 +2,24 @@ import { format } from "date-fns";
 import { TZDate } from "@date-fns/tz";
 
 /**
+ * Every half-hour clock time in a day as "HH:mm" strings, "00:00" to "23:30".
+ *
+ * Frozen because it is shared: the mentorship meeting log and scheduling forms
+ * offer the same grid of start and end times, and a second copy of this list
+ * is a second chance for the two to drift apart. Callers map it into whatever
+ * shape their picker wants.
+ *
+ * @type {readonly string[]}
+ */
+export const HALF_HOUR_SLOTS = Object.freeze(
+  Array.from({ length: 48 }, (_, i) => {
+    const hour = String(Math.floor(i / 2)).padStart(2, "0");
+    const minute = i % 2 === 0 ? "00" : "30";
+    return `${hour}:${minute}`;
+  }),
+);
+
+/**
  * Format a UTC ISO string into the given IANA timezone using a date-fns pattern.
  * Returns null for null/empty/invalid iso inputs.
  * Falls back to UTC when tz is null or empty.
@@ -70,6 +88,51 @@ export function formatLocalYmd(date) {
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+/**
+ * Minutes since midnight for an "HH:mm" (or "HH:mm:ss") clock string.
+ *
+ * The string counterpart of minutesIntoLocalDay, measured from the same origin,
+ * so a picker can compare an offered slot against the current clock directly.
+ * Any seconds component is ignored.
+ *
+ * @param {string} timeStr - e.g. "14:30" or "14:30:00".
+ * @returns {number} 0 at "00:00" through 1439 at "23:59".
+ */
+export function hhMmToMinutes(timeStr) {
+  const [h, m] = timeStr.split(":").map(Number);
+  return h * 60 + m;
+}
+
+/**
+ * Whether two dates fall on the same calendar day, by the local components each
+ * one carries.
+ *
+ * Compares calendar days rather than instants, through formatLocalYmd, so it
+ * stays correct across the UTC/local boundary that slicing `.toISOString()`
+ * gets wrong. Pass a TZDate from nowInTz to compare against a specific zone's
+ * clock rather than the browser's.
+ *
+ * @param {Date} a
+ * @param {Date} b
+ * @returns {boolean}
+ */
+export function isSameLocalDay(a, b) {
+  return formatLocalYmd(a) === formatLocalYmd(b);
+}
+
+/**
+ * Minutes elapsed since local midnight for the date's own local components.
+ *
+ * Lets a time picker compare an "HH:mm" option against the current clock in one
+ * subtraction. Pass a TZDate from nowInTz to read a specific zone's clock.
+ *
+ * @param {Date} date
+ * @returns {number} 0 at midnight through 1439 at 23:59.
+ */
+export function minutesIntoLocalDay(date) {
+  return date.getHours() * 60 + date.getMinutes();
 }
 
 /**
