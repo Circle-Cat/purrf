@@ -9,6 +9,10 @@ import {
   nowInTz,
   localToUtcIso,
   getDaysSince,
+  HALF_HOUR_SLOTS,
+  isSameLocalDay,
+  minutesIntoLocalDay,
+  hhMmToMinutes,
 } from "@/utils/dateTime";
 
 describe("formatInTz", () => {
@@ -267,5 +271,112 @@ describe("localToUtcIso", () => {
     expect(localToUtcIso(dateObj, "10:00:30", "America/New_York")).toBe(
       "2024-01-15T15:00:30Z",
     );
+  });
+});
+
+describe("HALF_HOUR_SLOTS", () => {
+  it("covers a full day in half-hour steps", () => {
+    expect(HALF_HOUR_SLOTS).toHaveLength(48);
+    expect(HALF_HOUR_SLOTS[0]).toBe("00:00");
+    expect(HALF_HOUR_SLOTS[HALF_HOUR_SLOTS.length - 1]).toBe("23:30");
+  });
+
+  it("alternates between the hour and the half hour", () => {
+    expect(HALF_HOUR_SLOTS.slice(0, 4)).toEqual([
+      "00:00",
+      "00:30",
+      "01:00",
+      "01:30",
+    ]);
+  });
+
+  it("zero-pads single-digit hours", () => {
+    expect(HALF_HOUR_SLOTS).toContain("09:30");
+    expect(HALF_HOUR_SLOTS).not.toContain("9:30");
+  });
+
+  it("cannot be mutated by a caller", () => {
+    // Shared across the meeting log and scheduling forms, so one form must not
+    // be able to change what the other offers.
+    expect(() => HALF_HOUR_SLOTS.push("24:00")).toThrow();
+    expect(HALF_HOUR_SLOTS).toHaveLength(48);
+  });
+});
+
+describe("isSameLocalDay", () => {
+  it("is true for two instants on the same local calendar day", () => {
+    expect(
+      isSameLocalDay(
+        new Date(2024, 2, 15, 0, 0),
+        new Date(2024, 2, 15, 23, 59),
+      ),
+    ).toBe(true);
+  });
+
+  it("is false across a local day boundary one minute apart", () => {
+    expect(
+      isSameLocalDay(
+        new Date(2024, 2, 15, 23, 59),
+        new Date(2024, 2, 16, 0, 0),
+      ),
+    ).toBe(false);
+  });
+
+  it("compares the calendar day each date carries, not the UTC day", () => {
+    // 2024-01-01T20:00Z is already Jan 2 in Shanghai, so a picker sitting on
+    // Jan 2 (built by todayInTz) is "today" even though UTC still says Jan 1.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-01-01T20:00:00Z"));
+    try {
+      const shanghaiNow = nowInTz("Asia/Shanghai");
+      expect(isSameLocalDay(todayInTz("Asia/Shanghai"), shanghaiNow)).toBe(
+        true,
+      );
+      expect(isSameLocalDay(new Date(2024, 0, 1), shanghaiNow)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("minutesIntoLocalDay", () => {
+  it("is zero at local midnight", () => {
+    expect(minutesIntoLocalDay(new Date(2024, 2, 15, 0, 0))).toBe(0);
+  });
+
+  it("counts hours and minutes since local midnight", () => {
+    expect(minutesIntoLocalDay(new Date(2024, 2, 15, 14, 30))).toBe(870);
+    expect(minutesIntoLocalDay(new Date(2024, 2, 15, 23, 59))).toBe(1439);
+  });
+
+  it("reads the zone-local clock of a timezone-aware date", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-06-15T14:30:00Z"));
+    try {
+      // 14:30 UTC is 10:30 in New York (UTC-4 in June)
+      expect(minutesIntoLocalDay(nowInTz("America/New_York"))).toBe(630);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("hhMmToMinutes", () => {
+  it("converts a clock string to minutes since midnight", () => {
+    expect(hhMmToMinutes("00:00")).toBe(0);
+    expect(hhMmToMinutes("14:30")).toBe(870);
+    expect(hhMmToMinutes("23:30")).toBe(1410);
+  });
+
+  it("agrees with minutesIntoLocalDay for the same clock time", () => {
+    // The pickers compare an offered slot against the current clock, so the two
+    // must measure from the same origin.
+    expect(hhMmToMinutes("09:45")).toBe(
+      minutesIntoLocalDay(new Date(2024, 2, 15, 9, 45)),
+    );
+  });
+
+  it("ignores a seconds component when one is present", () => {
+    expect(hhMmToMinutes("10:15:30")).toBe(615);
   });
 });

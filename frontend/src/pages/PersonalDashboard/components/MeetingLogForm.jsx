@@ -2,7 +2,15 @@ import { useState } from "react";
 import TimezoneSelector from "@/components/common/TimezoneSelector";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
-import { todayInTz, nowInTz, localToUtcIso } from "@/utils/dateTime";
+import {
+  HALF_HOUR_SLOTS,
+  hhMmToMinutes,
+  isSameLocalDay,
+  localToUtcIso,
+  minutesIntoLocalDay,
+  nowInTz,
+  todayInTz,
+} from "@/utils/dateTime";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -21,15 +29,6 @@ import {
 import { cn } from "@/lib/utils";
 
 import { postMyMentorshipMeetingLog } from "@/api/mentorshipApi";
-
-// Generate time options in 30-minute increments (e.g., "00:00", "00:30", ..., "23:30")
-const timeOptions = Array.from({ length: 48 }, (_, i) => {
-  const hour = Math.floor(i / 2)
-    .toString()
-    .padStart(2, "0");
-  const minute = i % 2 === 0 ? "00" : "30";
-  return `${hour}:${minute}`;
-});
 
 /**
  * Form for logging a single mentorship meeting that has already been held.
@@ -80,23 +79,21 @@ export default function MeetingLogForm({
   const toUtcIso = (dateObj, timeStr, addDays = 0) =>
     localToUtcIso(dateObj, timeStr, tzIana, addDays);
 
-  const [startH, startM] = (startTime || "0:0").split(":").map(Number);
-  const [endH, endM] = (endTime || "0:0").split(":").map(Number);
+  const startMinutes = hhMmToMinutes(startTime || "0:0");
+  const endMinutes = hhMmToMinutes(endTime || "0:0");
 
-  const validateTimesNotEqual = () => startH !== endH || startM !== endM;
+  const validateTimesNotEqual = () => startMinutes !== endMinutes;
 
   // Current date/time in the selected timezone.
   const tzNow = nowInTz(tzIana);
 
-  const isTodayInTz =
-    format(selectedDate, "yyyy-MM-dd") === format(tzNow, "yyyy-MM-dd");
+  const isTodayInTz = isSameLocalDay(selectedDate, tzNow);
 
-  const currentMinutesInTz = tzNow.getHours() * 60 + tzNow.getMinutes();
+  const currentMinutesInTz = minutesIntoLocalDay(tzNow);
 
   const isFutureTime = (timeStr, bufferMinutes = 0) => {
     if (!isTodayInTz) return false;
-    const [h, m] = timeStr.split(":").map(Number);
-    return h * 60 + m + bufferMinutes >= currentMinutesInTz;
+    return hhMmToMinutes(timeStr) + bufferMinutes >= currentMinutesInTz;
   };
 
   const maxSelectableDate = new Date(
@@ -130,7 +127,7 @@ export default function MeetingLogForm({
     }
 
     setIsSubmitting(true);
-    const isOvernight = endH < startH || (endH === startH && endM < startM);
+    const isOvernight = endMinutes < startMinutes;
     try {
       await postMyMentorshipMeetingLog({
         roundId: Number(roundId),
@@ -222,7 +219,7 @@ export default function MeetingLogForm({
                   <SelectValue placeholder="Pick a start time" />
                 </SelectTrigger>
                 <SelectContent>
-                  {timeOptions.map((t) => (
+                  {HALF_HOUR_SLOTS.map((t) => (
                     <SelectItem
                       key={t}
                       value={t}
@@ -242,7 +239,7 @@ export default function MeetingLogForm({
                   <SelectValue placeholder="Pick an end time" />
                 </SelectTrigger>
                 <SelectContent>
-                  {timeOptions.map((t) => (
+                  {HALF_HOUR_SLOTS.map((t) => (
                     <SelectItem key={t} value={t} disabled={isFutureTime(t)}>
                       {t}
                     </SelectItem>
