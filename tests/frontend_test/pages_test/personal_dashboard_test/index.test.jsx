@@ -66,14 +66,6 @@ vi.mock(
   }),
 );
 
-vi.mock("@/pages/PersonalDashboard/components/GoogleMeetingControl", () => ({
-  GoogleMeetingControl: vi.fn(({ meetingRoundId }) => (
-    <div data-testid="mock-manage-meetings-btn">
-      Mock Button - Round: {meetingRoundId ?? "null"}
-    </div>
-  )),
-}));
-
 vi.mock("@/hooks/useFeatureFlags", () => {
   return {
     useFeatureFlags: vi.fn(),
@@ -311,93 +303,20 @@ describe("PersonalDashboard", () => {
     expect(button).toBeDisabled();
   });
 
-  describe("Manage Meetings Button", () => {
-    it("calculates active meetingRoundId using enum and passes it to the button", () => {
-      useMentorshipData.mockReturnValue({
-        ...mockHookData,
-        selectedRoundId: 20,
-        roundSelectionData: {
-          sortedRounds: [
-            { id: 10, status: MentorshipRoundStatus.COMPLETED },
-            { id: 20, status: MentorshipRoundStatus.ACTIVE },
-          ],
-        },
-      });
-
-      render(<PersonalDashboard />);
-
-      const btn = screen.getByTestId("mock-manage-meetings-btn");
-      expect(btn).toBeInTheDocument();
-      expect(btn.innerHTML).toContain("Round: 20");
+  it("hides the mentorship section when there is no hired mentorship role", () => {
+    useMyApplications.mockReturnValue({
+      applications: [],
+      isLoading: false,
+      loadError: false,
+      load: vi.fn(),
+      hiredMentorshipRoles: [],
     });
 
-    it("successfully activates and casts ID when selectedRoundId is a string from select dropdown", () => {
-      useMentorshipData.mockReturnValue({
-        ...mockHookData,
-        selectedRoundId: "20",
-        roundSelectionData: {
-          sortedRounds: [
-            { id: 10, status: MentorshipRoundStatus.COMPLETED },
-            { id: 20, status: MentorshipRoundStatus.ACTIVE },
-          ],
-        },
-      });
+    render(<PersonalDashboard />);
 
-      render(<PersonalDashboard />);
-
-      const btn = screen.getByTestId("mock-manage-meetings-btn");
-      expect(btn).toBeInTheDocument();
-      expect(btn.innerHTML).toContain("Round: 20");
-    });
-
-    it("passes null to the button when the user selects a completed / inactive round", () => {
-      useMentorshipData.mockReturnValue({
-        ...mockHookData,
-        selectedRoundId: 10,
-        roundSelectionData: {
-          sortedRounds: [
-            { id: 10, status: MentorshipRoundStatus.COMPLETED },
-            { id: 20, status: MentorshipRoundStatus.ACTIVE },
-          ],
-        },
-      });
-
-      render(<PersonalDashboard />);
-
-      const btn = screen.getByTestId("mock-manage-meetings-btn");
-      expect(btn.innerHTML).toContain("Round: null");
-    });
-
-    it("passes null to the button when there is no active round", () => {
-      useMentorshipData.mockReturnValue({
-        ...mockHookData,
-        selectedRoundId: 10,
-        roundSelectionData: {
-          sortedRounds: [{ id: 10, status: MentorshipRoundStatus.COMPLETED }],
-        },
-      });
-
-      render(<PersonalDashboard />);
-
-      const btn = screen.getByTestId("mock-manage-meetings-btn");
-      expect(btn.innerHTML).toContain("Round: null");
-    });
-
-    it("hides the button when there is no hired mentorship role", () => {
-      useMyApplications.mockReturnValue({
-        applications: [],
-        isLoading: false,
-        loadError: false,
-        load: vi.fn(),
-        hiredMentorshipRoles: [],
-      });
-
-      render(<PersonalDashboard />);
-
-      expect(
-        screen.queryByTestId("mock-manage-meetings-btn"),
-      ).not.toBeInTheDocument();
-    });
+    expect(
+      screen.queryByTestId("mock-participants-card"),
+    ).not.toBeInTheDocument();
   });
 
   it("always renders the My Applications card", () => {

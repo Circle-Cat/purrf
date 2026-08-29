@@ -9,8 +9,6 @@ import { useOnboardingTrainingReminder } from "@/pages/PersonalDashboard/hooks/u
 import { useRegistrationReminder } from "@/pages/PersonalDashboard/hooks/useRegistrationReminder";
 import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
-import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
-import { GoogleMeetingControl } from "@/pages/PersonalDashboard/components/GoogleMeetingControl";
 import LeaveApprovalsCard from "@/pages/PersonalDashboard/components/LeaveApprovalsCard";
 import { useLeaveApprovals } from "@/pages/Leave/hooks/useLeaveApprovals";
 import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
@@ -115,33 +113,14 @@ const PersonalDashboard = () => {
   const { isCovered, availableHours, pendingHours, usedHours } =
     useLeaveStanding({ enabled: isLeaveEnabled });
 
-  const currentSelectedRound = roundSelectionData?.sortedRounds?.find(
-    (round) => Number(round.id) === Number(selectedRoundId),
-  );
-
-  const isCurrentRoundActive =
-    currentSelectedRound?.status === MentorshipRoundStatus.ACTIVE;
-
   return (
     <div className="personal-dashboard space-y-5">
       {/* Welcome header */}
-      <div className="flex items-start justify-between shrink-0">
-        <div className="flex items-center gap-2">
-          <span role="img" aria-label="clapping hands" className="text-xl">
-            &#x1F44F;
-          </span>
-          <h2 className="m-0 text-lg font-medium">Welcome</h2>
-        </div>
-
-        {showMentorshipSection && (
-          <GoogleMeetingControl
-            meetingRoundId={
-              isCurrentRoundActive ? Number(selectedRoundId) : null
-            }
-            onRefresh={refreshMeetings}
-            userTimezone={userTimezone}
-          />
-        )}
+      <div className="flex items-center gap-2 shrink-0">
+        <span role="img" aria-label="clapping hands" className="text-xl">
+          &#x1F44F;
+        </span>
+        <h2 className="m-0 text-lg font-medium">Welcome</h2>
       </div>
 
       {/* My Applications card */}

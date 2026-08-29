@@ -1,12 +1,10 @@
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useState } from "react";
 import { addDays, addMonths, isAfter, isBefore, subMonths } from "date-fns";
 import { formatInTz, formatDateTimeWithZone } from "@/utils/dateTime";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
-import { GraduationCap, User, Plus } from "lucide-react";
+import { GraduationCap, User } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -14,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import MeetingSubmissionModal from "@/pages/PersonalDashboard/components/MeetingSubmissionModal";
+import MeetingManagementDialog from "@/pages/PersonalDashboard/components/MeetingManagementDialog";
 import { userDisplayName } from "@/utils/userName";
 import MeetingOverviewCard from "@/pages/PersonalDashboard/components/MeetingOverviewCard";
 import MentorshipFeedbackDialog from "@/pages/PersonalDashboard/components/MentorshipFeedbackDialog";
@@ -26,7 +24,8 @@ import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
  *
  * - Show role, round details, and per-partner meeting overview via MeetingOverviewCard.
  * - Provide a round selector to switch between rounds.
- * - Allow mentees to open the meeting submission modal.
+ * - Host the meeting entry point, which sits beside the round selector that
+ *   governs it rather than elsewhere on the page.
  *
  * @param {{
  *   roundSelectionData: { sortedRounds: Array },
@@ -52,9 +51,10 @@ export default function MentorshipParticipantsCard({
 }) {
   const { roundInfo, partnerMeetingOverview, participantRole } =
     participantDetails || {};
-  const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
-  const { [FEATURE_FLAGS.MANUAL_SUBMIT_MEETING]: manualSubmitMeeting } =
-    useFeatureFlags();
+  const {
+    [FEATURE_FLAGS.MANUAL_SUBMIT_MEETING]: manualSubmitMeeting,
+    [FEATURE_FLAGS.CREATE_GOOGLE_MEETING]: createGoogleMeeting,
+  } = useFeatureFlags();
   const isMentee =
     participantRole?.toLowerCase() === MentorshipParticipantRoles.MENTEE;
   const canSubmitMeeting = isMentee && manualSubmitMeeting;
@@ -82,13 +82,28 @@ export default function MentorshipParticipantsCard({
   const submissionPartnerId =
     livePairings.length === 1 ? livePairings[0].partnerId : null;
 
+  // Logging stays open for a day past the meetings deadline, so meetings held
+  // right up against it can still be recorded. Booking a new meeting needs a
+  // round that is still running, which is a different question -- keeping the
+  // two reasons apart is what lets the entry point stay reachable for one
+  // while the other is closed.
   const deadline = roundInfo?.timeline?.meetingsCompletionDeadlineAt;
-  const isSubmitDisabled =
-    !hasParticipation ||
-    submissionPartnerId == null ||
-    (deadline
-      ? isAfter(new Date(), addDays(new Date(deadline), 1))
-      : roundInfo?.status === MentorshipRoundStatus.COMPLETED);
+  const isLoggingClosed = deadline
+    ? isAfter(new Date(), addDays(new Date(deadline), 1))
+    : roundInfo?.status === MentorshipRoundStatus.COMPLETED;
+  const logUnavailableReason = isLoggingClosed
+    ? "Logging meetings for this round has closed."
+    : !hasParticipation || submissionPartnerId == null
+      ? "No single active pairing to log a meeting against."
+      : null;
+
+  const selectedRound = roundSelectionData?.sortedRounds?.find(
+    (round) => Number(round.id) === Number(selectedRoundId),
+  );
+  const scheduleUnavailableReason =
+    selectedRound?.status === MentorshipRoundStatus.ACTIVE
+      ? null
+      : "No active mentorship round";
 
   // Feedback opens halfway through the round rather than after all meetings are
   // done, so participants can write it while the round is still fresh. Both
@@ -134,17 +149,17 @@ export default function MentorshipParticipantsCard({
         <div className="flex items-center justify-between">
           <CardTitle>Mentorship Participation</CardTitle>
           <div className="flex items-center gap-2">
-            {canSubmitMeeting && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsMeetingModalOpen(true)}
-                disabled={isSubmitDisabled}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Submit Meeting Info
-              </Button>
-            )}
+            <MeetingManagementDialog
+              roundId={selectedRoundId}
+              canSchedule={Boolean(createGoogleMeeting)}
+              scheduleUnavailableReason={scheduleUnavailableReason}
+              canLogPast={canSubmitMeeting}
+              logPartnerId={submissionPartnerId}
+              logUnavailableReason={logUnavailableReason}
+              userTimezone={userTimezone}
+              onBooked={refreshMeetings}
+              onLogged={refreshMeetings}
+            />
             {showFeedback && (
               <MentorshipFeedbackDialog
                 roundId={selectedRoundId}
@@ -274,20 +289,6 @@ export default function MentorshipParticipantsCard({
           </>
         )}
       </CardContent>
-
-      {canSubmitMeeting && submissionPartnerId != null && (
-        <MeetingSubmissionModal
-          open={isMeetingModalOpen}
-          onOpenChange={setIsMeetingModalOpen}
-          roundId={selectedRoundId}
-          partnerId={submissionPartnerId}
-          userTimezone={userTimezone}
-          onSuccess={() => {
-            setIsMeetingModalOpen(false);
-            refreshMeetings();
-          }}
-        />
-      )}
     </Card>
   );
 }
