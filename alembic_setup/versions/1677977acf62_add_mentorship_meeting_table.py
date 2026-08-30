@@ -111,7 +111,7 @@ def upgrade() -> None:
             start_datetime, end_datetime, is_completed, created_datetime
         )
         SELECT
-            e->>'meeting_id',
+            gen_random_uuid()::text,
             p.pair_id,
             'manual'::meeting_source_enum,
             (e->>'start_datetime')::timestamptz,
@@ -136,7 +136,7 @@ def upgrade() -> None:
             has_insufficient_duration, last_sync_at
         )
         SELECT
-            e->>'meeting_id',
+            COALESCE(e->>'meeting_id', gen_random_uuid()::text),
             p.pair_id,
             'google'::meeting_source_enum,
             (e->>'start_datetime')::timestamptz,

@@ -75,12 +75,12 @@ const CompanyHolidaysDialog = ({ isOpen, onClose }) => {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Company holidays</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="flex flex-col min-h-0 flex-1 space-y-4">
           <div className="flex items-end justify-between gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="holiday-year">Year</Label>
@@ -102,50 +102,55 @@ const CompanyHolidaysDialog = ({ isOpen, onClose }) => {
             </span>
           </div>
 
-          {isLoading && (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          )}
+          <div className="overflow-y-auto min-h-0 flex-1 pr-1">
+            {isLoading && (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            )}
 
-          {!isLoading && loadError && (
-            <div className="flex flex-col items-start gap-3">
+            {!isLoading && loadError && (
+              <div className="flex flex-col items-start gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Couldn't load the calendar.
+                </p>
+                <Button onClick={() => loadYear(year)}>Retry</Button>
+              </div>
+            )}
+
+            {!isLoading && !loadError && segments.length === 0 && (
               <p className="text-sm text-muted-foreground">
-                Couldn't load the calendar.
+                No holidays have been entered for {year} yet.
               </p>
-              <Button onClick={() => loadYear(year)}>Retry</Button>
-            </div>
-          )}
+            )}
 
-          {!isLoading && !loadError && segments.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              No holidays have been entered for {year} yet.
-            </p>
-          )}
-
-          {!isLoading && !loadError && segments.length > 0 && (
-            <ul className="divide-y divide-gray-100">
-              {segments.map((segment) => (
-                <li
-                  key={`${segment.startDate}-${segment.name}`}
-                  className="flex items-start justify-between gap-3 py-2"
-                >
-                  <div className="min-w-0">
-                    <p className="m-0 text-sm font-medium">{segment.name}</p>
-                    <p className="m-0 text-sm text-muted-foreground">
-                      {formatBusinessRange(segment.startDate, segment.endDate)}
-                      {` · ${segment.dayCount} ${
-                        segment.dayCount === 1 ? "day" : "days"
-                      }`}
-                    </p>
-                  </div>
-                  {/* Whether it can be traded is a property of the whole
-                      holiday, not of single days within it. */}
-                  {segment.isExchangeable && (
-                    <Badge variant="secondary">Exchangeable</Badge>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
+            {!isLoading && !loadError && segments.length > 0 && (
+              <ul className="divide-y divide-gray-100">
+                {segments.map((segment) => (
+                  <li
+                    key={`${segment.startDate}-${segment.name}`}
+                    className="flex items-start justify-between gap-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="m-0 text-sm font-medium">{segment.name}</p>
+                      <p className="m-0 text-sm text-muted-foreground">
+                        {formatBusinessRange(
+                          segment.startDate,
+                          segment.endDate,
+                        )}
+                        {` · ${segment.dayCount} ${
+                          segment.dayCount === 1 ? "day" : "days"
+                        }`}
+                      </p>
+                    </div>
+                    {/* Whether it can be traded is a property of the whole
+                        holiday, not of single days within it. */}
+                    {segment.isExchangeable && (
+                      <Badge variant="secondary">Exchangeable</Badge>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

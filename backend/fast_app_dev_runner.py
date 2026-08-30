@@ -36,7 +36,7 @@ class DevAuthenticationService(AuthenticationService):
     def authenticate_request(self, headers: Headers) -> UserContextDto:
         return UserContextDto(
             sub="email|dev-superuser",
-            primary_email="admin@dev.local",
+            primary_email="bingl_w@circlecat.org",
             # Verified, so first login lands a confirmed primary email and the
             # hard wall passes without touching Auth0.
             email_verified=True,
