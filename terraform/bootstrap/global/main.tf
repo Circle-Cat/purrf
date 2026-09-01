@@ -1,3 +1,10 @@
+# Access-Control-Allow-Origin for the API hosts. The backend itself sets no
+# CORS headers at all, so this ruleset and the Access applications below are
+# the whole of purrf's CORS policy.
+#
+# 🔴 Never add a training-content host here. It exists to run third-party
+# course JavaScript at arm's length; letting it read API responses defeats the
+# separate origin entirely.
 resource "cloudflare_ruleset" "cors_headers" {
   zone_id = local.zone_id
   name    = "default"
@@ -475,6 +482,43 @@ resource "cloudflare_dns_record" "root_test" {
   }
 }
 
+# Origin serving SCORM course files, test only for now. Same tunnel and same
+# backend as test-api; what makes it a separate origin is only the hostname.
+#
+# 🔴 This host must stay OUT of the Access application below and OUT of the
+# CORS ruleset at the top of this file. Course JavaScript is third-party code
+# that we do not review, and it gets to run here. Two consequences:
+#
+#   * Access cookies are host-only, so a course cannot read the app's
+#     CF_Authorization -- but only for as long as this host has no Access
+#     application of its own. Putting one here would hand every course a
+#     readable identity token (http_only_cookie_attribute = false).
+#   * Access's CORS block is what issues Access-Control-Allow-Origin for this
+#     zone; the backend sets no CORS headers of its own. Adding this host to
+#     any allowed_origins list would let course JavaScript read purrf API
+#     responses cross-origin.
+#
+# Requests are authenticated by a signed token in the URL path instead
+# (random_password.training_token_signing_key in the purrf_instance module).
+#
+# staging and prod get the same record when the feature promotes; nothing in
+# this file is per-environment-conditional, so they are added by hand then.
+resource "cloudflare_dns_record" "training_content_test" {
+  zone_id = local.zone_id
+  name    = "test-training-content"
+  type    = "CNAME"
+  # The test cluster's cloudflare-tunnel ingress controller, same tunnel as
+  # api_test above. staging and prod ride c65a2ea6 (cloudflare2-tunnel).
+  content = "0a108bed-55ea-4c18-88b3-fd9bb68105ae.cfargotunnel.com"
+  proxied = true
+  ttl     = 1
+  lifecycle {
+    ignore_changes = [
+      comment,
+    ]
+  }
+}
+
 # CF-function route for staging reuses the existing tunnel (CF functions remain in purrf-452300).
 resource "cloudflare_dns_record" "cf_staging" {
   zone_id = local.zone_id
@@ -717,6 +761,10 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_test" {
   name       = "purrf_test"
   domain     = local.environments.test.origin_web
   type       = "self_hosted"
+  # 🔴 test-training-content.purrf.io is deliberately NOT listed. Access
+  # cookies are host-only and JS-readable, so protecting the course origin
+  # would hand every course package a valid identity token. It authenticates
+  # with a signed path token instead -- see the DNS record above.
   destinations = [
     { type = "public", uri = local.environments.test.origin_web },
     { type = "public", uri = local.environments.test.api_host },

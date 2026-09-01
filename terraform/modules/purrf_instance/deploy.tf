@@ -41,6 +41,14 @@ resource "kubernetes_secret" "purrf_app" {
     MENTORSHIP_MENTEE_ONBOARDING_LINK = "https://learn.circlecat.cn/course/view.php?id=16"
     RESUME_BUCKET                     = google_storage_bucket.resumes.name
 
+    # SCORM training. The content host is a separate origin on purpose (see
+    # local.domains.training_content): course JavaScript must not be able to
+    # read the app's Access cookie. The backend hands learners a signed
+    # TRAINING_CONTENT_HOST URL and validates the signature on the way back in.
+    TRAINING_BUCKET            = google_storage_bucket.training.name
+    TRAINING_CONTENT_HOST      = local.domains.training_content
+    TRAINING_TOKEN_SIGNING_KEY = random_password.training_token_signing_key.result
+
     # Per-environment Google Calendar isolation. Event ids are scoped per
     # calendar, so pointing each environment at its own secondary calendars is
     # what stops a delete or a reschedule driven by restored prod data from

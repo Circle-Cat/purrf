@@ -16,6 +16,13 @@ locals {
     # here: the DNS record is a placeholder address behind Cloudflare's proxy
     # and a Worker route answers every request.
     hook = "${local.subdomain_prefix}hook.${var.base_domain}"
+    # SCORM course files are served from their own origin so that course
+    # JavaScript -- third-party code we do not review -- runs somewhere it
+    # cannot read the app's CF_Authorization cookie or call the API with the
+    # learner's identity. Authentication here is a signed token in the URL
+    # path, never a cookie, which is why this host is deliberately absent from
+    # the Cloudflare Access application (see bootstrap/global/main.tf).
+    training_content = "${local.subdomain_prefix}training-content.${var.base_domain}"
   }
 
   common_labels = {
