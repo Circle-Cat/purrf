@@ -1,0 +1,1047 @@
+<!doctype html>
+<!--
+  SCORM training prototype — six views of the upload / verify / assign / learn loop.
+
+  Why it sits in public/ rather than being a route in the Recruiting v2 prototype
+  app: it is plain HTML with no build step, so it stays openable on its own. Vite
+  copies public/ into the Pages bundle verbatim, which publishes it at
+  /purrf/scorm-training.html without touching this branch's React entry.
+
+  The source of truth is branch scorm-training-prototype,
+  frontend/prototypes/scorm-training.html. Edit there, then copy here.
+
+  Colour tokens are copied verbatim from frontend/src/index.css — never hand-tune
+  a colour here. People shown are placeholders.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SCORM Training Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* ==========================================================================
+   Tokens copied verbatim from frontend/src/index.css so this prototype and
+   the app cannot drift. Do not hand-tune colours here — change the app.
+   ========================================================================== */
+:root {
+  --radius: 0.625rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.51 0.25 286);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.96 0.01 286);
+  --secondary-foreground: oklch(0.3 0.15 286);
+  --muted: oklch(0.96 0 0);
+  --muted-foreground: oklch(0.55 0.05 286);
+  --accent: oklch(0.94 0 0);
+  --accent-foreground: oklch(0.3 0.15 286);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.51 0.25 286);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-accent: oklch(0.96 0.02 286);
+  --sidebar-accent-foreground: oklch(0.51 0.25 286);
+  --sidebar-border: oklch(0.922 0 0);
+
+  /* Semantic states. Borrowed from the recruiting stage palette already in
+     index.css so this feature introduces no new hues. */
+  --state-ok: #10b981;        /* --stage-hired    */
+  --state-warn: #f59e0b;      /* --stage-tech     */
+  --state-idle: #64748b;      /* --stage-rejected */
+
+  --font-sans: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.dark, :root[data-theme="dark"] {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.18 0.02 286);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.18 0.02 286);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.65 0.2 286);
+  --primary-foreground: oklch(0.1 0.1 286);
+  --secondary: oklch(0.25 0.05 286);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.25 0 0);
+  --muted-foreground: oklch(0.7 0.05 286);
+  --accent: oklch(0.25 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 15%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.65 0.2 286);
+  --sidebar: oklch(0.18 0.02 286);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.25 0.05 286);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 15%);
+
+  --state-ok: #059669;
+  --state-warn: #d97706;
+  --state-idle: #64748b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not(.light) {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.18 0.02 286);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.18 0.02 286);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.65 0.2 286);
+    --primary-foreground: oklch(0.1 0.1 286);
+    --secondary: oklch(0.25 0.05 286);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.25 0 0);
+    --muted-foreground: oklch(0.7 0.05 286);
+    --accent: oklch(0.25 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 15%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.65 0.2 286);
+    --sidebar: oklch(0.18 0.02 286);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.25 0.05 286);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 15%);
+    --state-ok: #059669;
+    --state-warn: #d97706;
+  }
+}
+
+/* ========================= base ========================= */
+* { box-sizing: border-box; }
+/* Author-layer display rules beat the UA sheet's [hidden] rule, so anything
+   toggled with el.hidden needs this or it stays on screen. The scrim did. */
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); border-radius: var(--radius-md); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* ========================= prototype chrome ========================= */
+.proto {
+  position: fixed; inset: 0 auto auto 0; z-index: 200;
+  width: 100%; display: flex; align-items: center; gap: .75rem;
+  padding: .5rem .875rem; background: var(--card);
+  border-bottom: 1px solid var(--border);
+  font-size: .75rem;
+}
+.proto .tag {
+  font-family: var(--font-mono); font-size: .625rem; font-weight: 500;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--primary); border: 1px solid var(--primary);
+  border-radius: var(--radius-sm); padding: .05rem .35rem;
+}
+.proto .grow { flex: 1; }
+.proto select, .proto button.chrome {
+  font: inherit; font-size: .75rem; color: var(--foreground);
+  background: var(--background); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: .25rem .5rem; cursor: pointer;
+}
+.shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; padding-top: 37px; }
+
+/* ---- sidebar ---- */
+.side {
+  background: var(--sidebar); color: var(--sidebar-foreground);
+  border-right: 1px solid var(--sidebar-border);
+  padding: 1rem .625rem; display: flex; flex-direction: column; gap: .125rem;
+}
+.side .brand {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .375rem .5rem 1.125rem; font-weight: 700; font-size: 1rem; letter-spacing: -.01em;
+}
+.side .brand .dot { width: 1.5rem; height: 1.5rem; border-radius: var(--radius-md); background: var(--primary); }
+.side .grp {
+  font-size: .6875rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--muted-foreground); padding: .875rem .5rem .25rem;
+}
+.side a {
+  display: flex; align-items: center; gap: .5rem; text-decoration: none;
+  color: var(--sidebar-foreground); font-size: .8125rem; font-weight: 500;
+  padding: .4375rem .5rem; border-radius: var(--radius-md);
+}
+.side a:hover { background: var(--sidebar-accent); }
+.side a.on { background: var(--sidebar-accent); color: var(--sidebar-accent-foreground); font-weight: 600; }
+
+/* ---- main ---- */
+.main { min-width: 0; display: flex; flex-direction: column; }
+.topbar {
+  height: 56px; flex: none; display: flex; align-items: center; gap: 1rem;
+  padding: 0 1.5rem; border-bottom: 1px solid var(--border); background: var(--background);
+}
+.topbar .crumb { font-size: .8125rem; color: var(--muted-foreground); }
+.topbar .crumb b { color: var(--foreground); font-weight: 600; }
+.topbar .who {
+  margin-left: auto; display: flex; align-items: center; gap: .5rem; font-size: .8125rem;
+}
+.topbar .av {
+  width: 1.75rem; height: 1.75rem; border-radius: 999px; background: var(--secondary);
+  color: var(--secondary-foreground); display: grid; place-items: center;
+  font-size: .6875rem; font-weight: 600;
+}
+.content { padding: 1.75rem 1.5rem 4rem; max-width: 1180px; width: 100%; }
+
+/* ========================= shadcn primitives ========================= */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
+  white-space: nowrap; border-radius: var(--radius-md);
+  font-size: .875rem; font-weight: 500; height: 2.25rem; padding: 0 1rem;
+  border: 1px solid transparent; cursor: pointer; transition: all .15s;
+  background: var(--primary); color: var(--primary-foreground); font-family: inherit;
+}
+.btn:hover { background: color-mix(in oklch, var(--primary) 90%, transparent); }
+.btn.sm { height: 2rem; padding: 0 .75rem; }
+.btn.outline {
+  background: var(--background); color: var(--foreground); border-color: var(--border);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / .05);
+}
+.btn.outline:hover { background: var(--accent); color: var(--accent-foreground); }
+.btn.ghost { background: transparent; color: var(--foreground); }
+.btn.ghost:hover { background: var(--accent); color: var(--accent-foreground); }
+.btn.secondary { background: var(--secondary); color: var(--secondary-foreground); }
+.btn.secondary:hover { background: color-mix(in oklch, var(--secondary) 80%, transparent); }
+.btn.destructive { background: var(--destructive); color: #fff; }
+.btn[disabled] { pointer-events: none; opacity: .5; }
+.btn.icon { width: 2.25rem; padding: 0; }
+
+.badge {
+  display: inline-flex; align-items: center; justify-content: center; gap: .25rem;
+  border-radius: 999px; border: 1px solid transparent; padding: .125rem .5rem;
+  font-size: .75rem; font-weight: 500; width: fit-content; white-space: nowrap;
+  background: var(--primary); color: var(--primary-foreground);
+}
+.badge.secondary { background: var(--secondary); color: var(--secondary-foreground); }
+.badge.outline { background: transparent; color: var(--foreground); border-color: var(--border); }
+.badge .dot { width: .375rem; height: .375rem; border-radius: 999px; background: currentColor; }
+.badge.st-ok   { background: color-mix(in srgb, var(--state-ok) 14%, transparent);   color: var(--state-ok);   border-color: color-mix(in srgb, var(--state-ok) 32%, transparent); }
+.badge.st-warn { background: color-mix(in srgb, var(--state-warn) 16%, transparent); color: var(--state-warn); border-color: color-mix(in srgb, var(--state-warn) 34%, transparent); }
+.badge.st-idle { background: color-mix(in srgb, var(--state-idle) 14%, transparent); color: var(--state-idle); border-color: color-mix(in srgb, var(--state-idle) 32%, transparent); }
+
+.card {
+  background: var(--card); color: var(--card-foreground);
+  border: 1px solid var(--border); border-radius: var(--radius-xl);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / .05);
+}
+.card-head { padding: 1.25rem 1.5rem; display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+.card-head h3 { margin: 0; font-size: 1rem; font-weight: 600; line-height: 1.2; }
+.card-head p { margin: .25rem 0 0; font-size: .8125rem; color: var(--muted-foreground); }
+.card-head .right { margin-left: auto; display: flex; gap: .5rem; align-items: center; }
+.card-body { padding: 0 1.5rem 1.5rem; }
+.card-body.flush { padding: 0; }
+
+.input {
+  width: 100%; height: 2.25rem; padding: 0 .75rem; font: inherit; font-size: .875rem;
+  color: var(--foreground); background: var(--background);
+  border: 1px solid var(--input); border-radius: var(--radius-md);
+}
+.input::placeholder { color: var(--muted-foreground); }
+.label { display: block; font-size: .8125rem; font-weight: 500; margin-bottom: .375rem; }
+.hint { font-size: .75rem; color: var(--muted-foreground); margin-top: .375rem; }
+
+table.t { width: 100%; border-collapse: collapse; font-size: .875rem; }
+table.t th {
+  text-align: left; font-size: .75rem; font-weight: 500; color: var(--muted-foreground);
+  padding: .625rem 1.5rem; border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+table.t td { padding: .875rem 1.5rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+table.t tbody tr:last-child td { border-bottom: 0; }
+table.t tbody tr:hover { background: color-mix(in oklch, var(--muted) 55%, transparent); }
+table.t td.num { font-variant-numeric: tabular-nums; text-align: right; }
+table.t td .name { font-weight: 500; }
+table.t td .sub { font-size: .75rem; color: var(--muted-foreground); font-family: var(--font-mono); }
+.acts { display: flex; gap: .5rem; justify-content: flex-end; }
+
+/* alerts */
+.alert {
+  display: flex; gap: .75rem; padding: .875rem 1rem;
+  border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card);
+}
+.alert .ico { flex: none; width: 1.125rem; height: 1.125rem; margin-top: .0625rem; }
+.alert .at { font-weight: 600; font-size: .875rem; }
+.alert .ad { font-size: .8125rem; color: var(--muted-foreground); margin-top: .1875rem; }
+.alert.warn { border-color: color-mix(in srgb, var(--state-warn) 40%, transparent); background: color-mix(in srgb, var(--state-warn) 8%, var(--card)); }
+.alert.warn .ico, .alert.warn .at { color: var(--state-warn); }
+.alert.ok   { border-color: color-mix(in srgb, var(--state-ok) 40%, transparent);   background: color-mix(in srgb, var(--state-ok) 8%, var(--card)); }
+.alert.ok .ico, .alert.ok .at { color: var(--state-ok); }
+.alert.bad  { border-color: color-mix(in oklch, var(--destructive) 45%, transparent); background: color-mix(in oklch, var(--destructive) 8%, var(--card)); }
+.alert.bad .ico, .alert.bad .at { color: var(--destructive); }
+
+/* dialog */
+.scrim {
+  position: fixed; inset: 0; z-index: 300; background: rgb(0 0 0 / .5);
+  display: grid; place-items: center; padding: 2rem 1rem;
+  overflow-y: auto;
+}
+.dialog {
+  background: var(--popover); color: var(--popover-foreground);
+  border: 1px solid var(--border); border-radius: var(--radius-xl);
+  box-shadow: 0 20px 40px -12px rgb(0 0 0 / .35);
+  width: 100%; max-width: 34rem;
+}
+.dialog.wide { max-width: 42rem; }
+.dialog-head { padding: 1.5rem 1.5rem .75rem; }
+.dialog-head h2 { margin: 0; font-size: 1.0625rem; font-weight: 600; }
+.dialog-head p { margin: .3125rem 0 0; font-size: .8125rem; color: var(--muted-foreground); }
+.dialog-body { padding: .25rem 1.5rem 0; display: flex; flex-direction: column; gap: 1rem; }
+.dialog-foot {
+  padding: 1.5rem; display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+}
+.dialog-foot .grow { flex: 1; font-size: .75rem; color: var(--muted-foreground); }
+
+/* dropzone */
+.drop {
+  border: 1.5px dashed var(--border); border-radius: var(--radius-lg);
+  padding: 1.5rem; text-align: center; background: color-mix(in oklch, var(--muted) 45%, transparent);
+}
+.drop .f { font-weight: 500; font-size: .875rem; }
+.drop .m { font-size: .75rem; color: var(--muted-foreground); margin-top: .25rem; font-family: var(--font-mono); }
+
+/* validation checklist */
+.checks { display: flex; flex-direction: column; gap: .4375rem; font-size: .8125rem; }
+.checks div { display: flex; gap: .5rem; align-items: flex-start; }
+.checks .m { flex: none; width: 1rem; text-align: center; font-weight: 600; }
+.checks .ok  .m { color: var(--state-ok); }
+.checks .bad .m { color: var(--destructive); }
+.checks .idle .m { color: var(--muted-foreground); }
+.checks .bad span:last-child { color: var(--foreground); }
+.checks span:last-child { color: var(--muted-foreground); }
+
+/* key/value */
+dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: .375rem 1rem; margin: 0; font-size: .8125rem; }
+dl.kv dt { color: var(--muted-foreground); }
+dl.kv dd { margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+code {
+  font-family: var(--font-mono); font-size: .8125em;
+  background: var(--muted); border-radius: var(--radius-sm); padding: .0625rem .25rem;
+}
+
+/* trial run split */
+.trial { display: grid; grid-template-columns: minmax(0,1.7fr) minmax(300px,1fr); gap: 1.25rem; align-items: start; }
+.stage {
+  border: 1px solid var(--border); border-radius: var(--radius-xl); overflow: hidden;
+  background: var(--card); box-shadow: 0 1px 2px 0 rgb(0 0 0 / .05);
+}
+.stage .frame {
+  aspect-ratio: 16 / 10; display: grid; place-items: center; gap: .5rem;
+  background: color-mix(in oklch, var(--muted) 60%, transparent);
+  color: var(--muted-foreground); font-size: .8125rem; text-align: center;
+}
+.stage .frame .mono { font-family: var(--font-mono); font-size: .6875rem; }
+.panel { display: flex; flex-direction: column; gap: 1rem; }
+.panel h4 {
+  margin: 0 0 .625rem; font-size: .75rem; font-weight: 600; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--muted-foreground);
+}
+.log {
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--background); font-family: var(--font-mono); font-size: .6875rem;
+  padding: .5rem .625rem; display: flex; flex-direction: column; gap: .1875rem;
+  max-height: 11rem; overflow-y: auto; color: var(--muted-foreground);
+}
+.log b { color: var(--foreground); font-weight: 500; }
+
+/* learner course viewport */
+.player { border: 1px solid var(--border); border-radius: var(--radius-xl); overflow: hidden; background: var(--card); }
+.player .bar {
+  display: flex; align-items: center; gap: .75rem; padding: .625rem 1rem;
+  border-bottom: 1px solid var(--border); font-size: .8125rem;
+}
+.player .bar .ttl { font-weight: 600; }
+.player .bar .save { margin-left: auto; color: var(--muted-foreground); font-size: .75rem; display: flex; align-items: center; gap: .375rem; }
+.player .frame {
+  aspect-ratio: 16 / 9; display: grid; place-items: center; gap: .375rem;
+  background: color-mix(in oklch, var(--muted) 60%, transparent);
+  color: var(--muted-foreground); font-size: .8125rem; text-align: center;
+}
+.player .notice { padding: 1rem 1rem 0; }
+.player .errwrap { padding: 3rem 1.5rem; display: grid; place-items: center; }
+.player .errwrap .inner { max-width: 26rem; text-align: center; display: flex; flex-direction: column; gap: .75rem; align-items: center; }
+
+.page-head { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+.page-head h1 { margin: 0; font-size: 1.5rem; font-weight: 600; letter-spacing: -.015em; }
+.page-head p { margin: .25rem 0 0; font-size: .875rem; color: var(--muted-foreground); }
+.page-head .right { margin-left: auto; display: flex; gap: .5rem; }
+
+.toolbar { display: flex; gap: .5rem; padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.toolbar .search { position: relative; flex: 1; min-width: 14rem; max-width: 22rem; }
+
+.seg { display: inline-flex; background: var(--muted); border-radius: var(--radius-lg); padding: .1875rem; gap: .1875rem; }
+.seg button {
+  font: inherit; font-size: .75rem; font-weight: 500; border: 0; cursor: pointer;
+  background: transparent; color: var(--muted-foreground);
+  padding: .3125rem .625rem; border-radius: var(--radius-md);
+}
+.seg button.on { background: var(--background); color: var(--foreground); box-shadow: 0 1px 2px 0 rgb(0 0 0 / .06); }
+
+.stack { display: flex; flex-direction: column; gap: 1.25rem; }
+.view { display: none; }
+.view.on { display: block; }
+.muted { color: var(--muted-foreground); }
+.mono { font-family: var(--font-mono); }
+
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; }
+  .side { display: none; }
+  .trial { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ============ prototype chrome (not part of the product) ============ -->
+<div class="proto">
+  <span class="tag">Prototype</span>
+  <label class="muted" for="viewsel">View</label>
+  <select id="viewsel">
+    <option value="courses">1 · Course list</option>
+    <option value="upload">2 · Upload package</option>
+    <option value="trial">3 · Trial run</option>
+    <option value="assign">4 · Assign</option>
+    <option value="profile">5 · Profile training</option>
+    <option value="learn">6 · Learning page</option>
+  </select>
+  <span id="stateWrap" hidden>
+    <label class="muted" for="statesel">State</label>
+    <select id="statesel"></select>
+  </span>
+  <span class="grow"></span>
+  <span class="muted mono" style="font-size:.6875rem">tokens from frontend/src/index.css</span>
+  <button class="chrome" id="themeBtn" type="button">Dark</button>
+</div>
+
+<div class="shell">
+  <!-- ============ sidebar ============ -->
+  <nav class="side">
+    <div class="brand"><span class="dot"></span> purrf</div>
+    <a href="#">Dashboard</a>
+    <a href="#">Profile</a>
+    <a href="#">Leave</a>
+    <div class="grp">Mentorship</div>
+    <a href="#">Participants</a>
+    <a href="#">Meetings</a>
+    <div class="grp">Recruiting</div>
+    <a href="#">Board</a>
+    <a href="#">Job postings</a>
+    <div class="grp">Admin</div>
+    <a href="#" class="on" id="navTraining">Training</a>
+    <a href="#">Permissions</a>
+  </nav>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="crumb" id="crumb">Admin / <b>Training</b></div>
+      <div class="who"><span class="muted">Sam Lee</span><span class="av">SL</span></div>
+    </header>
+
+    <div class="content">
+
+      <!-- ============================================================ 1 -->
+      <section class="view on" data-view="courses">
+        <div class="page-head">
+          <div>
+            <h1>Training courses</h1>
+            <p>Upload a course, prove it can be finished, then assign it.</p>
+          </div>
+          <div class="right"><button class="btn">New course</button></div>
+        </div>
+
+        <div class="card">
+          <div class="toolbar">
+            <div class="search"><input class="input" placeholder="Search courses"></div>
+            <button class="btn outline sm">All statuses</button>
+            <button class="btn outline sm">Active only</button>
+          </div>
+          <div class="card-body flush">
+            <table class="t">
+              <thead>
+                <tr><th>Course</th><th>Package</th><th>Status</th><th class="num">Assigned</th><th></th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><div class="name">Mentee Onboarding</div><div class="sub">mentorship</div></td>
+                  <td><div class="sub">RaOvlxxJ</div><div class="sub muted">Sep 1, 2026</div></td>
+                  <td><span class="badge st-ok"><span class="dot"></span>Verified</span></td>
+                  <td class="num">124</td>
+                  <td><div class="acts"><button class="btn outline sm" data-goto="assign">Assign</button><button class="btn ghost sm icon">⋯</button></div></td>
+                </tr>
+                <tr>
+                  <td><div class="name">Mentor Onboarding</div><div class="sub">mentorship</div></td>
+                  <td><div class="sub">9K8IMOal</div><div class="sub muted">Aug 29, 2026</div></td>
+                  <td><span class="badge st-ok"><span class="dot"></span>Verified</span></td>
+                  <td class="num">38</td>
+                  <td><div class="acts"><button class="btn outline sm" data-goto="assign">Assign</button><button class="btn ghost sm icon">⋯</button></div></td>
+                </tr>
+                <tr>
+                  <td><div class="name">Corporate Culture</div><div class="sub">corporate_culture</div></td>
+                  <td><div class="sub">b2Kq1xZ</div><div class="sub muted">Sep 1, 2026</div></td>
+                  <td><span class="badge st-warn"><span class="dot"></span>Needs trial run</span></td>
+                  <td class="num">0</td>
+                  <td><div class="acts">
+                    <button class="btn sm" data-goto="trial">Trial run</button>
+                    <button class="btn outline sm" disabled title="Run this course to completion first">Assign</button>
+                    <button class="btn ghost sm icon">⋯</button>
+                  </div></td>
+                </tr>
+                <tr>
+                  <td><div class="name">Residency</div><div class="sub">residency</div></td>
+                  <td><span class="muted">—</span></td>
+                  <td><span class="badge st-idle"><span class="dot"></span>No package</span></td>
+                  <td class="num">0</td>
+                  <td><div class="acts"><button class="btn sm" data-goto="upload">Upload package</button><button class="btn ghost sm icon">⋯</button></div></td>
+                </tr>
+                <tr>
+                  <td><div class="name">Legacy Safety Briefing</div><div class="sub">—</div></td>
+                  <td><span class="muted">—</span></td>
+                  <td><span class="badge outline">External link</span></td>
+                  <td class="num">61</td>
+                  <td><div class="acts"><button class="btn outline sm" data-goto="upload">Upload package</button><button class="btn ghost sm icon">⋯</button></div></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <p class="hint" style="margin-top:.875rem">
+          Assign stays visible but disabled until a course has been run to completion — hiding it
+          would hide the rule. The API answers 409 either way.
+        </p>
+      </section>
+
+      <!-- ============================================================ 2 -->
+      <section class="view" data-view="upload">
+        <div class="page-head">
+          <div><h1>Training courses</h1><p>Upload dialog, shown over the list.</p></div>
+        </div>
+        <div class="card"><div class="card-body" style="padding:1.5rem"><p class="muted" style="margin:0">The course list sits behind this dialog.</p></div></div>
+      </section>
+
+      <!-- ============================================================ 3 -->
+      <section class="view" data-view="trial">
+        <div class="page-head">
+          <div>
+            <h1>Trial run — Mentee Onboarding</h1>
+            <p class="mono" style="font-size:.75rem">RaOvlxxJ · uploaded Sep 1, 2026</p>
+          </div>
+          <div class="right"><button class="btn outline" data-goto="courses">Exit</button></div>
+        </div>
+
+        <div class="trial">
+          <div class="stage">
+            <div class="frame">
+              <span>Course runs here</span>
+              <span class="mono">content origin · /p/&lt;token&gt;/scormdriver/indexAPI.html</span>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div id="trialVerdict"></div>
+
+            <div class="card"><div class="card-body" style="padding:1.25rem">
+              <h4>How this course completes</h4>
+              <div class="alert warn" style="border:0;background:transparent;padding:0">
+                <span class="ico">⚠</span>
+                <div>
+                  <div class="at">Reports through an embedded Storyline block</div>
+                  <div class="ad">Finishing every Rise lesson will not mark this course complete.</div>
+                </div>
+              </div>
+              <dl class="kv" style="margin-top:.875rem">
+                <dt>storylineId</dt><dd>cm171zxgx006v…</dd>
+                <dt>reporting</dt><dd>passed-incomplete</dd>
+                <dt>threshold</dt><dd>100%</dd>
+                <dt>driver</dt><dd>scormdriver 7.12.0</dd>
+              </dl>
+            </div></div>
+
+            <div class="card"><div class="card-body" style="padding:1.25rem">
+              <h4>Runtime</h4>
+              <dl class="kv" id="trialRuntime"></dl>
+            </div></div>
+
+            <div class="card"><div class="card-body" style="padding:1.25rem">
+              <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.625rem">
+                <h4 style="margin:0">CMI writes</h4>
+                <span class="badge secondary" id="trialWrites">772</span>
+                <button class="btn ghost sm" style="margin-left:auto">Export</button>
+              </div>
+              <div class="log" id="trialLog"></div>
+            </div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ 4 -->
+      <section class="view" data-view="assign">
+        <div class="page-head">
+          <div><h1>Training courses</h1><p>Assign dialog, shown over the list.</p></div>
+        </div>
+        <div class="card"><div class="card-body" style="padding:1.5rem"><p class="muted" style="margin:0">The course list sits behind this dialog.</p></div></div>
+      </section>
+
+      <!-- ============================================================ 5 -->
+      <section class="view" data-view="profile">
+        <div class="page-head">
+          <div><h1>Profile</h1><p>The Training section, as a learner sees it.</p></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h3>Training</h3>
+              <p>Dates shown in Asia/Shanghai.</p>
+            </div>
+          </div>
+          <div class="card-body flush">
+            <table class="t">
+              <thead>
+                <tr><th>Course</th><th>Status</th><th>Completed on</th><th>Due date</th><th></th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><div class="name">Mentee Onboarding</div></td>
+                  <td><span class="badge st-warn"><span class="dot"></span>In progress</span></td>
+                  <td><span class="muted">—</span></td>
+                  <td>Oct 1, 2026</td>
+                  <td><div class="acts"><button class="btn sm" data-goto="learn">Continue</button></div></td>
+                </tr>
+                <tr>
+                  <td><div class="name">Mentor Onboarding</div></td>
+                  <td><span class="badge st-ok"><span class="dot"></span>Completed</span></td>
+                  <td>Aug 12, 2026</td>
+                  <td><span class="muted">—</span></td>
+                  <td><div class="acts"><button class="btn outline sm" data-goto="learn">Review</button></div></td>
+                </tr>
+                <tr>
+                  <td><div class="name">Residency</div></td>
+                  <td><span class="badge st-idle"><span class="dot"></span>Not started</span></td>
+                  <td><span class="muted">—</span></td>
+                  <td>Nov 3, 2026</td>
+                  <td><div class="acts"><button class="btn sm" data-goto="learn">Start</button></div></td>
+                </tr>
+                <tr>
+                  <td><div class="name">Corporate Culture</div></td>
+                  <td><span class="badge st-idle"><span class="dot"></span>Not started</span></td>
+                  <td><span class="muted">—</span></td>
+                  <td><span class="muted">—</span></td>
+                  <td><div class="acts"><button class="btn outline sm">View link ↗</button></div></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <p class="hint" style="margin-top:.875rem">
+          The last row has no uploaded package, so it keeps the external link it has always had
+          rather than showing a Start button that cannot work.
+        </p>
+      </section>
+
+      <!-- ============================================================ 6 -->
+      <section class="view" data-view="learn">
+        <div class="page-head">
+          <div><h1>Mentee Onboarding</h1><p>Due Oct 1, 2026</p></div>
+          <div class="right"><button class="btn outline" data-goto="profile">Exit</button></div>
+        </div>
+        <div class="player" id="player"></div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<!-- ============ dialogs ============ -->
+<div class="scrim" id="scrim" hidden><div id="dialogHost"></div></div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------------- theme ---------------- */
+  var root = document.documentElement;
+  var themeBtn = document.getElementById("themeBtn");
+  function prefersDark() {
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+  function isDark() {
+    return root.classList.contains("dark") ||
+      (!root.classList.contains("light") && prefersDark());
+  }
+  function paintThemeBtn() { themeBtn.textContent = isDark() ? "Light" : "Dark"; }
+  themeBtn.addEventListener("click", function () {
+    var dark = isDark();
+    root.classList.remove("dark", "light");
+    root.classList.add(dark ? "light" : "dark");
+    paintThemeBtn();
+  });
+  paintThemeBtn();
+
+  /* ---------------- view + state routing ---------------- */
+  var viewSel  = document.getElementById("viewsel");
+  var stateSel = document.getElementById("statesel");
+  var stateWrap = document.getElementById("stateWrap");
+  var scrim = document.getElementById("scrim");
+  var dialogHost = document.getElementById("dialogHost");
+  var crumb = document.getElementById("crumb");
+
+  var CRUMBS = {
+    courses: "Admin / <b>Training</b>",
+    upload:  "Admin / Training / <b>Upload package</b>",
+    trial:   "Admin / Training / <b>Trial run</b>",
+    assign:  "Admin / Training / <b>Assign</b>",
+    profile: "<b>Profile</b>",
+    learn:   "Profile / <b>Mentee Onboarding</b>"
+  };
+
+  var STATES = {
+    upload:  [["checking", "Validating"], ["ready", "Ready to upload"], ["replace", "Replacing a package"], ["rejected", "Rejected"], ["unknown", "Unreadable config"]],
+    trial:   [["running", "In progress"], ["done", "Completed"], ["noinit", "Never initialised"]],
+    learn:   [["normal", "Learning"], ["updated", "Package was replaced"], ["missing", "Content missing"], ["expired", "Session expired"], ["savefail", "Save failed"]]
+  };
+
+  function setStateOptions(view) {
+    var list = STATES[view];
+    if (!list) { stateWrap.hidden = true; stateSel.innerHTML = ""; return; }
+    stateWrap.hidden = false;
+    stateSel.innerHTML = list.map(function (s) {
+      return '<option value="' + s[0] + '">' + s[1] + "</option>";
+    }).join("");
+  }
+
+  function show(view, state) {
+    Array.prototype.forEach.call(document.querySelectorAll(".view"), function (el) {
+      el.classList.toggle("on", el.dataset.view === view);
+    });
+    viewSel.value = view;
+    crumb.innerHTML = CRUMBS[view] || "";
+    setStateOptions(view);
+    if (state && STATES[view]) stateSel.value = state;
+    render(view, stateSel.value);
+    window.scrollTo(0, 0);
+  }
+
+  viewSel.addEventListener("change", function () { show(viewSel.value); });
+  stateSel.addEventListener("change", function () { render(viewSel.value, stateSel.value); });
+
+  document.addEventListener("click", function (e) {
+    var t = e.target.closest("[data-goto]");
+    if (t) { e.preventDefault(); show(t.dataset.goto); return; }
+    if (e.target.closest("[data-close]")) { e.preventDefault(); show("courses"); }
+  });
+
+  /* ---------------- renderers ---------------- */
+  function closeDialog() { scrim.hidden = true; dialogHost.innerHTML = ""; }
+
+  function openDialog(html) {
+    dialogHost.innerHTML = html;
+    scrim.hidden = false;
+  }
+
+  var CHECKS_OK = [
+    ["ok", "✓", "No path traversal, no symlinks, no <code>__</code>-prefixed entries"],
+    ["ok", "✓", "219 files, 32.4 MB — within limits"],
+    ["ok", "✓", "<code>imsmanifest.xml</code> parsed — SCORM 1.2"],
+    ["ok", "✓", "Entry point <code>scormdriver/indexAPI.html</code>"],
+    ["ok", "✓", "All 219 declared files present"]
+  ];
+
+  function checklist(rows) {
+    return '<div class="checks">' + rows.map(function (r) {
+      return '<div class="' + r[0] + '"><span class="m">' + r[1] + "</span><span>" + r[2] + "</span></div>";
+    }).join("") + "</div>";
+  }
+
+  var COMPLETION_BOX =
+    '<div class="alert warn">' +
+      '<span class="ico">⚠</span>' +
+      "<div>" +
+        '<div class="at">Completes through an embedded Storyline block</div>' +
+        '<div class="ad">Finishing every Rise lesson will <b>not</b> mark this course complete.</div>' +
+        '<dl class="kv" style="margin-top:.625rem">' +
+          "<dt>storylineId</dt><dd>cm171zxgx006v…</dd>" +
+          "<dt>reporting</dt><dd>passed-incomplete</dd>" +
+          "<dt>threshold</dt><dd>100%</dd>" +
+        "</dl>" +
+      "</div>" +
+    "</div>";
+
+  var UNKNOWN_BOX =
+    '<div class="alert">' +
+      '<span class="ico muted">◇</span>' +
+      "<div>" +
+        '<div class="at">Completion behaviour could not be determined</div>' +
+        '<div class="ad">This package was not built with a toolchain we can read. The trial run is ' +
+        "the only check — it will not be assignable until someone finishes it.</div>" +
+      "</div>" +
+    "</div>";
+
+  var REPLACE_BOX =
+    '<div class="alert warn">' +
+      '<span class="ico">⚠</span>' +
+      "<div>" +
+        '<div class="at">This replaces package qPpo9zHD</div>' +
+        '<div class="ad">Verification is cleared — the course must be run to completion again ' +
+        "before anyone can be assigned.<br>3 learners in progress will restart from the beginning. " +
+        "121 completed records are untouched.</div>" +
+      "</div>" +
+    "</div>";
+
+  function uploadDialog(state) {
+    var body, foot, uploadBtn;
+
+    if (state === "checking") {
+      body = '<div class="drop"><div class="f">circle-cat-mentee-onboarding-scorm12-RaOvlxxJ.zip</div>' +
+             '<div class="m">32.4 MB</div></div>' +
+             checklist([
+               ["ok", "✓", "No path traversal, no symlinks, no <code>__</code>-prefixed entries"],
+               ["ok", "✓", "219 files, 32.4 MB — within limits"],
+               ["idle", "…", "Parsing <code>imsmanifest.xml</code>"],
+               ["idle", "·", "Reading completion behaviour"]
+             ]);
+      uploadBtn = '<button class="btn" disabled>Checking…</button>';
+    } else if (state === "rejected") {
+      body = '<div class="drop"><div class="f">safety-briefing-scorm2004.zip</div><div class="m">18.1 MB</div></div>' +
+             checklist([
+               ["ok", "✓", "No path traversal, no symlinks, no <code>__</code>-prefixed entries"],
+               ["ok", "✓", "94 files, 18.1 MB — within limits"],
+               ["bad", "✕", "<b>This is a SCORM 2004 package.</b> Only SCORM 1.2 is supported. " +
+                 "Ask whoever exported it to publish for SCORM 1.2 instead."]
+             ]);
+      uploadBtn = '<button class="btn" disabled>Upload</button>';
+      foot = "Nothing was uploaded. The current package is unchanged.";
+    } else if (state === "unknown") {
+      body = '<div class="drop"><div class="f">residency-orientation.zip</div><div class="m">11.7 MB</div></div>' +
+             checklist(CHECKS_OK.slice(0, 4)) + UNKNOWN_BOX;
+      uploadBtn = '<button class="btn">Upload</button>';
+    } else if (state === "replace") {
+      body = '<div class="drop"><div class="f">circle-cat-mentee-onboarding-scorm12-RaOvlxxJ.zip</div>' +
+             '<div class="m">32.4 MB</div></div>' +
+             checklist(CHECKS_OK) + COMPLETION_BOX + REPLACE_BOX;
+      uploadBtn = '<button class="btn">Replace package</button>';
+      foot = "The previous files are kept for 24 hours.";
+    } else {
+      body = '<div class="drop"><div class="f">circle-cat-mentee-onboarding-scorm12-RaOvlxxJ.zip</div>' +
+             '<div class="m">32.4 MB</div></div>' +
+             checklist(CHECKS_OK) + COMPLETION_BOX;
+      uploadBtn = '<button class="btn">Upload</button>';
+    }
+
+    return '<div class="dialog wide">' +
+      '<div class="dialog-head"><h2>Upload package</h2><p>Mentee Onboarding</p></div>' +
+      '<div class="dialog-body">' + body + "</div>" +
+      '<div class="dialog-foot"><span class="grow">' + (foot || "") + "</span>" +
+        '<button class="btn ghost" data-close>Cancel</button>' + uploadBtn +
+      "</div></div>";
+  }
+
+  function assignDialog() {
+    return '<div class="dialog">' +
+      '<div class="dialog-head"><h2>Assign course</h2><p>Mentee Onboarding</p></div>' +
+      '<div class="dialog-body">' +
+        '<div><label class="label" for="who">Person</label>' +
+          '<input class="input" id="who" placeholder="Search by name or email"></div>' +
+        '<div><label class="label" for="due">Due date</label>' +
+          '<input class="input" id="due" placeholder="Optional">' +
+          '<div class="hint">Leave empty if there is no deadline yet. One can be set later.</div></div>' +
+        '<div class="alert"><span class="ico muted">ℹ</span><div>' +
+          '<div class="ad" style="margin:0">Already assigned to 124 people. Assigning someone a ' +
+          "second time does nothing.</div></div></div>" +
+      "</div>" +
+      '<div class="dialog-foot"><span class="grow">Bulk assignment comes later.</span>' +
+        '<button class="btn ghost" data-close>Cancel</button><button class="btn">Assign</button>' +
+      "</div></div>";
+  }
+
+  var RUNTIME_RUNNING = [
+    ["LMSInitialize", "✓ 0.4 s"],
+    ["lesson_status", "incomplete"],
+    ["suspend_data", "1,264 chars"],
+    ["Unsupported fields", "none"],
+    ["LMSFinish", "not called yet"],
+    ["Commits", "38 · last 12:04:31"]
+  ];
+  var RUNTIME_DONE = [
+    ["LMSInitialize", "✓ 0.4 s"],
+    ["lesson_status", "completed"],
+    ["suspend_data", "1,264 chars"],
+    ["Unsupported fields", "none"],
+    ["LMSFinish", "✓ 12:07:02"],
+    ["Commits", "44 · last 12:07:02"]
+  ];
+  var RUNTIME_NOINIT = [
+    ["LMSInitialize", "never called"],
+    ["lesson_status", "—"],
+    ["suspend_data", "—"],
+    ["Unsupported fields", "—"],
+    ["LMSFinish", "—"],
+    ["Commits", "0"]
+  ];
+
+  var LOG_RUNNING = [
+    ["12:04:31", "lesson_status", "incomplete"],
+    ["12:04:31", "suspend_data", "1264 chars"],
+    ["12:04:11", "lesson_location", '"6#h5p"'],
+    ["12:03:51", "suspend_data", "1198 chars"],
+    ["12:03:31", "suspend_data", "1102 chars"]
+  ];
+  var LOG_DONE = [
+    ["12:07:02", "session_time", "0000:09:20.00"],
+    ["12:06:54", "lesson_status", "completed"],
+    ["12:06:54", "suspend_data", "1264 chars"],
+    ["12:06:31", "lesson_status", "incomplete"],
+    ["12:06:11", "lesson_location", '"32#end"']
+  ];
+
+  function renderTrial(state) {
+    var verdict = document.getElementById("trialVerdict");
+    var runtime = document.getElementById("trialRuntime");
+    var log = document.getElementById("trialLog");
+    var writes = document.getElementById("trialWrites");
+    if (!verdict) return;
+
+    var rows, entries;
+    if (state === "done") {
+      verdict.innerHTML =
+        '<div class="alert ok"><span class="ico">✓</span><div>' +
+          '<div class="at">Completed — this course can now be assigned</div>' +
+          '<div class="ad">Verified by Sam Lee on Sep 1, 2026 at 12:07. Reached ' +
+          "<code>completed</code> after 9m 20s with no runtime errors.</div>" +
+          '<div style="margin-top:.75rem;display:flex;gap:.5rem;flex-wrap:wrap">' +
+            '<button class="btn sm" data-goto="assign">Assign to someone</button>' +
+            '<button class="btn outline sm" data-goto="courses">Back to courses</button>' +
+          "</div>" +
+        "</div></div>";
+      rows = RUNTIME_DONE; entries = LOG_DONE; writes.textContent = "772";
+    } else if (state === "noinit") {
+      verdict.innerHTML =
+        '<div class="alert bad"><span class="ico">✕</span><div>' +
+          '<div class="at">The course never reached our runtime</div>' +
+          '<div class="ad">It has not called <code>LMSInitialize</code>, so it never found the ' +
+          "SCORM API. That is a hosting fault on our side, not a defect in the package — the " +
+          "course itself has not been tested yet.</div>" +
+        "</div></div>";
+      rows = RUNTIME_NOINIT; entries = []; writes.textContent = "0";
+    } else {
+      verdict.innerHTML =
+        '<div class="alert"><span class="ico muted">○</span><div>' +
+          '<div class="at">Not complete yet</div>' +
+          '<div class="ad">This course unlocks for assignment the moment it reports ' +
+          "<code>completed</code> or <code>passed</code>.</div>" +
+        "</div></div>";
+      rows = RUNTIME_RUNNING; entries = LOG_RUNNING; writes.textContent = "772";
+    }
+
+    runtime.innerHTML = rows.map(function (r) {
+      return "<dt>" + r[0] + "</dt><dd>" + r[1] + "</dd>";
+    }).join("");
+
+    log.innerHTML = entries.length
+      ? entries.map(function (l) {
+          return "<span>" + l[0] + " <b>" + l[1] + "</b> " + l[2] + "</span>";
+        }).join("")
+      : '<span>No CMI traffic received.</span>';
+  }
+
+  function renderLearn(state) {
+    var host = document.getElementById("player");
+    if (!host) return;
+
+    var bar =
+      '<div class="bar"><span class="ttl">Mentee Onboarding</span>' +
+      '<span class="save">Progress saved 12:04</span></div>';
+
+    if (state === "missing") {
+      host.innerHTML = bar +
+        '<div class="errwrap"><div class="inner">' +
+          '<div class="at" style="font-size:1rem;font-weight:600">This course is temporarily unavailable</div>' +
+          '<p class="muted" style="margin:0;font-size:.875rem">Its files could not be found. Your progress is ' +
+          "saved. Please let an administrator know.</p>" +
+          '<button class="btn outline sm" data-goto="profile">Back to my training</button>' +
+        "</div></div>";
+      return;
+    }
+    if (state === "expired") {
+      host.innerHTML = bar +
+        '<div class="errwrap"><div class="inner">' +
+          '<div class="at" style="font-size:1rem;font-weight:600">Your session expired</div>' +
+          '<p class="muted" style="margin:0;font-size:.875rem">Refresh the page to carry on. Nothing is lost.</p>' +
+          '<button class="btn sm">Refresh</button>' +
+        "</div></div>";
+      return;
+    }
+
+    var notice = "";
+    if (state === "updated") {
+      notice =
+        '<div class="notice"><div class="alert">' +
+          '<span class="ico muted">ℹ</span><div style="flex:1">' +
+            '<div class="at">This course was updated</div>' +
+            '<div class="ad">You are starting from the beginning — your earlier progress could not ' +
+            "be carried over to the new version.</div>" +
+          "</div>" +
+          '<button class="btn ghost sm">Got it</button>' +
+        "</div></div>";
+    }
+    if (state === "savefail") {
+      notice =
+        '<div class="notice"><div class="alert bad">' +
+          '<span class="ico">⚠</span><div style="flex:1">' +
+            '<div class="at">Could not save your progress</div>' +
+            '<div class="ad">Retrying automatically. Keep this tab open.</div>' +
+          "</div>" +
+          '<button class="btn outline sm">Retry now</button>' +
+        "</div></div>";
+    }
+
+    var saveText = state === "savefail"
+      ? '<span class="save" style="color:var(--destructive)">Last saved 12:01</span>'
+      : '<span class="save">Progress saved 12:04</span>';
+
+    host.innerHTML =
+      '<div class="bar"><span class="ttl">Mentee Onboarding</span>' + saveText + "</div>" +
+      notice +
+      '<div class="frame" style="margin:' + (notice ? "1rem" : "0") + '">' +
+        "<span>Course runs here</span>" +
+        '<span class="mono" style="font-size:.6875rem">content origin · /p/&lt;token&gt;/…</span>' +
+      "</div>";
+  }
+
+  function render(view, state) {
+    closeDialog();
+    if (view === "upload") { openDialog(uploadDialog(state)); return; }
+    if (view === "assign") { openDialog(assignDialog()); return; }
+    if (view === "trial")  { renderTrial(state); return; }
+    if (view === "learn")  { renderLearn(state); return; }
+  }
+
+  show("courses");
+})();
+</script>
+</body>
+</html>
