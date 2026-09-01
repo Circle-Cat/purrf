@@ -13,15 +13,13 @@ class TrainingCourseRepository:
     ) -> list[tuple[TrainingCourseEntity, int]]:
         """Every course with the number of people assigned to it.
 
-        The count is an outer-joined aggregate rather than a second query per
-        row: the admin page shows it on every line, and it is what the
-        deactivate and overwrite confirmations count.
+        An outer-joined aggregate rather than a query per row: the admin page
+        shows the count on every line.
 
         Args:
             session (AsyncSession): The active async database session.
             include_inactive (bool): Whether deactivated courses are returned.
-                They are by default -- an admin looking at the catalogue needs
-                to see what they turned off in order to turn it back on.
+                They are by default.
 
         Returns:
             list[tuple[TrainingCourseEntity, int]]: Courses paired with their

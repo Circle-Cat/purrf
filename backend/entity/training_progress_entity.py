@@ -10,17 +10,13 @@ from backend.common.base import Base
 class TrainingProgressEntity(Base):
     """The SCORM runtime state behind one assignment.
 
-    One row per ``training`` row, created the first time a learner opens a
-    course. It is a separate table rather than more columns on ``training``
-    because ``training`` is read by the profile page, by registration and by
-    the matching gate, none of which care what slide somebody is on -- and
-    because the old link-only rows would carry these columns as permanent
+    Separate from ``training`` because the profile page, registration and the
+    matching gate all read that table and none of them care what slide somebody
+    is on -- and because link-only rows would carry these columns as permanent
     NULLs.
 
     ``lesson_status`` holds the SCORM value verbatim (``not attempted`` /
     ``incomplete`` / ``completed`` / ``passed`` / ``failed`` / ``browsed``).
-    Mapping it to a ``TrainingStatus`` is a decision made when it is written,
-    not a shape imposed on storage.
     """
 
     __tablename__ = "training_progress"
@@ -35,25 +31,19 @@ class TrainingProgressEntity(Base):
 
     lesson_status: Mapped[str | None] = mapped_column(String)
 
-    # The course's own bookmark. Wiped, with suspend_data, when a new package
-    # replaces the one a learner started on.
     lesson_location: Mapped[str | None] = mapped_column(String)
 
-    # 🔴 Text with no length limit, and no length validation anywhere above it.
-    #
-    # The SCORM 1.2 spec caps this at 4096 characters, but real packages ship
-    # driverOptions.js with USE_STRICT_SUSPEND_DATA_LIMITS = false and write
-    # straight past it. A rejected write is invisible to the course: it carries
-    # on, and the learner silently loses their place on the next visit. So the
-    # only safe behaviour is to store whatever arrives.
+    # Text with no length limit, and no length validation above it either.
+    # Real packages disable the SCORM 1.2 4096-character cap and write past it.
+    # A rejected write is invisible to the course: it carries on, and the
+    # learner silently loses their place. Never add a length here.
     suspend_data: Mapped[str | None] = mapped_column(Text)
 
     score_raw: Mapped[Decimal | None] = mapped_column(Numeric(precision=8, scale=2))
     score_min: Mapped[Decimal | None] = mapped_column(Numeric(precision=8, scale=2))
     score_max: Mapped[Decimal | None] = mapped_column(Numeric(precision=8, scale=2))
 
-    # Accumulated across sessions, in seconds. Courses report each session's
-    # time separately and expect the total back.
+    # Accumulated across sessions, in seconds.
     session_time_seconds: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0
     )

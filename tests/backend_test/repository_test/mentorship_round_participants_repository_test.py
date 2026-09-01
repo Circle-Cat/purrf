@@ -11,8 +11,7 @@ from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.job_entity import JobEntity
 
-# Imported for its side effect: registers the table training.course_id
-# points at, without which the mapper cannot resolve the foreign key.
+# Registers the table training.course_id points at.
 from backend.entity.training_course_entity import TrainingCourseEntity  # noqa: F401
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.training_entity import TrainingEntity

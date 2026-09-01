@@ -35,7 +35,7 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.trainings.get_training_by_user_id_and_course_id = AsyncMock(
             return_value=None
         )
-        # session.flush() is what gives the new row its training_id.
+        # flush() is what gives the new row its training_id.
         self.session.flush.side_effect = self._stamp_training_id
         self.service = TrainingAssignmentService(
             logger=MagicMock(),
@@ -59,8 +59,7 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(added.course_id, 3)
 
     async def test_unverified_course_is_refused(self):
-        """A course nobody has finished closes the matching gate for everybody
-        assigned to it, silently. The refusal is the whole point of the gate."""
+        """The refusal is the whole point of the gate."""
         self.courses.get_course_by_id.return_value = _course(
             verified_completable_at=None
         )
@@ -85,8 +84,7 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
             await self.service.assign(self.session, self.payload)
 
     async def test_assigning_twice_is_a_no_op(self):
-        """Not an error: (user_id, course_id) is uniquely indexed, and the
-        second call must not look like a duplicate somebody created."""
+        """Not an error: (user_id, course_id) is uniquely indexed."""
         self.trainings.get_training_by_user_id_and_course_id.return_value = (
             TrainingEntity(training_id=99, user_id=11, course_id=3)
         )
@@ -98,8 +96,8 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.session.add.assert_not_called()
 
     async def test_repeat_assignment_never_overwrites_an_existing_deadline(self):
-        """Registration stamps a deadline once and never refreshes it. Assigning
-        again with a different date must not be a second way to move it."""
+        """Registration stamps a deadline once; this must not be a second way
+        to move it."""
         existing = TrainingEntity(
             training_id=99,
             user_id=11,
@@ -123,15 +121,13 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_an_empty_deadline_is_allowed(self):
-        """Nullable since July; ensure_for_admitted already creates rows without
-        one and stamps it on first registration."""
+        """ensure_for_admitted already creates rows without one."""
         await self.service.assign(self.session, self.payload)
 
         self.assertIsNone(self.session.add.call_args.args[0].deadline)
 
     async def test_category_is_copied_from_the_course(self):
-        """Seed courses keep their category on the assignment so registration and
-        the matching gate, which filter on that column, read as they always did."""
+        """So registration and the matching gate read as they always did."""
         await self.service.assign(self.session, self.payload)
 
         self.assertEqual(

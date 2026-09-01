@@ -22,9 +22,8 @@ from backend.utils.permission_decorators import authenticate
 class TrainingAdminController:
     """Admin-only training routes.
 
-    Reading the catalogue is separated from changing it because the two are
-    genuinely different jobs: whoever schedules training needs to see what
-    exists, while uploading packages and assigning them is a narrower grant.
+    Reading the catalogue is a separate grant from changing it: scheduling
+    training needs to see what exists, assigning it is narrower.
     """
 
     def __init__(self, training_course_service, training_assignment_service, database):
@@ -76,8 +75,7 @@ class TrainingAdminController:
     async def list_courses(self):
         """Every course, with its state and how many people hold it.
 
-        Deactivated courses are included: an admin who turned one off has to be
-        able to see it in order to turn it back on.
+        Deactivated ones included, or they could never be turned back on.
         """
         async with self.database.session() as session:
             courses = await self.training_course_service.list_courses(session)
@@ -111,7 +109,7 @@ class TrainingAdminController:
         """Assign one course to one person.
 
         Answers 409 for a course nobody has finished, whatever the admin page
-        shows -- the disabled button there is an explanation, not the rule.
+        shows -- the disabled button there explains the rule, it is not the rule.
         """
         async with self.database.session() as session:
             result = await self.training_assignment_service.assign(session, payload)

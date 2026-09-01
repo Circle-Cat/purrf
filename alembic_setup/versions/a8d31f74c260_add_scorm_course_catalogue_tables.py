@@ -1,14 +1,12 @@
 """add scorm course catalogue tables
 
-Courses stop being four hard-coded enum values and become rows. The four that
-exist keep working unchanged: they are seeded here as rows carrying their
-category, and every existing `training` row is pointed at the one matching its
-own category, so registration and the mentorship matching gate -- which filter
-on `training.category` -- read exactly what they read before.
+The four hard-coded courses are seeded as rows carrying their category, and
+every existing `training` row is pointed at the one matching its own, so
+registration and the matching gate read what they read before.
 
-`training.category` becomes nullable in the same step. It has to: a course
-created from the admin page has no category, and assignments to it would
-otherwise be impossible to insert. Existing rows are untouched and keep theirs.
+`training.category` becomes nullable in the same step: a course created from
+the admin page has no category, and its assignments could not otherwise be
+inserted. Existing rows keep theirs.
 
 Revision ID: a8d31f74c260
 Revises: f9206b0d6531
@@ -29,9 +27,8 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-# Seeded one-for-one with backend.common.mentorship_enums.TrainingCategory.
-# Names are what an admin sees in the course list, so they are written for a
-# reader rather than copied from the enum value.
+# One per backend.common.mentorship_enums.TrainingCategory. Names are what an
+# admin sees, so they are written for a reader rather than copied from the enum.
 _SEED_COURSES = [
     ("mentorship_mentee_onboarding", "Mentee Onboarding"),
     ("mentorship_mentor_onboarding", "Mentor Onboarding"),
@@ -89,9 +86,8 @@ def upgrade() -> None:
             ondelete="SET NULL",
         ),
         sa.PrimaryKeyConstraint("course_id", name=op.f("pk_training_course")),
-        # One seed row per enum value, and no second course claiming a
-        # category. NULL is not constrained, so any number of new courses can
-        # exist without one.
+        # NULL is not constrained, so any number of new courses can exist
+        # without a category.
         sa.UniqueConstraint("category", name=op.f("uq_training_course_category")),
     )
 
@@ -110,9 +106,8 @@ def upgrade() -> None:
         "training_course",
         ["course_id"],
         ["course_id"],
-        # RESTRICT, not CASCADE: nothing deletes a course, and if something
-        # ever tries, losing people's completion records with it would be the
-        # worst possible way to find out.
+        # RESTRICT, not CASCADE: nothing deletes a course, and losing
+        # completion records would be the worst way to discover otherwise.
         ondelete="RESTRICT",
     )
     op.create_index(
@@ -126,8 +121,7 @@ def upgrade() -> None:
         "WHERE training_course.category = training.category"
     )
 
-    # Partial, so the four seed rows' many NULLs before this backfill -- and
-    # any future row without a course -- do not collide with each other.
+    # Partial, so rows without a course do not collide with each other.
     op.create_index(
         "uq_training_user_course",
         "training",
@@ -155,9 +149,9 @@ def upgrade() -> None:
         sa.Column("training_id", sa.Integer(), nullable=False),
         sa.Column("lesson_status", sa.String(), nullable=True),
         sa.Column("lesson_location", sa.String(), nullable=True),
-        # 🔴 Text, deliberately unbounded. Real packages disable the SCORM 1.2
-        # 4096-character limit and write past it; a rejected write is invisible
-        # to the course and costs the learner their place. Never add a length.
+        # Deliberately unbounded: real packages disable the SCORM 1.2
+        # 4096-character limit and write past it, and a rejected write is
+        # invisible to the course. Never add a length.
         sa.Column("suspend_data", sa.Text(), nullable=True),
         sa.Column("score_raw", sa.Numeric(precision=8, scale=2), nullable=True),
         sa.Column("score_min", sa.Numeric(precision=8, scale=2), nullable=True),
@@ -192,9 +186,8 @@ def downgrade() -> None:
     """Downgrade schema.
 
     Restoring `training.category` to NOT NULL fails if any assignment to a
-    course without a category exists. That is intended: those rows have no
-    category to restore, and inventing one would corrupt the matching gate.
-    Delete them first if a downgrade is genuinely wanted.
+    course without a category exists. Intended: inventing one would corrupt the
+    matching gate. Delete those rows first if a downgrade is really wanted.
     """
     op.drop_table("training_progress")
 

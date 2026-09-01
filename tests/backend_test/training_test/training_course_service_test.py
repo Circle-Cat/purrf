@@ -33,8 +33,7 @@ class TestDeriveCourseState(unittest.TestCase):
         )
 
     def test_re_upload_drops_a_verified_course_back_to_needs_trial_run(self):
-        """A new export is a new thing; the old proof does not carry over. The
-        prefix stays populated, so reading it first would report VERIFIED."""
+        """The prefix stays populated, so reading it first would say VERIFIED."""
         course = TrainingCourseEntity(
             storage_prefix="training/3/def/", verified_completable_at=None
         )
@@ -43,7 +42,7 @@ class TestDeriveCourseState(unittest.TestCase):
         )
 
     def test_seed_course_without_a_package_keeps_its_external_link(self):
-        """Not broken, just not hosted here -- 61 people point at that link."""
+        """Not broken, just not hosted here."""
         course = TrainingCourseEntity(
             category=TrainingCategory.CORPORATE_CULTURE_COURSE, storage_prefix=None
         )
@@ -62,8 +61,7 @@ class TestTrainingCourseService(unittest.IsolatedAsyncioTestCase):
         self.repository.count_assignments = AsyncMock(return_value=0)
 
         def _assign_id(_session, course):
-            # Stands in for the flush the repository does: the id exists only
-            # once the row has been sent to the database.
+            # Stands in for the repository's flush.
             course.course_id = 7
             return course
 
@@ -98,8 +96,7 @@ class TestTrainingCourseService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(course.state, TrainingCourseState.NO_PACKAGE)
 
     async def test_deactivating_only_flips_the_flag(self):
-        """Nothing is deleted and nobody loses access; that is the whole reason
-        this is deactivation rather than a delete."""
+        """Nothing is deleted and nobody loses access."""
         existing = TrainingCourseEntity(
             course_id=5, name="Legacy Safety Briefing", is_active=True
         )

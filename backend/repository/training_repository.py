@@ -75,9 +75,7 @@ class TrainingRepository:
         """
         Fetch the assignment a user holds for one course, if any.
 
-        This is the read behind idempotent assignment: (user_id, course_id) is
-        uniquely indexed, so assigning twice must find the existing row rather
-        than raise.
+        The read behind idempotent assignment.
 
         Args:
             session (AsyncSession): The active async database session.

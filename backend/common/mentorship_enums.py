@@ -82,10 +82,10 @@ MENTORSHIP_ONBOARDING_CATEGORIES: frozenset[TrainingCategory] = frozenset({
 
 
 class ScormVersion(str, Enum):
-    """The SCORM version a package declares in its manifest.
+    """The version a package declares in its manifest.
 
-    2004 is recognised so an upload can be rejected by name rather than
-    accepted and left to fail when a learner opens it. Nothing runs it.
+    2004 is recognised only so an upload can be rejected by name; nothing
+    runs it.
     """
 
     SCORM_12 = "1.2"

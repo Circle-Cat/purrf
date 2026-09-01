@@ -12,16 +12,11 @@ from backend.entity.training_course_entity import TrainingCourseEntity
 def derive_course_state(course: TrainingCourseEntity) -> TrainingCourseState:
     """Read a course's row as the one status the admin page shows.
 
-    Order matters. Verification is checked before the package because a
-    re-upload clears ``verified_completable_at`` and leaves the prefix in
-    place: a course that has a package but no proof is NEEDS_TRIAL_RUN, never
-    VERIFIED.
+    Order matters: a re-upload clears ``verified_completable_at`` but leaves
+    the prefix, so a package without proof is NEEDS_TRIAL_RUN, never VERIFIED.
 
-    The two package-less states are told apart by ``category``. A seed row
-    carries one and still has a working environment-variable link behind it, so
-    it is EXTERNAL_LINK -- not broken, just not hosted here. A course somebody
-    created and never uploaded to has no category and nowhere to send a
-    learner, so it is NO_PACKAGE.
+    A package-less seed row still has a working external link, so it is
+    EXTERNAL_LINK rather than NO_PACKAGE.
 
     Args:
         course (TrainingCourseEntity): The row to read.
@@ -62,8 +57,7 @@ def to_course_dto(
 class TrainingCourseService:
     """Creating, listing and deactivating courses.
 
-    Uploading a package is not here: it belongs with the storage and manifest
-    handling that arrives with it.
+    Uploading a package belongs with the storage handling that arrives with it.
     """
 
     def __init__(self, logger, training_course_repository):
@@ -90,8 +84,7 @@ class TrainingCourseService:
     ) -> TrainingCourseDto:
         """Create a course with no package.
 
-        It starts unassignable and stays that way until a package is uploaded
-        and somebody runs it to completion.
+        Unassignable until a package is uploaded and somebody finishes it.
         """
         course = TrainingCourseEntity(
             name=payload.name.strip(),
@@ -111,9 +104,8 @@ class TrainingCourseService:
     ) -> TrainingCourseDto:
         """Rename a course, or turn it on or off.
 
-        Deactivating only stops new assignments. Everybody already assigned
-        keeps their access and their progress, which is why this is the whole
-        of it and there is no delete.
+        Deactivating only stops new assignments; everybody already assigned
+        keeps their access and their progress. There is no delete.
 
         Raises:
             ValueError: No such course.

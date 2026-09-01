@@ -9,11 +9,8 @@ from backend.common.permissions import (
 
 
 class TestPermissions(unittest.TestCase):
-    # The count is a deliberate tripwire, not a fact worth asserting for its
-    # own sake: adding a permission has to be a conscious act, because it also
-    # needs an entry in permission_descriptions.py. Bump it and write the
-    # description. The name no longer carries the number so that bumping it
-    # does not also mean renaming the test.
+    # The count is a tripwire: a new permission also needs an entry in
+    # permission_descriptions.py. Bump it and write the description.
     def test_catalog_values_are_unique_and_dotted(self):
         self.assertEqual(len(Permission), 22)
         values = [p.value for p in Permission]

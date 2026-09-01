@@ -99,7 +99,7 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(response["data"]["created"])
 
     async def test_a_repeat_assignment_is_200_and_says_so(self):
-        """It is a no-op, not a failure -- so neither 201 nor an error."""
+        """A no-op, not a failure -- so neither 201 nor an error."""
         self.assignment_service.assign.return_value = TrainingAssignmentResultDto(
             training_id=42, user_id=11, course_id=3, created=False
         )
@@ -112,7 +112,7 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(response["data"]["created"])
 
     async def test_the_list_includes_deactivated_courses(self):
-        """An admin who turned a course off has to see it to turn it back on."""
+        """Or they could never be turned back on."""
         await self.controller.list_courses()
 
         self.course_service.list_courses.assert_awaited_once_with(self.session)

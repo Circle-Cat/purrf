@@ -1,9 +1,8 @@
 """Assigning a course to a person, by hand.
 
-Automatic dispatch -- courses attached to a job posting, and a missing-courses
-list to catch everybody a posting cannot reach -- is a later piece of work. The
-existing mentorship dispatch (``OnboardingTrainingService.ensure_for_admitted``)
-keeps working untouched; its rows simply carry a ``course_id`` now.
+Automatic dispatch is a later piece of work. The existing mentorship dispatch
+(``OnboardingTrainingService.ensure_for_admitted``) keeps working untouched;
+its rows simply carry a ``course_id`` now.
 """
 
 from backend.common.exceptions import ConflictError
@@ -36,22 +35,13 @@ class TrainingAssignmentService:
     ) -> TrainingAssignmentResultDto:
         """Give one person one course.
 
-        Three rules, in this order:
+        A course nobody has finished cannot be assigned: an unfinishable course
+        holds everyone assigned to it at the mentorship matching gate,
+        silently, and looks like our bug. Neither can a deactivated one.
 
-        1. **A course nobody has finished cannot be assigned.** A course that
-           cannot be completed does not merely go unfinished -- it closes the
-           mentorship matching gate for everybody assigned to it, silently, and
-           looks like our bug. It happened in August. Somebody running the
-           course to the end is the only check that catches it, and it has to
-           happen before anybody is assigned.
-        2. **A deactivated course cannot be assigned.** That is what
-           deactivating means; the people already assigned are untouched.
-        3. **Assigning twice does nothing.** ``(user_id, course_id)`` is
-           uniquely indexed. A repeat returns the row that already exists with
-           ``created=False`` rather than raising, so nobody goes hunting for a
-           duplicate they did not create. The existing row is left exactly as
-           it is -- in particular a deadline already set is never overwritten,
-           the same rule registration follows.
+        Assigning twice is a no-op rather than an error, and never rewrites the
+        existing row -- in particular a deadline already stamped by
+        registration stays put.
 
         Args:
             session: The active async database session.
@@ -98,10 +88,8 @@ class TrainingAssignmentService:
         assignment = TrainingEntity(
             user_id=payload.user_id,
             course_id=payload.course_id,
-            # Kept in step with the course so the four seed categories keep
-            # reading the way registration and the matching gate expect. It is
-            # None for courses created after this feature, which those two
-            # paths never look at.
+            # Kept in step with the course so registration and the matching
+            # gate keep reading as they expect.
             category=course.category,
             status=TrainingStatus.TO_DO,
             deadline=payload.deadline,

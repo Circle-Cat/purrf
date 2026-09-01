@@ -14,12 +14,10 @@ class TrainingEntity(Base):
         ForeignKey("users.user_id", ondelete="CASCADE"), index=True
     )
 
-    # Nullable since courses stopped being an enum. It stays in step with
-    # `course_id`: seed courses carry a category and rows for them keep one, so
-    # registration and the mentorship matching gate -- which filter on this
-    # column -- read exactly as they always did. Courses created from the admin
-    # page have no category, and their rows are correctly invisible to those
-    # two paths.
+    # Nullable since courses stopped being an enum. Rows for seed courses keep
+    # their category, so registration and the matching gate -- which filter on
+    # this column -- read as they always did. Courses created from the admin
+    # page have none, and are correctly invisible to those two paths.
     category: Mapped[TrainingCategory | None] = mapped_column(
         Enum(
             TrainingCategory,
@@ -47,12 +45,8 @@ class TrainingEntity(Base):
 
     link: Mapped[str | None] = mapped_column(String)
 
-    # Which course this assignment is for. Nullable only because the migration
-    # that adds it backfills from `category`, and a row could in principle
-    # predate any course; every row written from here on carries one.
-    #
-    # `category` stays: registration and the matching gate still read it, and
-    # dropping a column is a contracting migration for a later release.
+    # Nullable only because the migration that adds it backfills from
+    # `category`; every row written from here on carries one.
     course_id: Mapped[int | None] = mapped_column(
         ForeignKey("training_course.course_id", ondelete="RESTRICT"), index=True
     )

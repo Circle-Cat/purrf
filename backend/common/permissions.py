@@ -34,9 +34,8 @@ class Permission(StrEnum):
     # the whole company works from. Managers are not a role here either: what a
     # manager may see follows the Azure manager relationship, not a grant.
     LEAVE_ADMIN = "leave.admin"
-    # Uploading course packages, running the trial that unlocks a course, and
-    # assigning one to somebody. Learning a course you were assigned needs no
-    # permission -- the assignment is the grant.
+    # Learning a course you were assigned needs no permission; the assignment
+    # is the grant.
     TRAINING_ADMIN_READ = "training.admin.read"
     TRAINING_ADMIN_WRITE = "training.admin.write"
     PERMISSION_MANAGE = "permission.manage"
