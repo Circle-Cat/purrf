@@ -9,8 +9,13 @@ from backend.common.permissions import (
 
 
 class TestPermissions(unittest.TestCase):
-    def test_catalog_has_twenty_unique_dotted_values(self):
-        self.assertEqual(len(Permission), 20)
+    # The count is a deliberate tripwire, not a fact worth asserting for its
+    # own sake: adding a permission has to be a conscious act, because it also
+    # needs an entry in permission_descriptions.py. Bump it and write the
+    # description. The name no longer carries the number so that bumping it
+    # does not also mean renaming the test.
+    def test_catalog_values_are_unique_and_dotted(self):
+        self.assertEqual(len(Permission), 22)
         values = [p.value for p in Permission]
         self.assertEqual(len(values), len(set(values)))
         for value in values:

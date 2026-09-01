@@ -14,7 +14,13 @@ class TrainingEntity(Base):
         ForeignKey("users.user_id", ondelete="CASCADE"), index=True
     )
 
-    category: Mapped[TrainingCategory] = mapped_column(
+    # Nullable since courses stopped being an enum. It stays in step with
+    # `course_id`: seed courses carry a category and rows for them keep one, so
+    # registration and the mentorship matching gate -- which filter on this
+    # column -- read exactly as they always did. Courses created from the admin
+    # page have no category, and their rows are correctly invisible to those
+    # two paths.
+    category: Mapped[TrainingCategory | None] = mapped_column(
         Enum(
             TrainingCategory,
             name="training_category",
@@ -40,6 +46,16 @@ class TrainingEntity(Base):
     deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     link: Mapped[str | None] = mapped_column(String)
+
+    # Which course this assignment is for. Nullable only because the migration
+    # that adds it backfills from `category`, and a row could in principle
+    # predate any course; every row written from here on carries one.
+    #
+    # `category` stays: registration and the matching gate still read it, and
+    # dropping a column is a contracting migration for a later release.
+    course_id: Mapped[int | None] = mapped_column(
+        ForeignKey("training_course.course_id", ondelete="RESTRICT"), index=True
+    )
 
     created_datetime: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
