@@ -36,6 +36,32 @@ _STATE_ALGORITHM = "HS256"
 _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _INVALID_STATE_MESSAGE = "Verification session expired. Please request a new code."
 _SET_PRIMARY_STATE_FLOW = "set_primary"
+_PASSWORDLESS_SUB_PREFIX = "email|"
+
+
+def _is_session_address(
+    current_sub: str, current_claim_email: str | None, email: str
+) -> bool:
+    """Whether ``email`` is the address the caller's own session signed in with.
+
+    Passwordless-only by construction: a row-less ``email|`` login leaves no
+    ``user_identities`` row, so its address is the only handle on the session;
+    a google/social session is identified by its sub against an identity row
+    instead, and flagging its email row too would mark the same address twice.
+
+    Args:
+        current_sub (str): JWT ``sub`` of the caller's session.
+        current_claim_email (str | None): The session token's email claim.
+        email (str): The stored (lowercased) address to test.
+
+    Returns:
+        bool: True only for a passwordless session's own address.
+    """
+    return (
+        current_sub.startswith(_PASSWORDLESS_SUB_PREFIX)
+        and bool(current_claim_email)
+        and email == current_claim_email.strip().lower()
+    )
 
 
 class EmailManagementService:
@@ -115,11 +141,7 @@ class EmailManagementService:
             raise ValueError("Email address not found.")
         if row.is_primary:
             raise ConflictError("Your primary contact email cannot be removed.")
-        if (
-            current_sub.startswith("email|")
-            and current_claim_email
-            and row.email == current_claim_email.strip().lower()
-        ):
+        if _is_session_address(current_sub, current_claim_email, row.email):
             raise ConflictError(
                 "You cannot remove the email tied to your current session. "
                 "Sign in with another method first."
@@ -248,7 +270,11 @@ class EmailManagementService:
         return {"ok": True, "email": target_email}
 
     async def list_emails_and_identities(
-        self, session, current_user_id: int, current_sub: str
+        self,
+        session,
+        current_user_id: int,
+        current_sub: str,
+        current_claim_email: str | None,
     ) -> EmailsViewDto:
         """
         Assemble the comprehensive email/identity view for the Settings page.
@@ -262,10 +288,18 @@ class EmailManagementService:
         ``current_sub`` (the account root the session is bound to) is flagged
         ``is_current_session`` so the UI can badge it and withhold its unlink.
 
+        A row-less passwordless session matches no identity row at all, so the
+        same flag is set on the *email* row it signed in with — the address is
+        that session's only handle. The two flags are mutually exclusive by
+        ``_is_session_address``'s passwordless gate, so exactly one row carries
+        it whichever way the caller signed in.
+
         Args:
             session (AsyncSession): The active async database session.
             current_user_id (int): user_id of the authenticated caller.
             current_sub (str): JWT ``sub`` of the caller's session (the account root).
+            current_claim_email (str | None): The session token's email claim,
+                used to flag a passwordless session's own address.
 
         Returns:
             EmailsViewDto: The caller's email rows plus their internal and
@@ -300,6 +334,9 @@ class EmailManagementService:
                 linked_identity_count=claim_counts.get(row.email.lower(), 0),
                 is_corp=is_company_email(row.email),
                 last_login_at=row.last_login_at,
+                is_current_session=_is_session_address(
+                    current_sub, current_claim_email, row.email
+                ),
             )
             for row in emails
         ]
