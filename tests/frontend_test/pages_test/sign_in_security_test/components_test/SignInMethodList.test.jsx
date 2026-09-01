@@ -342,6 +342,33 @@ describe("SignInMethodList", () => {
         within(rows[1]).queryByText("Current session"),
       ).not.toBeInTheDocument();
     });
+
+    it("badges a passwordless session's address, which has no identity row", () => {
+      // A row-less passwordless login writes no user_identities row, so the
+      // flag arrives on the email row instead. Without this the badge is
+      // unreachable for every email-OTP session.
+      render(
+        <SignInMethodList
+          emails={[
+            makeEmail({ emailId: 1, isCurrentSession: true }),
+            makeEmail({
+              emailId: 2,
+              email: "backup@gmail.com",
+              isCurrentSession: false,
+            }),
+          ]}
+          internalIdentities={[]}
+          externalIdentities={[]}
+          isLoading={false}
+        />,
+      );
+
+      const rows = screen.getAllByRole("listitem");
+      expect(within(rows[0]).getByText("Current session")).toBeInTheDocument();
+      expect(
+        within(rows[1]).queryByText("Current session"),
+      ).not.toBeInTheDocument();
+    });
   });
 
   describe("Remove sign-in identity", () => {
@@ -489,6 +516,30 @@ describe("SignInMethodList", () => {
       render(
         <SignInMethodList
           emails={[makeEmail({ isPrimary: true })]}
+          internalIdentities={[]}
+          externalIdentities={[]}
+          isLoading={false}
+          onRemove={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.queryByRole("button", { name: "Remove email" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("does not offer Remove email on the address the session signed in with", () => {
+      // The backend refuses this removal with a 409 (it would strand a live
+      // token), so offering the button only produces a dead end.
+      render(
+        <SignInMethodList
+          emails={[
+            makeEmail({
+              emailId: 3,
+              email: "backup@gmail.com",
+              isCurrentSession: true,
+            }),
+          ]}
           internalIdentities={[]}
           externalIdentities={[]}
           isLoading={false}
