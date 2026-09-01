@@ -1,12 +1,22 @@
 from datetime import datetime
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, Enum, DateTime, ForeignKey, func
+from sqlalchemy import String, Enum, DateTime, ForeignKey, Index, func, text
 from backend.common.mentorship_enums import TrainingStatus, TrainingCategory
 from backend.common.base import Base
 
 
 class TrainingEntity(Base):
     __tablename__ = "training"
+    __table_args__ = (
+        # Partial, so rows without a course do not collide with each other.
+        Index(
+            "uq_training_user_course",
+            "user_id",
+            "course_id",
+            unique=True,
+            postgresql_where=text("course_id IS NOT NULL"),
+        ),
+    )
 
     training_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
 
