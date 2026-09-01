@@ -10,6 +10,10 @@ from backend.entity.users_entity import UsersEntity
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.job_entity import JobEntity
+
+# Imported for its side effect: registers the table training.course_id
+# points at, without which the mapper cannot resolve the foreign key.
+from backend.entity.training_course_entity import TrainingCourseEntity  # noqa: F401
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.training_entity import TrainingEntity
 from backend.repository.mentorship_round_participants_repository import (
