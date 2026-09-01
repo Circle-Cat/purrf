@@ -573,7 +573,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_identities.list_by_user_id.return_value = [internal, external_current]
 
         result = await self.service.list_emails_and_identities(
-            self.session, _USER_ID, _CURRENT_SUB
+            self.session, _USER_ID, _CURRENT_SUB, current_claim_email=None
         )
 
         emails = {e.email_id: e for e in result.emails}
@@ -608,7 +608,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_identities.list_by_user_id.return_value = [external]
 
         result = await self.service.list_emails_and_identities(
-            self.session, _USER_ID, _CURRENT_SUB
+            self.session, _USER_ID, _CURRENT_SUB, current_claim_email=None
         )
 
         self.assertEqual(result.internal_identities, [])
@@ -634,7 +634,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_identities.list_by_user_id.return_value = [sso, otp_corp]
 
         result = await self.service.list_emails_and_identities(
-            self.session, _USER_ID, _CURRENT_SUB
+            self.session, _USER_ID, _CURRENT_SUB, current_claim_email=None
         )
 
         ids = {i.identity_id: i for i in result.internal_identities}
@@ -672,7 +672,7 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_identities.list_by_user_id.return_value = [corp, personal, no_claim]
 
         result = await self.service.list_emails_and_identities(
-            self.session, _USER_ID, _CURRENT_SUB
+            self.session, _USER_ID, _CURRENT_SUB, current_claim_email=None
         )
 
         self.assertEqual({i.identity_id for i in result.internal_identities}, {1})
@@ -699,7 +699,10 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_identities.list_by_user_id.return_value = []
 
         view = await self.service.list_emails_and_identities(
-            self.session, current_user_id=_USER_ID, current_sub=_CURRENT_SUB
+            self.session,
+            current_user_id=_USER_ID,
+            current_sub=_CURRENT_SUB,
+            current_claim_email=None,
         )
 
         by_email = {e.email: e.is_corp for e in view.emails}
@@ -732,12 +735,102 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.user_identities.list_by_user_id.return_value = []
 
         view = await self.service.list_emails_and_identities(
-            self.session, current_user_id=_USER_ID, current_sub=_CURRENT_SUB
+            self.session,
+            current_user_id=_USER_ID,
+            current_sub=_CURRENT_SUB,
+            current_claim_email=None,
         )
 
         by_id = {e.email_id: e.last_login_at for e in view.emails}
         self.assertEqual(by_id[1], stamped_at)
         self.assertIsNone(by_id[2])
+
+    async def test_emails_view_flags_passwordless_session_address(self):
+        """A row-less passwordless session has no identity row to flag, so the
+        address it signed in with must be flagged on the email row instead —
+        matched with the same case/whitespace tolerance as the remove guard."""
+        added_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        self.user_emails.list_by_user_id.return_value = [
+            MagicMock(
+                email_id=1,
+                email="alice@gmail.com",
+                otp_confirmed=True,
+                is_primary=True,
+                added_at=added_at,
+                last_login_at=None,
+            ),
+            MagicMock(
+                email_id=2,
+                email="backup@gmail.com",
+                otp_confirmed=True,
+                is_primary=False,
+                added_at=added_at,
+                last_login_at=None,
+            ),
+        ]
+        self.user_identities.list_by_user_id.return_value = []
+
+        view = await self.service.list_emails_and_identities(
+            self.session,
+            current_user_id=_USER_ID,
+            current_sub="email|abc123",
+            current_claim_email="  Backup@Gmail.com  ",
+        )
+
+        by_id = {e.email_id: e.is_current_session for e in view.emails}
+        self.assertFalse(by_id[1])
+        self.assertTrue(by_id[2])
+
+    async def test_emails_view_does_not_flag_email_row_for_google_session(self):
+        """The email-row flag is passwordless-only: a google session's address
+        is flagged on its identity row, so flagging the email row too would
+        badge the same address twice."""
+        added_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        self.user_emails.list_by_user_id.return_value = [
+            MagicMock(
+                email_id=1,
+                email="alice@gmail.com",
+                otp_confirmed=True,
+                is_primary=True,
+                added_at=added_at,
+                last_login_at=None,
+            )
+        ]
+        self.user_identities.list_by_user_id.return_value = []
+
+        view = await self.service.list_emails_and_identities(
+            self.session,
+            current_user_id=_USER_ID,
+            current_sub=_CURRENT_SUB,
+            current_claim_email="alice@gmail.com",
+        )
+
+        self.assertFalse(view.emails[0].is_current_session)
+
+    async def test_emails_view_without_claim_email_flags_nothing(self):
+        """No email claim on the token (defensive) leaves every row unflagged
+        rather than guessing which address the session belongs to."""
+        added_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        self.user_emails.list_by_user_id.return_value = [
+            MagicMock(
+                email_id=1,
+                email="alice@gmail.com",
+                otp_confirmed=True,
+                is_primary=True,
+                added_at=added_at,
+                last_login_at=None,
+            )
+        ]
+        self.user_identities.list_by_user_id.return_value = []
+
+        view = await self.service.list_emails_and_identities(
+            self.session,
+            current_user_id=_USER_ID,
+            current_sub="email|abc123",
+            current_claim_email=None,
+        )
+
+        self.assertFalse(view.emails[0].is_current_session)
 
     # initiate_set_primary — step 1: validate target, OTP the current primary
     async def test_initiate_set_primary_sends_otp_to_current_primary(self):

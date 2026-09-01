@@ -245,6 +245,10 @@ class EmailManagementController:
         (each with an app-layer ``linked_identity_count``) alongside the list of
         ``internal_identities`` and the list of ``external_identities``.
 
+        The token's email claim goes down with the caller's sub: a row-less
+        passwordless session has no identity row to flag, so the service needs
+        the claim to mark the address that session signed in with.
+
         Args:
             current_user (UserContextDto): The authenticated user context.
 
@@ -256,6 +260,7 @@ class EmailManagementController:
                 session=session,
                 current_user_id=current_user.user_id,
                 current_sub=current_user.sub,
+                current_claim_email=current_user.primary_email,
             )
         return api_response(message="Emails and identities", data=result)
 
