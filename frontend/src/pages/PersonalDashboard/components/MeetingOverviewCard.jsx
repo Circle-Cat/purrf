@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Calendar, Trash2, Video } from "lucide-react";
+import { Calendar, CalendarClock, Trash2, Video } from "lucide-react";
 import { formatInTz } from "@/utils/dateTime";
 import {
   getMeetingStatus,
@@ -62,10 +62,15 @@ function compareByStartDatetimeDesc(a, b) {
  * A meeting created through Google carries a `meetLink`, which is rendered as
  * a Join entry point; a manually logged meeting has none and shows no button.
  *
- * Only a `SCHEDULED` meeting can be called off, and only when the viewer is
- * offered cancelling at all: a completed meeting is a record of something that
- * happened, and a past uncompleted one is history the attendance sweep never
- * closed out. Neither is something there is still any point in cancelling.
+ * Only a `SCHEDULED` meeting can be called off or moved, and only when the
+ * viewer is offered managing meetings at all: a completed meeting is a record
+ * of something that happened, and a past uncompleted one is history the
+ * attendance sweep never closed out. Neither is something there is still any
+ * point in cancelling or rescheduling.
+ *
+ * Rescheduling itself is not handled here -- the reschedule control just
+ * hands the meeting to `onRescheduleMeeting`, and the parent owns the dialog
+ * that collects the new slot.
  *
  * @param {{ overview: {
  *   requiredMeetings: number,
@@ -74,15 +79,17 @@ function compareByStartDatetimeDesc(a, b) {
  *   meetingTimeList: Array<{ meetLink?: string }>,
  * } userTimezone: string,
  *   showMeetingList?: boolean,
- *   canDelete?: boolean,
- *   onDeleteMeeting?: (meeting: Object) => Promise<void>}} props
+ *   canManageMeetings?: boolean,
+ *   onDeleteMeeting?: (meeting: Object) => Promise<void>,
+ *   onRescheduleMeeting?: (meeting: Object) => void}} props
  */
 export default function MeetingOverviewCard({
   overview,
   userTimezone,
   showMeetingList = true,
-  canDelete = false,
+  canManageMeetings = false,
   onDeleteMeeting,
+  onRescheduleMeeting,
 }) {
   // The meeting awaiting confirmation, or null while nothing is pending.
   const [meetingToCancel, setMeetingToCancel] = useState(null);
@@ -199,16 +206,28 @@ export default function MeetingOverviewCard({
                             SCHEDULED
                           </span>
                         )}
-                        {canDelete && status === MeetingStatus.SCHEDULED && (
-                          <button
-                            type="button"
-                            aria-label={`Cancel meeting on ${date}`}
-                            onClick={() => setMeetingToCancel(m)}
-                            className="rounded p-1 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        )}
+                        {canManageMeetings &&
+                          status === MeetingStatus.SCHEDULED && (
+                            <button
+                              type="button"
+                              aria-label={`Reschedule meeting on ${date}`}
+                              onClick={() => onRescheduleMeeting?.(m)}
+                              className="rounded p-1 text-gray-400 transition-colors hover:bg-blue-50 hover:text-blue-600"
+                            >
+                              <CalendarClock className="h-4 w-4" />
+                            </button>
+                          )}
+                        {canManageMeetings &&
+                          status === MeetingStatus.SCHEDULED && (
+                            <button
+                              type="button"
+                              aria-label={`Cancel meeting on ${date}`}
+                              onClick={() => setMeetingToCancel(m)}
+                              className="rounded p-1 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
                       </div>
                     </div>
                   );

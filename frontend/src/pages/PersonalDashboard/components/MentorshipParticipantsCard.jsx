@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { addDays, addMonths, isAfter, isBefore, subMonths } from "date-fns";
@@ -6,7 +7,7 @@ import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { GraduationCap, User } from "lucide-react";
 import { toast } from "sonner";
-import { deleteMeeting } from "@/api/meetingApi";
+import { deleteMeeting, rescheduleMeeting } from "@/api/meetingApi";
 import {
   Select,
   SelectContent,
@@ -17,6 +18,7 @@ import {
 import MeetingManagementDialog from "@/pages/PersonalDashboard/components/MeetingManagementDialog";
 import { userDisplayName } from "@/utils/userName";
 import MeetingOverviewCard from "@/pages/PersonalDashboard/components/MeetingOverviewCard";
+import MeetingRescheduleDialog from "@/pages/PersonalDashboard/components/MeetingRescheduleDialog";
 import MentorshipFeedbackDialog from "@/pages/PersonalDashboard/components/MentorshipFeedbackDialog";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
 import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
@@ -51,6 +53,11 @@ export default function MentorshipParticipantsCard({
   refreshMeetings,
   userTimezone,
 }) {
+  // The meeting awaiting a new slot, and which partner's row it came from --
+  // the API call needs that partner's id, which the meeting itself carries.
+  const [meetingToReschedule, setMeetingToReschedule] = useState(null);
+  const [reschedulePartnerId, setReschedulePartnerId] = useState(null);
+
   const { roundInfo, partnerMeetingOverview, participantRole } =
     participantDetails || {};
   const {
@@ -136,9 +143,10 @@ export default function MentorshipParticipantsCard({
     ? formatDateTimeWithZone(feedbackClosesAt.toISOString(), userTimezone)
     : null;
 
-  // Cancelling is offered on the same terms as booking: both go through
-  // Google, so the flag that gates creating a meeting gates calling one off.
-  const canCancelMeetings = Boolean(createGoogleMeeting);
+  // Cancelling and rescheduling are offered on the same terms as booking: all
+  // three go through Google, so the flag that gates creating a meeting gates
+  // managing one.
+  const canManageMeetings = Boolean(createGoogleMeeting);
 
   /**
    * Cancel one meeting held with a partner, then refresh the round's meetings
@@ -156,6 +164,38 @@ export default function MentorshipParticipantsCard({
     } catch (error) {
       console.error("Failed to cancel meeting:", error);
       toast.error("Failed to cancel the meeting.");
+    }
+  };
+
+  /**
+   * Move the pending meeting to the slot collected by the reschedule dialog,
+   * then refresh the round's meetings so the list reflects the new time.
+   *
+   * @param {{date: string, startTime: string, durationMinutes: number,
+   *   timezone: string}} slot - Wall-clock slot chosen in the dialog.
+   * @returns {Promise<void>}
+   */
+  const handleRescheduleMeeting = async ({
+    date,
+    startTime,
+    durationMinutes,
+    timezone,
+  }) => {
+    try {
+      await rescheduleMeeting(meetingToReschedule.meetingId, {
+        round_id: selectedRoundId,
+        partner_id: reschedulePartnerId,
+        timezone,
+        start_date: date,
+        start_time: startTime,
+        duration_minutes: durationMinutes,
+      });
+      toast.success("Meeting rescheduled successfully!");
+      setMeetingToReschedule(null);
+      await refreshMeetings?.();
+    } catch (error) {
+      console.error("Failed to reschedule meeting:", error);
+      toast.error("Failed to reschedule the meeting.");
     }
   };
 
@@ -307,10 +347,14 @@ export default function MentorshipParticipantsCard({
                     showMeetingList={
                       roundInfo?.status === MentorshipRoundStatus.ACTIVE
                     }
-                    canDelete={canCancelMeetings}
+                    canManageMeetings={canManageMeetings}
                     onDeleteMeeting={(meeting) =>
                       handleCancelMeeting(overview.partnerId, meeting)
                     }
+                    onRescheduleMeeting={(meeting) => {
+                      setMeetingToReschedule(meeting);
+                      setReschedulePartnerId(overview.partnerId);
+                    }}
                   />
                 </div>
               ))}
@@ -318,6 +362,15 @@ export default function MentorshipParticipantsCard({
           </>
         )}
       </CardContent>
+      <MeetingRescheduleDialog
+        open={Boolean(meetingToReschedule)}
+        onOpenChange={(open) => {
+          if (!open) setMeetingToReschedule(null);
+        }}
+        meeting={meetingToReschedule}
+        userTimezone={userTimezone}
+        onSubmit={handleRescheduleMeeting}
+      />
     </Card>
   );
 }
