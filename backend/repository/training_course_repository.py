@@ -1,6 +1,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.common.mentorship_enums import TrainingCategory
 from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.training_entity import TrainingEntity
 
@@ -47,6 +48,30 @@ class TrainingCourseRepository:
         result = await session.execute(
             select(TrainingCourseEntity).where(
                 TrainingCourseEntity.course_id == course_id
+            )
+        )
+        return result.scalars().one_or_none()
+
+    async def get_course_by_category(
+        self, session: AsyncSession, category: TrainingCategory
+    ) -> TrainingCourseEntity | None:
+        """Fetch the one course carrying this category, or None.
+
+        `category` is unique, so a seed course is addressable by the enum the
+        mentorship paths already hold. That is how automatic dispatch turns a
+        category into the course_id its row has to carry.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            category (TrainingCategory): The category to resolve.
+
+        Returns:
+            TrainingCourseEntity | None: The course, or None if the seed row is
+            missing.
+        """
+        result = await session.execute(
+            select(TrainingCourseEntity).where(
+                TrainingCourseEntity.category == category
             )
         )
         return result.scalars().one_or_none()

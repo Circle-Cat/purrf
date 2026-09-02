@@ -37,6 +37,9 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.trainings.get_training_by_user_id_and_course_id = AsyncMock(
             return_value=None
         )
+        self.trainings.get_training_by_user_id_and_category = AsyncMock(
+            return_value=None
+        )
         self.service = TrainingAssignmentService(
             logger=MagicMock(),
             training_course_repository=self.courses,
@@ -227,6 +230,78 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         result = await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)
 
         self.assertTrue(result.created)
+
+    async def test_a_row_held_by_category_is_adopted_rather_than_doubled(self):
+        """The onboarding dispatch owns the same pairing under a category. A
+        second row for one category makes every later read of it raise, and
+        the partial unique index does not stop the insert."""
+        by_category = TrainingEntity(
+            training_id=77,
+            user_id=11,
+            category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+            course_id=None,
+        )
+        self.trainings.get_training_by_user_id_and_category.return_value = by_category
+
+        result = await self.service.assign(self.session, self.payload)
+
+        self.assertFalse(result.created)
+        self.assertEqual(result.training_id, 77)
+        self.assertEqual(by_category.course_id, 3)
+        self.session.add.assert_not_called()
+        self.session.commit.assert_awaited_once()
+
+    async def test_adopting_a_category_row_leaves_the_rest_of_it_alone(self):
+        stamped = datetime.datetime(2026, 10, 1, tzinfo=datetime.timezone.utc)
+        by_category = TrainingEntity(
+            training_id=77,
+            user_id=11,
+            category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+            course_id=None,
+            status=TrainingStatus.IN_PROGRESS,
+            deadline=stamped,
+            link="https://mentee",
+        )
+        self.trainings.get_training_by_user_id_and_category.return_value = by_category
+
+        await self.service.assign(
+            self.session,
+            TrainingAssignmentRequestDto(
+                user_id=11,
+                course_id=3,
+                deadline=datetime.datetime(2027, 1, 1, tzinfo=datetime.timezone.utc),
+            ),
+        )
+
+        self.assertEqual(by_category.deadline, stamped)
+        self.assertEqual(by_category.status, TrainingStatus.IN_PROGRESS)
+        self.assertEqual(by_category.link, "https://mentee")
+
+    async def test_a_course_without_a_category_is_not_looked_up_by_one(self):
+        self.courses.get_course_by_id.return_value = _course(category=None)
+
+        await self.service.assign(self.session, self.payload)
+
+        self.trainings.get_training_by_user_id_and_category.assert_not_awaited()
+        self.session.add.assert_called_once()
+
+    async def test_a_trial_adopts_a_category_row_too(self):
+        """A verifier who already holds the seed course by category must not
+        end up with two rows for it either."""
+        by_category = TrainingEntity(
+            training_id=77,
+            user_id=_USER_ID,
+            category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+            course_id=None,
+        )
+        self.trainings.get_training_by_user_id_and_category.return_value = by_category
+
+        result = await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)
+
+        self.assertFalse(result.created)
+        self.assertEqual(result.training_id, 77)
+        self.assertEqual(by_category.course_id, _COURSE_ID)
+        self.session.add.assert_not_called()
 
 
 if __name__ == "__main__":

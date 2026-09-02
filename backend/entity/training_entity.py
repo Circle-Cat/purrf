@@ -55,8 +55,12 @@ class TrainingEntity(Base):
 
     link: Mapped[str | None] = mapped_column(String)
 
-    # Nullable only because the migration that adds it backfills from
-    # `category`; every row written from here on carries one.
+    # Nullable, and it can really be null. The migration that adds it
+    # backfills from `category`, and both paths that write a row -- manual
+    # assignment and the mentorship onboarding dispatch -- set it. A row still
+    # ends up without one if the catalogue holds no course for the category
+    # being dispatched, and such a row cannot be opened. Every read of this
+    # column has to allow for that.
     course_id: Mapped[int | None] = mapped_column(
         ForeignKey("training_course.course_id", ondelete="RESTRICT"), index=True
     )

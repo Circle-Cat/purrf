@@ -17,8 +17,8 @@ from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.entity.notification_entity import NotificationEntity
 from backend.entity.training_entity import TrainingEntity
 
-# Registers the table training.course_id points at.
-from backend.entity.training_course_entity import TrainingCourseEntity  # noqa: F401
+from backend.entity.training_course_entity import TrainingCourseEntity
+from backend.entity.training_progress_entity import TrainingProgressEntity
 from backend.entity.users_entity import UsersEntity
 from backend.mentorship import recipient_resolvers  # noqa: F401 (registers)
 from backend.mentorship.mentorship_admission_service import (
@@ -26,6 +26,8 @@ from backend.mentorship.mentorship_admission_service import (
 )
 from backend.mentorship.onboarding_training_service import OnboardingTrainingService
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
+from backend.repository.training_course_repository import TrainingCourseRepository
+from backend.repository.training_progress_repository import TrainingProgressRepository
 from backend.repository.training_repository import TrainingRepository
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
@@ -53,11 +55,14 @@ _SOONER_DEADLINE = _at(5)
 class MentorshipAdmissionServiceTest(BaseRepositoryTestLib):
     async def asyncSetUp(self):
         await super().asyncSetUp()
+        self.course_repository = TrainingCourseRepository()
+        self.progress_repository = TrainingProgressRepository()
         self.service = MentorshipAdmissionService(
             logger=logging.getLogger(__name__),
             onboarding_training_service=OnboardingTrainingService(
                 logger=logging.getLogger(__name__),
                 training_repository=TrainingRepository(),
+                training_course_repository=self.course_repository,
             ),
             mentorship_round_repository=MentorshipRoundRepository(),
         )
@@ -117,6 +122,28 @@ class MentorshipAdmissionServiceTest(BaseRepositoryTestLib):
             select(TrainingEntity.category).where(TrainingEntity.user_id == user_id)
         )
         return set(result.scalars())
+
+    async def _training(self, user_id: int) -> TrainingEntity:
+        result = await self.session.execute(
+            select(TrainingEntity).where(TrainingEntity.user_id == user_id)
+        )
+        return result.scalars().one()
+
+    async def _seed_course(self, category: TrainingCategory) -> TrainingCourseEntity:
+        """The catalogue row the migration seeds for a category."""
+        result = await self.session.execute(
+            select(TrainingCourseEntity).where(
+                TrainingCourseEntity.category == category
+            )
+        )
+        return result.scalars().one()
+
+    async def _assigned_count(self, course_id: int) -> int:
+        counts = {
+            course.course_id: count
+            for course, count in await self.course_repository.list_courses(self.session)
+        }
+        return counts[course_id]
 
     async def test_an_admitted_mentor_is_notified(self):
         """The regression ``actor_id=None`` exists to prevent: on the
@@ -235,6 +262,46 @@ class MentorshipAdmissionServiceTest(BaseRepositoryTestLib):
         user, _ = await self._admit(kind=JobKind.EMPLOYMENT, role=None)
 
         self.assertEqual(await self._training_categories(user.user_id), set())
+
+    async def test_the_training_it_creates_points_at_the_seed_course(self):
+        """Without the course id the learner cannot open the course at all."""
+        user, _ = await self._admit()
+
+        course = await self._seed_course(TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
+        training = await self._training(user.user_id)
+        self.assertEqual(training.course_id, course.course_id)
+
+    async def test_the_seed_course_counts_the_people_admission_assigned_it_to(self):
+        """The number the admin page shows before deactivating or overwriting
+        a course -- it has to include the automatic dispatch."""
+        course = await self._seed_course(TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
+        before = await self._assigned_count(course.course_id)
+
+        await self._admit()
+
+        self.assertEqual(await self._assigned_count(course.course_id), before + 1)
+
+    async def test_clearing_resume_state_reaches_an_admission_created_row(self):
+        """An overwrite promises to drop stale suspend_data for everyone on
+        the course."""
+        user, _ = await self._admit()
+        training = await self._training(user.user_id)
+        progress = TrainingProgressEntity(
+            training_id=training.training_id,
+            lesson_status="incomplete",
+            lesson_location="Summary",
+            suspend_data="stale",
+        )
+        await self.insert_entities([progress])
+        course = await self._seed_course(TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
+
+        cleared = await self.progress_repository.clear_resume_state(
+            self.session, course.course_id
+        )
+
+        self.assertEqual(cleared, 1)
+        await self.session.refresh(progress)
+        self.assertIsNone(progress.suspend_data)
 
 
 if __name__ == "__main__":

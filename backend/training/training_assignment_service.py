@@ -1,8 +1,15 @@
 """Assigning a course to a person, by hand.
 
 Automatic dispatch is a later piece of work. The existing mentorship dispatch
-(``OnboardingTrainingService.ensure_for_admitted``) keeps working untouched;
-its rows simply carry a ``course_id`` now.
+(``OnboardingTrainingService.ensure_for_admitted``) keeps working untouched and
+attaches the seed course its category stands for, so both paths write the same
+shape of row.
+
+The two paths can reach the same person for the same seed course, and only one
+row may exist for a category: ``TrainingRepository.get_training_by_user_id_and_category``
+reads it with ``one_or_none()``, so a second row would raise for that user for
+good. Assignment therefore adopts a category row it finds rather than inserting
+beside it.
 """
 
 from backend.common.exceptions import ConflictError
@@ -74,9 +81,7 @@ class TrainingAssignmentService:
                 "This course is deactivated and cannot be assigned to anybody new."
             )
 
-        existing = await self.training_repository.get_training_by_user_id_and_course_id(
-            session, payload.user_id, payload.course_id
-        )
+        existing = await self._existing_assignment(session, payload.user_id, course)
         if existing is not None:
             return TrainingAssignmentResultDto(
                 training_id=existing.training_id,
@@ -150,9 +155,7 @@ class TrainingAssignmentService:
                 "This course has no package uploaded yet, so there is nothing to run."
             )
 
-        existing = await self.training_repository.get_training_by_user_id_and_course_id(
-            session, user_id, course_id
-        )
+        existing = await self._existing_assignment(session, user_id, course)
         if existing is not None:
             return TrainingAssignmentResultDto(
                 training_id=existing.training_id,
@@ -186,3 +189,53 @@ class TrainingAssignmentService:
             course_id=course_id,
             created=True,
         )
+
+    async def _existing_assignment(self, session, user_id: int, course):
+        """The row this person already holds for this course, if any.
+
+        Looked up twice. By course first, which is the ordinary repeat
+        assignment. Then, for a course carrying a category, by that category:
+        the mentorship dispatch owns the same pairing under a category and
+        older rows of its making carry no course at all. Such a row is this
+        assignment, so it is adopted -- given the course_id it was missing --
+        rather than inserted beside, which would leave the person holding two
+        rows for one category and raise on every later read of it.
+
+        Only the course_id is written. Everything else the row already
+        records, a deadline registration stamped above all, is left as it is.
+
+        Args:
+            session: The active async database session.
+            user_id (int): Who is being assigned.
+            course (TrainingCourseEntity): The course being assigned.
+
+        Returns:
+            TrainingEntity | None: The row already standing, or None.
+        """
+        existing = await self.training_repository.get_training_by_user_id_and_course_id(
+            session, user_id, course.course_id
+        )
+        if existing is not None:
+            return existing
+
+        if course.category is None:
+            return None
+
+        by_category = (
+            await self.training_repository.get_training_by_user_id_and_category(
+                session, user_id, course.category
+            )
+        )
+        if by_category is None or by_category.course_id is not None:
+            return by_category
+
+        by_category.course_id = course.course_id
+        await session.commit()
+        self.logger.info(
+            "[TrainingAssignmentService] attached course %s to user %s's "
+            "existing %s row",
+            course.course_id,
+            user_id,
+            course.category.value,
+        )
+        return by_category

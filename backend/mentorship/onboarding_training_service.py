@@ -36,14 +36,17 @@ class OnboardingTrainingService:
     the first time the user registers for a round.
     """
 
-    def __init__(self, logger, training_repository):
+    def __init__(self, logger, training_repository, training_course_repository):
         """
         Args:
             logger: Application logger.
             training_repository (TrainingRepository): Training data access.
+            training_course_repository (TrainingCourseRepository): Resolves the
+                category into the course the row must point at.
         """
         self.logger = logger
         self.training_repo = training_repository
+        self.training_course_repo = training_course_repository
 
     async def ensure_for_admitted(
         self, session: AsyncSession, user_id: int, job
@@ -94,6 +97,10 @@ class OnboardingTrainingService:
         - Row exists with a deadline: left alone. Later registrations never
           recompute it.
 
+        Either way the row ends up carrying the course its category stands
+        for: that is what the learner opens, what the admin page counts, and
+        what an overwrite clears resume state by.
+
         Does not commit. The caller owns the transaction, so the training row
         and the decision that caused it stand or fall together.
 
@@ -109,6 +116,7 @@ class OnboardingTrainingService:
         existing = await self.training_repo.get_training_by_user_id_and_category(
             session=session, user_id=user_id, category=category
         )
+        course_id = await self._course_id_for(session=session, category=category)
 
         if existing is None:
             link_env_var = _CATEGORY_LINK_ENV_VAR[category]
@@ -117,6 +125,7 @@ class OnboardingTrainingService:
                 entity=TrainingEntity(
                     user_id=user_id,
                     category=category,
+                    course_id=course_id,
                     status=TrainingStatus.TO_DO,
                     completed_timestamp=None,
                     deadline=deadline,
@@ -130,10 +139,44 @@ class OnboardingTrainingService:
             )
             return created
 
+        changed = False
+
+        # A row from before this path attached a course carries none, and
+        # without one its owner cannot open the course at all. Attaching it on
+        # the next touch heals those rows in place.
+        if existing.course_id is None and course_id is not None:
+            existing.course_id = course_id
+            changed = True
+
         if deadline is not None and existing.deadline is None:
             existing.deadline = deadline
+            changed = True
+
+        if changed:
             return await self.training_repo.upsert_training(
                 session=session, entity=existing
             )
 
         return existing
+
+    async def _course_id_for(
+        self, session: AsyncSession, category: TrainingCategory
+    ) -> int | None:
+        """The seed course this category stands for, if the catalogue holds it.
+
+        None rather than an error when it does not: the training task itself
+        is what admission owes the participant, and refusing to record it
+        because the catalogue is short a row would cost more than the course
+        being unopenable until somebody seeds it.
+        """
+        course = await self.training_course_repo.get_course_by_category(
+            session=session, category=category
+        )
+        if course is None:
+            self.logger.warning(
+                "[OnboardingTrainingService] no course carries category %s; "
+                "the row for this user will not be openable.",
+                category.value,
+            )
+            return None
+        return course.course_id
