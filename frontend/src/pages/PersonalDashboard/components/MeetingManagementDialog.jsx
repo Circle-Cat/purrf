@@ -39,13 +39,7 @@ import {
   nowInTz,
   todayInTz,
 } from "@/utils/dateTime";
-
-const DURATION_OPTIONS = [
-  { value: "30", label: "30 minutes" },
-  { value: "45", label: "45 minutes" },
-  { value: "60", label: "1 hour" },
-  { value: "90", label: "1.5 hours" },
-];
+import { DURATION_OPTIONS } from "@/utils/meetingSlot";
 
 const INTERVAL_OPTIONS = [
   { value: "1", label: "1 week" },

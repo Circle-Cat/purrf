@@ -19,21 +19,11 @@ import {
 import TimezoneSelector from "@/components/common/TimezoneSelector";
 import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
 import { formatInTz } from "@/utils/dateTime";
-
-/**
- * Default zone/duration for a fresh "schedule" booking with nothing else to
- * derive a default from -- deliberately a fixed constant rather than the
- * browser's local zone, so the initial state is deterministic regardless of
- * the machine running the app (or the test).
- */
-const DEFAULT_DURATION_MINUTES = 45;
-
-const DURATION_OPTIONS = [
-  { value: "30", label: "30 minutes" },
-  { value: "45", label: "45 minutes" },
-  { value: "60", label: "1 hour" },
-  { value: "90", label: "1.5 hours" },
-];
+import {
+  DEFAULT_DURATION_MINUTES,
+  DURATION_OPTIONS,
+  durationFromRange,
+} from "@/utils/meetingSlot";
 
 /**
  * Book or edit an application's current stage+round interview meeting, in
@@ -98,13 +88,7 @@ const InterviewMeetingDialog = ({
       setStartTime(
         formatInTz(interview.startAt, viewerTimezone, "HH:mm") ?? "",
       );
-      setDurationMinutes(
-        Math.round(
-          (new Date(interview.endAt).getTime() -
-            new Date(interview.startAt).getTime()) /
-            60000,
-        ),
-      );
+      setDurationMinutes(durationFromRange(interview.startAt, interview.endAt));
       setTimezone(viewerTimezone);
     } else {
       setAssigneeId(defaultAssigneeId ?? undefined);

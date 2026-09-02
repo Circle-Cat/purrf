@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { toast } from "sonner";
-import { deleteMeeting } from "@/api/meetingApi";
+import { deleteMeeting, rescheduleMeeting } from "@/api/meetingApi";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import MentorshipParticipantsCard from "@/pages/PersonalDashboard/components/MentorshipParticipantsCard";
 import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
@@ -15,6 +15,7 @@ vi.mock("@/hooks/useFeatureFlags", () => ({
 
 vi.mock("@/api/meetingApi", () => ({
   deleteMeeting: vi.fn(),
+  rescheduleMeeting: vi.fn(),
 }));
 
 vi.mock("@/pages/PersonalDashboard/components/MeetingManagementDialog", () => ({
@@ -44,16 +45,43 @@ vi.mock("@/pages/PersonalDashboard/components/MeetingManagementDialog", () => ({
 }));
 
 vi.mock("@/pages/PersonalDashboard/components/MeetingOverviewCard", () => ({
-  default: ({ overview, canDelete, onDeleteMeeting }) => (
+  default: ({
+    overview,
+    canManageMeetings,
+    onDeleteMeeting,
+    onRescheduleMeeting,
+  }) => (
     <div
       data-testid={`overview-${overview.partnerId}`}
-      data-can-delete={String(canDelete)}
+      data-can-manage={String(canManageMeetings)}
     >
       <button
         onClick={() => onDeleteMeeting({ meetingId: "m-1" })}
       >{`mock-cancel-${overview.partnerId}`}</button>
+      <button
+        onClick={() => onRescheduleMeeting({ meetingId: "m-1" })}
+      >{`mock-reschedule-${overview.partnerId}`}</button>
     </div>
   ),
+}));
+
+// The dialog has its own suite; here only the slot it hands back matters.
+vi.mock("@/pages/PersonalDashboard/components/MeetingRescheduleDialog", () => ({
+  default: ({ open, onSubmit }) =>
+    open ? (
+      <button
+        onClick={() =>
+          onSubmit({
+            date: "2026-06-08",
+            startTime: "09:30",
+            durationMinutes: 60,
+            timezone: "Asia/Shanghai",
+          })
+        }
+      >
+        mock-reschedule-submit
+      </button>
+    ) : null,
 }));
 
 vi.mock(
@@ -341,7 +369,7 @@ describe("MentorshipParticipantsCard", () => {
   it("should offer cancelling on the same flag that gates booking", () => {
     render(<MentorshipParticipantsCard {...baseProps} />);
     expect(screen.getByTestId("overview-1")).toHaveAttribute(
-      "data-can-delete",
+      "data-can-manage",
       "true",
     );
   });
@@ -354,7 +382,7 @@ describe("MentorshipParticipantsCard", () => {
 
     render(<MentorshipParticipantsCard {...baseProps} />);
     expect(screen.getByTestId("overview-1")).toHaveAttribute(
-      "data-can-delete",
+      "data-can-manage",
       "false",
     );
   });
@@ -404,6 +432,124 @@ describe("MentorshipParticipantsCard", () => {
     expect(refreshMeetings).not.toHaveBeenCalled();
     errorToast.mockRestore();
     consoleSpy.mockRestore();
+  });
+
+  it("should open the reschedule dialog without calling the API", () => {
+    render(<MentorshipParticipantsCard {...baseProps} />);
+
+    expect(
+      screen.queryByRole("button", { name: "mock-reschedule-submit" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "mock-reschedule-1" }));
+
+    expect(
+      screen.getByRole("button", { name: "mock-reschedule-submit" }),
+    ).toBeInTheDocument();
+    expect(rescheduleMeeting).not.toHaveBeenCalled();
+  });
+
+  it("should reschedule against the selected round and that partner, then refresh", async () => {
+    const refreshMeetings = vi.fn();
+    rescheduleMeeting.mockResolvedValue({});
+    const successToast = vi
+      .spyOn(toast, "success")
+      .mockImplementation(() => {});
+
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        refreshMeetings={refreshMeetings}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "mock-reschedule-1" }));
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "mock-reschedule-submit" }),
+      );
+    });
+
+    // `round_id` is passed through as the prop's own type; the DTO coerces.
+    expect(rescheduleMeeting).toHaveBeenCalledWith("m-1", {
+      round_id: "1",
+      partner_id: 1,
+      timezone: "Asia/Shanghai",
+      start_date: "2026-06-08",
+      start_time: "09:30",
+      duration_minutes: 60,
+    });
+    expect(refreshMeetings).toHaveBeenCalled();
+    expect(successToast).toHaveBeenCalled();
+    successToast.mockRestore();
+  });
+
+  it("should surface a failed reschedule and leave the list alone", async () => {
+    const refreshMeetings = vi.fn();
+    rescheduleMeeting.mockRejectedValue(new Error("boom"));
+    const errorToast = vi.spyOn(toast, "error").mockImplementation(() => {});
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        refreshMeetings={refreshMeetings}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "mock-reschedule-1" }));
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "mock-reschedule-submit" }),
+      );
+    });
+
+    expect(errorToast).toHaveBeenCalled();
+    expect(refreshMeetings).not.toHaveBeenCalled();
+    errorToast.mockRestore();
+    consoleSpy.mockRestore();
+  });
+
+  it("should reschedule against the partner whose row the control came from, not just the first partner", async () => {
+    // With a single partner, threading the wrong (e.g. loop-stale) partner id
+    // through would still pass every other reschedule test. A second partner
+    // is what makes that mistake observable.
+    const secondPartner = {
+      partnerId: 2,
+      preferredName: "Bob",
+      requiredMeetings: 3,
+      completedCount: 0,
+      completedRate: 0,
+      meetingTimeList: [],
+      participantRole: "mentee",
+      isActive: true,
+    };
+    rescheduleMeeting.mockResolvedValue({});
+
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        participantDetails={{
+          ...baseProps.participantDetails,
+          partnerMeetingOverview: [
+            ...baseProps.participantDetails.partnerMeetingOverview,
+            secondPartner,
+          ],
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "mock-reschedule-2" }));
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "mock-reschedule-submit" }),
+      );
+    });
+
+    expect(rescheduleMeeting).toHaveBeenCalledWith(
+      "m-1",
+      expect.objectContaining({ partner_id: 2 }),
+    );
   });
 
   it("should call refreshMeetings after a meeting is logged", () => {

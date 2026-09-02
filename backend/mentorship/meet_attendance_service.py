@@ -5,7 +5,7 @@ from intervaltree import Interval, IntervalTree
 from itertools import combinations
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.dto.google_meeting_detail_dto import GoogleMeetingDetailDto
-from backend.dto.meeting_batch_create_dto import ALLOWED_DURATION_MINUTES
+from backend.dto.meeting_slot_request_dto import ALLOWED_DURATION_MINUTES
 from backend.entity.users_entity import UsersEntity
 
 # Configuration Constants
@@ -18,9 +18,9 @@ EXCLUDED_GOOGLE_USER_IDS = {"100580340666352382634"}
 MIN_INTERACTION_RATIO = 0.8
 ATTENDANCE_WINDOW_DELTA = timedelta(hours=3)
 # The longest meeting anyone can create: ALLOWED_DURATION_MINUTES is enforced
-# by the batch-create DTO, which is the only path that makes a Google meeting,
-# so this is a real ceiling rather than a guess. Derived from that set instead
-# of restated, so the two cannot drift.
+# by the shared meeting-slot DTO base, which the batch-create and reschedule
+# DTOs both use, so this is a real ceiling rather than a guess. Derived from
+# that set instead of restated, so the two cannot drift.
 MAX_MEETING_DURATION = timedelta(minutes=max(ALLOWED_DURATION_MINUTES))
 # Top N anonymous participants ranked by total time spent
 TOP_ANONYMOUS_USERS = 3
