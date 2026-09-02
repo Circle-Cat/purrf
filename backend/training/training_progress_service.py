@@ -18,6 +18,8 @@ _SCORE_COLUMNS = {
     "cmi.core.score.min": "score_min",
     "cmi.core.score.max": "score_max",
 }
+# Numeric(8, 2)'s largest storable magnitude.
+_SCORE_LIMIT = Decimal("999999.99")
 
 
 def _timespan_seconds(value: str) -> int | None:
@@ -36,14 +38,24 @@ def _timespan_seconds(value: str) -> int | None:
 
 
 def _score_decimal(value) -> Decimal | None:
-    """A CMI score string as a Decimal, or None if it does not parse.
+    """A CMI score string as a Decimal, or None if it cannot be stored.
 
-    An unparseable score must not cost the learner the rest of the commit.
+    Covers three ways a score can be unstorable: it does not parse, it is
+    not finite (``NaN`` / ``Infinity`` both parse as a Decimal), or it
+    overflows the column's Numeric(8, 2) precision. All three are dropped
+    the same way an unparseable score already was, so one bad field does not
+    cost the learner the rest of the commit. A score outside SCORM's 0-100
+    is not clamped into range -- if the column can hold it, it is stored as
+    reported, since silently coercing it would hide a broken course rather
+    than surface one.
     """
     try:
-        return Decimal(str(value))
+        parsed = Decimal(str(value))
     except (InvalidOperation, ValueError, TypeError):
         return None
+    if not parsed.is_finite() or abs(parsed) > _SCORE_LIMIT:
+        return None
+    return parsed
 
 
 class TrainingProgressService:
@@ -106,8 +118,18 @@ class TrainingProgressService:
             parsed_total = _timespan_seconds(cmi[_TOTAL_TIME])
             if parsed_total is not None:
                 columns["session_time_seconds"] = parsed_total
-            # else: leave the stored value alone. A course that cannot format
-            # its own elapsed time must not zero out what was already banked.
+            else:
+                # Leave the stored value alone. A course that cannot format
+                # its own elapsed time must not zero out what was already
+                # banked -- but a course that never accumulates anything
+                # should not do so silently forever.
+                self.logger.warning(
+                    "[TrainingProgressService] training %s sent an "
+                    "unparseable cmi.core.total_time %r; leaving the stored "
+                    "value alone",
+                    training_id,
+                    cmi[_TOTAL_TIME],
+                )
         elif _SESSION_TIME in cmi:
             # No total_time to trust: fall back to accumulating the raw
             # session-to-date value onto what was already stored.
@@ -115,9 +137,16 @@ class TrainingProgressService:
                 session, training_id
             )
             accumulated = getattr(existing, "session_time_seconds", 0) or 0
-            columns["session_time_seconds"] = accumulated + (
-                _timespan_seconds(cmi[_SESSION_TIME]) or 0
-            )
+            parsed_session = _timespan_seconds(cmi[_SESSION_TIME])
+            if parsed_session is None:
+                self.logger.warning(
+                    "[TrainingProgressService] training %s sent an "
+                    "unparseable cmi.core.session_time %r; adding nothing "
+                    "for this session",
+                    training_id,
+                    cmi[_SESSION_TIME],
+                )
+            columns["session_time_seconds"] = accumulated + (parsed_session or 0)
 
         for cmi_key, column in _SCORE_COLUMNS.items():
             if cmi_key not in cmi:
@@ -131,13 +160,21 @@ class TrainingProgressService:
             parsed_score = _score_decimal(raw)
             if parsed_score is not None:
                 columns[column] = parsed_score
-            # else: an unparseable score is dropped, not stored -- it must
-            # not cost the learner the rest of this commit.
+            else:
+                # Dropped, not stored -- must not cost the learner the rest
+                # of this commit, but must not vanish without a trace either.
+                self.logger.warning(
+                    "[TrainingProgressService] training %s sent an "
+                    "unstorable %s %r; dropping it",
+                    training_id,
+                    cmi_key,
+                    raw,
+                )
 
         if not columns:
             self.logger.warning(
-                "[TrainingProgressService] commit to training %s matched no "
-                "known CMI element; keys=%s",
+                "[TrainingProgressService] commit to training %s produced "
+                "no storable columns; keys=%s",
                 training_id,
                 sorted(cmi.keys()),
             )

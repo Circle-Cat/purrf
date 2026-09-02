@@ -158,6 +158,21 @@ class TestSave(_ProgressServiceCase):
 
         self.assertNotIn("session_time_seconds", self._saved_columns())
 
+    async def test_an_unparseable_total_time_is_logged(self):
+        """A course reporting time in a shape we reject would otherwise bank
+        nothing, forever, with no trace anywhere."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "not a timespan"},
+        )
+
+        self.logger.warning.assert_called_once()
+        message = "%s" % (self.logger.warning.call_args,)
+        self.assertIn(str(_TRAINING_ID), message)
+        self.assertIn("not a timespan", message)
+
     async def test_a_single_digit_hour_total_time_is_treated_as_malformed(self):
         """SCORM 1.2's CMITimespan needs at least two digits of hours; a value
         that skips the leading zero is not one of ours to guess at, so it is
@@ -217,6 +232,62 @@ class TestSave(_ProgressServiceCase):
         saved = self._saved_columns()
         self.assertNotIn("score_raw", saved)
         self.assertEqual(saved["lesson_status"], "incomplete")
+
+    async def test_an_out_of_range_score_does_not_lose_the_rest_of_the_commit(self):
+        """ "12345678" parses as a Decimal fine, but overflows Numeric(8, 2)
+        and would otherwise 500 the request at flush, losing suspend_data
+        along with it."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {
+                **_COMMIT,
+                "cmi.core.score.raw": "12345678",
+                "cmi.core.score.min": "0",
+                "cmi.core.score.max": "82.5",
+            },
+        )
+
+        saved = self._saved_columns()
+        self.assertNotIn("score_raw", saved)
+        self.assertEqual(saved["score_min"], Decimal("0"))
+        self.assertEqual(saved["score_max"], Decimal("82.5"))
+        self.assertEqual(saved["suspend_data"], "x" * 5000)
+
+    async def test_a_non_finite_score_does_not_lose_the_rest_of_the_commit(self):
+        """ "NaN" and "Infinity" both parse as a Decimal; storing them would
+        round-trip back out to the browser as the literal string "NaN"."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {
+                **_COMMIT,
+                "cmi.core.score.raw": "NaN",
+                "cmi.core.score.min": "Infinity",
+                "cmi.core.score.max": "72",
+            },
+        )
+
+        saved = self._saved_columns()
+        self.assertNotIn("score_raw", saved)
+        self.assertNotIn("score_min", saved)
+        self.assertEqual(saved["score_max"], Decimal("72"))
+        self.assertEqual(saved["lesson_status"], "incomplete")
+
+    async def test_an_unstorable_score_is_logged(self):
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.score.raw": "1e400"},
+        )
+
+        self.logger.warning.assert_called_once()
+        message = "%s" % (self.logger.warning.call_args,)
+        self.assertIn(str(_TRAINING_ID), message)
+        self.assertIn("1e400", message)
 
     async def test_an_empty_score_is_stored_as_no_score_rather_than_zero(self):
         """A course clears its score the same way it clears any other field:
