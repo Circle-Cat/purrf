@@ -6,6 +6,15 @@ import unittest
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from fastapi import FastAPI, Request
+from fastapi.testclient import TestClient
+
+from backend.common.api_endpoints import (
+    TRAINING_COURSE_PACKAGE_ENDPOINT,
+    TRAINING_COURSE_TRIAL_ENDPOINT,
+    TRAINING_COURSES_ENDPOINT,
+    TRAINING_SESSION_ENDPOINT,
+)
 from backend.common.mentorship_enums import ScormVersion
 from backend.common.permissions import Permission
 from backend.dto.training_course_dto import (
@@ -15,12 +24,31 @@ from backend.dto.training_course_dto import (
     TrainingCourseDto,
     TrainingCourseState,
     TrainingPackageUploadResultDto,
+    TrainingProgressDto,
+    TrainingSessionDto,
 )
 from backend.dto.user_context_dto import UserContextDto
 from backend.training.training_admin_controller import (
     _MAX_PROGRESS_BODY_BYTES,
     TrainingAdminController,
 )
+
+
+def _session_dto():
+    """A content session as the content service hands one back."""
+    return TrainingSessionDto(
+        content_base_url="https://content.example/p/tok/",
+        entry_path="scormcontent/index.html",
+        player_path="__player.html",
+        expires_at=1788400000,
+        progress=TrainingProgressDto(
+            lesson_status="incomplete",
+            lesson_location="Summary",
+            suspend_data="blob",
+            session_time_seconds=500,
+            score_raw="82.50",
+        ),
+    )
 
 
 def _request(body: bytes, chunk_size=None):
@@ -147,7 +175,7 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(response["status_code"], HTTPStatus.CREATED)
-        self.assertEqual(response["data"]["state"], "no_package")
+        self.assertEqual(response["data"].state, TrainingCourseState.NO_PACKAGE)
 
     async def test_a_fresh_assignment_is_201(self):
         response = await self.controller.assign(
@@ -155,7 +183,7 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(response["status_code"], HTTPStatus.CREATED)
-        self.assertTrue(response["data"]["created"])
+        self.assertTrue(response["data"].created)
 
     async def test_a_repeat_assignment_is_200_and_says_so(self):
         """A no-op, not a failure -- so neither 201 nor an error."""
@@ -168,7 +196,7 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(response["status_code"], HTTPStatus.OK)
-        self.assertFalse(response["data"]["created"])
+        self.assertFalse(response["data"].created)
 
     async def test_a_trial_is_opened_for_the_caller_not_for_a_named_user(self):
         """The user id comes from the token, never from the request."""
@@ -213,16 +241,14 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         response = await self.controller.upload_package(7, upload)
 
         self.assertEqual(response["status_code"], HTTPStatus.CREATED)
-        self.assertEqual(response["data"]["storage_prefix"], "training/7/abc/")
+        self.assertEqual(response["data"].storage_prefix, "training/7/abc/")
         self.package_service.upload_package.assert_awaited_once_with(
             self.session, 7, b"zipbytes"
         )
 
     async def test_a_session_is_opened_for_the_caller_not_for_a_named_user(self):
         """The user id comes from the token, never from the request."""
-        self.content_service.open_session = AsyncMock(
-            return_value={"contentBaseUrl": "https://content.example/p/tok/"}
-        )
+        self.content_service.open_session = AsyncMock(return_value=_session_dto())
         current_user = MagicMock(user_id=11)
 
         await self.controller.open_session(42, current_user)
@@ -336,6 +362,229 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         await self.controller.list_courses()
 
         self.course_service.list_courses.assert_awaited_once_with(self.session)
+
+
+def _course_dto():
+    """One catalogue row, with a field of every kind the aliaser touches."""
+    return TrainingCourseDto(
+        course_id=7,
+        name="Safety Briefing",
+        is_active=True,
+        state=TrainingCourseState.VERIFIED,
+        scorm_version=ScormVersion.SCORM_12,
+        package_version="1.4",
+        reporting_mode="passed-incomplete",
+        verified_by_user_id=11,
+        assigned_count=3,
+    )
+
+
+def _upload_dto():
+    return TrainingPackageUploadResultDto(
+        course_id=7,
+        storage_prefix="training/7/abc/",
+        entry_path="index.html",
+        scorm_version=ScormVersion.SCORM_12,
+        file_count=3,
+        total_bytes=4096,
+    )
+
+
+class _FakeSession:
+    async def __aenter__(self):
+        return MagicMock()
+
+    async def __aexit__(self, *args):
+        return False
+
+
+def _snake_case_keys(body, path=""):
+    """Every key in a response body that is not camelCase, with where it is."""
+    if isinstance(body, list):
+        return [
+            found
+            for index, item in enumerate(body)
+            for found in _snake_case_keys(item, f"{path}[{index}]")
+        ]
+    if not isinstance(body, dict):
+        return []
+    found = [f"{path}.{key}" for key in body if "_" in key]
+    for key, value in body.items():
+        found.extend(_snake_case_keys(value, f"{path}.{key}"))
+    return found
+
+
+class TestTrainingResponsesOnTheWire(unittest.TestCase):
+    """What a browser receives, asserted through the router rather than the
+    handler.
+
+    Calling a handler directly returns whatever object was handed to
+    api_response, which is the half of the contract the frontend never sees.
+    The repo serialises DTOs by alias, so the wire is camelCase; a body built
+    by hand somewhere in here would be snake_case and every reader of it
+    would silently read undefined.
+    """
+
+    def setUp(self):
+        self.course_service = MagicMock()
+        self.course_service.list_courses = AsyncMock(return_value=[_course_dto()])
+        self.course_service.create_course = AsyncMock(return_value=_course_dto())
+        self.course_service.update_course = AsyncMock(return_value=_course_dto())
+
+        self.assignment_service = MagicMock()
+        self.assignment_service.assign = AsyncMock(
+            return_value=TrainingAssignmentResultDto(
+                training_id=42, user_id=11, course_id=3, created=True
+            )
+        )
+        self.assignment_service.start_trial = AsyncMock(
+            return_value=TrainingAssignmentResultDto(
+                training_id=42, user_id=11, course_id=3, created=True
+            )
+        )
+
+        self.package_service = MagicMock()
+        self.package_service.upload_package = AsyncMock(return_value=_upload_dto())
+
+        self.content_service = MagicMock()
+        self.content_service.open_session = AsyncMock(return_value=_session_dto())
+
+        self.progress_service = MagicMock()
+        self.progress_service.save = AsyncMock()
+
+        database = MagicMock()
+        database.session = lambda: _FakeSession()
+        controller = TrainingAdminController(
+            self.course_service,
+            self.assignment_service,
+            self.package_service,
+            self.content_service,
+            self.progress_service,
+            database,
+        )
+
+        app = FastAPI()
+        current_user = _user(
+            Permission.TRAINING_ADMIN_READ, Permission.TRAINING_ADMIN_WRITE
+        )
+
+        @app.middleware("http")
+        async def _sign_in(request: Request, call_next):
+            request.state.user = current_user
+            return await call_next(request)
+
+        app.include_router(controller.router)
+        self.client = TestClient(app)
+
+    def start_trial(self):
+        return self.client.post(TRAINING_COURSE_TRIAL_ENDPOINT.format(course_id=3))
+
+    def open_session(self):
+        return self.client.post(TRAINING_SESSION_ENDPOINT.format(training_id=42))
+
+    def test_a_trial_run_answers_with_the_training_id_the_page_opens(self):
+        """The page reads trainingId off this body and can do nothing without
+        it: no trial run means no course can ever be verified, and an
+        unverified course cannot be assigned to anybody."""
+        response = self.start_trial()
+
+        self.assertEqual(response.status_code, HTTPStatus.CREATED)
+        self.assertEqual(
+            response.json()["data"],
+            {"trainingId": 42, "userId": 11, "courseId": 3, "created": True},
+        )
+
+    def test_a_content_session_answers_with_the_keys_the_player_loads_from(self):
+        response = self.open_session()
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(
+            response.json()["data"],
+            {
+                "contentBaseUrl": "https://content.example/p/tok/",
+                "entryPath": "scormcontent/index.html",
+                "playerPath": "__player.html",
+                "expiresAt": 1788400000,
+                "progress": {
+                    "lessonStatus": "incomplete",
+                    "lessonLocation": "Summary",
+                    "suspendData": "blob",
+                    "sessionTimeSeconds": 500,
+                    "scoreRaw": "82.50",
+                    "scoreMin": None,
+                    "scoreMax": None,
+                },
+            },
+        )
+
+    def test_an_untouched_assignment_opens_with_no_progress_rather_than_a_shape(self):
+        """The page seeds the CMI model from `progress || {}`."""
+        self.content_service.open_session = AsyncMock(
+            return_value=TrainingSessionDto(
+                content_base_url="https://content.example/p/tok/",
+                entry_path="scormcontent/index.html",
+                player_path="__player.html",
+                expires_at=1788400000,
+            )
+        )
+
+        self.assertIsNone(self.open_session().json()["data"]["progress"])
+
+    def test_the_catalogue_answers_with_camel_case_rows(self):
+        response = self.client.get(TRAINING_COURSES_ENDPOINT)
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        row = response.json()["data"][0]
+        self.assertEqual(row["courseId"], 7)
+        self.assertIs(row["isActive"], True)
+        self.assertEqual(row["scormVersion"], "1.2")
+        self.assertEqual(row["packageVersion"], "1.4")
+        self.assertEqual(row["reportingMode"], "passed-incomplete")
+        self.assertEqual(row["verifiedByUserId"], 11)
+        self.assertEqual(row["assignedCount"], 3)
+
+    def test_an_upload_answers_with_camel_case(self):
+        response = self.client.post(
+            TRAINING_COURSE_PACKAGE_ENDPOINT.format(course_id=7),
+            files={"file": ("package.zip", b"zipbytes", "application/zip")},
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.CREATED)
+        self.assertEqual(response.json()["data"]["storagePrefix"], "training/7/abc/")
+        self.assertEqual(response.json()["data"]["fileCount"], 3)
+        self.assertIs(response.json()["data"]["completionConfigReadable"], False)
+
+    def test_no_training_response_carries_a_snake_case_key(self):
+        """Every body this controller can send, swept in one place, so a route
+        added later cannot quietly reintroduce the mismatch."""
+        responses = {
+            "list courses": lambda: self.client.get(TRAINING_COURSES_ENDPOINT),
+            "create course": lambda: self.client.post(
+                TRAINING_COURSES_ENDPOINT, json={"name": "Safety Briefing"}
+            ),
+            "update course": lambda: self.client.patch(
+                "/training/courses/7", json={"isActive": False}
+            ),
+            "upload package": lambda: self.client.post(
+                TRAINING_COURSE_PACKAGE_ENDPOINT.format(course_id=7),
+                files={"file": ("package.zip", b"zipbytes", "application/zip")},
+            ),
+            "assign": lambda: self.client.post(
+                "/training/assignments", json={"userId": 11, "courseId": 3}
+            ),
+            "start trial": self.start_trial,
+            "open session": self.open_session,
+            "save progress": lambda: self.client.post(
+                "/training/42/progress",
+                json={"cmi": {"cmi.core.lesson_status": "passed"}},
+            ),
+        }
+
+        for name, send in responses.items():
+            with self.subTest(name):
+                body = send().json()
+                self.assertTrue(body["success"], msg=body)
+                self.assertEqual(_snake_case_keys(body["data"], name), [])
 
 
 if __name__ == "__main__":

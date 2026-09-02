@@ -38,6 +38,7 @@ const SESSION = {
     entryPath: "scormdriver/indexAPI.html",
     playerPath: "__player.html",
     expiresAt: 1788400000,
+    progress: null,
   },
 };
 

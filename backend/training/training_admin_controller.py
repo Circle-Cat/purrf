@@ -169,7 +169,7 @@ class TrainingAdminController:
             courses = await self.training_course_service.list_courses(session)
         return api_response(
             message="Training courses retrieved.",
-            data=[course.model_dump(mode="json") for course in courses],
+            data=courses,
         )
 
     async def create_course(self, payload: TrainingCourseCreateDto):
@@ -178,7 +178,7 @@ class TrainingAdminController:
             course = await self.training_course_service.create_course(session, payload)
         return api_response(
             message="Training course created.",
-            data=course.model_dump(mode="json"),
+            data=course,
             status_code=HTTPStatus.CREATED,
         )
 
@@ -190,7 +190,7 @@ class TrainingAdminController:
             )
         return api_response(
             message="Training course updated.",
-            data=course.model_dump(mode="json"),
+            data=course,
         )
 
     async def assign(self, payload: TrainingAssignmentRequestDto):
@@ -207,7 +207,7 @@ class TrainingAdminController:
                 if result.created
                 else "This person already has this course."
             ),
-            data=result.model_dump(mode="json"),
+            data=result,
             status_code=HTTPStatus.CREATED if result.created else HTTPStatus.OK,
         )
 
@@ -228,7 +228,7 @@ class TrainingAdminController:
                 if result.created
                 else "Resuming your existing trial of this course."
             ),
-            data=result.model_dump(mode="json"),
+            data=result,
             status_code=HTTPStatus.CREATED if result.created else HTTPStatus.OK,
         )
 
@@ -245,17 +245,17 @@ class TrainingAdminController:
             )
         return api_response(
             message="Package uploaded.",
-            data=result.model_dump(mode="json"),
+            data=result,
             status_code=HTTPStatus.CREATED,
         )
 
     async def open_session(self, training_id: int, current_user):
         """Mint the content URL for the caller's own assignment."""
         async with self.database.session() as session:
-            payload = await self.training_content_service.open_session(
+            training_session = await self.training_content_service.open_session(
                 session, training_id, current_user.user_id
             )
-        return api_response(message="Training session opened.", data=payload)
+        return api_response(message="Training session opened.", data=training_session)
 
     async def save_progress(self, training_id: int, request: Request, current_user):
         """Store one commit from the caller's own course.

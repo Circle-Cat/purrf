@@ -42,6 +42,7 @@ const SESSION = {
     entryPath: "scormdriver/indexAPI.html",
     playerPath: "__player.html",
     expiresAt: 1788400000,
+    progress: null,
   },
 };
 
@@ -231,8 +232,8 @@ describe("TrainingCourse", () => {
   });
 
   it("still replies to READY with an empty progress object, not undefined, when nobody has opened the course yet", async () => {
-    // SESSION carries no `progress` key at all -- the shape the API returns
-    // for an assignment nobody has opened.
+    // SESSION carries `progress: null` -- what the API sends for an
+    // assignment nobody has opened.
     renderCourse();
     const frame = await screen.findByTitle(/course/i);
     const postMessage = vi.spyOn(frame.contentWindow, "postMessage");

@@ -4,6 +4,7 @@ import pathlib
 import posixpath
 from dataclasses import dataclass
 
+from backend.dto.training_course_dto import TrainingProgressDto, TrainingSessionDto
 from backend.training.byte_range import (
     RangeSpec,
     ResolvedRange,
@@ -51,19 +52,19 @@ def _score(value) -> str | None:
     return None if value is None else f"{value:.2f}"
 
 
-def _progress_payload(progress) -> dict:
-    """The learner's stored CMI state, or ``{}`` if there is none yet."""
+def _progress_payload(progress) -> TrainingProgressDto | None:
+    """The learner's stored CMI state, or None if there is none yet."""
     if progress is None:
-        return {}
-    return {
-        "lessonStatus": progress.lesson_status,
-        "lessonLocation": progress.lesson_location,
-        "suspendData": progress.suspend_data,
-        "sessionTimeSeconds": progress.session_time_seconds,
-        "scoreRaw": _score(progress.score_raw),
-        "scoreMin": _score(progress.score_min),
-        "scoreMax": _score(progress.score_max),
-    }
+        return None
+    return TrainingProgressDto(
+        lesson_status=progress.lesson_status,
+        lesson_location=progress.lesson_location,
+        suspend_data=progress.suspend_data,
+        session_time_seconds=progress.session_time_seconds,
+        score_raw=_score(progress.score_raw),
+        score_min=_score(progress.score_min),
+        score_max=_score(progress.score_max),
+    )
 
 
 @dataclass(frozen=True)
@@ -134,7 +135,9 @@ class TrainingContentService:
         self.training_progress_repository = training_progress_repository
         self.training_storage = training_storage
 
-    async def open_session(self, session, training_id: int, user_id: int) -> dict:
+    async def open_session(
+        self, session, training_id: int, user_id: int
+    ) -> TrainingSessionDto:
         """Mint a content URL for one person's own assignment.
 
         Args:
@@ -143,9 +146,10 @@ class TrainingContentService:
             user_id (int): Who is opening it.
 
         Returns:
-            dict: ``contentBaseUrl``, ``expiresAt``, and the learner's stored
-                ``progress`` to seed the CMI model with (``{}`` if this
-                assignment has never been opened before).
+            TrainingSessionDto: Where the course loads from, when the token
+                behind that URL expires, and the learner's stored progress to
+                seed the CMI model with (None if this assignment has never
+                been opened before).
 
         Raises:
             ValueError: Not configured, or no such assignment.
@@ -185,13 +189,13 @@ class TrainingContentService:
             course.storage_prefix,
             expires_at,
         )
-        return {
-            "contentBaseUrl": f"https://{self.content_host}/p/{token}/",
-            "entryPath": course.entry_path,
-            "playerPath": PLAYER_PATH,
-            "expiresAt": expires_at,
-            "progress": _progress_payload(progress),
-        }
+        return TrainingSessionDto(
+            content_base_url=f"https://{self.content_host}/p/{token}/",
+            entry_path=course.entry_path,
+            player_path=PLAYER_PATH,
+            expires_at=expires_at,
+            progress=_progress_payload(progress),
+        )
 
     def _require_configuration(self) -> None:
         """Refuse to work half-configured, saying which half in the log only.

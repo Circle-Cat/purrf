@@ -87,6 +87,7 @@ py_library(
         ":scorm_package",
         ":training_content_token",
         ":training_storage",
+        "//backend/dto",
         "//backend/repository:repositories",
     ],
 )

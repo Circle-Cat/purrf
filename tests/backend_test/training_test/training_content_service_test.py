@@ -36,10 +36,6 @@ _NEW_PREFIX = "training/9/new-package/"
 _VIDEO_PATH = "scormcontent/assets/Mentee_Onboarding_Program_.mp4"
 _VIDEO = bytes(range(256)) * 4
 
-# Spec 5.1 names the session response fields.
-_CONTENT_BASE_URL_KEY = "contentBaseUrl"
-_EXPIRES_AT_KEY = "expiresAt"
-
 
 def _as_epoch(value):
     """The spec leaves the expiry's wire format open; accept epoch or ISO-8601."""
@@ -144,7 +140,7 @@ class _ContentServiceCase(unittest.IsolatedAsyncioTestCase):
         return keys
 
     def token_from(self, result):
-        base_url = result[_CONTENT_BASE_URL_KEY]
+        base_url = result.content_base_url
         head = f"https://{_CONTENT_HOST}/p/"
         self.assertTrue(base_url.startswith(head), msg=base_url)
         self.assertTrue(base_url.endswith("/"), msg=base_url)
@@ -178,7 +174,7 @@ class TestOpenSession(_ContentServiceCase):
         result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
 
         claims = verify_content_token(_KEY, self.token_from(result))
-        self.assertEqual(_as_epoch(result[_EXPIRES_AT_KEY]), claims.expires_at)
+        self.assertEqual(_as_epoch(result.expires_at), claims.expires_at)
 
     async def test_somebody_elses_assignment_cannot_be_opened(self):
         self.training.user_id = _OTHER_USER_ID
@@ -204,16 +200,16 @@ class TestOpenSession(_ContentServiceCase):
 
         result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
 
-        self.assertEqual(result["progress"]["lessonLocation"], "Summary")
-        self.assertEqual(result["progress"]["suspendData"], "blob")
-        self.assertEqual(result["progress"]["sessionTimeSeconds"], 500)
+        self.assertEqual(result.progress.lesson_location, "Summary")
+        self.assertEqual(result.progress.suspend_data, "blob")
+        self.assertEqual(result.progress.session_time_seconds, 500)
 
     async def test_a_session_for_an_untouched_assignment_carries_no_progress(self):
         self.progress_repository.get_by_training_id.return_value = None
 
         result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
 
-        self.assertEqual(result["progress"], {})
+        self.assertIsNone(result.progress)
 
     async def test_the_session_carries_the_learners_stored_score(self):
         self.progress_repository.get_by_training_id.return_value = (
@@ -227,9 +223,9 @@ class TestOpenSession(_ContentServiceCase):
 
         result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
 
-        self.assertEqual(result["progress"]["scoreRaw"], "82.50")
-        self.assertEqual(result["progress"]["scoreMin"], "0.00")
-        self.assertEqual(result["progress"]["scoreMax"], "100.00")
+        self.assertEqual(result.progress.score_raw, "82.50")
+        self.assertEqual(result.progress.score_min, "0.00")
+        self.assertEqual(result.progress.score_max, "100.00")
 
     async def test_a_session_for_a_course_with_no_score_yet_carries_none(self):
         self.progress_repository.get_by_training_id.return_value = (
@@ -238,7 +234,7 @@ class TestOpenSession(_ContentServiceCase):
 
         result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
 
-        self.assertIsNone(result["progress"]["scoreRaw"])
+        self.assertIsNone(result.progress.score_raw)
 
 
 class TestReadAssetLooksThePrefixUpFresh(_ContentServiceCase):

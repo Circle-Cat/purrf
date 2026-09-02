@@ -12,11 +12,14 @@ vi.mock("@/utils/request", () => ({
 const TRAINING_ID = 7;
 const CONTENT_ORIGIN = "https://content.test";
 
+// The envelope the session endpoint sends for an assignment nobody has
+// opened yet: progress is null, not an empty object.
 const SESSION = {
   contentBaseUrl: `${CONTENT_ORIGIN}/packages/1/`,
   entryPath: "index.html",
   playerPath: "player.html",
-  progress: {},
+  expiresAt: 1788400000,
+  progress: null,
 };
 
 const cmiWith = (lessonStatus) => ({

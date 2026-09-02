@@ -27,10 +27,13 @@ py_test(
     name = "training_admin_controller_test",
     srcs = ["training_admin_controller_test.py"],
     deps = [
+        "//backend/common:api_endpoints",
         "//backend/common:mentorship_enums",
         "//backend/common:permissions",
         "//backend/dto",
         "//backend/training:training_admin_controller",
+        "@pypi//fastapi",
+        "@pypi//httpx",
     ],
 )
 

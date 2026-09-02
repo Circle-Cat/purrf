@@ -102,3 +102,32 @@ class TrainingPackageUploadResultDto(BaseDto):
     missing_declared_files: list[str] = Field(default_factory=list)
     # Unfinished learners whose resume data this upload wiped.
     learners_reset: int = 0
+
+
+class TrainingProgressDto(BaseDto):
+    """The learner's stored CMI state, seeded back into the course.
+
+    Scores are strings, never numbers: a Decimal encoded as a float turns
+    82.50 into 82.5, and a course reads back whatever it is handed.
+    """
+
+    lesson_status: str | None = None
+    lesson_location: str | None = None
+    suspend_data: str | None = None
+    session_time_seconds: int | None = None
+    score_raw: str | None = None
+    score_min: str | None = None
+    score_max: str | None = None
+
+
+class TrainingSessionDto(BaseDto):
+    """Where one learner's course loads from, and what it resumes with.
+
+    ``progress`` is None for an assignment nobody has opened yet.
+    """
+
+    content_base_url: str
+    entry_path: str | None = None
+    player_path: str
+    expires_at: int
+    progress: TrainingProgressDto | None = None
