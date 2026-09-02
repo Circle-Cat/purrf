@@ -1,4 +1,6 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
+import { toast } from "sonner";
+import { deleteMeeting } from "@/api/meetingApi";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import MentorshipParticipantsCard from "@/pages/PersonalDashboard/components/MentorshipParticipantsCard";
 import { MentorshipRoundStatus } from "@/constants/MentorshipRoundStatus";
@@ -9,6 +11,10 @@ const { mockUseFlags } = vi.hoisted(() => ({
 
 vi.mock("@/hooks/useFeatureFlags", () => ({
   useFeatureFlags: mockUseFlags,
+}));
+
+vi.mock("@/api/meetingApi", () => ({
+  deleteMeeting: vi.fn(),
 }));
 
 vi.mock("@/pages/PersonalDashboard/components/MeetingManagementDialog", () => ({
@@ -38,8 +44,15 @@ vi.mock("@/pages/PersonalDashboard/components/MeetingManagementDialog", () => ({
 }));
 
 vi.mock("@/pages/PersonalDashboard/components/MeetingOverviewCard", () => ({
-  default: ({ overview }) => (
-    <div data-testid={`overview-${overview.partnerId}`} />
+  default: ({ overview, canDelete, onDeleteMeeting }) => (
+    <div
+      data-testid={`overview-${overview.partnerId}`}
+      data-can-delete={String(canDelete)}
+    >
+      <button
+        onClick={() => onDeleteMeeting({ meetingId: "m-1" })}
+      >{`mock-cancel-${overview.partnerId}`}</button>
+    </div>
   ),
 }));
 
@@ -323,6 +336,74 @@ describe("MentorshipParticipantsCard", () => {
   it("should render a MeetingOverviewCard for each partner", () => {
     render(<MentorshipParticipantsCard {...baseProps} />);
     expect(screen.getByTestId("overview-1")).toBeInTheDocument();
+  });
+
+  it("should offer cancelling on the same flag that gates booking", () => {
+    render(<MentorshipParticipantsCard {...baseProps} />);
+    expect(screen.getByTestId("overview-1")).toHaveAttribute(
+      "data-can-delete",
+      "true",
+    );
+  });
+
+  it("should NOT offer cancelling when the google meeting flag is off", () => {
+    mockUseFlags.mockReturnValue({
+      "manual-submit-meeting": true,
+      "create-google-meeting": false,
+    });
+
+    render(<MentorshipParticipantsCard {...baseProps} />);
+    expect(screen.getByTestId("overview-1")).toHaveAttribute(
+      "data-can-delete",
+      "false",
+    );
+  });
+
+  it("should cancel against the selected round and that partner, then refresh", async () => {
+    const refreshMeetings = vi.fn();
+    deleteMeeting.mockResolvedValue({});
+    const successToast = vi
+      .spyOn(toast, "success")
+      .mockImplementation(() => {});
+
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        refreshMeetings={refreshMeetings}
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "mock-cancel-1" }));
+    });
+
+    expect(deleteMeeting).toHaveBeenCalledWith("m-1", "1", 1);
+    expect(refreshMeetings).toHaveBeenCalled();
+    expect(successToast).toHaveBeenCalled();
+    successToast.mockRestore();
+  });
+
+  it("should surface a failed cancellation and leave the list alone", async () => {
+    const refreshMeetings = vi.fn();
+    deleteMeeting.mockRejectedValue(new Error("boom"));
+    const errorToast = vi.spyOn(toast, "error").mockImplementation(() => {});
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        refreshMeetings={refreshMeetings}
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "mock-cancel-1" }));
+    });
+
+    expect(errorToast).toHaveBeenCalled();
+    expect(refreshMeetings).not.toHaveBeenCalled();
+    errorToast.mockRestore();
+    consoleSpy.mockRestore();
   });
 
   it("should call refreshMeetings after a meeting is logged", () => {
