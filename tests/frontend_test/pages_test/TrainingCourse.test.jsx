@@ -250,7 +250,7 @@ describe("TrainingCourse", () => {
     expect(message.progress).toEqual({});
   });
 
-  it("saves what it last received when the tab goes away, over a keepalive fetch rather than axios", async () => {
+  it("saves what it last received when the page goes away, over a keepalive fetch rather than axios", async () => {
     renderCourse();
     await screen.findByTitle(/course/i);
     postCommit({ "cmi.suspend_data": "blob" });
@@ -260,10 +260,10 @@ describe("TrainingCourse", () => {
     await waitFor(() => expect(saveProgress).toHaveBeenCalledTimes(1), {
       timeout: 3000,
     });
-    // The ordinary commit save never touches fetch -- only unload does.
+    // The ordinary commit save never touches fetch -- only the parting one does.
     expect(fetch).not.toHaveBeenCalled();
 
-    window.dispatchEvent(new Event("beforeunload"));
+    window.dispatchEvent(new Event("pagehide"));
 
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
     const [url, options] = fetch.mock.calls[0];
@@ -280,21 +280,21 @@ describe("TrainingCourse", () => {
       cmi: { "cmi.suspend_data": "blob" },
       final: true,
     });
-    // Unload does not also re-trigger the axios save.
+    // The parting save does not also re-trigger the axios save.
     expect(saveProgress).toHaveBeenCalledTimes(1);
   });
 
-  it("does not save on unload when nothing new arrived", async () => {
+  it("does not save on page hide when nothing new arrived", async () => {
     renderCourse();
     await screen.findByTitle(/course/i);
 
-    window.dispatchEvent(new Event("beforeunload"));
+    window.dispatchEvent(new Event("pagehide"));
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("stops listening for unload when it goes away", async () => {
+  it("stops listening for page hide when it goes away", async () => {
     const { unmount } = renderCourse();
     await screen.findByTitle(/course/i);
     postCommit({ "cmi.suspend_data": "blob" });
@@ -303,7 +303,7 @@ describe("TrainingCourse", () => {
     });
     unmount();
 
-    window.dispatchEvent(new Event("beforeunload"));
+    window.dispatchEvent(new Event("pagehide"));
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(fetch).not.toHaveBeenCalled();

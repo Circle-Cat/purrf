@@ -7,7 +7,7 @@ import { MESSAGE_TYPES, isTrustedMessage } from "@/training/scormBridge";
 /**
  * Opens a training session and bridges postMessage traffic with the course
  * frame it points at: replies to the frame's READY handshake, saves every
- * commit and finish, and falls back to a save on unload.
+ * commit and finish, and falls back to a save as the page is hidden.
  *
  * Shared by the learner's course page and the admin trial page so the
  * origin check -- the whole security of the bridge -- exists in one place.
@@ -29,9 +29,9 @@ export default function useTrainingRuntime(trainingId, user) {
   const [saveFailed, setSaveFailed] = useState(false);
   const [writes, setWrites] = useState([]);
   const frameRef = useRef(null);
-  // The last cmi a commit or finish carried, and whether the unload safety net
-  // below still owes a save for it. The tab can close before the ordinary save
-  // even resolves, so unload resends the same cmi unconditionally.
+  // The last cmi a commit or finish carried, and whether the safety net below
+  // still owes a save for it. The tab can close before the ordinary save even
+  // resolves, so being hidden resends the same cmi unconditionally.
   const lastCmiRef = useRef(null);
   const unsavedRef = useRef(false);
   // One save per assignment on the wire at a time. A course reports
@@ -146,10 +146,10 @@ export default function useTrainingRuntime(trainingId, user) {
     // stored -- `final` is what makes the server write it anyway, and writing
     // it is the whole point: the elapsed time it carries is exactly what the
     // server's unchanged-content check leaves out. It is not queued behind
-    // the chain above, because an unload handler has to issue its request
-    // before it returns; the server's row lock orders it against whatever is
-    // still in flight.
-    const onBeforeUnload = () => {
+    // the chain above, because a page being hidden has to issue its request
+    // before the handler returns; the server's row lock orders it against
+    // whatever is still in flight.
+    const saveOnHide = () => {
       if (!unsavedRef.current) return;
       unsavedRef.current = false;
       fetch(
@@ -162,9 +162,9 @@ export default function useTrainingRuntime(trainingId, user) {
           body: JSON.stringify({ cmi: lastCmiRef.current, final: true }),
         },
       ).catch((error) => {
-        // Usually nothing is left to notice this. A cancelled navigation
-        // leaves the page alive though, so put the debt back and let the
-        // next unload try again rather than dropping it in silence.
+        // Usually nothing is left to notice this. A page that is hidden and
+        // comes back is still alive though, so put the debt back and let the
+        // next hide try again rather than dropping it in silence.
         unsavedRef.current = true;
         console.error(
           `[useTrainingRuntime] final save for training ${trainingId} failed`,
@@ -173,11 +173,23 @@ export default function useTrainingRuntime(trainingId, user) {
       });
     };
 
+    // `beforeunload` never fires on iOS Safari, and a discarded background tab
+    // skips it everywhere. `pagehide` covers the closes and navigations it
+    // used to, and `visibilitychange` to hidden is the last event a page is
+    // guaranteed to see before either. Both run the same handler: the debt
+    // flag above is what keeps a learner switching between apps from sending
+    // a save per switch when no commit has arrived since the last one.
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") saveOnHide();
+    };
+
     window.addEventListener("message", onMessage);
-    window.addEventListener("beforeunload", onBeforeUnload);
+    window.addEventListener("pagehide", saveOnHide);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       window.removeEventListener("message", onMessage);
-      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("pagehide", saveOnHide);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [session, trainingId, user, post]);
 

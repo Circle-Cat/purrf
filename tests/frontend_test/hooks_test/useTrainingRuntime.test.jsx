@@ -119,10 +119,11 @@ describe("useTrainingRuntime saves", () => {
   });
 });
 
-describe("useTrainingRuntime unload save", () => {
+describe("useTrainingRuntime parting save", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     api.saveProgress.mockResolvedValue({});
+    setVisibility("visible");
   });
 
   afterEach(() => {
@@ -130,9 +131,31 @@ describe("useTrainingRuntime unload save", () => {
     vi.restoreAllMocks();
   });
 
+  /** jsdom leaves visibilityState read-only, so it is redefined per test. */
+  const setVisibility = (state) => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => state,
+    });
+  };
+
   const unload = () => {
     act(() => {
-      window.dispatchEvent(new Event("beforeunload"));
+      window.dispatchEvent(new Event("pagehide"));
+    });
+  };
+
+  const hide = () => {
+    setVisibility("hidden");
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+  };
+
+  const show = () => {
+    setVisibility("visible");
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
     });
   };
 
@@ -201,5 +224,93 @@ describe("useTrainingRuntime unload save", () => {
     unload();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("banks the session when the page is hidden, which is all iOS gives us", async () => {
+    // Mobile Safari never fires beforeunload; hiding the tab is the last
+    // event the page is guaranteed to see.
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    await renderRuntime();
+    await act(async () => {
+      window.dispatchEvent(commit(cmiWith("incomplete")));
+    });
+
+    hide();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      cmi: cmiWith("incomplete"),
+      final: true,
+    });
+  });
+
+  it("ignores the page coming back into view", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    await renderRuntime();
+    await act(async () => {
+      window.dispatchEvent(commit(cmiWith("incomplete")));
+    });
+    hide();
+
+    show();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends one save however often a learner switches apps", async () => {
+    // Nothing new has been committed between the switches, so there is
+    // nothing left to bank.
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    await renderRuntime();
+    await act(async () => {
+      window.dispatchEvent(commit(cmiWith("incomplete")));
+    });
+
+    hide();
+    show();
+    hide();
+    show();
+    hide();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves again once the course has committed something new", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    await renderRuntime();
+    await act(async () => {
+      window.dispatchEvent(commit(cmiWith("incomplete")));
+    });
+    hide();
+    show();
+
+    await act(async () => {
+      window.dispatchEvent(commit(cmiWith("completed")));
+    });
+    hide();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).cmi).toEqual(
+      cmiWith("completed"),
+    );
+  });
+
+  it("no longer leans on beforeunload, which iOS never fires", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    await renderRuntime();
+    await act(async () => {
+      window.dispatchEvent(commit(cmiWith("incomplete")));
+    });
+
+    act(() => {
+      window.dispatchEvent(new Event("beforeunload"));
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
