@@ -29,6 +29,14 @@ _PERMISSION_BY_VALUE = {p.value: p for p in Permission}
 _UNAUTHENTICATED_PATHS = frozenset({f"/api{NOTIFICATION_DELIVER_ENDPOINT}"})
 
 
+class AccountDeactivatedError(PermissionError):
+    """Authenticated, but the account is not active."""
+
+
+class AccountSuspendedError(PermissionError):
+    """Authenticated, but the account is blacklisted."""
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     """
     Middleware for authenticating incoming HTTP requests.
@@ -145,6 +153,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return api_response(
                 message=str(e), status_code=HTTPStatus.BAD_REQUEST, data=None
             )
+        except AccountSuspendedError as e:
+            self.logger.warning(
+                "[AuthMiddleware] %s %s denied: %s",
+                request.method,
+                request.url.path,
+                e,
+            )
+            return api_response(
+                message=("Your account has been suspended. Contact an administrator."),
+                status_code=HTTPStatus.FORBIDDEN,
+                data=None,
+            )
         except PermissionError as e:
             self.logger.warning(
                 "[AuthMiddleware] %s %s denied: %s",
@@ -239,10 +259,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
                             # Not the race — a real bug. Must surface.
                             raise
 
-                # A deactivated account still authenticates (valid token, real
-                # user) but must not be allowed to act.
+                # A deactivated or blacklisted account still authenticates
+                # (valid token, real user) but must not be allowed to act.
+                # is_active is checked first: an account that is both reads as
+                # deactivated, the broader of the two states.
                 if not user.is_active:
-                    raise PermissionError("User account is deactivated")
+                    raise AccountDeactivatedError("User account is deactivated")
+                if user.is_blocked:
+                    raise AccountSuspendedError("User account is blocked")
 
                 await self._resolve_permissions(session, user, user_context)
 

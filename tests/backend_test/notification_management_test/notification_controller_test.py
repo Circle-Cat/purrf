@@ -43,7 +43,12 @@ class TestNotificationIntegration(unittest.TestCase):
         self.mock_database.session = MagicMock(return_value=session_cm)
         self.mock_user_identity_service = MagicMock()
         self.mock_user_identity_service.find_user_by_sub = AsyncMock(
-            return_value=MagicMock(user_id=1, is_super_admin=False)
+            return_value=MagicMock(
+                user_id=1,
+                is_super_admin=False,
+                is_active=True,
+                is_blocked=False,
+            )
         )
         self.mock_user_permissions_repository = MagicMock()
         self.mock_user_permissions_repository.get_active_permission_names = AsyncMock(

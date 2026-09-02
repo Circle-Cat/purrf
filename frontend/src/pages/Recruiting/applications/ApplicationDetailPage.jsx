@@ -2140,6 +2140,10 @@ const ApplicationDetailPage = () => {
             other application they hold on every posting — including any that
             already reached Hired. Each one is tagged as blacklisted.
           </p>
+          <p className="text-sm text-slate-700">
+            This also blocks them from Purrf entirely — they can still sign in,
+            but every page will be inaccessible until they are unblocked.
+          </p>
           {blacklistUpcoming.length > 0 && (
             <div className="text-sm text-slate-700">
               <p>

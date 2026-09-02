@@ -2127,6 +2127,8 @@ class BoardService:
         """Block a user org-wide and close out the triggering application
         and every other application of the user (including already-HIRED
         ones; already-rejected ones keep their stage but get the tag).
+        The block also locks the user out of every Purrf page, not just
+        applications, until an admin unblocks them.
 
         Deliberately NOT owner-gated: unlike every other write in this
         service, this does not check whether ``current_user`` owns the

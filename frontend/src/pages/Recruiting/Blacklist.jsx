@@ -57,7 +57,8 @@ const Blacklist = () => {
           <h1 className="text-xl font-semibold">Blacklist</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             Blocked users are rejected at the application entry point across all
-            postings — no cooldown, no re-apply. Unblock to lift the block.
+            postings — no cooldown, no re-apply — and they cannot use Purrf at
+            all until unblocked.
           </p>
         </div>
         <Badge variant="outline" className="ml-auto shrink-0">
