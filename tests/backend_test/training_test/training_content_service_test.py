@@ -3,6 +3,7 @@
 import datetime
 import time
 import unittest
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
 from backend.common.mentorship_enums import TrainingStatus
@@ -204,6 +205,31 @@ class TestOpenSession(_ContentServiceCase):
 
         self.assertEqual(result["progress"], {})
 
+    async def test_the_session_carries_the_learners_stored_score(self):
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                score_raw=Decimal("82.50"),
+                score_min=Decimal("0.00"),
+                score_max=Decimal("100.00"),
+            )
+        )
+
+        result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+        self.assertEqual(result["progress"]["scoreRaw"], "82.50")
+        self.assertEqual(result["progress"]["scoreMin"], "0.00")
+        self.assertEqual(result["progress"]["scoreMax"], "100.00")
+
+    async def test_a_session_for_a_course_with_no_score_yet_carries_none(self):
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(training_id=_TRAINING_ID)
+        )
+
+        result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+        self.assertIsNone(result["progress"]["scoreRaw"])
+
 
 class TestReadAssetLooksThePrefixUpFresh(_ContentServiceCase):
     async def test_a_re_upload_after_minting_redirects_the_same_token(self):
@@ -322,6 +348,19 @@ class TestReservedPlayerPath(_ContentServiceCase):
         )
 
         self.assertTrue(asset.data)
+
+    async def test_a_reserved_asset_is_read_from_disk_once_not_per_request(self):
+        """The FORCED_COMMIT_TIME cadence (spec 6.4) means this route answers
+        every ~20 seconds per learner; re-reading the same static file off
+        disk on each request is pure waste."""
+        first = await self.service.read_asset(
+            self.session, self.valid_token(), PLAYER_PATH
+        )
+        second = await self.service.read_asset(
+            self.session, self.valid_token(), PLAYER_PATH
+        )
+
+        self.assertIs(first.data, second.data)
 
 
 class TestReadAssetResult(_ContentServiceCase):

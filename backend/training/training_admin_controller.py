@@ -191,9 +191,16 @@ class TrainingAdminController:
         return api_response(message="Training session opened.", data=payload)
 
     async def save_progress(self, training_id: int, payload: dict, current_user):
-        """Store one commit from the caller's own course."""
+        """Store one commit from the caller's own course.
+
+        ``cmi`` is course-controlled; a shape other than an object must come
+        back as a 4xx, not a TypeError from deeper in the stack.
+        """
+        cmi = payload.get("cmi", {})
+        if not isinstance(cmi, dict):
+            raise ValueError("cmi must be an object.")
         async with self.database.session() as session:
             await self.training_progress_service.save(
-                session, training_id, current_user.user_id, payload.get("cmi", {})
+                session, training_id, current_user.user_id, cmi
             )
         return api_response(message="Progress saved.")

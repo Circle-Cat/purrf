@@ -179,6 +179,17 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
             self.session, 42, 11, {"cmi.core.lesson_location": "Summary"}
         )
 
+    async def test_a_non_object_cmi_is_a_client_error_not_a_500(self):
+        """A course controls this payload; {"cmi": 5} must not reach
+        payload.get("cmi", {}).items()-shaped code as a TypeError."""
+        self.progress_service.save = AsyncMock()
+        current_user = MagicMock(user_id=11)
+
+        with self.assertRaises(ValueError):
+            await self.controller.save_progress(42, {"cmi": 5}, current_user)
+
+        self.progress_service.save.assert_not_awaited()
+
     async def test_the_list_includes_deactivated_courses(self):
         """Or they could never be turned back on."""
         await self.controller.list_courses()

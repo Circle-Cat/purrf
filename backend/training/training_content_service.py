@@ -27,6 +27,23 @@ PLAYER_ASSETS = {
     "__bridge.js": ("bridge.js", "text/javascript"),
 }
 
+# Static files, read once at import rather than on every request -- a course
+# in progress commits roughly every 20 seconds (spec 6.4), and none of this
+# ever changes without a redeploy.
+_PLAYER_ASSET_BYTES = {
+    path: (_PLAYER_DIR / name).read_bytes() for path, (name, _) in PLAYER_ASSETS.items()
+}
+
+
+def _score(value) -> str | None:
+    """A stored score column as a string, or None if there is no score.
+
+    Never a float: the jsonable_encoder turns a Decimal into one, and a score
+    of 82.50 would come back as 82.5 or worse (see the leave module's DTOs
+    for the same fix).
+    """
+    return None if value is None else f"{value:.2f}"
+
 
 def _progress_payload(progress) -> dict:
     """The learner's stored CMI state, or ``{}`` if there is none yet."""
@@ -37,6 +54,9 @@ def _progress_payload(progress) -> dict:
         "lessonLocation": progress.lesson_location,
         "suspendData": progress.suspend_data,
         "sessionTimeSeconds": progress.session_time_seconds,
+        "scoreRaw": _score(progress.score_raw),
+        "scoreMin": _score(progress.score_min),
+        "scoreMax": _score(progress.score_max),
     }
 
 
@@ -168,9 +188,9 @@ class TrainingContentService:
             known = PLAYER_ASSETS.get(normalised)
             if known is None:
                 raise FileNotFoundError(normalised)
-            name, content_type = known
+            _, content_type = known
             return ContentAsset(
-                data=(_PLAYER_DIR / name).read_bytes(), content_type=content_type
+                data=_PLAYER_ASSET_BYTES[normalised], content_type=content_type
             )
 
         assignment = await self.training_repository.get_training_by_id(
