@@ -736,6 +736,47 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
 
         self.assertEqual(result.meeting_id, meeting.meeting_id)
 
+    # --- update_schedule ---
+
+    async def test_update_schedule_moves_only_the_two_time_columns(self):
+        """A reschedule must not disturb the row's identity or its Meet data.
+
+        `created_datetime` is Google's own event-creation time and the
+        ordering tiebreaker; `meet_link` survives because the Meet space is
+        never re-opened by a Calendar patch.
+        """
+        pair = await self._seed_pair()
+        original_created = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        meeting = self._google_meeting(
+            pair.pair_id,
+            meeting_id="google-event-1",
+            start_datetime=datetime(2026, 5, 1, 10, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2026, 5, 1, 10, 30, tzinfo=timezone.utc),
+            meet_link="https://meet.google.com/abc-defg-hij",
+            created_datetime=original_created,
+        )
+        await self.insert_entities([meeting])
+        repo = MentorshipMeetingRepository()
+
+        new_start = datetime(2026, 5, 8, 14, 0, tzinfo=timezone.utc)
+        new_end = datetime(2026, 5, 8, 15, 0, tzinfo=timezone.utc)
+        await repo.update_schedule(
+            session=self.session,
+            meeting=meeting,
+            start_datetime=new_start,
+            end_datetime=new_end,
+        )
+
+        rows = await repo.get_meetings_by_pair(self.session, pair.pair_id)
+        self.assertEqual(len(rows), 1)
+        moved = rows[0]
+        self.assertEqual(moved.start_datetime, new_start)
+        self.assertEqual(moved.end_datetime, new_end)
+        self.assertEqual(moved.meeting_id, "google-event-1")
+        self.assertEqual(moved.created_datetime, original_created)
+        self.assertEqual(moved.meet_link, "https://meet.google.com/abc-defg-hij")
+        self.assertFalse(moved.is_completed)
+
     # --- delete_meetings ---
 
     async def test_delete_meetings_only_deletes_specified_pair_and_ids(self):
