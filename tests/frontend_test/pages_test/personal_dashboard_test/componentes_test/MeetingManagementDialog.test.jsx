@@ -70,29 +70,7 @@ const mockPartners = new Map([
   ],
 ]);
 
-const mockUncompletedMeetings = [
-  {
-    meetingId: "m-1",
-    partnerId: 1,
-    partnerName: "Johnny",
-    partnerRole: "mentee",
-    partnerEmail: "john@test.com",
-    startDatetime: "2026-07-15T09:00:00.000Z",
-    endDatetime: "2026-07-15T09:30:00.000Z",
-  },
-  {
-    meetingId: "m-2",
-    partnerId: 2,
-    partnerName: "Alice Smith",
-    partnerRole: "mentor",
-    partnerEmail: "alice@test.com",
-    startDatetime: "2026-07-02T11:00:00.000Z",
-    endDatetime: "2026-07-02T11:30:00.000Z",
-  },
-];
-
 const mockBookMeeting = vi.fn();
-const mockCancelMeetings = vi.fn();
 const mockRefresh = vi.fn();
 const mockOnBooked = vi.fn();
 
@@ -110,9 +88,7 @@ describe("MeetingManagementDialog Component", () => {
     useMeetingManagement.mockReturnValue({
       partners: mockPartners,
       bookMeeting: mockBookMeeting,
-      cancelMeetings: mockCancelMeetings,
       refresh: mockRefresh,
-      uncompletedMeetings: [],
       isLoading: false,
     });
 
@@ -161,9 +137,7 @@ describe("MeetingManagementDialog Component", () => {
         ],
       ]),
       bookMeeting: mockBookMeeting,
-      cancelMeetings: mockCancelMeetings,
       refresh: mockRefresh,
-      uncompletedMeetings: [],
       isLoading: false,
     });
 
@@ -179,7 +153,7 @@ describe("MeetingManagementDialog Component", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("should open the dialog and switch tabs correctly when interactions occur", async () => {
+  it("should open the dialog onto the scheduling form", async () => {
     render(<MeetingManagementDialog roundId={2} />);
 
     const triggerButton = screen.getByRole("button", {
@@ -193,14 +167,12 @@ describe("MeetingManagementDialog Component", () => {
     const partnerSelect = document.querySelector('select[name="partnerId"]');
     expect(partnerSelect).toBeInTheDocument();
 
-    // Switch to the 'Uncompleted' tab
-    const uncompletedTab = screen.getByRole("tab", { name: /uncompleted/i });
-    await userEvent.click(uncompletedTab);
-
-    // Verify the empty state placeholder text is visible
+    // Cancelling lives on the participation card now, so scheduling is the
+    // only thing this viewer's dialog holds.
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
     expect(
-      screen.getByText("No uncompleted meetings found"),
-    ).toBeInTheDocument();
+      screen.queryByRole("tab", { name: /uncompleted/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("should handle submission validation if required fields are missing", async () => {
@@ -247,157 +219,6 @@ describe("MeetingManagementDialog Component", () => {
       name: /select partner/i,
     });
     expect(refreshedPartnerSelect.value).toBe("");
-  });
-
-  it("should successfully cancel a single selected meeting", async () => {
-    const activeMeetings = [
-      {
-        meetingId: "m-1",
-        partnerId: 1,
-        partnerName: "Test Partner",
-        startDatetime: "2026-07-02T10:00:00Z",
-        endDatetime: "2026-07-02T11:00:00Z",
-        timezoneStr: "Asia/Shanghai",
-      },
-    ];
-
-    useMeetingManagement.mockReturnValue({
-      partners: mockPartners,
-      bookMeeting: mockBookMeeting,
-      cancelMeetings: mockCancelMeetings,
-      refresh: mockRefresh,
-      uncompletedMeetings: activeMeetings,
-      uncompletedLength: 1,
-      isLoading: false,
-    });
-
-    render(<MeetingManagementDialog roundId={2} onBooked={mockOnBooked} />);
-
-    // Open the dialog trigger
-    await userEvent.click(
-      screen.getByRole("button", { name: /manage meetings/i }),
-    );
-
-    // Switch to the Uncompleted Tab
-    const uncompletedTab = screen.getByRole("tab", { name: /uncompleted/i });
-    await userEvent.click(uncompletedTab);
-
-    // Wait asynchronously to retrieve the specific checkbox
-    const checkbox = await waitFor(() => {
-      const el = document.getElementById("check-m-1");
-      if (!el) throw new Error("Waiting for checkbox to render...");
-      return el;
-    });
-
-    // Select the item
-    await userEvent.click(checkbox);
-
-    // Target the delete button once enabled
-    const deleteButton = await screen.findByRole("button", {
-      name: /delete \(1\)/i,
-    });
-
-    // Execute the deletion action
-    await userEvent.click(deleteButton);
-
-    // Verify standard payload filtering and subsequent view refreshes
-    await waitFor(() => {
-      expect(mockCancelMeetings).toHaveBeenCalledWith([
-        expect.objectContaining({
-          meetingId: "m-1",
-          partnerName: "Test Partner",
-        }),
-      ]);
-      expect(mockOnBooked).toHaveBeenCalled();
-    });
-  });
-
-  it("should successfully batch cancel all meetings when 'Select All' is checked", async () => {
-    useMeetingManagement.mockReturnValue({
-      partners: mockPartners,
-      bookMeeting: mockBookMeeting,
-      cancelMeetings: mockCancelMeetings,
-      refresh: mockRefresh,
-      uncompletedMeetings: mockUncompletedMeetings,
-      uncompletedLength: mockUncompletedMeetings.length,
-      isLoading: false,
-    });
-
-    render(<MeetingManagementDialog roundId={2} onBooked={mockOnBooked} />);
-
-    // Open dialog and toggle views
-    await userEvent.click(
-      screen.getByRole("button", { name: /manage meetings/i }),
-    );
-    await userEvent.click(screen.getByRole("tab", { name: /uncompleted/i }));
-
-    // Locate the "Select All" target element
-    const selectAllCheckbox = await waitFor(() => {
-      const el = document.getElementById("select-all-uncompleted");
-      if (!el)
-        throw new Error(
-          "Timeout: select-all-uncompleted master checkbox element not found",
-        );
-      return el;
-    });
-
-    // Trigger Radix state change via click interaction
-    await userEvent.click(selectAllCheckbox);
-
-    // Wait for batch delete confirmation control to become interactive
-    const deleteButton = await screen.findByRole("button", {
-      name: new RegExp(`delete \\(${mockUncompletedMeetings.length}\\)`, "i"),
-    });
-
-    // Perform final deletion click
-    await userEvent.click(deleteButton);
-
-    // Validation: Ensure full collection transmission and state synchandlers run successfully
-    await waitFor(() => {
-      expect(mockCancelMeetings).toHaveBeenCalledWith(mockUncompletedMeetings);
-      expect(mockOnBooked).toHaveBeenCalled();
-    });
-  });
-
-  it("should uncheck all items and disable delete button when clicking 'Select All' twice", async () => {
-    useMeetingManagement.mockReturnValue({
-      partners: mockPartners,
-      bookMeeting: mockBookMeeting,
-      cancelMeetings: mockCancelMeetings,
-      refresh: mockRefresh,
-      uncompletedMeetings: mockUncompletedMeetings,
-      uncompletedLength: mockUncompletedMeetings.length,
-      isLoading: false,
-    });
-
-    render(<MeetingManagementDialog roundId={2} />);
-
-    await userEvent.click(
-      screen.getByRole("button", { name: /manage meetings/i }),
-    );
-    await userEvent.click(screen.getByRole("tab", { name: /uncompleted/i }));
-
-    const selectAllCheckbox = await waitFor(() =>
-      document.getElementById("select-all-uncompleted"),
-    );
-
-    // First interaction: Select All
-    await userEvent.click(selectAllCheckbox);
-    const deleteButton = await screen.findByRole("button", {
-      name: /delete \(2\)/i,
-    });
-    expect(deleteButton).not.toBeDisabled();
-
-    // Second interaction: Deselect All
-    await userEvent.click(selectAllCheckbox);
-
-    // Assertions: Ensure delete metric tracking drops to 0 and becomes disabled
-    await waitFor(() => {
-      const updatedDeleteButton = screen.getByRole("button", {
-        name: /delete \(0\)/i,
-      });
-      expect(updatedDeleteButton).toBeDisabled();
-    });
   });
 
   it("should submit a wall-clock payload (no client-side UTC conversion)", async () => {
@@ -449,107 +270,6 @@ describe("MeetingManagementDialog Component", () => {
     });
 
     vi.useRealTimers();
-  });
-
-  it("should clear selectedIds when switching tabs or closing the dialog", async () => {
-    useMeetingManagement.mockReturnValue({
-      partners: mockPartners,
-      bookMeeting: mockBookMeeting,
-      cancelMeetings: mockCancelMeetings,
-      refresh: mockRefresh,
-      uncompletedMeetings: mockUncompletedMeetings,
-      uncompletedLength: mockUncompletedMeetings.length,
-      isLoading: false,
-    });
-
-    render(<MeetingManagementDialog roundId={2} />);
-
-    await userEvent.click(
-      screen.getByRole("button", { name: /manage meetings/i }),
-    );
-    await userEvent.click(screen.getByRole("tab", { name: /uncompleted/i }));
-
-    const checkbox = await waitFor(() => document.getElementById("check-m-1"));
-    await userEvent.click(checkbox);
-    expect(
-      screen.getByRole("button", { name: /delete \(1\)/i }),
-    ).not.toBeDisabled();
-
-    // Navigate to alternative workflow views
-    await userEvent.click(
-      screen.getByRole("tab", { name: /schedule meeting/i }),
-    );
-    // Return back to tracking panel
-    await userEvent.click(screen.getByRole("tab", { name: /uncompleted/i }));
-
-    // Assertions: Side-effects should clear prior cached selections to prevent dangling reference deletes
-    expect(
-      screen.getByRole("button", { name: /delete \(0\)/i }),
-    ).toBeDisabled();
-  });
-
-  it("should reset selection when uncompletedMeetings length changes from outside", async () => {
-    // Initialize list with multiple items
-    useMeetingManagement.mockReturnValue({
-      partners: mockPartners,
-      uncompletedMeetings: mockUncompletedMeetings,
-      uncompletedLength: mockUncompletedMeetings.length,
-      isLoading: false,
-    });
-
-    const { rerender } = render(<MeetingManagementDialog roundId={2} />);
-
-    await userEvent.click(
-      screen.getByRole("button", { name: /manage meetings/i }),
-    );
-    await userEvent.click(screen.getByRole("tab", { name: /uncompleted/i }));
-
-    const checkbox = await waitFor(() => document.getElementById("check-m-1"));
-    await userEvent.click(checkbox);
-    expect(
-      screen.getByRole("button", { name: /delete \(1\)/i }),
-    ).not.toBeDisabled();
-
-    // Simulate upstream sync modifications
-    useMeetingManagement.mockReturnValue({
-      partners: mockPartners,
-      uncompletedMeetings: [mockUncompletedMeetings[0]],
-      uncompletedLength: 1,
-      isLoading: false,
-    });
-
-    rerender(<MeetingManagementDialog roundId={2} />);
-
-    // Assertions: Cache resets correctly upon collection updates via hook side effects
-    await waitFor(() => {
-      expect(
-        screen.getByRole("button", { name: /delete \(0\)/i }),
-      ).toBeDisabled();
-    });
-  });
-
-  it("should show the full IANA zone name (not a city fragment) on uncompleted meeting cards", async () => {
-    useMeetingManagement.mockReturnValue({
-      partners: mockPartners,
-      bookMeeting: mockBookMeeting,
-      cancelMeetings: mockCancelMeetings,
-      refresh: mockRefresh,
-      uncompletedMeetings: mockUncompletedMeetings,
-      uncompletedLength: mockUncompletedMeetings.length,
-      isLoading: false,
-    });
-
-    render(
-      <MeetingManagementDialog roundId={2} userTimezone="Asia/Shanghai" />,
-    );
-
-    await userEvent.click(
-      screen.getByRole("button", { name: /manage meetings/i }),
-    );
-    await userEvent.click(screen.getByRole("tab", { name: /uncompleted/i }));
-
-    expect(screen.getAllByText("Asia/Shanghai").length).toBeGreaterThan(0);
-    expect(screen.queryByText("Shanghai")).not.toBeInTheDocument();
   });
 
   it("should send interval_weeks and count when a recurrence is chosen", async () => {
@@ -658,88 +378,6 @@ describe("MeetingManagementDialog Component", () => {
 
     vi.useRealTimers();
   });
-
-  it("should render a Join link only for an uncompleted meeting that has a meet link", async () => {
-    // Pin the clock inside m-1's slot (2026-07-15T09:00-09:30Z); the join
-    // window is time-bounded, so this must not ride the wall clock.
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.setSystemTime(new Date("2026-07-15T09:15:00Z"));
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    // m-1 was created through Google and carries a link; m-2 stands in for a
-    // manually logged meeting, which never has one.
-    const meetings = [
-      {
-        ...mockUncompletedMeetings[0],
-        meetLink: "https://meet.google.com/abc-defg-hij",
-      },
-      mockUncompletedMeetings[1],
-    ];
-    useMeetingManagement.mockReturnValue({
-      partners: mockPartners,
-      bookMeeting: mockBookMeeting,
-      cancelMeetings: mockCancelMeetings,
-      refresh: mockRefresh,
-      uncompletedMeetings: meetings,
-      uncompletedLength: meetings.length,
-      isLoading: false,
-    });
-
-    render(
-      <MeetingManagementDialog roundId={2} userTimezone="Asia/Shanghai" />,
-    );
-
-    await user.click(screen.getByRole("button", { name: /manage meetings/i }));
-    await user.click(screen.getByRole("tab", { name: /uncompleted/i }));
-
-    const joinLinks = screen.getAllByRole("link", { name: /join/i });
-    expect(joinLinks).toHaveLength(1);
-    expect(joinLinks[0]).toHaveAttribute(
-      "href",
-      "https://meet.google.com/abc-defg-hij",
-    );
-    expect(joinLinks[0]).toHaveAttribute("target", "_blank");
-    expect(joinLinks[0]).toHaveAttribute(
-      "rel",
-      expect.stringContaining("noopener"),
-    );
-    vi.useRealTimers();
-  });
-
-  it("should not render a Join link for a meeting whose slot is long past", async () => {
-    // This list filters on completion, not on time, so a meeting nobody
-    // attended stays here indefinitely. The join window is what keeps a
-    // months-old slot from still offering a way in.
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.setSystemTime(new Date("2026-09-01T00:00:00Z"));
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    const meetings = [
-      {
-        ...mockUncompletedMeetings[0],
-        meetLink: "https://meet.google.com/abc-defg-hij",
-      },
-    ];
-    useMeetingManagement.mockReturnValue({
-      partners: mockPartners,
-      bookMeeting: mockBookMeeting,
-      cancelMeetings: mockCancelMeetings,
-      refresh: mockRefresh,
-      uncompletedMeetings: meetings,
-      uncompletedLength: meetings.length,
-      isLoading: false,
-    });
-
-    render(
-      <MeetingManagementDialog roundId={2} userTimezone="Asia/Shanghai" />,
-    );
-
-    await user.click(screen.getByRole("button", { name: /manage meetings/i }));
-    await user.click(screen.getByRole("tab", { name: /uncompleted/i }));
-
-    expect(
-      screen.queryByRole("link", { name: /join/i }),
-    ).not.toBeInTheDocument();
-    vi.useRealTimers();
-  });
 });
 
 describe("MeetingManagementDialog entry point", () => {
@@ -748,9 +386,7 @@ describe("MeetingManagementDialog entry point", () => {
     useMeetingManagement.mockReturnValue({
       partners: mockPartners,
       bookMeeting: mockBookMeeting,
-      cancelMeetings: mockCancelMeetings,
       refresh: mockRefresh,
-      uncompletedMeetings: [],
       isLoading: false,
     });
     document.body.style.pointerEvents = "auto";
