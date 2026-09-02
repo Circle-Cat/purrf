@@ -215,6 +215,20 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         added = self.session.add.call_args.args[0]
         self.assertEqual(added.category, TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
 
+    async def test_a_deactivated_course_can_still_be_trialled(self):
+        """assign checks is_active on its own, so a trial does not have to:
+        stamping a deactivated course does not make it assignable."""
+        self.course_repository.get_course_by_id.return_value = TrainingCourseEntity(
+            course_id=_COURSE_ID,
+            name="Mentor Onboarding",
+            is_active=False,
+            storage_prefix="training/3/abc/",
+        )
+
+        result = await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)
+
+        self.assertTrue(result.created)
+
 
 if __name__ == "__main__":
     unittest.main()

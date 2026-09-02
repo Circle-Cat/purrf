@@ -116,10 +116,16 @@ class TrainingAssignmentService:
     ) -> TrainingAssignmentResultDto:
         """Open the caller's own assignment so they can verify a course.
 
-        Deliberately skips the verification gate `assign` enforces: that gate
-        is what this call exists to answer. It is otherwise an ordinary
-        assignment, because a trial that ran through different code would
-        prove less than one that runs through the learner's own path.
+        Deliberately skips two checks `assign` enforces. The verification
+        gate (`verified_completable_at`) is what this call exists to answer,
+        so it cannot also require it. The `is_active` check is skipped too:
+        stamping a deactivated course still leaves it deactivated, since
+        `assign` checks `is_active` on its own, so skipping it here buys no
+        safety back -- and it supports a real sequence, a broken course gets
+        deactivated, re-exported, re-uploaded, trialled, then reactivated.
+        Beyond that it is an ordinary assignment, because a trial that ran
+        through different code would prove less than one that runs through
+        the learner's own path.
 
         Args:
             session: The active async database session.
