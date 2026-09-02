@@ -257,25 +257,42 @@ class TestReadAssetRejections(_ContentServiceCase):
 
 
 class TestReservedPlayerPath(_ContentServiceCase):
-    async def test_the_player_is_never_looked_up_inside_the_package(self):
-        """Our own name, so a package-supplied file must never answer for it.
+    async def test_the_player_page_is_served_from_our_own_files(self):
+        asset = await self.service.read_asset(
+            self.session, self.valid_token(), PLAYER_PATH
+        )
 
-        Uploads already refuse the name; this keeps the guarantee local, and
-        the runtime slice serves the page from here instead.
-        """
-        with self.assertRaises(FileNotFoundError):
-            await self.service.read_asset(self.session, self.valid_token(), PLAYER_PATH)
-
+        self.assertIn(b"<html", asset.data.lower())
+        self.assertEqual(asset.content_type, "text/html")
         for key in self.fetched_keys():
-            self.assertFalse(
-                str(key).startswith(_OLD_PREFIX), msg=f"{key} came from the package"
-            )
+            self.assertFalse(str(key).startswith(_OLD_PREFIX))
 
-    async def test_no_reserved_name_resolves_against_the_package(self):
+    async def test_the_shim_and_the_bridge_are_served_too(self):
+        # __bridge.js is deferred until the frontend target it copies from
+        # exists; the next task re-enables that half of this loop.
+        for path, content_type in (("__scorm12.min.js", "text/javascript"),):
+            with self.subTest(path=path):
+                asset = await self.service.read_asset(
+                    self.session, self.valid_token(), path
+                )
+                self.assertTrue(asset.data)
+                self.assertEqual(asset.content_type, content_type)
+
+    async def test_an_unknown_reserved_name_is_still_refused(self):
         with self.assertRaises(FileNotFoundError):
             await self.service.read_asset(
                 self.session, self.valid_token(), "__internal/shim.js"
             )
+
+    async def test_a_reserved_asset_needs_no_course_package(self):
+        """The player has to load even when the course row is half set up."""
+        self.course.storage_prefix = None
+
+        asset = await self.service.read_asset(
+            self.session, self.valid_token(), PLAYER_PATH
+        )
+
+        self.assertTrue(asset.data)
 
 
 class TestReadAssetResult(_ContentServiceCase):

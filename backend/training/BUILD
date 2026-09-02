@@ -71,6 +71,7 @@ py_library(
 py_library(
     name = "training_content_service",
     srcs = ["training_content_service.py"],
+    data = ["//backend/training/player:player_files"],
     deps = [
         ":scorm_package",
         ":training_content_token",

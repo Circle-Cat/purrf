@@ -1,5 +1,6 @@
 """Serving course files to a browser that has a signed token and no cookie."""
 
+import pathlib
 import posixpath
 from dataclasses import dataclass
 
@@ -14,6 +15,17 @@ from backend.training.training_content_token import (
 # which is the whole reason the course can find window.API. Reserved, and
 # package uploads reject any entry that could collide with it.
 PLAYER_PATH = "__player.html"
+
+_PLAYER_DIR = pathlib.Path(__file__).parent / "player"
+
+# Ours to serve, by exact name. Everything else under the reserved prefix is
+# refused: the reservation exists so a package can never answer for one of
+# these, and a prefix match would hand that back.
+PLAYER_ASSETS = {
+    PLAYER_PATH: ("player.html", "text/html"),
+    "__scorm12.min.js": ("scorm12.min.js", "text/javascript"),
+    "__bridge.js": ("bridge.js", "text/javascript"),
+}
 
 
 @dataclass(frozen=True)
@@ -127,9 +139,16 @@ class TrainingContentService:
         # The reserved space is ours. Uploads refuse these names, so resolving
         # one against the package could only ever serve a file that arrived
         # some other way -- exactly the collision the reservation prevents.
-        # The player itself is served here once the runtime lands.
+        # Ahead of the course lookup: the player has to load even when the
+        # course row has no package yet.
         if normalised.startswith(RESERVED_PREFIX):
-            raise FileNotFoundError(normalised)
+            known = PLAYER_ASSETS.get(normalised)
+            if known is None:
+                raise FileNotFoundError(normalised)
+            name, content_type = known
+            return ContentAsset(
+                data=(_PLAYER_DIR / name).read_bytes(), content_type=content_type
+            )
 
         assignment = await self.training_repository.get_training_by_id(
             session, claims.training_id
@@ -156,6 +175,7 @@ class TrainingContentService:
 __all__ = [
     "ContentAsset",
     "InvalidContentToken",
+    "PLAYER_ASSETS",
     "PLAYER_PATH",
     "TrainingContentService",
 ]
