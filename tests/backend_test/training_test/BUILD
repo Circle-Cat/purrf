@@ -85,6 +85,12 @@ py_test(
 )
 
 py_test(
+    name = "training_storage_test",
+    srcs = ["training_storage_test.py"],
+    deps = ["//backend/training:training_storage"],
+)
+
+py_test(
     name = "training_content_service_test",
     srcs = ["training_content_service_test.py"],
     deps = [

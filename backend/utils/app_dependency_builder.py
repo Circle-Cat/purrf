@@ -959,7 +959,9 @@ class AppDependencyBuilder:
             training_repository=self.training_repository,
         )
         self.training_progress_repository = TrainingProgressRepository()
-        self.training_storage = TrainingStorage(os.getenv(TRAINING_BUCKET))
+        self.training_storage = TrainingStorage(
+            os.getenv(TRAINING_BUCKET), logger=self.logger
+        )
         self.training_content_host = os.getenv(TRAINING_CONTENT_HOST)
         # Nothing downstream can tell a content host apart from the app's own
         # host: set them equal and every request still succeeds, with course

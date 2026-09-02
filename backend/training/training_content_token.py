@@ -74,9 +74,9 @@ def issue_content_token(
         ValueError: No signing key configured.
     """
     if not signing_key:
-        raise ValueError(
-            "Training content is not configured; set TRAINING_TOKEN_SIGNING_KEY."
-        )
+        # Which variable is missing is logged by the caller, which has a
+        # logger; this message reaches a browser.
+        raise ValueError("Training content is not available.")
     expires_at = int(now if now is not None else time.time()) + lifetime_seconds
     payload = json.dumps(
         {"t": training_id, "u": user_id, "e": expires_at},
@@ -105,9 +105,7 @@ def verify_content_token(
         ValueError: No signing key configured.
     """
     if not signing_key:
-        raise ValueError(
-            "Training content is not configured; set TRAINING_TOKEN_SIGNING_KEY."
-        )
+        raise ValueError("Training content is not available.")
 
     encoded, _, provided = token.partition(".")
     if not encoded or not provided:

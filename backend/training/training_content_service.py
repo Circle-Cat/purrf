@@ -119,10 +119,7 @@ class TrainingContentService:
             ValueError: Not configured, or no such assignment.
             PermissionError: The assignment belongs to somebody else.
         """
-        if not self.content_host:
-            raise ValueError(
-                "Training content is not configured; set TRAINING_CONTENT_HOST."
-            )
+        self._require_configuration()
 
         assignment = await self.training_repository.get_training_by_id(
             session, training_id
@@ -164,6 +161,31 @@ class TrainingContentService:
             "progress": _progress_payload(progress),
         }
 
+    def _require_configuration(self) -> None:
+        """Refuse to work half-configured, saying which half in the log only.
+
+        Raises:
+            ValueError: Content hosting is not configured.
+        """
+        missing = [
+            name
+            for name, value in (
+                ("TRAINING_CONTENT_HOST", self.content_host),
+                ("TRAINING_TOKEN_SIGNING_KEY", self.signing_key),
+            )
+            if not value
+        ]
+        if not missing:
+            return
+        # The variable names are for whoever runs the environment. The message
+        # goes to a browser, so it carries none of them.
+        self.logger.error(
+            "[TrainingContentService] training content is not configured; "
+            "missing %s",
+            ", ".join(missing),
+        )
+        raise ValueError("Training content is not available.")
+
     async def read_asset(self, session, token: str, asset_path: str) -> ContentAsset:
         """Resolve one file requested from the content origin.
 
@@ -184,6 +206,8 @@ class TrainingContentService:
             FileNotFoundError: No such file, or the course has no package.
             PermissionError: The path escapes the package.
         """
+        self._require_configuration()
+
         try:
             claims = verify_content_token(self.signing_key, token)
         except InvalidContentToken as error:

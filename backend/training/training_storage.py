@@ -45,19 +45,27 @@ class TrainingStorage:
     startup.
     """
 
-    def __init__(self, bucket_name: str | None, storage_client=None):
+    def __init__(self, bucket_name: str | None, logger, storage_client=None):
         """
         Args:
             bucket_name (str | None): Target bucket, e.g. ``purrf-test-training``.
                 May be absent in environments without training storage.
+            logger: Injected logger.
             storage_client: Optional pre-built client; tests inject a mock.
         """
         self._client = storage_client
         self._bucket_name = bucket_name
+        self.logger = logger
 
     def _bucket(self):
         if not self._bucket_name:
-            raise ValueError("Training storage is not configured; set TRAINING_BUCKET.")
+            # Which variable is missing is for whoever runs the environment,
+            # and the message travels to a browser: it is logged, not raised.
+            self.logger.error(
+                "[TrainingStorage] TRAINING_BUCKET is not set; no course "
+                "package can be read or written."
+            )
+            raise ValueError("Training storage is not available.")
         if self._client is None:
             from google.cloud import storage
 

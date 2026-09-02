@@ -311,6 +311,48 @@ class TestReadAssetRejections(_ContentServiceCase):
         self.assertNotIsInstance(caught.exception, (TypeError, AttributeError))
 
 
+class TestUnconfiguredContentHosting(_ContentServiceCase):
+    """The message reaches a browser; the variable names stay in the log."""
+
+    def unconfigured_service(self, **overrides):
+        return TrainingContentService(
+            logger=self.logger,
+            signing_key=overrides.get("signing_key", _KEY),
+            content_host=overrides.get("content_host", _CONTENT_HOST),
+            training_repository=self.training_repository,
+            training_course_repository=self.course_repository,
+            training_progress_repository=self.progress_repository,
+            training_storage=self.storage,
+        )
+
+    async def test_opening_a_session_names_no_environment_variable(self):
+        service = self.unconfigured_service(content_host=None)
+
+        with self.assertRaises(ValueError) as caught:
+            await service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+        self.assertNotIn("TRAINING_CONTENT_HOST", str(caught.exception))
+
+    async def test_the_log_names_every_variable_that_is_missing(self):
+        service = self.unconfigured_service(content_host=None, signing_key=None)
+
+        with self.assertRaises(ValueError):
+            await service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+        template, *arguments = self.logger.error.call_args.args
+        logged = template % tuple(arguments)
+        self.assertIn("TRAINING_CONTENT_HOST", logged)
+        self.assertIn("TRAINING_TOKEN_SIGNING_KEY", logged)
+
+    async def test_reading_an_asset_without_a_signing_key_leaks_nothing(self):
+        service = self.unconfigured_service(signing_key=None)
+
+        with self.assertRaises(ValueError) as caught:
+            await service.read_asset(self.session, "anything", "index.html")
+
+        self.assertNotIn("TRAINING_TOKEN_SIGNING_KEY", str(caught.exception))
+
+
 class TestReadAssetLogging(_ContentServiceCase):
     """This route serves every file of every course; a course that 404s on all
     of them must leave a server-side trail, and a healthy one must not."""
