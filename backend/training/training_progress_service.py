@@ -150,6 +150,10 @@ class TrainingProgressService:
         )
 
         columns = {}
+        # Set only on the session_time fallback path below, where
+        # session_time_seconds is a delta added to the stored total rather
+        # than a value recomputed fresh -- see the comment there.
+        accumulates_session_time = False
         if _LESSON_STATUS in cmi:
             columns["lesson_status"] = cmi[_LESSON_STATUS]
         if _LESSON_LOCATION in cmi:
@@ -180,7 +184,15 @@ class TrainingProgressService:
                 )
         elif _SESSION_TIME in cmi:
             # No total_time to trust: fall back to accumulating the raw
-            # session-to-date value onto what was already stored.
+            # session-to-date value onto what was already stored. Unlike
+            # total_time (recomputed fresh from a stable seed every commit),
+            # this is stateful: the delta only exists in this one commit, so
+            # this commit must never be skipped -- a skip here would discard
+            # the delta permanently, not just delay an accurate figure. Our
+            # own player always sends total_time, so this path is dormant in
+            # production today, but a dormant trap is the kind that fires
+            # years later when somebody revives it.
+            accumulates_session_time = True
             accumulated = getattr(existing, "session_time_seconds", 0) or 0
             parsed_session = _timespan_seconds(cmi[_SESSION_TIME])
             if parsed_session is None:
@@ -228,11 +240,18 @@ class TrainingProgressService:
             assignment.status, cmi.get(_LESSON_STATUS)
         )
 
-        unchanged = _content_unchanged(existing, columns)
+        unchanged = (
+            _content_unchanged(existing, columns) and not accumulates_session_time
+        )
         if unchanged and moved is None:
             # Nothing to store and nothing to decide -- skip the write
             # entirely rather than rewrite a row a parked tab keeps
             # reporting. The course still sees a successful commit.
+            #
+            # last_accessed_at (stamped by upsert) does not advance while a
+            # commit is skipped. That is accepted: touching it would require
+            # the write this skip exists to avoid, and nothing reads the
+            # column today.
             return existing
 
         row = existing

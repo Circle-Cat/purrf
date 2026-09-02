@@ -430,7 +430,13 @@ class TestSave(_ProgressServiceCase):
         self.progress_repository.upsert.assert_awaited()
 
     async def test_an_identical_commit_writes_nothing(self):
-        """The driver commits every 20 seconds whether anything changed or not."""
+        """The driver commits every 20 seconds whether anything changed or not.
+
+        Carries cmi.core.total_time, as our own player always does -- the
+        session_time-only fallback below is a different, stateful case that
+        must never be skipped (see
+        test_a_fallback_session_time_commit_is_never_skipped).
+        """
         self.progress_repository.get_by_training_id.return_value = (
             TrainingProgressEntity(
                 training_id=_TRAINING_ID,
@@ -443,7 +449,12 @@ class TestSave(_ProgressServiceCase):
         assignment = self.training_repository.get_training_by_id.return_value
         assignment.status = TrainingStatus.IN_PROGRESS
 
-        await self.service.save(self.session, _TRAINING_ID, _USER_ID, _COMMIT)
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "00:08:20"},
+        )
 
         self.progress_repository.upsert.assert_not_awaited()
         self.session.commit.assert_not_awaited()
@@ -568,6 +579,48 @@ class TestSave(_ProgressServiceCase):
         await self.service.save(self.session, _TRAINING_ID, _USER_ID, _COMMIT)
 
         self.progress_repository.upsert.assert_awaited()
+
+    async def test_a_fallback_session_time_commit_is_never_skipped(self):
+        """The session_time fallback's delta lives only in this one commit --
+        unlike total_time, which is recomputed fresh from a stable seed on
+        every commit, skipping this write discards the delta permanently
+        rather than merely delaying an accurate figure. Our own player
+        always sends total_time, so this path is dormant in production
+        today, but a dormant trap is exactly the one that fires years later
+        when somebody revives the path."""
+        fallback_commit = {
+            "cmi.core.lesson_status": "incomplete",
+            "cmi.core.lesson_location": "Summary",
+            "cmi.suspend_data": "x" * 5000,
+            "cmi.core.session_time": "00:00:30",
+        }
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="incomplete",
+                lesson_location="Summary",
+                suspend_data="x" * 5000,
+                session_time_seconds=0,
+            )
+        )
+
+        await self.service.save(self.session, _TRAINING_ID, _USER_ID, fallback_commit)
+
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="incomplete",
+                lesson_location="Summary",
+                suspend_data="x" * 5000,
+                session_time_seconds=30,
+            )
+        )
+
+        await self.service.save(self.session, _TRAINING_ID, _USER_ID, fallback_commit)
+
+        self.assertEqual(self.progress_repository.upsert.call_count, 2)
+        second_call = self.progress_repository.upsert.call_args_list[1].kwargs
+        self.assertEqual(second_call["session_time_seconds"], 60)
 
     async def test_the_write_is_committed_after_the_upsert(self):
         order = []
