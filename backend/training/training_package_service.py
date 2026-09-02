@@ -123,6 +123,8 @@ class TrainingPackageService:
                 session, course_id
             )
 
+        await session.commit()
+
         self.logger.info(
             "[TrainingPackageService] course %s now serves %s "
             "(%s files, %s learners reset)",
@@ -182,6 +184,9 @@ class TrainingPackageService:
                 continue
             row.deleted_at = moment
             swept += 1
+
+        if swept:
+            await session.commit()
 
         if due:
             self.logger.info(
