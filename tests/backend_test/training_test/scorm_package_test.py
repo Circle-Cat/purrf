@@ -16,10 +16,13 @@ from backend.training.scorm_package import (
 )
 
 _ENTRY_PATH = "scormdriver/indexAPI.html"
+# The block the mentor package ships, copied out of its entry page rather than
+# invented: the keys are the whole point of reading it.
 _DRIVER_CONFIG = (
     '<script id="__DRIVER_CONFIG__" type="application/json">'
-    '{"coursePackageVersion": "2026.08.29.1", "reporting": "passed",'
-    ' "storylineId": null, "quizId": null}'
+    '{"coursePackageVersion":"9K8IMOal","lmsTarget":"scorm12",'
+    '"resetLearnerData":false,"quizId":null,"storylineId":null,'
+    '"completionPercentage":100,"reporting":"completed-incomplete"}'
     "</script>"
 )
 
@@ -210,8 +213,9 @@ class TestReadPackageAcceptance(unittest.TestCase):
         self.assertEqual(contents.manifest.scorm_version, ScormVersion.SCORM_12)
         self.assertEqual(contents.manifest.entry_path, _ENTRY_PATH)
         self.assertIsNotNone(contents.driver_config)
-        self.assertEqual(contents.driver_config.course_package_version, "2026.08.29.1")
-        self.assertEqual(contents.driver_config.reporting, "passed")
+        self.assertEqual(contents.driver_config.course_package_version, "9K8IMOal")
+        self.assertEqual(contents.driver_config.reporting, "completed-incomplete")
+        self.assertEqual(contents.driver_config.completion_percentage, 100.0)
         self.assertIsNone(contents.driver_config.storyline_id)
         self.assertIsNone(contents.driver_config.quiz_id)
 

@@ -18,14 +18,15 @@ _LIVE_PREFIX = "training/7/9cf1e0d2/"
 _NOW = datetime.datetime(2026, 9, 2, 9, 0, tzinfo=datetime.timezone.utc)
 _VERIFIED_AT = datetime.datetime(2026, 8, 30, 12, 0, tzinfo=datetime.timezone.utc)
 
+# The keys the real packages under scorm/ write, and only those.
 _DRIVER_CONFIG = {
-    "storylineId": None,
-    "quizId": None,
-    "reporting": "passed-incomplete",
     "coursePackageVersion": "qPpo9zHD",
-    "threshold": 100,
-    "driverVersion": "7.12.0",
     "lmsTarget": "scorm12",
+    "resetLearnerData": False,
+    "quizId": None,
+    "storylineId": None,
+    "completionPercentage": 100,
+    "reporting": "passed-incomplete",
 }
 
 
@@ -399,6 +400,7 @@ class TestUploadPackage(_PackageServiceTestCase):
 
         self.assertEqual(result.package_version, "qPpo9zHD")
         self.assertEqual(result.reporting_mode, "passed-incomplete")
+        self.assertEqual(result.completion_percentage, 100.0)
         self.assertTrue(result.completion_config_readable)
         self.assertEqual(course.package_version, "qPpo9zHD")
         self.assertEqual(course.reporting_mode, "passed-incomplete")
@@ -416,6 +418,7 @@ class TestUploadPackage(_PackageServiceTestCase):
         self.assertFalse(result.completion_config_readable)
         self.assertIsNone(result.package_version)
         self.assertIsNone(result.reporting_mode)
+        self.assertIsNone(result.completion_percentage)
         self.assertIsNotNone(course.storage_prefix)
 
     async def test_files_the_manifest_declares_but_the_archive_lacks_are_surfaced(self):

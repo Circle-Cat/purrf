@@ -154,6 +154,7 @@ class TrainingPackageService:
             total_bytes=contents.total_uncompressed_bytes,
             package_version=config.course_package_version if config else None,
             reporting_mode=config.reporting if config else None,
+            completion_percentage=config.completion_percentage if config else None,
             completes_via_storyline=bool(config and config.storyline_id),
             completion_config_readable=config is not None,
             missing_declared_files=contents.missing_declared_files,

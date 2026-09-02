@@ -65,6 +65,21 @@ def _entry_page(script: str = "") -> bytes:
     return html.encode("utf-8")
 
 
+# Copied verbatim out of scormdriver/indexAPI.html in the two packages under
+# scorm/: a fixture that invents its keys proves nothing about a real package.
+_REAL_MENTEE_CONFIG = (
+    '{"coursePackageVersion":"qPpo9zHD","lmsTarget":"scorm12",'
+    '"resetLearnerData":false,"quizId":null,'
+    '"storylineId":"cm171zxgx006v35737y24wb4j",'
+    '"completionPercentage":100,"reporting":"passed-incomplete"}'
+)
+_REAL_MENTOR_CONFIG = (
+    '{"coursePackageVersion":"9K8IMOal","lmsTarget":"scorm12",'
+    '"resetLearnerData":false,"quizId":null,"storylineId":null,'
+    '"completionPercentage":100,"reporting":"completed-incomplete"}'
+)
+
+
 def _driver_config_script(json_text: str) -> str:
     return (
         f'<script id="__DRIVER_CONFIG__" type="application/json">{json_text}</script>'
@@ -227,33 +242,57 @@ class TestParseManifest(unittest.TestCase):
 
 class TestParseDriverConfig(unittest.TestCase):
     def test_the_driver_config_script_is_read_off_the_entry_page(self):
+        page = _entry_page(_driver_config_script(_REAL_MENTEE_CONFIG))
+
+        config = parse_driver_config(page)
+
+        self.assertIsNotNone(config)
+        self.assertEqual(config.course_package_version, "qPpo9zHD")
+        self.assertEqual(config.reporting, "passed-incomplete")
+        self.assertEqual(config.storyline_id, "cm171zxgx006v35737y24wb4j")
+        self.assertIsNone(config.quiz_id)
+        self.assertEqual(config.completion_percentage, 100.0)
+
+    def test_the_completion_threshold_is_read_from_completion_percentage(self):
+        """The key every real package writes it under, and the only one."""
+        page = _entry_page(_driver_config_script(_REAL_MENTOR_CONFIG))
+
+        config = parse_driver_config(page)
+
+        self.assertIsNotNone(config)
+        self.assertEqual(config.completion_percentage, 100.0)
+        self.assertEqual(config.reporting, "completed-incomplete")
+
+    def test_a_config_without_a_completion_percentage_leaves_it_none(self):
+        """Rather than a zero, which would read as "no threshold at all"."""
         page = _entry_page(
             _driver_config_script(
-                '{"coursePackageVersion": "2026.08.29.1",'
-                ' "reporting": "completed",'
-                ' "storylineId": "story_7",'
-                ' "quizId": "quiz_3"}'
+                '{"coursePackageVersion": "9K8IMOal",'
+                ' "reporting": "completed-incomplete",'
+                ' "storylineId": null, "quizId": null}'
             )
         )
 
         config = parse_driver_config(page)
 
         self.assertIsNotNone(config)
-        self.assertEqual(config.course_package_version, "2026.08.29.1")
-        self.assertEqual(config.reporting, "completed")
-        self.assertEqual(config.storyline_id, "story_7")
-        self.assertEqual(config.quiz_id, "quiz_3")
+        self.assertIsNone(config.completion_percentage)
+
+    def test_a_non_numeric_completion_percentage_is_ignored(self):
+        page = _entry_page(
+            _driver_config_script(
+                '{"coursePackageVersion": "9K8IMOal", "completionPercentage": "all"}'
+            )
+        )
+
+        config = parse_driver_config(page)
+
+        self.assertIsNotNone(config)
+        self.assertIsNone(config.completion_percentage)
 
     def test_null_storyline_and_quiz_ids_stay_none(self):
         """A stringified null here is what kept a real course from completing."""
-        page = _entry_page(
-            _driver_config_script(
-                '{"coursePackageVersion": "2026.08.29.1",'
-                ' "reporting": "passed",'
-                ' "storylineId": null,'
-                ' "quizId": null}'
-            )
-        )
+        page = _entry_page(_driver_config_script(_REAL_MENTOR_CONFIG))
 
         config = parse_driver_config(page)
 

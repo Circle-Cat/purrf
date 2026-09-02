@@ -95,6 +95,8 @@ class TrainingPackageUploadResultDto(BaseDto):
     total_bytes: int
     package_version: str | None = None
     reporting_mode: str | None = None
+    # How much of the course the driver requires before it reports completion.
+    completion_percentage: float | None = None
     # Finishing the surrounding lessons will not complete such a course.
     completes_via_storyline: bool = False
     completion_config_readable: bool = False

@@ -58,8 +58,9 @@ class DriverConfig:
     # counts as finished differs per course; never hard-code it.
     reporting: str | None
     course_package_version: str | None
-    threshold: float | None
-    driver_version: str | None
+    # Percentage of the course the driver requires before it reports
+    # completion. 100 in every package we hold.
+    completion_percentage: float | None
 
 
 def _tag(element) -> str:
@@ -177,12 +178,13 @@ def parse_driver_config(entry_page_bytes: bytes) -> DriverConfig | None:
     if not isinstance(config, dict):
         return None
 
-    threshold = config.get("threshold")
+    percentage = config.get("completionPercentage")
     return DriverConfig(
         storyline_id=config.get("storylineId") or None,
         quiz_id=config.get("quizId") or None,
         reporting=config.get("reporting") or None,
         course_package_version=config.get("coursePackageVersion") or None,
-        threshold=float(threshold) if isinstance(threshold, (int, float)) else None,
-        driver_version=config.get("driverVersion") or None,
+        completion_percentage=(
+            float(percentage) if isinstance(percentage, (int, float)) else None
+        ),
     )
