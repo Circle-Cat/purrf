@@ -161,10 +161,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 e,
             )
             return api_response(
-                message=(
-                    "Your account has been suspended. "
-                    "Contact an administrator."
-                ),
+                message=("Your account has been suspended. Contact an administrator."),
                 status_code=HTTPStatus.FORBIDDEN,
                 data=None,
             )
