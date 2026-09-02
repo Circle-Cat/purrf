@@ -106,6 +106,7 @@ py_test(
     name = "training_content_controller_test",
     srcs = ["training_content_controller_test.py"],
     deps = [
+        "//backend/training:content_host",
         "//backend/training:training_content_controller",
         "//backend/training:training_content_service",
         "//backend/training:training_content_token",

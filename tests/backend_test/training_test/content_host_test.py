@@ -1,10 +1,12 @@
-"""Refusing to start when course files would be served from an app origin."""
+"""Deciding whether course files may be served, and disabling them if not."""
 
 import unittest
+from unittest.mock import MagicMock
 
-from backend.training.content_host import assert_content_host_isolated, hostname_of
+from backend.training.content_host import hostname_of, resolve_content_host
 
 _APP_ORIGINS = "https://purrf.io,https://api.purrf.io"
+_CONTENT_HOST = "training-content.purrf.io"
 
 
 class TestHostnameOf(unittest.TestCase):
@@ -19,49 +21,77 @@ class TestHostnameOf(unittest.TestCase):
         self.assertEqual(hostname_of("   "), "")
 
 
-class TestAssertContentHostIsolated(unittest.TestCase):
-    def test_a_separate_content_host_is_accepted(self):
-        assert_content_host_isolated("training-content.purrf.io", _APP_ORIGINS)
+class _ResolveCase(unittest.TestCase):
+    def setUp(self):
+        self.logger = MagicMock()
 
-    def test_content_hosting_that_is_not_configured_is_not_checked(self):
-        """No content host means the route and the middleware exemption both
-        already refuse everything, so there is nothing to compare."""
-        assert_content_host_isolated(None, None)
-        assert_content_host_isolated("", None)
+    def resolve(self, content_host, app_origins):
+        return resolve_content_host(content_host, app_origins, self.logger)
 
-    def test_serving_content_from_the_api_origin_refuses_to_start(self):
-        with self.assertRaises(ValueError) as caught:
-            assert_content_host_isolated("api.purrf.io", _APP_ORIGINS)
+    def logged_error(self):
+        self.assertTrue(self.logger.error.called, msg="nothing was logged")
+        template, *arguments = self.logger.error.call_args.args
+        return template % tuple(arguments)
 
-        self.assertIn("api.purrf.io", str(caught.exception))
 
-    def test_serving_content_from_the_web_origin_refuses_to_start(self):
-        with self.assertRaises(ValueError):
-            assert_content_host_isolated("purrf.io", _APP_ORIGINS)
+class TestContentHostingStaysOn(_ResolveCase):
+    def test_a_separate_content_host_is_served(self):
+        self.assertEqual(self.resolve(_CONTENT_HOST, _APP_ORIGINS), _CONTENT_HOST)
+        self.logger.error.assert_not_called()
 
-    def test_a_content_host_written_as_a_url_refuses_to_start(self):
-        """It is compared against the Host header exactly, so a value with a
-        scheme matches nothing and every asset 404s with no other signal."""
-        with self.assertRaises(ValueError):
-            assert_content_host_isolated("https://training.purrf.io", _APP_ORIGINS)
+    def test_app_origins_written_as_bare_hostnames_still_compare(self):
+        self.assertEqual(
+            self.resolve(_CONTENT_HOST, "purrf.io, api.purrf.io"), _CONTENT_HOST
+        )
+        self.logger.error.assert_not_called()
 
-    def test_a_content_host_carrying_a_port_refuses_to_start(self):
-        with self.assertRaises(ValueError):
-            assert_content_host_isolated("training.purrf.io:443", _APP_ORIGINS)
+    def test_content_hosting_that_is_nobody_configured_is_silent(self):
+        """No content host is a normal environment, not a misconfiguration."""
+        for value in (None, ""):
+            with self.subTest(value=value):
+                self.assertIsNone(self.resolve(value, None))
 
-    def test_a_content_host_that_is_not_lowercase_refuses_to_start(self):
-        with self.assertRaises(ValueError):
-            assert_content_host_isolated("Training.Purrf.io", _APP_ORIGINS)
+        self.logger.error.assert_not_called()
 
-    def test_unknown_app_origins_refuse_to_start(self):
-        """Without them the check cannot be made at all, and an unchecked
-        content host is the thing this exists to prevent."""
+
+class TestContentHostingIsDisabled(_ResolveCase):
+    """Never an exception: one optional feature that cannot verify its own
+    wiring must not stop login, mentorship and recruiting from starting."""
+
+    def test_a_content_host_that_is_an_app_origin_is_refused(self):
+        self.assertIsNone(self.resolve("api.purrf.io", _APP_ORIGINS))
+        self.assertIn("api.purrf.io", self.logged_error())
+
+    def test_a_content_host_that_is_the_web_origin_is_refused(self):
+        self.assertIsNone(self.resolve("purrf.io", _APP_ORIGINS))
+
+    def test_unknown_app_origins_disable_content_rather_than_trust_it(self):
         for origins in (None, "", "  ,  "):
             with self.subTest(origins=origins):
-                with self.assertRaises(ValueError) as caught:
-                    assert_content_host_isolated("training.purrf.io", origins)
+                self.logger.reset_mock()
 
-                self.assertIn("APP_ORIGINS", str(caught.exception))
+                self.assertIsNone(self.resolve(_CONTENT_HOST, origins))
+
+                self.assertIn("APP_ORIGINS", self.logged_error())
+
+    def test_the_log_says_what_to_set(self):
+        self.resolve(_CONTENT_HOST, None)
+
+        logged = self.logged_error()
+        self.assertIn("APP_ORIGINS", logged)
+        self.assertIn("https://purrf.io", logged)
+
+    def test_a_content_host_written_as_a_url_is_refused(self):
+        """It is compared against the Host header exactly, so a value with a
+        scheme matches nothing and every asset 404s with no other signal."""
+        self.assertIsNone(self.resolve("https://training.purrf.io", _APP_ORIGINS))
+        self.assertIn("hostname", self.logged_error())
+
+    def test_a_content_host_carrying_a_port_is_refused(self):
+        self.assertIsNone(self.resolve("training.purrf.io:443", _APP_ORIGINS))
+
+    def test_a_content_host_that_is_not_lowercase_is_refused(self):
+        self.assertIsNone(self.resolve("Training.Purrf.io", _APP_ORIGINS))
 
 
 if __name__ == "__main__":

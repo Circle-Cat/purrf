@@ -1,4 +1,4 @@
-"""Checking at startup that course files are not served from the app's origin.
+"""Deciding whether course files may be served on their own hostname at all.
 
 The whole safety of the content route rests on one thing nothing asserted: the
 hostname in TRAINING_CONTENT_HOST is not a hostname the app itself answers on.
@@ -8,8 +8,17 @@ JavaScript ends up same-origin with the API and with a deliberately JS-readable
 Cloudflare Access cookie. Nothing fails, so nobody finds out.
 
 The backend is not told its own hostname anywhere else, so the origins it
-answers on are named explicitly in APP_ORIGINS, and this refuses to start when
-content hosting is configured without them.
+answers on are named explicitly in APP_ORIGINS. A configuration that cannot be
+shown to be isolated disables content hosting and says so at error level; it
+never stops the process. One optional feature that cannot verify its own
+wiring must not take login, mentorship and recruiting down with it, and the
+environments already carrying TRAINING_CONTENT_HOST have no APP_ORIGINS yet.
+
+Disabled means genuinely inert, not merely logged: the resolved value is what
+the auth middleware exempts on and what the content route answers on, so None
+leaves /p/ authenticated like any other path and the route refusing everything.
+A learner opening a course then gets an authentication failure -- visible,
+rather than course files quietly served from the wrong origin.
 """
 
 from urllib.parse import urlsplit
@@ -36,48 +45,60 @@ def hostname_of(origin: str) -> str:
     return urlsplit(candidate).hostname or ""
 
 
-def assert_content_host_isolated(content_host, app_origins) -> None:
-    """Refuse to start with a content host the app also answers on.
+def resolve_content_host(content_host, app_origins, logger) -> str | None:
+    """The hostname course files may be served from, or None to serve none.
 
     Args:
         content_host (str | None): TRAINING_CONTENT_HOST. Absent means content
-            hosting is not configured, which the route and the middleware
-            exemption both already fail closed on, so there is nothing to check.
+            hosting is not configured, and nothing needs deciding.
         app_origins (str | None): APP_ORIGINS, comma-separated.
+        logger: Injected logger.
 
-    Raises:
-        ValueError: The content host is not a bare hostname, the app's own
-            origins are unknown, or the two name the same host.
+    Returns:
+        str | None: ``content_host`` when it is provably none of the app's own
+        origins, otherwise None -- which disables the middleware exemption and
+        the content route together.
     """
     if not content_host:
-        return
+        return None
 
     # Compared against the Host header exactly, so a value carrying a scheme,
     # a port or a path matches nothing: content would 404 everywhere while the
-    # middleware exemption quietly stopped applying. That is a startup failure,
-    # not something to normalise away.
+    # middleware exemption quietly stopped applying.
     if content_host != content_host.strip().lower() or any(
         character in content_host for character in " \t/:"
     ):
-        raise ValueError(
-            "TRAINING_CONTENT_HOST must be a bare lowercase hostname "
-            f"(no scheme, port or path); got {content_host!r}."
+        logger.error(
+            "[content_host] TRAINING_CONTENT_HOST (%r) is not a bare lowercase "
+            "hostname; it must carry no scheme, port or path. Course content "
+            "is disabled until it is corrected.",
+            content_host,
         )
+        return None
 
     app_hostnames = {
         hostname_of(origin) for origin in (app_origins or "").split(",")
     } - {""}
     if not app_hostnames:
-        raise ValueError(
-            "TRAINING_CONTENT_HOST is set but APP_ORIGINS is not, so the "
-            "content host cannot be checked against the app's own origins. "
-            "Set APP_ORIGINS to every origin this app answers on, "
-            "comma-separated."
+        logger.error(
+            "[content_host] TRAINING_CONTENT_HOST is set but APP_ORIGINS is "
+            "missing or unreadable, so %s cannot be shown to differ from the "
+            "app's own origins. Set APP_ORIGINS to every origin this app "
+            "answers on, comma-separated (for example "
+            "https://purrf.io,https://api.purrf.io). Course content is "
+            "disabled until then.",
+            content_host,
         )
+        return None
 
     if content_host in app_hostnames:
-        raise ValueError(
-            f"TRAINING_CONTENT_HOST ({content_host}) is one of APP_ORIGINS. "
+        logger.error(
+            "[content_host] TRAINING_CONTENT_HOST (%s) is one of APP_ORIGINS. "
             "Course files must be served from their own hostname, or course "
-            "JavaScript runs same-origin with the API and the Access cookie."
+            "JavaScript runs same-origin with the API and the Access cookie. "
+            "Course content is disabled until they differ.",
+            content_host,
         )
+        return None
+
+    return content_host

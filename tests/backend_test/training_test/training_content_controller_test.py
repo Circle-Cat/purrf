@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 
+from backend.training.content_host import resolve_content_host
 from backend.training.training_content_controller import (
     _CACHE_CONTROL,
     TrainingContentController,
@@ -195,6 +196,49 @@ class TestTrainingContentController(unittest.IsolatedAsyncioTestCase):
         for name, value in outcome.headers.items():
             self.assertNotIn(TOKEN, value, msg=name)
         self.assertNotIn(TOKEN.encode("ascii"), outcome.body)
+
+
+class TestDisabledContentHosting(unittest.IsolatedAsyncioTestCase):
+    """A content host that cannot be shown to differ from the app's own
+    origins disables the route outright, rather than stopping the app."""
+
+    async def asyncSetUp(self):
+        self.session = AsyncMock()
+        self.database = MagicMock()
+        self.database.session.return_value.__aenter__.return_value = self.session
+        self.database.session.return_value.__aexit__.return_value = None
+
+        self.content_service = MagicMock()
+        self.content_service.read_asset = AsyncMock(
+            return_value=ContentAsset(data=ASSET_BYTES, content_type=ASSET_CONTENT_TYPE)
+        )
+        self.logger = MagicMock()
+        # APP_ORIGINS is missing, so the resolver hands the controller nothing.
+        self.resolved_host = resolve_content_host(CONTENT_HOST, None, self.logger)
+        self.controller = TrainingContentController(
+            self.content_service, self.resolved_host, self.database, self.logger
+        )
+
+    def test_the_resolver_disabled_hosting(self):
+        self.assertIsNone(self.resolved_host)
+
+    async def test_no_host_gets_an_asset_out_of_the_route(self):
+        for host in [CONTENT_HOST, APP_HOST, f"{CONTENT_HOST}:443", None]:
+            with self.subTest(host=host):
+                request = make_request(host, f"/p/{TOKEN}/{ASSET_PATH}")
+
+                response = await self.controller.get_asset(TOKEN, ASSET_PATH, request)
+
+                self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
+                self.assertEqual(await read_body(response), b"")
+
+    async def test_the_route_never_reaches_storage(self):
+        request = make_request(CONTENT_HOST, f"/p/{TOKEN}/{ASSET_PATH}")
+
+        await self.controller.get_asset(TOKEN, ASSET_PATH, request)
+
+        self.content_service.read_asset.assert_not_awaited()
+        self.database.session.assert_not_called()
 
 
 if __name__ == "__main__":
