@@ -510,6 +510,48 @@ describe("MentorshipParticipantsCard", () => {
     consoleSpy.mockRestore();
   });
 
+  it("should reschedule against the partner whose row the control came from, not just the first partner", async () => {
+    // With a single partner, threading the wrong (e.g. loop-stale) partner id
+    // through would still pass every other reschedule test. A second partner
+    // is what makes that mistake observable.
+    const secondPartner = {
+      partnerId: 2,
+      preferredName: "Bob",
+      requiredMeetings: 3,
+      completedCount: 0,
+      completedRate: 0,
+      meetingTimeList: [],
+      participantRole: "mentee",
+      isActive: true,
+    };
+    rescheduleMeeting.mockResolvedValue({});
+
+    render(
+      <MentorshipParticipantsCard
+        {...baseProps}
+        participantDetails={{
+          ...baseProps.participantDetails,
+          partnerMeetingOverview: [
+            ...baseProps.participantDetails.partnerMeetingOverview,
+            secondPartner,
+          ],
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "mock-reschedule-2" }));
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "mock-reschedule-submit" }),
+      );
+    });
+
+    expect(rescheduleMeeting).toHaveBeenCalledWith(
+      "m-1",
+      expect.objectContaining({ partner_id: 2 }),
+    );
+  });
+
   it("should call refreshMeetings after a meeting is logged", () => {
     const refreshMeetings = vi.fn();
 
