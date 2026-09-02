@@ -3,6 +3,64 @@
   <head>
     <meta charset="utf-8" />
     <title>Course</title>
+    <style>
+      html, body { margin: 0; height: 100%; }
+      iframe { border: 0; width: 100%; height: 100%; display: block; }
+    </style>
+    <script src="__scorm12.min.js"></script>
   </head>
-  <body></body>
+  <body>
+    <script type="module">
+      import { MESSAGE_TYPES, toFlattenedCmi } from "./__bridge.js";
+
+      // The app origin is handed over in the query string rather than compiled
+      // in, because it differs per environment and this file ships in the image.
+      const appOrigin = new URLSearchParams(location.search).get("appOrigin");
+
+      const post = (message) => parent.postMessage(message, appOrigin);
+
+      let api = null;
+
+      // Everything below runs only after scorm:init: the CMI model has to be
+      // in memory before the course frame exists, or the course's first
+      // LMSGetValue returns empty and the learner silently loses their place.
+      window.addEventListener("message", (event) => {
+        if (event.origin !== appOrigin || event.data?.type !== MESSAGE_TYPES.INIT) {
+          return;
+        }
+        if (api) {
+          return;
+        }
+        start(event.data);
+      });
+
+      function start({ progress, learner, entryPath }) {
+        api = new window.Scorm12API({
+          autocommit: false,
+          logLevel: 4,
+          // No lmsCommitUrl on purpose: this origin must never reach the API.
+        });
+        api.loadFromFlattenedJSON(toFlattenedCmi(progress, learner));
+
+        api.on("LMSCommit", () =>
+          post({ type: MESSAGE_TYPES.COMMIT, cmi: api.renderCommitCMI(true) }),
+        );
+        api.on("LMSFinish", () =>
+          post({ type: MESSAGE_TYPES.FINISH, cmi: api.renderCommitCMI(true) }),
+        );
+
+        window.API = api;
+
+        const frame = document.createElement("iframe");
+        frame.src = entryPath;
+        document.body.appendChild(frame);
+      }
+
+      window.addEventListener("error", (event) =>
+        post({ type: MESSAGE_TYPES.ERROR, code: 0, message: String(event.message) }),
+      );
+
+      post({ type: MESSAGE_TYPES.READY });
+    </script>
+  </body>
 </html>
