@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import MeetingRescheduleDialog from "@/pages/PersonalDashboard/components/MeetingRescheduleDialog";
 
 const meeting = {
@@ -23,6 +23,18 @@ function renderOpen(props = {}) {
 }
 
 describe("MeetingRescheduleDialog", () => {
+  // The dialog bounds its date input to "today" in the selected timezone,
+  // so a fixed system time keeps that bound behind the fixture's fixed
+  // 2026-06 dates instead of drifting past them as real time moves on.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-05-01T00:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("prefills the meeting's current slot in the viewer's timezone", () => {
     renderOpen();
     expect(screen.getByLabelText("Date")).toHaveValue("2026-06-01");
