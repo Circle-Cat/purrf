@@ -11,7 +11,11 @@ const SUSPEND = "x".repeat(1264);
 // shape instead of flat "cmi.core.*" dot-keys, and the mismatch would not
 // show up here -- only in training_progress_service.py, which reads flat
 // keys and would silently store nothing.
-const API_OPTIONS = { autocommit: false, logLevel: 5, dataCommitFormat: "flattened" };
+const API_OPTIONS = {
+  autocommit: false,
+  logLevel: 5,
+  dataCommitFormat: "flattened",
+};
 
 describe("the behaviour a course depends on", () => {
   let api;

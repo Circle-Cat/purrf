@@ -235,7 +235,9 @@ class TestTrainingProgressRepository(BaseRepositoryTestLib):
         )
         blob = "z" * 40000
 
-        row = await self.repo.upsert(self.session, training.training_id, suspend_data=blob)
+        row = await self.repo.upsert(
+            self.session, training.training_id, suspend_data=blob
+        )
         await self._reload(row)
 
         self.assertEqual(row.suspend_data, blob)

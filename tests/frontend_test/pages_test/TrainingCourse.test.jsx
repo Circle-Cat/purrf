@@ -110,7 +110,9 @@ describe("TrainingCourse", () => {
   });
 
   it("logs a scorm:error from the player instead of dropping it", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
     renderCourse();
     await screen.findByTitle(/course/i);
 
@@ -131,7 +133,9 @@ describe("TrainingCourse", () => {
   });
 
   it("ignores a scorm:error forged by any other page", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
     renderCourse();
     await screen.findByTitle(/course/i);
 
