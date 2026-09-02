@@ -97,6 +97,7 @@ class TrainingAssignmentService:
         )
         session.add(assignment)
         await session.flush()
+        await session.commit()
 
         self.logger.info(
             "[TrainingAssignmentService] assigned course %s to user %s",

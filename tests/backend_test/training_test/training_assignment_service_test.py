@@ -35,8 +35,6 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.trainings.get_training_by_user_id_and_course_id = AsyncMock(
             return_value=None
         )
-        # flush() is what gives the new row its training_id.
-        self.session.flush.side_effect = self._stamp_training_id
         self.service = TrainingAssignmentService(
             logger=MagicMock(),
             training_course_repository=self.courses,
@@ -44,7 +42,20 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         )
         self.payload = TrainingAssignmentRequestDto(user_id=11, course_id=3)
 
+        # Records the order the write, the flush and the commit happen in.
+        # add() is synchronous in SQLAlchemy, unlike the session itself.
+        self.calls = []
+        self.session.add = MagicMock(
+            side_effect=lambda entity: self.calls.append(("add", entity))
+        )
+        self.session.flush = AsyncMock(side_effect=self._stamp_training_id)
+        self.session.commit = AsyncMock(
+            side_effect=lambda: self.calls.append(("commit",))
+        )
+
     async def _stamp_training_id(self):
+        # flush() is what gives the new row its training_id.
+        self.calls.append(("flush",))
         for call in self.session.add.call_args_list:
             call.args[0].training_id = 42
 
@@ -57,6 +68,7 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         added = self.session.add.call_args.args[0]
         self.assertEqual(added.status, TrainingStatus.TO_DO)
         self.assertEqual(added.course_id, 3)
+        self.assertEqual([step[0] for step in self.calls], ["add", "flush", "commit"])
 
     async def test_unverified_course_is_refused(self):
         """The refusal is the whole point of the gate."""
@@ -68,6 +80,7 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
             await self.service.assign(self.session, self.payload)
 
         self.session.add.assert_not_called()
+        self.session.commit.assert_not_awaited()
 
     async def test_deactivated_course_is_refused(self):
         self.courses.get_course_by_id.return_value = _course(is_active=False)
@@ -76,12 +89,15 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
             await self.service.assign(self.session, self.payload)
 
         self.session.add.assert_not_called()
+        self.session.commit.assert_not_awaited()
 
     async def test_missing_course_is_a_value_error(self):
         self.courses.get_course_by_id.return_value = None
 
         with self.assertRaises(ValueError):
             await self.service.assign(self.session, self.payload)
+
+        self.session.commit.assert_not_awaited()
 
     async def test_assigning_twice_is_a_no_op(self):
         """Not an error: (user_id, course_id) is uniquely indexed."""
@@ -94,6 +110,7 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.created)
         self.assertEqual(result.training_id, 99)
         self.session.add.assert_not_called()
+        self.session.commit.assert_not_awaited()
 
     async def test_repeat_assignment_never_overwrites_an_existing_deadline(self):
         """Registration stamps a deadline once; this must not be a second way

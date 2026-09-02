@@ -92,6 +92,7 @@ class TrainingCourseService:
             is_active=True,
         )
         await self.training_course_repository.add_course(session, course)
+        await session.commit()
         self.logger.info(
             "[TrainingCourseService] created course %s (%s)",
             course.course_id,
@@ -122,6 +123,8 @@ class TrainingCourseService:
             course.description = payload.description
         if payload.is_active is not None:
             course.is_active = payload.is_active
+
+        await session.commit()
 
         assigned_count = await self.training_course_repository.count_assignments(
             session, course_id

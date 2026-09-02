@@ -60,13 +60,17 @@ class TestTrainingCourseService(unittest.IsolatedAsyncioTestCase):
         self.repository.list_courses = AsyncMock(return_value=[])
         self.repository.count_assignments = AsyncMock(return_value=0)
 
-        def _assign_id(_session, course):
-            # Stands in for the repository's flush.
+        # Records the order the write and the commit happen in.
+        self.calls = []
+
+        async def _add_course(_session, course):
             course.course_id = 7
+            self.calls.append("add_course")
             return course
 
-        self.repository.add_course = AsyncMock(side_effect=_assign_id)
+        self.repository.add_course = AsyncMock(side_effect=_add_course)
         self.repository.get_course_by_id = AsyncMock(return_value=None)
+        self.session.commit = AsyncMock(side_effect=lambda: self.calls.append("commit"))
         self.service = TrainingCourseService(
             logger=MagicMock(), training_course_repository=self.repository
         )
@@ -94,6 +98,7 @@ class TestTrainingCourseService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(course.name, "Safety Briefing")
         self.assertIsNone(course.verified_completable_at)
         self.assertEqual(course.state, TrainingCourseState.NO_PACKAGE)
+        self.assertEqual(self.calls, ["add_course", "commit"])
 
     async def test_deactivating_only_flips_the_flag(self):
         """Nothing is deleted and nobody loses access."""
@@ -110,12 +115,31 @@ class TestTrainingCourseService(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(course.is_active)
         self.assertEqual(course.assigned_count, 61)
         self.assertEqual(existing.name, "Legacy Safety Briefing")
+        self.session.commit.assert_awaited_once()
+
+    async def test_the_rename_lands_before_the_commit(self):
+        existing = TrainingCourseEntity(course_id=5, name="Old Name", is_active=True)
+        self.repository.get_course_by_id.return_value = existing
+
+        async def _commit():
+            # If this runs before the rename, the assertion below catches it.
+            self.calls.append(("commit", existing.name))
+
+        self.session.commit = AsyncMock(side_effect=_commit)
+
+        await self.service.update_course(
+            self.session, 5, TrainingCourseUpdateDto(name="New Name")
+        )
+
+        self.assertEqual(self.calls, [("commit", "New Name")])
 
     async def test_updating_a_missing_course_is_a_value_error(self):
         with self.assertRaises(ValueError):
             await self.service.update_course(
                 self.session, 404, TrainingCourseUpdateDto(name="Nope")
             )
+
+        self.session.commit.assert_not_awaited()
 
 
 if __name__ == "__main__":
