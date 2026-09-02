@@ -38,9 +38,9 @@ describe("toFlattenedCmi", () => {
   });
 
   it("derives entry rather than expecting the caller to pass it", () => {
-    expect(toFlattenedCmi({ suspendData: "blob" }, LEARNER)["cmi.core.entry"]).toBe(
-      "resume",
-    );
+    expect(
+      toFlattenedCmi({ suspendData: "blob" }, LEARNER)["cmi.core.entry"],
+    ).toBe("resume");
     expect(toFlattenedCmi({}, LEARNER)["cmi.core.entry"]).toBe("ab-initio");
   });
 

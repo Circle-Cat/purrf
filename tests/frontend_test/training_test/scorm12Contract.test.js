@@ -12,7 +12,11 @@ describe("the behaviour a course depends on", () => {
     api = new Scorm12API({ autocommit: false, logLevel: 5 });
     api.loadFromFlattenedJSON(
       toFlattenedCmi(
-        { suspendData: SUSPEND, lessonLocation: "Summary", lessonStatus: "incomplete" },
+        {
+          suspendData: SUSPEND,
+          lessonLocation: "Summary",
+          lessonStatus: "incomplete",
+        },
         LEARNER,
       ),
     );
