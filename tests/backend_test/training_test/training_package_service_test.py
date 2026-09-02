@@ -546,6 +546,20 @@ class TestReplacedPrefixDeletion(_PackageServiceTestCase):
 
         self.assertEqual(events, ["commit", "delete"])
 
+    async def test_a_failed_commit_never_deletes_the_previous_prefix(self):
+        """The delete is irreversible and the commit is not, so the delete must
+        never run unless the commit that it depends on actually succeeded.
+        """
+        self._course(storage_prefix=_LIVE_PREFIX)
+        self.session.commit.side_effect = RuntimeError("connection lost")
+
+        with self.assertRaises(RuntimeError):
+            await self.service.upload_package(
+                self.session, _COURSE_ID, _package(), now=_NOW
+            )
+
+        self.storage.delete_prefix.assert_not_called()
+
     async def test_a_failed_delete_of_the_previous_prefix_does_not_fail_the_upload(
         self,
     ):
