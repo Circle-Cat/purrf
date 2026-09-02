@@ -180,8 +180,7 @@ class TrainingContentService:
         # The variable names are for whoever runs the environment. The message
         # goes to a browser, so it carries none of them.
         self.logger.error(
-            "[TrainingContentService] training content is not configured; "
-            "missing %s",
+            "[TrainingContentService] training content is not configured; missing %s",
             ", ".join(missing),
         )
         raise ValueError("Training content is not available.")

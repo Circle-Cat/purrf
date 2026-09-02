@@ -246,9 +246,10 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         """Only the page knows which save is the last one, and that save
         exists to bank elapsed time -- which the service's unchanged-content
         check ignores, so it is skipped unless it says so."""
-        await self.save_progress(
-            {"cmi": {"cmi.core.lesson_location": "Summary"}, "final": True}
-        )
+        await self.save_progress({
+            "cmi": {"cmi.core.lesson_location": "Summary"},
+            "final": True,
+        })
 
         self.assertIs(self.progress_service.save.await_args.kwargs["final"], True)
 
@@ -302,9 +303,9 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
     async def test_a_body_too_large_to_be_a_commit_is_refused(self):
         """Refused while it is being read, so the cap bounds what is held in
         memory rather than being checked once the whole thing already is."""
-        oversized = json.dumps(
-            {"cmi": {"cmi.suspend_data": "x" * (2 * _MAX_PROGRESS_BODY_BYTES)}}
-        ).encode()
+        oversized = json.dumps({
+            "cmi": {"cmi.suspend_data": "x" * (2 * _MAX_PROGRESS_BODY_BYTES)}
+        }).encode()
 
         with self.assertRaises(ValueError):
             await self.post_progress(oversized, chunk_size=8192)

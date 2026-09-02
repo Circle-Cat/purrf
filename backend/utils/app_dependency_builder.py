@@ -967,9 +967,7 @@ class AppDependencyBuilder:
         # host: set them equal and every request still succeeds, with course
         # JavaScript same-origin with the API. Checked here so a wrong value
         # stops the process instead of silently opening that door.
-        assert_content_host_isolated(
-            self.training_content_host, os.getenv(APP_ORIGINS)
-        )
+        assert_content_host_isolated(self.training_content_host, os.getenv(APP_ORIGINS))
         self.training_package_service = TrainingPackageService(
             logger=self.logger,
             training_course_repository=self.training_course_repository,
