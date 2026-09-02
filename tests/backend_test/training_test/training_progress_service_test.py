@@ -741,6 +741,89 @@ class TestFinalSave(_ProgressServiceCase):
         self.progress_repository.upsert.assert_awaited()
 
 
+class TestLengthLimits(_ProgressServiceCase):
+    """The endpoint is open to anyone holding the assignment, and the columns
+    behind it are unbounded text."""
+
+    async def test_a_suspend_data_no_course_could_produce_is_refused(self):
+        with self.assertRaises(ValueError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                {**_COMMIT, "cmi.suspend_data": "x" * 65537},
+            )
+
+    async def test_a_refused_commit_writes_nothing_at_all(self):
+        """Refused loudly, not stored short: the course is told, and the row
+        is left exactly as it was."""
+        with self.assertRaises(ValueError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                {**_COMMIT, "cmi.suspend_data": "x" * 65537},
+            )
+
+        self.progress_repository.upsert.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_suspend_data_at_the_limit_is_stored_whole(self):
+        """The cap is far above any real package; nothing legitimate is near
+        it, and what is under it is still stored byte for byte."""
+        blob = "x" * 65536
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.suspend_data": blob},
+        )
+
+        self.assertEqual(self._saved_columns()["suspend_data"], blob)
+
+    async def test_an_oversized_lesson_location_is_refused(self):
+        """String columns are unbounded too, so the same hole is open here."""
+        with self.assertRaises(ValueError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                {**_COMMIT, "cmi.core.lesson_location": "y" * 4097},
+            )
+
+    async def test_an_oversized_lesson_status_is_refused(self):
+        with self.assertRaises(ValueError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                {**_COMMIT, "cmi.core.lesson_status": "z" * 65},
+            )
+
+    async def test_the_refusal_names_the_element_and_the_limit(self):
+        """The learner sees a failed save; whoever they report it to needs to
+        be able to tell abuse from a course that got bigger."""
+        with self.assertRaises(ValueError) as caught:
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                {**_COMMIT, "cmi.suspend_data": "x" * 65537},
+            )
+
+        message = str(caught.exception)
+        self.assertIn("cmi.suspend_data", message)
+        self.assertIn("65536", message)
+
+    async def test_an_empty_value_is_not_caught_by_the_cap(self):
+        await self.service.save(
+            self.session, _TRAINING_ID, _USER_ID, {"cmi.suspend_data": ""}
+        )
+
+        self.assertEqual(self._saved_columns()["suspend_data"], "")
+
+
 class TestSaveRefusals(_ProgressServiceCase):
     async def test_saving_onto_somebody_elses_assignment_is_refused(self):
         self.training_repository.get_training_by_id.return_value.user_id = 999

@@ -41,6 +41,33 @@ _CONTENT_COLUMNS = (
     "score_max",
 )
 
+# The columns behind these are unbounded text on purpose, and the endpoint is
+# open to anyone holding the assignment, so without a cap one learner can grow
+# the database without limit. The limits are far above anything a real course
+# produces: the largest sample in this repo is about 1.3 KB, real packages that
+# ignore SCORM 1.2's 4096-character convention still land nowhere near 64 KB,
+# and a keepalive unload fetch cannot carry a body that big anyway. Passing one
+# is refused with an error the page can show, never truncated or dropped: a
+# write stored short, or discarded quietly, costs the learner their place with
+# no signal at all -- which is the reason the column has no length.
+_LENGTH_LIMITS = {
+    _SUSPEND_DATA: 65536,
+    _LESSON_LOCATION: 4096,
+    _LESSON_STATUS: 64,
+}
+
+
+def _reject_oversized(cmi: dict) -> None:
+    """Refuse a commit carrying a value no real course would send.
+
+    Raises:
+        ValueError: A CMI element is longer than the cap for it.
+    """
+    for key, limit in _LENGTH_LIMITS.items():
+        value = cmi.get(key)
+        if isinstance(value, str) and len(value) > limit:
+            raise ValueError(f"{key} is {len(value)} characters; the limit is {limit}.")
+
 
 def _content_unchanged(existing, columns: dict) -> bool:
     """Whether this commit reports the same content the row already holds.
@@ -141,9 +168,11 @@ class TrainingProgressService:
             TrainingProgressEntity: The stored row.
 
         Raises:
-            ValueError: No such assignment.
+            ValueError: No such assignment, or an element over its length cap.
             PermissionError: The assignment belongs to somebody else.
         """
+        _reject_oversized(cmi)
+
         # Locked, because what follows reads the status, decides the next one
         # from it, and writes it back. A course reports `incomplete` and then
         # `completed` within the same second, and unlocked those two requests
@@ -173,7 +202,8 @@ class TrainingProgressService:
         if _LESSON_LOCATION in cmi:
             columns["lesson_location"] = cmi[_LESSON_LOCATION]
         if _SUSPEND_DATA in cmi:
-            # Never length-checked. A rejected write is invisible to the course.
+            # Stored whole. Only the abuse cap above bounds it, and that one
+            # refuses the request rather than shortening what it stores.
             columns["suspend_data"] = cmi[_SUSPEND_DATA]
 
         if _TOTAL_TIME in cmi:
