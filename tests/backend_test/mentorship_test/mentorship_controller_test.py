@@ -10,6 +10,7 @@ from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RegistrationDto
 from backend.dto.registration_create_dto import RegistrationCreateDto
 from backend.dto.meeting_batch_create_dto import MeetingBatchCreateDto
+from backend.dto.meeting_reschedule_dto import MeetingRescheduleDto
 from backend.dto.feedback_create_dto import FeedbackCreateDto
 from backend.dto.feedback_dto import FeedbackDto
 from backend.common.permissions import Permission
@@ -695,6 +696,60 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
                 current_user=mock_user,
                 payload=payload,
             )
+
+    async def test_reschedule_google_meeting_passes_the_payload_through(self):
+        self.mock_launchdarkly_service.is_create_google_meeting_enabled.return_value = (
+            True
+        )
+        mock_user = MagicMock(spec=UserContextDto)
+        self.mock_meeting_service.reschedule_google_meeting = AsyncMock(
+            return_value="moved"
+        )
+        payload = MeetingRescheduleDto(
+            round_id=10,
+            partner_id=2,
+            timezone="America/New_York",
+            start_date=date.today() + timedelta(days=1),
+            start_time="09:00",
+            duration_minutes=60,
+        )
+
+        response = await self.controller.reschedule_google_meeting(
+            current_user=mock_user,
+            meeting_id="google-event-1",
+            payload=payload,
+        )
+
+        self.mock_meeting_service.reschedule_google_meeting.assert_awaited_once()
+        kwargs = self.mock_meeting_service.reschedule_google_meeting.await_args.kwargs
+        self.assertEqual(kwargs["meeting_id"], "google-event-1")
+        self.assertEqual(kwargs["round_id"], 10)
+        self.assertEqual(kwargs["partner_id"], 2)
+        self.assertEqual(kwargs["duration_minutes"], 60)
+        self.assertIsNotNone(response)
+
+    async def test_reschedule_google_meeting_refused_when_flag_is_off(self):
+        self.mock_launchdarkly_service.is_create_google_meeting_enabled.return_value = (
+            False
+        )
+        mock_user = MagicMock(spec=UserContextDto)
+        self.mock_meeting_service.reschedule_google_meeting = AsyncMock()
+        payload = MeetingRescheduleDto(
+            round_id=10,
+            partner_id=2,
+            timezone="America/New_York",
+            start_date=date.today() + timedelta(days=1),
+            start_time="09:00",
+            duration_minutes=60,
+        )
+
+        with self.assertRaises(PermissionError):
+            await self.controller.reschedule_google_meeting(
+                current_user=mock_user,
+                meeting_id="google-event-1",
+                payload=payload,
+            )
+        self.mock_meeting_service.reschedule_google_meeting.assert_not_awaited()
 
     async def test_sync_meet_attendance_runs_without_the_google_meeting_flag(self):
         """The cron sweep must not depend on a per-user feature flag."""
