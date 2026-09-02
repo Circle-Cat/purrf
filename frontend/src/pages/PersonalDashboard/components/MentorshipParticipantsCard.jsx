@@ -53,10 +53,14 @@ export default function MentorshipParticipantsCard({
   refreshMeetings,
   userTimezone,
 }) {
-  // The meeting awaiting a new slot, and which partner's row it came from --
-  // the API call needs that partner's id, which the meeting itself carries.
+  // The meeting awaiting a new slot, and which partner's row it came from.
+  // `meetingToReschedule` is a `meetingTimeList` entry, which carries only
+  // `meetingId`, `startDatetime`, `endDatetime`, `isCompleted`, and
+  // `meetLink` -- no partner id -- so the partner has to be remembered
+  // separately from whichever row's "Reschedule" was clicked.
   const [meetingToReschedule, setMeetingToReschedule] = useState(null);
   const [reschedulePartnerId, setReschedulePartnerId] = useState(null);
+  const [isReschedulingMeeting, setIsReschedulingMeeting] = useState(false);
 
   const { roundInfo, partnerMeetingOverview, participantRole } =
     participantDetails || {};
@@ -181,6 +185,7 @@ export default function MentorshipParticipantsCard({
     durationMinutes,
     timezone,
   }) => {
+    setIsReschedulingMeeting(true);
     try {
       await rescheduleMeeting(meetingToReschedule.meetingId, {
         round_id: selectedRoundId,
@@ -196,6 +201,8 @@ export default function MentorshipParticipantsCard({
     } catch (error) {
       console.error("Failed to reschedule meeting:", error);
       toast.error("Failed to reschedule the meeting.");
+    } finally {
+      setIsReschedulingMeeting(false);
     }
   };
 
@@ -370,6 +377,7 @@ export default function MentorshipParticipantsCard({
         meeting={meetingToReschedule}
         userTimezone={userTimezone}
         onSubmit={handleRescheduleMeeting}
+        submitting={isReschedulingMeeting}
       />
     </Card>
   );

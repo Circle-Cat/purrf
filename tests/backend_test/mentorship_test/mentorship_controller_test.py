@@ -726,7 +726,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["round_id"], 10)
         self.assertEqual(kwargs["partner_id"], 2)
         self.assertEqual(kwargs["duration_minutes"], 60)
-        self.assertIsNotNone(response)
+        self.assertEqual(response["data"], "moved")
 
     async def test_reschedule_google_meeting_refused_when_flag_is_off(self):
         self.mock_launchdarkly_service.is_create_google_meeting_enabled.return_value = (

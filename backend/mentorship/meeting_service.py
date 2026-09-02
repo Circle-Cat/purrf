@@ -646,13 +646,30 @@ class MeetingService:
             )
             raise ValueError(_MEETING_GONE_MESSAGE) from e
 
-        await self.mentorship_meeting_repository.update_schedule(
-            session=session,
-            meeting=meeting,
-            start_datetime=start_utc,
-            end_datetime=end_utc,
-        )
-        await session.commit()
+        old_start_datetime = meeting.start_datetime
+        old_end_datetime = meeting.end_datetime
+
+        try:
+            await self.mentorship_meeting_repository.update_schedule(
+                session=session,
+                meeting=meeting,
+                start_datetime=start_utc,
+                end_datetime=end_utc,
+            )
+            await session.commit()
+        except Exception as e:
+            self.logger.error(
+                "[MeetingService] DB write failed after Calendar patch, "
+                "meeting_id=%s now diverges from Calendar: old=%s/%s new=%s/%s: %s",
+                meeting_id,
+                old_start_datetime,
+                old_end_datetime,
+                start_utc,
+                end_utc,
+                e,
+                exc_info=True,
+            )
+            raise
 
         self.logger.info(
             "[MeetingService] Meeting %s rescheduled for round_id=%s, user_id=%s",

@@ -767,6 +767,14 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
             end_datetime=new_end,
         )
 
+        # Expire the identity-mapped object so the readback below reloads
+        # from the database instead of handing back the same Python object
+        # `update_schedule` just mutated -- otherwise the assertions on
+        # `meeting_id` / `created_datetime` / `meet_link` would only prove
+        # those attributes were untouched in memory, not that the SQL left
+        # those columns alone.
+        self.session.expire(meeting)
+
         rows = await repo.get_meetings_by_pair(self.session, pair.pair_id)
         self.assertEqual(len(rows), 1)
         moved = rows[0]

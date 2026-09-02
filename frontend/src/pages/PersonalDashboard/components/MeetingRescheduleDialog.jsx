@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import {
   Dialog,
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import TimezoneSelector from "@/components/common/TimezoneSelector";
-import { formatInTz } from "@/utils/dateTime";
+import { formatInTz, formatLocalYmd, todayInTz } from "@/utils/dateTime";
 import {
   DEFAULT_DURATION_MINUTES,
   DURATION_OPTIONS,
@@ -76,6 +76,14 @@ export default function MeetingRescheduleDialog({
     );
   };
 
+  const minDate = useMemo(() => {
+    try {
+      return formatLocalYmd(todayInTz(timezone));
+    } catch {
+      return undefined;
+    }
+  }, [timezone]);
+
   const canSubmit = date !== "" && startTime !== "";
 
   const handleSubmit = (e) => {
@@ -98,6 +106,7 @@ export default function MeetingRescheduleDialog({
                 id="reschedule-date"
                 type="date"
                 value={date}
+                min={minDate}
                 onChange={(e) => setDate(e.target.value)}
               />
             </div>
