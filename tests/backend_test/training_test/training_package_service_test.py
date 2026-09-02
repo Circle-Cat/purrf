@@ -194,6 +194,31 @@ class TestUploadPackage(_PackageServiceTestCase):
             sorted(course.storage_prefix + name for name in members),
         )
 
+    async def test_a_zip_written_with_dot_slash_entries_uploads(self):
+        """Legal, and some zip tools write every entry this way. Reading such an
+        entry back by its normalised name used to raise KeyError, which reached
+        the admin as "Internal Server Error" rather than as a rule."""
+        course = self._course(storage_prefix=None)
+        members = {
+            f"./{name}": data
+            for name, data in _members(
+                extra_members={"assets/cat.jpg": b"meow"}
+            ).items()
+        }
+
+        result = await self.service.upload_package(
+            self.session, _COURSE_ID, _zip(members), now=_NOW
+        )
+
+        self.assertEqual(result.entry_path, _ENTRY_PATH)
+        self.assertEqual(
+            sorted(self._put_keys()),
+            sorted(
+                course.storage_prefix + name
+                for name in ("assets/cat.jpg", "imsmanifest.xml", _ENTRY_PATH)
+            ),
+        )
+
     async def test_an_overwrite_mints_a_prefix_the_live_one_does_not_share(self):
         """Nothing is ever written in place."""
         course = self._course(storage_prefix=_LIVE_PREFIX)

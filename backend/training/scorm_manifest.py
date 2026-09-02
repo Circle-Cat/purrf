@@ -1,6 +1,7 @@
 """Reading imsmanifest.xml, and the completion configuration beside it."""
 
 import json
+import posixpath
 import re
 from dataclasses import dataclass, field
 
@@ -149,7 +150,9 @@ def parse_manifest(manifest_bytes: bytes) -> ManifestInfo:
 
     return ManifestInfo(
         scorm_version=scorm_version,
-        entry_path=entry_path.split("?", 1)[0],
+        # Normalised the same way archive entry names are, so an href written
+        # "./scormdriver/indexAPI.html" still matches the file it names.
+        entry_path=posixpath.normpath(entry_path.split("?", 1)[0]),
         declared_hrefs=declared_hrefs,
     )
 

@@ -88,7 +88,9 @@ class TrainingPackageService:
                 for name in contents.file_names:
                     self.training_storage.put(
                         posixpath.join(new_prefix, name),
-                        archive.read(name),
+                        # Served under the normalised name, read back under the
+                        # one the zip actually stores.
+                        archive.read(contents.archive_names[name]),
                         content_type_for(name),
                     )
         except zipfile.BadZipFile as error:

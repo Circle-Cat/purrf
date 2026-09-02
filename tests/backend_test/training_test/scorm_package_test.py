@@ -178,6 +178,16 @@ class TestReadPackageRejections(unittest.TestCase):
         with self.assertRaises(PackageRejected):
             read_package(_build_zip(entries))
 
+    def test_two_entries_naming_the_same_served_path_are_refused_by_name(self):
+        """Which of them a learner would be given is not ours to guess."""
+        entries = _valid_entries(**{"assets/cat.jpg": b"first"})
+        entries["./assets/cat.jpg"] = b"second"
+
+        with self.assertRaises(PackageRejected) as raised:
+            read_package(_build_zip(entries))
+
+        self.assertIn("assets/cat.jpg", str(raised.exception))
+
     def test_a_scorm_2004_package_is_refused_at_upload(self):
         """Nothing here runs 2004, so it is named and refused, never stored."""
         entries = _valid_entries()
@@ -198,6 +208,38 @@ class TestReadPackageAcceptance(unittest.TestCase):
         contents = read_package(_build_zip(entries))
 
         self.assertIn("assets/__chunk.js", contents.file_names)
+
+    def test_entries_written_with_a_leading_dot_slash_are_read_and_served(self):
+        """Legal, and some zip tools write every entry this way."""
+        entries = {
+            f"./{MANIFEST_NAME}": _manifest(),
+            f"./{_ENTRY_PATH}": _entry_page(),
+            "assets//cat.jpg": b"jpegbytes",
+        }
+
+        contents = read_package(_build_zip(entries))
+
+        self.assertEqual(
+            set(contents.file_names), {MANIFEST_NAME, _ENTRY_PATH, "assets/cat.jpg"}
+        )
+        self.assertEqual(contents.archive_names[MANIFEST_NAME], f"./{MANIFEST_NAME}")
+        self.assertEqual(contents.archive_names["assets/cat.jpg"], "assets//cat.jpg")
+        self.assertEqual(contents.manifest.entry_path, _ENTRY_PATH)
+        self.assertIsNotNone(contents.driver_config)
+
+    def test_every_served_name_can_be_read_back_out_of_the_archive(self):
+        """The mapping is only worth anything if archive.read accepts it."""
+        entries = {
+            f"./{MANIFEST_NAME}": _manifest(),
+            f"./{_ENTRY_PATH}": _entry_page(),
+            "assets//cat.jpg": b"jpegbytes",
+        }
+        archive = _build_zip(entries)
+
+        contents = read_package(archive)
+
+        for name in contents.file_names:
+            self.assertTrue(archive.read(contents.archive_names[name]))
 
     def test_a_well_formed_package_reports_its_contents(self):
         entries = _valid_entries(**{"assets/cat.jpg": b"jpegbytes"})

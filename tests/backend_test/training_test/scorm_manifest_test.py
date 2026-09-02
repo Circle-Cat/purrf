@@ -163,6 +163,19 @@ class TestParseManifest(unittest.TestCase):
 
         self.assertEqual(info.entry_path, "indexAPI.html")
 
+    def test_a_dot_slash_href_normalises_to_the_path_the_archive_uses(self):
+        """Archive names are normalised before the entry point is looked up."""
+        resources = """
+  <resources>
+    <resource identifier="res_1" type="webcontent" href="./scormdriver/indexAPI.html">
+      <file href="./scormdriver/indexAPI.html"/>
+    </resource>
+  </resources>"""
+
+        info = parse_manifest(_manifest(resources=resources))
+
+        self.assertEqual(info.entry_path, _ENTRY_PATH)
+
     def test_declared_hrefs_are_kept_as_the_manifest_wrote_them(self):
         """Decoding belongs to the comparison against the archive, not here.
 

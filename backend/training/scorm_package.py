@@ -51,6 +51,10 @@ class PackageContents:
     driver_config: DriverConfig | None
     # Entry names in archive order, already checked to be safe to write.
     file_names: list[str]
+    # Served name -> the name the entry actually has inside the zip. The two
+    # differ whenever an entry is written "./a/b.js" or "a//b.js", and reading
+    # such an entry back by its served name raises KeyError.
+    archive_names: dict[str, str]
     total_uncompressed_bytes: int
     # Files the manifest declares that are not in the archive. A warning, not a
     # rejection: the comparison is only as good as our href handling, and a
@@ -144,6 +148,31 @@ def _find_missing_declared_files(declared: list[str], present: set[str]) -> list
     return missing
 
 
+def _served_names(entries: list[zipfile.ZipInfo]) -> dict[str, str]:
+    """Map each entry's served path to the name it has inside the zip.
+
+    Zip entry names are stored as written, and "./a/b.js" and "a//b.js" are
+    both legal; we serve and store the normalised path, but every read back out
+    of the archive has to use the original name or it raises KeyError.
+
+    Raises:
+        PackageRejected: Two entries normalise to the same served path, so
+            which of them a learner would be given is undecidable.
+    """
+    mapping: dict[str, str] = {}
+    for entry in entries:
+        name = posixpath.normpath(entry.filename)
+        if name in mapping and mapping[name] != entry.filename:
+            raise PackageRejected(
+                f"Rejected: the entries {mapping[name]!r} and "
+                f"{entry.filename!r} both name the file {name!r}, so there is "
+                "no telling which one a learner would be served. Re-export the "
+                "package with one file per path."
+            )
+        mapping[name] = entry.filename
+    return mapping
+
+
 def read_package(archive: zipfile.ZipFile) -> PackageContents:
     """Validate an uploaded package and read what we need out of it.
 
@@ -168,15 +197,16 @@ def read_package(archive: zipfile.ZipFile) -> PackageContents:
     _reject_unsafe_paths(entries)
     total = _reject_oversized(entries)
 
-    names = [posixpath.normpath(entry.filename) for entry in entries]
-    if MANIFEST_NAME not in names:
+    archive_names = _served_names(entries)
+    names = list(archive_names)
+    if MANIFEST_NAME not in archive_names:
         raise PackageRejected(
             f"Rejected: there is no {MANIFEST_NAME} at the root of the "
             "archive, so this is not a SCORM package. Zip the contents of the "
             "published folder rather than the folder itself."
         )
 
-    manifest = parse_manifest(archive.read(MANIFEST_NAME))
+    manifest = parse_manifest(archive.read(archive_names[MANIFEST_NAME]))
 
     if manifest.scorm_version is ScormVersion.SCORM_2004:
         raise PackageRejected(
@@ -185,18 +215,21 @@ def read_package(archive: zipfile.ZipFile) -> PackageContents:
             "instead."
         )
 
-    if manifest.entry_path not in names:
+    if manifest.entry_path not in archive_names:
         raise PackageRejected(
             f"Rejected: the manifest names {manifest.entry_path!r} as the "
             "entry point, but there is no such file in the archive."
         )
 
-    driver_config = parse_driver_config(archive.read(manifest.entry_path))
+    driver_config = parse_driver_config(
+        archive.read(archive_names[manifest.entry_path])
+    )
 
     return PackageContents(
         manifest=manifest,
         driver_config=driver_config,
         file_names=names,
+        archive_names=archive_names,
         total_uncompressed_bytes=total,
         missing_declared_files=_find_missing_declared_files(
             manifest.declared_hrefs, set(names)
