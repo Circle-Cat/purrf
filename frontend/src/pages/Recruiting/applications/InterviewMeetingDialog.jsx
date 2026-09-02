@@ -22,6 +22,7 @@ import { formatInTz } from "@/utils/dateTime";
 import {
   DEFAULT_DURATION_MINUTES,
   DURATION_OPTIONS,
+  durationFromRange,
 } from "@/utils/meetingSlot";
 
 /**
@@ -87,13 +88,7 @@ const InterviewMeetingDialog = ({
       setStartTime(
         formatInTz(interview.startAt, viewerTimezone, "HH:mm") ?? "",
       );
-      setDurationMinutes(
-        Math.round(
-          (new Date(interview.endAt).getTime() -
-            new Date(interview.startAt).getTime()) /
-            60000,
-        ),
-      );
+      setDurationMinutes(durationFromRange(interview.startAt, interview.endAt));
       setTimezone(viewerTimezone);
     } else {
       setAssigneeId(defaultAssigneeId ?? undefined);

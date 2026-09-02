@@ -194,6 +194,23 @@ describe("InterviewMeetingDialog", () => {
     ).toHaveTextContent("Eve Evaluator");
   });
 
+  it("falls back to a selectable duration when the booked length is not offered", () => {
+    // A 25-minute interview is not one of the offered durations. Before
+    // durationFromRange was wired in, 25 went straight into the Select, which
+    // renders an empty trigger because no item matches.
+    renderDialog({
+      mode: "edit",
+      interview: {
+        ...INTERVIEW,
+        startAt: "2026-08-05T21:00:00Z",
+        endAt: "2026-08-05T21:25:00Z",
+      },
+    });
+    expect(
+      screen.getByRole("combobox", { name: "Duration" }),
+    ).toHaveTextContent("45 minutes");
+  });
+
   it("warns that attendees will be notified in edit mode", () => {
     renderDialog({ mode: "edit", interview: INTERVIEW });
     expect(screen.getByText(/attendees will be notified/i)).toBeInTheDocument();
