@@ -145,6 +145,17 @@ class TrainingContentService:
         )
 
         token, expires_at = issue_content_token(self.signing_key, training_id, user_id)
+        # One line per course opening, not per file: this is the only record
+        # tying a burst of content requests back to a person and a package.
+        self.logger.info(
+            "[TrainingContentService] user %s opened training %s (course %s, "
+            "prefix %s); token expires at %s",
+            user_id,
+            training_id,
+            course.course_id,
+            course.storage_prefix,
+            expires_at,
+        )
         return {
             "contentBaseUrl": f"https://{self.content_host}/p/{token}/",
             "entryPath": course.entry_path,
@@ -173,10 +184,27 @@ class TrainingContentService:
             FileNotFoundError: No such file, or the course has no package.
             PermissionError: The path escapes the package.
         """
-        claims = verify_content_token(self.signing_key, token)
+        try:
+            claims = verify_content_token(self.signing_key, token)
+        except InvalidContentToken as error:
+            # Info, not warning: a tab left open past the token's twelve hours
+            # produces one of these for every file the page still tries to
+            # load, and the fix is a refresh rather than an investigation. The
+            # token itself is not logged -- it is the credential.
+            self.logger.info(
+                "[TrainingContentService] refused a content token: %s", error
+            )
+            raise
 
         normalised = posixpath.normpath(asset_path.lstrip("/"))
         if normalised.startswith("..") or posixpath.isabs(normalised):
+            # Path is course-controlled, so %r: it is escaped, not pasted.
+            self.logger.warning(
+                "[TrainingContentService] training %s asked for %r, which "
+                "escapes the package",
+                claims.training_id,
+                asset_path,
+            )
             raise PermissionError("Asset path escapes the package.")
 
         # The reserved space is ours. Uploads refuse these names, so resolving
@@ -187,6 +215,12 @@ class TrainingContentService:
         if normalised.startswith(RESERVED_PREFIX):
             known = PLAYER_ASSETS.get(normalised)
             if known is None:
+                self.logger.warning(
+                    "[TrainingContentService] training %s asked for %r under "
+                    "the reserved prefix, which is not a player asset",
+                    claims.training_id,
+                    normalised,
+                )
                 raise FileNotFoundError(normalised)
             _, content_type = known
             return ContentAsset(
@@ -197,21 +231,49 @@ class TrainingContentService:
             session, claims.training_id
         )
         if assignment is None or assignment.course_id is None:
+            self.logger.warning(
+                "[TrainingContentService] token for training %s has no course "
+                "behind it; the assignment is %s",
+                claims.training_id,
+                "gone" if assignment is None else "not attached to a course",
+            )
             raise FileNotFoundError("No course behind this token.")
 
         course = await self.training_course_repository.get_course_by_id(
             session, assignment.course_id
         )
         if course is None or not course.storage_prefix:
+            self.logger.warning(
+                "[TrainingContentService] course %s behind training %s has no "
+                "package to serve",
+                assignment.course_id,
+                claims.training_id,
+            )
             raise FileNotFoundError("This course has no package.")
 
-        found = self.training_storage.get(
-            posixpath.join(course.storage_prefix, normalised)
-        )
+        object_key = posixpath.join(course.storage_prefix, normalised)
+        found = self.training_storage.get(object_key)
         if found is None:
+            # A course that lost its files 404s on every asset it references,
+            # which is what a stale prefix, a half-finished upload or a
+            # cleanup that deleted the wrong prefix all look like from here.
+            # Noisy on purpose: a healthy package produces none of these.
+            self.logger.warning(
+                "[TrainingContentService] training %s: no object at %r",
+                claims.training_id,
+                object_key,
+            )
             raise FileNotFoundError(normalised)
 
         data, content_type = found
+        # Debug: a single course load asks for hundreds of files.
+        self.logger.debug(
+            "[TrainingContentService] training %s: served %r (%s bytes, %s)",
+            claims.training_id,
+            object_key,
+            len(data),
+            content_type,
+        )
         return ContentAsset(data=data, content_type=content_type)
 
 

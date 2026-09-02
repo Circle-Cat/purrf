@@ -134,6 +134,30 @@ class TestTrainingContentController(unittest.IsolatedAsyncioTestCase):
 
         self.assert_refused_without_the_asset(outcome)
 
+    async def test_a_refusal_says_which_host_asked_and_which_one_is_expected(self):
+        await self.get_asset(APP_HOST)
+
+        template, *arguments = self.logger.warning.call_args.args
+        logged = template % tuple(arguments)
+        self.assertIn(APP_HOST, logged)
+        self.assertIn(CONTENT_HOST, logged)
+
+    async def test_a_host_header_cannot_forge_a_log_line(self):
+        """The Host header is whatever the client sent, newlines included."""
+        await self.get_asset("evil.test\r\nWARNING forged log line")
+
+        template, *arguments = self.logger.warning.call_args.args
+        logged = template % tuple(arguments)
+        self.assertNotIn("\n", logged)
+        self.assertNotIn("\r", logged)
+
+    async def test_an_overlong_host_header_is_not_logged_whole(self):
+        await self.get_asset("a" * 5000 + ".test")
+
+        template, *arguments = self.logger.warning.call_args.args
+        logged = template % tuple(arguments)
+        self.assertLess(len(logged), 400)
+
     async def test_an_expired_token_is_401_and_returns_no_bytes(self):
         """401 is what tells the app page to mint a fresh session token."""
         self.content_service.read_asset.side_effect = InvalidContentToken(

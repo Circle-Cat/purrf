@@ -114,8 +114,9 @@ class _ContentServiceCase(unittest.IsolatedAsyncioTestCase):
         self.storage = MagicMock()
         self.storage.get = MagicMock(return_value=(b"<html></html>", "text/html"))
 
+        self.logger = MagicMock()
         self.service = TrainingContentService(
-            logger=MagicMock(),
+            logger=self.logger,
             signing_key=_KEY,
             content_host=_CONTENT_HOST,
             training_repository=self.training_repository,
@@ -308,6 +309,87 @@ class TestReadAssetRejections(_ContentServiceCase):
             )
 
         self.assertNotIsInstance(caught.exception, (TypeError, AttributeError))
+
+
+class TestReadAssetLogging(_ContentServiceCase):
+    """This route serves every file of every course; a course that 404s on all
+    of them must leave a server-side trail, and a healthy one must not."""
+
+    def rendered(self, mock_method):
+        self.assertTrue(mock_method.called, msg="nothing was logged")
+        template, *arguments = mock_method.call_args.args
+        return template % tuple(arguments)
+
+    async def test_a_missing_object_names_the_key_it_looked_for(self):
+        self.storage.get.return_value = None
+
+        with self.assertRaises(FileNotFoundError):
+            await self.service.read_asset(
+                self.session, self.valid_token(), "scormcontent/gone.png"
+            )
+
+        logged = self.rendered(self.logger.warning)
+        self.assertIn(_OLD_PREFIX + "scormcontent/gone.png", logged)
+        self.assertIn(str(_TRAINING_ID), logged)
+
+    async def test_a_course_with_no_package_says_which_course(self):
+        self.course.storage_prefix = None
+
+        with self.assertRaises(FileNotFoundError):
+            await self.service.read_asset(
+                self.session, self.valid_token(), "scormcontent/index.html"
+            )
+
+        logged = self.rendered(self.logger.warning)
+        self.assertIn(str(_COURSE_ID), logged)
+
+    async def test_a_path_that_escapes_the_package_is_logged(self):
+        with self.assertRaises(PermissionError):
+            await self.service.read_asset(
+                self.session, self.valid_token(), "../../etc/passwd"
+            )
+
+        self.assertIn("../../etc/passwd", self.rendered(self.logger.warning))
+
+    async def test_a_course_controlled_path_cannot_forge_a_log_line(self):
+        with self.assertRaises(FileNotFoundError):
+            await self.service.read_asset(
+                self.session,
+                self.valid_token(),
+                "__reserved\nWARNING forged line",
+            )
+
+        self.assertNotIn("\n", self.rendered(self.logger.warning))
+
+    async def test_a_refused_token_is_logged_without_the_token_itself(self):
+        with self.assertRaises(InvalidContentToken):
+            await self.service.read_asset(
+                self.session, self.expired_token(), "scormcontent/index.html"
+            )
+
+        logged = self.rendered(self.logger.info)
+        self.assertNotIn(self.expired_token().split(".")[1], logged)
+
+    async def test_a_served_asset_is_not_an_info_line_per_file(self):
+        """Hundreds of files load per course; only debug may fire per file."""
+        await self.service.read_asset(
+            self.session, self.valid_token(), "scormcontent/index.html"
+        )
+
+        self.logger.info.assert_not_called()
+        self.logger.warning.assert_not_called()
+        self.assertIn("scormcontent/index.html", self.rendered(self.logger.debug))
+
+
+class TestOpenSessionLogging(_ContentServiceCase):
+    async def test_opening_a_course_logs_the_learner_and_the_package(self):
+        """One line per opening, which is what the per-file bursts hang off."""
+        await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+        template, *arguments = self.logger.info.call_args.args
+        logged = template % tuple(arguments)
+        self.assertIn(str(_USER_ID), logged)
+        self.assertIn(_OLD_PREFIX, logged)
 
 
 class TestReservedPlayerPath(_ContentServiceCase):

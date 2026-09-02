@@ -20,6 +20,10 @@ from backend.training.training_content_service import InvalidContentToken
 # mints new URLs. Private, because the response is one learner's course.
 _CACHE_CONTROL = "private, max-age=3600"
 
+# How much of a rejected Host header is worth keeping. It is whatever the
+# client sent, so it is truncated as well as escaped before it is logged.
+_LOGGED_HOST_LIMIT = 128
+
 
 class TrainingContentController:
     """Serves package files against a signed token, with no cookie involved."""
@@ -65,12 +69,18 @@ class TrainingContentController:
         should confirm.
         """
         if self._wrong_host(request):
+            # %r, not %s: the Host header is whatever the client sent, and a
+            # newline pasted into a log line forges a log line.
             self.logger.warning(
-                "[TrainingContentController] refused content request for host %s",
-                request.headers.get("host"),
+                "[TrainingContentController] refused a content request for "
+                "host %r (content host is %r)",
+                (request.headers.get("host") or "")[:_LOGGED_HOST_LIMIT],
+                self.content_host,
             )
             return Response(status_code=HTTPStatus.NOT_FOUND)
 
+        # Each of these is logged where it is decided, with the training id and
+        # the object key the bare status code cannot carry.
         try:
             async with self.database.session() as session:
                 asset = await self.training_content_service.read_asset(
