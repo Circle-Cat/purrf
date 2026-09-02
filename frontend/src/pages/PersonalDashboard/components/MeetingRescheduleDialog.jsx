@@ -53,8 +53,12 @@ export default function MeetingRescheduleDialog({
   useEffect(() => {
     if (!open) return;
     if (meeting?.startDatetime) {
-      setDate(formatInTz(meeting.startDatetime, userTimezone, "yyyy-MM-dd") ?? "");
-      setStartTime(formatInTz(meeting.startDatetime, userTimezone, "HH:mm") ?? "");
+      setDate(
+        formatInTz(meeting.startDatetime, userTimezone, "yyyy-MM-dd") ?? "",
+      );
+      setStartTime(
+        formatInTz(meeting.startDatetime, userTimezone, "HH:mm") ?? "",
+      );
       setDurationMinutes(
         durationFromRange(meeting.startDatetime, meeting.endDatetime),
       );
@@ -132,7 +136,10 @@ export default function MeetingRescheduleDialog({
             </div>
             <div className="min-w-0 space-y-1.5">
               <Label>Timezone</Label>
-              <TimezoneSelector value={timezone} onChange={handleTimezoneChange} />
+              <TimezoneSelector
+                value={timezone}
+                onChange={handleTimezoneChange}
+              />
             </div>
           </div>
 

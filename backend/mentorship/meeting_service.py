@@ -30,8 +30,7 @@ from backend.common.exceptions import MeetingGoneError
 # Mirrors the recruiting wording for the same situation: the row and the
 # Calendar event have diverged, and the way out is cancel-then-rebook.
 _MEETING_GONE_MESSAGE = (
-    "This meeting no longer exists on the calendar. Cancel it here and "
-    "book a new one."
+    "This meeting no longer exists on the calendar. Cancel it here and book a new one."
 )
 
 
@@ -616,7 +615,9 @@ class MeetingService:
         if meeting.is_completed:
             raise ValueError("A completed meeting cannot be rescheduled.")
         if meeting.start_datetime <= datetime.now(dt_timezone.utc):
-            raise ValueError("A meeting that has already started cannot be rescheduled.")
+            raise ValueError(
+                "A meeting that has already started cannot be rescheduled."
+            )
 
         start_utc, end_utc = self._expand_occurrences(
             timezone=timezone,
