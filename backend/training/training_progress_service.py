@@ -1,7 +1,11 @@
 """Turning one LMSCommit into a row."""
 
 import re
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+
+from backend.common.mentorship_enums import TrainingStatus
+from backend.training.completion import next_training_status
 
 # SCORM 1.2's CMITimespan needs at least two digits of hours. A single-digit
 # hour is already outside the format, and is treated the same as any other
@@ -182,5 +186,14 @@ class TrainingProgressService:
         row = await self.training_progress_repository.upsert(
             session, training_id, **columns
         )
+
+        moved = next_training_status(
+            assignment.status, cmi.get(_LESSON_STATUS)
+        )
+        if moved is not None:
+            assignment.status = moved
+            if moved is TrainingStatus.DONE and assignment.completed_timestamp is None:
+                assignment.completed_timestamp = datetime.now(timezone.utc)
+
         await session.commit()
         return row

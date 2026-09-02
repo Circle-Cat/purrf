@@ -1,6 +1,7 @@
 """What one LMSCommit is allowed to change."""
 
 import unittest
+from datetime import datetime, timezone
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
@@ -11,6 +12,7 @@ from backend.training.training_progress_service import TrainingProgressService
 
 _TRAINING_ID = 42
 _USER_ID = 11
+_EARLIER = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 _COMMIT = {
     "cmi.core.lesson_status": "incomplete",
@@ -299,10 +301,9 @@ class TestSave(_ProgressServiceCase):
 
         self.assertIsNone(self._saved_columns()["score_raw"])
 
-    async def test_it_does_not_touch_the_assignment_status(self):
-        """Mapping a course's status onto DONE is the next slice's business."""
+    async def test_a_completion_finishes_the_assignment_and_stamps_the_time(self):
         assignment = self.training_repository.get_training_by_id.return_value
-        before = assignment.status
+        assignment.status = TrainingStatus.IN_PROGRESS
 
         await self.service.save(
             self.session,
@@ -311,7 +312,38 @@ class TestSave(_ProgressServiceCase):
             {**_COMMIT, "cmi.core.lesson_status": "passed"},
         )
 
-        self.assertEqual(assignment.status, before)
+        self.assertEqual(assignment.status, TrainingStatus.DONE)
+        self.assertIsNotNone(assignment.completed_timestamp)
+
+    async def test_reopening_a_finished_course_does_not_undo_it(self):
+        """Mentor onboarding writes `incomplete` on its way to `completed`."""
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.DONE
+        assignment.completed_timestamp = _EARLIER
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "incomplete"},
+        )
+
+        self.assertEqual(assignment.status, TrainingStatus.DONE)
+        self.assertEqual(assignment.completed_timestamp, _EARLIER)
+
+    async def test_the_completion_time_is_the_first_one_not_the_latest(self):
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.DONE
+        assignment.completed_timestamp = _EARLIER
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+        )
+
+        self.assertEqual(assignment.completed_timestamp, _EARLIER)
 
     async def test_a_partial_body_leaves_absent_fields_alone(self):
         """Only the elements a course actually committed are written."""

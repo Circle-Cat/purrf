@@ -81,8 +81,20 @@ py_library(
 )
 
 py_library(
+    name = "completion",
+    srcs = ["completion.py"],
+    deps = [
+        "//backend/common:mentorship_enums",
+    ],
+)
+
+py_library(
     name = "training_progress_service",
     srcs = ["training_progress_service.py"],
+    deps = [
+        ":completion",
+        "//backend/common:mentorship_enums",
+    ],
 )
 
 py_library(

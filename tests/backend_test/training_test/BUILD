@@ -45,6 +45,15 @@ py_test(
 )
 
 py_test(
+    name = "completion_test",
+    srcs = ["completion_test.py"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/training:completion",
+    ],
+)
+
+py_test(
     name = "scorm_manifest_test",
     srcs = ["scorm_manifest_test.py"],
     deps = [
