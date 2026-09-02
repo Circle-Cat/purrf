@@ -73,6 +73,12 @@ py_test(
 )
 
 py_test(
+    name = "byte_range_test",
+    srcs = ["byte_range_test.py"],
+    deps = ["//backend/training:byte_range"],
+)
+
+py_test(
     name = "content_host_test",
     srcs = ["content_host_test.py"],
     deps = ["//backend/training:content_host"],
@@ -87,7 +93,10 @@ py_test(
 py_test(
     name = "training_storage_test",
     srcs = ["training_storage_test.py"],
-    deps = ["//backend/training:training_storage"],
+    deps = [
+        "//backend/training:training_storage",
+        "@pypi//google_api_core",
+    ],
 )
 
 py_test(
@@ -96,6 +105,7 @@ py_test(
     deps = [
         "//backend/common:mentorship_enums",
         "//backend/entity:entities",
+        "//backend/training:byte_range",
         "//backend/training:training_content_service",
         "//backend/training:training_content_token",
         "//backend/training:training_storage",
@@ -106,6 +116,7 @@ py_test(
     name = "training_content_controller_test",
     srcs = ["training_content_controller_test.py"],
     deps = [
+        "//backend/training:byte_range",
         "//backend/training:content_host",
         "//backend/training:training_content_controller",
         "//backend/training:training_content_service",

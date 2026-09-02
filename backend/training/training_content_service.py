@@ -4,6 +4,12 @@ import pathlib
 import posixpath
 from dataclasses import dataclass
 
+from backend.training.byte_range import (
+    RangeSpec,
+    ResolvedRange,
+    UnsatisfiableRange,
+    resolve_range,
+)
 from backend.training.scorm_package import RESERVED_PREFIX
 from backend.training.training_content_token import (
     InvalidContentToken,
@@ -62,10 +68,36 @@ def _progress_payload(progress) -> dict:
 
 @dataclass(frozen=True)
 class ContentAsset:
-    """One file on its way back to the browser."""
+    """One file, or one stretch of one, on its way back to the browser."""
 
     data: bytes
     content_type: str
+    # Set only when `data` is part of the file rather than all of it, which is
+    # what tells the route to answer 206 instead of 200.
+    partial: ResolvedRange | None = None
+
+
+def _slice_in_memory(
+    data: bytes, content_type: str, byte_range: RangeSpec | None
+) -> ContentAsset:
+    """Cut a file already held in memory down to the range asked for.
+
+    Only the player's own files reach this: a few kilobytes each, read once at
+    import, so slicing them costs nothing worth avoiding.
+
+    Raises:
+        UnsatisfiableRange: The range names no byte of the file.
+    """
+    if byte_range is None:
+        return ContentAsset(data=data, content_type=content_type)
+    resolved = resolve_range(byte_range, len(data))
+    if resolved is None:
+        raise UnsatisfiableRange(len(data))
+    return ContentAsset(
+        data=data[resolved.start : resolved.end + 1],
+        content_type=content_type,
+        partial=resolved,
+    )
 
 
 class TrainingContentService:
@@ -185,25 +217,39 @@ class TrainingContentService:
         )
         raise ValueError("Training content is not available.")
 
-    async def read_asset(self, session, token: str, asset_path: str) -> ContentAsset:
+    async def read_asset(
+        self,
+        session,
+        token: str,
+        asset_path: str,
+        byte_range: RangeSpec | None = None,
+    ) -> ContentAsset:
         """Resolve one file requested from the content origin.
 
         The prefix is looked up here, per request, never carried in the token:
         a token outlives an upload, and one holding a stale prefix would start
         404ing the moment the cleanup ran.
 
+        A range changes only how much of the file comes back. Every check
+        below runs first and unchanged: a range is not a way past the token,
+        the package boundary or the reserved names.
+
         Args:
             session: The active async database session.
             token (str): The token from the URL path.
             asset_path (str): The rest of the path, relative to the package.
+            byte_range (RangeSpec | None): The range the browser asked for, or
+                None for the whole file.
 
         Returns:
-            ContentAsset: Bytes and Content-Type.
+            ContentAsset: Bytes and Content-Type, and the resolved range when
+            only part of the file is coming back.
 
         Raises:
             InvalidContentToken: Bad or expired token.
             FileNotFoundError: No such file, or the course has no package.
             PermissionError: The path escapes the package.
+            UnsatisfiableRange: The range names no byte of the file.
         """
         self._require_configuration()
 
@@ -246,8 +292,8 @@ class TrainingContentService:
                 )
                 raise FileNotFoundError(normalised)
             _, content_type = known
-            return ContentAsset(
-                data=_PLAYER_ASSET_BYTES[normalised], content_type=content_type
+            return _slice_in_memory(
+                _PLAYER_ASSET_BYTES[normalised], content_type, byte_range
             )
 
         assignment = await self.training_repository.get_training_by_id(
@@ -275,18 +321,12 @@ class TrainingContentService:
             raise FileNotFoundError("This course has no package.")
 
         object_key = posixpath.join(course.storage_prefix, normalised)
+        if byte_range is not None:
+            return self._read_range(claims.training_id, object_key, byte_range)
+
         found = self.training_storage.get(object_key)
         if found is None:
-            # A course that lost its files 404s on every asset it references,
-            # which is what a stale prefix, a half-finished upload or a
-            # cleanup that deleted the wrong prefix all look like from here.
-            # Noisy on purpose: a healthy package produces none of these.
-            self.logger.warning(
-                "[TrainingContentService] training %s: no object at %r",
-                claims.training_id,
-                object_key,
-            )
-            raise FileNotFoundError(normalised)
+            self._no_object(claims.training_id, object_key)
 
         data, content_type = found
         # Debug: a single course load asks for hundreds of files.
@@ -299,6 +339,64 @@ class TrainingContentService:
         )
         return ContentAsset(data=data, content_type=content_type)
 
+    def _read_range(
+        self, training_id: int, object_key: str, byte_range: RangeSpec
+    ) -> ContentAsset:
+        """Fetch only the bytes asked for, never the whole object.
+
+        Two calls to storage rather than one, because neither ``bytes=-500``
+        nor ``bytes=100-`` means anything until the size comes back. That is
+        still far cheaper than pulling a 3 MB video through this process for
+        every seek a learner makes.
+
+        Raises:
+            FileNotFoundError: No such object.
+            UnsatisfiableRange: The range names no byte of it.
+        """
+        described = self.training_storage.stat(object_key)
+        if described is None:
+            self._no_object(training_id, object_key)
+        total_size, content_type = described
+
+        resolved = resolve_range(byte_range, total_size)
+        if resolved is None:
+            raise UnsatisfiableRange(total_size)
+
+        data = self.training_storage.get_range(object_key, resolved.start, resolved.end)
+        if data is None:
+            # Gone between the two calls, which is what an upload replacing the
+            # package underneath an open course looks like from here.
+            self._no_object(training_id, object_key)
+
+        self.logger.debug(
+            "[TrainingContentService] training %s: served %r bytes %s-%s of %s (%s)",
+            training_id,
+            object_key,
+            resolved.start,
+            resolved.end,
+            total_size,
+            content_type,
+        )
+        return ContentAsset(data=data, content_type=content_type, partial=resolved)
+
+    def _no_object(self, training_id: int, object_key: str):
+        """Report a missing object and refuse.
+
+        A course that lost its files 404s on every asset it references, which
+        is what a stale prefix, a half-finished upload and a cleanup that
+        deleted the wrong prefix all look like from here. Noisy on purpose: a
+        healthy package produces none of these.
+
+        Raises:
+            FileNotFoundError: Always.
+        """
+        self.logger.warning(
+            "[TrainingContentService] training %s: no object at %r",
+            training_id,
+            object_key,
+        )
+        raise FileNotFoundError(object_key)
+
 
 __all__ = [
     "ContentAsset",
@@ -306,4 +404,5 @@ __all__ = [
     "PLAYER_ASSETS",
     "PLAYER_PATH",
     "TrainingContentService",
+    "UnsatisfiableRange",
 ]

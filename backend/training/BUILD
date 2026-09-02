@@ -43,6 +43,11 @@ py_library(
 )
 
 py_library(
+    name = "byte_range",
+    srcs = ["byte_range.py"],
+)
+
+py_library(
     name = "content_host",
     srcs = ["content_host.py"],
 )
@@ -78,6 +83,7 @@ py_library(
     srcs = ["training_content_service.py"],
     data = ["//backend/training/player:player_files"],
     deps = [
+        ":byte_range",
         ":scorm_package",
         ":training_content_token",
         ":training_storage",
@@ -107,6 +113,7 @@ py_library(
     name = "training_content_controller",
     srcs = ["training_content_controller.py"],
     deps = [
+        ":byte_range",
         ":training_content_service",
         "//backend/common:api_endpoints",
         "@pypi//fastapi",

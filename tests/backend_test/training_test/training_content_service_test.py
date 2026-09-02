@@ -10,6 +10,7 @@ from backend.common.mentorship_enums import TrainingStatus
 from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.training_entity import TrainingEntity
 from backend.entity.training_progress_entity import TrainingProgressEntity
+from backend.training.byte_range import RangeSpec, UnsatisfiableRange
 from backend.training.training_content_service import (
     PLAYER_PATH,
     TrainingContentService,
@@ -30,6 +31,10 @@ _OTHER_USER_ID = 999
 _COURSE_ID = 9
 _OLD_PREFIX = "training/9/old-package/"
 _NEW_PREFIX = "training/9/new-package/"
+
+# Stands in for the 3.7 MB MP4 the real mentee package ships.
+_VIDEO_PATH = "scormcontent/assets/Mentee_Onboarding_Program_.mp4"
+_VIDEO = bytes(range(256)) * 4
 
 # Spec 5.1 names the session response fields.
 _CONTENT_BASE_URL_KEY = "contentBaseUrl"
@@ -113,6 +118,10 @@ class _ContentServiceCase(unittest.IsolatedAsyncioTestCase):
 
         self.storage = MagicMock()
         self.storage.get = MagicMock(return_value=(b"<html></html>", "text/html"))
+        self.storage.stat = MagicMock(return_value=(len(_VIDEO), "video/mp4"))
+        self.storage.get_range = MagicMock(
+            side_effect=lambda key, start, end: _VIDEO[start : end + 1]
+        )
 
         self.logger = MagicMock()
         self.service = TrainingContentService(
@@ -518,6 +527,146 @@ class TestReadAssetResult(_ContentServiceCase):
             self.fetched_keys(),
             [_OLD_PREFIX + "scormcontent/assets/abc/html5/data/js/data.js"],
         )
+
+
+class TestReadAssetRanges(_ContentServiceCase):
+    """A range must cost only the bytes it names, not the whole file."""
+
+    async def test_the_whole_object_is_never_fetched_for_a_range(self):
+        """The point of the exercise: a seek into a 3.7 MB video must not pull
+        3.7 MB through this process."""
+        asset = await self.service.read_asset(
+            self.session, self.valid_token(), _VIDEO_PATH, RangeSpec(100, 199)
+        )
+
+        self.storage.get.assert_not_called()
+        self.storage.get_range.assert_called_once_with(
+            _OLD_PREFIX + _VIDEO_PATH, 100, 199
+        )
+        self.assertEqual(asset.data, _VIDEO[100:200])
+
+    async def test_a_range_reports_where_it_sits_in_the_whole_file(self):
+        asset = await self.service.read_asset(
+            self.session, self.valid_token(), _VIDEO_PATH, RangeSpec(100, 199)
+        )
+
+        self.assertEqual(asset.partial.start, 100)
+        self.assertEqual(asset.partial.end, 199)
+        self.assertEqual(asset.partial.total, len(_VIDEO))
+        self.assertEqual(asset.content_type, "video/mp4")
+
+    async def test_no_range_still_fetches_the_object_in_one_call(self):
+        asset = await self.service.read_asset(
+            self.session, self.valid_token(), _VIDEO_PATH
+        )
+
+        self.storage.get.assert_called_once()
+        self.storage.get_range.assert_not_called()
+        self.assertIsNone(asset.partial)
+
+    async def test_an_open_ended_range_asks_for_the_rest_of_the_file(self):
+        await self.service.read_asset(
+            self.session, self.valid_token(), _VIDEO_PATH, RangeSpec(first=1000)
+        )
+
+        self.storage.get_range.assert_called_once_with(
+            _OLD_PREFIX + _VIDEO_PATH, 1000, len(_VIDEO) - 1
+        )
+
+    async def test_a_suffix_range_asks_for_the_tail(self):
+        await self.service.read_asset(
+            self.session, self.valid_token(), _VIDEO_PATH, RangeSpec(suffix_length=16)
+        )
+
+        self.storage.get_range.assert_called_once_with(
+            _OLD_PREFIX + _VIDEO_PATH, len(_VIDEO) - 16, len(_VIDEO) - 1
+        )
+
+    async def test_an_end_past_the_file_is_clamped_before_storage_sees_it(self):
+        await self.service.read_asset(
+            self.session, self.valid_token(), _VIDEO_PATH, RangeSpec(0, 10_000_000)
+        )
+
+        self.storage.get_range.assert_called_once_with(
+            _OLD_PREFIX + _VIDEO_PATH, 0, len(_VIDEO) - 1
+        )
+
+    async def test_a_start_past_the_file_reads_nothing_at_all(self):
+        with self.assertRaises(UnsatisfiableRange) as caught:
+            await self.service.read_asset(
+                self.session,
+                self.valid_token(),
+                _VIDEO_PATH,
+                RangeSpec(first=len(_VIDEO)),
+            )
+
+        self.assertEqual(caught.exception.total_size, len(_VIDEO))
+        self.storage.get_range.assert_not_called()
+        self.storage.get.assert_not_called()
+
+    async def test_a_missing_object_is_not_found_rather_than_a_range_error(self):
+        self.storage.stat.return_value = None
+
+        with self.assertRaises(FileNotFoundError):
+            await self.service.read_asset(
+                self.session, self.valid_token(), _VIDEO_PATH, RangeSpec(0, 10)
+            )
+
+    async def test_an_object_deleted_mid_request_is_not_found(self):
+        """An upload replacing the package between the two storage calls."""
+        self.storage.get_range.side_effect = None
+        self.storage.get_range.return_value = None
+
+        with self.assertRaises(FileNotFoundError):
+            await self.service.read_asset(
+                self.session, self.valid_token(), _VIDEO_PATH, RangeSpec(0, 10)
+            )
+
+    async def test_a_range_over_a_player_file_is_served_from_memory(self):
+        whole = await self.service.read_asset(
+            self.session, self.valid_token(), PLAYER_PATH
+        )
+
+        part = await self.service.read_asset(
+            self.session, self.valid_token(), PLAYER_PATH, RangeSpec(0, 9)
+        )
+
+        self.assertEqual(part.data, whole.data[:10])
+        self.assertEqual(part.partial.total, len(whole.data))
+        self.storage.get.assert_not_called()
+        self.storage.get_range.assert_not_called()
+
+    async def test_an_unsatisfiable_range_over_a_player_file_is_refused(self):
+        whole = await self.service.read_asset(
+            self.session, self.valid_token(), PLAYER_PATH
+        )
+
+        with self.assertRaises(UnsatisfiableRange) as caught:
+            await self.service.read_asset(
+                self.session,
+                self.valid_token(),
+                PLAYER_PATH,
+                RangeSpec(first=len(whole.data)),
+            )
+
+        self.assertEqual(caught.exception.total_size, len(whole.data))
+
+    async def test_a_range_does_not_get_past_the_package_boundary(self):
+        with self.assertRaises(PermissionError):
+            await self.service.read_asset(
+                self.session, self.valid_token(), "../secrets", RangeSpec(0, 10)
+            )
+
+        self.storage.get_range.assert_not_called()
+        self.storage.stat.assert_not_called()
+
+    async def test_a_range_does_not_get_past_an_expired_token(self):
+        with self.assertRaises(InvalidContentToken):
+            await self.service.read_asset(
+                self.session, self.expired_token(), _VIDEO_PATH, RangeSpec(0, 10)
+            )
+
+        self.storage.stat.assert_not_called()
 
 
 if __name__ == "__main__":
