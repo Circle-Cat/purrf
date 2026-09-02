@@ -106,6 +106,11 @@ describe("TrainingCourse", () => {
       }),
     );
 
+    // Waited in two stages rather than one. The banner is three awaits away
+    // from the dispatch -- the rejected save, the state update, the render --
+    // and under the full suite's parallel load that overran a single default
+    // budget. Each stage also says which of the three did not happen.
+    await waitFor(() => expect(saveProgress).toHaveBeenCalled());
     expect(await screen.findByText(/could not be saved/i)).toBeInTheDocument();
   });
 
