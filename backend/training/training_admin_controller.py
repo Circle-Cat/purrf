@@ -225,12 +225,21 @@ class TrainingAdminController:
 
         ``cmi`` is course-controlled; a shape other than an object must come
         back as a 4xx, not a TypeError from deeper in the stack.
+
+        ``final`` marks the page's parting save as the tab closes. Only the
+        page knows which save is the last one, and that save exists to bank
+        elapsed time -- the one thing the service's unchanged-content check
+        ignores -- so it has to say so or the write is skipped.
         """
         cmi = payload.get("cmi", {})
         if not isinstance(cmi, dict):
             raise ValueError("cmi must be an object.")
         async with self.database.session() as session:
             await self.training_progress_service.save(
-                session, training_id, current_user.user_id, cmi
+                session,
+                training_id,
+                current_user.user_id,
+                cmi,
+                final=bool(payload.get("final")),
             )
         return api_response(message="Progress saved.")

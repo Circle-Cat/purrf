@@ -29,8 +29,9 @@ _SCORE_LIMIT = Decimal("999999.99")
 # idle tab would otherwise rewrite the same row -- and the same tens of
 # kilobytes of suspend_data -- forever. session_time_seconds is deliberately
 # not compared: it is wall clock since the course loaded, so it grows on every
-# commit and would make this never fire. An idle learner's time therefore
-# lags until they do something or the tab closes, which is the trade.
+# commit and would make this never fire. An idle learner's time therefore lags
+# until they do something, or until the page marks a save final -- which it
+# does on unload, and which is written whether the content changed or not.
 _CONTENT_COLUMNS = (
     "lesson_status",
     "lesson_location",
@@ -116,7 +117,9 @@ class TrainingProgressService:
         self.training_progress_repository = training_progress_repository
         self.training_course_repository = training_course_repository
 
-    async def save(self, session, training_id: int, user_id: int, cmi: dict):
+    async def save(
+        self, session, training_id: int, user_id: int, cmi: dict, final: bool = False
+    ):
         """Apply one commit to the caller's own assignment.
 
         Only the CMI elements actually present in ``cmi`` are written. A
@@ -129,6 +132,10 @@ class TrainingProgressService:
             training_id (int): The assignment being learned.
             user_id (int): Who is learning it.
             cmi (dict): Flattened CMI from the course.
+            final (bool): The page's last save of this session. Written even
+                when the content matches what is stored, because the only
+                thing such a save carries is the elapsed time the content
+                comparison ignores.
 
         Returns:
             TrainingProgressEntity: The stored row.
@@ -246,7 +253,9 @@ class TrainingProgressService:
         moved = next_training_status(assignment.status, cmi.get(_LESSON_STATUS))
 
         unchanged = (
-            _content_unchanged(existing, columns) and not accumulates_session_time
+            _content_unchanged(existing, columns)
+            and not accumulates_session_time
+            and not final
         )
         if unchanged and moved is None:
             # Nothing to store and nothing to decide -- skip the write

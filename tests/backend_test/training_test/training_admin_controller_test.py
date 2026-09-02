@@ -197,8 +197,23 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         )
 
         self.progress_service.save.assert_awaited_once_with(
-            self.session, 42, 11, {"cmi.core.lesson_location": "Summary"}
+            self.session, 42, 11, {"cmi.core.lesson_location": "Summary"}, final=False
         )
+
+    async def test_the_pages_parting_save_is_passed_through_as_final(self):
+        """Only the page knows which save is the last one, and that save
+        exists to bank elapsed time -- which the service's unchanged-content
+        check ignores, so it is skipped unless it says so."""
+        self.progress_service.save = AsyncMock()
+        current_user = MagicMock(user_id=11)
+
+        await self.controller.save_progress(
+            42,
+            {"cmi": {"cmi.core.lesson_location": "Summary"}, "final": True},
+            current_user,
+        )
+
+        self.assertIs(self.progress_service.save.await_args.kwargs["final"], True)
 
     async def test_a_non_object_cmi_is_a_client_error_not_a_500(self):
         """A course controls this payload; {"cmi": 5} must not reach

@@ -29,9 +29,9 @@ export default function useTrainingRuntime(trainingId, user) {
   const [saveFailed, setSaveFailed] = useState(false);
   const [writes, setWrites] = useState([]);
   const frameRef = useRef(null);
-  // The last cmi a commit or finish carried, and whether it has been flushed
-  // by the unload safety net below. The tab can close before the ordinary
-  // save even resolves, so unload resends the same cmi unconditionally.
+  // The last cmi a commit or finish carried, and whether the unload safety net
+  // below still owes a save for it. The tab can close before the ordinary save
+  // even resolves, so unload resends the same cmi unconditionally.
   const lastCmiRef = useRef(null);
   const unsavedRef = useRef(false);
   // One save per assignment on the wire at a time. A course reports
@@ -141,7 +141,14 @@ export default function useTrainingRuntime(trainingId, user) {
     };
 
     // An XHR in flight when the tab closes is dropped; fetch with keepalive
-    // survives it, so this one save goes around axios.
+    // survives it, so this one save goes around axios. It resends the cmi the
+    // last commit already carried, which is byte-identical to what the server
+    // stored -- `final` is what makes the server write it anyway, and writing
+    // it is the whole point: the elapsed time it carries is exactly what the
+    // server's unchanged-content check leaves out. It is not queued behind
+    // the chain above, because an unload handler has to issue its request
+    // before it returns; the server's row lock orders it against whatever is
+    // still in flight.
     const onBeforeUnload = () => {
       if (!unsavedRef.current) return;
       unsavedRef.current = false;
@@ -152,9 +159,18 @@ export default function useTrainingRuntime(trainingId, user) {
           credentials: "include",
           keepalive: true,
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cmi: lastCmiRef.current }),
+          body: JSON.stringify({ cmi: lastCmiRef.current, final: true }),
         },
-      );
+      ).catch((error) => {
+        // Usually nothing is left to notice this. A cancelled navigation
+        // leaves the page alive though, so put the debt back and let the
+        // next unload try again rather than dropping it in silence.
+        unsavedRef.current = true;
+        console.error(
+          `[useTrainingRuntime] final save for training ${trainingId} failed`,
+          error,
+        );
+      });
     };
 
     window.addEventListener("message", onMessage);

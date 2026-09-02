@@ -272,8 +272,12 @@ describe("TrainingCourse", () => {
       credentials: "include",
       keepalive: true,
     });
+    // final: the server skips a save whose content matches what it stored,
+    // and this one always does -- the elapsed time it banks is the one thing
+    // that comparison leaves out.
     expect(JSON.parse(options.body)).toEqual({
       cmi: { "cmi.suspend_data": "blob" },
+      final: true,
     });
     // Unload does not also re-trigger the axios save.
     expect(saveProgress).toHaveBeenCalledTimes(1);

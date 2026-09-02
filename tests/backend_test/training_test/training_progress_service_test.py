@@ -680,6 +680,67 @@ class TestConcurrentSaves(_ProgressServiceCase):
         self.assertEqual(assignment.completed_timestamp, _EARLIER)
 
 
+class TestFinalSave(_ProgressServiceCase):
+    """The page's parting save as the tab closes."""
+
+    def _row_matching(self, **overrides):
+        return TrainingProgressEntity(
+            training_id=_TRAINING_ID,
+            lesson_status="incomplete",
+            lesson_location="Summary",
+            suspend_data="x" * 5000,
+            session_time_seconds=500,
+            **overrides,
+        )
+
+    async def test_a_final_save_is_written_even_though_the_content_matches(self):
+        """It resends the cmi the last commit already stored, so the content
+        always matches -- and the elapsed time it exists to bank is the one
+        thing the content comparison leaves out. Skipped, it does nothing."""
+        self.progress_repository.get_by_training_id.return_value = self._row_matching()
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "01:00:00"},
+            final=True,
+        )
+
+        self.assertEqual(self._saved_columns()["session_time_seconds"], 3600)
+
+    async def test_an_ordinary_save_of_the_same_commit_is_still_skipped(self):
+        """The 20-second rewrite of a parked tab has to stay gone."""
+        self.progress_repository.get_by_training_id.return_value = self._row_matching()
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "01:00:00"},
+        )
+
+        self.progress_repository.upsert.assert_not_awaited()
+
+    async def test_a_final_save_does_not_move_a_finished_assignment(self):
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.DONE
+        assignment.completed_timestamp = _EARLIER
+        self.progress_repository.get_by_training_id.return_value = self._row_matching()
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "01:00:00"},
+            final=True,
+        )
+
+        self.assertEqual(assignment.status, TrainingStatus.DONE)
+        self.assertEqual(assignment.completed_timestamp, _EARLIER)
+        self.progress_repository.upsert.assert_awaited()
+
+
 class TestSaveRefusals(_ProgressServiceCase):
     async def test_saving_onto_somebody_elses_assignment_is_refused(self):
         self.training_repository.get_training_by_id.return_value.user_id = 999

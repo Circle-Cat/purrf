@@ -115,3 +115,88 @@ describe("useTrainingRuntime saves", () => {
     expect(api.saveProgress).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("useTrainingRuntime unload save", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    api.saveProgress.mockResolvedValue({});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const unload = () => {
+    act(() => {
+      window.dispatchEvent(new Event("beforeunload"));
+    });
+  };
+
+  it("marks the parting save final so the server writes it", async () => {
+    // It resends the cmi the last commit already stored, so the content
+    // matches and the server would otherwise skip it -- and the elapsed time
+    // it exists to bank is exactly what the content comparison ignores.
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    await renderRuntime();
+    await act(async () => {
+      window.dispatchEvent(commit(cmiWith("incomplete")));
+    });
+
+    unload();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://api.test/training/7/progress");
+    expect(init.keepalive).toBe(true);
+    expect(JSON.parse(init.body)).toEqual({
+      cmi: cmiWith("incomplete"),
+      final: true,
+    });
+  });
+
+  it("sends nothing when no commit is owed", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    await renderRuntime();
+
+    unload();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("says so when the parting save does not go out", async () => {
+    const fetchMock = vi.fn(() => Promise.reject(new Error("offline")));
+    vi.stubGlobal("fetch", fetchMock);
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    await renderRuntime();
+    await act(async () => {
+      window.dispatchEvent(commit(cmiWith("incomplete")));
+    });
+
+    unload();
+
+    await waitFor(() => expect(consoleError).toHaveBeenCalled());
+  });
+
+  it("still owes the save after a failed one, so a cancelled close retries", async () => {
+    const fetchMock = vi.fn(() => Promise.reject(new Error("offline")));
+    vi.stubGlobal("fetch", fetchMock);
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    await renderRuntime();
+    await act(async () => {
+      window.dispatchEvent(commit(cmiWith("incomplete")));
+    });
+    unload();
+    await waitFor(() => expect(consoleError).toHaveBeenCalled());
+
+    unload();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
