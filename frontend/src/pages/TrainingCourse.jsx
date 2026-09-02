@@ -20,6 +20,13 @@ export default function TrainingCourse() {
   const [loadError, setLoadError] = useState(null);
   const [saveFailed, setSaveFailed] = useState(false);
   const frameRef = useRef(null);
+  // The last cmi a commit or finish carried, and whether it has been flushed
+  // by the unload safety net below. Independent of the regular save the
+  // message handler already fires -- the tab can close before we ever learn
+  // whether that save landed, so unload resends the same cmi unconditionally
+  // once something has arrived.
+  const lastCmiRef = useRef(null);
+  const unsavedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,6 +90,8 @@ export default function TrainingCourse() {
         event.data.type === MESSAGE_TYPES.COMMIT ||
         event.data.type === MESSAGE_TYPES.FINISH
       ) {
+        lastCmiRef.current = event.data.cmi;
+        unsavedRef.current = true;
         try {
           await saveProgress(trainingId, { cmi: event.data.cmi });
           setSaveFailed(false);
@@ -96,8 +105,25 @@ export default function TrainingCourse() {
       }
     };
 
+    // Courses very often never call LMSFinish -- the learner just closes the
+    // tab -- so whatever the last commit carried needs a save that does not
+    // depend on the page staying alive to receive a response. The driver
+    // already re-commits on its own every 20 seconds (FORCED_COMMIT_TIME), so
+    // a periodic timer here would only re-send what that heartbeat just sent;
+    // the spec's 60-second fallback predates measuring that heartbeat. Only
+    // the unload half is implemented.
+    const onBeforeUnload = () => {
+      if (!unsavedRef.current) return;
+      unsavedRef.current = false;
+      saveProgress(trainingId, { cmi: lastCmiRef.current });
+    };
+
     window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      window.removeEventListener("message", onMessage);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
   }, [session, trainingId, user, post]);
 
   if (loadError) {

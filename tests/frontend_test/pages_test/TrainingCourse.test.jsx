@@ -28,6 +28,14 @@ const renderCourse = () =>
     </MemoryRouter>,
   );
 
+const postCommit = (cmi) =>
+  window.dispatchEvent(
+    new MessageEvent("message", {
+      origin: "https://test-training-content.purrf.io",
+      data: { type: MESSAGE_TYPES.COMMIT, cmi },
+    }),
+  );
+
 const SESSION = {
   data: {
     contentBaseUrl: "https://test-training-content.purrf.io/p/tok/",
@@ -231,5 +239,44 @@ describe("TrainingCourse", () => {
     await waitFor(() => expect(postMessage).toHaveBeenCalled());
     const [message] = postMessage.mock.calls.at(-1);
     expect(message.progress).toEqual({});
+  });
+
+  it("saves what it last received when the tab goes away", async () => {
+    renderCourse();
+    await screen.findByTitle(/course/i);
+    postCommit({ "cmi.suspend_data": "blob" });
+    // A generous timeout on this first stage, not the assertion, is what
+    // needs raising: under the full suite's parallel load the default 1000ms
+    // budget can elapse before the mocked save even resolves once.
+    await waitFor(() => expect(saveProgress).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    });
+
+    window.dispatchEvent(new Event("beforeunload"));
+
+    await waitFor(() => expect(saveProgress).toHaveBeenCalledTimes(2));
+  });
+
+  it("does not save on unload when nothing new arrived", async () => {
+    renderCourse();
+    await screen.findByTitle(/course/i);
+
+    window.dispatchEvent(new Event("beforeunload"));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(saveProgress).not.toHaveBeenCalled();
+  });
+
+  it("stops listening for unload when it goes away", async () => {
+    const { unmount } = renderCourse();
+    await screen.findByTitle(/course/i);
+    postCommit({ "cmi.suspend_data": "blob" });
+    await waitFor(() => expect(saveProgress).toHaveBeenCalledTimes(1));
+    unmount();
+
+    window.dispatchEvent(new Event("beforeunload"));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(saveProgress).toHaveBeenCalledTimes(1);
   });
 });
