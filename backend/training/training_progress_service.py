@@ -1,7 +1,11 @@
 """Turning one LMSCommit into a row."""
 
 import re
+from decimal import Decimal, InvalidOperation
 
+# SCORM 1.2's CMITimespan needs at least two digits of hours. A single-digit
+# hour is already outside the format, and is treated the same as any other
+# unparseable value rather than guessed at.
 _TIMESPAN = re.compile(r"^(\d{2,4}):([0-5]\d):([0-5]\d)(\.\d{1,2})?$")
 
 _LESSON_STATUS = "cmi.core.lesson_status"
@@ -9,19 +13,37 @@ _LESSON_LOCATION = "cmi.core.lesson_location"
 _SUSPEND_DATA = "cmi.suspend_data"
 _SESSION_TIME = "cmi.core.session_time"
 _TOTAL_TIME = "cmi.core.total_time"
+_SCORE_COLUMNS = {
+    "cmi.core.score.raw": "score_raw",
+    "cmi.core.score.min": "score_min",
+    "cmi.core.score.max": "score_max",
+}
 
 
-def _timespan_seconds(value: str) -> int:
-    """Seconds in a SCORM 1.2 CMITimespan, or 0 if it is not one.
+def _timespan_seconds(value: str) -> int | None:
+    """Seconds in a SCORM 1.2 CMITimespan, or None if it is not one.
 
     A course that reports its session time in a shape we cannot read must not
-    cost the learner the rest of the commit.
+    cost the learner the rest of the commit -- and for a value that replaces
+    rather than accumulates, None has to stay distinguishable from an actual
+    zero so the caller can leave the stored value alone.
     """
     match = _TIMESPAN.match((value or "").strip())
     if not match:
-        return 0
+        return None
     hours, minutes, seconds = (int(match.group(i)) for i in (1, 2, 3))
     return hours * 3600 + minutes * 60 + seconds
+
+
+def _score_decimal(value) -> Decimal | None:
+    """A CMI score string as a Decimal, or None if it does not parse.
+
+    An unparseable score must not cost the learner the rest of the commit.
+    """
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
 
 
 class TrainingProgressService:
@@ -81,7 +103,11 @@ class TrainingProgressService:
             # (scorm-again's getCurrentTotalTime), so it is already the right
             # number to store on every commit -- adding it again would count
             # the same session more than once.
-            columns["session_time_seconds"] = _timespan_seconds(cmi[_TOTAL_TIME])
+            parsed_total = _timespan_seconds(cmi[_TOTAL_TIME])
+            if parsed_total is not None:
+                columns["session_time_seconds"] = parsed_total
+            # else: leave the stored value alone. A course that cannot format
+            # its own elapsed time must not zero out what was already banked.
         elif _SESSION_TIME in cmi:
             # No total_time to trust: fall back to accumulating the raw
             # session-to-date value onto what was already stored.
@@ -89,8 +115,31 @@ class TrainingProgressService:
                 session, training_id
             )
             accumulated = getattr(existing, "session_time_seconds", 0) or 0
-            columns["session_time_seconds"] = accumulated + _timespan_seconds(
-                cmi[_SESSION_TIME]
+            columns["session_time_seconds"] = accumulated + (
+                _timespan_seconds(cmi[_SESSION_TIME]) or 0
+            )
+
+        for cmi_key, column in _SCORE_COLUMNS.items():
+            if cmi_key not in cmi:
+                continue
+            raw = cmi[cmi_key]
+            if raw == "":
+                # A course clears a score the way it clears any other field.
+                # Numeric has no empty value, so the clear becomes NULL.
+                columns[column] = None
+                continue
+            parsed_score = _score_decimal(raw)
+            if parsed_score is not None:
+                columns[column] = parsed_score
+            # else: an unparseable score is dropped, not stored -- it must
+            # not cost the learner the rest of this commit.
+
+        if not columns:
+            self.logger.warning(
+                "[TrainingProgressService] commit to training %s matched no "
+                "known CMI element; keys=%s",
+                training_id,
+                sorted(cmi.keys()),
             )
 
         row = await self.training_progress_repository.upsert(

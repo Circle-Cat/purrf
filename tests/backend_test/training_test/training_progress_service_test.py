@@ -1,8 +1,10 @@
 """What one LMSCommit is allowed to change."""
 
 import unittest
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
+from backend.common.mentorship_enums import TrainingStatus
 from backend.entity.training_entity import TrainingEntity
 from backend.entity.training_progress_entity import TrainingProgressEntity
 from backend.training.training_progress_service import TrainingProgressService
@@ -24,7 +26,10 @@ class _ProgressServiceCase(unittest.IsolatedAsyncioTestCase):
         self.logger = MagicMock()
         self.training_repository = AsyncMock()
         self.training_repository.get_training_by_id.return_value = TrainingEntity(
-            training_id=_TRAINING_ID, user_id=_USER_ID, course_id=3
+            training_id=_TRAINING_ID,
+            user_id=_USER_ID,
+            course_id=3,
+            status=TrainingStatus.IN_PROGRESS,
         )
         self.progress_repository = AsyncMock()
         self.progress_repository.get_by_training_id.return_value = None
@@ -140,6 +145,88 @@ class TestSave(_ProgressServiceCase):
         saved = self._saved_columns()
         self.assertEqual(saved["session_time_seconds"], 0)
         self.assertEqual(saved["lesson_location"], "Summary")
+
+    async def test_a_malformed_total_time_leaves_the_stored_value_alone(self):
+        """0 is a real elapsed time, not a stand-in for "could not read it";
+        writing it over a real total would wipe accumulated time."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "not a timespan"},
+        )
+
+        self.assertNotIn("session_time_seconds", self._saved_columns())
+
+    async def test_a_single_digit_hour_total_time_is_treated_as_malformed(self):
+        """SCORM 1.2's CMITimespan needs at least two digits of hours; a value
+        that skips the leading zero is not one of ours to guess at, so it is
+        left unparsed rather than silently read as zero."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "0:02:30"},
+        )
+
+        self.assertNotIn("session_time_seconds", self._saved_columns())
+
+    async def test_a_commit_matching_no_known_element_is_logged(self):
+        """columns ends up empty and the row still gets touched -- the only
+        trace of a misbehaving course is this log line."""
+        await self.service.save(
+            self.session, _TRAINING_ID, _USER_ID, {"cmi.objectives.0.id": "obj-1"}
+        )
+
+        self.logger.warning.assert_called_once()
+        message = "%s" % (self.logger.warning.call_args,)
+        self.assertIn(str(_TRAINING_ID), message)
+        self.assertIn("cmi.objectives.0.id", message)
+
+    async def test_a_commit_with_a_recognised_element_is_not_logged(self):
+        await self.service.save(self.session, _TRAINING_ID, _USER_ID, _COMMIT)
+
+        self.logger.warning.assert_not_called()
+
+    async def test_score_fields_land_on_the_row(self):
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {
+                **_COMMIT,
+                "cmi.core.score.raw": "82.5",
+                "cmi.core.score.min": "0",
+                "cmi.core.score.max": "100",
+            },
+        )
+
+        saved = self._saved_columns()
+        self.assertEqual(saved["score_raw"], Decimal("82.5"))
+        self.assertEqual(saved["score_min"], Decimal("0"))
+        self.assertEqual(saved["score_max"], Decimal("100"))
+
+    async def test_an_unparseable_score_does_not_lose_the_rest_of_the_commit(self):
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.score.raw": "not-a-number"},
+        )
+
+        saved = self._saved_columns()
+        self.assertNotIn("score_raw", saved)
+        self.assertEqual(saved["lesson_status"], "incomplete")
+
+    async def test_an_empty_score_is_stored_as_no_score_rather_than_zero(self):
+        """A course clears its score the same way it clears any other field:
+        by writing an empty string. Numeric has no empty value, so that
+        clears to NULL instead of being rejected as unparseable."""
+        await self.service.save(
+            self.session, _TRAINING_ID, _USER_ID, {"cmi.core.score.raw": ""}
+        )
+
+        self.assertIsNone(self._saved_columns()["score_raw"])
 
     async def test_it_does_not_touch_the_assignment_status(self):
         """Mapping a course's status onto DONE is the next slice's business."""
