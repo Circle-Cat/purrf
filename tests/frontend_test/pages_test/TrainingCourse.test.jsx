@@ -2,13 +2,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import TrainingCourse from "@/pages/TrainingCourse";
+import { MESSAGE_TYPES } from "@/training/scormBridge";
 
 vi.mock("@/api/trainingApi", () => ({
   openSession: vi.fn(),
   saveProgress: vi.fn(),
 }));
+vi.mock("@/context/auth", () => ({
+  useAuth: vi.fn(),
+}));
 
 import { openSession, saveProgress } from "@/api/trainingApi";
+import { useAuth } from "@/context/auth";
 
 // react-router-dom re-exports live hooks from react-router; in the Bazel
 // sandbox vi.mock("react-router-dom") does not intercept useParams for the
@@ -37,6 +42,9 @@ describe("TrainingCourse", () => {
     vi.clearAllMocks();
     openSession.mockResolvedValue(SESSION);
     saveProgress.mockResolvedValue({});
+    useAuth.mockReturnValue({
+      user: { userId: 7, email: "alice@example.com" },
+    });
   });
 
   it("points the player frame at the content origin, not at our own", async () => {
@@ -107,5 +115,74 @@ describe("TrainingCourse", () => {
     renderCourse();
 
     expect(await screen.findByText(/not available/i)).toBeInTheDocument();
+  });
+
+  it("replies to a trusted READY with the stored progress, the learner, and the entry path", async () => {
+    const progress = {
+      lessonStatus: "incomplete",
+      lessonLocation: "3",
+      suspendData: "blob",
+      sessionTimeSeconds: 42,
+    };
+    openSession.mockResolvedValue({ data: { ...SESSION.data, progress } });
+    renderCourse();
+    const frame = await screen.findByTitle(/course/i);
+    const postMessage = vi.spyOn(frame.contentWindow, "postMessage");
+
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: "https://test-training-content.purrf.io",
+        data: { type: MESSAGE_TYPES.READY },
+      }),
+    );
+
+    await waitFor(() => expect(postMessage).toHaveBeenCalled());
+    const [message, targetOrigin] = postMessage.mock.calls.at(-1);
+    expect(message).toEqual({
+      type: MESSAGE_TYPES.INIT,
+      progress,
+      learner: { userId: 7, displayName: "alice@example.com" },
+      entryPath: SESSION.data.entryPath,
+    });
+    // Must go to the content origin specifically -- never a wildcard, and
+    // never back to our own origin.
+    expect(targetOrigin).toBe("https://test-training-content.purrf.io");
+    expect(targetOrigin).not.toBe("*");
+    expect(targetOrigin).not.toBe(window.location.origin);
+  });
+
+  it("ignores a READY forged by any other page", async () => {
+    renderCourse();
+    const frame = await screen.findByTitle(/course/i);
+    const postMessage = vi.spyOn(frame.contentWindow, "postMessage");
+
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: "https://evil.example",
+        data: { type: MESSAGE_TYPES.READY },
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it("still replies to READY with an empty progress object, not undefined, when nobody has opened the course yet", async () => {
+    // SESSION carries no `progress` key at all -- the shape the API returns
+    // for an assignment nobody has opened.
+    renderCourse();
+    const frame = await screen.findByTitle(/course/i);
+    const postMessage = vi.spyOn(frame.contentWindow, "postMessage");
+
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: "https://test-training-content.purrf.io",
+        data: { type: MESSAGE_TYPES.READY },
+      }),
+    );
+
+    await waitFor(() => expect(postMessage).toHaveBeenCalled());
+    const [message] = postMessage.mock.calls.at(-1);
+    expect(message.progress).toEqual({});
   });
 });

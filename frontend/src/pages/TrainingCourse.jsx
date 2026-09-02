@@ -57,6 +57,8 @@ export default function TrainingCourse() {
             progress: session.progress || {},
             learner: {
               userId: user?.userId,
+              // The auth context carries no name field, so email stands in
+              // as the learner-visible name the course displays and reports.
               displayName: user?.email ?? "",
             },
             entryPath: session.entryPath,
