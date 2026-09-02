@@ -81,6 +81,11 @@ describe("the behaviour a course depends on", () => {
     // session_time_seconds on the strength of this: getCurrentTotalTime()
     // returns the seeded total plus wall time since init, which only holds
     // if loadFromFlattenedJSON actually applies total_time before init.
+    //
+    // getCurrentTotalTime() adds real wall-clock time since lmsInitialize(),
+    // so this pins a floor (the seed survived) and a generous ceiling
+    // (nothing beyond ordinary test latency got added), rather than an
+    // exact value a slow machine could roll over a second boundary.
     const seeded = new Scorm12API(API_OPTIONS);
     seeded.loadFromFlattenedJSON(
       toFlattenedCmi({ sessionTimeSeconds: 500 }, LEARNER),
@@ -88,7 +93,13 @@ describe("the behaviour a course depends on", () => {
     seeded.lmsInitialize();
 
     const payload = seeded.renderCommitCMI(true);
+    const [, hours, minutes, seconds] = payload["cmi.core.total_time"].match(
+      /^(\d{2,4}):(\d{2}):(\d{2})/,
+    );
+    const totalSeconds =
+      Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds);
 
-    expect(payload["cmi.core.total_time"]).toMatch(/^00:08:20(\.\d+)?$/);
+    expect(totalSeconds).toBeGreaterThanOrEqual(500);
+    expect(totalSeconds).toBeLessThan(560);
   });
 });
