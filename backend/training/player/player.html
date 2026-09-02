@@ -38,6 +38,9 @@
         api = new window.Scorm12API({
           autocommit: false,
           logLevel: 4,
+          // Flattened dot-keys, not scorm-again's default nested JSON --
+          // the backend's commit parsing reads "cmi.core.lesson_status" keys.
+          dataCommitFormat: "flattened",
           // No lmsCommitUrl on purpose: this origin must never reach the API.
         });
         api.loadFromFlattenedJSON(toFlattenedCmi(progress, learner));

@@ -78,7 +78,11 @@ class TestSave(_ProgressServiceCase):
         self.assertEqual(saved["suspend_data"], "")
         self.assertEqual(saved["lesson_location"], "")
 
-    async def test_session_time_accumulates_rather_than_replaces(self):
+    async def test_session_time_falls_back_to_accumulating_when_total_time_is_absent(
+        self,
+    ):
+        """The real player always sends total_time; this covers a payload
+        that does not, so the older accumulation rule still has a test."""
         self.progress_repository.get_by_training_id.return_value = (
             TrainingProgressEntity(training_id=_TRAINING_ID, session_time_seconds=500)
         )
@@ -86,6 +90,44 @@ class TestSave(_ProgressServiceCase):
         await self.service.save(self.session, _TRAINING_ID, _USER_ID, _COMMIT)
 
         self.assertEqual(self._saved_columns()["session_time_seconds"], 650)
+
+    async def test_session_time_comes_from_total_time_when_present(self):
+        """scorm-again's total_time is already seeded-total plus this
+        session's elapsed time, so it replaces the stored value outright."""
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(training_id=_TRAINING_ID, session_time_seconds=500)
+        )
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "00:10:00"},
+        )
+
+        self.assertEqual(self._saved_columns()["session_time_seconds"], 600)
+
+    async def test_two_commits_in_one_session_do_not_double_count(self):
+        """Each commit's total_time already covers the whole session so far;
+        summing successive commits would multiply it, not accumulate it."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "00:03:00"},
+        )
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(training_id=_TRAINING_ID, session_time_seconds=180)
+        )
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "00:05:00"},
+        )
+
+        self.assertEqual(self._saved_columns()["session_time_seconds"], 300)
 
     async def test_a_malformed_session_time_does_not_lose_the_commit(self):
         await self.service.save(
@@ -113,6 +155,47 @@ class TestSave(_ProgressServiceCase):
 
         self.assertEqual(assignment.status, before)
 
+    async def test_a_partial_body_leaves_absent_fields_alone(self):
+        """Only the elements a course actually committed are written."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {"cmi.core.lesson_status": "completed"},
+        )
+
+        self.assertEqual(self._saved_columns(), {"lesson_status": "completed"})
+
+    async def test_an_explicit_empty_value_is_written_not_treated_as_absent(self):
+        """A course clears a field on purpose and reads it back to check."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {"cmi.suspend_data": "", "cmi.core.lesson_location": ""},
+        )
+
+        saved = self._saved_columns()
+        self.assertEqual(saved, {"suspend_data": "", "lesson_location": ""})
+
+    async def test_the_write_is_committed_after_the_upsert(self):
+        order = []
+        self.progress_repository.upsert.side_effect = None
+
+        async def fake_upsert(session, training_id, **columns):
+            order.append("upsert")
+            return TrainingProgressEntity(training_id=training_id, **columns)
+
+        async def fake_commit():
+            order.append("commit")
+
+        self.progress_repository.upsert.side_effect = fake_upsert
+        self.session.commit.side_effect = fake_commit
+
+        await self.service.save(self.session, _TRAINING_ID, _USER_ID, _COMMIT)
+
+        self.assertEqual(order, ["upsert", "commit"])
+
 
 class TestSaveRefusals(_ProgressServiceCase):
     async def test_saving_onto_somebody_elses_assignment_is_refused(self):
@@ -122,6 +205,7 @@ class TestSaveRefusals(_ProgressServiceCase):
             await self.service.save(self.session, _TRAINING_ID, _USER_ID, _COMMIT)
 
         self.progress_repository.upsert.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
 
     async def test_saving_onto_an_assignment_that_does_not_exist_is_refused(self):
         self.training_repository.get_training_by_id.return_value = None
@@ -130,6 +214,7 @@ class TestSaveRefusals(_ProgressServiceCase):
             await self.service.save(self.session, _TRAINING_ID, _USER_ID, _COMMIT)
 
         self.progress_repository.upsert.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
 
 
 if __name__ == "__main__":
