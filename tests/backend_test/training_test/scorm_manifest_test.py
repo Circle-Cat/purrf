@@ -100,25 +100,12 @@ class TestParseManifest(unittest.TestCase):
         with self.assertRaises(ManifestRejected):
             parse_manifest(_manifest(schemaversion="1.1"))
 
-    def test_a_lone_resource_stands_in_for_a_missing_organization(self):
-        """Packages exist with no item tree, and one resource is unambiguous."""
-        info = parse_manifest(_manifest(organizations="\n  <organizations/>"))
-
-        self.assertEqual(info.entry_path, _ENTRY_PATH)
-
-    def test_no_organization_and_several_resources_is_rejected(self):
-        resources = f"""
-  <resources>
-    <resource identifier="res_1" type="webcontent" href="{_ENTRY_PATH}"/>
-    <resource identifier="res_2" type="webcontent" href="other.html"/>
-  </resources>"""
-
+    def test_a_manifest_without_an_organization_is_rejected(self):
+        """One resource is not permission to guess which page starts a course."""
         with self.assertRaises(ManifestRejected):
-            parse_manifest(
-                _manifest(organizations="\n  <organizations/>", resources=resources)
-            )
+            parse_manifest(_manifest(organizations="\n  <organizations/>"))
 
-    def test_an_identifierref_matching_no_resource_falls_back_to_the_lone_one(self):
+    def test_an_identifierref_matching_no_resource_is_rejected(self):
         organizations = """
   <organizations default="org_1">
     <organization identifier="org_1">
@@ -129,27 +116,15 @@ class TestParseManifest(unittest.TestCase):
     </organization>
   </organizations>"""
 
-        info = parse_manifest(_manifest(organizations=organizations))
-
-        self.assertEqual(info.entry_path, _ENTRY_PATH)
-
-    def test_a_dangling_identifierref_among_several_resources_is_rejected(self):
-        organizations = """
-  <organizations default="org_1">
-    <organization identifier="org_1">
-      <item identifier="item_1" identifierref="res_missing">
-        <title>Module One</title>
-      </item>
-    </organization>
-  </organizations>"""
-        resources = f"""
-  <resources>
-    <resource identifier="res_1" type="webcontent" href="{_ENTRY_PATH}"/>
-    <resource identifier="res_2" type="webcontent" href="other.html"/>
-  </resources>"""
-
         with self.assertRaises(ManifestRejected):
-            parse_manifest(_manifest(organizations=organizations, resources=resources))
+            parse_manifest(_manifest(organizations=organizations))
+
+    def test_the_rejection_says_what_to_re_export(self):
+        """The admin has to forward this to whoever built the package."""
+        with self.assertRaises(ManifestRejected) as raised:
+            parse_manifest(_manifest(organizations="\n  <organizations/>"))
+
+        self.assertIn("identifierref", str(raised.exception))
 
     def test_a_manifest_with_no_resource_href_at_all_is_rejected(self):
         resources = """

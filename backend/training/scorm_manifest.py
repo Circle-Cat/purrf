@@ -78,7 +78,9 @@ def parse_manifest(manifest_bytes: bytes) -> ManifestInfo:
 
     The entry point is the href of the resource referenced by the first item of
     the default organization, which is where it lives in both real packages.
-    If the organization structure is missing, the sole resource is used.
+    A package that does not say it that way is refused rather than guessed at:
+    picking a resource ourselves would launch whatever happened to be listed
+    first, and being wrong about that looks like a broken course.
 
     Args:
         manifest_bytes (bytes): Raw imsmanifest.xml.
@@ -136,13 +138,12 @@ def parse_manifest(manifest_bytes: bytes) -> ManifestInfo:
         if entry_path:
             break
 
-    if entry_path is None and len(resources) == 1:
-        entry_path = next(iter(resources.values())).get("href")
-
     if not entry_path:
         raise ManifestRejected(
-            f"Rejected: {MANIFEST_NAME} does not name a launchable resource, "
-            "so there is no page to open when somebody starts the course."
+            f"Rejected: {MANIFEST_NAME} does not name a launchable resource. "
+            "Its default organization needs an item whose identifierref names "
+            "a resource with an href. Re-export the package with a course "
+            "structure rather than a bare list of files."
         )
 
     return ManifestInfo(
