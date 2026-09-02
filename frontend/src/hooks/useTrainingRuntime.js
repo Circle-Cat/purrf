@@ -34,6 +34,11 @@ export default function useTrainingRuntime(trainingId, user) {
   // save even resolves, so unload resends the same cmi unconditionally.
   const lastCmiRef = useRef(null);
   const unsavedRef = useRef(false);
+  // One save per assignment on the wire at a time. A course reports
+  // `incomplete` and then `completed` within the same second, and two such
+  // requests in flight together each decide the assignment's next status from
+  // a server-side read the other has not written to yet.
+  const saveChainRef = useRef(Promise.resolve());
 
   useEffect(() => {
     if (!trainingId) return undefined;
@@ -62,6 +67,16 @@ export default function useTrainingRuntime(trainingId, user) {
   useEffect(() => {
     if (!session) return undefined;
     const contentOrigin = new URL(session.contentBaseUrl).origin;
+
+    const queueSave = (cmi, extra) => {
+      const queued = saveChainRef.current.then(() =>
+        saveProgress(trainingId, { cmi, ...extra }),
+      );
+      // The chain has to survive a rejected save, or one failure strands
+      // every save after it.
+      saveChainRef.current = queued.catch(() => {});
+      return queued;
+    };
 
     const onMessage = async (event) => {
       // The whole security of the bridge. Without it any page could post a
@@ -113,7 +128,7 @@ export default function useTrainingRuntime(trainingId, user) {
         lastCmiRef.current = event.data.cmi;
         unsavedRef.current = true;
         try {
-          await saveProgress(trainingId, { cmi: event.data.cmi });
+          await queueSave(event.data.cmi);
           setSaveFailed(false);
           post({ type: MESSAGE_TYPES.SAVED, ok: true }, contentOrigin);
         } catch {

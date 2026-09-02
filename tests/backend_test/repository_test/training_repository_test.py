@@ -179,6 +179,69 @@ class TestTrainingRepository(BaseRepositoryTestLib):
         )
         self.assertEqual(result, [])
 
+    async def _sql_of_get_training_by_id(self, **kwargs) -> list[str]:
+        """Every statement the call sends, compiled for Postgres."""
+        from sqlalchemy import event
+        from sqlalchemy.dialects import postgresql
+
+        captured = []
+
+        def capture(conn, clauseelement, multiparams, params, execution_options):
+            captured.append(clauseelement)
+
+        training = await self.repo.get_training_by_user_id_and_category(
+            self.session,
+            self.user1.user_id,
+            TrainingCategory.CORPORATE_CULTURE_COURSE,
+        )
+        event.listen(self.connection.sync_connection, "before_execute", capture)
+        try:
+            await self.repo.get_training_by_id(
+                self.session, training.training_id, **kwargs
+            )
+        finally:
+            event.remove(self.connection.sync_connection, "before_execute", capture)
+
+        return [
+            str(statement.compile(dialect=postgresql.dialect()))
+            for statement in captured
+            if hasattr(statement, "compile")
+        ]
+
+    async def test_the_read_a_progress_save_makes_locks_the_row(self):
+        """A save reads the status, decides the next one from it and writes it
+        back. Without the lock two commits a second apart both read the old
+        status, and the one that decided "not finished" can land last."""
+        sqls = await self._sql_of_get_training_by_id(for_update=True)
+
+        self.assertTrue(
+            any("FOR UPDATE" in sql for sql in sqls),
+            f"Expected FOR UPDATE when for_update=True. Got: {sqls}",
+        )
+
+    async def test_a_plain_read_takes_no_lock(self):
+        """Locking by default would make every reader of an assignment wait
+        behind whoever is saving progress on it."""
+        sqls = await self._sql_of_get_training_by_id()
+
+        self.assertFalse(
+            any("FOR UPDATE" in sql for sql in sqls),
+            f"Expected no FOR UPDATE by default. Got: {sqls}",
+        )
+
+    async def test_get_training_by_id_returns_the_assignment(self):
+        expected = await self.repo.get_training_by_user_id_and_category(
+            self.session,
+            self.user1.user_id,
+            TrainingCategory.CORPORATE_CULTURE_COURSE,
+        )
+
+        result = await self.repo.get_training_by_id(
+            self.session, expected.training_id, for_update=True
+        )
+
+        self.assertEqual(result.training_id, expected.training_id)
+
 
 if __name__ == "__main__":
     unittest.main()

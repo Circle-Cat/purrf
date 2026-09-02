@@ -643,6 +643,43 @@ class TestSave(_ProgressServiceCase):
         self.assertEqual(order, ["upsert", "commit"])
 
 
+class TestConcurrentSaves(_ProgressServiceCase):
+    """Two commits for one assignment, arriving at once.
+
+    The mentor onboarding course writes `incomplete` and then `completed`
+    within the same second, and the page does not wait for the first save
+    before sending the second.
+    """
+
+    async def test_the_assignment_is_read_under_a_row_lock(self):
+        """Unlocked, both requests read the status the other has not written
+        yet: one of them decides "not finished" from a snapshot that is
+        already stale by the time it commits, and a learner who finished is
+        left held at the matching gate with nothing to reopen."""
+        await self.service.save(self.session, _TRAINING_ID, _USER_ID, _COMMIT)
+
+        self.training_repository.get_training_by_id.assert_awaited_once_with(
+            self.session, _TRAINING_ID, for_update=True
+        )
+
+    async def test_the_loser_of_the_race_reads_the_status_the_winner_wrote(self):
+        """What the lock buys: the second request re-reads DONE rather than
+        the TO_DO it would have seen, and next_training_status leaves it."""
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.DONE
+        assignment.completed_timestamp = _EARLIER
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "incomplete"},
+        )
+
+        self.assertEqual(assignment.status, TrainingStatus.DONE)
+        self.assertEqual(assignment.completed_timestamp, _EARLIER)
+
+
 class TestSaveRefusals(_ProgressServiceCase):
     async def test_saving_onto_somebody_elses_assignment_is_refused(self):
         self.training_repository.get_training_by_id.return_value.user_id = 999

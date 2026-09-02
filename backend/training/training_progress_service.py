@@ -137,8 +137,15 @@ class TrainingProgressService:
             ValueError: No such assignment.
             PermissionError: The assignment belongs to somebody else.
         """
+        # Locked, because what follows reads the status, decides the next one
+        # from it, and writes it back. A course reports `incomplete` and then
+        # `completed` within the same second, and unlocked those two requests
+        # both read TO_DO: whichever commits second wins, and half the time
+        # that is the one holding the stale not-finished decision. The lock
+        # makes the loser re-read the status the winner wrote, where
+        # next_training_status leaves a finished assignment alone.
         assignment = await self.training_repository.get_training_by_id(
-            session, training_id
+            session, training_id, for_update=True
         )
         if assignment is None:
             raise ValueError(f"No training assignment with id {training_id}.")

@@ -94,7 +94,7 @@ class TrainingRepository:
         return result.scalars().one_or_none()
 
     async def get_training_by_id(
-        self, session: AsyncSession, training_id: int
+        self, session: AsyncSession, training_id: int, for_update: bool = False
     ) -> TrainingEntity | None:
         """
         Fetch one assignment by its primary key.
@@ -102,11 +102,21 @@ class TrainingRepository:
         Args:
             session (AsyncSession): The active async database session.
             training_id (int): The assignment to fetch.
+            for_update (bool): Take a row lock, held until this transaction
+                commits. Anyone else reading the same row this way waits, and
+                then reads the status this transaction wrote rather than the
+                one they would otherwise still see. Required of anything that
+                decides the assignment's next status from its current one; a
+                plain read must not ask for it.
 
         Returns:
             TrainingEntity | None: The assignment, or None.
         """
-        result = await session.execute(
-            select(TrainingEntity).where(TrainingEntity.training_id == training_id)
-        )
+        stmt = select(TrainingEntity).where(TrainingEntity.training_id == training_id)
+        if for_update:
+            # populate_existing so the row the lock re-read wins over anything
+            # this session already had in memory for it -- the point of the
+            # lock is to read what the other transaction just committed.
+            stmt = stmt.with_for_update().execution_options(populate_existing=True)
+        result = await session.execute(stmt)
         return result.scalars().one_or_none()
