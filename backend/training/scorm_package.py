@@ -34,6 +34,12 @@ MAX_COMPRESSION_RATIO = 200
 # SCORM API.
 RESERVED_PREFIX = "__"
 
+# Zipping a folder in the macOS Finder adds this directory of AppleDouble
+# resource forks beside the real files. It lands in the reserved space above,
+# and the course author who would have to rename it did not create it and
+# cannot see it, so it is dropped rather than served or refused.
+MACOS_METADATA_DIR = "__MACOSX"
+
 
 class PackageRejected(ValueError):
     """An uploaded package broke one of the rules below.
@@ -85,9 +91,8 @@ def _reject_unsafe_paths(entries: list[zipfile.ZipInfo]) -> None:
                 "Symbolic links are not allowed in a course package."
             )
         # The reserved names sit at the root of the package's own URL space,
-        # so the first segment is what can collide -- a basename test both
-        # misses "__MACOSX/thumbs.db", which a Mac-zipped package carries, and
-        # refuses "assets/__chunk.js", which collides with nothing.
+        # so the first segment is what can collide -- a basename test would
+        # refuse "assets/__chunk.js", which collides with nothing.
         if normalised.startswith(RESERVED_PREFIX):
             raise PackageRejected(
                 f"Rejected: the entry {name!r} starts with {RESERVED_PREFIX!r}, "
@@ -148,6 +153,15 @@ def _find_missing_declared_files(declared: list[str], present: set[str]) -> list
     return missing
 
 
+def _is_macos_metadata(entry: zipfile.ZipInfo) -> bool:
+    """Whether an entry belongs to the Finder's metadata directory.
+
+    Judged on the normalised path, so "__MACOSX/../__player.html" is not one of
+    these and still meets the reserved-name refusal.
+    """
+    return posixpath.normpath(entry.filename).split("/")[0] == MACOS_METADATA_DIR
+
+
 def _served_names(entries: list[zipfile.ZipInfo]) -> dict[str, str]:
     """Map each entry's served path to the name it has inside the zip.
 
@@ -190,7 +204,11 @@ def read_package(archive: zipfile.ZipFile) -> PackageContents:
     Raises:
         PackageRejected: Any rule above was broken.
     """
-    entries = [entry for entry in archive.infolist() if not entry.is_dir()]
+    entries = [
+        entry
+        for entry in archive.infolist()
+        if not entry.is_dir() and not _is_macos_metadata(entry)
+    ]
     if not entries:
         raise PackageRejected("Rejected: the archive is empty.")
 

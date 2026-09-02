@@ -170,10 +170,10 @@ class TestReadPackageRejections(unittest.TestCase):
         with self.assertRaises(PackageRejected):
             read_package(_build_zip(entries))
 
-    def test_a_mac_zipped_metadata_directory_is_rejected(self):
-        """Zipping on a Mac adds this, and it lands in the reserved space."""
+    def test_a_traversal_dressed_as_mac_metadata_is_still_refused(self):
+        """Ignoring that directory must not become a way past the reserved rule."""
         entries = _valid_entries()
-        entries["__MACOSX/._indexAPI.html"] = b"\x00\x05\x16\x07"
+        entries["__MACOSX/../__player.html"] = b"<html>not ours</html>"
 
         with self.assertRaises(PackageRejected):
             read_package(_build_zip(entries))
@@ -201,6 +201,28 @@ class TestReadPackageRejections(unittest.TestCase):
 
 
 class TestReadPackageAcceptance(unittest.TestCase):
+    def test_a_mac_zipped_metadata_directory_is_ignored_rather_than_refused(self):
+        """The Finder adds it; the course author cannot see it or remove it."""
+        entries = _valid_entries(**{
+            "__MACOSX/._imsmanifest.html": b"\x00\x05\x16\x07",
+            "__MACOSX/scormdriver/._indexAPI.html": b"\x00\x05\x16\x07",
+        })
+
+        contents = read_package(_build_zip(entries))
+
+        self.assertEqual(set(contents.file_names), {MANIFEST_NAME, _ENTRY_PATH})
+
+    def test_the_metadata_directory_is_left_out_of_the_byte_total(self):
+        """Nothing that is never served should count against the size caps."""
+        clean = read_package(_build_zip(_valid_entries()))
+        with_metadata = read_package(
+            _build_zip(_valid_entries(**{"__MACOSX/._imsmanifest.html": b"\x00" * 64}))
+        )
+
+        self.assertEqual(
+            with_metadata.total_uncompressed_bytes, clean.total_uncompressed_bytes
+        )
+
     def test_a_reserved_prefix_deeper_in_the_tree_collides_with_nothing(self):
         """Bundlers emit these constantly; only the root is ours to reserve."""
         entries = _valid_entries(**{"assets/__chunk.js": b"// bundler output"})
