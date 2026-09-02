@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { openSession, saveProgress } from "@/api/trainingApi";
 import { useAuth } from "@/context/auth";
+import request from "@/utils/request";
+import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 import { MESSAGE_TYPES, isTrustedMessage } from "@/training/scormBridge";
 
 /**
@@ -112,10 +114,27 @@ export default function TrainingCourse() {
     // a periodic timer here would only re-send what that heartbeat just sent;
     // the spec's 60-second fallback predates measuring that heartbeat. Only
     // the unload half is implemented.
+    //
+    // This one save cannot go through the axios instance: a request started
+    // during unload is an XHR, and the browser drops in-flight XHRs the
+    // moment the tab actually closes. fetch with keepalive is exempted from
+    // that and is allowed to outlive the page, so this path -- and only this
+    // one -- goes around axios. The URL is built from the same endpoint
+    // constant and base axios uses, and credentials: "include" reproduces
+    // axios's withCredentials, since auth here is cookie-only.
     const onBeforeUnload = () => {
       if (!unsavedRef.current) return;
       unsavedRef.current = false;
-      saveProgress(trainingId, { cmi: lastCmiRef.current });
+      fetch(
+        `${request.defaults.baseURL}${API_ENDPOINTS.TRAINING_PROGRESS(trainingId)}`,
+        {
+          method: "POST",
+          credentials: "include",
+          keepalive: true,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cmi: lastCmiRef.current }),
+        },
+      );
     };
 
     window.addEventListener("message", onMessage);

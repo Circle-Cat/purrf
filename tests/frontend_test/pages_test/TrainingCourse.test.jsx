@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import TrainingCourse from "@/pages/TrainingCourse";
@@ -53,6 +53,17 @@ describe("TrainingCourse", () => {
     useAuth.mockReturnValue({
       user: { userId: 7, email: "alice@example.com" },
     });
+    // The unload save goes around axios on purpose (see TrainingCourse.jsx),
+    // so it is observed here at the fetch seam instead of through the
+    // trainingApi mock.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("points the player frame at the content origin, not at our own", async () => {
@@ -241,7 +252,7 @@ describe("TrainingCourse", () => {
     expect(message.progress).toEqual({});
   });
 
-  it("saves what it last received when the tab goes away", async () => {
+  it("saves what it last received when the tab goes away, over a keepalive fetch rather than axios", async () => {
     renderCourse();
     await screen.findByTitle(/course/i);
     postCommit({ "cmi.suspend_data": "blob" });
@@ -251,10 +262,24 @@ describe("TrainingCourse", () => {
     await waitFor(() => expect(saveProgress).toHaveBeenCalledTimes(1), {
       timeout: 3000,
     });
+    // The ordinary commit save never touches fetch -- only unload does.
+    expect(fetch).not.toHaveBeenCalled();
 
     window.dispatchEvent(new Event("beforeunload"));
 
-    await waitFor(() => expect(saveProgress).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    const [url, options] = fetch.mock.calls[0];
+    expect(url).toBe("/api/training/42/progress");
+    expect(options).toMatchObject({
+      method: "POST",
+      credentials: "include",
+      keepalive: true,
+    });
+    expect(JSON.parse(options.body)).toEqual({
+      cmi: { "cmi.suspend_data": "blob" },
+    });
+    // Unload does not also re-trigger the axios save.
+    expect(saveProgress).toHaveBeenCalledTimes(1);
   });
 
   it("does not save on unload when nothing new arrived", async () => {
@@ -264,19 +289,21 @@ describe("TrainingCourse", () => {
     window.dispatchEvent(new Event("beforeunload"));
 
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(saveProgress).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("stops listening for unload when it goes away", async () => {
     const { unmount } = renderCourse();
     await screen.findByTitle(/course/i);
     postCommit({ "cmi.suspend_data": "blob" });
-    await waitFor(() => expect(saveProgress).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(saveProgress).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    });
     unmount();
 
     window.dispatchEvent(new Event("beforeunload"));
 
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(saveProgress).toHaveBeenCalledTimes(1);
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
