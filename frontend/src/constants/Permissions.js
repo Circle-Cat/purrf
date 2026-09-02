@@ -18,4 +18,5 @@ export const PERMISSIONS = {
   RECRUITING_BLACKLIST_WRITE: "recruiting.blacklist.write",
   RECRUITING_AUDIT_READ: "recruiting.audit.read",
   LEAVE_ADMIN: "leave.admin",
+  TRAINING_ADMIN_WRITE: "training.admin.write",
 };

@@ -16,3 +16,12 @@ export const openSession = (trainingId) =>
  */
 export const saveProgress = (trainingId, payload) =>
   request.post(API_ENDPOINTS.TRAINING_PROGRESS(trainingId), payload);
+
+/**
+ * Open a trial assignment on a course under the caller's own identity, so an
+ * admin can run it to completion before it is assignable to anyone else.
+ * @param {string|number} courseId
+ * @returns {Promise<{data: {trainingId: number, userId: number, courseId: number, created: boolean}}>}
+ */
+export const startTrial = (courseId) =>
+  request.post(API_ENDPOINTS.TRAINING_COURSE_TRIAL(courseId));

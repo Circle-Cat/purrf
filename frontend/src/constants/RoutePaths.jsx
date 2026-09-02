@@ -27,4 +27,5 @@ export const ROUTE_PATHS = {
   LEAVE_REQUESTS: "/leave/requests",
   LEAVE_ADMIN: "/leave/admin",
   TRAINING_COURSE: (trainingId) => `/training/${trainingId}`,
+  TRAINING_TRIAL: (courseId) => `/admin/training/${courseId}/trial`,
 };

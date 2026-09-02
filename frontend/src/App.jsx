@@ -36,6 +36,7 @@ import LeaveApprovalsPage from "@/pages/Leave/ApprovalsPage";
 import LeaveRequestsPage from "@/pages/Leave/RequestsPage";
 import LeaveAdminPage from "@/pages/Leave/AdminPage";
 import TrainingCourse from "@/pages/TrainingCourse";
+import TrainingTrial from "@/pages/TrainingTrial";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
 import { PERMISSIONS } from "@/constants/Permissions";
@@ -284,6 +285,18 @@ function App() {
                     <Route
                       path={ROUTE_PATHS.TRAINING_COURSE(":trainingId")}
                       element={<TrainingCourse />}
+                    />
+                    <Route
+                      path={ROUTE_PATHS.TRAINING_TRIAL(":courseId")}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.TRAINING_ADMIN_WRITE,
+                          ]}
+                        >
+                          <TrainingTrial />
+                        </ProtectedRoute>
+                      }
                     />
                     <Route
                       path={ROUTE_PATHS.ACCESS_DENIED}

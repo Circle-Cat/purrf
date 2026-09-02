@@ -115,6 +115,7 @@ export const API_ENDPOINTS = {
   RECRUITING_NOTIFICATION: (id) => `/recruiting/notifications/${id}`,
   TRAINING_SESSION: (trainingId) => `/training/${trainingId}/session`,
   TRAINING_PROGRESS: (trainingId) => `/training/${trainingId}/progress`,
+  TRAINING_COURSE_TRIAL: (courseId) => `/training/courses/${courseId}/trial`,
 };
 
 /**
