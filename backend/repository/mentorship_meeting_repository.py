@@ -218,6 +218,37 @@ class MentorshipMeetingRepository:
         await session.flush()
         return meeting
 
+    async def update_schedule(
+        self,
+        session: AsyncSession,
+        meeting: MentorshipMeetingEntity,
+        start_datetime: datetime,
+        end_datetime: datetime,
+    ) -> MentorshipMeetingEntity:
+        """Move one meeting to a new slot.
+
+        Writes the two time columns and nothing else. `meeting_id` is the
+        Calendar event id and a Calendar patch does not change it;
+        `created_datetime` holds Google's own creation time and is the
+        ordering tiebreaker when two meetings share a start; `meet_link` and
+        `entry_points` describe a Meet space that a patch never re-opens.
+        None of them may be rewritten here.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            meeting (MentorshipMeetingEntity): The row to move, already
+                loaded and belonging to the caller's pair.
+            start_datetime (datetime): New start, tz-aware UTC.
+            end_datetime (datetime): New end, tz-aware UTC.
+
+        Returns:
+            MentorshipMeetingEntity: The updated row.
+        """
+        meeting.start_datetime = start_datetime
+        meeting.end_datetime = end_datetime
+        await session.flush()
+        return meeting
+
     async def delete_meetings(
         self, session: AsyncSession, pair_id: int, meeting_ids: list[str]
     ) -> int:

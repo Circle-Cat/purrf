@@ -45,3 +45,16 @@ export const getMyMentorshipMeetingsV2 = ({ roundId, includeDetails }) =>
  */
 export const postMyMentorshipMeetingV2 = (data) =>
   request.post(API_ENDPOINTS.MENTORSHIP_MEETINGS_V2, data);
+
+/**
+ * Move an already-booked mentorship meeting to a new slot.
+ *
+ * Sends wall-clock values; the backend converts them to UTC using the
+ * timezone in the payload.
+ *
+ * @param {string} meetingId - The Google Calendar event ID of the meeting.
+ * @param {{round_id: number, partner_id: number, timezone: string,
+ *   start_date: string, start_time: string, duration_minutes: number}} data
+ */
+export const rescheduleMeeting = (meetingId, data) =>
+  request.patch(API_ENDPOINTS.MENTORSHIP_MEETING_V2_SINGLE(meetingId), data);

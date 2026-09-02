@@ -22,6 +22,30 @@ const mockOverview = {
   ],
 };
 
+const mixedOverview = {
+  ...mockOverview,
+  meetingTimeList: [
+    {
+      meetingId: "m-scheduled",
+      startDatetime: "2026-04-01T02:00:00Z",
+      endDatetime: "2026-04-01T03:00:00Z",
+      isCompleted: false,
+    },
+    {
+      meetingId: "m-completed",
+      startDatetime: "2026-02-10T02:00:00Z",
+      endDatetime: "2026-02-10T03:00:00Z",
+      isCompleted: true,
+    },
+    {
+      meetingId: "m-past-incomplete",
+      startDatetime: "2026-02-20T02:00:00Z",
+      endDatetime: "2026-02-20T03:00:00Z",
+      isCompleted: false,
+    },
+  ],
+};
+
 describe("MeetingOverviewCard", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -316,36 +340,12 @@ describe("MeetingOverviewCard", () => {
   });
 
   describe("cancelling a meeting", () => {
-    const mixedOverview = {
-      ...mockOverview,
-      meetingTimeList: [
-        {
-          meetingId: "m-scheduled",
-          startDatetime: "2026-04-01T02:00:00Z",
-          endDatetime: "2026-04-01T03:00:00Z",
-          isCompleted: false,
-        },
-        {
-          meetingId: "m-completed",
-          startDatetime: "2026-02-10T02:00:00Z",
-          endDatetime: "2026-02-10T03:00:00Z",
-          isCompleted: true,
-        },
-        {
-          meetingId: "m-past-incomplete",
-          startDatetime: "2026-02-20T02:00:00Z",
-          endDatetime: "2026-02-20T03:00:00Z",
-          isCompleted: false,
-        },
-      ],
-    };
-
     it("should offer a cancel control for the scheduled meeting only", () => {
       render(
         <MeetingOverviewCard
           overview={mixedOverview}
           userTimezone="UTC"
-          canDelete
+          canManageMeetings
           onDeleteMeeting={vi.fn()}
         />,
       );
@@ -375,7 +375,7 @@ describe("MeetingOverviewCard", () => {
         <MeetingOverviewCard
           overview={mixedOverview}
           userTimezone="UTC"
-          canDelete
+          canManageMeetings
           onDeleteMeeting={onDeleteMeeting}
         />,
       );
@@ -403,7 +403,7 @@ describe("MeetingOverviewCard", () => {
         <MeetingOverviewCard
           overview={mixedOverview}
           userTimezone="UTC"
-          canDelete
+          canManageMeetings
           onDeleteMeeting={onDeleteMeeting}
         />,
       );
@@ -417,6 +417,54 @@ describe("MeetingOverviewCard", () => {
         screen.queryByText("Cancel this meeting?"),
       ).not.toBeInTheDocument();
       expect(onDeleteMeeting).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("rescheduling a meeting", () => {
+    it("should offer a reschedule control for the scheduled meeting only", () => {
+      render(
+        <MeetingOverviewCard
+          overview={mixedOverview}
+          userTimezone="UTC"
+          canManageMeetings
+          onDeleteMeeting={vi.fn()}
+          onRescheduleMeeting={vi.fn()}
+        />,
+      );
+
+      const controls = screen.getAllByRole("button", {
+        name: /reschedule meeting on/i,
+      });
+      expect(controls).toHaveLength(1);
+      expect(controls[0]).toHaveAccessibleName(/2026-04-01/);
+    });
+
+    it("should not offer a reschedule control when managing is unavailable", () => {
+      render(
+        <MeetingOverviewCard overview={mixedOverview} userTimezone="UTC" />,
+      );
+      expect(
+        screen.queryByRole("button", { name: /reschedule meeting on/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("should hand the meeting to the reschedule callback when the control is used", () => {
+      const onRescheduleMeeting = vi.fn();
+      render(
+        <MeetingOverviewCard
+          overview={mixedOverview}
+          userTimezone="UTC"
+          canManageMeetings
+          onDeleteMeeting={vi.fn()}
+          onRescheduleMeeting={onRescheduleMeeting}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /reschedule meeting on/i }),
+      );
+      expect(onRescheduleMeeting).toHaveBeenCalledWith(
+        expect.objectContaining({ meetingId: "m-scheduled" }),
+      );
     });
   });
 });
