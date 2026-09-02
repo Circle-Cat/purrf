@@ -87,7 +87,7 @@ class TrainingCourseService:
         Unassignable until a package is uploaded and somebody finishes it.
         """
         course = TrainingCourseEntity(
-            name=payload.name.strip(),
+            name=payload.name,
             description=payload.description,
             is_active=True,
         )
@@ -118,7 +118,7 @@ class TrainingCourseService:
             raise ValueError(f"No training course with id {course_id}.")
 
         if payload.name is not None:
-            course.name = payload.name.strip()
+            course.name = payload.name
         if payload.description is not None:
             course.description = payload.description
         if payload.is_active is not None:

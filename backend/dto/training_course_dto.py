@@ -5,6 +5,7 @@ from pydantic import Field
 
 from backend.common.mentorship_enums import ScormVersion, TrainingCategory
 from backend.dto.base_dto import BaseDto
+from backend.dto.base_request_dto import BaseRequestDto
 
 
 class TrainingCourseState(StrEnum):
@@ -42,14 +43,14 @@ class TrainingCourseDto(BaseDto):
     assigned_count: int = 0
 
 
-class TrainingCourseCreateDto(BaseDto):
+class TrainingCourseCreateDto(BaseRequestDto):
     """Creating a course. A package is uploaded separately, afterwards."""
 
     name: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
 
 
-class TrainingCourseUpdateDto(BaseDto):
+class TrainingCourseUpdateDto(BaseRequestDto):
     """Renaming a course, or turning it off. There is no delete."""
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
@@ -57,7 +58,7 @@ class TrainingCourseUpdateDto(BaseDto):
     is_active: bool | None = None
 
 
-class TrainingAssignmentRequestDto(BaseDto):
+class TrainingAssignmentRequestDto(BaseRequestDto):
     """Assigning one course to one person."""
 
     user_id: int
