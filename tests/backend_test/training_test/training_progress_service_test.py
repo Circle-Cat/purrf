@@ -381,10 +381,49 @@ class TestSave(_ProgressServiceCase):
             _TRAINING_ID,
             _USER_ID,
             {**_COMMIT, "cmi.core.lesson_status": "completed"},
+            may_verify_course=True,
         )
 
         self.assertIsNotNone(course.verified_completable_at)
         self.assertEqual(course.verified_by_user_id, _USER_ID)
+
+    async def test_a_learner_without_the_grant_cannot_unlock_the_course(self):
+        """Replacing a package clears the stamp and keeps every assignment,
+        so an assignee could otherwise post a finishing status and make the
+        new package assignable to everybody without opening it."""
+        course = self.course_repository.get_course_by_id.return_value
+        course.verified_completable_at = None
+        course.verified_by_user_id = None
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.IN_PROGRESS
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+        )
+
+        self.assertIsNone(course.verified_completable_at)
+        self.assertIsNone(course.verified_by_user_id)
+
+    async def test_a_learner_without_the_grant_still_finishes_their_own_training(self):
+        """The gate is on unlocking the course for everybody else, not on a
+        learner reporting their own assignment done."""
+        course = self.course_repository.get_course_by_id.return_value
+        course.verified_completable_at = None
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.IN_PROGRESS
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+        )
+
+        self.assertIs(assignment.status, TrainingStatus.DONE)
+        self.assertIsNotNone(assignment.completed_timestamp)
 
     async def test_an_already_verified_course_keeps_its_first_verifier(self):
         course = self.course_repository.get_course_by_id.return_value
@@ -398,6 +437,7 @@ class TestSave(_ProgressServiceCase):
             _TRAINING_ID,
             _USER_ID,
             {**_COMMIT, "cmi.core.lesson_status": "passed"},
+            may_verify_course=True,
         )
 
         self.assertEqual(course.verified_completable_at, _EARLIER)
@@ -412,6 +452,7 @@ class TestSave(_ProgressServiceCase):
             _TRAINING_ID,
             _USER_ID,
             {**_COMMIT, "cmi.core.lesson_status": "incomplete"},
+            may_verify_course=True,
         )
 
         self.assertIsNone(course.verified_completable_at)

@@ -145,7 +145,13 @@ class TrainingProgressService:
         self.training_course_repository = training_course_repository
 
     async def save(
-        self, session, training_id: int, user_id: int, cmi: dict, final: bool = False
+        self,
+        session,
+        training_id: int,
+        user_id: int,
+        cmi: dict,
+        final: bool = False,
+        may_verify_course: bool = False,
     ):
         """Apply one commit to the caller's own assignment.
 
@@ -163,6 +169,11 @@ class TrainingProgressService:
                 when the content matches what is stored, because the only
                 thing such a save carries is the elapsed time the content
                 comparison ignores.
+            may_verify_course (bool): Whether the caller holds
+                TRAINING_ADMIN_WRITE, resolved by the middleware from the
+                database and passed down rather than read from the request.
+                Defaults to False so a caller nobody vouched for cannot
+                unlock the course for everybody else.
 
         Returns:
             TrainingProgressEntity: The stored row.
@@ -309,19 +320,35 @@ class TrainingProgressService:
             if moved is TrainingStatus.DONE:
                 if assignment.completed_timestamp is None:
                     assignment.completed_timestamp = datetime.now(timezone.utc)
-                await self._stamp_if_unverified(session, assignment, user_id)
+                await self._stamp_if_unverified(
+                    session, assignment, user_id, may_verify_course
+                )
 
         await session.commit()
         return row
 
-    async def _stamp_if_unverified(self, session, assignment, user_id: int) -> None:
-        """Record that somebody ran this course to the end.
+    async def _stamp_if_unverified(
+        self, session, assignment, user_id: int, may_verify_course: bool
+    ) -> None:
+        """Record that somebody with the grant ran this course to the end.
 
-        An unverified course cannot be assigned to anybody, so whoever holds
-        an assignment on one got it from the trial run -- which is what makes
-        this the trial's stamp without needing a flag to say so.
+        Holding an assignment is not enough. Replacing a package clears the
+        stamp and keeps every existing assignment, so after a re-upload any
+        assignee could post a finishing lesson_status with no course involved
+        and unlock the new package for the whole organisation. Reporting your
+        own assignment DONE stays open to anybody -- a course reports its own
+        completion and it costs nobody but the learner -- but the stamp that
+        makes a course assignable needs TRAINING_ADMIN_WRITE.
         """
         if assignment.course_id is None:
+            return
+        if not may_verify_course:
+            self.logger.info(
+                "[TrainingProgressService] user %s finished course %s without "
+                "training.admin.write; leaving it unverified",
+                user_id,
+                assignment.course_id,
+            )
             return
         course = await self.training_course_repository.get_course_by_id(
             session, assignment.course_id

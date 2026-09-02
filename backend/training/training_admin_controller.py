@@ -99,7 +99,8 @@ class TrainingAdminController:
             methods=["POST"],
             response_model=None,
         )
-        # Same grant as opening the session: holding the assignment.
+        # Same grant as opening the session: holding the assignment. Marking
+        # the course itself verified is gated separately, inside the service.
         self.router.add_api_route(
             TRAINING_PROGRESS_ENDPOINT,
             endpoint=authenticate()(self.save_progress),
@@ -230,6 +231,11 @@ class TrainingAdminController:
         page knows which save is the last one, and that save exists to bank
         elapsed time -- the one thing the service's unchanged-content check
         ignores -- so it has to say so or the write is skipped.
+
+        Whether this commit may also mark the course verified comes from the
+        permissions the middleware resolved from the database, never from the
+        payload: a course reporting itself finished must not be able to claim
+        the grant that unlocks it for everybody else.
         """
         cmi = payload.get("cmi", {})
         if not isinstance(cmi, dict):
@@ -241,5 +247,8 @@ class TrainingAdminController:
                 current_user.user_id,
                 cmi,
                 final=bool(payload.get("final")),
+                may_verify_course=current_user.has_permission(
+                    Permission.TRAINING_ADMIN_WRITE
+                ),
             )
         return api_response(message="Progress saved.")

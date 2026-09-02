@@ -14,7 +14,18 @@ from backend.dto.training_course_dto import (
     TrainingCourseState,
     TrainingPackageUploadResultDto,
 )
+from backend.dto.user_context_dto import UserContextDto
 from backend.training.training_admin_controller import TrainingAdminController
+
+
+def _user(*permissions):
+    """The caller as the middleware builds them, with grants read from the DB."""
+    return UserContextDto(
+        sub="auth0|learner",
+        primary_email="learner@circlecat.org",
+        user_id=11,
+        permissions=frozenset(permissions),
+    )
 
 
 def _route_permissions(route):
@@ -55,6 +66,7 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         self.package_service = MagicMock()
         self.content_service = MagicMock()
         self.progress_service = MagicMock()
+        self.progress_service.save = AsyncMock()
         self.controller = TrainingAdminController(
             self.course_service,
             self.assignment_service,
@@ -74,6 +86,12 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.addCleanup(patcher.stop)
+
+    async def save_progress(self, payload, current_user=None):
+        """Post one commit as a learner who holds no grant unless one is given."""
+        return await self.controller.save_progress(
+            42, payload, current_user or _user()
+        )
 
     def test_reading_the_catalogue_and_changing_it_are_separate_grants(self):
         by_method = {
@@ -189,28 +207,23 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_commit_is_saved_for_the_caller_not_for_a_named_user(self):
         """The user id comes from the token, never from the request."""
-        self.progress_service.save = AsyncMock()
-        current_user = MagicMock(user_id=11)
-
-        await self.controller.save_progress(
-            42, {"cmi": {"cmi.core.lesson_location": "Summary"}}, current_user
-        )
+        await self.save_progress({"cmi": {"cmi.core.lesson_location": "Summary"}})
 
         self.progress_service.save.assert_awaited_once_with(
-            self.session, 42, 11, {"cmi.core.lesson_location": "Summary"}, final=False
+            self.session,
+            42,
+            11,
+            {"cmi.core.lesson_location": "Summary"},
+            final=False,
+            may_verify_course=False,
         )
 
     async def test_the_pages_parting_save_is_passed_through_as_final(self):
         """Only the page knows which save is the last one, and that save
         exists to bank elapsed time -- which the service's unchanged-content
         check ignores, so it is skipped unless it says so."""
-        self.progress_service.save = AsyncMock()
-        current_user = MagicMock(user_id=11)
-
-        await self.controller.save_progress(
-            42,
-            {"cmi": {"cmi.core.lesson_location": "Summary"}, "final": True},
-            current_user,
+        await self.save_progress(
+            {"cmi": {"cmi.core.lesson_location": "Summary"}, "final": True}
         )
 
         self.assertIs(self.progress_service.save.await_args.kwargs["final"], True)
@@ -218,13 +231,35 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
     async def test_a_non_object_cmi_is_a_client_error_not_a_500(self):
         """A course controls this payload; {"cmi": 5} must not reach
         payload.get("cmi", {}).items()-shaped code as a TypeError."""
-        self.progress_service.save = AsyncMock()
-        current_user = MagicMock(user_id=11)
-
         with self.assertRaises(ValueError):
-            await self.controller.save_progress(42, {"cmi": 5}, current_user)
+            await self.save_progress({"cmi": 5})
 
         self.progress_service.save.assert_not_awaited()
+
+    async def test_an_ordinary_learner_may_not_verify_the_course(self):
+        """Reporting your own training done is open to anybody who holds the
+        assignment; unlocking the course for everybody else is not."""
+        await self.save_progress({"cmi": {"cmi.core.lesson_status": "passed"}})
+
+        self.assertIs(
+            self.progress_service.save.await_args.kwargs["may_verify_course"], False
+        )
+
+    async def test_the_grant_that_unlocks_a_course_comes_from_the_session(self):
+        """Never from the payload: the course controls that, and a course
+        must not be able to claim the grant that makes it assignable."""
+        await self.save_progress(
+            {
+                "cmi": {"cmi.core.lesson_status": "passed"},
+                "may_verify_course": True,
+                "permissions": ["training.admin.write"],
+            },
+            current_user=_user(Permission.TRAINING_ADMIN_WRITE),
+        )
+
+        self.assertIs(
+            self.progress_service.save.await_args.kwargs["may_verify_course"], True
+        )
 
     async def test_the_list_includes_deactivated_courses(self):
         """Or they could never be turned back on."""
