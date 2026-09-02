@@ -94,6 +94,7 @@ py_library(
     deps = [
         ":completion",
         "//backend/common:mentorship_enums",
+        "//backend/repository:repositories",
     ],
 )
 

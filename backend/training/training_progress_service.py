@@ -63,7 +63,7 @@ def _score_decimal(value) -> Decimal | None:
 
 
 class TrainingProgressService:
-    """Stores what a course reports, and nothing more."""
+    """Stores what a course reports, and stamps the course verified on completion."""
 
     def __init__(
         self,
@@ -201,9 +201,9 @@ class TrainingProgressService:
         )
         if moved is not None:
             assignment.status = moved
-            if moved is TrainingStatus.DONE and assignment.completed_timestamp is None:
-                assignment.completed_timestamp = datetime.now(timezone.utc)
             if moved is TrainingStatus.DONE:
+                if assignment.completed_timestamp is None:
+                    assignment.completed_timestamp = datetime.now(timezone.utc)
                 await self._stamp_if_unverified(session, assignment, user_id)
 
         await session.commit()
