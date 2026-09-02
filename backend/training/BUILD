@@ -43,6 +43,11 @@ py_library(
 )
 
 py_library(
+    name = "content_host",
+    srcs = ["content_host.py"],
+)
+
+py_library(
     name = "training_content_token",
     srcs = ["training_content_token.py"],
 )

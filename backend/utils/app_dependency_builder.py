@@ -136,6 +136,7 @@ from backend.leave.leave_calendar_service import LeaveCalendarService
 from backend.leave.leave_calendar_controller import LeaveCalendarController
 from backend.leave.leave_adjustment_service import LeaveAdjustmentService
 from backend.leave.leave_admin_controller import LeaveAdminController
+from backend.training.content_host import assert_content_host_isolated
 from backend.training.training_admin_controller import TrainingAdminController
 from backend.training.training_assignment_service import TrainingAssignmentService
 from backend.training.training_content_controller import TrainingContentController
@@ -163,6 +164,7 @@ from backend.notification_management.delivery_controller import (
 )
 from backend.common.environment_constants import (
     RESUME_BUCKET,
+    APP_ORIGINS,
     TRAINING_BUCKET,
     TRAINING_CONTENT_HOST,
     TRAINING_TOKEN_SIGNING_KEY,
@@ -959,6 +961,13 @@ class AppDependencyBuilder:
         self.training_progress_repository = TrainingProgressRepository()
         self.training_storage = TrainingStorage(os.getenv(TRAINING_BUCKET))
         self.training_content_host = os.getenv(TRAINING_CONTENT_HOST)
+        # Nothing downstream can tell a content host apart from the app's own
+        # host: set them equal and every request still succeeds, with course
+        # JavaScript same-origin with the API. Checked here so a wrong value
+        # stops the process instead of silently opening that door.
+        assert_content_host_isolated(
+            self.training_content_host, os.getenv(APP_ORIGINS)
+        )
         self.training_package_service = TrainingPackageService(
             logger=self.logger,
             training_course_repository=self.training_course_repository,

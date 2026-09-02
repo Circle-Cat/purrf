@@ -162,6 +162,7 @@ py_library(
         "//backend/service:jira_search_service",
         "//backend/service:launchdarkly_service",
         "//backend/service:microsoft_service",
+        "//backend/training:content_host",
         "//backend/training:training_admin_controller",
         "//backend/training:training_assignment_service",
         "//backend/training:training_content_controller",
