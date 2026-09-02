@@ -6,8 +6,9 @@ from backend.common.mentorship_enums import TrainingStatus
 # Both finishing values are here on purpose: which one a course reports is a
 # per-course setting in the authoring tool, not something we may assume.
 # Mentee onboarding reports "passed"; mentor onboarding reports "completed".
+# A failed attempt is still in progress, not done -- the learner may retake it.
 _FINISHED = frozenset({"passed", "completed"})
-_STARTED = frozenset({"incomplete", "browsed"})
+_STARTED = frozenset({"incomplete", "browsed", "failed"})
 
 
 def next_training_status(
@@ -33,10 +34,6 @@ def next_training_status(
     reported = (lesson_status or "").strip()
     if reported in _FINISHED:
         return TrainingStatus.DONE
-    if reported == "failed":
-        # A failed attempt always reopens the assignment for a retake, even
-        # if it was already in progress.
-        return TrainingStatus.IN_PROGRESS
     if reported in _STARTED and current is not TrainingStatus.IN_PROGRESS:
         return TrainingStatus.IN_PROGRESS
     # "not attempted" and anything we do not recognise leave the row alone.

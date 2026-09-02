@@ -35,7 +35,7 @@ class TestNextTrainingStatus(unittest.TestCase):
 
     def test_failed_is_in_progress_so_it_can_be_retaken(self):
         self.assertEqual(
-            next_training_status(TrainingStatus.IN_PROGRESS, "failed"),
+            next_training_status(TrainingStatus.TO_DO, "failed"),
             TrainingStatus.IN_PROGRESS,
         )
 
@@ -66,6 +66,12 @@ class TestNextTrainingStatus(unittest.TestCase):
     def test_it_does_not_repeat_a_status_the_row_already_has(self):
         self.assertIsNone(
             next_training_status(TrainingStatus.IN_PROGRESS, "incomplete")
+        )
+
+    def test_failed_does_not_rewrite_a_status_the_row_already_has(self):
+        """A repeat status write would defeat the unchanged-commit skip."""
+        self.assertIsNone(
+            next_training_status(TrainingStatus.IN_PROGRESS, "failed")
         )
 
 
