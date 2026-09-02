@@ -662,12 +662,12 @@ class MeetingService:
 
         return GoogleMeetingResponseDetailDto(
             meeting_id=meeting.meeting_id,
-            meet_link=meeting.meet_link,
+            meet_link=meeting.meet_link or "",
             attendees=[current_user.user_id, partner.user_id],
             start_datetime=start_utc.isoformat(),
             end_datetime=end_utc.isoformat(),
             is_completed=meeting.is_completed,
-            entry_points=meeting.entry_points,
+            entry_points=meeting.entry_points or [],
         )
 
     async def delete_google_meetings(

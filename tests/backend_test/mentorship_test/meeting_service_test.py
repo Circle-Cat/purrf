@@ -1361,11 +1361,20 @@ class TestMeetingServiceReschedule(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_patches_calendar_and_moves_the_row(self):
-        await self.service.reschedule_google_meeting(**self.kwargs)
+        result = await self.service.reschedule_google_meeting(**self.kwargs)
 
         # 09:00 America/New_York on 2099-06-01 is 13:00Z (EDT, UTC-4).
         expected_start = datetime(2099, 6, 1, 13, 0, tzinfo=timezone.utc)
         expected_end = datetime(2099, 6, 1, 14, 0, tzinfo=timezone.utc)
+
+        self.mock_pairs_repo.get_pair_with_partner_by_round_and_users_and_status.assert_awaited_once_with(
+            session=self.mock_session,
+            round_id=10,
+            user_id=1,
+            partner_id=2,
+            status=PairStatus.ACTIVE,
+            with_lock=True,
+        )
 
         self.mock_meeting_scheduling_service.update.assert_awaited_once()
         call = self.mock_meeting_scheduling_service.update.await_args
@@ -1382,6 +1391,21 @@ class TestMeetingServiceReschedule(unittest.IsolatedAsyncioTestCase):
             end_datetime=expected_end,
         )
         self.mock_session.commit.assert_awaited()
+
+        self.assertEqual(result.meeting_id, "google-event-1")
+        self.assertEqual(result.meet_link, "https://meet.google.com/abc-def-ghi")
+        self.assertEqual(sorted(result.attendees), [1, 2])
+        self.assertEqual(result.start_datetime, expected_start.isoformat())
+        self.assertEqual(result.end_datetime, expected_end.isoformat())
+        self.assertFalse(result.is_completed)
+
+    async def test_coerces_a_null_meet_link_to_empty_string(self):
+        # Migrated rows can carry a NULL meet_link (old JSONB writer
+        # defaulted it to "" whenever Meet conference creation failed).
+        # The DTO field is a non-nullable str, so this must not raise.
+        self.scheduled_meeting.meet_link = None
+        result = await self.service.reschedule_google_meeting(**self.kwargs)
+        self.assertEqual(result.meet_link, "")
 
     async def test_rejects_when_no_active_pair(self):
         self.mock_pairs_repo.get_pair_with_partner_by_round_and_users_and_status.return_value = None
