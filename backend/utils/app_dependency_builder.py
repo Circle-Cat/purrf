@@ -141,7 +141,6 @@ from backend.training.training_assignment_service import TrainingAssignmentServi
 from backend.training.training_content_controller import TrainingContentController
 from backend.training.training_content_service import TrainingContentService
 from backend.training.training_course_service import TrainingCourseService
-from backend.training.training_job_controller import TrainingJobController
 from backend.training.training_package_service import TrainingPackageService
 from backend.training.training_storage import TrainingStorage
 from backend.leave.leave_engine_service import LeaveEngineService
@@ -183,9 +182,6 @@ from backend.repository.training_course_repository import (
 )
 from backend.repository.training_progress_repository import (
     TrainingProgressRepository,
-)
-from backend.repository.training_retired_prefix_repository import (
-    TrainingRetiredPrefixRepository,
 )
 from backend.repository.training_repository import TrainingRepository
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
@@ -959,13 +955,11 @@ class AppDependencyBuilder:
             training_repository=self.training_repository,
         )
         self.training_progress_repository = TrainingProgressRepository()
-        self.training_retired_prefix_repository = TrainingRetiredPrefixRepository()
         self.training_storage = TrainingStorage(os.getenv(TRAINING_BUCKET))
         self.training_content_host = os.getenv(TRAINING_CONTENT_HOST)
         self.training_package_service = TrainingPackageService(
             logger=self.logger,
             training_course_repository=self.training_course_repository,
-            training_retired_prefix_repository=self.training_retired_prefix_repository,
             training_progress_repository=self.training_progress_repository,
             training_storage=self.training_storage,
         )
@@ -989,10 +983,6 @@ class AppDependencyBuilder:
             self.training_content_host,
             self.database,
             self.logger,
-        )
-        self.training_job_controller = TrainingJobController(
-            self.training_package_service,
-            self.database,
         )
 
         self.leave_request_repository = LeaveRequestRepository()
@@ -1035,7 +1025,6 @@ class AppDependencyBuilder:
             leave_admin_controller=self.leave_admin_controller,
             training_admin_controller=self.training_admin_controller,
             training_content_controller=self.training_content_controller,
-            training_job_controller=self.training_job_controller,
             training_content_host=self.training_content_host,
             leave_job_controller=self.leave_job_controller,
             leave_request_controller=self.leave_request_controller,

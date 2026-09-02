@@ -90,19 +90,6 @@ py_library(
 )
 
 py_library(
-    name = "training_job_controller",
-    srcs = ["training_job_controller.py"],
-    deps = [
-        ":training_package_service",
-        "//backend/common:api_endpoints",
-        "//backend/common:fast_api_response_wrapper",
-        "//backend/common:permissions",
-        "//backend/utils:permission_decorators",
-        "@pypi//fastapi",
-    ],
-)
-
-py_library(
     name = "training_admin_controller",
     srcs = ["training_admin_controller.py"],
     deps = [

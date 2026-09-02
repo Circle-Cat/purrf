@@ -4,16 +4,12 @@ import io
 import posixpath
 import uuid
 import zipfile
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from backend.dto.training_course_dto import TrainingPackageUploadResultDto
 from backend.training.scorm_manifest import ManifestRejected
 from backend.training.scorm_package import PackageRejected, read_package
 from backend.training.training_storage import content_type_for
-
-# Comfortably wider than a content token's 12 hours, so no token can still be
-# valid for a prefix that has been deleted.
-RETIREMENT_DELAY = timedelta(hours=24)
 
 
 class TrainingPackageService:
@@ -28,7 +24,6 @@ class TrainingPackageService:
         self,
         logger,
         training_course_repository,
-        training_retired_prefix_repository,
         training_progress_repository,
         training_storage,
     ):
@@ -37,14 +32,12 @@ class TrainingPackageService:
             logger: Injected logger.
             training_course_repository (TrainingCourseRepository): The course
                 being uploaded to.
-            training_retired_prefix_repository: Records the replaced prefix.
             training_progress_repository: Clears resume data for learners who
                 had not finished.
             training_storage (TrainingStorage): Object storage.
         """
         self.logger = logger
         self.training_course_repository = training_course_repository
-        self.training_retired_prefix_repository = training_retired_prefix_repository
         self.training_progress_repository = training_progress_repository
         self.training_storage = training_storage
 
@@ -59,6 +52,15 @@ class TrainingPackageService:
         data is wiped for everyone who had not finished, because the previous
         package's suspend_data means nothing to the new one and can hang it.
         Finished records are left alone.
+
+        The previous prefix's files are deleted only after the transaction
+        that moves the course onto the new one commits. A content token never
+        carries the prefix -- every asset request looks it up fresh -- so
+        nobody can still be reading the old prefix once the course row has
+        flipped, and deleting beforehand would risk leaving the course
+        pointing at files that a rollback never restores. A delete that fails
+        is logged, not raised: the upload has already succeeded, and the only
+        cost is some storage left behind.
 
         Args:
             session: The active async database session.
@@ -116,9 +118,6 @@ class TrainingPackageService:
 
         cleared = 0
         if previous_prefix:
-            await self.training_retired_prefix_repository.add(
-                session, course_id, previous_prefix, moment + RETIREMENT_DELAY
-            )
             cleared = await self.training_progress_repository.clear_resume_state(
                 session, course_id
             )
@@ -133,6 +132,17 @@ class TrainingPackageService:
             len(contents.file_names),
             cleared,
         )
+
+        if previous_prefix:
+            try:
+                self.training_storage.delete_prefix(previous_prefix)
+            except Exception:
+                self.logger.exception(
+                    "[TrainingPackageService] could not delete replaced prefix %s "
+                    "for course %s",
+                    previous_prefix,
+                    course_id,
+                )
 
         config = contents.driver_config
         return TrainingPackageUploadResultDto(
@@ -149,51 +159,3 @@ class TrainingPackageService:
             missing_declared_files=contents.missing_declared_files,
             learners_reset=cleared,
         )
-
-    async def delete_retired_prefixes(
-        self, session, now: datetime | None = None
-    ) -> dict:
-        """Delete the storage behind prefixes whose delay has elapsed.
-
-        Args:
-            session: The active async database session.
-            now (datetime | None): For tests.
-
-        Returns:
-            dict: Prefixes swept and objects removed, for the scheduler's log.
-        """
-        moment = now or datetime.now(timezone.utc)
-        due = await self.training_retired_prefix_repository.due(session, moment)
-
-        objects = 0
-        swept = 0
-        failed = 0
-        for row in due:
-            # One prefix that will not delete must not hold up the others: this
-            # runs on a schedule, so a raise here would stop every later prefix
-            # on this pass and on every pass after it. The row keeps its null
-            # deleted_at and comes back next time.
-            try:
-                objects += self.training_storage.delete_prefix(row.storage_prefix)
-            except Exception:
-                failed += 1
-                self.logger.exception(
-                    "[TrainingPackageService] could not delete retired prefix %s",
-                    row.storage_prefix,
-                )
-                continue
-            row.deleted_at = moment
-            swept += 1
-
-        if swept:
-            await session.commit()
-
-        if due:
-            self.logger.info(
-                "[TrainingPackageService] deleted %s objects under %s retired "
-                "prefixes, %s could not be deleted",
-                objects,
-                swept,
-                failed,
-            )
-        return {"prefixes": swept, "objects": objects, "failed": failed}

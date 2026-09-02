@@ -620,7 +620,6 @@ class TestAppDependencyBuilder(TestCase):
             leave_admin_controller=ANY,
             training_admin_controller=ANY,
             training_content_controller=ANY,
-            training_job_controller=ANY,
             training_content_host=ANY,
             leave_job_controller=ANY,
             leave_request_controller=ANY,

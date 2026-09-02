@@ -46,7 +46,6 @@ class FastAppFactory:
         leave_admin_controller,
         training_admin_controller,
         training_content_controller,
-        training_job_controller,
         training_content_host,
         leave_job_controller,
         leave_request_controller,
@@ -83,7 +82,6 @@ class FastAppFactory:
             leave_admin_controller: An instance of LeaveAdminController that manages admin-only leave API routes, starting with hand-written balance adjustments.
             training_admin_controller: An instance of TrainingAdminController that manages the course catalogue and manual assignment.
             training_content_controller: An instance of TrainingContentController that serves course files on the content origin.
-            training_job_controller: An instance of TrainingJobController that runs the delayed package cleanup.
             training_content_host: Hostname course files are served from, or None where content hosting is not configured.
             leave_job_controller: An instance of LeaveJobController that exposes the two scheduled leave jobs to the CronJobs that call them.
             leave_request_controller: An instance of LeaveRequestController that manages the routes employees file leave through and managers decide on.
@@ -120,7 +118,6 @@ class FastAppFactory:
         self.leave_admin_controller = leave_admin_controller
         self.training_admin_controller = training_admin_controller
         self.training_content_controller = training_content_controller
-        self.training_job_controller = training_job_controller
         self.training_content_host = training_content_host
         self.leave_job_controller = leave_job_controller
         self.leave_request_controller = leave_request_controller
@@ -225,7 +222,6 @@ class FastAppFactory:
         app.include_router(self.leave_calendar_controller.router, prefix="/api")
         app.include_router(self.leave_admin_controller.router, prefix="/api")
         app.include_router(self.training_admin_controller.router, prefix="/api")
-        app.include_router(self.training_job_controller.router, prefix="/api")
         # No /api prefix and no authenticate(): course files live at /p/<token>/
         # on the content origin, and the middleware exempts exactly that pair.
         app.include_router(self.training_content_controller.router)

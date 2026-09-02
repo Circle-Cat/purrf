@@ -9,12 +9,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 from backend.common.mentorship_enums import ScormVersion
 from backend.entity.training_course_entity import TrainingCourseEntity
-from backend.entity.training_retired_prefix_entity import TrainingRetiredPrefixEntity
 from backend.training.scorm_package import PackageRejected
-from backend.training.training_package_service import (
-    RETIREMENT_DELAY,
-    TrainingPackageService,
-)
+from backend.training.training_package_service import TrainingPackageService
 
 _COURSE_ID = 7
 _ENTRY_PATH = "index.html"
@@ -117,11 +113,6 @@ def _named_arguments(mock, names: tuple) -> dict:
     return bound
 
 
-def _reported_numbers(report: dict) -> list:
-    """The cleanup job's report keys are not pinned by the spec; its counts are."""
-    return [value for value in report.values() if isinstance(value, int)]
-
-
 class _RecordingCourse:
     """A course row that notes the moment its columns are written.
 
@@ -149,7 +140,6 @@ class _PackageServiceTestCase(unittest.IsolatedAsyncioTestCase):
         self.logger = MagicMock()
         self.course_repository = AsyncMock()
         self.course_repository.get_course_by_id.return_value = None
-        self.retired_repository = AsyncMock()
         self.progress_repository = AsyncMock()
         self.progress_repository.clear_resume_state.return_value = 0
         self.storage = MagicMock()
@@ -158,7 +148,6 @@ class _PackageServiceTestCase(unittest.IsolatedAsyncioTestCase):
         self.service = TrainingPackageService(
             logger=self.logger,
             training_course_repository=self.course_repository,
-            training_retired_prefix_repository=self.retired_repository,
             training_progress_repository=self.progress_repository,
             training_storage=self.storage,
         )
@@ -269,44 +258,8 @@ class TestUploadPackage(_PackageServiceTestCase):
         self.assertEqual(course.entry_path, "old_index.html")
         self.assertEqual(course.verified_completable_at, _VERIFIED_AT)
         self.assertEqual(course.verified_by_user_id, 3)
-        self.retired_repository.add.assert_not_awaited()
         self.progress_repository.clear_resume_state.assert_not_awaited()
-
-    async def test_an_overwrite_retires_the_old_prefix_for_twenty_four_hours(self):
-        self._course(storage_prefix=_LIVE_PREFIX)
-
-        await self.service.upload_package(
-            self.session, _COURSE_ID, _package(), now=_NOW
-        )
-
-        self.assertEqual(RETIREMENT_DELAY, datetime.timedelta(hours=24))
-        self.retired_repository.add.assert_awaited_once()
-        recorded = _named_arguments(
-            self.retired_repository.add,
-            ("session", "course_id", "storage_prefix", "delete_after"),
-        )
-        self.assertEqual(recorded["course_id"], _COURSE_ID)
-        self.assertEqual(recorded["storage_prefix"], _LIVE_PREFIX)
-        self.assertEqual(recorded["delete_after"], _NOW + RETIREMENT_DELAY)
-
-    async def test_the_old_prefix_is_not_deleted_during_the_upload(self):
-        """Requests in flight are still holding it; deleting is the job's business."""
-        self._course(storage_prefix=_LIVE_PREFIX)
-
-        await self.service.upload_package(
-            self.session, _COURSE_ID, _package(), now=_NOW
-        )
-
         self.storage.delete_prefix.assert_not_called()
-
-    async def test_a_first_upload_retires_nothing(self):
-        self._course(storage_prefix=None)
-
-        await self.service.upload_package(
-            self.session, _COURSE_ID, _package(), now=_NOW
-        )
-
-        self.retired_repository.add.assert_not_awaited()
 
     async def test_an_overwrite_clears_resume_state_and_reports_the_count(self):
         self._course(storage_prefix=_LIVE_PREFIX)
@@ -396,8 +349,8 @@ class TestUploadPackage(_PackageServiceTestCase):
 
         self.storage.put.assert_not_called()
         self.assertEqual(course.storage_prefix, _LIVE_PREFIX)
-        self.retired_repository.add.assert_not_awaited()
         self.progress_repository.clear_resume_state.assert_not_awaited()
+        self.storage.delete_prefix.assert_not_called()
 
     async def test_an_archive_that_climbs_out_of_its_prefix_is_refused(self):
         course = self._course(storage_prefix=_LIVE_PREFIX)
@@ -410,7 +363,6 @@ class TestUploadPackage(_PackageServiceTestCase):
 
         self.storage.put.assert_not_called()
         self.assertEqual(course.storage_prefix, _LIVE_PREFIX)
-        self.retired_repository.add.assert_not_awaited()
         self.progress_repository.clear_resume_state.assert_not_awaited()
 
     async def test_uploading_to_a_course_that_does_not_exist_is_refused(self):
@@ -420,7 +372,6 @@ class TestUploadPackage(_PackageServiceTestCase):
             await self.service.upload_package(self.session, 404, _package(), now=_NOW)
 
         self.storage.put.assert_not_called()
-        self.retired_repository.add.assert_not_awaited()
         self.progress_repository.clear_resume_state.assert_not_awaited()
 
     async def test_the_result_describes_what_was_stored(self):
@@ -482,17 +433,15 @@ class TestUploadPackage(_PackageServiceTestCase):
         self.assertEqual(result.missing_declared_files, ["assets/gone.png"])
 
     async def test_an_overwrite_commits_once_after_every_write(self):
-        """The commit is the last thing that happens, not merely something that happens."""
+        """The recorded writes commit last; the old prefix's deletion is checked
+        separately, since it happens after this commit rather than as part of it.
+        """
         events = []
         course = _RecordingCourse(
             events, course_id=_COURSE_ID, storage_prefix=_LIVE_PREFIX
         )
         self.course_repository.get_course_by_id.return_value = course
         self.storage.put.side_effect = lambda key, *a, **k: events.append(("put", key))
-        self.retired_repository.add.side_effect = lambda *a, **k: events.append((
-            "retired.add",
-            None,
-        ))
         self.progress_repository.clear_resume_state.side_effect = (
             lambda *a, **k: events.append(("progress.clear", None)) or 0
         )
@@ -560,113 +509,56 @@ class TestUploadPackage(_PackageServiceTestCase):
         self.session.commit.assert_not_awaited()
 
 
-class TestDeleteRetiredPrefixes(_PackageServiceTestCase):
-    def _retired(self, prefix: str, delete_after) -> TrainingRetiredPrefixEntity:
-        return TrainingRetiredPrefixEntity(
-            course_id=_COURSE_ID, storage_prefix=prefix, delete_after=delete_after
+class TestReplacedPrefixDeletion(_PackageServiceTestCase):
+    """The prefix an overwrite replaces is deleted once, after the commit."""
+
+    async def test_an_overwrite_deletes_the_previous_prefix(self):
+        self._course(storage_prefix=_LIVE_PREFIX)
+
+        await self.service.upload_package(
+            self.session, _COURSE_ID, _package(), now=_NOW
         )
 
-    async def test_it_deletes_every_prefix_whose_delay_has_elapsed(self):
-        first = self._retired("training/7/aaa/", _NOW - datetime.timedelta(hours=1))
-        second = self._retired("training/7/bbb/", _NOW - datetime.timedelta(days=2))
-        self.retired_repository.due.return_value = [first, second]
+        self.assertEqual(self._deleted_prefixes(), [_LIVE_PREFIX])
 
-        report = await self.service.delete_retired_prefixes(self.session, now=_NOW)
+    async def test_a_first_upload_deletes_nothing(self):
+        """There is no previous prefix to clean up."""
+        self._course(storage_prefix=None)
 
-        self.assertEqual(
-            sorted(self._deleted_prefixes()), ["training/7/aaa/", "training/7/bbb/"]
+        await self.service.upload_package(
+            self.session, _COURSE_ID, _package(), now=_NOW
         )
-        self.assertIsNotNone(first.deleted_at)
-        self.assertIsNotNone(second.deleted_at)
-        self.assertIn(2, _reported_numbers(report))
-
-    async def test_a_prefix_still_inside_its_delay_is_left_alone(self):
-        """The cutoff is the repository's query; the service hands it the clock."""
-        elapsed = self._retired("training/7/aaa/", _NOW - datetime.timedelta(hours=1))
-        not_yet = self._retired("training/7/bbb/", _NOW + datetime.timedelta(hours=23))
-        self.retired_repository.due.return_value = [elapsed]
-
-        await self.service.delete_retired_prefixes(self.session, now=_NOW)
-
-        recorded = _named_arguments(self.retired_repository.due, ("session", "now"))
-        self.assertEqual(recorded["now"], _NOW)
-        self.assertEqual(self._deleted_prefixes(), ["training/7/aaa/"])
-        self.assertIsNone(not_yet.deleted_at)
-
-    async def test_one_prefix_that_will_not_delete_does_not_wedge_the_rest(self):
-        stuck = self._retired("training/7/aaa/", _NOW - datetime.timedelta(hours=1))
-        healthy = self._retired("training/7/bbb/", _NOW - datetime.timedelta(days=2))
-        self.retired_repository.due.return_value = [stuck, healthy]
-
-        def _fail_on_the_stuck_one(prefix, *args, **kwargs):
-            if prefix == "training/7/aaa/":
-                raise RuntimeError("storage said no")
-            return 4
-
-        self.storage.delete_prefix.side_effect = _fail_on_the_stuck_one
-
-        await self.service.delete_retired_prefixes(self.session, now=_NOW)
-
-        self.assertIn("training/7/bbb/", self._deleted_prefixes())
-        self.assertIsNotNone(healthy.deleted_at)
-        self.assertIsNone(stuck.deleted_at)
-        self.assertTrue(self.logger.exception.called or self.logger.error.called)
-
-    async def test_with_nothing_due_it_deletes_nothing(self):
-        self.retired_repository.due.return_value = []
-
-        report = await self.service.delete_retired_prefixes(self.session, now=_NOW)
 
         self.storage.delete_prefix.assert_not_called()
-        self.assertEqual(set(_reported_numbers(report)), {0})
 
-    async def test_it_commits_once_after_every_prefix_is_marked_deleted(self):
+    async def test_the_previous_prefix_is_deleted_only_after_the_commit(self):
+        """Deleting ahead of the commit risks a rollback finding the files gone."""
         events = []
-        first = self._retired("training/7/aaa/", _NOW - datetime.timedelta(hours=1))
-        second = self._retired("training/7/bbb/", _NOW - datetime.timedelta(days=2))
-        self.retired_repository.due.return_value = [first, second]
+        self._course(storage_prefix=_LIVE_PREFIX)
+        self.session.commit.side_effect = lambda: events.append("commit")
         self.storage.delete_prefix.side_effect = (
-            lambda prefix, *a, **k: events.append(("delete", prefix)) or 1
+            lambda prefix, *a, **k: events.append("delete") or 0
         )
-        self.session.commit.side_effect = lambda: events.append(("commit", None))
 
-        await self.service.delete_retired_prefixes(self.session, now=_NOW)
+        await self.service.upload_package(
+            self.session, _COURSE_ID, _package(), now=_NOW
+        )
 
-        names = [name for name, _ in events]
-        self.assertEqual(names.count("commit"), 1)
-        self.assertEqual(names.index("commit"), len(names) - 1)
+        self.assertEqual(events, ["commit", "delete"])
 
-    async def test_a_stuck_prefix_does_not_block_the_commit_for_the_rest(self):
-        stuck = self._retired("training/7/aaa/", _NOW - datetime.timedelta(hours=1))
-        healthy = self._retired("training/7/bbb/", _NOW - datetime.timedelta(days=2))
-        self.retired_repository.due.return_value = [stuck, healthy]
+    async def test_a_failed_delete_of_the_previous_prefix_does_not_fail_the_upload(
+        self,
+    ):
+        """The upload already succeeded; a leftover prefix is the accepted cost."""
+        self._course(storage_prefix=_LIVE_PREFIX)
+        self.storage.delete_prefix.side_effect = RuntimeError("bucket said no")
 
-        def _fail_on_the_stuck_one(prefix, *args, **kwargs):
-            if prefix == "training/7/aaa/":
-                raise RuntimeError("storage said no")
-            return 4
+        result = await self.service.upload_package(
+            self.session, _COURSE_ID, _package(), now=_NOW
+        )
 
-        self.storage.delete_prefix.side_effect = _fail_on_the_stuck_one
-
-        await self.service.delete_retired_prefixes(self.session, now=_NOW)
-
-        self.session.commit.assert_awaited_once()
-
-    async def test_with_nothing_due_it_awaits_no_commit(self):
-        self.retired_repository.due.return_value = []
-
-        await self.service.delete_retired_prefixes(self.session, now=_NOW)
-
-        self.session.commit.assert_not_awaited()
-
-    async def test_when_every_due_prefix_fails_to_delete_it_awaits_no_commit(self):
-        stuck = self._retired("training/7/aaa/", _NOW - datetime.timedelta(hours=1))
-        self.retired_repository.due.return_value = [stuck]
-        self.storage.delete_prefix.side_effect = RuntimeError("storage said no")
-
-        await self.service.delete_retired_prefixes(self.session, now=_NOW)
-
-        self.session.commit.assert_not_awaited()
+        self.assertIsNotNone(result)
+        self.logger.exception.assert_called_once()
 
 
 if __name__ == "__main__":
