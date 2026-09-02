@@ -57,6 +57,9 @@ export const toFlattenedCmi = (progress = {}, learner) => ({
   "cmi.core.lesson_status": progress.lessonStatus || "not attempted",
   "cmi.core.lesson_location": progress.lessonLocation || "",
   "cmi.suspend_data": progress.suspendData || "",
+  "cmi.core.score.raw": progress.scoreRaw || "",
+  "cmi.core.score.min": progress.scoreMin || "",
+  "cmi.core.score.max": progress.scoreMax || "",
   "cmi.launch_data": "",
 });
 

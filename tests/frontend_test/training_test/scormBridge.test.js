@@ -68,6 +68,25 @@ describe("toFlattenedCmi", () => {
       "not attempted",
     );
   });
+
+  it("seeds a stored score", () => {
+    const cmi = toFlattenedCmi(
+      { scoreRaw: "82.50", scoreMin: "0.00", scoreMax: "100.00" },
+      LEARNER,
+    );
+
+    expect(cmi["cmi.core.score.raw"]).toBe("82.50");
+    expect(cmi["cmi.core.score.min"]).toBe("0.00");
+    expect(cmi["cmi.core.score.max"]).toBe("100.00");
+  });
+
+  it("starts an assignment with no score yet empty, not undefined", () => {
+    const cmi = toFlattenedCmi({}, LEARNER);
+
+    expect(cmi["cmi.core.score.raw"]).toBe("");
+    expect(cmi["cmi.core.score.min"]).toBe("");
+    expect(cmi["cmi.core.score.max"]).toBe("");
+  });
 });
 
 describe("isTrustedMessage", () => {

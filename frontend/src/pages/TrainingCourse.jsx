@@ -68,6 +68,17 @@ export default function TrainingCourse() {
         return;
       }
 
+      if (event.data.type === MESSAGE_TYPES.ERROR) {
+        // The player already surfaced this to the course; without a
+        // consumer here, a learner's "blank iframe" report leaves nothing
+        // behind it to investigate.
+        console.error(
+          `[TrainingCourse] scorm:error from training ${trainingId}`,
+          { code: event.data.code, message: event.data.message },
+        );
+        return;
+      }
+
       if (
         event.data.type === MESSAGE_TYPES.COMMIT ||
         event.data.type === MESSAGE_TYPES.FINISH

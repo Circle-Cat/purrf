@@ -109,6 +109,44 @@ describe("TrainingCourse", () => {
     expect(await screen.findByText(/could not be saved/i)).toBeInTheDocument();
   });
 
+  it("logs a scorm:error from the player instead of dropping it", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    renderCourse();
+    await screen.findByTitle(/course/i);
+
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: "https://test-training-content.purrf.io",
+        data: { type: "scorm:error", code: 101, message: "General exception" },
+      }),
+    );
+
+    await waitFor(() =>
+      expect(consoleError).toHaveBeenCalledWith(
+        expect.stringContaining("42"),
+        expect.objectContaining({ code: 101, message: "General exception" }),
+      ),
+    );
+    consoleError.mockRestore();
+  });
+
+  it("ignores a scorm:error forged by any other page", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    renderCourse();
+    await screen.findByTitle(/course/i);
+
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: "https://evil.example",
+        data: { type: "scorm:error", code: 101, message: "forged" },
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
   it("says so when the course has no package to open", async () => {
     openSession.mockRejectedValue({ response: { status: 404 } });
 

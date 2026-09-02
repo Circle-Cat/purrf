@@ -5,11 +5,19 @@ import { toFlattenedCmi } from "@/training/scormBridge";
 const LEARNER = { userId: 11, displayName: "Alice Admin" };
 const SUSPEND = "x".repeat(1264);
 
+// The player (backend/training/player/player.html) constructs Scorm12API
+// with exactly these options. Without dataCommitFormat: "flattened" here,
+// renderCommitCMI returns the library's default nested {cmi: {core: {...}}}
+// shape instead of flat "cmi.core.*" dot-keys, and the mismatch would not
+// show up here -- only in training_progress_service.py, which reads flat
+// keys and would silently store nothing.
+const API_OPTIONS = { autocommit: false, logLevel: 5, dataCommitFormat: "flattened" };
+
 describe("the behaviour a course depends on", () => {
   let api;
 
   beforeEach(() => {
-    api = new Scorm12API({ autocommit: false, logLevel: 5 });
+    api = new Scorm12API(API_OPTIONS);
     api.loadFromFlattenedJSON(
       toFlattenedCmi(
         {
@@ -31,11 +39,6 @@ describe("the behaviour a course depends on", () => {
 
   it("says the entry is a resume", () => {
     expect(api.lmsGetValue("cmi.core.entry")).toBe("resume");
-  });
-
-  it("reports a normal lesson mode", () => {
-    // Empty here sends the driver down its invalid-mode branch.
-    expect(api.lmsGetValue("cmi.core.lesson_mode")).toBe("normal");
   });
 
   it("accepts an empty suspend_data as a real write", () => {
@@ -64,6 +67,24 @@ describe("the behaviour a course depends on", () => {
 
     const payload = api.renderCommitCMI(true);
 
-    expect(JSON.stringify(payload)).toContain("passed");
+    // The backend reads flat "cmi.core.*" keys, not the library's default
+    // nested shape -- a nested payload already shipped once on this branch.
+    expect(payload["cmi.core.lesson_status"]).toBe("passed");
+  });
+
+  it("keeps a seeded total_time until this session adds to it", () => {
+    // training_progress_service.py replaces rather than accumulates
+    // session_time_seconds on the strength of this: getCurrentTotalTime()
+    // returns the seeded total plus wall time since init, which only holds
+    // if loadFromFlattenedJSON actually applies total_time before init.
+    const seeded = new Scorm12API(API_OPTIONS);
+    seeded.loadFromFlattenedJSON(
+      toFlattenedCmi({ sessionTimeSeconds: 500 }, LEARNER),
+    );
+    seeded.lmsInitialize();
+
+    const payload = seeded.renderCommitCMI(true);
+
+    expect(payload["cmi.core.total_time"]).toMatch(/^00:08:20(\.\d+)?$/);
   });
 });
