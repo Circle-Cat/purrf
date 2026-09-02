@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.mentorship_enums import TrainingStatus
@@ -27,6 +28,12 @@ class TrainingProgressRepository:
     ) -> TrainingProgressEntity:
         """Create or update the progress row for one assignment.
 
+        One statement, not a read followed by an insert: two overlapping first
+        commits on the same assignment both read no row, and the second insert
+        would violate the unique constraint on ``training_id`` and 500 the
+        request -- taking that learner's completion down with it. ON CONFLICT
+        turns the loser of that race into an update instead.
+
         Args:
             session (AsyncSession): The active async database session.
             training_id (int): The assignment the row belongs to.
@@ -35,15 +42,30 @@ class TrainingProgressRepository:
         Returns:
             TrainingProgressEntity: The stored row.
         """
-        entity = await self.get_by_training_id(session, training_id)
-        if entity is None:
-            entity = TrainingProgressEntity(training_id=training_id)
-            session.add(entity)
-        for name, value in columns.items():
-            setattr(entity, name, value)
-        entity.last_accessed_at = datetime.now(timezone.utc)
-        await session.flush()
-        return entity
+        values = {
+            "training_id": training_id,
+            **columns,
+            "last_accessed_at": datetime.now(timezone.utc),
+        }
+        statement = (
+            insert(TrainingProgressEntity)
+            .values(**values)
+            .on_conflict_do_update(
+                index_elements=[TrainingProgressEntity.training_id],
+                set_={
+                    name: value
+                    for name, value in values.items()
+                    if name != "training_id"
+                },
+            )
+            .returning(TrainingProgressEntity)
+        )
+        # populate_existing: the caller has usually already loaded this row, and
+        # the object it holds must end up carrying what was just written.
+        result = await session.execute(
+            statement, execution_options={"populate_existing": True}
+        )
+        return result.scalars().one()
 
     async def clear_resume_state(self, session: AsyncSession, course_id: int) -> int:
         """Wipe resume data for everyone on this course who has not finished.

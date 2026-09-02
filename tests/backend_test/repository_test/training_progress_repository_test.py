@@ -242,6 +242,96 @@ class TestTrainingProgressRepository(BaseRepositoryTestLib):
 
         self.assertEqual(row.suspend_data, blob)
 
+    async def _statements_of_upsert(self, **columns):
+        """Every statement the call sends, compiled for Postgres."""
+        from sqlalchemy import event
+        from sqlalchemy.dialects import postgresql
+
+        captured = []
+
+        def capture(conn, clauseelement, multiparams, params, execution_options):
+            captured.append(clauseelement)
+
+        training = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.IN_PROGRESS
+        )
+        event.listen(self.connection.sync_connection, "before_execute", capture)
+        try:
+            await self.repo.upsert(self.session, training.training_id, **columns)
+        finally:
+            event.remove(self.connection.sync_connection, "before_execute", capture)
+
+        return [
+            str(statement.compile(dialect=postgresql.dialect()))
+            for statement in captured
+            if hasattr(statement, "compile")
+        ]
+
+    async def test_upsert_writes_without_reading_first(self):
+        """Get-then-insert leaves a window: two overlapping first commits both
+        read no row, and the second insert violates the unique constraint on
+        training_id, 500s the request, and takes that learner's status write
+        down with it. One statement has no such window."""
+        statements = await self._statements_of_upsert(lesson_location="Intro")
+
+        self.assertEqual(len(statements), 1, f"Expected one statement: {statements}")
+
+    async def test_upsert_resolves_a_conflicting_insert_into_an_update(self):
+        statements = await self._statements_of_upsert(lesson_location="Intro")
+
+        self.assertIn("ON CONFLICT", statements[0])
+        self.assertIn("DO UPDATE", statements[0])
+
+    async def test_upsert_with_no_columns_still_stamps_the_row(self):
+        """The service can reach here with nothing but a status decision."""
+        training = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.IN_PROGRESS
+        )
+
+        row = await self.repo.upsert(self.session, training.training_id)
+        await self._reload(row)
+
+        self.assertIsNotNone(row.last_accessed_at)
+        self.assertEqual(row.session_time_seconds, 0)
+
+    async def test_upsert_leaves_columns_it_was_not_given_alone(self):
+        """A partial commit must not blank what an earlier one stored."""
+        training = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.IN_PROGRESS
+        )
+        await self.repo.upsert(
+            self.session,
+            training.training_id,
+            lesson_location="Intro",
+            suspend_data="blob",
+        )
+
+        row = await self.repo.upsert(
+            self.session, training.training_id, lesson_location="Summary"
+        )
+        await self._reload(row)
+
+        self.assertEqual(row.lesson_location, "Summary")
+        self.assertEqual(row.suspend_data, "blob")
+
+    async def test_upsert_returns_the_row_the_caller_already_holds(self):
+        """The service reads the row before it writes; the object it is
+        holding has to end up carrying what was written."""
+        training = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.IN_PROGRESS
+        )
+        await self.repo.upsert(
+            self.session, training.training_id, lesson_location="Intro"
+        )
+        held = await self.repo.get_by_training_id(self.session, training.training_id)
+
+        returned = await self.repo.upsert(
+            self.session, training.training_id, lesson_location="Summary"
+        )
+
+        self.assertIs(returned, held)
+        self.assertEqual(held.lesson_location, "Summary")
+
 
 if __name__ == "__main__":
     unittest.main()
