@@ -39,22 +39,29 @@ class TestProfileMapper(unittest.TestCase):
             linkedin_link="http://linkedin.com/alice",
         )
 
-        self.training_entities = [
-            TrainingEntity(
-                training_id=1,
-                user_id=self.users_entity.user_id,
-                category=TrainingCategory.CORPORATE_CULTURE_COURSE,
-                completed_timestamp=self.now - timedelta(days=5),
-                status=TrainingStatus.DONE,
+        self.training_rows = [
+            (
+                TrainingEntity(
+                    training_id=1,
+                    user_id=self.users_entity.user_id,
+                    category=TrainingCategory.CORPORATE_CULTURE_COURSE,
+                    completed_timestamp=self.now - timedelta(days=5),
+                    status=TrainingStatus.DONE,
+                    course_id=7,
+                ),
+                "Corporate Culture",
             ),
-            TrainingEntity(
-                training_id=2,
-                user_id=self.users_entity.user_id,
-                category=TrainingCategory.RESIDENCY_PROGRAM_ONBOARDING,
-                completed_timestamp=self.now - timedelta(days=3),
-                status=TrainingStatus.IN_PROGRESS,
-                deadline=self.now + timedelta(days=4),
-                link="http://example.com/1",
+            (
+                TrainingEntity(
+                    training_id=2,
+                    user_id=self.users_entity.user_id,
+                    category=TrainingCategory.RESIDENCY_PROGRAM_ONBOARDING,
+                    completed_timestamp=self.now - timedelta(days=3),
+                    status=TrainingStatus.IN_PROGRESS,
+                    deadline=self.now + timedelta(days=4),
+                    link="http://example.com/1",
+                ),
+                None,
             ),
         ]
 
@@ -120,18 +127,46 @@ class TestProfileMapper(unittest.TestCase):
 
     def test_map_training_entity_to_dto(self):
         """Test mapping of a single training record using _map_training."""
-        training = self.training_entities[0]
-        dto = self.mapper._map_training(training)
+        training, course_name = self.training_rows[0]
+        dto = self.mapper._map_training(training, course_name)
 
         self.assertIsInstance(dto, TrainingDto)
         self.assertEqual(dto.id, training.training_id)
         self.assertEqual(dto.category, TrainingCategory.CORPORATE_CULTURE_COURSE)
         self.assertEqual(dto.status, TrainingStatus.DONE)
 
+    def test_a_training_row_carries_the_course_it_points_at(self):
+        """The profile page needs both to name the course and to open it."""
+        training, course_name = self.training_rows[0]
+
+        dto = self.mapper._map_training(training, course_name)
+
+        self.assertEqual(dto.course_id, 7)
+        self.assertEqual(dto.name, "Corporate Culture")
+
+    def test_a_training_row_with_no_course_maps_to_nulls(self):
+        """Legacy rows have no course_id, and the column really is nullable."""
+        training, course_name = self.training_rows[1]
+
+        dto = self.mapper._map_training(training, course_name)
+
+        self.assertIsNone(dto.course_id)
+        self.assertIsNone(dto.name)
+
+    def test_the_course_name_reaches_the_wire_as_camel_case(self):
+        profile_dto = self.mapper.map_to_profile_dto(
+            self.users_entity, self.experience_entity, self.training_rows
+        )
+
+        row = profile_dto.model_dump(by_alias=True)["training"][0]
+
+        self.assertEqual(row["courseId"], 7)
+        self.assertEqual(row["name"], "Corporate Culture")
+
     def test_map_to_profile_dto_full(self):
         """Test the main mapping method with full data."""
         profile_dto = self.mapper.map_to_profile_dto(
-            self.users_entity, self.experience_entity, self.training_entities
+            self.users_entity, self.experience_entity, self.training_rows
         )
 
         self.assertIsInstance(profile_dto, ProfileDto)
@@ -177,7 +212,7 @@ class TestProfileMapper(unittest.TestCase):
         profile_dto = self.mapper.map_to_profile_dto(
             self.users_entity,
             self.experience_entity,
-            self.training_entities,
+            self.training_rows,
             include_work_history=False,
             include_education=True,
         )

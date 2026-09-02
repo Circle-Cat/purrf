@@ -81,8 +81,10 @@ class ProfileQueryService:
             )
 
         if include_training:
-            training_entities = await self.training_repository.get_training_by_user_id(
-                session, user_id
+            training_entities = (
+                await self.training_repository.get_training_with_course_name_by_user_id(
+                    session, user_id
+                )
             )
 
         contact_email = await self.user_emails_repository.get_contact_email(

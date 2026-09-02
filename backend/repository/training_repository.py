@@ -1,21 +1,28 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from backend.entity.training_entity import TrainingEntity
+from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.common.mentorship_enums import TrainingCategory
 
 
 class TrainingRepository:
-    async def get_training_by_user_id(
+    async def get_training_with_course_name_by_user_id(
         self, session: AsyncSession, user_id: int
-    ) -> list[TrainingEntity]:
-        """
-        Fetch all training records for a given user_id.
+    ) -> list[tuple[TrainingEntity, str | None]]:
+        """Fetch a user's training records, each with its course name.
+
+        Outer joined: course_id is nullable, and a row without one is still
+        the user's assignment and still has to be shown.
         """
         result = await session.execute(
-            select(TrainingEntity).where(TrainingEntity.user_id == user_id)
+            select(TrainingEntity, TrainingCourseEntity.name)
+            .outerjoin(
+                TrainingCourseEntity,
+                TrainingEntity.course_id == TrainingCourseEntity.course_id,
+            )
+            .where(TrainingEntity.user_id == user_id)
         )
-        trainings = result.scalars().all()
-        return trainings
+        return [(row[0], row[1]) for row in result.all()]
 
     async def get_training_by_user_id_and_category(
         self, session: AsyncSession, user_id: int, category: TrainingCategory

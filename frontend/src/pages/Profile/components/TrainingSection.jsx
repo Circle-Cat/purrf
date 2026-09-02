@@ -1,6 +1,8 @@
 import React from "react";
+import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { TrainingCategoryLabel } from "@/pages/Profile/utils";
 import { formatInTz } from "@/utils/dateTime";
 import { isIncompleteOnboarding } from "@/utils/training";
@@ -66,7 +68,8 @@ const TrainingSection = ({ list, timezone }) => {
                   }
                 >
                   <td>
-                    {TrainingCategoryLabel[training.category] ??
+                    {training.name ??
+                      TrainingCategoryLabel[training.category] ??
                       training.category}
                   </td>
                   <td>
@@ -95,6 +98,10 @@ const TrainingSection = ({ list, timezone }) => {
                       >
                         View Link
                       </a>
+                    ) : training.courseId ? (
+                      <Link to={ROUTE_PATHS.TRAINING_COURSE(training.id)}>
+                        Open Course
+                      </Link>
                     ) : (
                       "-"
                     )}

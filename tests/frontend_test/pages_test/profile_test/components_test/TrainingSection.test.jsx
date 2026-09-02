@@ -1,9 +1,12 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { describe, it, expect } from "vitest";
 import "@testing-library/jest-dom";
 
 import TrainingSection from "@/pages/Profile/components/TrainingSection";
+
+const renderInRouter = (ui) => render(ui, { wrapper: MemoryRouter });
 
 const BASE_TIMESTAMPS = {
   completedTimestamp: "2023-01-15T00:00:00Z",
@@ -282,6 +285,96 @@ describe("TrainingSection Component", () => {
       .getByText("Residency Program Onboarding")
       .closest("tr");
     expect(noLinkRow).toHaveTextContent("-");
+  });
+
+  it("names the row by its course, not by the category", () => {
+    renderInRouter(
+      <TrainingSection
+        list={[
+          {
+            id: 1,
+            courseId: 7,
+            name: "Mentor Onboarding",
+            category: null,
+            status: "to_do",
+            link: null,
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Mentor Onboarding")).toBeInTheDocument();
+  });
+
+  it("opens a hosted course in the app when the row has no external link", () => {
+    renderInRouter(
+      <TrainingSection
+        list={[
+          {
+            id: 42,
+            courseId: 7,
+            name: "Mentor Onboarding",
+            category: null,
+            status: "to_do",
+            link: null,
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: /open course/i })).toHaveAttribute(
+      "href",
+      "/training/42",
+    );
+  });
+
+  it("keeps sending a seed row to its external link", () => {
+    renderInRouter(
+      <TrainingSection
+        list={[
+          {
+            id: 42,
+            courseId: 7,
+            name: "Corporate Culture",
+            category: "corporate_culture_course",
+            status: "done",
+            link: "http://test.com",
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: /view link/i })).toHaveAttribute(
+      "href",
+      "http://test.com",
+    );
+    expect(
+      screen.queryByRole("link", { name: /open course/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("still names a row the catalogue holds no course for", () => {
+    renderInRouter(
+      <TrainingSection
+        list={[
+          {
+            id: 1,
+            courseId: null,
+            name: null,
+            category: "corporate_culture_course",
+            status: "done",
+            link: null,
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Corporate Culture Course")).toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
   it('renders "-" instead of a clickable link for a javascript: link', () => {
