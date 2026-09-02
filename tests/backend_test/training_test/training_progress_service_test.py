@@ -571,7 +571,9 @@ class TestSave(_ProgressServiceCase):
             {**_COMMIT, "cmi.suspend_data": ""},
         )
 
-        self.assertEqual(self.progress_repository.upsert.call_args.kwargs["suspend_data"], "")
+        self.assertEqual(
+            self.progress_repository.upsert.call_args.kwargs["suspend_data"], ""
+        )
 
     async def test_the_first_commit_of_all_is_written(self):
         self.progress_repository.get_by_training_id.return_value = None

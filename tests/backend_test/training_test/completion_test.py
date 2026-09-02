@@ -70,9 +70,7 @@ class TestNextTrainingStatus(unittest.TestCase):
 
     def test_failed_does_not_rewrite_a_status_the_row_already_has(self):
         """A repeat status write would defeat the unchanged-commit skip."""
-        self.assertIsNone(
-            next_training_status(TrainingStatus.IN_PROGRESS, "failed")
-        )
+        self.assertIsNone(next_training_status(TrainingStatus.IN_PROGRESS, "failed"))
 
 
 if __name__ == "__main__":

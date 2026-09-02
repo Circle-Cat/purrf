@@ -236,9 +236,7 @@ class TrainingProgressService:
                 sorted(cmi.keys()),
             )
 
-        moved = next_training_status(
-            assignment.status, cmi.get(_LESSON_STATUS)
-        )
+        moved = next_training_status(assignment.status, cmi.get(_LESSON_STATUS))
 
         unchanged = (
             _content_unchanged(existing, columns) and not accumulates_session_time

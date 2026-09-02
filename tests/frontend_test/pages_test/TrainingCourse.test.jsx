@@ -56,10 +56,7 @@ describe("TrainingCourse", () => {
     // The unload save goes around axios on purpose (see TrainingCourse.jsx),
     // so it is observed here at the fetch seam instead of through the
     // trainingApi mock.
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true }),
-    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
   });
 
   afterEach(() => {

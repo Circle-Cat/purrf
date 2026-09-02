@@ -147,8 +147,7 @@ class TrainingAssignmentService:
 
         if course.storage_prefix is None:
             raise ConflictError(
-                "This course has no package uploaded yet, so there is nothing "
-                "to run."
+                "This course has no package uploaded yet, so there is nothing to run."
             )
 
         existing = await self.training_repository.get_training_by_user_id_and_course_id(
