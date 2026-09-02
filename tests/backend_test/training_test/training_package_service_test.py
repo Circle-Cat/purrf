@@ -1,0 +1,547 @@
+"""Uploading a package over a live course, and clearing up after it."""
+
+import datetime
+import io
+import json
+import unittest
+import zipfile
+from unittest.mock import AsyncMock, MagicMock
+
+from backend.common.mentorship_enums import ScormVersion
+from backend.entity.training_course_entity import TrainingCourseEntity
+from backend.entity.training_retired_prefix_entity import TrainingRetiredPrefixEntity
+from backend.training.scorm_package import PackageRejected
+from backend.training.training_package_service import (
+    RETIREMENT_DELAY,
+    TrainingPackageService,
+)
+
+_COURSE_ID = 7
+_ENTRY_PATH = "index.html"
+_LIVE_PREFIX = "training/7/9cf1e0d2/"
+_NOW = datetime.datetime(2026, 9, 2, 9, 0, tzinfo=datetime.timezone.utc)
+_VERIFIED_AT = datetime.datetime(2026, 8, 30, 12, 0, tzinfo=datetime.timezone.utc)
+
+_DRIVER_CONFIG = {
+    "storylineId": None,
+    "quizId": None,
+    "reporting": "passed-incomplete",
+    "coursePackageVersion": "qPpo9zHD",
+    "threshold": 100,
+    "driverVersion": "7.12.0",
+    "lmsTarget": "scorm12",
+}
+
+
+def _manifest(*, schemaversion: str = "1.2", declared_files: tuple = ()) -> bytes:
+    """A manifest shaped like the ones the real packages ship."""
+    files = "".join(
+        f'\n      <file href="{href}"/>' for href in (_ENTRY_PATH, *declared_files)
+    )
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="cat_course" version="1.2">
+  <metadata>
+    <schema>ADL SCORM</schema>
+    <schemaversion>{schemaversion}</schemaversion>
+  </metadata>
+  <organizations default="org_1">
+    <organization identifier="org_1">
+      <title>Cat Care Fundamentals</title>
+      <item identifier="item_1" identifierref="res_1">
+        <title>Module One</title>
+      </item>
+    </organization>
+  </organizations>
+  <resources>
+    <resource identifier="res_1" type="webcontent" href="{_ENTRY_PATH}">{files}
+    </resource>
+  </resources>
+</manifest>"""
+    return xml.encode("utf-8")
+
+
+def _entry_page(driver_config: dict | None) -> bytes:
+    script = ""
+    if driver_config is not None:
+        script = (
+            '<script id="__DRIVER_CONFIG__" type="application/json">'
+            f"{json.dumps(driver_config)}</script>"
+        )
+    html = f"""<!DOCTYPE html>
+<html>
+<head><title>Cat Care Fundamentals</title>{script}</head>
+<body><div id="course"></div></body>
+</html>"""
+    return html.encode("utf-8")
+
+
+def _members(
+    *,
+    schemaversion: str = "1.2",
+    driver_config: dict | None = _DRIVER_CONFIG,
+    declared_files: tuple = (),
+    extra_members: dict | None = None,
+) -> dict:
+    """The archive members of a minimal but valid SCORM 1.2 package.
+
+    Separate from the zip so a test can assert on file count and byte total
+    without opening the archive again.
+    """
+    members = {
+        "imsmanifest.xml": _manifest(
+            schemaversion=schemaversion, declared_files=declared_files
+        ),
+        _ENTRY_PATH: _entry_page(driver_config),
+    }
+    members.update(extra_members or {})
+    return members
+
+
+def _zip(members: dict) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in members.items():
+            archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+def _package(**kwargs) -> bytes:
+    return _zip(_members(**kwargs))
+
+
+def _named_arguments(mock, names: tuple) -> dict:
+    """One call's arguments by name, however they were passed."""
+    args, kwargs = mock.call_args
+    bound = dict(zip(names, args))
+    bound.update(kwargs)
+    return bound
+
+
+def _reported_numbers(report: dict) -> list:
+    """The cleanup job's report keys are not pinned by the spec; its counts are."""
+    return [value for value in report.values() if isinstance(value, int)]
+
+
+class _RecordingCourse:
+    """A course row that notes the moment its columns are written.
+
+    A real entity cannot interleave its attribute writes with the storage
+    calls in one list, and that order is the whole point of one test below.
+    """
+
+    def __init__(self, events: list, **fields):
+        object.__setattr__(self, "_events", events)
+        for name, value in fields.items():
+            object.__setattr__(self, name, value)
+
+    def __getattr__(self, name):
+        # Any column not set here is NULL on a real row.
+        return None
+
+    def __setattr__(self, name, value):
+        self._events.append((f"course.{name}", value))
+        object.__setattr__(self, name, value)
+
+
+class _PackageServiceTestCase(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.session = AsyncMock()
+        self.logger = MagicMock()
+        self.course_repository = AsyncMock()
+        self.course_repository.get_course_by_id.return_value = None
+        self.retired_repository = AsyncMock()
+        self.progress_repository = AsyncMock()
+        self.progress_repository.clear_resume_state.return_value = 0
+        self.storage = MagicMock()
+        self.storage.put.return_value = None
+        self.storage.delete_prefix.return_value = 0
+        self.service = TrainingPackageService(
+            logger=self.logger,
+            training_course_repository=self.course_repository,
+            training_retired_prefix_repository=self.retired_repository,
+            training_progress_repository=self.progress_repository,
+            training_storage=self.storage,
+        )
+
+    def _course(self, **overrides) -> TrainingCourseEntity:
+        fields = {
+            "course_id": _COURSE_ID,
+            "name": "Cat Care Fundamentals",
+            "is_active": True,
+        }
+        fields.update(overrides)
+        course = TrainingCourseEntity(**fields)
+        self.course_repository.get_course_by_id.return_value = course
+        return course
+
+    def _put_keys(self) -> list:
+        return [
+            call.args[0] if call.args else call.kwargs["object_key"]
+            for call in self.storage.put.call_args_list
+        ]
+
+    def _deleted_prefixes(self) -> list:
+        return [
+            call.args[0] if call.args else call.kwargs["prefix"]
+            for call in self.storage.delete_prefix.call_args_list
+        ]
+
+
+class TestUploadPackage(_PackageServiceTestCase):
+    async def test_a_first_upload_stores_every_file_under_a_fresh_prefix(self):
+        course = self._course(storage_prefix=None)
+        members = _members()
+
+        result = await self.service.upload_package(
+            self.session, _COURSE_ID, _zip(members), now=_NOW
+        )
+
+        self.assertIsNotNone(course.storage_prefix)
+        self.assertTrue(course.storage_prefix.startswith(f"training/{_COURSE_ID}/"))
+        self.assertEqual(course.storage_prefix, result.storage_prefix)
+        self.assertEqual(
+            sorted(self._put_keys()),
+            sorted(course.storage_prefix + name for name in members),
+        )
+
+    async def test_an_overwrite_mints_a_prefix_the_live_one_does_not_share(self):
+        """Nothing is ever written in place."""
+        course = self._course(storage_prefix=_LIVE_PREFIX)
+
+        result = await self.service.upload_package(
+            self.session, _COURSE_ID, _package(), now=_NOW
+        )
+
+        self.assertNotEqual(result.storage_prefix, _LIVE_PREFIX)
+        self.assertEqual(course.storage_prefix, result.storage_prefix)
+        for key in self._put_keys():
+            self.assertFalse(key.startswith(_LIVE_PREFIX))
+
+    async def test_every_file_is_stored_before_the_prefix_moves(self):
+        """A half-finished upload has to leave the live course intact."""
+        events = []
+        course = _RecordingCourse(
+            events,
+            course_id=_COURSE_ID,
+            storage_prefix=_LIVE_PREFIX,
+            verified_completable_at=_VERIFIED_AT,
+        )
+        self.course_repository.get_course_by_id.return_value = course
+
+        def _note_the_put(object_key, *args, **kwargs):
+            events.append(("put", object_key))
+
+        self.storage.put.side_effect = _note_the_put
+
+        await self.service.upload_package(
+            self.session, _COURSE_ID, _package(), now=_NOW
+        )
+
+        names = [name for name, _ in events]
+        self.assertIn("put", names)
+        self.assertIn("course.storage_prefix", names)
+        last_put = max(index for index, name in enumerate(names) if name == "put")
+        self.assertGreater(names.index("course.storage_prefix"), last_put)
+
+    async def test_an_upload_that_dies_partway_leaves_the_live_course_alone(self):
+        course = self._course(
+            storage_prefix=_LIVE_PREFIX,
+            entry_path="old_index.html",
+            verified_completable_at=_VERIFIED_AT,
+            verified_by_user_id=3,
+        )
+        stored = []
+
+        def _die_on_the_second_file(object_key, *args, **kwargs):
+            stored.append(object_key)
+            if len(stored) == 2:
+                raise RuntimeError("the bucket went away mid-upload")
+
+        self.storage.put.side_effect = _die_on_the_second_file
+        archive = _package(extra_members={"assets/cat.png": b"not really a png"})
+
+        with self.assertRaises(RuntimeError):
+            await self.service.upload_package(
+                self.session, _COURSE_ID, archive, now=_NOW
+            )
+
+        self.assertEqual(course.storage_prefix, _LIVE_PREFIX)
+        self.assertEqual(course.entry_path, "old_index.html")
+        self.assertEqual(course.verified_completable_at, _VERIFIED_AT)
+        self.assertEqual(course.verified_by_user_id, 3)
+        self.retired_repository.add.assert_not_awaited()
+        self.progress_repository.clear_resume_state.assert_not_awaited()
+
+    async def test_an_overwrite_retires_the_old_prefix_for_twenty_four_hours(self):
+        self._course(storage_prefix=_LIVE_PREFIX)
+
+        await self.service.upload_package(
+            self.session, _COURSE_ID, _package(), now=_NOW
+        )
+
+        self.assertEqual(RETIREMENT_DELAY, datetime.timedelta(hours=24))
+        self.retired_repository.add.assert_awaited_once()
+        recorded = _named_arguments(
+            self.retired_repository.add,
+            ("session", "course_id", "storage_prefix", "delete_after"),
+        )
+        self.assertEqual(recorded["course_id"], _COURSE_ID)
+        self.assertEqual(recorded["storage_prefix"], _LIVE_PREFIX)
+        self.assertEqual(recorded["delete_after"], _NOW + RETIREMENT_DELAY)
+
+    async def test_the_old_prefix_is_not_deleted_during_the_upload(self):
+        """Requests in flight are still holding it; deleting is the job's business."""
+        self._course(storage_prefix=_LIVE_PREFIX)
+
+        await self.service.upload_package(
+            self.session, _COURSE_ID, _package(), now=_NOW
+        )
+
+        self.storage.delete_prefix.assert_not_called()
+
+    async def test_a_first_upload_retires_nothing(self):
+        self._course(storage_prefix=None)
+
+        await self.service.upload_package(
+            self.session, _COURSE_ID, _package(), now=_NOW
+        )
+
+        self.retired_repository.add.assert_not_awaited()
+
+    async def test_an_overwrite_clears_resume_state_and_reports_the_count(self):
+        self._course(storage_prefix=_LIVE_PREFIX)
+        self.progress_repository.clear_resume_state.return_value = 3
+
+        result = await self.service.upload_package(
+            self.session, _COURSE_ID, _package(), now=_NOW
+        )
+
+        self.assertEqual(result.learners_reset, 3)
+
+    async def test_a_first_upload_resets_nobody(self):
+        self._course(storage_prefix=None)
+
+        result = await self.service.upload_package(
+            self.session, _COURSE_ID, _package(), now=_NOW
+        )
+
+        self.assertEqual(result.learners_reset, 0)
+
+    async def test_the_clearing_is_asked_for_by_course(self):
+        """Whether DONE rows are spared is the repository's contract, tested there."""
+        self._course(storage_prefix=_LIVE_PREFIX)
+        self.progress_repository.clear_resume_state.return_value = 3
+
+        await self.service.upload_package(
+            self.session, _COURSE_ID, _package(), now=_NOW
+        )
+
+        self.progress_repository.clear_resume_state.assert_awaited_once()
+        recorded = _named_arguments(
+            self.progress_repository.clear_resume_state, ("session", "course_id")
+        )
+        self.assertEqual(recorded["course_id"], _COURSE_ID)
+
+    async def test_the_service_never_clears_a_progress_row_itself(self):
+        """One statement over the course, not a row-by-row walk it can half-finish."""
+        self._course(storage_prefix=_LIVE_PREFIX)
+
+        await self.service.upload_package(
+            self.session, _COURSE_ID, _package(), now=_NOW
+        )
+
+        self.assertEqual(
+            [recorded[0] for recorded in self.progress_repository.mock_calls],
+            ["clear_resume_state"],
+        )
+        self.session.add.assert_not_called()
+        self.session.execute.assert_not_called()
+
+    async def test_an_overwrite_drops_the_course_back_to_needs_trial_run(self):
+        """The proof belonged to the old package."""
+        course = self._course(
+            storage_prefix=_LIVE_PREFIX,
+            verified_completable_at=_VERIFIED_AT,
+            verified_by_user_id=3,
+        )
+
+        await self.service.upload_package(
+            self.session, _COURSE_ID, _package(), now=_NOW
+        )
+
+        self.assertIsNone(course.verified_completable_at)
+        self.assertIsNone(course.verified_by_user_id)
+
+    async def test_a_first_upload_is_unverified_too(self):
+        course = self._course(storage_prefix=None)
+
+        await self.service.upload_package(
+            self.session, _COURSE_ID, _package(), now=_NOW
+        )
+
+        self.assertIsNone(course.verified_completable_at)
+        self.assertIsNone(course.verified_by_user_id)
+
+    async def test_a_scorm_2004_package_is_refused_and_nothing_is_written(self):
+        """Refused at upload, not left to fail under a learner months later."""
+        course = self._course(storage_prefix=_LIVE_PREFIX)
+
+        with self.assertRaises(PackageRejected):
+            await self.service.upload_package(
+                self.session,
+                _COURSE_ID,
+                _package(schemaversion="2004 4th Edition"),
+                now=_NOW,
+            )
+
+        self.storage.put.assert_not_called()
+        self.assertEqual(course.storage_prefix, _LIVE_PREFIX)
+        self.retired_repository.add.assert_not_awaited()
+        self.progress_repository.clear_resume_state.assert_not_awaited()
+
+    async def test_an_archive_that_climbs_out_of_its_prefix_is_refused(self):
+        course = self._course(storage_prefix=_LIVE_PREFIX)
+        archive = _package(extra_members={"../escape.txt": b"nope"})
+
+        with self.assertRaises(PackageRejected):
+            await self.service.upload_package(
+                self.session, _COURSE_ID, archive, now=_NOW
+            )
+
+        self.storage.put.assert_not_called()
+        self.assertEqual(course.storage_prefix, _LIVE_PREFIX)
+        self.retired_repository.add.assert_not_awaited()
+        self.progress_repository.clear_resume_state.assert_not_awaited()
+
+    async def test_uploading_to_a_course_that_does_not_exist_is_refused(self):
+        self.course_repository.get_course_by_id.return_value = None
+
+        with self.assertRaises(ValueError):
+            await self.service.upload_package(self.session, 404, _package(), now=_NOW)
+
+        self.storage.put.assert_not_called()
+        self.retired_repository.add.assert_not_awaited()
+        self.progress_repository.clear_resume_state.assert_not_awaited()
+
+    async def test_the_result_describes_what_was_stored(self):
+        course = self._course(storage_prefix=None)
+        members = _members()
+
+        result = await self.service.upload_package(
+            self.session, _COURSE_ID, _zip(members), now=_NOW
+        )
+
+        self.assertEqual(result.course_id, _COURSE_ID)
+        self.assertEqual(result.entry_path, _ENTRY_PATH)
+        self.assertEqual(result.scorm_version, ScormVersion.SCORM_12)
+        self.assertEqual(result.file_count, len(members))
+        self.assertEqual(result.total_bytes, sum(len(d) for d in members.values()))
+        self.assertEqual(result.storage_prefix, course.storage_prefix)
+
+    async def test_the_completion_settings_are_read_off_the_entry_page_and_kept(self):
+        """The overwrite criterion and the per-course DONE rule both read them."""
+        course = self._course(storage_prefix=None)
+
+        result = await self.service.upload_package(
+            self.session, _COURSE_ID, _package(), now=_NOW
+        )
+
+        self.assertEqual(result.package_version, "qPpo9zHD")
+        self.assertEqual(result.reporting_mode, "passed-incomplete")
+        self.assertTrue(result.completion_config_readable)
+        self.assertEqual(course.package_version, "qPpo9zHD")
+        self.assertEqual(course.reporting_mode, "passed-incomplete")
+        self.assertEqual(course.entry_path, _ENTRY_PATH)
+        self.assertEqual(course.scorm_version, ScormVersion.SCORM_12)
+
+    async def test_a_package_we_cannot_read_uploads_and_says_so(self):
+        """Silence here would be read as 'nothing wrong'."""
+        course = self._course(storage_prefix=None)
+
+        result = await self.service.upload_package(
+            self.session, _COURSE_ID, _package(driver_config=None), now=_NOW
+        )
+
+        self.assertFalse(result.completion_config_readable)
+        self.assertIsNone(result.package_version)
+        self.assertIsNone(result.reporting_mode)
+        self.assertIsNotNone(course.storage_prefix)
+
+    async def test_files_the_manifest_declares_but_the_archive_lacks_are_surfaced(self):
+        """A warning, not a rejection, and not something to swallow either."""
+        self._course(storage_prefix=None)
+        archive = _package(
+            declared_files=("assets/cute%20cat.jpg", "assets/gone.png"),
+            extra_members={"assets/cute cat.jpg": b"meow"},
+        )
+
+        result = await self.service.upload_package(
+            self.session, _COURSE_ID, archive, now=_NOW
+        )
+
+        self.assertEqual(result.missing_declared_files, ["assets/gone.png"])
+
+
+class TestDeleteRetiredPrefixes(_PackageServiceTestCase):
+    def _retired(self, prefix: str, delete_after) -> TrainingRetiredPrefixEntity:
+        return TrainingRetiredPrefixEntity(
+            course_id=_COURSE_ID, storage_prefix=prefix, delete_after=delete_after
+        )
+
+    async def test_it_deletes_every_prefix_whose_delay_has_elapsed(self):
+        first = self._retired("training/7/aaa/", _NOW - datetime.timedelta(hours=1))
+        second = self._retired("training/7/bbb/", _NOW - datetime.timedelta(days=2))
+        self.retired_repository.due.return_value = [first, second]
+
+        report = await self.service.delete_retired_prefixes(self.session, now=_NOW)
+
+        self.assertEqual(
+            sorted(self._deleted_prefixes()), ["training/7/aaa/", "training/7/bbb/"]
+        )
+        self.assertIsNotNone(first.deleted_at)
+        self.assertIsNotNone(second.deleted_at)
+        self.assertIn(2, _reported_numbers(report))
+
+    async def test_a_prefix_still_inside_its_delay_is_left_alone(self):
+        """The cutoff is the repository's query; the service hands it the clock."""
+        elapsed = self._retired("training/7/aaa/", _NOW - datetime.timedelta(hours=1))
+        not_yet = self._retired("training/7/bbb/", _NOW + datetime.timedelta(hours=23))
+        self.retired_repository.due.return_value = [elapsed]
+
+        await self.service.delete_retired_prefixes(self.session, now=_NOW)
+
+        recorded = _named_arguments(self.retired_repository.due, ("session", "now"))
+        self.assertEqual(recorded["now"], _NOW)
+        self.assertEqual(self._deleted_prefixes(), ["training/7/aaa/"])
+        self.assertIsNone(not_yet.deleted_at)
+
+    async def test_one_prefix_that_will_not_delete_does_not_wedge_the_rest(self):
+        stuck = self._retired("training/7/aaa/", _NOW - datetime.timedelta(hours=1))
+        healthy = self._retired("training/7/bbb/", _NOW - datetime.timedelta(days=2))
+        self.retired_repository.due.return_value = [stuck, healthy]
+
+        def _fail_on_the_stuck_one(prefix, *args, **kwargs):
+            if prefix == "training/7/aaa/":
+                raise RuntimeError("storage said no")
+            return 4
+
+        self.storage.delete_prefix.side_effect = _fail_on_the_stuck_one
+
+        await self.service.delete_retired_prefixes(self.session, now=_NOW)
+
+        self.assertIn("training/7/bbb/", self._deleted_prefixes())
+        self.assertIsNotNone(healthy.deleted_at)
+        self.assertIsNone(stuck.deleted_at)
+        self.assertTrue(self.logger.exception.called or self.logger.error.called)
+
+    async def test_with_nothing_due_it_deletes_nothing(self):
+        self.retired_repository.due.return_value = []
+
+        report = await self.service.delete_retired_prefixes(self.session, now=_NOW)
+
+        self.storage.delete_prefix.assert_not_called()
+        self.assertEqual(set(_reported_numbers(report)), {0})
+
+
+if __name__ == "__main__":
+    unittest.main()

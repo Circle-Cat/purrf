@@ -25,16 +25,97 @@ py_library(
 )
 
 py_library(
+    name = "scorm_manifest",
+    srcs = ["scorm_manifest.py"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "@pypi//defusedxml",
+    ],
+)
+
+py_library(
+    name = "scorm_package",
+    srcs = ["scorm_package.py"],
+    deps = [
+        ":scorm_manifest",
+        "//backend/common:mentorship_enums",
+    ],
+)
+
+py_library(
+    name = "training_content_token",
+    srcs = ["training_content_token.py"],
+)
+
+py_library(
+    name = "training_storage",
+    srcs = ["training_storage.py"],
+    deps = [
+        "@pypi//google_api_core",
+        "@pypi//google_cloud_storage",
+    ],
+)
+
+py_library(
+    name = "training_package_service",
+    srcs = ["training_package_service.py"],
+    deps = [
+        ":scorm_manifest",
+        ":scorm_package",
+        ":training_storage",
+        "//backend/dto",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_library(
+    name = "training_content_service",
+    srcs = ["training_content_service.py"],
+    deps = [
+        ":scorm_package",
+        ":training_content_token",
+        ":training_storage",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_library(
+    name = "training_content_controller",
+    srcs = ["training_content_controller.py"],
+    deps = [
+        ":training_content_service",
+        "//backend/common:api_endpoints",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
+    name = "training_job_controller",
+    srcs = ["training_job_controller.py"],
+    deps = [
+        ":training_package_service",
+        "//backend/common:api_endpoints",
+        "//backend/common:fast_api_response_wrapper",
+        "//backend/common:permissions",
+        "//backend/utils:permission_decorators",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
     name = "training_admin_controller",
     srcs = ["training_admin_controller.py"],
     deps = [
         ":training_assignment_service",
+        ":training_content_service",
         ":training_course_service",
+        ":training_package_service",
         "//backend/common:api_endpoints",
         "//backend/common:fast_api_response_wrapper",
         "//backend/common:permissions",
         "//backend/dto",
         "//backend/utils:permission_decorators",
         "@pypi//fastapi",
+        "@pypi//python_multipart",
     ],
 )

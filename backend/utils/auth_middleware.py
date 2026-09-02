@@ -28,6 +28,29 @@ _PERMISSION_BY_VALUE = {p.value: p for p in Permission}
 # of the origin -- the request cannot arrive without passing both.
 _UNAUTHENTICATED_PATHS = frozenset({f"/api{NOTIFICATION_DELIVER_ENDPOINT}"})
 
+# Course files are requested by the course's own JavaScript, which cannot
+# present an Access JWT; a signature in the URL path stands in for one.
+#
+# The exemption is on (host, path prefix), never on the path alone. Matching
+# only the path would exempt /p/... on the API host too, and a course that
+# reached that origin would be same-origin with the API -- able to read the
+# Access cookie, which is deliberately JS-readable, and to call any endpoint as
+# the learner. A course knows the token in its own URL, so nothing but this
+# check stops it navigating there itself.
+_CONTENT_PATH_PREFIX = "/p/"
+
+
+def _is_content_origin_request(request: Request, content_host: str | None) -> bool:
+    """Whether this is a course-file request on the content origin.
+
+    Returns False when no content host is configured, so a missing environment
+    variable authenticates everything rather than exempting everything.
+    """
+    if not content_host:
+        return False
+    host = request.headers.get("host", "").split(":")[0]
+    return host == content_host and request.url.path.startswith(_CONTENT_PATH_PREFIX)
+
 
 class AccountDeactivatedError(PermissionError):
     """Authenticated, but the account is not active."""
@@ -97,6 +120,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         user_identity_service,
         user_permissions_repository,
         logger,
+        training_content_host=None,
     ):
         super().__init__(app)
         self.auth_service = auth_service
@@ -104,6 +128,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self.user_identity_service = user_identity_service
         self.user_permissions_repository = user_permissions_repository
         self.logger = logger
+        self.training_content_host = training_content_host
 
     async def dispatch(self, request: Request, call_next):
         """
@@ -128,6 +153,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     if authentication fails.
         """
         if request.url.path in _UNAUTHENTICATED_PATHS:
+            return await call_next(request)
+
+        if _is_content_origin_request(request, self.training_content_host):
             return await call_next(request)
 
         try:
