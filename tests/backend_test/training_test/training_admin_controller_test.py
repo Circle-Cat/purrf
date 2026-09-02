@@ -47,6 +47,11 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
                 training_id=42, user_id=11, course_id=3, created=True
             )
         )
+        self.assignment_service.start_trial = AsyncMock(
+            return_value=TrainingAssignmentResultDto(
+                training_id=42, user_id=11, course_id=3, created=True
+            )
+        )
         self.package_service = MagicMock()
         self.content_service = MagicMock()
         self.progress_service = MagicMock()
@@ -86,6 +91,7 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
             ("/training/courses/{course_id}", "PATCH"),
             ("/training/courses/{course_id}/package", "POST"),
             ("/training/assignments", "POST"),
+            ("/training/courses/{course_id}/trial", "POST"),
         ]:
             self.assertEqual(
                 by_method[(path, method)],
@@ -121,6 +127,21 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response["status_code"], HTTPStatus.OK)
         self.assertFalse(response["data"]["created"])
+
+    async def test_a_trial_is_opened_for_the_caller_not_for_a_named_user(self):
+        """The user id comes from the token, never from the request."""
+        self.assignment_service.start_trial = AsyncMock(
+            return_value=TrainingAssignmentResultDto(
+                training_id=42, user_id=11, course_id=3, created=True
+            )
+        )
+        current_user = MagicMock(user_id=11)
+
+        await self.controller.start_trial(3, current_user)
+
+        self.assignment_service.start_trial.assert_awaited_once_with(
+            self.session, 3, 11
+        )
 
     def test_opening_your_own_course_takes_no_permission(self):
         """Holding the assignment is the grant; the service checks you hold it."""

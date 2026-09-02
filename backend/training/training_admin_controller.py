@@ -8,6 +8,7 @@ from backend.common.api_endpoints import (
     TRAINING_ASSIGNMENTS_ENDPOINT,
     TRAINING_COURSE_ENDPOINT,
     TRAINING_COURSE_PACKAGE_ENDPOINT,
+    TRAINING_COURSE_TRIAL_ENDPOINT,
     TRAINING_COURSES_ENDPOINT,
     TRAINING_PROGRESS_ENDPOINT,
     TRAINING_SESSION_ENDPOINT,
@@ -113,6 +114,14 @@ class TrainingAdminController:
             methods=["POST"],
             response_model=None,
         )
+        self.router.add_api_route(
+            TRAINING_COURSE_TRIAL_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_WRITE])(
+                self.start_trial
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
 
     async def list_courses(self):
         """Every course, with its state and how many people hold it.
@@ -160,6 +169,27 @@ class TrainingAdminController:
                 "Training assigned."
                 if result.created
                 else "This person already has this course."
+            ),
+            data=result.model_dump(mode="json"),
+            status_code=HTTPStatus.CREATED if result.created else HTTPStatus.OK,
+        )
+
+    async def start_trial(self, course_id: int, current_user):
+        """Open the caller's own assignment on a course so they can verify it.
+
+        Answers the deadlock at the assignment gate: nobody may be assigned an
+        unverified course, so a verifier gets one this way instead, from
+        their own identity, never a named user in the request.
+        """
+        async with self.database.session() as session:
+            result = await self.training_assignment_service.start_trial(
+                session, course_id, current_user.user_id
+            )
+        return api_response(
+            message=(
+                "Trial started."
+                if result.created
+                else "Resuming your existing trial of this course."
             ),
             data=result.model_dump(mode="json"),
             status_code=HTTPStatus.CREATED if result.created else HTTPStatus.OK,

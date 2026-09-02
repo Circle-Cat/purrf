@@ -110,3 +110,74 @@ class TrainingAssignmentService:
             course_id=payload.course_id,
             created=True,
         )
+
+    async def start_trial(
+        self, session, course_id: int, user_id: int
+    ) -> TrainingAssignmentResultDto:
+        """Open the caller's own assignment so they can verify a course.
+
+        Deliberately skips the verification gate `assign` enforces: that gate
+        is what this call exists to answer. It is otherwise an ordinary
+        assignment, because a trial that ran through different code would
+        prove less than one that runs through the learner's own path.
+
+        Args:
+            session: The active async database session.
+            course_id (int): The course being verified.
+            user_id (int): The verifier, from the authenticated caller.
+
+        Returns:
+            TrainingAssignmentResultDto: The assignment to open.
+
+        Raises:
+            ValueError: No such course.
+            ConflictError: The course has no package to run.
+        """
+        course = await self.training_course_repository.get_course_by_id(
+            session, course_id
+        )
+        if course is None:
+            raise ValueError(f"No training course with id {course_id}.")
+
+        if course.storage_prefix is None:
+            raise ConflictError(
+                "This course has no package uploaded yet, so there is nothing "
+                "to run."
+            )
+
+        existing = await self.training_repository.get_training_by_user_id_and_course_id(
+            session, user_id, course_id
+        )
+        if existing is not None:
+            return TrainingAssignmentResultDto(
+                training_id=existing.training_id,
+                user_id=existing.user_id,
+                course_id=course_id,
+                created=False,
+            )
+
+        assignment = TrainingEntity(
+            user_id=user_id,
+            course_id=course_id,
+            # Kept in step with the course, same as assign: this is what lets
+            # a trial run open the mentorship matching gate for its verifier.
+            category=course.category,
+            status=TrainingStatus.TO_DO,
+            deadline=None,
+            link=None,
+        )
+        session.add(assignment)
+        await session.flush()
+        await session.commit()
+
+        self.logger.info(
+            "[TrainingAssignmentService] opened a trial run of course %s for user %s",
+            course_id,
+            user_id,
+        )
+        return TrainingAssignmentResultDto(
+            training_id=assignment.training_id,
+            user_id=assignment.user_id,
+            course_id=course_id,
+            created=True,
+        )

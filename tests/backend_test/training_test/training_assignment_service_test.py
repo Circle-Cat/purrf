@@ -12,6 +12,8 @@ from backend.entity.training_entity import TrainingEntity
 from backend.training.training_assignment_service import TrainingAssignmentService
 
 _VERIFIED_AT = datetime.datetime(2026, 9, 1, 12, 7, tzinfo=datetime.timezone.utc)
+_COURSE_ID = 3
+_USER_ID = 11
 
 
 def _course(**overrides):
@@ -41,6 +43,9 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
             training_repository=self.trainings,
         )
         self.payload = TrainingAssignmentRequestDto(user_id=11, course_id=3)
+        # Aliases matching the repositories' role in start_trial's tests.
+        self.course_repository = self.courses
+        self.training_repository = self.trainings
 
         # Records the order the write, the flush and the commit happen in.
         # add() is synchronous in SQLAlchemy, unlike the session itself.
@@ -158,6 +163,57 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         await self.service.assign(self.session, self.payload)
 
         self.assertIsNone(self.session.add.call_args.args[0].category)
+
+
+    async def test_a_trial_opens_an_assignment_on_an_unverified_course(self):
+        """The gate that refuses assignment is exactly what the trial answers."""
+        self.course_repository.get_course_by_id.return_value = TrainingCourseEntity(
+            course_id=_COURSE_ID,
+            name="Mentor Onboarding",
+            is_active=True,
+            storage_prefix="training/3/abc/",
+            verified_completable_at=None,
+        )
+
+        result = await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)
+
+        self.assertEqual(result.user_id, _USER_ID)
+        self.assertEqual(result.course_id, _COURSE_ID)
+        self.assertTrue(result.created)
+
+    async def test_a_second_trial_reuses_the_first_assignment(self):
+        """So a verifier who stops and comes back resumes where they were."""
+        self.training_repository.get_training_by_user_id_and_course_id.return_value = (
+            TrainingEntity(training_id=42, user_id=_USER_ID, course_id=_COURSE_ID)
+        )
+
+        result = await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)
+
+        self.assertEqual(result.training_id, 42)
+        self.assertFalse(result.created)
+
+    async def test_a_trial_on_a_course_with_no_package_is_refused(self):
+        self.course_repository.get_course_by_id.return_value = TrainingCourseEntity(
+            course_id=_COURSE_ID, name="Empty", is_active=True, storage_prefix=None
+        )
+
+        with self.assertRaises(ConflictError):
+            await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)
+
+    async def test_a_trial_carries_the_courses_category_like_an_assignment_does(self):
+        """A seed course's category is what opens the mentorship gate."""
+        self.course_repository.get_course_by_id.return_value = TrainingCourseEntity(
+            course_id=_COURSE_ID,
+            name="Mentor Onboarding",
+            category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+            is_active=True,
+            storage_prefix="training/3/abc/",
+        )
+
+        await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)
+
+        added = self.session.add.call_args.args[0]
+        self.assertEqual(added.category, TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
 
 
 if __name__ == "__main__":
