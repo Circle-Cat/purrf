@@ -28,6 +28,18 @@ PLAYER_ASSETS = {
 }
 
 
+def _progress_payload(progress) -> dict:
+    """The learner's stored CMI state, or ``{}`` if there is none yet."""
+    if progress is None:
+        return {}
+    return {
+        "lessonStatus": progress.lesson_status,
+        "lessonLocation": progress.lesson_location,
+        "suspendData": progress.suspend_data,
+        "sessionTimeSeconds": progress.session_time_seconds,
+    }
+
+
 @dataclass(frozen=True)
 class ContentAsset:
     """One file on its way back to the browser."""
@@ -46,6 +58,7 @@ class TrainingContentService:
         content_host,
         training_repository,
         training_course_repository,
+        training_progress_repository,
         training_storage,
     ):
         """
@@ -57,6 +70,8 @@ class TrainingContentService:
                 is issued against.
             training_course_repository (TrainingCourseRepository): Resolves the
                 live storage prefix.
+            training_progress_repository (TrainingProgressRepository): The
+                learner's stored progress, seeded back into the page.
             training_storage (TrainingStorage): Object storage.
         """
         self.logger = logger
@@ -64,6 +79,7 @@ class TrainingContentService:
         self.content_host = content_host
         self.training_repository = training_repository
         self.training_course_repository = training_course_repository
+        self.training_progress_repository = training_progress_repository
         self.training_storage = training_storage
 
     async def open_session(self, session, training_id: int, user_id: int) -> dict:
@@ -75,7 +91,9 @@ class TrainingContentService:
             user_id (int): Who is opening it.
 
         Returns:
-            dict: ``contentBaseUrl`` and ``expiresAt``.
+            dict: ``contentBaseUrl``, ``expiresAt``, and the learner's stored
+                ``progress`` to seed the CMI model with (``{}`` if this
+                assignment has never been opened before).
 
         Raises:
             ValueError: Not configured, or no such assignment.
@@ -102,12 +120,17 @@ class TrainingContentService:
         if course is None or not course.storage_prefix:
             raise ValueError("This course has no package to open.")
 
+        progress = await self.training_progress_repository.get_by_training_id(
+            session, training_id
+        )
+
         token, expires_at = issue_content_token(self.signing_key, training_id, user_id)
         return {
             "contentBaseUrl": f"https://{self.content_host}/p/{token}/",
             "entryPath": course.entry_path,
             "playerPath": PLAYER_PATH,
             "expiresAt": expires_at,
+            "progress": _progress_payload(progress),
         }
 
     async def read_asset(self, session, token: str, asset_path: str) -> ContentAsset:

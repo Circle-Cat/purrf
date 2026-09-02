@@ -81,6 +81,11 @@ py_library(
 )
 
 py_library(
+    name = "training_progress_service",
+    srcs = ["training_progress_service.py"],
+)
+
+py_library(
     name = "training_content_controller",
     srcs = ["training_content_controller.py"],
     deps = [
@@ -98,6 +103,7 @@ py_library(
         ":training_content_service",
         ":training_course_service",
         ":training_package_service",
+        ":training_progress_service",
         "//backend/common:api_endpoints",
         "//backend/common:fast_api_response_wrapper",
         "//backend/common:permissions",

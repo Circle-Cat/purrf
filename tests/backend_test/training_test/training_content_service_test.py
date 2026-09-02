@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 from backend.common.mentorship_enums import TrainingStatus
 from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.training_entity import TrainingEntity
+from backend.entity.training_progress_entity import TrainingProgressEntity
 from backend.training.training_content_service import (
     PLAYER_PATH,
     TrainingContentService,
@@ -106,6 +107,9 @@ class _ContentServiceCase(unittest.IsolatedAsyncioTestCase):
         self.course_repository = MagicMock()
         self.course_repository.get_course_by_id = AsyncMock(return_value=self.course)
 
+        self.progress_repository = MagicMock()
+        self.progress_repository.get_by_training_id = AsyncMock(return_value=None)
+
         self.storage = MagicMock()
         self.storage.get = MagicMock(return_value=(b"<html></html>", "text/html"))
 
@@ -115,6 +119,7 @@ class _ContentServiceCase(unittest.IsolatedAsyncioTestCase):
             content_host=_CONTENT_HOST,
             training_repository=self.training_repository,
             training_course_repository=self.course_repository,
+            training_progress_repository=self.progress_repository,
             training_storage=self.storage,
         )
 
@@ -175,6 +180,29 @@ class TestOpenSession(_ContentServiceCase):
 
         with self.assertRaises(ValueError):
             await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+    async def test_the_session_carries_the_learners_stored_progress(self):
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_location="Summary",
+                suspend_data="blob",
+                session_time_seconds=500,
+            )
+        )
+
+        result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+        self.assertEqual(result["progress"]["lessonLocation"], "Summary")
+        self.assertEqual(result["progress"]["suspendData"], "blob")
+        self.assertEqual(result["progress"]["sessionTimeSeconds"], 500)
+
+    async def test_a_session_for_an_untouched_assignment_carries_no_progress(self):
+        self.progress_repository.get_by_training_id.return_value = None
+
+        result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+        self.assertEqual(result["progress"], {})
 
 
 class TestReadAssetLooksThePrefixUpFresh(_ContentServiceCase):

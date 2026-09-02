@@ -9,6 +9,7 @@ from backend.common.api_endpoints import (
     TRAINING_COURSE_ENDPOINT,
     TRAINING_COURSE_PACKAGE_ENDPOINT,
     TRAINING_COURSES_ENDPOINT,
+    TRAINING_PROGRESS_ENDPOINT,
     TRAINING_SESSION_ENDPOINT,
 )
 from backend.common.fast_api_response_wrapper import api_response
@@ -34,6 +35,7 @@ class TrainingAdminController:
         training_assignment_service,
         training_package_service,
         training_content_service,
+        training_progress_service,
         database,
     ):
         """
@@ -44,12 +46,15 @@ class TrainingAdminController:
             training_package_service (TrainingPackageService): Uploads.
             training_content_service (TrainingContentService): Mints the
                 content URL a learner's page loads the course from.
+            training_progress_service (TrainingProgressService): Stores what
+                the course commits back.
             database: Async session provider.
         """
         self.training_course_service = training_course_service
         self.training_assignment_service = training_assignment_service
         self.training_package_service = training_package_service
         self.training_content_service = training_content_service
+        self.training_progress_service = training_progress_service
         self.database = database
         self.router = APIRouter(tags=["training-admin"])
 
@@ -90,6 +95,13 @@ class TrainingAdminController:
         self.router.add_api_route(
             TRAINING_SESSION_ENDPOINT,
             endpoint=authenticate()(self.open_session),
+            methods=["POST"],
+            response_model=None,
+        )
+        # Same grant as opening the session: holding the assignment.
+        self.router.add_api_route(
+            TRAINING_PROGRESS_ENDPOINT,
+            endpoint=authenticate()(self.save_progress),
             methods=["POST"],
             response_model=None,
         )
@@ -177,3 +189,11 @@ class TrainingAdminController:
                 session, training_id, current_user.user_id
             )
         return api_response(message="Training session opened.", data=payload)
+
+    async def save_progress(self, training_id: int, payload: dict, current_user):
+        """Store one commit from the caller's own course."""
+        async with self.database.session() as session:
+            await self.training_progress_service.save(
+                session, training_id, current_user.user_id, payload.get("cmi", {})
+            )
+        return api_response(message="Progress saved.")

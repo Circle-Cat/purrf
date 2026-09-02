@@ -188,6 +188,49 @@ class TestTrainingProgressRepository(BaseRepositoryTestLib):
             await self.repo.clear_resume_state(self.session, self.course_id), 0
         )
 
+    async def test_upsert_creates_the_row_the_first_time(self):
+        training = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.IN_PROGRESS
+        )
+
+        await self.repo.upsert(
+            self.session,
+            training.training_id,
+            lesson_status="incomplete",
+            lesson_location="Summary",
+            suspend_data="blob",
+            session_time_seconds=150,
+        )
+
+        found = await self.repo.get_by_training_id(self.session, training.training_id)
+        self.assertEqual(found.lesson_location, "Summary")
+
+    async def test_upsert_updates_the_row_the_second_time(self):
+        training = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.IN_PROGRESS
+        )
+        await self.repo.upsert(
+            self.session, training.training_id, lesson_location="Intro"
+        )
+
+        await self.repo.upsert(
+            self.session, training.training_id, lesson_location="Summary"
+        )
+
+        found = await self.repo.get_by_training_id(self.session, training.training_id)
+        self.assertEqual(found.lesson_location, "Summary")
+
+    async def test_upsert_stores_suspend_data_far_past_the_scorm_limit(self):
+        training = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.IN_PROGRESS
+        )
+        blob = "z" * 40000
+
+        await self.repo.upsert(self.session, training.training_id, suspend_data=blob)
+
+        found = await self.repo.get_by_training_id(self.session, training.training_id)
+        self.assertEqual(found.suspend_data, blob)
+
 
 if __name__ == "__main__":
     unittest.main()
