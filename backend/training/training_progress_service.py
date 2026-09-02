@@ -65,16 +65,25 @@ def _score_decimal(value) -> Decimal | None:
 class TrainingProgressService:
     """Stores what a course reports, and nothing more."""
 
-    def __init__(self, logger, training_repository, training_progress_repository):
+    def __init__(
+        self,
+        logger,
+        training_repository,
+        training_progress_repository,
+        training_course_repository,
+    ):
         """
         Args:
             logger: Injected logger.
             training_repository (TrainingRepository): The assignment being saved.
             training_progress_repository (TrainingProgressRepository): The row.
+            training_course_repository (TrainingCourseRepository): Reads the
+                course being finished, to stamp it on first completion.
         """
         self.logger = logger
         self.training_repository = training_repository
         self.training_progress_repository = training_progress_repository
+        self.training_course_repository = training_course_repository
 
     async def save(self, session, training_id: int, user_id: int, cmi: dict):
         """Apply one commit to the caller's own assignment.
@@ -194,6 +203,30 @@ class TrainingProgressService:
             assignment.status = moved
             if moved is TrainingStatus.DONE and assignment.completed_timestamp is None:
                 assignment.completed_timestamp = datetime.now(timezone.utc)
+            if moved is TrainingStatus.DONE:
+                await self._stamp_if_unverified(session, assignment, user_id)
 
         await session.commit()
         return row
+
+    async def _stamp_if_unverified(self, session, assignment, user_id: int) -> None:
+        """Record that somebody ran this course to the end.
+
+        An unverified course cannot be assigned to anybody, so whoever holds
+        an assignment on one got it from the trial run -- which is what makes
+        this the trial's stamp without needing a flag to say so.
+        """
+        if assignment.course_id is None:
+            return
+        course = await self.training_course_repository.get_course_by_id(
+            session, assignment.course_id
+        )
+        if course is None or course.verified_completable_at is not None:
+            return
+        course.verified_completable_at = datetime.now(timezone.utc)
+        course.verified_by_user_id = user_id
+        self.logger.info(
+            "[TrainingProgressService] course %s verified completable by user %s",
+            course.course_id,
+            user_id,
+        )

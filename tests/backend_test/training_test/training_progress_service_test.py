@@ -40,10 +40,12 @@ class _ProgressServiceCase(unittest.IsolatedAsyncioTestCase):
                 training_id=training_id, **columns
             )
         )
+        self.course_repository = AsyncMock()
         self.service = TrainingProgressService(
             logger=self.logger,
             training_repository=self.training_repository,
             training_progress_repository=self.progress_repository,
+            training_course_repository=self.course_repository,
         )
 
     def _saved_columns(self):
@@ -367,6 +369,65 @@ class TestSave(_ProgressServiceCase):
 
         saved = self._saved_columns()
         self.assertEqual(saved, {"suspend_data": "", "lesson_location": ""})
+
+    async def test_finishing_an_unverified_course_unlocks_it(self):
+        course = self.course_repository.get_course_by_id.return_value
+        course.verified_completable_at = None
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.IN_PROGRESS
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+        )
+
+        self.assertIsNotNone(course.verified_completable_at)
+        self.assertEqual(course.verified_by_user_id, _USER_ID)
+
+    async def test_an_already_verified_course_keeps_its_first_verifier(self):
+        course = self.course_repository.get_course_by_id.return_value
+        course.verified_completable_at = _EARLIER
+        course.verified_by_user_id = 99
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.IN_PROGRESS
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "passed"},
+        )
+
+        self.assertEqual(course.verified_completable_at, _EARLIER)
+        self.assertEqual(course.verified_by_user_id, 99)
+
+    async def test_not_finishing_it_leaves_the_course_locked(self):
+        course = self.course_repository.get_course_by_id.return_value
+        course.verified_completable_at = None
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "incomplete"},
+        )
+
+        self.assertIsNone(course.verified_completable_at)
+
+    async def test_an_assignment_with_no_course_does_not_crash_the_save(self):
+        """Legacy link-only rows carry no course_id."""
+        self.training_repository.get_training_by_id.return_value.course_id = None
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "passed"},
+        )
+
+        self.progress_repository.upsert.assert_awaited()
 
     async def test_the_write_is_committed_after_the_upsert(self):
         order = []
