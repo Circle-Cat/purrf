@@ -429,6 +429,146 @@ class TestSave(_ProgressServiceCase):
 
         self.progress_repository.upsert.assert_awaited()
 
+    async def test_an_identical_commit_writes_nothing(self):
+        """The driver commits every 20 seconds whether anything changed or not."""
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="incomplete",
+                lesson_location="Summary",
+                suspend_data="x" * 5000,
+                session_time_seconds=500,
+            )
+        )
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.IN_PROGRESS
+
+        await self.service.save(self.session, _TRAINING_ID, _USER_ID, _COMMIT)
+
+        self.progress_repository.upsert.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_an_identical_commit_still_reports_success(self):
+        """The course must not be told its save failed."""
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="incomplete",
+                lesson_location="Summary",
+                suspend_data="x" * 5000,
+            )
+        )
+
+        await self.service.save(self.session, _TRAINING_ID, _USER_ID, _COMMIT)
+        # No exception is the assertion; the controller answers 200 either way.
+
+    async def test_a_growing_total_time_alone_does_not_count_as_a_change(self):
+        """Otherwise an idle learner is written every 20 seconds forever."""
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="incomplete",
+                lesson_location="Summary",
+                suspend_data="x" * 5000,
+                session_time_seconds=500,
+            )
+        )
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "01:00:00"},
+        )
+
+        self.progress_repository.upsert.assert_not_awaited()
+
+    async def test_one_changed_field_writes_all_of_them(self):
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="incomplete",
+                lesson_location="Intro",
+                suspend_data="x" * 5000,
+            )
+        )
+
+        await self.service.save(self.session, _TRAINING_ID, _USER_ID, _COMMIT)
+
+        saved = self.progress_repository.upsert.call_args.kwargs
+        self.assertEqual(saved["lesson_location"], "Summary")
+        self.assertEqual(saved["suspend_data"], "x" * 5000)
+
+    async def test_a_completion_is_written_even_though_the_progress_matches(self):
+        """The status still has to move, or a failed save is never made up."""
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="passed",
+                lesson_location="Summary",
+                suspend_data="x" * 5000,
+            )
+        )
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.IN_PROGRESS
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "passed"},
+        )
+
+        self.assertEqual(assignment.status, TrainingStatus.DONE)
+        self.session.commit.assert_awaited()
+
+    async def test_an_absent_key_is_not_a_difference(self):
+        """A partial body means "do not touch", not "set it to nothing"."""
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="incomplete",
+                lesson_location="Summary",
+                suspend_data="x" * 5000,
+            )
+        )
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {"cmi.core.lesson_status": "incomplete"},
+        )
+
+        self.progress_repository.upsert.assert_not_awaited()
+
+    async def test_an_explicit_empty_value_is_a_difference(self):
+        """A course clears these to reset itself; that is a real write."""
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="incomplete",
+                lesson_location="Summary",
+                suspend_data="x" * 5000,
+            )
+        )
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.suspend_data": ""},
+        )
+
+        self.assertEqual(self.progress_repository.upsert.call_args.kwargs["suspend_data"], "")
+
+    async def test_the_first_commit_of_all_is_written(self):
+        self.progress_repository.get_by_training_id.return_value = None
+
+        await self.service.save(self.session, _TRAINING_ID, _USER_ID, _COMMIT)
+
+        self.progress_repository.upsert.assert_awaited()
+
     async def test_the_write_is_committed_after_the_upsert(self):
         order = []
         self.progress_repository.upsert.side_effect = None

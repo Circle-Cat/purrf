@@ -25,6 +25,37 @@ _SCORE_COLUMNS = {
 # Numeric(8, 2)'s largest storable magnitude.
 _SCORE_LIMIT = Decimal("999999.99")
 
+# The driver commits every 20 seconds whether or not anything changed, so an
+# idle tab would otherwise rewrite the same row -- and the same tens of
+# kilobytes of suspend_data -- forever. session_time_seconds is deliberately
+# not compared: it is wall clock since the course loaded, so it grows on every
+# commit and would make this never fire. An idle learner's time therefore
+# lags until they do something or the tab closes, which is the trade.
+_CONTENT_COLUMNS = (
+    "lesson_status",
+    "lesson_location",
+    "suspend_data",
+    "score_raw",
+    "score_min",
+    "score_max",
+)
+
+
+def _content_unchanged(existing, columns: dict) -> bool:
+    """Whether this commit reports the same content the row already holds.
+
+    Only the keys actually present in ``columns`` are compared -- an absent
+    key means the course did not report that element this time, not that it
+    should read as blank.
+    """
+    if existing is None:
+        return False
+    return all(
+        getattr(existing, name) == value
+        for name, value in columns.items()
+        if name in _CONTENT_COLUMNS
+    )
+
 
 def _timespan_seconds(value: str) -> int | None:
     """Seconds in a SCORM 1.2 CMITimespan, or None if it is not one.
@@ -114,6 +145,10 @@ class TrainingProgressService:
         if assignment.user_id != user_id:
             raise PermissionError("This training belongs to somebody else.")
 
+        existing = await self.training_progress_repository.get_by_training_id(
+            session, training_id
+        )
+
         columns = {}
         if _LESSON_STATUS in cmi:
             columns["lesson_status"] = cmi[_LESSON_STATUS]
@@ -146,9 +181,6 @@ class TrainingProgressService:
         elif _SESSION_TIME in cmi:
             # No total_time to trust: fall back to accumulating the raw
             # session-to-date value onto what was already stored.
-            existing = await self.training_progress_repository.get_by_training_id(
-                session, training_id
-            )
             accumulated = getattr(existing, "session_time_seconds", 0) or 0
             parsed_session = _timespan_seconds(cmi[_SESSION_TIME])
             if parsed_session is None:
@@ -192,13 +224,23 @@ class TrainingProgressService:
                 sorted(cmi.keys()),
             )
 
-        row = await self.training_progress_repository.upsert(
-            session, training_id, **columns
-        )
-
         moved = next_training_status(
             assignment.status, cmi.get(_LESSON_STATUS)
         )
+
+        unchanged = _content_unchanged(existing, columns)
+        if unchanged and moved is None:
+            # Nothing to store and nothing to decide -- skip the write
+            # entirely rather than rewrite a row a parked tab keeps
+            # reporting. The course still sees a successful commit.
+            return existing
+
+        row = existing
+        if not unchanged:
+            row = await self.training_progress_repository.upsert(
+                session, training_id, **columns
+            )
+
         if moved is not None:
             assignment.status = moved
             if moved is TrainingStatus.DONE:
