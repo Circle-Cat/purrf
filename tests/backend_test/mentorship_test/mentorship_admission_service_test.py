@@ -57,6 +57,14 @@ class MentorshipAdmissionServiceTest(BaseRepositoryTestLib):
         await super().asyncSetUp()
         self.course_repository = TrainingCourseRepository()
         self.progress_repository = TrainingProgressRepository()
+        # The catalogue has to hold these before anybody is admitted: they are
+        # what the dispatch resolves the category into.
+        self.mentor_course = await self._course_for(
+            TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING
+        )
+        self.mentee_course = await self._course_for(
+            TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING
+        )
         self.service = MentorshipAdmissionService(
             logger=logging.getLogger(__name__),
             onboarding_training_service=OnboardingTrainingService(
@@ -129,14 +137,26 @@ class MentorshipAdmissionServiceTest(BaseRepositoryTestLib):
         )
         return result.scalars().one()
 
-    async def _seed_course(self, category: TrainingCategory) -> TrainingCourseEntity:
-        """The catalogue row the migration seeds for a category."""
+    async def _course_for(self, category: TrainingCategory) -> TrainingCourseEntity:
+        """The catalogue row for a category, inserted if it is not there.
+
+        The migration seeds one per category, but a schema built from the
+        models rather than by running the migration has the table and none of
+        the rows. `category` is unique, so reusing the row when it exists is
+        the only way to have one either way.
+        """
         result = await self.session.execute(
             select(TrainingCourseEntity).where(
                 TrainingCourseEntity.category == category
             )
         )
-        return result.scalars().one()
+        course = result.scalars().one_or_none()
+        if course is None:
+            course = TrainingCourseEntity(
+                name=category.value, category=category, is_active=True
+            )
+            await self.insert_entities([course])
+        return course
 
     async def _assigned_count(self, course_id: int) -> int:
         counts = {
@@ -267,19 +287,18 @@ class MentorshipAdmissionServiceTest(BaseRepositoryTestLib):
         """Without the course id the learner cannot open the course at all."""
         user, _ = await self._admit()
 
-        course = await self._seed_course(TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
         training = await self._training(user.user_id)
-        self.assertEqual(training.course_id, course.course_id)
+        self.assertEqual(training.course_id, self.mentor_course.course_id)
 
     async def test_the_seed_course_counts_the_people_admission_assigned_it_to(self):
         """The number the admin page shows before deactivating or overwriting
         a course -- it has to include the automatic dispatch."""
-        course = await self._seed_course(TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
-        before = await self._assigned_count(course.course_id)
+        course_id = self.mentor_course.course_id
+        before = await self._assigned_count(course_id)
 
         await self._admit()
 
-        self.assertEqual(await self._assigned_count(course.course_id), before + 1)
+        self.assertEqual(await self._assigned_count(course_id), before + 1)
 
     async def test_clearing_resume_state_reaches_an_admission_created_row(self):
         """An overwrite promises to drop stale suspend_data for everyone on
@@ -293,10 +312,9 @@ class MentorshipAdmissionServiceTest(BaseRepositoryTestLib):
             suspend_data="stale",
         )
         await self.insert_entities([progress])
-        course = await self._seed_course(TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
 
         cleared = await self.progress_repository.clear_resume_state(
-            self.session, course.course_id
+            self.session, self.mentor_course.course_id
         )
 
         self.assertEqual(cleared, 1)
