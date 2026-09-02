@@ -79,4 +79,80 @@ describe("MeetingRescheduleDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(onSubmit).not.toHaveBeenCalled();
   });
+
+  it("re-derives the slot when reopened on a different meeting", () => {
+    const otherMeeting = {
+      meetingId: "google-event-2",
+      startDatetime: "2026-07-10T09:00:00Z",
+      endDatetime: "2026-07-10T10:00:00Z",
+    };
+    const { rerender } = render(
+      <MeetingRescheduleDialog
+        open
+        onOpenChange={vi.fn()}
+        meeting={meeting}
+        userTimezone="UTC"
+        onSubmit={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Date")).toHaveValue("2026-06-01");
+
+    rerender(
+      <MeetingRescheduleDialog
+        open={false}
+        onOpenChange={vi.fn()}
+        meeting={meeting}
+        userTimezone="UTC"
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    rerender(
+      <MeetingRescheduleDialog
+        open
+        onOpenChange={vi.fn()}
+        meeting={otherMeeting}
+        userTimezone="UTC"
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText("Date")).toHaveValue("2026-07-10");
+    expect(screen.getByLabelText("Start time")).toHaveValue("09:00");
+  });
+
+  it("keeps an in-progress edit across a parent re-render with an equal meeting", () => {
+    const { rerender } = render(
+      <MeetingRescheduleDialog
+        open
+        onOpenChange={vi.fn()}
+        meeting={meeting}
+        userTimezone="UTC"
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Date"), {
+      target: { value: "2026-06-15" },
+    });
+    expect(screen.getByLabelText("Date")).toHaveValue("2026-06-15");
+
+    // A fresh object literal, deeply equal to the original meeting: this is
+    // what a parent re-render looks like, not a reopen on a new meeting.
+    rerender(
+      <MeetingRescheduleDialog
+        open
+        onOpenChange={vi.fn()}
+        meeting={{
+          meetingId: "google-event-1",
+          startDatetime: "2026-06-01T13:00:00Z",
+          endDatetime: "2026-06-01T14:00:00Z",
+        }}
+        userTimezone="UTC"
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText("Date")).toHaveValue("2026-06-15");
+  });
 });
