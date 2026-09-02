@@ -148,6 +148,18 @@ class TestGarbageInput(unittest.TestCase):
     def test_a_token_whose_segments_are_not_base64_is_refused(self):
         self._assert_only_invalid_content_token("!!!!.????")
 
+    def test_a_non_ascii_signature_is_refused_not_a_500(self):
+        """hmac.compare_digest raises TypeError rather than answering False,
+        and anybody can put a non-ASCII character in a URL."""
+        token, _ = issue_content_token(_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
+        payload, _ = _split(token)
+        self._assert_only_invalid_content_token(payload + ".sign\u00e9")
+
+    def test_a_non_ascii_payload_segment_is_refused_not_a_500(self):
+        token, _ = issue_content_token(_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
+        _, signature = _split(token)
+        self._assert_only_invalid_content_token("caf\u00e9." + signature)
+
     def test_base64_that_is_not_the_expected_json_is_refused(self):
         token, _ = issue_content_token(_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
         _, signature = _split(token)

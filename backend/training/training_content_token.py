@@ -119,8 +119,14 @@ def verify_content_token(
         raise InvalidContentToken("Malformed content token.") from error
 
     # compare_digest, not ==: an ordinary comparison returns faster the earlier
-    # it finds a difference, which leaks the signature a byte at a time.
-    if not hmac.compare_digest(_signature(signing_key, payload), provided):
+    # it finds a difference, which leaks the signature a byte at a time. It
+    # raises TypeError on a non-ASCII string rather than answering False, and
+    # anybody can put one in a URL, so that is just another bad token.
+    try:
+        matches = hmac.compare_digest(_signature(signing_key, payload), provided)
+    except TypeError as error:
+        raise InvalidContentToken("Malformed content token.") from error
+    if not matches:
         raise InvalidContentToken("Content token signature does not match.")
 
     try:
