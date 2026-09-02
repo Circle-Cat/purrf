@@ -5,6 +5,8 @@ import { formatInTz, formatDateTimeWithZone } from "@/utils/dateTime";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { GraduationCap, User } from "lucide-react";
+import { toast } from "sonner";
+import { deleteMeeting } from "@/api/meetingApi";
 import {
   Select,
   SelectContent,
@@ -133,6 +135,29 @@ export default function MentorshipParticipantsCard({
   const feedbackDeadlineText = feedbackClosesAt
     ? formatDateTimeWithZone(feedbackClosesAt.toISOString(), userTimezone)
     : null;
+
+  // Cancelling is offered on the same terms as booking: both go through
+  // Google, so the flag that gates creating a meeting gates calling one off.
+  const canCancelMeetings = Boolean(createGoogleMeeting);
+
+  /**
+   * Cancel one meeting held with a partner, then refresh the round's meetings
+   * so the list reflects what is left.
+   *
+   * @param {string | number} partnerId - Partner the meeting was booked with.
+   * @param {{meetingId: string}} meeting - Meeting to cancel.
+   * @returns {Promise<void>}
+   */
+  const handleCancelMeeting = async (partnerId, meeting) => {
+    try {
+      await deleteMeeting(meeting.meetingId, selectedRoundId, partnerId);
+      toast.success("Meeting cancelled successfully!");
+      await refreshMeetings?.();
+    } catch (error) {
+      console.error("Failed to cancel meeting:", error);
+      toast.error("Failed to cancel the meeting.");
+    }
+  };
 
   const getRoleIcon = (participantRole) => {
     return participantRole?.toLowerCase() ===
@@ -281,6 +306,10 @@ export default function MentorshipParticipantsCard({
                     userTimezone={userTimezone}
                     showMeetingList={
                       roundInfo?.status === MentorshipRoundStatus.ACTIVE
+                    }
+                    canDelete={canCancelMeetings}
+                    onDeleteMeeting={(meeting) =>
+                      handleCancelMeeting(overview.partnerId, meeting)
                     }
                   />
                 </div>
