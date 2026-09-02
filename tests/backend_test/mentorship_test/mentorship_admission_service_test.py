@@ -313,13 +313,15 @@ class MentorshipAdmissionServiceTest(BaseRepositoryTestLib):
         )
         await self.insert_entities([progress])
 
-        cleared = await self.progress_repository.clear_resume_state(
+        await self.progress_repository.clear_resume_state(
             self.session, self.mentor_course.course_id
         )
 
-        self.assertEqual(cleared, 1)
+        # This row, not a count: how many rows the call touched depends on
+        # what else the database happens to hold.
         await self.session.refresh(progress)
         self.assertIsNone(progress.suspend_data)
+        self.assertIsNone(progress.lesson_location)
 
 
 if __name__ == "__main__":
