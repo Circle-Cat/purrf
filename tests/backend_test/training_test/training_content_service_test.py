@@ -268,9 +268,10 @@ class TestReservedPlayerPath(_ContentServiceCase):
             self.assertFalse(str(key).startswith(_OLD_PREFIX))
 
     async def test_the_shim_and_the_bridge_are_served_too(self):
-        # __bridge.js is deferred until the frontend target it copies from
-        # exists; the next task re-enables that half of this loop.
-        for path, content_type in (("__scorm12.min.js", "text/javascript"),):
+        for path, content_type in (
+            ("__scorm12.min.js", "text/javascript"),
+            ("__bridge.js", "text/javascript"),
+        ):
             with self.subTest(path=path):
                 asset = await self.service.read_asset(
                     self.session, self.valid_token(), path
