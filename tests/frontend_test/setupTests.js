@@ -1,4 +1,14 @@
 import "@testing-library/jest-dom/vitest";
+import { configure } from "@testing-library/react";
+
+// Testing Library's `waitFor` defaults to 1000ms. Bazel runs ten shards at
+// once, so a shard can lose the CPU for long enough that a poll window that
+// is normally ample expires -- and `waitFor` re-throws its last assertion
+// error, so the failure reads as a wrong value ("called 4 times, expected 5")
+// rather than as a timeout. That is what made these look like races in the
+// application code. Raising the window does not weaken any assertion: a
+// condition that never becomes true still fails, just later.
+configure({ asyncUtilTimeout: 5000 });
 
 // Radix UI primitives (Select, etc.) measure elements via ResizeObserver, which
 // jsdom does not implement. Provide a no-op so any component that renders a
