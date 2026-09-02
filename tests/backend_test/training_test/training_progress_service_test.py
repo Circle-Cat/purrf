@@ -52,6 +52,56 @@ class _ProgressServiceCase(unittest.IsolatedAsyncioTestCase):
         return self.progress_repository.upsert.call_args.kwargs
 
 
+class TestNonStringValues(_ProgressServiceCase):
+    """The body is JSON from whoever holds the assignment, so a CMI element
+    can arrive as a number, an object or null however well the course behaves."""
+
+    async def test_a_text_element_that_is_not_a_string_is_refused(self):
+        for value in (5, {"nested": "object"}, None, ["a"], True):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    await self.service.save(
+                        self.session,
+                        _TRAINING_ID,
+                        _USER_ID,
+                        {"cmi.suspend_data": value},
+                    )
+
+        self.progress_repository.upsert.assert_not_called()
+
+    async def test_a_non_string_time_is_dropped_not_a_crash(self):
+        """Same treatment as a time in a format we cannot read."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {"cmi.core.total_time": 90, "cmi.core.lesson_location": "Summary"},
+        )
+
+        self.assertEqual(self._saved_columns(), {"lesson_location": "Summary"})
+        self.logger.warning.assert_called()
+
+    async def test_a_non_string_session_time_adds_nothing(self):
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {"cmi.core.session_time": {"minutes": 3}},
+        )
+
+        self.assertEqual(self._saved_columns()["session_time_seconds"], 0)
+
+    async def test_a_non_string_score_is_dropped_like_an_unstorable_one(self):
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {"cmi.core.score.raw": {"value": 80}, "cmi.core.lesson_location": "End"},
+        )
+
+        self.assertEqual(self._saved_columns(), {"lesson_location": "End"})
+
+
 class TestSave(_ProgressServiceCase):
     async def test_the_course_values_land_on_the_row(self):
         await self.service.save(self.session, _TRAINING_ID, _USER_ID, _COMMIT)

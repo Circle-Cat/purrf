@@ -1,5 +1,7 @@
 """Routes for the training course catalogue and manual assignment."""
 
+import inspect
+import json
 import unittest
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -15,7 +17,23 @@ from backend.dto.training_course_dto import (
     TrainingPackageUploadResultDto,
 )
 from backend.dto.user_context_dto import UserContextDto
-from backend.training.training_admin_controller import TrainingAdminController
+from backend.training.training_admin_controller import (
+    _MAX_PROGRESS_BODY_BYTES,
+    TrainingAdminController,
+)
+
+
+def _request(body: bytes, chunk_size=None):
+    """A request whose body arrives in chunks, as an ASGI server delivers it."""
+    step = chunk_size or max(len(body), 1)
+
+    async def stream():
+        for start in range(0, max(len(body), 1), step):
+            yield body[start : start + step]
+
+    request = MagicMock()
+    request.stream = stream
+    return request
 
 
 def _user(*permissions):
@@ -89,8 +107,14 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
 
     async def save_progress(self, payload, current_user=None):
         """Post one commit as a learner who holds no grant unless one is given."""
+        return await self.post_progress(
+            json.dumps(payload).encode(), current_user=current_user
+        )
+
+    async def post_progress(self, body, current_user=None, chunk_size=None):
+        """Post a raw body, optionally split the way a client would send it."""
         return await self.controller.save_progress(
-            42, payload, current_user or _user()
+            42, _request(body, chunk_size), current_user or _user()
         )
 
     def test_reading_the_catalogue_and_changing_it_are_separate_grants(self):
@@ -260,6 +284,51 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         self.assertIs(
             self.progress_service.save.await_args.kwargs["may_verify_course"], True
         )
+
+    def test_the_route_declares_no_body_parameter(self):
+        """FastAPI reads and parses a declared body before the handler runs,
+        which is exactly what the size cap has to come before."""
+        route = next(
+            route
+            for route in self.controller.router.routes
+            if route.path == "/training/{training_id}/progress"
+            and "POST" in route.methods
+        )
+
+        parameters = inspect.signature(route.endpoint).parameters
+
+        self.assertEqual(set(parameters), {"request", "training_id"})
+
+    async def test_a_body_too_large_to_be_a_commit_is_refused(self):
+        """Refused while it is being read, so the cap bounds what is held in
+        memory rather than being checked once the whole thing already is."""
+        oversized = json.dumps(
+            {"cmi": {"cmi.suspend_data": "x" * (2 * _MAX_PROGRESS_BODY_BYTES)}}
+        ).encode()
+
+        with self.assertRaises(ValueError):
+            await self.post_progress(oversized, chunk_size=8192)
+
+        self.progress_service.save.assert_not_awaited()
+
+    async def test_a_body_that_is_not_json_is_a_client_error(self):
+        with self.assertRaises(ValueError):
+            await self.post_progress(b"not json at all")
+
+        self.progress_service.save.assert_not_awaited()
+
+    async def test_a_body_that_is_not_an_object_is_a_client_error(self):
+        with self.assertRaises(ValueError):
+            await self.post_progress(b"[1, 2, 3]")
+
+        self.progress_service.save.assert_not_awaited()
+
+    async def test_an_empty_body_saves_nothing_rather_than_failing(self):
+        """The page's parting keepalive fetch can arrive with nothing in it."""
+        await self.post_progress(b"")
+
+        self.progress_service.save.assert_awaited_once()
+        self.assertEqual(self.progress_service.save.await_args.args[3], {})
 
     async def test_the_list_includes_deactivated_courses(self):
         """Or they could never be turned back on."""

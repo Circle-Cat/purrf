@@ -57,15 +57,25 @@ _LENGTH_LIMITS = {
 }
 
 
-def _reject_oversized(cmi: dict) -> None:
+def _reject_unstorable(cmi: dict) -> None:
     """Refuse a commit carrying a value no real course would send.
 
+    Every CMI element in SCORM 1.2 is a string, and the columns behind these
+    three are text. A course sending a number, an object or null for one of
+    them is refused rather than coerced: storing str(value) would hand the
+    course back something it never wrote, and the JSON that reaches here is
+    written by whoever holds the assignment, not only by a real course.
+
     Raises:
-        ValueError: A CMI element is longer than the cap for it.
+        ValueError: A CMI element is not a string, or is longer than the cap.
     """
     for key, limit in _LENGTH_LIMITS.items():
-        value = cmi.get(key)
-        if isinstance(value, str) and len(value) > limit:
+        if key not in cmi:
+            continue
+        value = cmi[key]
+        if not isinstance(value, str):
+            raise ValueError(f"{key} must be a string.")
+        if len(value) > limit:
             raise ValueError(f"{key} is {len(value)} characters; the limit is {limit}.")
 
 
@@ -85,15 +95,18 @@ def _content_unchanged(existing, columns: dict) -> bool:
     )
 
 
-def _timespan_seconds(value: str) -> int | None:
+def _timespan_seconds(value) -> int | None:
     """Seconds in a SCORM 1.2 CMITimespan, or None if it is not one.
 
     A course that reports its session time in a shape we cannot read must not
     cost the learner the rest of the commit -- and for a value that replaces
     rather than accumulates, None has to stay distinguishable from an actual
-    zero so the caller can leave the stored value alone.
+    zero so the caller can leave the stored value alone. A value that is not
+    a string at all is one more shape we cannot read, not a crash.
     """
-    match = _TIMESPAN.match((value or "").strip())
+    if not isinstance(value, str):
+        return None
+    match = _TIMESPAN.match(value.strip())
     if not match:
         return None
     hours, minutes, seconds = (int(match.group(i)) for i in (1, 2, 3))
@@ -182,7 +195,7 @@ class TrainingProgressService:
             ValueError: No such assignment, or an element over its length cap.
             PermissionError: The assignment belongs to somebody else.
         """
-        _reject_oversized(cmi)
+        _reject_unstorable(cmi)
 
         # Locked, because what follows reads the status, decides the next one
         # from it, and writes it back. A course reports `incomplete` and then

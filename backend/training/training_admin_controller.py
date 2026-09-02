@@ -1,8 +1,9 @@
 """FastAPI routes for the training course catalogue and manual assignment."""
 
+import json
 from http import HTTPStatus
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, Request, UploadFile
 
 from backend.common.api_endpoints import (
     TRAINING_ASSIGNMENTS_ENDPOINT,
@@ -21,6 +22,41 @@ from backend.dto.training_course_dto import (
     TrainingCourseUpdateDto,
 )
 from backend.utils.permission_decorators import authenticate
+
+# A commit is a few kilobytes; the largest element the service will store is
+# 64 KB of suspend_data. The body is read against this cap rather than parsed
+# first, because a length check that runs after the JSON is decoded has already
+# spent the memory it exists to bound.
+_MAX_PROGRESS_BODY_BYTES = 256 * 1024
+
+
+async def _read_progress_body(request: Request) -> dict:
+    """The commit body, refused before it is parsed if it is too large.
+
+    Args:
+        request (Request): The incoming request, unread.
+
+    Returns:
+        dict: The decoded body.
+
+    Raises:
+        ValueError: Over the cap, or not a JSON object.
+    """
+    chunks = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > _MAX_PROGRESS_BODY_BYTES:
+            raise ValueError("This progress commit is too large.")
+        chunks.append(chunk)
+
+    try:
+        payload = json.loads(b"".join(chunks) or b"{}")
+    except ValueError as error:
+        raise ValueError("This progress commit is not valid JSON.") from error
+    if not isinstance(payload, dict):
+        raise ValueError("A progress commit must be an object.")
+    return payload
 
 
 class TrainingAdminController:
@@ -221,8 +257,11 @@ class TrainingAdminController:
             )
         return api_response(message="Training session opened.", data=payload)
 
-    async def save_progress(self, training_id: int, payload: dict, current_user):
+    async def save_progress(self, training_id: int, request: Request, current_user):
         """Store one commit from the caller's own course.
+
+        The body is read here rather than declared as a parameter so that its
+        size is bounded before anything parses it.
 
         ``cmi`` is course-controlled; a shape other than an object must come
         back as a 4xx, not a TypeError from deeper in the stack.
@@ -237,6 +276,7 @@ class TrainingAdminController:
         payload: a course reporting itself finished must not be able to claim
         the grant that unlocks it for everybody else.
         """
+        payload = await _read_progress_body(request)
         cmi = payload.get("cmi", {})
         if not isinstance(cmi, dict):
             raise ValueError("cmi must be an object.")
