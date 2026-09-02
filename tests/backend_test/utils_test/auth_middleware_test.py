@@ -85,7 +85,11 @@ class TestAuthMiddleware(unittest.TestCase):
         self.mock_user_identity_service.find_user_by_sub = AsyncMock(return_value=None)
         self.mock_user_identity_service.create_or_swap_user = AsyncMock(
             return_value=SimpleNamespace(
-                user_id=1, is_super_admin=False, is_active=True, last_login_at=None
+                user_id=1,
+                is_super_admin=False,
+                is_active=True,
+                is_blocked=False,
+                last_login_at=None,
             )
         )
         self.mock_user_permissions_repository = MagicMock()
@@ -141,7 +145,11 @@ class TestAuthMiddleware(unittest.TestCase):
         user_context = make_user_context(last_login_at=1700000000)
         self.mock_auth_service.authenticate_request.return_value = user_context
         self.mock_user_identity_service.find_user_by_sub.return_value = SimpleNamespace(
-            user_id=42, is_super_admin=False, is_active=True, last_login_at=None
+            user_id=42,
+            is_super_admin=False,
+            is_active=True,
+            is_blocked=False,
+            last_login_at=None,
         )
 
         client = self._add_middleware()
@@ -167,7 +175,11 @@ class TestAuthMiddleware(unittest.TestCase):
         self.mock_user_identity_service.find_user_by_sub.return_value = None
         self.mock_user_identity_service.create_or_swap_user.return_value = (
             SimpleNamespace(
-                user_id=99, is_super_admin=False, is_active=True, last_login_at=None
+                user_id=99,
+                is_super_admin=False,
+                is_active=True,
+                is_blocked=False,
+                last_login_at=None,
             )
         )
 
@@ -191,7 +203,7 @@ class TestAuthMiddleware(unittest.TestCase):
         user_context = make_user_context()
         self.mock_auth_service.authenticate_request.return_value = user_context
         self.mock_user_identity_service.find_user_by_sub.return_value = SimpleNamespace(
-            user_id=42, is_active=False, last_login_at=None
+            user_id=42, is_active=False, is_blocked=False, last_login_at=None
         )
 
         client = self._add_middleware()
@@ -201,6 +213,59 @@ class TestAuthMiddleware(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
         self.assertIn("deactivated", response.json()["message"].lower())
+
+    def test_blocked_user_forbidden(self):
+        """
+        A blacklisted account authenticates (valid token, real user) but is
+        barred from every page: bootstrap raises and the middleware returns 403
+        with the suspended copy, kept distinct from the deactivated copy so the
+        two states stay tellable apart from the response alone.
+        """
+        user_context = make_user_context()
+        self.mock_auth_service.authenticate_request.return_value = user_context
+        self.mock_user_identity_service.find_user_by_sub.return_value = SimpleNamespace(
+            user_id=42,
+            is_super_admin=False,
+            is_active=True,
+            is_blocked=True,
+            last_login_at=None,
+        )
+
+        client = self._add_middleware()
+        response = client.get(
+            "/protected", headers={"Authorization": "Bearer valid_token"}
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
+        message = response.json()["message"].lower()
+        self.assertIn("suspended", message)
+        self.assertNotIn("deactivated", message)
+
+    def test_deactivated_wins_over_blocked(self):
+        """
+        An account that is both deactivated and blacklisted reads as
+        deactivated: is_active is the broader state, and pinning the order here
+        keeps the message for any pre-existing account state stable.
+        """
+        user_context = make_user_context()
+        self.mock_auth_service.authenticate_request.return_value = user_context
+        self.mock_user_identity_service.find_user_by_sub.return_value = SimpleNamespace(
+            user_id=42,
+            is_super_admin=False,
+            is_active=False,
+            is_blocked=True,
+            last_login_at=None,
+        )
+
+        client = self._add_middleware()
+        response = client.get(
+            "/protected", headers={"Authorization": "Bearer valid_token"}
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
+        message = response.json()["message"].lower()
+        self.assertIn("deactivated", message)
+        self.assertNotIn("suspended", message)
 
     def test_integrity_error_race_refinds_via_savepoint(self):
         """
@@ -215,7 +280,11 @@ class TestAuthMiddleware(unittest.TestCase):
         self.mock_user_identity_service.find_user_by_sub.side_effect = [
             None,
             SimpleNamespace(
-                user_id=7, is_super_admin=False, is_active=True, last_login_at=None
+                user_id=7,
+                is_super_admin=False,
+                is_active=True,
+                is_blocked=False,
+                last_login_at=None,
             ),
         ]
         self.mock_user_identity_service.create_or_swap_user.side_effect = (
@@ -365,7 +434,11 @@ class TestAuthMiddleware(unittest.TestCase):
         user_context = make_user_context()
         self.mock_auth_service.authenticate_request.return_value = user_context
         self.mock_user_identity_service.find_user_by_sub.return_value = SimpleNamespace(
-            user_id=1, is_super_admin=False, is_active=True, last_login_at=None
+            user_id=1,
+            is_super_admin=False,
+            is_active=True,
+            is_blocked=False,
+            last_login_at=None,
         )
 
         client = self._add_middleware()
@@ -392,7 +465,9 @@ class TestAuthMiddleware(unittest.TestCase):
         threaded down to find_user_by_sub for identity/email stamping."""
         # Note: no last_login_at attribute on user at all -- the middleware
         # must not need or set one.
-        user = SimpleNamespace(user_id=5, is_super_admin=False, is_active=True)
+        user = SimpleNamespace(
+            user_id=5, is_super_admin=False, is_active=True, is_blocked=False
+        )
         self.mock_user_identity_service.find_user_by_sub.return_value = user
         user_context = make_user_context(last_login_at=1_700_000_000)
 
@@ -419,7 +494,11 @@ class TestAuthMiddleware(unittest.TestCase):
         user_context = make_user_context(sub="email|abc", identity_type="external")
         self.mock_user_identity_service.create_or_swap_user.return_value = (
             SimpleNamespace(
-                user_id=5, is_super_admin=False, is_active=True, last_login_at=None
+                user_id=5,
+                is_super_admin=False,
+                is_active=True,
+                is_blocked=False,
+                last_login_at=None,
             )
         )
 
@@ -445,7 +524,11 @@ class TestAuthMiddleware(unittest.TestCase):
         self.mock_user_identity_service.create_or_swap_user.side_effect = [
             IntegrityError("stmt", "params", Exception("unique")),
             SimpleNamespace(
-                user_id=5, is_super_admin=False, is_active=True, last_login_at=None
+                user_id=5,
+                is_super_admin=False,
+                is_active=True,
+                is_blocked=False,
+                last_login_at=None,
             ),
         ]
 
