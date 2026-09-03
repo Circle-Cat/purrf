@@ -49,6 +49,8 @@ class TrainingCourseDto(BaseDto):
     # Deactivating and overwriting both ask the admin to weigh this number
     # rather than answer "are you sure".
     assigned_count: int = 0
+    # Everyone still counted here would be restarted by a replacement package.
+    unfinished_count: int = 0
 
 
 class TrainingCourseCreateDto(BaseRequestDto):

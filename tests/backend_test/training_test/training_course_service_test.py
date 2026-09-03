@@ -96,7 +96,7 @@ class TestExternalLinkOnTheCourseRow(unittest.TestCase):
             storage_prefix=None,
         )
 
-        dto = to_course_dto(course, 0)
+        dto = to_course_dto(course, 0, 0)
 
         self.assertEqual(dto.state, TrainingCourseState.EXTERNAL_LINK)
         self.assertEqual(dto.link, "https://example.com/mentor")
@@ -115,7 +115,7 @@ class TestExternalLinkOnTheCourseRow(unittest.TestCase):
             storage_prefix="training/1/abc/",
         )
 
-        dto = to_course_dto(course, 0)
+        dto = to_course_dto(course, 0, 0)
 
         self.assertIsNone(dto.link)
 
@@ -124,7 +124,7 @@ class TestExternalLinkOnTheCourseRow(unittest.TestCase):
             course_id=2, name="Something New", is_active=True, category=None
         )
 
-        dto = to_course_dto(course, 0)
+        dto = to_course_dto(course, 0, 0)
 
         self.assertEqual(dto.state, TrainingCourseState.NO_PACKAGE)
         self.assertIsNone(dto.link)
@@ -136,6 +136,7 @@ class TestTrainingCourseService(unittest.IsolatedAsyncioTestCase):
         self.repository = MagicMock()
         self.repository.list_courses = AsyncMock(return_value=[])
         self.repository.count_assignments = AsyncMock(return_value=0)
+        self.repository.count_unfinished_assignments = AsyncMock(return_value=0)
 
         # Records the order the write and the commit happen in.
         self.calls = []
@@ -159,7 +160,7 @@ class TestTrainingCourseService(unittest.IsolatedAsyncioTestCase):
             category=TrainingCategory.CORPORATE_CULTURE_COURSE,
             is_active=True,
         )
-        self.repository.list_courses.return_value = [(course, 61)]
+        self.repository.list_courses.return_value = [(course, 61, 0)]
 
         courses = await self.service.list_courses(self.session)
 
@@ -167,6 +168,18 @@ class TestTrainingCourseService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(courses[0].assigned_count, 61)
         # This category never had an external link, so there is nowhere to go.
         self.assertEqual(courses[0].state, TrainingCourseState.NO_PACKAGE)
+
+    async def test_the_list_carries_how_many_have_not_finished(self):
+        """The deactivate and replace dialogs both count heads with this."""
+        course = TrainingCourseEntity(
+            course_id=5, name="Mentor Onboarding", is_active=True
+        )
+        self.repository.list_courses.return_value = [(course, 61, 23)]
+
+        courses = await self.service.list_courses(self.session)
+
+        self.assertEqual(courses[0].assigned_count, 61)
+        self.assertEqual(courses[0].unfinished_count, 23)
 
     async def test_a_new_course_starts_unassignable(self):
         course = await self.service.create_course(

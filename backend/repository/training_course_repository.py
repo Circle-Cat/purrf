@@ -1,7 +1,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.common.mentorship_enums import TrainingCategory
+from backend.common.mentorship_enums import TrainingCategory, TrainingStatus
 from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.training_entity import TrainingEntity
 
@@ -11,11 +11,11 @@ class TrainingCourseRepository:
 
     async def list_courses(
         self, session: AsyncSession, include_inactive: bool = True
-    ) -> list[tuple[TrainingCourseEntity, int]]:
-        """Every course with the number of people assigned to it.
+    ) -> list[tuple[TrainingCourseEntity, int, int]]:
+        """Every course with its assigned and unfinished headcounts.
 
         An outer-joined aggregate rather than a query per row: the admin page
-        shows the count on every line.
+        shows both counts on every line.
 
         Args:
             session (AsyncSession): The active async database session.
@@ -23,11 +23,18 @@ class TrainingCourseRepository:
                 They are by default.
 
         Returns:
-            list[tuple[TrainingCourseEntity, int]]: Courses paired with their
-            assignment counts, oldest first.
+            list[tuple[TrainingCourseEntity, int, int]]: Courses paired with
+            their assigned and unfinished counts, oldest first.
         """
+        unfinished = func.count(TrainingEntity.training_id).filter(
+            TrainingEntity.status != TrainingStatus.DONE
+        )
         statement = (
-            select(TrainingCourseEntity, func.count(TrainingEntity.training_id))
+            select(
+                TrainingCourseEntity,
+                func.count(TrainingEntity.training_id),
+                unfinished,
+            )
             .outerjoin(
                 TrainingEntity,
                 TrainingEntity.course_id == TrainingCourseEntity.course_id,
@@ -39,7 +46,10 @@ class TrainingCourseRepository:
             statement = statement.where(TrainingCourseEntity.is_active.is_(True))
 
         result = await session.execute(statement)
-        return [(course, count) for course, count in result.all()]
+        return [
+            (course, assigned, unfinished)
+            for course, assigned, unfinished in result.all()
+        ]
 
     async def get_course_by_id(
         self, session: AsyncSession, course_id: int
@@ -81,6 +91,23 @@ class TrainingCourseRepository:
         result = await session.execute(
             select(func.count(TrainingEntity.training_id)).where(
                 TrainingEntity.course_id == course_id
+            )
+        )
+        return result.scalar_one()
+
+    async def count_unfinished_assignments(
+        self, session: AsyncSession, course_id: int
+    ) -> int:
+        """How many holders of this course have not finished it.
+
+        A replacement package restarts exactly these people, and deactivating
+        is weighed against them, so both dialogs count heads with this rather
+        than with the total.
+        """
+        result = await session.execute(
+            select(func.count(TrainingEntity.training_id)).where(
+                TrainingEntity.course_id == course_id,
+                TrainingEntity.status != TrainingStatus.DONE,
             )
         )
         return result.scalar_one()

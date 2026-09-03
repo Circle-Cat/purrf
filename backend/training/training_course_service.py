@@ -38,9 +38,9 @@ def derive_course_state(course: TrainingCourseEntity) -> TrainingCourseState:
 
 
 def to_course_dto(
-    course: TrainingCourseEntity, assigned_count: int
+    course: TrainingCourseEntity, assigned_count: int, unfinished_count: int
 ) -> TrainingCourseDto:
-    """Project one course row, plus its assignment count, for the API."""
+    """Project one course row, plus its headcounts, for the API."""
     return TrainingCourseDto(
         course_id=course.course_id,
         name=course.name,
@@ -58,6 +58,7 @@ def to_course_dto(
         verified_completable_at=course.verified_completable_at,
         verified_by_user_id=course.verified_by_user_id,
         assigned_count=assigned_count,
+        unfinished_count=unfinished_count,
     )
 
 
@@ -80,11 +81,14 @@ class TrainingCourseService:
     async def list_courses(
         self, session, include_inactive: bool = True
     ) -> list[TrainingCourseDto]:
-        """Every course, with its derived state and assignment count."""
+        """Every course, with its derived state and headcounts."""
         rows = await self.training_course_repository.list_courses(
             session, include_inactive=include_inactive
         )
-        return [to_course_dto(course, count) for course, count in rows]
+        return [
+            to_course_dto(course, assigned, unfinished)
+            for course, assigned, unfinished in rows
+        ]
 
     async def create_course(
         self, session, payload: TrainingCourseCreateDto
@@ -105,7 +109,7 @@ class TrainingCourseService:
             course.course_id,
             course.name,
         )
-        return to_course_dto(course, 0)
+        return to_course_dto(course, 0, 0)
 
     async def update_course(
         self, session, course_id: int, payload: TrainingCourseUpdateDto
@@ -136,4 +140,9 @@ class TrainingCourseService:
         assigned_count = await self.training_course_repository.count_assignments(
             session, course_id
         )
-        return to_course_dto(course, assigned_count)
+        unfinished_count = (
+            await self.training_course_repository.count_unfinished_assignments(
+                session, course_id
+            )
+        )
+        return to_course_dto(course, assigned_count, unfinished_count)

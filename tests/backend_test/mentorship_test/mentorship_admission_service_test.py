@@ -161,7 +161,9 @@ class MentorshipAdmissionServiceTest(BaseRepositoryTestLib):
     async def _assigned_count(self, course_id: int) -> int:
         counts = {
             course.course_id: count
-            for course, count in await self.course_repository.list_courses(self.session)
+            for course, count, _unfinished in await self.course_repository.list_courses(
+                self.session
+            )
         }
         return counts[course_id]
 
