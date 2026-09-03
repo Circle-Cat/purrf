@@ -182,6 +182,13 @@ class TestOpenSession(_ContentServiceCase):
         with self.assertRaises(PermissionError):
             await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
 
+    async def test_a_course_with_a_package_but_no_entry_page_cannot_be_opened(self):
+        """The player has nowhere to point, and null is not an answer for it."""
+        self.course.entry_path = None
+
+        with self.assertRaises(ValueError):
+            await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
     async def test_a_training_that_does_not_exist_cannot_be_opened(self):
         self.training_repository.get_training_by_id.return_value = None
 
@@ -218,6 +225,9 @@ class TestOpenSession(_ContentServiceCase):
                 score_raw=Decimal("82.50"),
                 score_min=Decimal("0.00"),
                 score_max=Decimal("100.00"),
+                # NOT NULL with a default, so a row read back always has one.
+                # An entity built in memory does not until it is flushed.
+                session_time_seconds=0,
             )
         )
 
@@ -229,7 +239,7 @@ class TestOpenSession(_ContentServiceCase):
 
     async def test_a_session_for_a_course_with_no_score_yet_carries_none(self):
         self.progress_repository.get_by_training_id.return_value = (
-            TrainingProgressEntity(training_id=_TRAINING_ID)
+            TrainingProgressEntity(training_id=_TRAINING_ID, session_time_seconds=0)
         )
 
         result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)

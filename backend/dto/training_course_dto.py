@@ -117,7 +117,7 @@ class TrainingProgressDto(BaseDto):
     lesson_status: str | None = None
     lesson_location: str | None = None
     suspend_data: str | None = None
-    session_time_seconds: int | None = None
+    session_time_seconds: int = 0
     score_raw: str | None = None
     score_min: str | None = None
     score_max: str | None = None
@@ -130,7 +130,7 @@ class TrainingSessionDto(BaseDto):
     """
 
     content_base_url: str
-    entry_path: str | None = None
+    entry_path: str
     player_path: str
     expires_at: int
     progress: TrainingProgressDto | None = None

@@ -172,6 +172,8 @@ class TrainingContentService:
         )
         if course is None or not course.storage_prefix:
             raise ValueError("This course has no package to open.")
+        if not course.entry_path:
+            raise ValueError("This course has no entry page to open.")
 
         progress = await self.training_progress_repository.get_by_training_id(
             session, training_id

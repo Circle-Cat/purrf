@@ -6,6 +6,7 @@ from backend.dto.training_course_dto import (
     TrainingAssignmentRequestDto,
     TrainingCourseCreateDto,
     TrainingCourseUpdateDto,
+    TrainingProgressDto,
 )
 
 
@@ -50,6 +51,13 @@ class TestTrainingAssignmentRequestDto(unittest.TestCase):
 
         self.assertEqual(dto.user_id, 1)
         self.assertEqual(dto.course_id, 2)
+
+
+class TestTrainingProgressDto(unittest.TestCase):
+    def test_the_accumulated_seconds_are_never_null(self):
+        """The column is NOT NULL with a default, so the wire never sees one."""
+        with self.assertRaises(pydantic.ValidationError):
+            TrainingProgressDto.model_validate({"sessionTimeSeconds": None})
 
 
 if __name__ == "__main__":

@@ -95,6 +95,7 @@ py_test(
     srcs = ["fast_api_response_wrapper_test.py"],
     deps = [
         "//backend/common:fast_api_response_wrapper",
+        "//backend/dto",
         "@pypi//fastapi",
         "@pypi//httpx",
     ],
