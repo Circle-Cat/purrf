@@ -11,8 +11,7 @@ The backend is not told its own hostname anywhere else, so the origins it
 answers on are named explicitly in APP_ORIGINS. A configuration that cannot be
 shown to be isolated disables content hosting and says so at error level; it
 never stops the process. One optional feature that cannot verify its own
-wiring must not take login, mentorship and recruiting down with it, and the
-environments already carrying TRAINING_CONTENT_HOST have no APP_ORIGINS yet.
+wiring must not take login, mentorship and recruiting down with it.
 
 Disabled means genuinely inert, not merely logged: the resolved value is what
 the auth middleware exempts on and what the content route answers on, so None
