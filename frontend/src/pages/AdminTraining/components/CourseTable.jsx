@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -129,28 +129,37 @@ function PackageCell({ course }) {
 /**
  * The admin course catalogue: Course / Package / Status / Assigned / action.
  *
+ * `courses` is the only source of truth for what a row shows -- a mutation
+ * never patches it locally, since `assignedCount` and `unfinishedCount` are
+ * server-derived aggregates a client-side patch cannot know the true value
+ * of. Instead every mutation, on success, calls `onCoursesChanged` and lets
+ * the parent refetch and pass fresh `courses` back down.
+ *
  * A row's dialog opens by naming the course it is for in one piece of local
  * state (`deactivating` here); the dialog itself is rendered once, outside
  * the row loop, keyed off that state, and closes by setting it back to
  * `null`. Assign and Upload follow the same shape.
  *
- * @param {{courses: Array<Object>}} props `TrainingCourseDto`-shaped rows.
+ * @param {{courses: Array<Object>, onCoursesChanged: () => (void|Promise<void>)}} props
+ *   `courses` are `TrainingCourseDto`-shaped rows; `onCoursesChanged` refetches them.
  */
-export default function CourseTable({ courses }) {
-  const [rows, setRows] = useState(courses);
-  useEffect(() => setRows(courses), [courses]);
-
+export default function CourseTable({ courses, onCoursesChanged }) {
   const [deactivating, setDeactivating] = useState(null);
-
-  const patchCourse = (courseId, patch) =>
-    setRows((prev) =>
-      prev.map((c) => (c.courseId === courseId ? { ...c, ...patch } : c)),
-    );
 
   const handleActivate = async (course) => {
     try {
       await updateCourse(course.courseId, { isActive: true });
-      patchCourse(course.courseId, { isActive: true });
+      await onCoursesChanged?.();
+    } catch (error) {
+      toast.error(error.message);
+    }
+  };
+
+  const handleConfirmDeactivate = async () => {
+    try {
+      await updateCourse(deactivating.courseId, { isActive: false });
+      setDeactivating(null);
+      await onCoursesChanged?.();
     } catch (error) {
       toast.error(error.message);
     }
@@ -169,7 +178,7 @@ export default function CourseTable({ courses }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((course) => (
+          {courses.map((course) => (
             <TableRow key={course.courseId}>
               <TableCell>
                 <div className="font-medium">{course.name}</div>
@@ -204,10 +213,7 @@ export default function CourseTable({ courses }) {
           course={deactivating}
           open
           onOpenChange={(open) => !open && setDeactivating(null)}
-          onDeactivated={() => {
-            patchCourse(deactivating.courseId, { isActive: false });
-            setDeactivating(null);
-          }}
+          onConfirm={handleConfirmDeactivate}
         />
       )}
     </>

@@ -85,8 +85,11 @@ const externalLink = {
   unfinishedCount: 23,
 };
 
-const renderTable = (courses) =>
-  render(<CourseTable courses={courses} />, { wrapper: MemoryRouter });
+const renderTable = (courses, onCoursesChanged) =>
+  render(
+    <CourseTable courses={courses} onCoursesChanged={onCoursesChanged} />,
+    { wrapper: MemoryRouter },
+  );
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -164,9 +167,10 @@ describe("CourseTable", () => {
     ).toBeInTheDocument();
   });
 
-  it("turns a course off through the dialog and flips the row to Activate", async () => {
+  it("turns a course off through the dialog, then asks the caller to refetch and closes", async () => {
     api.updateCourse.mockResolvedValue({ data: {} });
-    renderTable([verified]);
+    const onCoursesChanged = vi.fn();
+    renderTable([verified], onCoursesChanged);
 
     await userEvent.click(
       screen.getByRole("button", { name: /deactivate/i }),
@@ -180,8 +184,44 @@ describe("CourseTable", () => {
         isActive: false,
       }),
     );
+    expect(onCoursesChanged).toHaveBeenCalledTimes(1);
+    // CourseTable never patches `courses` itself -- the dialog is gone, but
+    // the row still reads whatever `courses` says until a fresh prop arrives.
+    expect(
+      screen.queryByText(/nothing is deleted/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("activates a course directly with no dialog, and only reflects it once fresh courses arrive", async () => {
+    const inactive = { ...verified, courseId: 9, isActive: false };
+    const reactivated = { ...inactive, isActive: true };
+    api.updateCourse.mockResolvedValue({ data: {} });
+    const onCoursesChanged = vi.fn();
+
+    const { rerender } = renderTable([inactive], onCoursesChanged);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /^activate$/i }),
+    );
+
+    await waitFor(() =>
+      expect(api.updateCourse).toHaveBeenCalledWith(inactive.courseId, {
+        isActive: true,
+      }),
+    );
+    expect(onCoursesChanged).toHaveBeenCalledTimes(1);
+    // No local patch: the row still says Activate until the parent re-renders
+    // with what the refetch actually returned.
     expect(
       screen.getByRole("button", { name: /^activate$/i }),
+    ).toBeInTheDocument();
+
+    rerender(
+      <CourseTable courses={[reactivated]} onCoursesChanged={onCoursesChanged} />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /deactivate/i }),
     ).toBeInTheDocument();
   });
 });

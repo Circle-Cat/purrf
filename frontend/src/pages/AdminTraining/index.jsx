@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { listCourses } from "@/api/trainingApi";
@@ -12,11 +12,20 @@ import CourseTable from "@/pages/AdminTraining/components/CourseTable";
 export default function AdminTraining() {
   const [courses, setCourses] = useState(null);
 
+  // The single source of truth for the list. Row actions in CourseTable
+  // never patch `courses` themselves -- they call this again once their
+  // mutation succeeds, so the counts shown always come from the server.
+  const fetchCourses = useCallback(
+    () =>
+      listCourses()
+        .then(({ data }) => setCourses(data ?? []))
+        .catch((error) => toast.error(error.message)),
+    [],
+  );
+
   useEffect(() => {
-    listCourses()
-      .then(({ data }) => setCourses(data ?? []))
-      .catch((error) => toast.error(error.message));
-  }, []);
+    fetchCourses();
+  }, [fetchCourses]);
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
@@ -34,7 +43,7 @@ export default function AdminTraining() {
           No training courses yet.
         </Card>
       ) : (
-        <CourseTable courses={courses} />
+        <CourseTable courses={courses} onCoursesChanged={fetchCourses} />
       )}
     </div>
   );

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -9,35 +8,35 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { updateCourse } from "@/api/trainingApi";
 
 /**
  * Confirms turning a course off. Spec §4.1: deactivating only blocks new
  * assignments, so this isn't an "are you sure" -- it counts who the change
  * actually reaches, because everyone already assigned keeps their access.
  *
+ * Presentational only, matching `StepUpConfirmDialog`: it tracks its own
+ * busy state and nothing else. The caller owns the mutation, and is
+ * responsible for closing the dialog and refreshing on success and for
+ * reporting failure -- this dialog never calls the API itself.
+ *
  * @param {Object} props
  * @param {{courseId: number, name?: string, assignedCount: number, unfinishedCount: number}} props.course
  * @param {boolean} props.open
  * @param {(open: boolean) => void} [props.onOpenChange]
- * @param {() => (void|Promise<void>)} [props.onDeactivated] - called once the course is turned off.
+ * @param {() => Promise<void>} props.onConfirm - turns the course off.
  */
 export default function DeactivateDialog({
   course,
   open,
   onOpenChange,
-  onDeactivated,
+  onConfirm,
 }) {
   const [busy, setBusy] = useState(false);
 
-  const handleDeactivate = async () => {
+  const handleConfirm = async () => {
     setBusy(true);
     try {
-      await updateCourse(course.courseId, { isActive: false });
-      onOpenChange?.(false);
-      await onDeactivated?.();
-    } catch (error) {
-      toast.error(error.message);
+      await onConfirm();
     } finally {
       setBusy(false);
     }
@@ -72,7 +71,7 @@ export default function DeactivateDialog({
           </Button>
           <Button
             variant="destructive"
-            onClick={handleDeactivate}
+            onClick={handleConfirm}
             disabled={busy}
           >
             {busy ? "Turning off..." : "Turn off course"}
