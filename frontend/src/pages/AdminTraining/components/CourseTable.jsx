@@ -13,8 +13,9 @@ import {
 } from "@/components/ui/table";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { canAssign, statusLabel } from "@/pages/AdminTraining/utils";
-import { updateCourse } from "@/api/trainingApi";
+import { updateCourse, uploadPackage } from "@/api/trainingApi";
 import DeactivateDialog from "@/pages/AdminTraining/components/DeactivateDialog";
+import UploadPackageDialog from "@/pages/AdminTraining/components/UploadPackageDialog";
 
 // Only the three states with a hosted package get a dot -- External link
 // isn't ours to color, it just says where the course actually lives.
@@ -60,7 +61,7 @@ function ToggleActiveButton({ course, onDeactivate, onActivate }) {
 // The row's one main action. Assign stays on screen even when it cannot be
 // clicked yet -- hiding it would hide the rule (spec §4.1); the hover title
 // is the only place that rule is taught, so it isn't optional here.
-function RowActions({ course, onDeactivate, onActivate }) {
+function RowActions({ course, onDeactivate, onActivate, onUpload }) {
   const toggle = (
     <ToggleActiveButton
       course={course}
@@ -72,7 +73,7 @@ function RowActions({ course, onDeactivate, onActivate }) {
   if (course.state === "no_package" || course.state === "external_link") {
     return (
       <div className="flex justify-end gap-2">
-        <Button size="sm" variant="outline">
+        <Button size="sm" variant="outline" onClick={() => onUpload(course)}>
           Upload package
         </Button>
         {toggle}
@@ -97,6 +98,9 @@ function RowActions({ course, onDeactivate, onActivate }) {
         title={assignable ? undefined : "Run this course to completion first"}
       >
         Assign
+      </Button>
+      <Button size="sm" variant="ghost" onClick={() => onUpload(course)}>
+        Replace package
       </Button>
       {toggle}
     </div>
@@ -145,6 +149,7 @@ function PackageCell({ course }) {
  */
 export default function CourseTable({ courses, onCoursesChanged }) {
   const [deactivating, setDeactivating] = useState(null);
+  const [uploading, setUploading] = useState(null);
 
   const handleActivate = async (course) => {
     try {
@@ -163,6 +168,15 @@ export default function CourseTable({ courses, onCoursesChanged }) {
     } catch (error) {
       toast.error(error.message);
     }
+  };
+
+  // Refetch as soon as the upload lands, so the row's state and counts are
+  // fresh while the dialog is still open showing the health box -- rejection
+  // is left to the dialog itself, which renders the backend message inline.
+  const handleConfirmUpload = async (file) => {
+    const { data } = await uploadPackage(uploading.courseId, file);
+    await onCoursesChanged?.();
+    return data;
   };
 
   return (
@@ -202,6 +216,7 @@ export default function CourseTable({ courses, onCoursesChanged }) {
                   course={course}
                   onDeactivate={setDeactivating}
                   onActivate={handleActivate}
+                  onUpload={setUploading}
                 />
               </TableCell>
             </TableRow>
@@ -214,6 +229,14 @@ export default function CourseTable({ courses, onCoursesChanged }) {
           open
           onOpenChange={(open) => !open && setDeactivating(null)}
           onConfirm={handleConfirmDeactivate}
+        />
+      )}
+      {uploading && (
+        <UploadPackageDialog
+          course={uploading}
+          open
+          onOpenChange={(open) => !open && setUploading(null)}
+          onConfirm={handleConfirmUpload}
         />
       )}
     </>

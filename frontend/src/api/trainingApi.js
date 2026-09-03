@@ -50,3 +50,21 @@ export const startTrial = (courseId) =>
  */
 export const readCompletionConfig = (courseId) =>
   request.get(API_ENDPOINTS.TRAINING_COURSE_PACKAGE(courseId));
+
+/**
+ * Upload (or replace) a course's SCORM package. A rejection's message is
+ * meant to be forwarded verbatim to whoever exported the course -- callers
+ * must not paraphrase it.
+ * @param {string|number} courseId
+ * @param {File} file
+ * @returns {Promise<{data: Object}>} `TrainingPackageUploadResultDto`.
+ */
+export const uploadPackage = (courseId, file) => {
+  const form = new FormData();
+  form.append("file", file);
+  return request.post(API_ENDPOINTS.TRAINING_COURSE_PACKAGE(courseId), form, {
+    headers: { "Content-Type": "multipart/form-data" },
+    // A zip upload is a bigger budget than the shared 10s request timeout.
+    timeout: 120000,
+  });
+};

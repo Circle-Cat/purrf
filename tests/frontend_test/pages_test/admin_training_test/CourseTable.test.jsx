@@ -224,4 +224,40 @@ describe("CourseTable", () => {
       screen.getByRole("button", { name: /deactivate/i }),
     ).toBeInTheDocument();
   });
+
+  it("opens the upload dialog for a course with no package, uploads, and refetches on success", async () => {
+    const file = new File(["zip-bytes"], "course.zip", { type: "application/zip" });
+    api.uploadPackage.mockResolvedValue({
+      data: {
+        completionConfigReadable: true,
+        completesViaStoryline: false,
+        completionPercentage: 100,
+      },
+    });
+    const onCoursesChanged = vi.fn();
+    renderTable([noPackage], onCoursesChanged);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /upload package/i }),
+    );
+    await userEvent.upload(screen.getByLabelText(/scorm package/i), file);
+    await userEvent.click(screen.getByRole("button", { name: /^upload/i }));
+
+    await waitFor(() =>
+      expect(api.uploadPackage).toHaveBeenCalledWith(noPackage.courseId, file),
+    );
+    expect(onCoursesChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("labels the action Replace package for a course that already has one, and warns before replacing", async () => {
+    renderTable([verified]);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /replace package/i }),
+    );
+
+    expect(
+      screen.getByText(/this replaces package qppo9zhd/i),
+    ).toBeInTheDocument();
+  });
 });
