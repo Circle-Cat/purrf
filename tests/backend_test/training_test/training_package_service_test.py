@@ -654,6 +654,32 @@ class TestReadCompletionConfig(_PackageServiceTestCase):
         self.assertIsNone(result.completion_percentage)
         self.assertFalse(result.completes_via_storyline)
 
+    async def test_it_reports_whether_the_course_is_already_verified(self):
+        """The trial page shows this; the assignment's own status cannot.
+
+        A verifier re-running a replaced package is still DONE on their row,
+        so a page reading that would claim the new package was unlocked
+        before anybody had finished it.
+        """
+        self._course(
+            storage_prefix=_LIVE_PREFIX,
+            entry_path=_ENTRY_PATH,
+            verified_completable_at=_VERIFIED_AT,
+        )
+        self._stored()
+
+        result = await self.service.read_completion_config(self.session, _COURSE_ID)
+
+        self.assertTrue(result.verified)
+
+    async def test_a_course_awaiting_its_trial_run_is_not_verified(self):
+        self._course(storage_prefix=_LIVE_PREFIX, entry_path=_ENTRY_PATH)
+        self._stored()
+
+        result = await self.service.read_completion_config(self.session, _COURSE_ID)
+
+        self.assertFalse(result.verified)
+
     async def test_a_course_with_no_package_is_refused(self):
         self._course(storage_prefix=None)
 

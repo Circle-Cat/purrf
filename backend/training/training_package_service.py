@@ -209,6 +209,7 @@ class TrainingPackageService:
 
         config = parse_driver_config(stored[0])
         return TrainingCompletionConfigDto(
+            verified=course.verified_completable_at is not None,
             completion_percentage=config.completion_percentage if config else None,
             completes_via_storyline=bool(config and config.storyline_id),
             completion_config_readable=config is not None,

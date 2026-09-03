@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Routes, Route, useNavigate } from "react-router-dom";
 import TrainingTrial from "@/pages/TrainingTrial";
 import { MESSAGE_TYPES } from "@/training/scormBridge";
 
@@ -34,6 +35,26 @@ const renderTrial = () =>
     </MemoryRouter>,
   );
 
+const renderTrialWithNav = () => {
+  const GoToAnotherCourse = () => {
+    const navigate = useNavigate();
+    return (
+      <button onClick={() => navigate("/admin/training/6/trial")}>next</button>
+    );
+  };
+  return render(
+    <MemoryRouter initialEntries={["/admin/training/5/trial"]}>
+      <GoToAnotherCourse />
+      <Routes>
+        <Route
+          path="/admin/training/:courseId/trial"
+          element={<TrainingTrial />}
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+};
+
 const TRIAL = {
   data: { trainingId: 42, userId: 7, courseId: 5, created: true },
 };
@@ -64,6 +85,7 @@ describe("TrainingTrial", () => {
     saveProgress.mockResolvedValue({ data: { status: "in_progress" } });
     readCompletionConfig.mockResolvedValue({
       data: {
+        verified: false,
         completionPercentage: 100,
         completesViaStoryline: false,
         completionConfigReadable: true,
@@ -105,8 +127,25 @@ describe("TrainingTrial", () => {
     expect(writesLog.getByText("incomplete")).toBeInTheDocument();
   });
 
-  it("shows the course as verified once the server says the assignment is done", async () => {
+  it("shows the course as verified once the server says the course is", async () => {
     saveProgress.mockResolvedValue({ data: { status: "done" } });
+    readCompletionConfig
+      .mockResolvedValueOnce({
+        data: {
+          verified: false,
+          completionPercentage: 100,
+          completesViaStoryline: false,
+          completionConfigReadable: true,
+        },
+      })
+      .mockResolvedValue({
+        data: {
+          verified: true,
+          completionPercentage: 100,
+          completesViaStoryline: false,
+          completionConfigReadable: true,
+        },
+      });
     renderTrial();
     await screen.findByTitle(/course/i);
 
@@ -120,6 +159,39 @@ describe("TrainingTrial", () => {
       await screen.findByText(/completed — this course can now be assigned/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/now verified and unlocked/i)).toBeInTheDocument();
+  });
+
+  it("does not claim the course is unlocked while the stamp is still missing", async () => {
+    // The assignment can read DONE while the course carries no stamp: a
+    // verifier re-running a replaced package was already DONE on their row.
+    saveProgress.mockResolvedValue({ data: { status: "done" } });
+    renderTrial();
+    await screen.findByTitle(/course/i);
+
+    postFromContent({
+      type: MESSAGE_TYPES.FINISH,
+      cmi: { "cmi.core.lesson_status": "completed" },
+    });
+
+    await waitFor(() => expect(saveProgress).toHaveBeenCalled());
+    expect(screen.queryByText(/can now be assigned/i)).not.toBeInTheDocument();
+  });
+
+  it("shows an already verified course as verified without any commit", async () => {
+    readCompletionConfig.mockResolvedValue({
+      data: {
+        verified: true,
+        completionPercentage: 100,
+        completesViaStoryline: false,
+        completionConfigReadable: true,
+      },
+    });
+
+    renderTrial();
+
+    expect(
+      await screen.findByText(/completed — this course can now be assigned/i),
+    ).toBeInTheDocument();
   });
 
   it("does not claim completion while the server still says in progress", async () => {
@@ -219,6 +291,64 @@ describe("TrainingTrial", () => {
     await screen.findByTitle(/course/i);
 
     expect(readCompletionConfig).toHaveBeenCalledWith("5");
+  });
+
+  it("survives a commit from the content origin that carries no cmi", async () => {
+    // Course content is uploaded by third parties and runs on that origin,
+    // so a malformed commit needs no bug of ours to arrive.
+    renderTrial();
+    await screen.findByTitle(/course/i);
+
+    postFromContent({ type: MESSAGE_TYPES.COMMIT });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByTestId("trial-writes")).toBeInTheDocument();
+    expect(saveProgress).not.toHaveBeenCalled();
+  });
+
+  it("does not carry one course's failure over to the next", async () => {
+    // Router keeps the page mounted when only the param changes.
+    startTrial.mockRejectedValueOnce(new Error("nope"));
+    renderTrialWithNav();
+    await screen.findByText(/could not start a trial run/i);
+
+    await userEvent.click(screen.getByRole("button", { name: /next/i }));
+
+    expect(await screen.findByText(/course #6/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/could not start a trial run/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not carry one course's package warning over to the next", async () => {
+    readCompletionConfig
+      .mockResolvedValueOnce({
+        data: {
+          verified: false,
+          completionPercentage: 100,
+          completesViaStoryline: true,
+          completionConfigReadable: true,
+        },
+      })
+      .mockResolvedValue({
+        data: {
+          verified: false,
+          completionPercentage: 100,
+          completesViaStoryline: false,
+          completionConfigReadable: true,
+        },
+      });
+    renderTrialWithNav();
+    await screen.findByTestId("trial-package-notes");
+
+    await userEvent.click(screen.getByRole("button", { name: /next/i }));
+
+    await screen.findByText(/course #6/i);
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("trial-package-notes"),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("shows suspend_data as a size only, never a limit", async () => {

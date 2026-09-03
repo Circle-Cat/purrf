@@ -23,6 +23,22 @@ import { MESSAGE_TYPES, isTrustedMessage } from "@/training/scormBridge";
  *   writes: Array<{type: "commit"|"finish", cmi: Object<string, string>, receivedAt: number}>,
  * }}
  */
+// fetch refuses a keepalive request once the bodies in flight exceed 64 KiB,
+// and the server accepts suspend_data up to 65536 -- so resending the whole
+// model on unload throws for exactly the learners who have the most stored,
+// every time, and the elapsed time this save exists to bank is never written.
+// Under the spec figure because that budget is shared with anything else the
+// closing page still has out. The blob was already stored by the commit that
+// carried it; the time was not, so the blob is what gives way.
+const KEEPALIVE_BODY_LIMIT = 60 * 1024;
+
+const partingBody = (cmi) => {
+  const whole = JSON.stringify({ cmi, final: true });
+  if (new Blob([whole]).size < KEEPALIVE_BODY_LIMIT) return whole;
+  const { "cmi.suspend_data": _blob, ...rest } = cmi ?? {};
+  return JSON.stringify({ cmi: rest, final: true });
+};
+
 export default function useTrainingRuntime(trainingId, user) {
   const [session, setSession] = useState(null);
   const [loadError, setLoadError] = useState(null);
@@ -169,7 +185,7 @@ export default function useTrainingRuntime(trainingId, user) {
           credentials: "include",
           keepalive: true,
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cmi: lastCmiRef.current, final: true }),
+          body: partingBody(lastCmiRef.current),
         },
       ).catch((error) => {
         // Usually nothing is left to notice this. A page that is hidden and

@@ -313,4 +313,30 @@ describe("useTrainingRuntime parting save", () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("drops suspend_data from the parting save rather than exceeding keepalive", async () => {
+    // fetch refuses a keepalive body over 64 KiB, and the server's own cap on
+    // suspend_data is exactly 65536 -- so the save that exists to bank elapsed
+    // time would throw every time for a learner near that cap.
+    const huge = {
+      ...cmiWith("incomplete"),
+      "cmi.suspend_data": "x".repeat(65536),
+      "cmi.core.total_time": "01:00:00",
+    };
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    await renderRuntime();
+    await act(async () => {
+      window.dispatchEvent(commit(huge));
+    });
+
+    unload();
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(new Blob([init.body]).size).toBeLessThan(60 * 1024);
+    const body = JSON.parse(init.body);
+    expect(body.final).toBe(true);
+    expect(body.cmi["cmi.core.total_time"]).toBe("01:00:00");
+    expect(body.cmi).not.toHaveProperty("cmi.suspend_data");
+  });
 });

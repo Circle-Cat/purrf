@@ -126,8 +126,14 @@ class TestTrainingProgressRepository(BaseRepositoryTestLib):
         self.assertIsNone(progress.suspend_data)
         self.assertIsNone(progress.lesson_location)
 
-    async def test_clear_resume_state_leaves_a_finished_learners_record_alone(self):
-        """Only resume data goes; the completion itself stands."""
+    async def test_clear_resume_state_drops_the_replaced_packages_status(self):
+        """Kept, it is seeded back and echoed on the new package's first commit.
+
+        The whole model is re-sent on every commit, so a status left over from
+        the package we just replaced comes back looking like the new one
+        reporting itself finished -- which is enough to mark the new package
+        verified with nobody having run it.
+        """
         training = await self._assign(
             self.user_ids[0], self.course_id, TrainingStatus.DONE
         )
@@ -136,7 +142,19 @@ class TestTrainingProgressRepository(BaseRepositoryTestLib):
         await self.repo.clear_resume_state(self.session, self.course_id)
 
         await self._reload(progress)
-        self.assertEqual(progress.lesson_status, "passed")
+        self.assertIsNone(progress.lesson_status)
+
+    async def test_clear_resume_state_leaves_the_completion_record_alone(self):
+        """The record of having finished lives on the assignment, not here."""
+        training = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.DONE
+        )
+        progress = await self._start(training, lesson_status="passed")
+
+        await self.repo.clear_resume_state(self.session, self.course_id)
+
+        await self._reload(progress)
+        self.assertEqual(progress.session_time_seconds, 940)
         await self.session.refresh(training)
         self.assertEqual(training.status, TrainingStatus.DONE)
 
@@ -189,8 +207,8 @@ class TestTrainingProgressRepository(BaseRepositoryTestLib):
 
         self.assertEqual(cleared, 3)
 
-    async def test_clear_resume_state_keeps_everything_that_is_not_resume_state(self):
-        """Only the bookmark and the blob go; the record of what happened stays."""
+    async def test_clear_resume_state_keeps_everything_the_new_package_can_use(self):
+        """Accumulated time is the learner's, not the package's, so it stays."""
         training = await self._assign(
             self.user_ids[0], self.course_id, TrainingStatus.IN_PROGRESS
         )
@@ -199,7 +217,6 @@ class TestTrainingProgressRepository(BaseRepositoryTestLib):
         await self.repo.clear_resume_state(self.session, self.course_id)
 
         await self._reload(progress)
-        self.assertEqual(progress.lesson_status, "incomplete")
         self.assertEqual(progress.session_time_seconds, 940)
         self.assertIsNotNone(progress.last_accessed_at)
 

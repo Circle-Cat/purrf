@@ -67,13 +67,21 @@ class TrainingProgressRepository:
         return result.scalars().one()
 
     async def clear_resume_state(self, session: AsyncSession, course_id: int) -> int:
-        """Wipe resume data for everyone on this course.
+        """Wipe the replaced package's state for everyone on this course.
 
         A previous package's suspend_data means nothing to a new one and can
         hang it, so an overwrite drops it. Rows already DONE included: the
         person who verified the replaced package is one of them, and they are
-        the likeliest to open the replacement. Only the resume data goes --
-        the completion itself, and the status, stand.
+        the likeliest to open the replacement.
+
+        lesson_status goes with it. It is seeded back into the CMI model when
+        the course opens, and the player re-sends the whole model on every
+        commit, so a status left over from the replaced package returns
+        looking like the new one reporting itself finished -- enough to mark
+        the replacement verified with nobody having run it.
+
+        The record of having finished lives on the assignment's own status,
+        which nothing here touches.
 
         Args:
             session (AsyncSession): The active async database session.
@@ -88,7 +96,7 @@ class TrainingProgressRepository:
         result = await session.execute(
             update(TrainingProgressEntity)
             .where(TrainingProgressEntity.training_id.in_(on_this_course))
-            .values(suspend_data=None, lesson_location=None)
+            .values(suspend_data=None, lesson_location=None, lesson_status=None)
             .execution_options(synchronize_session=False)
         )
         return result.rowcount or 0

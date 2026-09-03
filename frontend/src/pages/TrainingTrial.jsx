@@ -46,9 +46,17 @@ export default function TrainingTrial() {
   const [trainingId, setTrainingId] = useState(null);
   const [trialError, setTrialError] = useState(null);
   const [packageNotes, setPackageNotes] = useState([]);
+  // Whether the course carries its stamp. The only answer to "can this be
+  // assigned yet" -- the assignment's own status cannot stand in for it,
+  // because a verifier re-running a replaced package is already DONE.
+  const [verified, setVerified] = useState(false);
 
+  // Router keeps this page mounted when only the param changes, so every
+  // answer about the previous course has to go before the new one arrives.
   useEffect(() => {
     let cancelled = false;
+    setTrialError(null);
+    setTrainingId(null);
     startTrial(courseId)
       .then((response) => {
         if (!cancelled) setTrainingId(response.data.trainingId);
@@ -69,9 +77,12 @@ export default function TrainingTrial() {
   // says nothing about the package, and the run itself is the real answer.
   useEffect(() => {
     let cancelled = false;
+    setPackageNotes([]);
+    setVerified(false);
     readCompletionConfig(courseId)
       .then(({ data }) => {
         if (cancelled) return;
+        setVerified(Boolean(data.verified));
         const notes = [];
         if (!data.completionConfigReadable) {
           notes.push(
@@ -85,8 +96,6 @@ export default function TrainingTrial() {
               "Finishing the surrounding lessons will not finish it.",
           );
         }
-        // Nothing to say is the common case; re-rendering to say it would
-        // be a state update after the page has settled.
         if (notes.length > 0) setPackageNotes(notes);
       })
       .catch(() => {});
@@ -114,10 +123,24 @@ export default function TrainingTrial() {
     [writes],
   );
   const lessonStatus = latestCmi["cmi.core.lesson_status"];
-  // The server's answer, not ours. It decides which lesson_status finishes a
-  // course, and folds in rules this page has no copy of.
-  const isComplete = status === "done";
+  const isComplete = verified;
   const hasSuspendData = "cmi.suspend_data" in latestCmi;
+
+  // The stamp lands on the commit that finishes the course, so the answer
+  // this page shows is only stale once: ask again when a save comes back
+  // saying the assignment is done.
+  useEffect(() => {
+    if (status !== "done" || verified) return;
+    let cancelled = false;
+    readCompletionConfig(courseId)
+      .then(({ data }) => {
+        if (!cancelled) setVerified(Boolean(data.verified));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [status, verified, courseId]);
 
   const firstWrite = writes[0];
   // The write we were on when the server first said done. Held rather than

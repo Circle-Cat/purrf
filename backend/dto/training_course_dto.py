@@ -134,6 +134,12 @@ class TrainingCompletionConfigDto(BaseDto):
     overwrite would leave a stored copy describing the package it replaced.
     """
 
+    # Whether this package has been run to the end by somebody who could
+    # vouch for it. The one answer to "can this be assigned yet" -- an
+    # assignment's own status cannot stand in for it, because a verifier
+    # re-running a replaced package is still DONE on their row.
+    verified: bool = False
+
     # How much of the course the driver requires before it reports completion.
     completion_percentage: float | None = None
     # Finishing the surrounding lessons will not complete such a course.
