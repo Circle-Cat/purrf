@@ -136,6 +136,9 @@ from backend.leave.leave_calendar_service import LeaveCalendarService
 from backend.leave.leave_calendar_controller import LeaveCalendarController
 from backend.leave.leave_adjustment_service import LeaveAdjustmentService
 from backend.leave.leave_admin_controller import LeaveAdminController
+from backend.training.training_admin_controller import TrainingAdminController
+from backend.training.training_assignment_service import TrainingAssignmentService
+from backend.training.training_course_service import TrainingCourseService
 from backend.leave.leave_engine_service import LeaveEngineService
 from backend.leave.leave_job_controller import LeaveJobController
 from backend.leave.leave_request_service import LeaveRequestService
@@ -165,6 +168,9 @@ from backend.communication.email_conversation_service import EmailConversationSe
 from backend.communication.meeting_scheduling_service import MeetingSchedulingService
 from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.repository.experience_repository import ExperienceRepository
+from backend.repository.training_course_repository import (
+    TrainingCourseRepository,
+)
 from backend.repository.training_repository import TrainingRepository
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from backend.repository.mentorship_pairs_repository import MentorshipPairsRepository
@@ -926,6 +932,22 @@ class AppDependencyBuilder:
             self.leave_engine_service,
             self.database,
         )
+        self.training_course_repository = TrainingCourseRepository()
+        self.training_course_service = TrainingCourseService(
+            logger=self.logger,
+            training_course_repository=self.training_course_repository,
+        )
+        self.training_assignment_service = TrainingAssignmentService(
+            logger=self.logger,
+            training_course_repository=self.training_course_repository,
+            training_repository=self.training_repository,
+        )
+        self.training_admin_controller = TrainingAdminController(
+            self.training_course_service,
+            self.training_assignment_service,
+            self.database,
+        )
+
         self.leave_request_repository = LeaveRequestRepository()
         self.leave_request_service = LeaveRequestService(
             logger=self.logger,
@@ -964,6 +986,7 @@ class AppDependencyBuilder:
             audit_controller=self.audit_controller,
             recruiting_notification_controller=self.recruiting_notification_controller,
             leave_admin_controller=self.leave_admin_controller,
+            training_admin_controller=self.training_admin_controller,
             leave_job_controller=self.leave_job_controller,
             leave_request_controller=self.leave_request_controller,
             leave_calendar_controller=self.leave_calendar_controller,

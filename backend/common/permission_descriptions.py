@@ -48,6 +48,8 @@ PERMISSION_DESCRIPTIONS: dict[Permission, str] = _validate_complete({
     Permission.RECRUITING_BLACKLIST_WRITE: "View, add to, or remove from the org-wide recruiting blacklist (one permission covers both read and write — there's no separate read grant).",
     Permission.RECRUITING_AUDIT_READ: "View the cross-posting recruiting audit page — open positions, per-job stage breakdown, and daily application trend across every posting, regardless of ownership.",
     Permission.LEAVE_ADMIN: "Enter the company holiday calendar for a year and adjust individual leave balances by hand. Reading the calendar and the leave policy needs no permission; a manager's view of their reports follows the Azure manager relationship rather than a grant.",
+    Permission.TRAINING_ADMIN_READ: "View the training course catalogue: what courses exist, whether each has a package, whether it has been proven completable, and how many people are assigned to it.",
+    Permission.TRAINING_ADMIN_WRITE: "Create, rename, deactivate and upload packages for training courses, run the trial that unlocks a course for assignment, and assign a course to somebody. Learning a course you have been assigned needs no permission.",
     Permission.PERMISSION_MANAGE: "View/grant/revoke user permissions, browse users and the permission catalog, view the permission-change audit log, and grant (but not revoke) super-admin status.",
     Permission.SUPER_ADMIN_REVOKE: "Revoke another user's super-admin status.",
 })

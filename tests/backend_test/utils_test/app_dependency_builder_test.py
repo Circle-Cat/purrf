@@ -618,6 +618,7 @@ class TestAppDependencyBuilder(TestCase):
             audit_controller=ANY,
             recruiting_notification_controller=ANY,
             leave_admin_controller=ANY,
+            training_admin_controller=ANY,
             leave_job_controller=ANY,
             leave_request_controller=ANY,
             leave_calendar_controller=ANY,

@@ -44,6 +44,7 @@ class FastAppFactory:
         audit_controller,
         recruiting_notification_controller,
         leave_admin_controller,
+        training_admin_controller,
         leave_job_controller,
         leave_request_controller,
         leave_calendar_controller,
@@ -77,6 +78,7 @@ class FastAppFactory:
             audit_controller: An instance of AuditController that manages API routes for the cross-posting recruiting audit page.
             recruiting_notification_controller: An instance of RecruitingNotificationController that manages API routes for the caller's own in-app notifications.
             leave_admin_controller: An instance of LeaveAdminController that manages admin-only leave API routes, starting with hand-written balance adjustments.
+            training_admin_controller: An instance of TrainingAdminController that manages the course catalogue and manual assignment.
             leave_job_controller: An instance of LeaveJobController that exposes the two scheduled leave jobs to the CronJobs that call them.
             leave_request_controller: An instance of LeaveRequestController that manages the routes employees file leave through and managers decide on.
             leave_calendar_controller: An instance of LeaveCalendarController that manages API routes for the company holiday calendar and the read-only leave policy.
@@ -110,6 +112,7 @@ class FastAppFactory:
         self.audit_controller = audit_controller
         self.recruiting_notification_controller = recruiting_notification_controller
         self.leave_admin_controller = leave_admin_controller
+        self.training_admin_controller = training_admin_controller
         self.leave_job_controller = leave_job_controller
         self.leave_request_controller = leave_request_controller
         self.leave_calendar_controller = leave_calendar_controller
@@ -211,6 +214,7 @@ class FastAppFactory:
         )
         app.include_router(self.leave_calendar_controller.router, prefix="/api")
         app.include_router(self.leave_admin_controller.router, prefix="/api")
+        app.include_router(self.training_admin_controller.router, prefix="/api")
         app.include_router(self.leave_job_controller.router, prefix="/api")
         app.include_router(self.leave_request_controller.router, prefix="/api")
         # Deliberately NOT authenticate()-gated -- this route has no Auth0

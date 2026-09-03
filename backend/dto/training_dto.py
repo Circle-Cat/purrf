@@ -5,7 +5,8 @@ from backend.dto.base_dto import BaseDto
 
 class TrainingDto(BaseDto):
     id: int
-    category: TrainingCategory
+    # None for a course outside the four seed categories.
+    category: TrainingCategory | None = None
     completed_timestamp: datetime | None = None
     status: TrainingStatus
     deadline: datetime | None = None

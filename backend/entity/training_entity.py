@@ -1,12 +1,22 @@
 from datetime import datetime
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, Enum, DateTime, ForeignKey, func
+from sqlalchemy import String, Enum, DateTime, ForeignKey, Index, func, text
 from backend.common.mentorship_enums import TrainingStatus, TrainingCategory
 from backend.common.base import Base
 
 
 class TrainingEntity(Base):
     __tablename__ = "training"
+    __table_args__ = (
+        # Partial, so rows without a course do not collide with each other.
+        Index(
+            "uq_training_user_course",
+            "user_id",
+            "course_id",
+            unique=True,
+            postgresql_where=text("course_id IS NOT NULL"),
+        ),
+    )
 
     training_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
 
@@ -14,7 +24,11 @@ class TrainingEntity(Base):
         ForeignKey("users.user_id", ondelete="CASCADE"), index=True
     )
 
-    category: Mapped[TrainingCategory] = mapped_column(
+    # Nullable since courses stopped being an enum. Rows for seed courses keep
+    # their category, so registration and the matching gate -- which filter on
+    # this column -- read as they always did. Courses created from the admin
+    # page have none, and are correctly invisible to those two paths.
+    category: Mapped[TrainingCategory | None] = mapped_column(
         Enum(
             TrainingCategory,
             name="training_category",
@@ -40,6 +54,12 @@ class TrainingEntity(Base):
     deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     link: Mapped[str | None] = mapped_column(String)
+
+    # Nullable only because the migration that adds it backfills from
+    # `category`; every row written from here on carries one.
+    course_id: Mapped[int | None] = mapped_column(
+        ForeignKey("training_course.course_id", ondelete="RESTRICT"), index=True
+    )
 
     created_datetime: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

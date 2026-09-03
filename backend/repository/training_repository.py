@@ -68,3 +68,27 @@ class TrainingRepository:
         merged_entity = await session.merge(entity)
         await session.flush()
         return merged_entity
+
+    async def get_training_by_user_id_and_course_id(
+        self, session: AsyncSession, user_id: int, course_id: int
+    ) -> TrainingEntity | None:
+        """
+        Fetch the assignment a user holds for one course, if any.
+
+        The read behind idempotent assignment.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user the assignment belongs to.
+            course_id (int): The course being assigned.
+
+        Returns:
+            TrainingEntity | None: The existing assignment, or None.
+        """
+        result = await session.execute(
+            select(TrainingEntity).where(
+                TrainingEntity.user_id == user_id,
+                TrainingEntity.course_id == course_id,
+            )
+        )
+        return result.scalars().one_or_none()
