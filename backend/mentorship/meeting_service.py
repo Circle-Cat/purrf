@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime, timedelta, timezone as dt_timezone, date
-from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +9,7 @@ from backend.common.mentorship_enums import (
     PairStatus,
 )
 from backend.common.name_utils import user_display_name
+from backend.common.wall_clock import wall_clock_to_utc
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.dto.meeting_dto import MeetingDto
 from backend.dto.meeting_create_dto import MeetingCreateDto
@@ -448,19 +448,23 @@ class MeetingService:
         interval_weeks: int,
         count: int,
     ) -> list[tuple[datetime, datetime]]:
-        """Expand wall-clock recurrence into DST-correct (start_utc, end_utc) pairs."""
-        tz = ZoneInfo(timezone)
-        hour, minute = (int(p) for p in start_time.split(":"))
-        naive_start = datetime(
-            start_date.year, start_date.month, start_date.day, hour, minute
-        )
-        pairs = []
-        for i in range(count):
-            naive_i = naive_start + timedelta(weeks=interval_weeks * i)
-            start_utc = naive_i.replace(tzinfo=tz).astimezone(dt_timezone.utc)
-            end_utc = start_utc + timedelta(minutes=duration_minutes)
-            pairs.append((start_utc, end_utc))
-        return pairs
+        """Expand wall-clock recurrence into DST-correct (start_utc, end_utc) pairs.
+
+        Each occurrence is converted from its own local date, so a series that
+        spans a daylight-saving change keeps every session at the same local
+        time and lands them on different UTC offsets. Advancing a UTC instant
+        by seven days instead would hold the UTC hour and move the local one,
+        which is not what either participant agreed to.
+        """
+        return [
+            wall_clock_to_utc(
+                day=start_date + timedelta(weeks=interval_weeks * i),
+                start_time=start_time,
+                duration_minutes=duration_minutes,
+                timezone_name=timezone,
+            )
+            for i in range(count)
+        ]
 
     async def create_google_meetings_batch(
         self,

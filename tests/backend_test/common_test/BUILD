@@ -187,3 +187,11 @@ py_test(
         "//backend/common:identity_type",
     ],
 )
+
+py_test(
+    name = "wall_clock_test",
+    srcs = ["wall_clock_test.py"],
+    deps = [
+        "//backend/common:wall_clock",
+    ],
+)
