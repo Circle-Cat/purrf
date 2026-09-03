@@ -5,9 +5,6 @@ import { describe, it, expect, vi } from "vitest";
 import "@testing-library/jest-dom";
 
 import AssignDialog from "@/pages/AdminTraining/components/AssignDialog";
-import { assignCourse } from "@/api/trainingApi";
-
-vi.mock("@/api/trainingApi");
 
 describe("AssignDialog", () => {
   it("says a repeat assignment does nothing, rather than letting someone hunt for a duplicate", () => {
@@ -30,18 +27,24 @@ describe("AssignDialog", () => {
   });
 
   it("sends no deadline field at all when none was given", async () => {
-    assignCourse.mockResolvedValue({ data: { trainingId: 9, created: true } });
-    render(<AssignDialog course={{ courseId: 5, assignedCount: 0 }} open />);
+    const onConfirm = vi.fn().mockResolvedValue({ trainingId: 9, created: true });
+    render(
+      <AssignDialog
+        course={{ courseId: 5, assignedCount: 0 }}
+        open
+        onConfirm={onConfirm}
+      />,
+    );
 
     await userEvent.type(screen.getByLabelText(/person/i), "11");
     await userEvent.click(screen.getByRole("button", { name: /assign/i }));
 
-    expect(assignCourse).toHaveBeenCalledWith({ userId: 11, courseId: 5 });
+    expect(onConfirm).toHaveBeenCalledWith({ userId: 11, courseId: 5 });
   });
 
   it("names the search gap plainly instead of leaving the field unexplained", () => {
     render(<AssignDialog course={{ courseId: 5, assignedCount: 0 }} open />);
 
-    expect(screen.getByText(/not built yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/not available here/i)).toBeInTheDocument();
   });
 });

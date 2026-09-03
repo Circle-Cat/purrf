@@ -249,6 +249,26 @@ describe("CourseTable", () => {
     expect(onCoursesChanged).toHaveBeenCalledTimes(1);
   });
 
+  it("opens the assign dialog for a verified course, assigns, and refetches on success", async () => {
+    api.assignCourse.mockResolvedValue({
+      data: { trainingId: 9, userId: 11, courseId: verified.courseId, created: true },
+    });
+    const onCoursesChanged = vi.fn();
+    renderTable([verified], onCoursesChanged);
+
+    await userEvent.click(screen.getByRole("button", { name: /^assign$/i }));
+    await userEvent.type(screen.getByLabelText(/person/i), "11");
+    await userEvent.click(screen.getByRole("button", { name: /^assign$/i }));
+
+    await waitFor(() =>
+      expect(api.assignCourse).toHaveBeenCalledWith({
+        userId: 11,
+        courseId: verified.courseId,
+      }),
+    );
+    expect(onCoursesChanged).toHaveBeenCalledTimes(1);
+  });
+
   it("labels the action Replace package for a course that already has one, and warns before replacing", async () => {
     renderTable([verified]);
 

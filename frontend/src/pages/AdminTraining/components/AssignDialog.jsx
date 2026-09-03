@@ -15,7 +15,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { assignCourse } from "@/api/trainingApi";
 
 /**
  * Assign a verified course to one person. Spec §4.4.
@@ -28,23 +27,16 @@ import { assignCourse } from "@/api/trainingApi";
  * leaving the field unexplained.
  *
  * Presentational, matching `DeactivateDialog` and `UploadPackageDialog`: it
- * owns only its own form state and busy flag. Unlike those two, `onConfirm`
- * defaults to the real `assignCourse` call so the dialog is usable on its
- * own; `CourseTable` passes its own `onConfirm` to also close the dialog and
- * refetch the course list on success.
+ * owns only its own form state and busy flag. `CourseTable` owns the
+ * `assignCourse` call itself, via `onConfirm`.
  *
  * @param {Object} props
  * @param {{courseId: number, assignedCount: number}} props.course
  * @param {boolean} props.open
  * @param {(open: boolean) => void} [props.onOpenChange]
- * @param {(payload: {userId: number, courseId: number, deadline?: string}) => Promise<Object>} [props.onConfirm]
+ * @param {(payload: {userId: number, courseId: number, deadline?: string}) => Promise<Object>} props.onConfirm
  */
-export default function AssignDialog({
-  course,
-  open,
-  onOpenChange,
-  onConfirm = assignCourse,
-}) {
+export default function AssignDialog({ course, open, onOpenChange, onConfirm }) {
   const [personId, setPersonId] = useState("");
   const [deadline, setDeadline] = useState("");
   const [busy, setBusy] = useState(false);
@@ -102,8 +94,8 @@ export default function AssignDialog({
               onChange={(e) => setPersonId(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Search by name or email is not built yet -- enter the person's
-              user ID directly.
+              Search by name or email is not available here -- enter the
+              person's user ID directly.
             </p>
           </div>
 
