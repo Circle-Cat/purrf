@@ -115,7 +115,9 @@ describe("UploadPackageDialog", () => {
     );
 
     expect(screen.queryByText(/24 hours/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/previous files are kept/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/previous files are kept/i),
+    ).not.toBeInTheDocument();
   });
 
   it("calls the first upload Upload, not Replace", () => {

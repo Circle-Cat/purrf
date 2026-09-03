@@ -24,10 +24,9 @@ _OPENED_BEFORE = int(datetime(2026, 1, 31, 23, 55, tzinfo=timezone.utc).timestam
 
 def _session_token(opened_at: int) -> str:
     """The token a page was handed when its run opened at ``opened_at``."""
-    token, _ = issue_content_token(
-        _SIGNING_KEY, _TRAINING_ID, _USER_ID, now=opened_at
-    )
+    token, _ = issue_content_token(_SIGNING_KEY, _TRAINING_ID, _USER_ID, now=opened_at)
     return token
+
 
 _COMMIT = {
     "cmi.core.lesson_status": "incomplete",

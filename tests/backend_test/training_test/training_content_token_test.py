@@ -205,9 +205,7 @@ class TestTokenCarriesNoStoragePrefix(unittest.TestCase):
         course row."""
         names = {field.name for field in dataclasses.fields(ContentTokenClaims)}
 
-        self.assertEqual(
-            names, {"training_id", "user_id", "expires_at", "issued_at"}
-        )
+        self.assertEqual(names, {"training_id", "user_id", "expires_at", "issued_at"})
 
     def test_the_claims_are_frozen(self):
         claims = verify_content_token(_KEY, self.token, now=_NOW)
@@ -231,9 +229,7 @@ class TestReadingWhenTheRunBegan(unittest.TestCase):
         would cost the longest sitting its stamp."""
         token, _ = issue_content_token(_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
 
-        self.assertEqual(
-            read_session_start(_KEY, token), _NOW
-        )
+        self.assertEqual(read_session_start(_KEY, token), _NOW)
         with self.assertRaises(InvalidContentToken):
             verify_content_token(_KEY, token, now=_NOW + TOKEN_LIFETIME_SECONDS)
 

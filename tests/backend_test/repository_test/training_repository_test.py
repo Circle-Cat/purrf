@@ -85,9 +85,7 @@ class TestTrainingRepository(BaseRepositoryTestLib):
         self.assertTrue(all(t.user_id == self.user1.user_id for t, _, _ in result))
 
     async def test_get_training_with_course_by_user_id_non_existent(self):
-        result = await self.repo.get_training_with_course_by_user_id(
-            self.session, 9999
-        )
+        result = await self.repo.get_training_with_course_by_user_id(self.session, 9999)
         self.assertEqual(result, [])
 
     async def test_a_row_pointing_at_a_course_carries_that_course_name(self):
