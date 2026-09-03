@@ -50,10 +50,13 @@ not three screens that mention the same person.
 - **Raising a request changes nothing.** Switch to Mentorship, request a block
   on a participant, then look at them in Operations: still active, now carrying
   a third chip so no other operator acts on them blind.
-- **The approver sees what approval will do — including what it won't.** Every
-  block pre-flight lists the applications and interviews it sweeps _and_ names
-  the mentorship pairs and meetings it leaves running, because blocking does not
-  touch either. A screen showing only the first half would read as "handled".
+- **The approver sees the whole consequence, in counts and dates.** Every
+  pre-flight names what a block sweeps: applications rejected, interviews
+  cancelled, the mentorship pair ended mid-round and its unfinished meetings
+  cancelled. It shows how large and how soon, never which posting — who
+  applied to what is not an operator's business. The one identity it does name
+  is the partner, because ending the pair costs _them_ a partner mid-round and
+  the person deciding is entitled to know who they are about to affect.
 - **A reason is mandatory, everywhere.** Blocking with an empty reason is not
   possible in either mode. The `users` table keeps current state, not history,
   so the reason is the only durable record of why this happened.
@@ -92,7 +95,7 @@ not three screens that mention the same person.
 | `AccountsPage.jsx`                   | The operator's list: search, filters, pending-request banner            |
 | `AccountDetailPage.jsx`              | One person: identity, state, sign-in methods, actions, pending decision |
 | `BlockDialog.jsx`                    | Both blocking and requesting a block — same evidence, different verb    |
-| `BlockImpact.jsx`                    | The pre-flight, including the untouched-mentorship warning              |
+| `BlockImpact.jsx`                    | The pre-flight: what a block sweeps, and that none of it comes back     |
 | `DeactivateDialog.jsx`               | Deactivation, with its optional note                                    |
 | `DomainView.jsx`                     | Stands in for the board and mentorship management                       |
 | `accountState.js` / `StateChips.jsx` | State derivation, and the chips that render it                          |

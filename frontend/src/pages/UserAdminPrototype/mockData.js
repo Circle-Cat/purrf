@@ -284,39 +284,34 @@ export const INITIAL_USERS = [
  * What a block would sweep, keyed by user. The console reads this to build the
  * pre-flight so an approver can see the consequences before deciding.
  *
- * `mentorship` is listed separately and marked untouched on purpose: blocking
- * cancels interviews but does not cancel mentorship meetings or end a pair.
- * The design's rule is that the screen must not imply otherwise.
+ * Interviews and meetings are dates without titles: how large the consequence
+ * is and how soon it lands are the operator's business, which posting someone
+ * applied to is not. Pairs carry the partner's name because ending the pair
+ * costs that person a partner mid-round.
  */
 export const BLOCK_IMPACT = {
   1130: {
     applications: 3,
-    interviews: [
-      "Backend Engineer — technical round, 2026-09-08 14:00",
-      "Backend Engineer — culture round, 2026-09-11 10:00",
-    ],
-    mentorshipPairs: 0,
+    interviews: ["2026-09-08 14:00", "2026-09-11 10:00"],
+    pairs: [],
     mentorshipMeetings: [],
   },
   1311: {
     applications: 2,
-    interviews: ["Mentorship 2026 Autumn — screening call, 2026-09-05 09:30"],
-    mentorshipPairs: 1,
-    mentorshipMeetings: [
-      "Weekly 1:1 with Silva, Marco — 2026-09-04 16:00",
-      "Weekly 1:1 with Silva, Marco — 2026-09-11 16:00",
-    ],
+    interviews: ["2026-09-05 09:30"],
+    pairs: ["Silva, Marco"],
+    mentorshipMeetings: ["2026-09-04 16:00", "2026-09-11 16:00"],
   },
   1402: {
     applications: 1,
     interviews: [],
-    mentorshipPairs: 1,
-    mentorshipMeetings: ["Weekly 1:1 with Okonkwo, Ada — 2026-09-06 11:00"],
+    pairs: ["Okonkwo, Ada"],
+    mentorshipMeetings: ["2026-09-06 11:00"],
   },
   1508: {
     applications: 1,
-    interviews: ["Data Analyst — screening call, 2026-09-09 13:00"],
-    mentorshipPairs: 0,
+    interviews: ["2026-09-09 13:00"],
+    pairs: [],
     mentorshipMeetings: [],
   },
 };
@@ -325,7 +320,7 @@ export const BLOCK_IMPACT = {
 export const EMPTY_IMPACT = {
   applications: 0,
   interviews: [],
-  mentorshipPairs: 0,
+  pairs: [],
   mentorshipMeetings: [],
 };
 

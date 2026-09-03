@@ -5,75 +5,68 @@ import { AlertTriangle } from "lucide-react";
  *
  * The pre-flight shown before a block is requested or applied.
  *
- * It states what a block does *and* what it leaves alone. Blocking rejects
- * every application and cancels upcoming interviews, but it does not end a
- * mentorship pair or cancel mentorship meetings — so those are listed under
- * their own heading and explicitly marked untouched. A screen that showed
- * only the first half would read as "everything is handled", which is the
- * mistake this panel exists to prevent.
+ * Counts and dates, never titles. The approver needs to know how large the
+ * consequence is and how soon it lands; which posting someone applied to is
+ * not part of that, and who applied to what is not an operator's business.
+ * The one identity that does appear is the mentorship partner, because ending
+ * the pair costs *them* a partner mid-round — they are an affected party, so
+ * the person deciding is entitled to know who they are about to affect.
  *
  * @param {{impact: object}} props
  * @returns {JSX.Element}
  */
-const BlockImpact = ({ impact }) => (
-  <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm">
-    <div>
-      <p className="font-medium text-slate-900">Applying this will</p>
-      <ul className="mt-1 list-disc space-y-0.5 pl-5 text-slate-700">
-        <li>
-          Reject and tag {impact.applications} application
-          {impact.applications === 1 ? "" : "s"}, including any already hired
-        </li>
-        <li>Lock the person out of all of Purrf until unblocked</li>
-        {impact.interviews.length > 0 ? (
-          <li>
-            Cancel {impact.interviews.length} upcoming interview
-            {impact.interviews.length === 1 ? "" : "s"}:
-            <ul className="mt-1 list-none space-y-0.5 pl-0 text-xs text-slate-600">
-              {impact.interviews.map((line) => (
-                <li key={line}>· {line}</li>
-              ))}
-            </ul>
-          </li>
-        ) : (
-          <li>Cancel no interviews — none are scheduled</li>
-        )}
-      </ul>
-    </div>
+const BlockImpact = ({ impact }) => {
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-    <div className="flex gap-2 rounded-md border border-amber-300 bg-amber-50 p-2">
-      <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-700" />
+  return (
+    <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm">
       <div>
-        <p className="font-medium text-amber-900">Will NOT be touched</p>
-        {impact.mentorshipPairs === 0 &&
-        impact.mentorshipMeetings.length === 0 ? (
-          <p className="mt-0.5 text-amber-900">
-            No mentorship pair or meeting for this person.
-          </p>
-        ) : (
-          <>
-            <ul className="mt-1 list-none space-y-0.5 text-amber-900">
-              <li>
-                · {impact.mentorshipPairs} mentorship pair
-                {impact.mentorshipPairs === 1 ? "" : "s"} stays ACTIVE
-              </li>
-              {impact.mentorshipMeetings.map((line) => (
-                <li key={line}>· {line} stays on both calendars</li>
-              ))}
-            </ul>
-            <p className="mt-1 text-xs text-amber-800">
-              The mentor is not notified. Handle this separately.
-            </p>
-          </>
-        )}
+        <p className="font-medium text-slate-900">Applying this will</p>
+        <ul className="mt-1 list-disc space-y-0.5 pl-5 text-slate-700">
+          <li>Lock the person out of all of Purrf until unblocked</li>
+          <li>
+            Reject and tag {plural(impact.applications, "application")},
+            including any already hired
+          </li>
+          {impact.interviews.length > 0 ? (
+            <li>
+              Cancel {plural(impact.interviews.length, "interview")} —{" "}
+              {impact.interviews.join(", ")}
+            </li>
+          ) : (
+            <li>Cancel no interviews — none are scheduled</li>
+          )}
+          {impact.pairs.length > 0 ? (
+            <li>
+              End {plural(impact.pairs.length, "mentorship pair")} mid-round,
+              leaving {impact.pairs.join(" and ")} without a partner
+            </li>
+          ) : (
+            <li>End no mentorship pair — this person is not paired</li>
+          )}
+          {impact.mentorshipMeetings.length > 0 ? (
+            <li>
+              Cancel{" "}
+              {plural(impact.mentorshipMeetings.length, "mentorship meeting")}{" "}
+              that has not happened yet — {impact.mentorshipMeetings.join(", ")}
+            </li>
+          ) : (
+            <li>Cancel no mentorship meeting — none are scheduled</li>
+          )}
+        </ul>
+      </div>
+
+      <div className="flex gap-2 rounded-md border border-amber-300 bg-amber-50 p-2">
+        <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-700" />
+        <p className="text-amber-900">
+          Unblocking later restores access, but reinstates none of the above —
+          not the applications, not the interviews, not the pair. Mentorship
+          eligibility is gone for good, because it is derived from an
+          application that this action rejects. Treat it as permanent.
+        </p>
       </div>
     </div>
-
-    <p className="text-xs text-slate-600">
-      Unblocking later restores access, but does not reinstate applications,
-      interviews, or mentorship eligibility. Treat this as permanent.
-    </p>
-  </div>
-);
+  );
+};
 
 export default BlockImpact;
