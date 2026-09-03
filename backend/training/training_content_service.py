@@ -1,7 +1,9 @@
 """Serving course files to a browser that has a signed token and no cookie."""
 
+import asyncio
 import pathlib
 import posixpath
+import time
 from dataclasses import dataclass
 
 from backend.dto.training_course_dto import TrainingProgressDto, TrainingSessionDto
@@ -40,6 +42,24 @@ PLAYER_ASSETS = {
 _PLAYER_ASSET_BYTES = {
     path: (_PLAYER_DIR / name).read_bytes() for path, (name, _) in PLAYER_ASSETS.items()
 }
+
+# How long the assignment behind a token is reused for. Which course a token
+# names cannot change, so this is bounded only to let a deleted assignment
+# stop answering; the storage prefix is deliberately not cached with it.
+ASSIGNMENT_CACHE_SECONDS = 60
+
+# Entries are only evicted when they are read, so an assignment nobody comes
+# back to would otherwise sit here for the life of the process.
+_ASSIGNMENT_CACHE_LIMIT = 512
+
+
+def _now() -> float:
+    """The clock the assignment cache ages against.
+
+    Its own function so a test can move it without patching time.monotonic,
+    which the running event loop also reads.
+    """
+    return time.monotonic()
 
 
 def _score(value) -> str | None:
@@ -134,6 +154,10 @@ class TrainingContentService:
         self.training_course_repository = training_course_repository
         self.training_progress_repository = training_progress_repository
         self.training_storage = training_storage
+        # training_id -> (course_id, monotonic deadline). Not keyed on the
+        # token: the token is the credential, and two tokens naming the same
+        # assignment resolve to the same course anyway.
+        self._assignments: dict[int, tuple[int, float]] = {}
 
     async def open_session(
         self, session, training_id: int, user_id: int
@@ -304,35 +328,25 @@ class TrainingContentService:
                 _PLAYER_ASSET_BYTES[normalised], content_type, byte_range
             )
 
-        assignment = await self.training_repository.get_training_by_id(
-            session, claims.training_id
-        )
-        if assignment is None or assignment.course_id is None:
-            self.logger.warning(
-                "[TrainingContentService] token for training %s has no course "
-                "behind it; the assignment is %s",
-                claims.training_id,
-                "gone" if assignment is None else "not attached to a course",
-            )
-            raise FileNotFoundError("No course behind this token.")
+        course_id = await self._course_id_behind(session, claims.training_id)
 
         course = await self.training_course_repository.get_course_by_id(
-            session, assignment.course_id
+            session, course_id
         )
         if course is None or not course.storage_prefix:
             self.logger.warning(
                 "[TrainingContentService] course %s behind training %s has no "
                 "package to serve",
-                assignment.course_id,
+                course_id,
                 claims.training_id,
             )
             raise FileNotFoundError("This course has no package.")
 
         object_key = posixpath.join(course.storage_prefix, normalised)
         if byte_range is not None:
-            return self._read_range(claims.training_id, object_key, byte_range)
+            return await self._read_range(claims.training_id, object_key, byte_range)
 
-        found = self.training_storage.get(object_key)
+        found = await asyncio.to_thread(self.training_storage.get, object_key)
         if found is None:
             self._no_object(claims.training_id, object_key)
 
@@ -347,7 +361,63 @@ class TrainingContentService:
         )
         return ContentAsset(data=data, content_type=content_type)
 
-    def _read_range(
+    async def _course_id_behind(self, session, training_id: int) -> int:
+        """Which course a token's assignment names, read once and held.
+
+        A course load asks for hundreds of files and every one of them used to
+        re-read the assignment, whose answer cannot change: an assignment is
+        never re-pointed at a different course. Only the storage prefix moves,
+        and that is read fresh per request one caller up.
+
+        A missing assignment is not remembered. Caching the refusal would keep
+        refusing a learner whose row is created a moment later.
+
+        Raises:
+            FileNotFoundError: No assignment, or it has no course.
+        """
+        cached = self._assignments.get(training_id)
+        if cached is not None:
+            course_id, deadline = cached
+            if _now() < deadline:
+                return course_id
+            del self._assignments[training_id]
+
+        assignment = await self.training_repository.get_training_by_id(
+            session, training_id
+        )
+        if assignment is None or assignment.course_id is None:
+            self.logger.warning(
+                "[TrainingContentService] token for training %s has no course "
+                "behind it; the assignment is %s",
+                training_id,
+                "gone" if assignment is None else "not attached to a course",
+            )
+            raise FileNotFoundError("No course behind this token.")
+
+        if len(self._assignments) >= _ASSIGNMENT_CACHE_LIMIT:
+            self._evict_stale_assignments()
+        self._assignments[training_id] = (
+            assignment.course_id,
+            _now() + ASSIGNMENT_CACHE_SECONDS,
+        )
+        return assignment.course_id
+
+    def _evict_stale_assignments(self) -> None:
+        """Drop what has expired, and everything if that was not enough.
+
+        Clearing outright costs one extra read per learner still on a course,
+        which is cheaper than tracking use order for a table this small.
+        """
+        now = _now()
+        self._assignments = {
+            training_id: entry
+            for training_id, entry in self._assignments.items()
+            if now < entry[1]
+        }
+        if len(self._assignments) >= _ASSIGNMENT_CACHE_LIMIT:
+            self._assignments.clear()
+
+    async def _read_range(
         self, training_id: int, object_key: str, byte_range: RangeSpec
     ) -> ContentAsset:
         """Fetch only the bytes asked for, never the whole object.
@@ -361,7 +431,7 @@ class TrainingContentService:
             FileNotFoundError: No such object.
             UnsatisfiableRange: The range names no byte of it.
         """
-        described = self.training_storage.stat(object_key)
+        described = await asyncio.to_thread(self.training_storage.stat, object_key)
         if described is None:
             self._no_object(training_id, object_key)
         total_size, content_type = described
@@ -370,7 +440,9 @@ class TrainingContentService:
         if resolved is None:
             raise UnsatisfiableRange(total_size)
 
-        data = self.training_storage.get_range(object_key, resolved.start, resolved.end)
+        data = await asyncio.to_thread(
+            self.training_storage.get_range, object_key, resolved.start, resolved.end
+        )
         if data is None:
             # Gone between the two calls, which is what an upload replacing the
             # package underneath an open course looks like from here.
