@@ -60,9 +60,13 @@ class TrainingContentController:
 
     def _wrong_host(self, request: Request) -> bool:
         """Whether this request arrived anywhere but the content origin."""
+        # Lowercased: Host is case-insensitive and content_host is required
+        # to be lowercase, so a proxy preserving the case an operator typed
+        # would otherwise 404 every file.
         return (
             not self.content_host
-            or request.headers.get("host", "").split(":")[0] != self.content_host
+            or request.headers.get("host", "").split(":")[0].lower()
+            != self.content_host
         )
 
     async def get_asset(self, token: str, asset_path: str, request: Request):

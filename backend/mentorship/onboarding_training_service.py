@@ -9,6 +9,7 @@ from backend.common.mentorship_enums import (
     TrainingStatus,
 )
 from backend.common.recruiting_enums import JobKind
+from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.training_entity import TrainingEntity
 
 _ROLE_TO_CATEGORY = {
@@ -107,7 +108,17 @@ class OnboardingTrainingService:
         existing = await self.training_repo.get_training_by_user_id_and_category(
             session=session, user_id=user_id, category=category
         )
-        course_id = await self._course_id_for(session=session, category=category)
+        course = await self._course_for(session=session, category=category)
+        course_id = course.course_id if course is not None else None
+        # Nothing once we serve the package ourselves. The profile page prefers
+        # a stored link over the in-app course, so a link written here after an
+        # upload is what the learner follows -- and nothing out there is ever
+        # recorded against this row.
+        link = (
+            None
+            if course is not None and course.storage_prefix
+            else (external_link_for(category))
+        )
 
         if existing is None:
             created = await self.training_repo.upsert_training(
@@ -119,7 +130,7 @@ class OnboardingTrainingService:
                     status=TrainingStatus.TO_DO,
                     completed_timestamp=None,
                     deadline=deadline,
-                    link=external_link_for(category),
+                    link=link,
                 ),
             )
             self.logger.info(
@@ -149,9 +160,9 @@ class OnboardingTrainingService:
 
         return existing
 
-    async def _course_id_for(
+    async def _course_for(
         self, session: AsyncSession, category: TrainingCategory
-    ) -> int | None:
+    ) -> TrainingCourseEntity | None:
         """The seed course this category stands for, if the catalogue holds it.
 
         None rather than an error when it does not: the training task itself
@@ -169,4 +180,4 @@ class OnboardingTrainingService:
                 category.value,
             )
             return None
-        return course.course_id
+        return course

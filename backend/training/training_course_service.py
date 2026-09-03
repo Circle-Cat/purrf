@@ -16,8 +16,11 @@ def derive_course_state(course: TrainingCourseEntity) -> TrainingCourseState:
     Order matters: a re-upload clears ``verified_completable_at`` but leaves
     the prefix, so a package without proof is NEEDS_TRIAL_RUN, never VERIFIED.
 
-    A package-less seed row still has a working external link, so it is
-    EXTERNAL_LINK rather than NO_PACKAGE.
+    A package-less row is EXTERNAL_LINK only when a link really resolves for
+    its category. Two of the four seed categories never had one, and neither
+    does any category in an environment that has not set its variable; naming
+    the state after the category alone showed a link that could not be
+    followed.
 
     Args:
         course (TrainingCourseEntity): The row to read.
@@ -29,7 +32,7 @@ def derive_course_state(course: TrainingCourseEntity) -> TrainingCourseState:
         if course.verified_completable_at is not None:
             return TrainingCourseState.VERIFIED
         return TrainingCourseState.NEEDS_TRIAL_RUN
-    if course.category is not None:
+    if external_link_for(course.category):
         return TrainingCourseState.EXTERNAL_LINK
     return TrainingCourseState.NO_PACKAGE
 

@@ -107,7 +107,14 @@ class TestTrainingProgressRepository(BaseRepositoryTestLib):
         self.assertIsNone(progress.suspend_data)
         self.assertIsNone(progress.lesson_location)
 
-    async def test_clear_resume_state_leaves_a_finished_learner_alone(self):
+    async def test_clear_resume_state_wipes_a_finished_learner_too(self):
+        """The verifier of the replaced package is DONE, and has to run again.
+
+        Sparing DONE rows left the one person most likely to open the new
+        package resuming it with the previous package's blob -- the exact
+        wedge this clearing exists to prevent. Their status is untouched;
+        only the resume data goes.
+        """
         training = await self._assign(
             self.user_ids[0], self.course_id, TrainingStatus.DONE
         )
@@ -116,8 +123,22 @@ class TestTrainingProgressRepository(BaseRepositoryTestLib):
         await self.repo.clear_resume_state(self.session, self.course_id)
 
         await self._reload(progress)
-        self.assertEqual(progress.suspend_data, "x" * 5000)
-        self.assertEqual(progress.lesson_location, "Summary")
+        self.assertIsNone(progress.suspend_data)
+        self.assertIsNone(progress.lesson_location)
+
+    async def test_clear_resume_state_leaves_a_finished_learners_record_alone(self):
+        """Only resume data goes; the completion itself stands."""
+        training = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.DONE
+        )
+        progress = await self._start(training, lesson_status="passed")
+
+        await self.repo.clear_resume_state(self.session, self.course_id)
+
+        await self._reload(progress)
+        self.assertEqual(progress.lesson_status, "passed")
+        await self.session.refresh(training)
+        self.assertEqual(training.status, TrainingStatus.DONE)
 
     async def test_clear_resume_state_wipes_a_learner_who_has_not_started(self):
         training = await self._assign(
@@ -148,6 +169,7 @@ class TestTrainingProgressRepository(BaseRepositoryTestLib):
         self.assertEqual(their_progress.suspend_data, "x" * 5000)
 
     async def test_clear_resume_state_counts_only_the_rows_it_cleared(self):
+        """Everyone on the course, and nobody on another one."""
         unfinished = [
             await self._assign(uid, self.course_id, TrainingStatus.IN_PROGRESS)
             for uid in self.user_ids[:2]
@@ -165,7 +187,7 @@ class TestTrainingProgressRepository(BaseRepositoryTestLib):
 
         cleared = await self.repo.clear_resume_state(self.session, self.course_id)
 
-        self.assertEqual(cleared, 2)
+        self.assertEqual(cleared, 3)
 
     async def test_clear_resume_state_keeps_everything_that_is_not_resume_state(self):
         """Only the bookmark and the blob go; the record of what happened stays."""

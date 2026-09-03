@@ -1,5 +1,6 @@
 """What a SCORM manifest and its entry page are allowed to tell us."""
 
+import json
 import unittest
 
 from backend.common.mentorship_enums import ScormVersion
@@ -322,6 +323,66 @@ class TestParseDriverConfig(unittest.TestCase):
         page = _entry_page(_driver_config_script('{"reporting": "passed",,,'))
 
         self.assertIsNone(parse_driver_config(page))
+
+
+class TestEntryHrefDecoding(unittest.TestCase):
+    def _with_entry(self, href):
+        return _manifest(
+            resources=f"""
+  <resources>
+    <resource identifier="res_1" type="webcontent" href="{href}">
+      <file href="{href}"/>
+    </resource>
+  </resources>"""
+        )
+
+    def test_an_entry_href_with_an_encoded_space_names_the_real_file(self):
+        """Manifest hrefs are URL-encoded; zip entry names are not."""
+        info = parse_manifest(self._with_entry("my%20course/index.html"))
+
+        self.assertEqual(info.entry_path, "my course/index.html")
+
+    def test_a_fragment_on_the_entry_href_is_dropped(self):
+        info = parse_manifest(self._with_entry("index.html#start"))
+
+        self.assertEqual(info.entry_path, "index.html")
+
+
+class TestUntrustedDriverConfigValues(unittest.TestCase):
+    """The config is course-controlled JSON on its way to String columns."""
+
+    def _config(self, **overrides):
+        block = {
+            "coursePackageVersion": "qPpo9zHD",
+            "reporting": "passed-incomplete",
+            "storylineId": None,
+            "quizId": None,
+            "completionPercentage": 100,
+        }
+        block.update(overrides)
+        html = (
+            b'<script id="__DRIVER_CONFIG__" type="application/json">'
+            + json.dumps(block).encode()
+            + b"</script>"
+        )
+        return parse_driver_config(html)
+
+    def test_a_reporting_mode_that_is_not_a_string_is_ignored(self):
+        """It reaches a String column; a dict there is a 500, not a 400."""
+        self.assertIsNone(self._config(reporting={"x": 1}).reporting)
+
+    def test_a_package_version_that_is_not_a_string_is_ignored(self):
+        self.assertIsNone(
+            self._config(coursePackageVersion=[1, 2]).course_package_version
+        )
+
+    def test_a_storyline_id_that_is_not_a_string_is_ignored(self):
+        self.assertIsNone(self._config(storylineId=7).storyline_id)
+
+    def test_the_ordinary_strings_still_come_through(self):
+        config = self._config()
+        self.assertEqual(config.reporting, "passed-incomplete")
+        self.assertEqual(config.course_package_version, "qPpo9zHD")
 
 
 if __name__ == "__main__":

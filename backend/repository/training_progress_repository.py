@@ -4,7 +4,6 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.common.mentorship_enums import TrainingStatus
 from backend.entity.training_entity import TrainingEntity
 from backend.entity.training_progress_entity import TrainingProgressEntity
 
@@ -68,11 +67,13 @@ class TrainingProgressRepository:
         return result.scalars().one()
 
     async def clear_resume_state(self, session: AsyncSession, course_id: int) -> int:
-        """Wipe resume data for everyone on this course who has not finished.
+        """Wipe resume data for everyone on this course.
 
         A previous package's suspend_data means nothing to a new one and can
-        hang it, so an overwrite drops it. Rows already DONE are untouched:
-        their record stands and they have no reason to open the course again.
+        hang it, so an overwrite drops it. Rows already DONE included: the
+        person who verified the replaced package is one of them, and they are
+        the likeliest to open the replacement. Only the resume data goes --
+        the completion itself, and the status, stand.
 
         Args:
             session (AsyncSession): The active async database session.
@@ -81,13 +82,12 @@ class TrainingProgressRepository:
         Returns:
             int: How many learners were reset.
         """
-        unfinished = select(TrainingEntity.training_id).where(
-            TrainingEntity.course_id == course_id,
-            TrainingEntity.status != TrainingStatus.DONE,
+        on_this_course = select(TrainingEntity.training_id).where(
+            TrainingEntity.course_id == course_id
         )
         result = await session.execute(
             update(TrainingProgressEntity)
-            .where(TrainingProgressEntity.training_id.in_(unfinished))
+            .where(TrainingProgressEntity.training_id.in_(on_this_course))
             .values(suspend_data=None, lesson_location=None)
             .execution_options(synchronize_session=False)
         )

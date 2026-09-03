@@ -43,12 +43,37 @@ class TestDeriveCourseState(unittest.TestCase):
             derive_course_state(course), TrainingCourseState.NEEDS_TRIAL_RUN
         )
 
+    @patch.dict(
+        os.environ,
+        {"MENTORSHIP_MENTOR_ONBOARDING_LINK": "https://example.com/mentor"},
+    )
     def test_seed_course_without_a_package_keeps_its_external_link(self):
         """Not broken, just not hosted here."""
         course = TrainingCourseEntity(
-            category=TrainingCategory.CORPORATE_CULTURE_COURSE, storage_prefix=None
+            category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+            storage_prefix=None,
         )
         self.assertEqual(derive_course_state(course), TrainingCourseState.EXTERNAL_LINK)
+
+    def test_a_seed_category_with_no_link_configured_has_nowhere_either(self):
+        """Only the two mentorship courses were ever hosted elsewhere.
+
+        Reporting EXTERNAL_LINK for the other two showed a state with nothing
+        behind it, indistinguishable from one that can actually send people
+        somewhere.
+        """
+        course = TrainingCourseEntity(
+            category=TrainingCategory.CORPORATE_CULTURE_COURSE, storage_prefix=None
+        )
+        self.assertEqual(derive_course_state(course), TrainingCourseState.NO_PACKAGE)
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_a_mentorship_course_is_no_package_when_its_variable_is_unset(self):
+        course = TrainingCourseEntity(
+            category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+            storage_prefix=None,
+        )
+        self.assertEqual(derive_course_state(course), TrainingCourseState.NO_PACKAGE)
 
     def test_new_course_without_a_package_has_nowhere_to_send_anybody(self):
         course = TrainingCourseEntity(category=None, storage_prefix=None)
@@ -140,7 +165,8 @@ class TestTrainingCourseService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(courses), 1)
         self.assertEqual(courses[0].assigned_count, 61)
-        self.assertEqual(courses[0].state, TrainingCourseState.EXTERNAL_LINK)
+        # This category never had an external link, so there is nowhere to go.
+        self.assertEqual(courses[0].state, TrainingCourseState.NO_PACKAGE)
 
     async def test_a_new_course_starts_unassignable(self):
         course = await self.service.create_course(

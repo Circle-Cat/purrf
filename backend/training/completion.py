@@ -38,3 +38,20 @@ def next_training_status(
         return TrainingStatus.IN_PROGRESS
     # "not attempted" and anything we do not recognise leave the row alone.
     return None
+
+
+def reports_completion(lesson_status: str | None) -> bool:
+    """Whether the course just said it was finished.
+
+    Distinct from next_training_status, which answers where the assignment
+    moves. An assignment already DONE moves nowhere, and the run still has to
+    count as proof that the course can be completed -- which is exactly the
+    case after a re-upload clears the stamp and leaves the verifier DONE.
+
+    Args:
+        lesson_status (str | None): What the course just reported.
+
+    Returns:
+        bool: True for a finishing value.
+    """
+    return (lesson_status or "").strip() in _FINISHED

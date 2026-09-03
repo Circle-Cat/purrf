@@ -6,7 +6,7 @@ from decimal import Decimal, InvalidOperation
 
 from backend.common.mentorship_enums import TrainingStatus
 from backend.dto.training_course_dto import TrainingProgressSaveDto
-from backend.training.completion import next_training_status
+from backend.training.completion import next_training_status, reports_completion
 
 # SCORM 1.2's CMITimespan needs at least two digits of hours. A single-digit
 # hour is already outside the format, and is treated the same as any other
@@ -331,12 +331,17 @@ class TrainingProgressService:
 
         if moved is not None:
             assignment.status = moved
-            if moved is TrainingStatus.DONE:
-                if assignment.completed_timestamp is None:
-                    assignment.completed_timestamp = datetime.now(timezone.utc)
-                await self._stamp_if_unverified(
-                    session, assignment, user_id, may_verify_course
-                )
+            if moved is TrainingStatus.DONE and assignment.completed_timestamp is None:
+                assignment.completed_timestamp = datetime.now(timezone.utc)
+
+        # Keyed on what the course reported, not on where the assignment
+        # moved. A re-upload clears the stamp and leaves the verifier's row
+        # DONE, so their next run moves nothing -- and it is the run most
+        # likely to be proving the replacement package.
+        if reports_completion(cmi.get(_LESSON_STATUS)):
+            await self._stamp_if_unverified(
+                session, assignment, user_id, may_verify_course
+            )
 
         await session.commit()
         return TrainingProgressSaveDto(status=assignment.status)

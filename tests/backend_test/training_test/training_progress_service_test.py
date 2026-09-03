@@ -394,6 +394,29 @@ class TestSave(_ProgressServiceCase):
 
         self.assertEqual(result.status, TrainingStatus.IN_PROGRESS)
 
+    async def test_a_verifier_already_done_can_still_stamp_a_replaced_package(self):
+        """Re-upload clears the stamp but leaves the verifier's row DONE.
+
+        Their status moves nowhere on the next run, so a stamp gated on that
+        move would leave the new package unverifiable by the one person most
+        likely to be running it.
+        """
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.DONE
+        course = self.course_repository.get_course_by_id.return_value
+        course.verified_completable_at = None
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+            may_verify_course=True,
+        )
+
+        self.assertIsNotNone(course.verified_completable_at)
+        self.assertEqual(course.verified_by_user_id, _USER_ID)
+
     async def test_reopening_a_finished_course_does_not_undo_it(self):
         """Mentor onboarding writes `incomplete` on its way to `completed`."""
         assignment = self.training_repository.get_training_by_id.return_value

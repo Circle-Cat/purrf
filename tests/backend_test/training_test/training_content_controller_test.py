@@ -123,6 +123,18 @@ class TestTrainingContentController(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(outcome.status_code, HTTPStatus.OK)
         self.assertEqual(outcome.body, ASSET_BYTES)
 
+    async def test_a_host_header_in_another_case_is_still_the_content_host(self):
+        """Host is case-insensitive, and the configured value must be lowercase.
+
+        A proxy that preserves the case an operator typed would otherwise 404
+        every course file, and the middleware exemption would stop applying at
+        the same moment, turning that into a 401.
+        """
+        outcome = await self.get_asset(CONTENT_HOST.upper())
+
+        self.assertEqual(outcome.status_code, HTTPStatus.OK)
+        self.assertEqual(outcome.body, ASSET_BYTES)
+
     async def test_a_host_that_only_resembles_the_content_host_is_refused(self):
         """Neither a prefix nor a suffix of the real name is the real name."""
         for host in [
