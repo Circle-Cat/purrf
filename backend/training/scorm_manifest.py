@@ -1,8 +1,10 @@
 """Reading imsmanifest.xml, and the completion configuration beside it."""
 
 import json
+import posixpath
 import re
 from dataclasses import dataclass, field
+from urllib.parse import unquote
 
 from defusedxml import ElementTree
 
@@ -58,8 +60,9 @@ class DriverConfig:
     # counts as finished differs per course; never hard-code it.
     reporting: str | None
     course_package_version: str | None
-    threshold: float | None
-    driver_version: str | None
+    # Percentage of the course the driver requires before it reports
+    # completion. 100 in every package we hold.
+    completion_percentage: float | None
 
 
 def _tag(element) -> str:
@@ -148,7 +151,14 @@ def parse_manifest(manifest_bytes: bytes) -> ManifestInfo:
 
     return ManifestInfo(
         scorm_version=scorm_version,
-        entry_path=entry_path.split("?", 1)[0],
+        # Manifest hrefs are URL-encoded and zip entry names are not, so a
+        # course whose entry page has a space in its name would otherwise be
+        # refused for naming a file that is right there. Normalised the same
+        # way archive entry names are, so "./scormdriver/indexAPI.html" still
+        # matches the file it names.
+        entry_path=posixpath.normpath(
+            unquote(entry_path.split("?", 1)[0].split("#", 1)[0])
+        ),
         declared_hrefs=declared_hrefs,
     )
 
@@ -177,12 +187,23 @@ def parse_driver_config(entry_page_bytes: bytes) -> DriverConfig | None:
     if not isinstance(config, dict):
         return None
 
-    threshold = config.get("threshold")
+    percentage = config.get("completionPercentage")
     return DriverConfig(
-        storyline_id=config.get("storylineId") or None,
-        quiz_id=config.get("quizId") or None,
-        reporting=config.get("reporting") or None,
-        course_package_version=config.get("coursePackageVersion") or None,
-        threshold=float(threshold) if isinstance(threshold, (int, float)) else None,
-        driver_version=config.get("driverVersion") or None,
+        storyline_id=_text(config.get("storylineId")),
+        quiz_id=_text(config.get("quizId")),
+        reporting=_text(config.get("reporting")),
+        course_package_version=_text(config.get("coursePackageVersion")),
+        completion_percentage=(
+            float(percentage) if isinstance(percentage, (int, float)) else None
+        ),
     )
+
+
+def _text(value) -> str | None:
+    """A config value only if it really is a non-empty string.
+
+    The block is JSON the package controls, and these three reach String
+    columns. A dict or a list there would be a 500 rather than the 400 this
+    whole path exists to give.
+    """
+    return value if isinstance(value, str) and value else None

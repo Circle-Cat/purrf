@@ -9,7 +9,10 @@ py_test(
 py_test(
     name = "profile_query_service_test",
     srcs = ["profile_query_service_test.py"],
-    deps = ["//backend/profile"],
+    deps = [
+        "//backend/profile",
+        "//backend/repository:repositories",
+    ],
 )
 
 py_test(

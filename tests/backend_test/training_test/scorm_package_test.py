@@ -16,10 +16,13 @@ from backend.training.scorm_package import (
 )
 
 _ENTRY_PATH = "scormdriver/indexAPI.html"
+# The block the mentor package ships, copied out of its entry page rather than
+# invented: the keys are the whole point of reading it.
 _DRIVER_CONFIG = (
     '<script id="__DRIVER_CONFIG__" type="application/json">'
-    '{"coursePackageVersion": "2026.08.29.1", "reporting": "passed",'
-    ' "storylineId": null, "quizId": null}'
+    '{"coursePackageVersion":"9K8IMOal","lmsTarget":"scorm12",'
+    '"resetLearnerData":false,"quizId":null,"storylineId":null,'
+    '"completionPercentage":100,"reporting":"completed-incomplete"}'
     "</script>"
 )
 
@@ -167,13 +170,23 @@ class TestReadPackageRejections(unittest.TestCase):
         with self.assertRaises(PackageRejected):
             read_package(_build_zip(entries))
 
-    def test_a_mac_zipped_metadata_directory_is_rejected(self):
-        """Zipping on a Mac adds this, and it lands in the reserved space."""
+    def test_a_traversal_dressed_as_mac_metadata_is_still_refused(self):
+        """Ignoring that directory must not become a way past the reserved rule."""
         entries = _valid_entries()
-        entries["__MACOSX/._indexAPI.html"] = b"\x00\x05\x16\x07"
+        entries["__MACOSX/../__player.html"] = b"<html>not ours</html>"
 
         with self.assertRaises(PackageRejected):
             read_package(_build_zip(entries))
+
+    def test_two_entries_naming_the_same_served_path_are_refused_by_name(self):
+        """Which of them a learner would be given is not ours to guess."""
+        entries = _valid_entries(**{"assets/cat.jpg": b"first"})
+        entries["./assets/cat.jpg"] = b"second"
+
+        with self.assertRaises(PackageRejected) as raised:
+            read_package(_build_zip(entries))
+
+        self.assertIn("assets/cat.jpg", str(raised.exception))
 
     def test_a_scorm_2004_package_is_refused_at_upload(self):
         """Nothing here runs 2004, so it is named and refused, never stored."""
@@ -188,6 +201,28 @@ class TestReadPackageRejections(unittest.TestCase):
 
 
 class TestReadPackageAcceptance(unittest.TestCase):
+    def test_a_mac_zipped_metadata_directory_is_ignored_rather_than_refused(self):
+        """The Finder adds it; the course author cannot see it or remove it."""
+        entries = _valid_entries(**{
+            "__MACOSX/._imsmanifest.html": b"\x00\x05\x16\x07",
+            "__MACOSX/scormdriver/._indexAPI.html": b"\x00\x05\x16\x07",
+        })
+
+        contents = read_package(_build_zip(entries))
+
+        self.assertEqual(set(contents.file_names), {MANIFEST_NAME, _ENTRY_PATH})
+
+    def test_the_metadata_directory_is_left_out_of_the_byte_total(self):
+        """Nothing that is never served should count against the size caps."""
+        clean = read_package(_build_zip(_valid_entries()))
+        with_metadata = read_package(
+            _build_zip(_valid_entries(**{"__MACOSX/._imsmanifest.html": b"\x00" * 64}))
+        )
+
+        self.assertEqual(
+            with_metadata.total_uncompressed_bytes, clean.total_uncompressed_bytes
+        )
+
     def test_a_reserved_prefix_deeper_in_the_tree_collides_with_nothing(self):
         """Bundlers emit these constantly; only the root is ours to reserve."""
         entries = _valid_entries(**{"assets/__chunk.js": b"// bundler output"})
@@ -195,6 +230,38 @@ class TestReadPackageAcceptance(unittest.TestCase):
         contents = read_package(_build_zip(entries))
 
         self.assertIn("assets/__chunk.js", contents.file_names)
+
+    def test_entries_written_with_a_leading_dot_slash_are_read_and_served(self):
+        """Legal, and some zip tools write every entry this way."""
+        entries = {
+            f"./{MANIFEST_NAME}": _manifest(),
+            f"./{_ENTRY_PATH}": _entry_page(),
+            "assets//cat.jpg": b"jpegbytes",
+        }
+
+        contents = read_package(_build_zip(entries))
+
+        self.assertEqual(
+            set(contents.file_names), {MANIFEST_NAME, _ENTRY_PATH, "assets/cat.jpg"}
+        )
+        self.assertEqual(contents.archive_names[MANIFEST_NAME], f"./{MANIFEST_NAME}")
+        self.assertEqual(contents.archive_names["assets/cat.jpg"], "assets//cat.jpg")
+        self.assertEqual(contents.manifest.entry_path, _ENTRY_PATH)
+        self.assertIsNotNone(contents.driver_config)
+
+    def test_every_served_name_can_be_read_back_out_of_the_archive(self):
+        """The mapping is only worth anything if archive.read accepts it."""
+        entries = {
+            f"./{MANIFEST_NAME}": _manifest(),
+            f"./{_ENTRY_PATH}": _entry_page(),
+            "assets//cat.jpg": b"jpegbytes",
+        }
+        archive = _build_zip(entries)
+
+        contents = read_package(archive)
+
+        for name in contents.file_names:
+            self.assertTrue(archive.read(contents.archive_names[name]))
 
     def test_a_well_formed_package_reports_its_contents(self):
         entries = _valid_entries(**{"assets/cat.jpg": b"jpegbytes"})
@@ -210,8 +277,9 @@ class TestReadPackageAcceptance(unittest.TestCase):
         self.assertEqual(contents.manifest.scorm_version, ScormVersion.SCORM_12)
         self.assertEqual(contents.manifest.entry_path, _ENTRY_PATH)
         self.assertIsNotNone(contents.driver_config)
-        self.assertEqual(contents.driver_config.course_package_version, "2026.08.29.1")
-        self.assertEqual(contents.driver_config.reporting, "passed")
+        self.assertEqual(contents.driver_config.course_package_version, "9K8IMOal")
+        self.assertEqual(contents.driver_config.reporting, "completed-incomplete")
+        self.assertEqual(contents.driver_config.completion_percentage, 100.0)
         self.assertIsNone(contents.driver_config.storyline_id)
         self.assertIsNone(contents.driver_config.quiz_id)
 

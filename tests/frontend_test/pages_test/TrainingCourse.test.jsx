@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import TrainingCourse from "@/pages/TrainingCourse";
@@ -28,12 +28,22 @@ const renderCourse = () =>
     </MemoryRouter>,
   );
 
+const postCommit = (cmi) =>
+  window.dispatchEvent(
+    new MessageEvent("message", {
+      origin: "https://test-training-content.purrf.io",
+      data: { type: MESSAGE_TYPES.COMMIT, cmi },
+    }),
+  );
+
 const SESSION = {
   data: {
     contentBaseUrl: "https://test-training-content.purrf.io/p/tok/",
+    sessionToken: "signed.token",
     entryPath: "scormdriver/indexAPI.html",
     playerPath: "__player.html",
     expiresAt: 1788400000,
+    progress: null,
   },
 };
 
@@ -45,6 +55,14 @@ describe("TrainingCourse", () => {
     useAuth.mockReturnValue({
       user: { userId: 7, email: "alice@example.com" },
     });
+    // The unload save goes around axios on purpose (see TrainingCourse.jsx),
+    // so it is observed here at the fetch seam instead of through the
+    // trainingApi mock.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("points the player frame at the content origin, not at our own", async () => {
@@ -70,6 +88,7 @@ describe("TrainingCourse", () => {
     await waitFor(() =>
       expect(saveProgress).toHaveBeenCalledWith("42", {
         cmi: { "cmi.suspend_data": "blob" },
+        sessionToken: "signed.token",
       }),
     );
   });
@@ -215,8 +234,8 @@ describe("TrainingCourse", () => {
   });
 
   it("still replies to READY with an empty progress object, not undefined, when nobody has opened the course yet", async () => {
-    // SESSION carries no `progress` key at all -- the shape the API returns
-    // for an assignment nobody has opened.
+    // SESSION carries `progress: null` -- what the API sends for an
+    // assignment nobody has opened.
     renderCourse();
     const frame = await screen.findByTitle(/course/i);
     const postMessage = vi.spyOn(frame.contentWindow, "postMessage");
@@ -231,5 +250,65 @@ describe("TrainingCourse", () => {
     await waitFor(() => expect(postMessage).toHaveBeenCalled());
     const [message] = postMessage.mock.calls.at(-1);
     expect(message.progress).toEqual({});
+  });
+
+  it("saves what it last received when the page goes away, over a keepalive fetch rather than axios", async () => {
+    renderCourse();
+    await screen.findByTitle(/course/i);
+    postCommit({ "cmi.suspend_data": "blob" });
+    // A generous timeout on this first stage, not the assertion, is what
+    // needs raising: under the full suite's parallel load the default 1000ms
+    // budget can elapse before the mocked save even resolves once.
+    await waitFor(() => expect(saveProgress).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    });
+    // The ordinary commit save never touches fetch -- only the parting one does.
+    expect(fetch).not.toHaveBeenCalled();
+
+    window.dispatchEvent(new Event("pagehide"));
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    const [url, options] = fetch.mock.calls[0];
+    expect(url).toBe("/api/training/42/progress");
+    expect(options).toMatchObject({
+      method: "POST",
+      credentials: "include",
+      keepalive: true,
+    });
+    // final: the server skips a save whose content matches what it stored,
+    // and this one always does -- the elapsed time it banks is the one thing
+    // that comparison leaves out.
+    expect(JSON.parse(options.body)).toEqual({
+      cmi: { "cmi.suspend_data": "blob" },
+      final: true,
+      sessionToken: "signed.token",
+    });
+    // The parting save does not also re-trigger the axios save.
+    expect(saveProgress).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not save on page hide when nothing new arrived", async () => {
+    renderCourse();
+    await screen.findByTitle(/course/i);
+
+    window.dispatchEvent(new Event("pagehide"));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("stops listening for page hide when it goes away", async () => {
+    const { unmount } = renderCourse();
+    await screen.findByTitle(/course/i);
+    postCommit({ "cmi.suspend_data": "blob" });
+    await waitFor(() => expect(saveProgress).toHaveBeenCalledTimes(1), {
+      timeout: 3000,
+    });
+    unmount();
+
+    window.dispatchEvent(new Event("pagehide"));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

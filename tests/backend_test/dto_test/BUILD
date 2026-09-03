@@ -56,3 +56,9 @@ py_test(
     srcs = ["meeting_reschedule_dto_test.py"],
     deps = ["//backend/dto"],
 )
+
+py_test(
+    name = "training_course_dto_test",
+    srcs = ["training_course_dto_test.py"],
+    deps = ["//backend/dto"],
+)

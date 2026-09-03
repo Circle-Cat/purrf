@@ -114,6 +114,14 @@ const Sidebar = () => {
       permissions: [PERMISSIONS.LEAVE_ADMIN],
       flag: FEATURE_FLAGS.LEAVE_MANAGEMENT,
     },
+    {
+      // Same shape as Leave Administration above: this is the admin-only
+      // catalogue, not the learner-facing course page, which has no nav
+      // entry of its own -- it's reached from a training assignment.
+      label: "Training Administration",
+      to: ROUTE_PATHS.ADMIN_TRAINING,
+      permissions: [PERMISSIONS.TRAINING_ADMIN_READ],
+    },
   ];
 
   return (

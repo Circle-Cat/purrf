@@ -1,9 +1,12 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { describe, it, expect } from "vitest";
 import "@testing-library/jest-dom";
 
 import TrainingSection from "@/pages/Profile/components/TrainingSection";
+
+const renderInRouter = (ui) => render(ui, { wrapper: MemoryRouter });
 
 const BASE_TIMESTAMPS = {
   completedTimestamp: "2023-01-15T00:00:00Z",
@@ -198,9 +201,29 @@ describe("TrainingSection Component", () => {
     expect(completedTag).toBeInTheDocument();
     expect(completedTag).toHaveClass("bg-accent", "text-primary");
 
-    const pendingTag = screen.getByText("Not Completed");
-    expect(pendingTag).toBeInTheDocument();
-    expect(pendingTag).toHaveClass("bg-primary", "text-primary-foreground");
+    const notStartedTag = screen.getByText("Not Started");
+    expect(notStartedTag).toBeInTheDocument();
+    expect(notStartedTag).toHaveClass("bg-primary", "text-primary-foreground");
+  });
+
+  it("gives the in-progress status its own badge, distinct from the other two", () => {
+    render(
+      <TrainingSection
+        list={[
+          {
+            id: 1,
+            category: "mentorship_mentor_onboarding",
+            status: "in_progress",
+            link: "",
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
+      />,
+    );
+
+    const badge = screen.getByText("In Progress");
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveClass("bg-secondary", "text-secondary-foreground");
   });
 
   it("renders the timestamp in the user's profile timezone when provided", () => {
@@ -282,6 +305,185 @@ describe("TrainingSection Component", () => {
       .getByText("Residency Program Onboarding")
       .closest("tr");
     expect(noLinkRow).toHaveTextContent("-");
+  });
+
+  it("names the row by its course, not by the category", () => {
+    renderInRouter(
+      <TrainingSection
+        list={[
+          {
+            id: 1,
+            courseId: 7,
+            name: "Mentor Onboarding",
+            category: null,
+            status: "to_do",
+            link: null,
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Mentor Onboarding")).toBeInTheDocument();
+  });
+
+  it("opens a hosted course in the app when the row has no external link", () => {
+    renderInRouter(
+      <TrainingSection
+        list={[
+          {
+            id: 42,
+            courseId: 7,
+            isHosted: true,
+            name: "Mentor Onboarding",
+            category: null,
+            status: "to_do",
+            link: null,
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: /^start$/i })).toHaveAttribute(
+      "href",
+      "/training/42",
+    );
+  });
+
+  it("keeps sending a seed row to its external link", () => {
+    renderInRouter(
+      <TrainingSection
+        list={[
+          {
+            id: 42,
+            courseId: 7,
+            name: "Corporate Culture",
+            category: "corporate_culture_course",
+            status: "done",
+            link: "http://test.com",
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: /view link/i })).toHaveAttribute(
+      "href",
+      "http://test.com",
+    );
+    expect(
+      screen.queryByRole("link", { name: /^review$/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("names the action after where the learner actually is", () => {
+    renderInRouter(
+      <TrainingSection
+        list={[
+          {
+            id: 1,
+            courseId: 7,
+            isHosted: true,
+            name: "A",
+            status: "to_do",
+            link: null,
+            ...BASE_TIMESTAMPS,
+          },
+          {
+            id: 2,
+            courseId: 7,
+            isHosted: true,
+            name: "B",
+            status: "in_progress",
+            link: null,
+            ...BASE_TIMESTAMPS,
+          },
+          {
+            id: 3,
+            courseId: 7,
+            isHosted: true,
+            name: "C",
+            status: "done",
+            link: null,
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: /^start$/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /^continue$/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^review$/i })).toBeInTheDocument();
+  });
+
+  it("calls reopening a finished course Review, never Retake", () => {
+    // Opening a completed course must not move it out of Done. Naming it
+    // Retake invites the learner to expect that it would.
+    renderInRouter(
+      <TrainingSection
+        list={[
+          {
+            id: 3,
+            courseId: 7,
+            isHosted: true,
+            name: "C",
+            status: "done",
+            link: null,
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.queryByText(/retake/i)).not.toBeInTheDocument();
+  });
+
+  it("offers nothing to click on a course with no package and no link", () => {
+    // A seed course nobody has uploaded to, in an environment whose link
+    // variable is unset. Start would open the course and raise.
+    renderInRouter(
+      <TrainingSection
+        list={[
+          {
+            id: 42,
+            courseId: 7,
+            isHosted: false,
+            name: "Residency Onboarding",
+            category: "residency_program_onboarding",
+            status: "to_do",
+            link: null,
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^start$/i)).not.toBeInTheDocument();
+  });
+
+  it("still names a row the catalogue holds no course for", () => {
+    renderInRouter(
+      <TrainingSection
+        list={[
+          {
+            id: 1,
+            courseId: null,
+            name: null,
+            category: "corporate_culture_course",
+            status: "done",
+            link: null,
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Corporate Culture Course")).toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
   it('renders "-" instead of a clickable link for a javascript: link', () => {

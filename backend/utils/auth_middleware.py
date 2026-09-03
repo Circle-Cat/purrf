@@ -48,7 +48,10 @@ def _is_content_origin_request(request: Request, content_host: str | None) -> bo
     """
     if not content_host:
         return False
-    host = request.headers.get("host", "").split(":")[0]
+    # Lowercased for the same reason the content route lowercases it: Host is
+    # case-insensitive, and this exemption has to apply exactly where that
+    # route answers, or a mixed-case Host turns a 404 into a 401.
+    host = request.headers.get("host", "").split(":")[0].lower()
     return host == content_host and request.url.path.startswith(_CONTENT_PATH_PREFIX)
 
 

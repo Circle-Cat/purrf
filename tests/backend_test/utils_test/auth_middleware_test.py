@@ -14,6 +14,7 @@ from backend.common.api_endpoints import (
     NOTIFICATION_DELIVER_ENDPOINT,
     TRAINING_CONTENT_ENDPOINT,
 )
+from backend.training.content_host import resolve_content_host
 from backend.utils.auth_middleware import AuthMiddleware
 
 
@@ -689,6 +690,40 @@ class TestContentOriginExemption(unittest.TestCase):
         client = self._client(training_content_host=CONTENT_HOST)
 
         response = client.get("/api/training/courses", headers={"host": CONTENT_HOST})
+
+        self.assert_authenticated(response)
+
+    def test_a_content_host_the_resolver_disabled_is_not_exempt(self):
+        """APP_ORIGINS missing means the host cannot be shown to differ from
+        the app's own, so the exemption must not apply -- the learner gets an
+        authentication failure instead of course files on the wrong origin."""
+        resolved = resolve_content_host(CONTENT_HOST, None, self.mock_logger)
+        client = self._client(training_content_host=resolved)
+
+        response = client.get(CONTENT_PATH, headers={"host": CONTENT_HOST})
+
+        self.assert_authenticated(response)
+
+    def test_a_content_host_the_resolver_kept_is_still_exempt(self):
+        """The same wiring with APP_ORIGINS present serves the course."""
+        resolved = resolve_content_host(
+            CONTENT_HOST, f"https://{API_HOST}", self.mock_logger
+        )
+        client = self._client(training_content_host=resolved)
+
+        response = client.get(CONTENT_PATH, headers={"host": CONTENT_HOST})
+
+        self.assert_passed_through(response)
+
+    def test_a_content_host_that_is_an_app_origin_is_not_exempt(self):
+        """The failure this exists for: the same hostname for both would make
+        /p/ an unauthenticated path on the API origin."""
+        resolved = resolve_content_host(
+            API_HOST, f"https://{API_HOST}", self.mock_logger
+        )
+        client = self._client(training_content_host=resolved)
+
+        response = client.get(CONTENT_PATH, headers={"host": API_HOST})
 
         self.assert_authenticated(response)
 

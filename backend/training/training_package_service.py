@@ -6,8 +6,11 @@ import uuid
 import zipfile
 from datetime import datetime, timezone
 
-from backend.dto.training_course_dto import TrainingPackageUploadResultDto
-from backend.training.scorm_manifest import ManifestRejected
+from backend.dto.training_course_dto import (
+    TrainingCompletionConfigDto,
+    TrainingPackageUploadResultDto,
+)
+from backend.training.scorm_manifest import ManifestRejected, parse_driver_config
 from backend.training.scorm_package import PackageRejected, read_package
 from backend.training.training_storage import content_type_for
 
@@ -88,7 +91,9 @@ class TrainingPackageService:
                 for name in contents.file_names:
                     self.training_storage.put(
                         posixpath.join(new_prefix, name),
-                        archive.read(name),
+                        # Served under the normalised name, read back under the
+                        # one the zip actually stores.
+                        archive.read(contents.archive_names[name]),
                         content_type_for(name),
                     )
         except zipfile.BadZipFile as error:
@@ -154,8 +159,58 @@ class TrainingPackageService:
             total_bytes=contents.total_uncompressed_bytes,
             package_version=config.course_package_version if config else None,
             reporting_mode=config.reporting if config else None,
+            completion_percentage=config.completion_percentage if config else None,
             completes_via_storyline=bool(config and config.storyline_id),
             completion_config_readable=config is not None,
             missing_declared_files=contents.missing_declared_files,
             learners_reset=cleared,
+        )
+
+    async def read_completion_config(
+        self, session, course_id: int
+    ) -> TrainingCompletionConfigDto:
+        """What the course's stored package says it takes to finish it.
+
+        The upload dialog shows this once and is then gone. Whoever is about
+        to spend an hour proving the course can be completed needs it before
+        they start, so it is re-read from the package on request instead of
+        copied onto the course row where an overwrite could leave it stale.
+
+        Args:
+            session: The active async database session.
+            course_id (int): The course to read.
+
+        Returns:
+            TrainingCompletionConfigDto: What the package says, with
+            ``completion_config_readable`` False when it says nothing we
+            understand.
+
+        Raises:
+            ValueError: No such course, or it has no package.
+            FileNotFoundError: The stored entry page is gone.
+        """
+        course = await self.training_course_repository.get_course_by_id(
+            session, course_id
+        )
+        if course is None:
+            raise ValueError(f"No training course with id {course_id}.")
+        if not course.storage_prefix or not course.entry_path:
+            raise ValueError("This course has no package to read.")
+
+        object_key = f"{course.storage_prefix}{course.entry_path}"
+        stored = self.training_storage.get(object_key)
+        if stored is None:
+            self.logger.error(
+                "[TrainingPackageService] course %s points at %s, which is gone",
+                course_id,
+                object_key,
+            )
+            raise FileNotFoundError(object_key)
+
+        config = parse_driver_config(stored[0])
+        return TrainingCompletionConfigDto(
+            verified=course.verified_completable_at is not None,
+            completion_percentage=config.completion_percentage if config else None,
+            completes_via_storyline=bool(config and config.storyline_id),
+            completion_config_readable=config is not None,
         )

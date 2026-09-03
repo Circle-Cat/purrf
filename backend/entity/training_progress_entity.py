@@ -33,10 +33,12 @@ class TrainingProgressEntity(Base):
 
     lesson_location: Mapped[str | None] = mapped_column(String)
 
-    # Text with no length limit, and no length validation above it either.
-    # Real packages disable the SCORM 1.2 4096-character cap and write past it.
-    # A rejected write is invisible to the course: it carries on, and the
-    # learner silently loses their place. Never add a length here.
+    # Text with no length limit. Real packages disable the SCORM 1.2
+    # 4096-character cap and write past it, and a value the database truncates
+    # or refuses is invisible to the course: it carries on, and the learner
+    # silently loses their place. Never add a length here. The only bound sits
+    # in TrainingProgressService, far above any real course, and refuses the
+    # whole commit loudly rather than storing part of it.
     suspend_data: Mapped[str | None] = mapped_column(Text)
 
     score_raw: Mapped[Decimal | None] = mapped_column(Numeric(precision=8, scale=2))

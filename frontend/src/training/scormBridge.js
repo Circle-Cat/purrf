@@ -63,17 +63,31 @@ export const toFlattenedCmi = (progress = {}, learner) => ({
   "cmi.launch_data": "",
 });
 
+const CMI_BEARING_TYPES = new Set([MESSAGE_TYPES.COMMIT, MESSAGE_TYPES.FINISH]);
+
 /**
- * Whether a postMessage event is one of ours, from where we expect.
+ * Whether a postMessage event is one of ours, from where we expect, and
+ * shaped the way its type says it is.
  *
  * The origin check is the whole security of the bridge: without it any page
- * could post a completed course through it.
+ * could post a completed course through it. The shape check is why a course
+ * cannot take the page down with it: content is uploaded by third parties and
+ * runs on the content origin, so a commit carrying no cmi is reachable
+ * without any bug of ours, and every reader of it iterates that object.
  * @param {MessageEvent} event
  * @param {string} expectedOrigin
  * @returns {boolean}
  */
-export const isTrustedMessage = (event, expectedOrigin) =>
-  event?.origin === expectedOrigin &&
-  !!event.data &&
-  typeof event.data === "object" &&
-  MESSAGE_TYPE_VALUES.has(event.data.type);
+export const isTrustedMessage = (event, expectedOrigin) => {
+  if (
+    event?.origin !== expectedOrigin ||
+    !event.data ||
+    typeof event.data !== "object" ||
+    !MESSAGE_TYPE_VALUES.has(event.data.type)
+  ) {
+    return false;
+  }
+  if (!CMI_BEARING_TYPES.has(event.data.type)) return true;
+  const { cmi } = event.data;
+  return !!cmi && typeof cmi === "object" && !Array.isArray(cmi);
+};
