@@ -34,6 +34,10 @@ export default function useTrainingRuntime(trainingId, user) {
   // resolves, so being hidden resends the same cmi unconditionally.
   const lastCmiRef = useRef(null);
   const unsavedRef = useRef(false);
+  // What the server said the assignment's status was after the last save.
+  // Which lesson_status finishes a course is decided there, so nothing here
+  // reads the raw value to reach its own answer.
+  const [status, setStatus] = useState(null);
   // One save per assignment on the wire at a time. A course reports
   // `incomplete` and then `completed` within the same second, and two such
   // requests in flight together each decide the assignment's next status from
@@ -128,8 +132,9 @@ export default function useTrainingRuntime(trainingId, user) {
         lastCmiRef.current = event.data.cmi;
         unsavedRef.current = true;
         try {
-          await queueSave(event.data.cmi);
+          const saved = await queueSave(event.data.cmi);
           setSaveFailed(false);
+          if (saved?.data?.status) setStatus(saved.data.status);
           post({ type: MESSAGE_TYPES.SAVED, ok: true }, contentOrigin);
         } catch {
           // LMSCommit already answered "true" to the course the moment it
@@ -204,5 +209,13 @@ export default function useTrainingRuntime(trainingId, user) {
       )}`
     : null;
 
-  return { session, loadError, saveFailed, frameRef, playerSrc, writes };
+  return {
+    session,
+    loadError,
+    saveFailed,
+    frameRef,
+    playerSrc,
+    writes,
+    status,
+  };
 }

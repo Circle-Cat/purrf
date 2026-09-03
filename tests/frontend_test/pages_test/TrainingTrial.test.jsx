@@ -61,7 +61,7 @@ describe("TrainingTrial", () => {
     vi.clearAllMocks();
     startTrial.mockResolvedValue(TRIAL);
     openSession.mockResolvedValue(SESSION);
-    saveProgress.mockResolvedValue({});
+    saveProgress.mockResolvedValue({ data: { status: "in_progress" } });
     readCompletionConfig.mockResolvedValue({
       data: {
         completionPercentage: 100,
@@ -105,7 +105,8 @@ describe("TrainingTrial", () => {
     expect(writesLog.getByText("incomplete")).toBeInTheDocument();
   });
 
-  it("shows the course as verified and unlocked once it reports a finishing status", async () => {
+  it("shows the course as verified once the server says the assignment is done", async () => {
+    saveProgress.mockResolvedValue({ data: { status: "done" } });
     renderTrial();
     await screen.findByTitle(/course/i);
 
@@ -121,7 +122,7 @@ describe("TrainingTrial", () => {
     expect(screen.getByText(/now verified and unlocked/i)).toBeInTheDocument();
   });
 
-  it("does not claim completion for a non-finishing status", async () => {
+  it("does not claim completion while the server still says in progress", async () => {
     renderTrial();
     await screen.findByTitle(/course/i);
 
@@ -133,6 +134,22 @@ describe("TrainingTrial", () => {
     await waitFor(() => expect(saveProgress).toHaveBeenCalled());
     expect(screen.getByText(/not complete yet/i)).toBeInTheDocument();
     expect(screen.queryByText(/can now be assigned/i)).not.toBeInTheDocument();
+  });
+
+  it("does not claim completion on a finishing status the server did not accept", async () => {
+    // The page has no second opinion. The server folds in rules it cannot
+    // see: DONE is absorbing, and the stamp needs a grant.
+    renderTrial();
+    await screen.findByTitle(/course/i);
+
+    postFromContent({
+      type: MESSAGE_TYPES.COMMIT,
+      cmi: { "cmi.core.lesson_status": "passed" },
+    });
+
+    await waitFor(() => expect(saveProgress).toHaveBeenCalled());
+    expect(screen.queryByText(/can now be assigned/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/not complete yet/i)).toBeInTheDocument();
   });
 
   it("keeps a message from an untrusted origin out of both the panel and the save", async () => {

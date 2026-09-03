@@ -7,9 +7,6 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatInTz, resolveViewerTimezone } from "@/utils/dateTime";
 
-// The lesson_status values that map to TrainingStatus.DONE server-side.
-const FINISHING_STATUSES = new Set(["passed", "completed"]);
-
 const timeOf = (ms, tz) =>
   formatInTz(new Date(ms).toISOString(), tz, "HH:mm:ss");
 
@@ -98,8 +95,15 @@ export default function TrainingTrial() {
     };
   }, [courseId]);
 
-  const { session, loadError, saveFailed, frameRef, playerSrc, writes } =
-    useTrainingRuntime(trainingId, user);
+  const {
+    session,
+    loadError,
+    saveFailed,
+    frameRef,
+    playerSrc,
+    writes,
+    status,
+  } = useTrainingRuntime(trainingId, user);
 
   const tz = resolveViewerTimezone();
 
@@ -110,13 +114,20 @@ export default function TrainingTrial() {
     [writes],
   );
   const lessonStatus = latestCmi["cmi.core.lesson_status"];
-  const isComplete = FINISHING_STATUSES.has(lessonStatus);
+  // The server's answer, not ours. It decides which lesson_status finishes a
+  // course, and folds in rules this page has no copy of.
+  const isComplete = status === "done";
   const hasSuspendData = "cmi.suspend_data" in latestCmi;
 
   const firstWrite = writes[0];
-  const finishingWrite = [...writes]
-    .reverse()
-    .find((w) => FINISHING_STATUSES.has(w.cmi["cmi.core.lesson_status"]));
+  // The write we were on when the server first said done. Held rather than
+  // recomputed: the course keeps committing afterwards, and the moment it
+  // finished must not drift with them.
+  const [finishingWrite, setFinishingWrite] = useState(null);
+  useEffect(() => {
+    if (!isComplete) return;
+    setFinishingWrite((held) => held ?? writes[writes.length - 1] ?? null);
+  }, [isComplete, writes]);
   const lastFinishCall = [...writes].reverse().find((w) => w.type === "finish");
   const commitWrites = writes.filter((w) => w.type === "commit");
   const lastCommit = commitWrites[commitWrites.length - 1];
