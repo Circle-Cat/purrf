@@ -1,10 +1,12 @@
 """Opening a content session, and serving one asset out of a package."""
 
+import asyncio
 import datetime
+import threading
 import time
 import unittest
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.common.mentorship_enums import TrainingStatus
 from backend.entity.training_course_entity import TrainingCourseEntity
@@ -12,6 +14,7 @@ from backend.entity.training_entity import TrainingEntity
 from backend.entity.training_progress_entity import TrainingProgressEntity
 from backend.training.byte_range import RangeSpec, UnsatisfiableRange
 from backend.training.training_content_service import (
+    ASSIGNMENT_CACHE_SECONDS,
     PLAYER_PATH,
     TrainingContentService,
 )
@@ -673,6 +676,137 @@ class TestReadAssetRanges(_ContentServiceCase):
             )
 
         self.storage.stat.assert_not_called()
+
+
+class TestReadAssetLeavesTheEventLoopFree(_ContentServiceCase):
+    """The storage SDK is synchronous, so it must not run on the loop.
+
+    A single course load asks for hundreds of files. Serving one of them on
+    the event loop stops the process answering anything else -- including the
+    other files of that same page, which is what turned the first real course
+    load into a wall of 502s.
+    """
+
+    async def test_a_whole_file_read_runs_off_the_event_loop(self):
+        loop_thread = threading.get_ident()
+        seen = []
+
+        def get(object_key):
+            seen.append(threading.get_ident())
+            return b"x", "text/css"
+
+        self.storage.get = MagicMock(side_effect=get)
+
+        await self.service.read_asset(self.session, self.valid_token(), "a.css")
+
+        self.assertEqual(len(seen), 1)
+        self.assertNotEqual(seen[0], loop_thread)
+
+    async def test_a_range_read_runs_off_the_event_loop(self):
+        # Both halves of a range read, because they are two separate calls
+        # into the SDK and either one alone would stall the loop.
+        loop_thread = threading.get_ident()
+        seen = []
+
+        def stat(object_key):
+            seen.append(threading.get_ident())
+            return len(_VIDEO), "video/mp4"
+
+        def get_range(object_key, start, end):
+            seen.append(threading.get_ident())
+            return _VIDEO[start : end + 1]
+
+        self.storage.stat = MagicMock(side_effect=stat)
+        self.storage.get_range = MagicMock(side_effect=get_range)
+
+        await self.service.read_asset(
+            self.session, self.valid_token(), _VIDEO_PATH, RangeSpec(0, 15)
+        )
+
+        self.assertEqual(len(seen), 2)
+        self.assertNotIn(loop_thread, seen)
+
+    async def test_two_asset_reads_are_actually_in_flight_together(self):
+        # The behaviour the thread assertions above exist for. A barrier is
+        # the only way to state it without a sleep: if the two reads are
+        # serialised, neither can ever pass it and the wait raises.
+        both_here = threading.Barrier(2, timeout=5)
+
+        def blocking_get(key):
+            both_here.wait()
+            return b"x", "text/css"
+
+        self.storage.get = MagicMock(side_effect=blocking_get)
+        token = self.valid_token()
+
+        await asyncio.gather(
+            self.service.read_asset(self.session, token, "a.css"),
+            self.service.read_asset(self.session, token, "b.css"),
+        )
+
+        self.assertEqual(self.storage.get.call_count, 2)
+
+
+class TestReadAssetReusesTheAssignmentLookup(_ContentServiceCase):
+    """Which course a token names cannot change; where its files live can.
+
+    So the assignment behind a token is read once and held briefly, while the
+    course row -- and with it the storage prefix -- stays a fresh read on
+    every request (spec 5.1, pinned by TestReadAssetLooksThePrefixUpFresh).
+    """
+
+    async def test_the_assignment_is_read_once_for_many_files(self):
+        token = self.valid_token()
+
+        for name in ("a.css", "b.css", "c.js"):
+            await self.service.read_asset(self.session, token, name)
+
+        self.assertEqual(self.training_repository.get_training_by_id.await_count, 1)
+
+    async def test_the_course_is_still_read_for_every_one_of_them(self):
+        token = self.valid_token()
+
+        for name in ("a.css", "b.css", "c.js"):
+            await self.service.read_asset(self.session, token, name)
+
+        self.assertEqual(self.course_repository.get_course_by_id.await_count, 3)
+
+    async def test_two_assignments_do_not_share_a_lookup(self):
+        # Keyed on the training the token names, so one learner's page cannot
+        # answer from another's lookup.
+        other, _ = issue_content_token(_KEY, _TRAINING_ID + 1, _OTHER_USER_ID)
+
+        await self.service.read_asset(self.session, self.valid_token(), "a.css")
+        await self.service.read_asset(self.session, other, "a.css")
+
+        self.assertEqual(self.training_repository.get_training_by_id.await_count, 2)
+
+    async def test_the_assignment_is_read_again_once_the_entry_is_stale(self):
+        token = self.valid_token()
+        await self.service.read_asset(self.session, token, "a.css")
+
+        with patch(
+            "backend.training.training_content_service._now",
+            return_value=time.monotonic() + ASSIGNMENT_CACHE_SECONDS + 1,
+        ):
+            await self.service.read_asset(self.session, token, "b.css")
+
+        self.assertEqual(self.training_repository.get_training_by_id.await_count, 2)
+
+    async def test_an_assignment_that_is_gone_is_not_remembered_as_gone(self):
+        # Only a resolved assignment is held. Caching the refusal would keep
+        # refusing a learner whose row arrived a moment later.
+        token = self.valid_token()
+        self.training_repository.get_training_by_id = AsyncMock(return_value=None)
+        with self.assertRaises(FileNotFoundError):
+            await self.service.read_asset(self.session, token, "a.css")
+
+        self.training_repository.get_training_by_id = AsyncMock(
+            return_value=self.training
+        )
+        await self.service.read_asset(self.session, token, "a.css")
+
+        self.assertEqual(self.training_repository.get_training_by_id.await_count, 1)
 
 
 if __name__ == "__main__":
