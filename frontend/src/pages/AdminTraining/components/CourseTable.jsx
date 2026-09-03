@@ -182,8 +182,8 @@ export default function CourseTable({ courses, onCoursesChanged }) {
     return data;
   };
 
-  // The dialog itself calls `assignCourse` (it defaults `onConfirm` to that
-  // call); this wrapper is what makes the row close and refetch afterwards.
+  // Called by the dialog's onConfirm; closes the row and refetches once the
+  // assignment lands.
   const handleConfirmAssign = async (payload) => {
     const result = await assignCourse(payload);
     setAssigning(null);
