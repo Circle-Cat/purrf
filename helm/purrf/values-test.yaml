@@ -27,3 +27,9 @@ ingress:
       paths:
         - path: /
           pathType: Prefix
+    # SCORM course files, same pods as test-api. Not covered by any Cloudflare
+    # Access application, so every request carries a signed path token.
+    - host: test-training-content.purrf.io
+      paths:
+        - path: /
+          pathType: Prefix
