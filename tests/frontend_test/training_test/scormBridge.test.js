@@ -95,10 +95,29 @@ describe("isTrustedMessage", () => {
   it("accepts a message from the origin it was told to expect", () => {
     expect(
       isTrustedMessage(
-        { origin, data: { type: MESSAGE_TYPES.COMMIT } },
+        { origin, data: { type: MESSAGE_TYPES.COMMIT, cmi: {} } },
         origin,
       ),
     ).toBe(true);
+  });
+
+  it("rejects a commit carrying no cmi at all", () => {
+    // Every reader of a commit iterates that object. Course content is
+    // uploaded by third parties, so this arrives without a bug of ours.
+    for (const cmi of [undefined, null, "x", 7, ["a"]]) {
+      expect(
+        isTrustedMessage(
+          { origin, data: { type: MESSAGE_TYPES.COMMIT, cmi } },
+          origin,
+        ),
+      ).toBe(false);
+    }
+  });
+
+  it("still accepts the messages that carry no cmi by design", () => {
+    for (const type of [MESSAGE_TYPES.READY, MESSAGE_TYPES.ERROR]) {
+      expect(isTrustedMessage({ origin, data: { type } }, origin)).toBe(true);
+    }
   });
 
   it("rejects any other origin", () => {

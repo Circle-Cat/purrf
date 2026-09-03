@@ -1,5 +1,6 @@
 """The course catalogue: what exists, and what may be assigned."""
 
+from backend.common.training_links import external_link_for
 from backend.dto.training_course_dto import (
     TrainingCourseCreateDto,
     TrainingCourseDto,
@@ -15,8 +16,11 @@ def derive_course_state(course: TrainingCourseEntity) -> TrainingCourseState:
     Order matters: a re-upload clears ``verified_completable_at`` but leaves
     the prefix, so a package without proof is NEEDS_TRIAL_RUN, never VERIFIED.
 
-    A package-less seed row still has a working external link, so it is
-    EXTERNAL_LINK rather than NO_PACKAGE.
+    A package-less row is EXTERNAL_LINK only when a link really resolves for
+    its category. Two of the four seed categories never had one, and neither
+    does any category in an environment that has not set its variable; naming
+    the state after the category alone showed a link that could not be
+    followed.
 
     Args:
         course (TrainingCourseEntity): The row to read.
@@ -28,15 +32,15 @@ def derive_course_state(course: TrainingCourseEntity) -> TrainingCourseState:
         if course.verified_completable_at is not None:
             return TrainingCourseState.VERIFIED
         return TrainingCourseState.NEEDS_TRIAL_RUN
-    if course.category is not None:
+    if external_link_for(course.category):
         return TrainingCourseState.EXTERNAL_LINK
     return TrainingCourseState.NO_PACKAGE
 
 
 def to_course_dto(
-    course: TrainingCourseEntity, assigned_count: int
+    course: TrainingCourseEntity, assigned_count: int, unfinished_count: int
 ) -> TrainingCourseDto:
-    """Project one course row, plus its assignment count, for the API."""
+    """Project one course row, plus its headcounts, for the API."""
     return TrainingCourseDto(
         course_id=course.course_id,
         name=course.name,
@@ -44,6 +48,9 @@ def to_course_dto(
         category=course.category,
         is_active=course.is_active,
         state=derive_course_state(course),
+        link=(
+            external_link_for(course.category) if not course.storage_prefix else None
+        ),
         scorm_version=course.scorm_version,
         package_version=course.package_version,
         reporting_mode=course.reporting_mode,
@@ -51,6 +58,7 @@ def to_course_dto(
         verified_completable_at=course.verified_completable_at,
         verified_by_user_id=course.verified_by_user_id,
         assigned_count=assigned_count,
+        unfinished_count=unfinished_count,
     )
 
 
@@ -73,11 +81,14 @@ class TrainingCourseService:
     async def list_courses(
         self, session, include_inactive: bool = True
     ) -> list[TrainingCourseDto]:
-        """Every course, with its derived state and assignment count."""
+        """Every course, with its derived state and headcounts."""
         rows = await self.training_course_repository.list_courses(
             session, include_inactive=include_inactive
         )
-        return [to_course_dto(course, count) for course, count in rows]
+        return [
+            to_course_dto(course, assigned, unfinished)
+            for course, assigned, unfinished in rows
+        ]
 
     async def create_course(
         self, session, payload: TrainingCourseCreateDto
@@ -87,7 +98,7 @@ class TrainingCourseService:
         Unassignable until a package is uploaded and somebody finishes it.
         """
         course = TrainingCourseEntity(
-            name=payload.name.strip(),
+            name=payload.name,
             description=payload.description,
             is_active=True,
         )
@@ -98,7 +109,7 @@ class TrainingCourseService:
             course.course_id,
             course.name,
         )
-        return to_course_dto(course, 0)
+        return to_course_dto(course, 0, 0)
 
     async def update_course(
         self, session, course_id: int, payload: TrainingCourseUpdateDto
@@ -118,7 +129,7 @@ class TrainingCourseService:
             raise ValueError(f"No training course with id {course_id}.")
 
         if payload.name is not None:
-            course.name = payload.name.strip()
+            course.name = payload.name
         if payload.description is not None:
             course.description = payload.description
         if payload.is_active is not None:
@@ -129,4 +140,9 @@ class TrainingCourseService:
         assigned_count = await self.training_course_repository.count_assignments(
             session, course_id
         )
-        return to_course_dto(course, assigned_count)
+        unfinished_count = (
+            await self.training_course_repository.count_unfinished_assignments(
+                session, course_id
+            )
+        )
+        return to_course_dto(course, assigned_count, unfinished_count)

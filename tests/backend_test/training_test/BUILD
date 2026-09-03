@@ -27,10 +27,13 @@ py_test(
     name = "training_admin_controller_test",
     srcs = ["training_admin_controller_test.py"],
     deps = [
+        "//backend/common:api_endpoints",
         "//backend/common:mentorship_enums",
         "//backend/common:permissions",
         "//backend/dto",
         "//backend/training:training_admin_controller",
+        "@pypi//fastapi",
+        "@pypi//httpx",
     ],
 )
 
@@ -38,9 +41,20 @@ py_test(
     name = "training_progress_service_test",
     srcs = ["training_progress_service_test.py"],
     deps = [
+        "//backend/common:exceptions",
         "//backend/common:mentorship_enums",
         "//backend/entity:entities",
+        "//backend/training:training_content_token",
         "//backend/training:training_progress_service",
+    ],
+)
+
+py_test(
+    name = "completion_test",
+    srcs = ["completion_test.py"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/training:completion",
     ],
 )
 
@@ -64,9 +78,30 @@ py_test(
 )
 
 py_test(
+    name = "byte_range_test",
+    srcs = ["byte_range_test.py"],
+    deps = ["//backend/training:byte_range"],
+)
+
+py_test(
+    name = "content_host_test",
+    srcs = ["content_host_test.py"],
+    deps = ["//backend/training:content_host"],
+)
+
+py_test(
     name = "training_content_token_test",
     srcs = ["training_content_token_test.py"],
     deps = ["//backend/training:training_content_token"],
+)
+
+py_test(
+    name = "training_storage_test",
+    srcs = ["training_storage_test.py"],
+    deps = [
+        "//backend/training:training_storage",
+        "@pypi//google_api_core",
+    ],
 )
 
 py_test(
@@ -75,6 +110,7 @@ py_test(
     deps = [
         "//backend/common:mentorship_enums",
         "//backend/entity:entities",
+        "//backend/training:byte_range",
         "//backend/training:training_content_service",
         "//backend/training:training_content_token",
         "//backend/training:training_storage",
@@ -85,6 +121,8 @@ py_test(
     name = "training_content_controller_test",
     srcs = ["training_content_controller_test.py"],
     deps = [
+        "//backend/training:byte_range",
+        "//backend/training:content_host",
         "//backend/training:training_content_controller",
         "//backend/training:training_content_service",
         "//backend/training:training_content_token",

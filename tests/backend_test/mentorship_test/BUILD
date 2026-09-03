@@ -64,7 +64,9 @@ py_test(
     name = "onboarding_training_service_test",
     srcs = ["onboarding_training_service_test.py"],
     deps = [
+        "//backend/common:mentorship_enums",
         "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
         "//backend/mentorship",
     ],
 )

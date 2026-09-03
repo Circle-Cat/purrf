@@ -61,6 +61,7 @@ py_test(
         "//backend/common:api_endpoints",
         "//backend/common:identity_type",
         "//backend/common:permissions",
+        "//backend/training:content_host",
         "//backend/utils:auth_middleware",
         "@pypi//httpx",
         "@pypi//sqlalchemy",

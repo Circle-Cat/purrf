@@ -36,6 +36,8 @@ import LeaveApprovalsPage from "@/pages/Leave/ApprovalsPage";
 import LeaveRequestsPage from "@/pages/Leave/RequestsPage";
 import LeaveAdminPage from "@/pages/Leave/AdminPage";
 import TrainingCourse from "@/pages/TrainingCourse";
+import TrainingTrial from "@/pages/TrainingTrial";
+import AdminTraining from "@/pages/AdminTraining";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
 import { PERMISSIONS } from "@/constants/Permissions";
@@ -284,6 +286,33 @@ function App() {
                     <Route
                       path={ROUTE_PATHS.TRAINING_COURSE(":trainingId")}
                       element={<TrainingCourse />}
+                    />
+                    <Route
+                      path={ROUTE_PATHS.TRAINING_TRIAL(":courseId")}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.TRAINING_ADMIN_WRITE,
+                          ]}
+                        >
+                          <TrainingTrial />
+                        </ProtectedRoute>
+                      }
+                    />
+                    {/* Reading the catalogue is a narrower grant than
+                        changing it -- each write action's own button falls
+                        back on the backend's 403. */}
+                    <Route
+                      path={ROUTE_PATHS.ADMIN_TRAINING}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.TRAINING_ADMIN_READ,
+                          ]}
+                        >
+                          <AdminTraining />
+                        </ProtectedRoute>
+                      }
                     />
                     <Route
                       path={ROUTE_PATHS.ACCESS_DENIED}

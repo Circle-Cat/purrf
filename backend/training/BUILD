@@ -6,6 +6,7 @@ py_library(
     name = "training_course_service",
     srcs = ["training_course_service.py"],
     deps = [
+        "//backend/common:training_links",
         "//backend/dto",
         "//backend/entity:entities",
         "//backend/repository:repositories",
@@ -43,6 +44,16 @@ py_library(
 )
 
 py_library(
+    name = "byte_range",
+    srcs = ["byte_range.py"],
+)
+
+py_library(
+    name = "content_host",
+    srcs = ["content_host.py"],
+)
+
+py_library(
     name = "training_content_token",
     srcs = ["training_content_token.py"],
 )
@@ -73,22 +84,41 @@ py_library(
     srcs = ["training_content_service.py"],
     data = ["//backend/training/player:player_files"],
     deps = [
+        ":byte_range",
         ":scorm_package",
         ":training_content_token",
         ":training_storage",
+        "//backend/dto",
         "//backend/repository:repositories",
+    ],
+)
+
+py_library(
+    name = "completion",
+    srcs = ["completion.py"],
+    deps = [
+        "//backend/common:mentorship_enums",
     ],
 )
 
 py_library(
     name = "training_progress_service",
     srcs = ["training_progress_service.py"],
+    deps = [
+        ":completion",
+        ":training_content_token",
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/dto",
+        "//backend/repository:repositories",
+    ],
 )
 
 py_library(
     name = "training_content_controller",
     srcs = ["training_content_controller.py"],
     deps = [
+        ":byte_range",
         ":training_content_service",
         "//backend/common:api_endpoints",
         "@pypi//fastapi",

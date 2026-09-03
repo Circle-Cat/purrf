@@ -107,7 +107,14 @@ class TestTrainingProgressRepository(BaseRepositoryTestLib):
         self.assertIsNone(progress.suspend_data)
         self.assertIsNone(progress.lesson_location)
 
-    async def test_clear_resume_state_leaves_a_finished_learner_alone(self):
+    async def test_clear_resume_state_wipes_a_finished_learner_too(self):
+        """The verifier of the replaced package is DONE, and has to run again.
+
+        Sparing DONE rows left the one person most likely to open the new
+        package resuming it with the previous package's blob -- the exact
+        wedge this clearing exists to prevent. Their status is untouched;
+        only the resume data goes.
+        """
         training = await self._assign(
             self.user_ids[0], self.course_id, TrainingStatus.DONE
         )
@@ -116,8 +123,40 @@ class TestTrainingProgressRepository(BaseRepositoryTestLib):
         await self.repo.clear_resume_state(self.session, self.course_id)
 
         await self._reload(progress)
-        self.assertEqual(progress.suspend_data, "x" * 5000)
-        self.assertEqual(progress.lesson_location, "Summary")
+        self.assertIsNone(progress.suspend_data)
+        self.assertIsNone(progress.lesson_location)
+
+    async def test_clear_resume_state_drops_the_replaced_packages_status(self):
+        """Kept, it is seeded back and echoed on the new package's first commit.
+
+        The whole model is re-sent on every commit, so a status left over from
+        the package we just replaced comes back looking like the new one
+        reporting itself finished -- which is enough to mark the new package
+        verified with nobody having run it.
+        """
+        training = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.DONE
+        )
+        progress = await self._start(training, lesson_status="passed")
+
+        await self.repo.clear_resume_state(self.session, self.course_id)
+
+        await self._reload(progress)
+        self.assertIsNone(progress.lesson_status)
+
+    async def test_clear_resume_state_leaves_the_completion_record_alone(self):
+        """The record of having finished lives on the assignment, not here."""
+        training = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.DONE
+        )
+        progress = await self._start(training, lesson_status="passed")
+
+        await self.repo.clear_resume_state(self.session, self.course_id)
+
+        await self._reload(progress)
+        self.assertEqual(progress.session_time_seconds, 940)
+        await self.session.refresh(training)
+        self.assertEqual(training.status, TrainingStatus.DONE)
 
     async def test_clear_resume_state_wipes_a_learner_who_has_not_started(self):
         training = await self._assign(
@@ -148,6 +187,7 @@ class TestTrainingProgressRepository(BaseRepositoryTestLib):
         self.assertEqual(their_progress.suspend_data, "x" * 5000)
 
     async def test_clear_resume_state_counts_only_the_rows_it_cleared(self):
+        """Everyone on the course, and nobody on another one."""
         unfinished = [
             await self._assign(uid, self.course_id, TrainingStatus.IN_PROGRESS)
             for uid in self.user_ids[:2]
@@ -165,10 +205,10 @@ class TestTrainingProgressRepository(BaseRepositoryTestLib):
 
         cleared = await self.repo.clear_resume_state(self.session, self.course_id)
 
-        self.assertEqual(cleared, 2)
+        self.assertEqual(cleared, 3)
 
-    async def test_clear_resume_state_keeps_everything_that_is_not_resume_state(self):
-        """Only the bookmark and the blob go; the record of what happened stays."""
+    async def test_clear_resume_state_keeps_everything_the_new_package_can_use(self):
+        """Accumulated time is the learner's, not the package's, so it stays."""
         training = await self._assign(
             self.user_ids[0], self.course_id, TrainingStatus.IN_PROGRESS
         )
@@ -177,7 +217,6 @@ class TestTrainingProgressRepository(BaseRepositoryTestLib):
         await self.repo.clear_resume_state(self.session, self.course_id)
 
         await self._reload(progress)
-        self.assertEqual(progress.lesson_status, "incomplete")
         self.assertEqual(progress.session_time_seconds, 940)
         self.assertIsNotNone(progress.last_accessed_at)
 
@@ -241,6 +280,96 @@ class TestTrainingProgressRepository(BaseRepositoryTestLib):
         await self._reload(row)
 
         self.assertEqual(row.suspend_data, blob)
+
+    async def _statements_of_upsert(self, **columns):
+        """Every statement the call sends, compiled for Postgres."""
+        from sqlalchemy import event
+        from sqlalchemy.dialects import postgresql
+
+        captured = []
+
+        def capture(conn, clauseelement, multiparams, params, execution_options):
+            captured.append(clauseelement)
+
+        training = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.IN_PROGRESS
+        )
+        event.listen(self.connection.sync_connection, "before_execute", capture)
+        try:
+            await self.repo.upsert(self.session, training.training_id, **columns)
+        finally:
+            event.remove(self.connection.sync_connection, "before_execute", capture)
+
+        return [
+            str(statement.compile(dialect=postgresql.dialect()))
+            for statement in captured
+            if hasattr(statement, "compile")
+        ]
+
+    async def test_upsert_writes_without_reading_first(self):
+        """Get-then-insert leaves a window: two overlapping first commits both
+        read no row, and the second insert violates the unique constraint on
+        training_id, 500s the request, and takes that learner's status write
+        down with it. One statement has no such window."""
+        statements = await self._statements_of_upsert(lesson_location="Intro")
+
+        self.assertEqual(len(statements), 1, f"Expected one statement: {statements}")
+
+    async def test_upsert_resolves_a_conflicting_insert_into_an_update(self):
+        statements = await self._statements_of_upsert(lesson_location="Intro")
+
+        self.assertIn("ON CONFLICT", statements[0])
+        self.assertIn("DO UPDATE", statements[0])
+
+    async def test_upsert_with_no_columns_still_stamps_the_row(self):
+        """The service can reach here with nothing but a status decision."""
+        training = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.IN_PROGRESS
+        )
+
+        row = await self.repo.upsert(self.session, training.training_id)
+        await self._reload(row)
+
+        self.assertIsNotNone(row.last_accessed_at)
+        self.assertEqual(row.session_time_seconds, 0)
+
+    async def test_upsert_leaves_columns_it_was_not_given_alone(self):
+        """A partial commit must not blank what an earlier one stored."""
+        training = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.IN_PROGRESS
+        )
+        await self.repo.upsert(
+            self.session,
+            training.training_id,
+            lesson_location="Intro",
+            suspend_data="blob",
+        )
+
+        row = await self.repo.upsert(
+            self.session, training.training_id, lesson_location="Summary"
+        )
+        await self._reload(row)
+
+        self.assertEqual(row.lesson_location, "Summary")
+        self.assertEqual(row.suspend_data, "blob")
+
+    async def test_upsert_returns_the_row_the_caller_already_holds(self):
+        """The service reads the row before it writes; the object it is
+        holding has to end up carrying what was written."""
+        training = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.IN_PROGRESS
+        )
+        await self.repo.upsert(
+            self.session, training.training_id, lesson_location="Intro"
+        )
+        held = await self.repo.get_by_training_id(self.session, training.training_id)
+
+        returned = await self.repo.upsert(
+            self.session, training.training_id, lesson_location="Summary"
+        )
+
+        self.assertIs(returned, held)
+        self.assertEqual(held.lesson_location, "Summary")
 
 
 if __name__ == "__main__":

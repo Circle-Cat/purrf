@@ -1,13 +1,15 @@
 """FastAPI routes for the training course catalogue and manual assignment."""
 
+import json
 from http import HTTPStatus
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, Request, UploadFile
 
 from backend.common.api_endpoints import (
     TRAINING_ASSIGNMENTS_ENDPOINT,
     TRAINING_COURSE_ENDPOINT,
     TRAINING_COURSE_PACKAGE_ENDPOINT,
+    TRAINING_COURSE_TRIAL_ENDPOINT,
     TRAINING_COURSES_ENDPOINT,
     TRAINING_PROGRESS_ENDPOINT,
     TRAINING_SESSION_ENDPOINT,
@@ -20,6 +22,41 @@ from backend.dto.training_course_dto import (
     TrainingCourseUpdateDto,
 )
 from backend.utils.permission_decorators import authenticate
+
+# A commit is a few kilobytes; the largest element the service will store is
+# 64 KB of suspend_data. The body is read against this cap rather than parsed
+# first, because a length check that runs after the JSON is decoded has already
+# spent the memory it exists to bound.
+_MAX_PROGRESS_BODY_BYTES = 256 * 1024
+
+
+async def _read_progress_body(request: Request) -> dict:
+    """The commit body, refused before it is parsed if it is too large.
+
+    Args:
+        request (Request): The incoming request, unread.
+
+    Returns:
+        dict: The decoded body.
+
+    Raises:
+        ValueError: Over the cap, or not a JSON object.
+    """
+    chunks = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > _MAX_PROGRESS_BODY_BYTES:
+            raise ValueError("This progress commit is too large.")
+        chunks.append(chunk)
+
+    try:
+        payload = json.loads(b"".join(chunks) or b"{}")
+    except ValueError as error:
+        raise ValueError("This progress commit is not valid JSON.") from error
+    if not isinstance(payload, dict):
+        raise ValueError("A progress commit must be an object.")
+    return payload
 
 
 class TrainingAdminController:
@@ -90,6 +127,14 @@ class TrainingAdminController:
             methods=["POST"],
             response_model=None,
         )
+        self.router.add_api_route(
+            TRAINING_COURSE_PACKAGE_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_READ])(
+                self.read_completion_config
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
         # A learner opening their own course needs no permission; holding the
         # assignment is the grant, and the service checks they hold it.
         self.router.add_api_route(
@@ -98,7 +143,8 @@ class TrainingAdminController:
             methods=["POST"],
             response_model=None,
         )
-        # Same grant as opening the session: holding the assignment.
+        # Same grant as opening the session: holding the assignment. Marking
+        # the course itself verified is gated separately, inside the service.
         self.router.add_api_route(
             TRAINING_PROGRESS_ENDPOINT,
             endpoint=authenticate()(self.save_progress),
@@ -113,6 +159,14 @@ class TrainingAdminController:
             methods=["POST"],
             response_model=None,
         )
+        self.router.add_api_route(
+            TRAINING_COURSE_TRIAL_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_WRITE])(
+                self.start_trial
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
 
     async def list_courses(self):
         """Every course, with its state and how many people hold it.
@@ -123,7 +177,7 @@ class TrainingAdminController:
             courses = await self.training_course_service.list_courses(session)
         return api_response(
             message="Training courses retrieved.",
-            data=[course.model_dump(mode="json") for course in courses],
+            data=courses,
         )
 
     async def create_course(self, payload: TrainingCourseCreateDto):
@@ -132,7 +186,7 @@ class TrainingAdminController:
             course = await self.training_course_service.create_course(session, payload)
         return api_response(
             message="Training course created.",
-            data=course.model_dump(mode="json"),
+            data=course,
             status_code=HTTPStatus.CREATED,
         )
 
@@ -144,7 +198,7 @@ class TrainingAdminController:
             )
         return api_response(
             message="Training course updated.",
-            data=course.model_dump(mode="json"),
+            data=course,
         )
 
     async def assign(self, payload: TrainingAssignmentRequestDto):
@@ -161,7 +215,28 @@ class TrainingAdminController:
                 if result.created
                 else "This person already has this course."
             ),
-            data=result.model_dump(mode="json"),
+            data=result,
+            status_code=HTTPStatus.CREATED if result.created else HTTPStatus.OK,
+        )
+
+    async def start_trial(self, course_id: int, current_user):
+        """Open the caller's own assignment on a course so they can verify it.
+
+        Answers the deadlock at the assignment gate: nobody may be assigned an
+        unverified course, so a verifier gets one this way instead, from
+        their own identity, never a named user in the request.
+        """
+        async with self.database.session() as session:
+            result = await self.training_assignment_service.start_trial(
+                session, course_id, current_user.user_id
+            )
+        return api_response(
+            message=(
+                "Trial started."
+                if result.created
+                else "Resuming your existing trial of this course."
+            ),
+            data=result,
             status_code=HTTPStatus.CREATED if result.created else HTTPStatus.OK,
         )
 
@@ -178,29 +253,70 @@ class TrainingAdminController:
             )
         return api_response(
             message="Package uploaded.",
-            data=result.model_dump(mode="json"),
+            data=result,
             status_code=HTTPStatus.CREATED,
+        )
+
+    async def read_completion_config(self, course_id: int):
+        """What the stored package says it takes to finish this course."""
+        async with self.database.session() as session:
+            config = await self.training_package_service.read_completion_config(
+                session, course_id
+            )
+        return api_response(
+            message="Package completion configuration read.",
+            data=config,
         )
 
     async def open_session(self, training_id: int, current_user):
         """Mint the content URL for the caller's own assignment."""
         async with self.database.session() as session:
-            payload = await self.training_content_service.open_session(
+            training_session = await self.training_content_service.open_session(
                 session, training_id, current_user.user_id
             )
-        return api_response(message="Training session opened.", data=payload)
+        return api_response(message="Training session opened.", data=training_session)
 
-    async def save_progress(self, training_id: int, payload: dict, current_user):
+    async def save_progress(self, training_id: int, request: Request, current_user):
         """Store one commit from the caller's own course.
+
+        The body is read here rather than declared as a parameter so that its
+        size is bounded before anything parses it.
 
         ``cmi`` is course-controlled; a shape other than an object must come
         back as a 4xx, not a TypeError from deeper in the stack.
+
+        ``final`` marks the page's parting save as the tab closes. Only the
+        page knows which save is the last one, and that save exists to bank
+        elapsed time -- the one thing the service's unchanged-content check
+        ignores -- so it has to say so or the write is skipped.
+
+        Whether this commit may also mark the course verified comes from the
+        permissions the middleware resolved from the database, never from the
+        payload: a course reporting itself finished must not be able to claim
+        the grant that unlocks it for everybody else.
+
+        ``sessionToken`` names the run this commit came from. It is signed, so
+        the payload can only name a run that really was opened; a commit that
+        names none is still stored, but it cannot vouch for a package.
+
+        The response says where the assignment now stands. Which lesson_status
+        finishes a course is decided here; a page that judged the same values
+        itself would be a second answer free to disagree with this one.
         """
+        payload = await _read_progress_body(request)
         cmi = payload.get("cmi", {})
         if not isinstance(cmi, dict):
             raise ValueError("cmi must be an object.")
         async with self.database.session() as session:
-            await self.training_progress_service.save(
-                session, training_id, current_user.user_id, cmi
+            saved = await self.training_progress_service.save(
+                session,
+                training_id,
+                current_user.user_id,
+                cmi,
+                final=bool(payload.get("final")),
+                may_verify_course=current_user.has_permission(
+                    Permission.TRAINING_ADMIN_WRITE
+                ),
+                session_token=payload.get("sessionToken"),
             )
-        return api_response(message="Progress saved.")
+        return api_response(message="Progress saved.", data=saved)

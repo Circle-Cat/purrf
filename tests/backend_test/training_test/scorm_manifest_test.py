@@ -1,5 +1,6 @@
 """What a SCORM manifest and its entry page are allowed to tell us."""
 
+import json
 import unittest
 
 from backend.common.mentorship_enums import ScormVersion
@@ -63,6 +64,21 @@ def _entry_page(script: str = "") -> bytes:
 <body><div id="course"></div></body>
 </html>"""
     return html.encode("utf-8")
+
+
+# Copied verbatim out of scormdriver/indexAPI.html in the two packages under
+# scorm/: a fixture that invents its keys proves nothing about a real package.
+_REAL_MENTEE_CONFIG = (
+    '{"coursePackageVersion":"qPpo9zHD","lmsTarget":"scorm12",'
+    '"resetLearnerData":false,"quizId":null,'
+    '"storylineId":"cm171zxgx006v35737y24wb4j",'
+    '"completionPercentage":100,"reporting":"passed-incomplete"}'
+)
+_REAL_MENTOR_CONFIG = (
+    '{"coursePackageVersion":"9K8IMOal","lmsTarget":"scorm12",'
+    '"resetLearnerData":false,"quizId":null,"storylineId":null,'
+    '"completionPercentage":100,"reporting":"completed-incomplete"}'
+)
 
 
 def _driver_config_script(json_text: str) -> str:
@@ -148,6 +164,19 @@ class TestParseManifest(unittest.TestCase):
 
         self.assertEqual(info.entry_path, "indexAPI.html")
 
+    def test_a_dot_slash_href_normalises_to_the_path_the_archive_uses(self):
+        """Archive names are normalised before the entry point is looked up."""
+        resources = """
+  <resources>
+    <resource identifier="res_1" type="webcontent" href="./scormdriver/indexAPI.html">
+      <file href="./scormdriver/indexAPI.html"/>
+    </resource>
+  </resources>"""
+
+        info = parse_manifest(_manifest(resources=resources))
+
+        self.assertEqual(info.entry_path, _ENTRY_PATH)
+
     def test_declared_hrefs_are_kept_as_the_manifest_wrote_them(self):
         """Decoding belongs to the comparison against the archive, not here.
 
@@ -227,33 +256,57 @@ class TestParseManifest(unittest.TestCase):
 
 class TestParseDriverConfig(unittest.TestCase):
     def test_the_driver_config_script_is_read_off_the_entry_page(self):
+        page = _entry_page(_driver_config_script(_REAL_MENTEE_CONFIG))
+
+        config = parse_driver_config(page)
+
+        self.assertIsNotNone(config)
+        self.assertEqual(config.course_package_version, "qPpo9zHD")
+        self.assertEqual(config.reporting, "passed-incomplete")
+        self.assertEqual(config.storyline_id, "cm171zxgx006v35737y24wb4j")
+        self.assertIsNone(config.quiz_id)
+        self.assertEqual(config.completion_percentage, 100.0)
+
+    def test_the_completion_threshold_is_read_from_completion_percentage(self):
+        """The key every real package writes it under, and the only one."""
+        page = _entry_page(_driver_config_script(_REAL_MENTOR_CONFIG))
+
+        config = parse_driver_config(page)
+
+        self.assertIsNotNone(config)
+        self.assertEqual(config.completion_percentage, 100.0)
+        self.assertEqual(config.reporting, "completed-incomplete")
+
+    def test_a_config_without_a_completion_percentage_leaves_it_none(self):
+        """Rather than a zero, which would read as "no threshold at all"."""
         page = _entry_page(
             _driver_config_script(
-                '{"coursePackageVersion": "2026.08.29.1",'
-                ' "reporting": "completed",'
-                ' "storylineId": "story_7",'
-                ' "quizId": "quiz_3"}'
+                '{"coursePackageVersion": "9K8IMOal",'
+                ' "reporting": "completed-incomplete",'
+                ' "storylineId": null, "quizId": null}'
             )
         )
 
         config = parse_driver_config(page)
 
         self.assertIsNotNone(config)
-        self.assertEqual(config.course_package_version, "2026.08.29.1")
-        self.assertEqual(config.reporting, "completed")
-        self.assertEqual(config.storyline_id, "story_7")
-        self.assertEqual(config.quiz_id, "quiz_3")
+        self.assertIsNone(config.completion_percentage)
+
+    def test_a_non_numeric_completion_percentage_is_ignored(self):
+        page = _entry_page(
+            _driver_config_script(
+                '{"coursePackageVersion": "9K8IMOal", "completionPercentage": "all"}'
+            )
+        )
+
+        config = parse_driver_config(page)
+
+        self.assertIsNotNone(config)
+        self.assertIsNone(config.completion_percentage)
 
     def test_null_storyline_and_quiz_ids_stay_none(self):
         """A stringified null here is what kept a real course from completing."""
-        page = _entry_page(
-            _driver_config_script(
-                '{"coursePackageVersion": "2026.08.29.1",'
-                ' "reporting": "passed",'
-                ' "storylineId": null,'
-                ' "quizId": null}'
-            )
-        )
+        page = _entry_page(_driver_config_script(_REAL_MENTOR_CONFIG))
 
         config = parse_driver_config(page)
 
@@ -270,6 +323,66 @@ class TestParseDriverConfig(unittest.TestCase):
         page = _entry_page(_driver_config_script('{"reporting": "passed",,,'))
 
         self.assertIsNone(parse_driver_config(page))
+
+
+class TestEntryHrefDecoding(unittest.TestCase):
+    def _with_entry(self, href):
+        return _manifest(
+            resources=f"""
+  <resources>
+    <resource identifier="res_1" type="webcontent" href="{href}">
+      <file href="{href}"/>
+    </resource>
+  </resources>"""
+        )
+
+    def test_an_entry_href_with_an_encoded_space_names_the_real_file(self):
+        """Manifest hrefs are URL-encoded; zip entry names are not."""
+        info = parse_manifest(self._with_entry("my%20course/index.html"))
+
+        self.assertEqual(info.entry_path, "my course/index.html")
+
+    def test_a_fragment_on_the_entry_href_is_dropped(self):
+        info = parse_manifest(self._with_entry("index.html#start"))
+
+        self.assertEqual(info.entry_path, "index.html")
+
+
+class TestUntrustedDriverConfigValues(unittest.TestCase):
+    """The config is course-controlled JSON on its way to String columns."""
+
+    def _config(self, **overrides):
+        block = {
+            "coursePackageVersion": "qPpo9zHD",
+            "reporting": "passed-incomplete",
+            "storylineId": None,
+            "quizId": None,
+            "completionPercentage": 100,
+        }
+        block.update(overrides)
+        html = (
+            b'<script id="__DRIVER_CONFIG__" type="application/json">'
+            + json.dumps(block).encode()
+            + b"</script>"
+        )
+        return parse_driver_config(html)
+
+    def test_a_reporting_mode_that_is_not_a_string_is_ignored(self):
+        """It reaches a String column; a dict there is a 500, not a 400."""
+        self.assertIsNone(self._config(reporting={"x": 1}).reporting)
+
+    def test_a_package_version_that_is_not_a_string_is_ignored(self):
+        self.assertIsNone(
+            self._config(coursePackageVersion=[1, 2]).course_package_version
+        )
+
+    def test_a_storyline_id_that_is_not_a_string_is_ignored(self):
+        self.assertIsNone(self._config(storylineId=7).storyline_id)
+
+    def test_the_ordinary_strings_still_come_through(self):
+        config = self._config()
+        self.assertEqual(config.reporting, "passed-incomplete")
+        self.assertEqual(config.course_package_version, "qPpo9zHD")
 
 
 if __name__ == "__main__":

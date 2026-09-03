@@ -161,4 +161,21 @@ describe("Sidebar Component", () => {
     renderSidebar([PERMISSIONS.RECRUITING_JOB_APPROVE]);
     expect(screen.queryByText("Recruiting Audit")).not.toBeInTheDocument();
   });
+
+  test("renders Training Administration for a user with training.admin.read permission", () => {
+    renderSidebar([PERMISSIONS.TRAINING_ADMIN_READ]);
+    const link = screen.getByText("Training Administration");
+    expect(link).toBeInTheDocument();
+    expect(link.closest("a")).toHaveAttribute(
+      "href",
+      ROUTE_PATHS.ADMIN_TRAINING,
+    );
+  });
+
+  test("does not render Training Administration without training.admin.read permission", () => {
+    renderSidebar([PERMISSIONS.RECRUITING_JOB_APPROVE]);
+    expect(
+      screen.queryByText("Training Administration"),
+    ).not.toBeInTheDocument();
+  });
 });

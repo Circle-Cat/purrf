@@ -136,6 +136,7 @@ from backend.leave.leave_calendar_service import LeaveCalendarService
 from backend.leave.leave_calendar_controller import LeaveCalendarController
 from backend.leave.leave_adjustment_service import LeaveAdjustmentService
 from backend.leave.leave_admin_controller import LeaveAdminController
+from backend.training.content_host import resolve_content_host
 from backend.training.training_admin_controller import TrainingAdminController
 from backend.training.training_assignment_service import TrainingAssignmentService
 from backend.training.training_content_controller import TrainingContentController
@@ -163,6 +164,7 @@ from backend.notification_management.delivery_controller import (
 )
 from backend.common.environment_constants import (
     RESUME_BUCKET,
+    APP_ORIGINS,
     TRAINING_BUCKET,
     TRAINING_CONTENT_HOST,
     TRAINING_TOKEN_SIGNING_KEY,
@@ -551,11 +553,13 @@ class AppDependencyBuilder:
         self.user_identities_repository = UserIdentitiesRepository()
         self.user_permissions_repository = UserPermissionsRepository()
         self.training_repository = TrainingRepository()
-        # Built here, next to its repository, because both ApplicationService
+        self.training_course_repository = TrainingCourseRepository()
+        # Built here, next to its repositories, because both ApplicationService
         # and BoardService take it and are constructed further down.
         self.onboarding_training_service = OnboardingTrainingService(
             logger=self.logger,
             training_repository=self.training_repository,
+            training_course_repository=self.training_course_repository,
         )
         self.user_identity_service = UserIdentityService(
             logger=self.logger,
@@ -945,7 +949,6 @@ class AppDependencyBuilder:
             self.leave_engine_service,
             self.database,
         )
-        self.training_course_repository = TrainingCourseRepository()
         self.training_course_service = TrainingCourseService(
             logger=self.logger,
             training_course_repository=self.training_course_repository,
@@ -956,8 +959,17 @@ class AppDependencyBuilder:
             training_repository=self.training_repository,
         )
         self.training_progress_repository = TrainingProgressRepository()
-        self.training_storage = TrainingStorage(os.getenv(TRAINING_BUCKET))
-        self.training_content_host = os.getenv(TRAINING_CONTENT_HOST)
+        self.training_storage = TrainingStorage(
+            os.getenv(TRAINING_BUCKET), logger=self.logger
+        )
+        # Nothing downstream can tell a content host apart from the app's own
+        # host: set them equal and every request still succeeds, with course
+        # JavaScript same-origin with the API. A host that cannot be shown to
+        # differ resolves to None, which disables the exemption and the route
+        # together rather than taking the whole app down over one feature.
+        self.training_content_host = resolve_content_host(
+            os.getenv(TRAINING_CONTENT_HOST), os.getenv(APP_ORIGINS), self.logger
+        )
         self.training_package_service = TrainingPackageService(
             logger=self.logger,
             training_course_repository=self.training_course_repository,
@@ -975,8 +987,10 @@ class AppDependencyBuilder:
         )
         self.training_progress_service = TrainingProgressService(
             logger=self.logger,
+            signing_key=os.getenv(TRAINING_TOKEN_SIGNING_KEY),
             training_repository=self.training_repository,
             training_progress_repository=self.training_progress_repository,
+            training_course_repository=self.training_course_repository,
         )
         self.training_admin_controller = TrainingAdminController(
             self.training_course_service,

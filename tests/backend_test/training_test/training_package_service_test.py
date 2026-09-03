@@ -18,14 +18,15 @@ _LIVE_PREFIX = "training/7/9cf1e0d2/"
 _NOW = datetime.datetime(2026, 9, 2, 9, 0, tzinfo=datetime.timezone.utc)
 _VERIFIED_AT = datetime.datetime(2026, 8, 30, 12, 0, tzinfo=datetime.timezone.utc)
 
+# The keys the real packages under scorm/ write, and only those.
 _DRIVER_CONFIG = {
-    "storylineId": None,
-    "quizId": None,
-    "reporting": "passed-incomplete",
     "coursePackageVersion": "qPpo9zHD",
-    "threshold": 100,
-    "driverVersion": "7.12.0",
     "lmsTarget": "scorm12",
+    "resetLearnerData": False,
+    "quizId": None,
+    "storylineId": None,
+    "completionPercentage": 100,
+    "reporting": "passed-incomplete",
 }
 
 
@@ -191,6 +192,31 @@ class TestUploadPackage(_PackageServiceTestCase):
         self.assertEqual(
             sorted(self._put_keys()),
             sorted(course.storage_prefix + name for name in members),
+        )
+
+    async def test_a_zip_written_with_dot_slash_entries_uploads(self):
+        """Legal, and some zip tools write every entry this way. Reading such an
+        entry back by its normalised name used to raise KeyError, which reached
+        the admin as "Internal Server Error" rather than as a rule."""
+        course = self._course(storage_prefix=None)
+        members = {
+            f"./{name}": data
+            for name, data in _members(
+                extra_members={"assets/cat.jpg": b"meow"}
+            ).items()
+        }
+
+        result = await self.service.upload_package(
+            self.session, _COURSE_ID, _zip(members), now=_NOW
+        )
+
+        self.assertEqual(result.entry_path, _ENTRY_PATH)
+        self.assertEqual(
+            sorted(self._put_keys()),
+            sorted(
+                course.storage_prefix + name
+                for name in ("assets/cat.jpg", "imsmanifest.xml", _ENTRY_PATH)
+            ),
         )
 
     async def test_an_overwrite_mints_a_prefix_the_live_one_does_not_share(self):
@@ -399,6 +425,7 @@ class TestUploadPackage(_PackageServiceTestCase):
 
         self.assertEqual(result.package_version, "qPpo9zHD")
         self.assertEqual(result.reporting_mode, "passed-incomplete")
+        self.assertEqual(result.completion_percentage, 100.0)
         self.assertTrue(result.completion_config_readable)
         self.assertEqual(course.package_version, "qPpo9zHD")
         self.assertEqual(course.reporting_mode, "passed-incomplete")
@@ -416,6 +443,7 @@ class TestUploadPackage(_PackageServiceTestCase):
         self.assertFalse(result.completion_config_readable)
         self.assertIsNone(result.package_version)
         self.assertIsNone(result.reporting_mode)
+        self.assertIsNone(result.completion_percentage)
         self.assertIsNotNone(course.storage_prefix)
 
     async def test_files_the_manifest_declares_but_the_archive_lacks_are_surfaced(self):
@@ -573,6 +601,106 @@ class TestReplacedPrefixDeletion(_PackageServiceTestCase):
 
         self.assertIsNotNone(result)
         self.logger.exception.assert_called_once()
+
+
+class TestReadCompletionConfig(_PackageServiceTestCase):
+    """What the stored package says about finishing, re-read on demand.
+
+    The three answers here are shown once in the upload dialog and then never
+    again, so the trial page asks for them rather than the course row storing
+    a copy that a re-upload could leave stale.
+    """
+
+    def _stored(self, driver_config=_DRIVER_CONFIG):
+        self.storage.get.return_value = (_entry_page(driver_config), "text/html")
+
+    async def test_it_reads_the_entry_page_under_the_courses_own_prefix(self):
+        self._course(storage_prefix=_LIVE_PREFIX, entry_path=_ENTRY_PATH)
+        self._stored()
+
+        await self.service.read_completion_config(self.session, _COURSE_ID)
+
+        self.storage.get.assert_called_once()
+        key = self.storage.get.call_args.args[0]
+        self.assertEqual(key, f"{_LIVE_PREFIX}{_ENTRY_PATH}")
+
+    async def test_it_reports_what_the_package_requires_before_completion(self):
+        self._course(storage_prefix=_LIVE_PREFIX, entry_path=_ENTRY_PATH)
+        self._stored()
+
+        result = await self.service.read_completion_config(self.session, _COURSE_ID)
+
+        self.assertTrue(result.completion_config_readable)
+        self.assertEqual(result.completion_percentage, 100)
+        self.assertFalse(result.completes_via_storyline)
+
+    async def test_a_course_that_only_completes_via_storyline_says_so(self):
+        """Finishing the surrounding lessons will not complete such a course."""
+        self._course(storage_prefix=_LIVE_PREFIX, entry_path=_ENTRY_PATH)
+        self._stored({**_DRIVER_CONFIG, "storylineId": "5xKq"})
+
+        result = await self.service.read_completion_config(self.session, _COURSE_ID)
+
+        self.assertTrue(result.completes_via_storyline)
+
+    async def test_a_package_we_cannot_read_says_so_rather_than_failing(self):
+        """Silence here reads as "nothing wrong", which is the whole mistake."""
+        self._course(storage_prefix=_LIVE_PREFIX, entry_path=_ENTRY_PATH)
+        self._stored(None)
+
+        result = await self.service.read_completion_config(self.session, _COURSE_ID)
+
+        self.assertFalse(result.completion_config_readable)
+        self.assertIsNone(result.completion_percentage)
+        self.assertFalse(result.completes_via_storyline)
+
+    async def test_it_reports_whether_the_course_is_already_verified(self):
+        """The trial page shows this; the assignment's own status cannot.
+
+        A verifier re-running a replaced package is still DONE on their row,
+        so a page reading that would claim the new package was unlocked
+        before anybody had finished it.
+        """
+        self._course(
+            storage_prefix=_LIVE_PREFIX,
+            entry_path=_ENTRY_PATH,
+            verified_completable_at=_VERIFIED_AT,
+        )
+        self._stored()
+
+        result = await self.service.read_completion_config(self.session, _COURSE_ID)
+
+        self.assertTrue(result.verified)
+
+    async def test_a_course_awaiting_its_trial_run_is_not_verified(self):
+        self._course(storage_prefix=_LIVE_PREFIX, entry_path=_ENTRY_PATH)
+        self._stored()
+
+        result = await self.service.read_completion_config(self.session, _COURSE_ID)
+
+        self.assertFalse(result.verified)
+
+    async def test_a_course_with_no_package_is_refused(self):
+        self._course(storage_prefix=None)
+
+        with self.assertRaises(ValueError):
+            await self.service.read_completion_config(self.session, _COURSE_ID)
+
+        self.storage.get.assert_not_called()
+
+    async def test_a_course_that_does_not_exist_is_refused(self):
+        self.course_repository.get_course_by_id.return_value = None
+
+        with self.assertRaises(ValueError):
+            await self.service.read_completion_config(self.session, _COURSE_ID)
+
+    async def test_an_entry_page_gone_from_storage_is_a_clean_not_found(self):
+        """A missing object is a fault to fix, not a package we cannot read."""
+        self._course(storage_prefix=_LIVE_PREFIX, entry_path=_ENTRY_PATH)
+        self.storage.get.return_value = None
+
+        with self.assertRaises(FileNotFoundError):
+            await self.service.read_completion_config(self.session, _COURSE_ID)
 
 
 if __name__ == "__main__":
