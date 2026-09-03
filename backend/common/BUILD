@@ -249,3 +249,13 @@ py_library(
     name = "trusted_connections",
     srcs = ["trusted_connections.py"],
 )
+
+py_library(
+    name = "training_links",
+    srcs = ["training_links.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":environment_constants",
+        ":mentorship_enums",
+    ],
+)

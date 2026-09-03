@@ -6,6 +6,7 @@ py_library(
     name = "training_course_service",
     srcs = ["training_course_service.py"],
     deps = [
+        "//backend/common:training_links",
         "//backend/dto",
         "//backend/entity:entities",
         "//backend/repository:repositories",

@@ -1,12 +1,8 @@
-import os
 from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.common.environment_constants import (
-    MENTORSHIP_MENTEE_ONBOARDING_LINK,
-    MENTORSHIP_MENTOR_ONBOARDING_LINK,
-)
+from backend.common.training_links import external_link_for
 from backend.common.mentorship_enums import (
     ParticipantRole,
     TrainingCategory,
@@ -18,11 +14,6 @@ from backend.entity.training_entity import TrainingEntity
 _ROLE_TO_CATEGORY = {
     ParticipantRole.MENTOR: TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
     ParticipantRole.MENTEE: TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
-}
-
-_CATEGORY_LINK_ENV_VAR = {
-    TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING: MENTORSHIP_MENTOR_ONBOARDING_LINK,
-    TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING: MENTORSHIP_MENTEE_ONBOARDING_LINK,
 }
 
 
@@ -119,7 +110,6 @@ class OnboardingTrainingService:
         course_id = await self._course_id_for(session=session, category=category)
 
         if existing is None:
-            link_env_var = _CATEGORY_LINK_ENV_VAR[category]
             created = await self.training_repo.upsert_training(
                 session=session,
                 entity=TrainingEntity(
@@ -129,7 +119,7 @@ class OnboardingTrainingService:
                     status=TrainingStatus.TO_DO,
                     completed_timestamp=None,
                     deadline=deadline,
-                    link=os.getenv(link_env_var),
+                    link=external_link_for(category),
                 ),
             )
             self.logger.info(

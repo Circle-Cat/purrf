@@ -1,8 +1,9 @@
 """The course catalogue, and the state its list column shows."""
 
 import datetime
+import os
 import unittest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.common.mentorship_enums import TrainingCategory
 from backend.dto.training_course_dto import (
@@ -14,6 +15,7 @@ from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.training.training_course_service import (
     TrainingCourseService,
     derive_course_state,
+    to_course_dto,
 )
 
 _VERIFIED_AT = datetime.datetime(2026, 9, 1, 12, 7, tzinfo=datetime.timezone.utc)
@@ -51,6 +53,56 @@ class TestDeriveCourseState(unittest.TestCase):
     def test_new_course_without_a_package_has_nowhere_to_send_anybody(self):
         course = TrainingCourseEntity(category=None, storage_prefix=None)
         self.assertEqual(derive_course_state(course), TrainingCourseState.NO_PACKAGE)
+
+
+class TestExternalLinkOnTheCourseRow(unittest.TestCase):
+    """A state named EXTERNAL_LINK has to be able to show the link."""
+
+    @patch.dict(
+        os.environ,
+        {"MENTORSHIP_MENTOR_ONBOARDING_LINK": "https://example.com/mentor"},
+    )
+    def test_a_course_still_on_its_external_link_carries_that_link(self):
+        course = TrainingCourseEntity(
+            course_id=1,
+            name="Mentor Onboarding",
+            is_active=True,
+            category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+            storage_prefix=None,
+        )
+
+        dto = to_course_dto(course, 0)
+
+        self.assertEqual(dto.state, TrainingCourseState.EXTERNAL_LINK)
+        self.assertEqual(dto.link, "https://example.com/mentor")
+
+    @patch.dict(
+        os.environ,
+        {"MENTORSHIP_MENTOR_ONBOARDING_LINK": "https://example.com/mentor"},
+    )
+    def test_a_course_we_now_host_stops_pointing_at_the_old_one(self):
+        """The env var still resolves; the course is no longer served from it."""
+        course = TrainingCourseEntity(
+            course_id=1,
+            name="Mentor Onboarding",
+            is_active=True,
+            category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+            storage_prefix="training/1/abc/",
+        )
+
+        dto = to_course_dto(course, 0)
+
+        self.assertIsNone(dto.link)
+
+    def test_a_course_created_from_the_admin_page_has_no_link(self):
+        course = TrainingCourseEntity(
+            course_id=2, name="Something New", is_active=True, category=None
+        )
+
+        dto = to_course_dto(course, 0)
+
+        self.assertEqual(dto.state, TrainingCourseState.NO_PACKAGE)
+        self.assertIsNone(dto.link)
 
 
 class TestTrainingCourseService(unittest.IsolatedAsyncioTestCase):

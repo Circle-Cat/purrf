@@ -1,5 +1,6 @@
 """The course catalogue: what exists, and what may be assigned."""
 
+from backend.common.training_links import external_link_for
 from backend.dto.training_course_dto import (
     TrainingCourseCreateDto,
     TrainingCourseDto,
@@ -44,6 +45,9 @@ def to_course_dto(
         category=course.category,
         is_active=course.is_active,
         state=derive_course_state(course),
+        link=(
+            external_link_for(course.category) if not course.storage_prefix else None
+        ),
         scorm_version=course.scorm_version,
         package_version=course.package_version,
         reporting_mode=course.reporting_mode,

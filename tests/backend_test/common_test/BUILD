@@ -190,6 +190,12 @@ py_test(
 )
 
 py_test(
+    name = "training_links_test",
+    srcs = ["training_links_test.py"],
+    deps = ["//backend/common:training_links"],
+)
+
+py_test(
     name = "wall_clock_test",
     srcs = ["wall_clock_test.py"],
     deps = [

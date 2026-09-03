@@ -32,6 +32,10 @@ class TrainingCourseDto(BaseDto):
     category: TrainingCategory | None = None
     is_active: bool
     state: TrainingCourseState
+    # Where a course we do not host is served from, resolved from the
+    # category's environment variable. Null once we host the course ourselves,
+    # so the row never offers the place it used to be.
+    link: str | None = None
     scorm_version: ScormVersion | None = None
     package_version: str | None = None
     reporting_mode: str | None = None
