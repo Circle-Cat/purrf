@@ -6,6 +6,7 @@ import useTrainingRuntime from "@/hooks/useTrainingRuntime";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatInTz, resolveViewerTimezone } from "@/utils/dateTime";
+import PackageHealthBox from "@/pages/AdminTraining/components/PackageHealthBox";
 
 const timeOf = (ms, tz) =>
   formatInTz(new Date(ms).toISOString(), tz, "HH:mm:ss");
@@ -45,7 +46,10 @@ export default function TrainingTrial() {
   const { user } = useAuth() ?? {};
   const [trainingId, setTrainingId] = useState(null);
   const [trialError, setTrialError] = useState(null);
-  const [packageNotes, setPackageNotes] = useState([]);
+  // The same `TrainingCompletionConfigDto` shape `PackageHealthBox` renders
+  // from the upload dialog -- one component, one set of copy, so this page
+  // and that dialog never say two different things about the same package.
+  const [completionConfig, setCompletionConfig] = useState(null);
   // Whether the course carries its stamp. The only answer to "can this be
   // assigned yet" -- the assignment's own status cannot stand in for it,
   // because a verifier re-running a replaced package is already DONE.
@@ -73,30 +77,20 @@ export default function TrainingTrial() {
 
   // Read before the run, not after: whoever is about to click through a
   // course needs to know it can only be finished from inside a Storyline
-  // block, or that we cannot tell. A failure to read is left silent -- it
+  // block, or that we cannot tell. A failure to fetch is left silent -- it
   // says nothing about the package, and the run itself is the real answer.
+  // What the fetch resolves with is never silent, even when it's the
+  // ordinary, nothing-wrong case -- that silence is what let the 08-29
+  // failure go undetected.
   useEffect(() => {
     let cancelled = false;
-    setPackageNotes([]);
+    setCompletionConfig(null);
     setVerified(false);
     readCompletionConfig(courseId)
       .then(({ data }) => {
         if (cancelled) return;
         setVerified(Boolean(data.verified));
-        const notes = [];
-        if (!data.completionConfigReadable) {
-          notes.push(
-            "We could not read this package's completion settings. It was " +
-              "built by a toolchain we do not recognise, so nothing below " +
-              "predicts whether it can report completion.",
-          );
-        } else if (data.completesViaStoryline) {
-          notes.push(
-            "This course completes from inside an embedded Storyline block. " +
-              "Finishing the surrounding lessons will not finish it.",
-          );
-        }
-        if (notes.length > 0) setPackageNotes(notes);
+        setCompletionConfig(data);
       })
       .catch(() => {});
     return () => {
@@ -168,15 +162,10 @@ export default function TrainingTrial() {
         </p>
       </div>
 
-      {packageNotes.length > 0 && (
-        <Card
-          className="border-amber-500/40 bg-amber-500/10 p-4 text-sm"
-          data-testid="trial-package-notes"
-        >
-          {packageNotes.map((note) => (
-            <p key={note}>{note}</p>
-          ))}
-        </Card>
+      {completionConfig && (
+        <div data-testid="trial-package-notes">
+          <PackageHealthBox config={completionConfig} />
+        </div>
       )}
 
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[1.7fr_1fr]">

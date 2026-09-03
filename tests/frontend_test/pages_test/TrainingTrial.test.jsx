@@ -275,15 +275,20 @@ describe("TrainingTrial", () => {
     renderTrial();
 
     expect(await screen.findByTestId("trial-package-notes")).toHaveTextContent(
-      /could not read/i,
+      /could not be determined/i,
     );
   });
 
-  it("stays quiet for a package that completes the ordinary way", async () => {
+  it("renders the health check even for a package that completes the ordinary way", async () => {
+    // The box used to stay silent here; silence is exactly what let the
+    // 08-29 failure go undetected, so a healthy package now says so too,
+    // through the same PackageHealthBox the upload dialog uses.
     renderTrial();
     await screen.findByTitle(/course/i);
 
-    expect(screen.queryByTestId("trial-package-notes")).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(/completes on its own reporting/i),
+    ).toBeInTheDocument();
   });
 
   it("reads the package settings for the course being trialled", async () => {
@@ -320,7 +325,7 @@ describe("TrainingTrial", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("does not carry one course's package warning over to the next", async () => {
+  it("does not carry one course's package notes over to the next", async () => {
     readCompletionConfig
       .mockResolvedValueOnce({
         data: {
@@ -339,15 +344,17 @@ describe("TrainingTrial", () => {
         },
       });
     renderTrialWithNav();
-    await screen.findByTestId("trial-package-notes");
+    expect(
+      await screen.findByTestId("trial-package-notes"),
+    ).toHaveTextContent(/storyline/i);
 
     await userEvent.click(screen.getByRole("button", { name: /next/i }));
 
     await screen.findByText(/course #6/i);
     await waitFor(() =>
-      expect(
-        screen.queryByTestId("trial-package-notes"),
-      ).not.toBeInTheDocument(),
+      expect(screen.getByTestId("trial-package-notes")).not.toHaveTextContent(
+        /storyline/i,
+      ),
     );
   });
 
