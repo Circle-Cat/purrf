@@ -35,6 +35,16 @@ py_test(
 )
 
 py_test(
+    name = "training_progress_service_test",
+    srcs = ["training_progress_service_test.py"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/training:training_progress_service",
+    ],
+)
+
+py_test(
     name = "scorm_manifest_test",
     srcs = ["scorm_manifest_test.py"],
     deps = [

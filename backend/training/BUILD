@@ -71,12 +71,18 @@ py_library(
 py_library(
     name = "training_content_service",
     srcs = ["training_content_service.py"],
+    data = ["//backend/training/player:player_files"],
     deps = [
         ":scorm_package",
         ":training_content_token",
         ":training_storage",
         "//backend/repository:repositories",
     ],
+)
+
+py_library(
+    name = "training_progress_service",
+    srcs = ["training_progress_service.py"],
 )
 
 py_library(
@@ -97,6 +103,7 @@ py_library(
         ":training_content_service",
         ":training_course_service",
         ":training_package_service",
+        ":training_progress_service",
         "//backend/common:api_endpoints",
         "//backend/common:fast_api_response_wrapper",
         "//backend/common:permissions",

@@ -35,6 +35,7 @@ import Audit from "@/pages/Recruiting/audit/Audit";
 import LeaveApprovalsPage from "@/pages/Leave/ApprovalsPage";
 import LeaveRequestsPage from "@/pages/Leave/RequestsPage";
 import LeaveAdminPage from "@/pages/Leave/AdminPage";
+import TrainingCourse from "@/pages/TrainingCourse";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
 import { PERMISSIONS } from "@/constants/Permissions";
@@ -276,6 +277,13 @@ function App() {
                     <Route
                       path="/recruiting/jobs/:jobId/application"
                       element={<MyApplication />}
+                    />
+                    {/* No permission gate: a training assignment is the
+                        caller's own, enforced by the backend session
+                        endpoint, not by a role. */}
+                    <Route
+                      path={ROUTE_PATHS.TRAINING_COURSE(":trainingId")}
+                      element={<TrainingCourse />}
                     />
                     <Route
                       path={ROUTE_PATHS.ACCESS_DENIED}

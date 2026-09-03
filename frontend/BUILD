@@ -12,7 +12,11 @@ js_library(
 
 js_library(
     name = "source_files",
-    srcs = glob(["src/**"]),
+    srcs = glob(["src/**"]) + [
+        # glob() stops at package boundaries, and src/training is its own
+        # package so its BUILD file can expose a copy_file-able label.
+        "//frontend/src/training:scorm_bridge",
+    ],
 )
 
 js_library(

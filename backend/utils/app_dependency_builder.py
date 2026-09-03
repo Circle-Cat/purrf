@@ -142,6 +142,7 @@ from backend.training.training_content_controller import TrainingContentControll
 from backend.training.training_content_service import TrainingContentService
 from backend.training.training_course_service import TrainingCourseService
 from backend.training.training_package_service import TrainingPackageService
+from backend.training.training_progress_service import TrainingProgressService
 from backend.training.training_storage import TrainingStorage
 from backend.leave.leave_engine_service import LeaveEngineService
 from backend.leave.leave_job_controller import LeaveJobController
@@ -969,13 +970,20 @@ class AppDependencyBuilder:
             content_host=self.training_content_host,
             training_repository=self.training_repository,
             training_course_repository=self.training_course_repository,
+            training_progress_repository=self.training_progress_repository,
             training_storage=self.training_storage,
+        )
+        self.training_progress_service = TrainingProgressService(
+            logger=self.logger,
+            training_repository=self.training_repository,
+            training_progress_repository=self.training_progress_repository,
         )
         self.training_admin_controller = TrainingAdminController(
             self.training_course_service,
             self.training_assignment_service,
             self.training_package_service,
             self.training_content_service,
+            self.training_progress_service,
             self.database,
         )
         self.training_content_controller = TrainingContentController(

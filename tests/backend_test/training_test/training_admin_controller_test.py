@@ -49,11 +49,13 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         )
         self.package_service = MagicMock()
         self.content_service = MagicMock()
+        self.progress_service = MagicMock()
         self.controller = TrainingAdminController(
             self.course_service,
             self.assignment_service,
             self.package_service,
             self.content_service,
+            self.progress_service,
             self.database,
         )
 
@@ -129,6 +131,7 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         }
 
         self.assertIsNone(by_method[("/training/{training_id}/session", "POST")])
+        self.assertIsNone(by_method[("/training/{training_id}/progress", "POST")])
 
     async def test_an_upload_reports_what_it_stored(self):
         self.package_service.upload_package = AsyncMock(
@@ -162,6 +165,30 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         await self.controller.open_session(42, current_user)
 
         self.content_service.open_session.assert_awaited_once_with(self.session, 42, 11)
+
+    async def test_a_commit_is_saved_for_the_caller_not_for_a_named_user(self):
+        """The user id comes from the token, never from the request."""
+        self.progress_service.save = AsyncMock()
+        current_user = MagicMock(user_id=11)
+
+        await self.controller.save_progress(
+            42, {"cmi": {"cmi.core.lesson_location": "Summary"}}, current_user
+        )
+
+        self.progress_service.save.assert_awaited_once_with(
+            self.session, 42, 11, {"cmi.core.lesson_location": "Summary"}
+        )
+
+    async def test_a_non_object_cmi_is_a_client_error_not_a_500(self):
+        """A course controls this payload; {"cmi": 5} must not reach
+        payload.get("cmi", {}).items()-shaped code as a TypeError."""
+        self.progress_service.save = AsyncMock()
+        current_user = MagicMock(user_id=11)
+
+        with self.assertRaises(ValueError):
+            await self.controller.save_progress(42, {"cmi": 5}, current_user)
+
+        self.progress_service.save.assert_not_awaited()
 
     async def test_the_list_includes_deactivated_courses(self):
         """Or they could never be turned back on."""
