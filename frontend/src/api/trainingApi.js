@@ -18,6 +18,12 @@ export const saveProgress = (trainingId, payload) =>
   request.post(API_ENDPOINTS.TRAINING_PROGRESS(trainingId), payload);
 
 /**
+ * Every course in the catalogue, with its state and how many people hold it.
+ * @returns {Promise<{data: Array<Object>}>} `TrainingCourseDto` rows.
+ */
+export const listCourses = () => request.get(API_ENDPOINTS.TRAINING_COURSES);
+
+/**
  * Open a trial assignment on a course under the caller's own identity, so an
  * admin can run it to completion before it is assignable to anyone else.
  * @param {string|number} courseId

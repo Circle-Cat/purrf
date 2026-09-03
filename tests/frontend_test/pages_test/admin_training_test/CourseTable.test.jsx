@@ -1,0 +1,143 @@
+import React from "react";
+import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { describe, it, expect } from "vitest";
+import "@testing-library/jest-dom";
+
+import CourseTable from "@/pages/AdminTraining/components/CourseTable";
+
+// One fixture per `TrainingCourseState`, shaped like the wire DTO
+// (backend/dto/training_course_dto.py -> TrainingCourseDto), from the state
+// table in docs/superpowers/specs/2026-09-01-scorm-training-ui-design.md §4.1.
+const verified = {
+  courseId: 1,
+  name: "Mentor Onboarding",
+  description: "What a mentor needs before their first pairing.",
+  category: "mentorship_mentor_onboarding",
+  isActive: true,
+  state: "verified",
+  link: null,
+  scormVersion: "1.2",
+  packageVersion: "qPpo9zHD",
+  reportingMode: "completed",
+  packageUploadedAt: "2026-08-20T00:00:00Z",
+  verifiedCompletableAt: "2026-08-21T00:00:00Z",
+  verifiedByUserId: 42,
+  assignedCount: 124,
+  unfinishedCount: 3,
+};
+
+const needsTrialRun = {
+  courseId: 2,
+  name: "Mentee Onboarding",
+  description: null,
+  category: "mentorship_mentee_onboarding",
+  isActive: true,
+  state: "needs_trial_run",
+  link: null,
+  scormVersion: "1.2",
+  packageVersion: "cm171zxgx006v",
+  reportingMode: "passed-incomplete",
+  packageUploadedAt: "2026-09-01T00:00:00Z",
+  verifiedCompletableAt: null,
+  verifiedByUserId: null,
+  assignedCount: 0,
+  unfinishedCount: 0,
+};
+
+const noPackage = {
+  courseId: 3,
+  name: "Corporate Culture",
+  description: null,
+  category: "corporate_culture_course",
+  isActive: true,
+  state: "no_package",
+  link: null,
+  scormVersion: null,
+  packageVersion: null,
+  reportingMode: null,
+  packageUploadedAt: null,
+  verifiedCompletableAt: null,
+  verifiedByUserId: null,
+  assignedCount: 0,
+  unfinishedCount: 0,
+};
+
+const externalLink = {
+  courseId: 4,
+  name: "Residency Program Onboarding",
+  description: null,
+  category: "residency_program_onboarding",
+  isActive: true,
+  state: "external_link",
+  link: "https://example.com/mentor",
+  scormVersion: null,
+  packageVersion: null,
+  reportingMode: null,
+  packageUploadedAt: null,
+  verifiedCompletableAt: null,
+  verifiedByUserId: null,
+  assignedCount: 61,
+  unfinishedCount: 23,
+};
+
+const renderTable = (courses) =>
+  render(<CourseTable courses={courses} />, { wrapper: MemoryRouter });
+
+describe("CourseTable", () => {
+  it("shows a verified course as assignable", () => {
+    renderTable([verified]);
+
+    expect(screen.getByText("Verified")).toBeInTheDocument();
+    const assign = screen.getByRole("button", { name: /assign/i });
+    expect(assign).not.toBeDisabled();
+  });
+
+  it("shows the total assigned count", () => {
+    renderTable([verified]);
+
+    expect(screen.getByText("124")).toBeInTheDocument();
+  });
+
+  it("offers a trial run for a course that has never been finished", () => {
+    renderTable([needsTrialRun]);
+
+    expect(screen.getByText("Needs trial run")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /trial run/i }),
+    ).toHaveAttribute("href", "/admin/training/2/trial");
+  });
+
+  it("keeps Assign visible but disabled until the course is verified", () => {
+    render(<CourseTable courses={[needsTrialRun]} />, { wrapper: MemoryRouter });
+
+    const assign = screen.getByRole("button", { name: /assign/i });
+    expect(assign).toBeDisabled();
+    expect(assign).toHaveAccessibleDescription(
+      /run this course to completion first/i,
+    );
+  });
+
+  it("offers to upload a package for a course that has never had one", () => {
+    renderTable([noPackage]);
+
+    expect(screen.getByText("No package")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /upload package/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /assign/i })).not.toBeInTheDocument();
+  });
+
+  it("shows an external-link course as such, with the link", () => {
+    render(<CourseTable courses={[externalLink]} />, { wrapper: MemoryRouter });
+
+    expect(screen.getByText("External link")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /view/i })).toHaveAttribute(
+      "href",
+      "https://example.com/mentor",
+    );
+    expect(
+      screen.getByRole("button", { name: /upload package/i }),
+    ).toBeInTheDocument();
+  });
+});
