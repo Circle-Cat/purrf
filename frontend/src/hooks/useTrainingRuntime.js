@@ -140,6 +140,11 @@ export default function useTrainingRuntime(trainingId, user) {
       }
     };
 
+    // Only the unload half of the spec's fallback saving is implemented. The
+    // driver re-commits on its own every 20 seconds (FORCED_COMMIT_TIME), so a
+    // periodic timer here would only re-send what that heartbeat just sent;
+    // the spec's 60-second timer predates measuring that heartbeat.
+    //
     // An XHR in flight when the tab closes is dropped; fetch with keepalive
     // survives it, so this one save goes around axios. It resends the cmi the
     // last commit already carried, which is byte-identical to what the server
