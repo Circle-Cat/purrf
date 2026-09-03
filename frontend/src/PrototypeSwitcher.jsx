@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import RecruitingPrototype from "@/pages/RecruitingPrototype";
 import LeavePrototype from "@/pages/LeavePrototype";
+import UserAdminPrototype from "@/pages/UserAdminPrototype";
 
 /** The prototypes the static Pages bundle serves, in tab order. */
 const PROTOTYPES = [
@@ -10,6 +11,7 @@ const PROTOTYPES = [
     Component: RecruitingPrototype,
   },
   { hash: "leave", label: "Leave & PTO", Component: LeavePrototype },
+  { hash: "users", label: "User Accounts", Component: UserAdminPrototype },
 ];
 
 /** Which prototype the current URL hash selects, defaulting to the first. */
