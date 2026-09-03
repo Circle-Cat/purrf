@@ -16,6 +16,11 @@ locals {
     # here: the DNS record is a placeholder address behind Cloudflare's proxy
     # and a Worker route answers every request.
     hook = "${local.subdomain_prefix}hook.${var.base_domain}"
+    # Course files get their own origin so course JavaScript cannot read the
+    # app's CF_Authorization cookie. Authenticated by a signed path token, not
+    # a cookie, so this host is absent from the Access application
+    # (bootstrap/global/main.tf).
+    training_content = "${local.subdomain_prefix}training-content.${var.base_domain}"
   }
 
   common_labels = {
