@@ -4,6 +4,7 @@ import unittest
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from backend.common.mentorship_enums import ScormVersion
 from backend.common.permissions import Permission
 from backend.dto.training_course_dto import (
     TrainingAssignmentRequestDto,
@@ -11,6 +12,7 @@ from backend.dto.training_course_dto import (
     TrainingCourseCreateDto,
     TrainingCourseDto,
     TrainingCourseState,
+    TrainingPackageUploadResultDto,
 )
 from backend.training.training_admin_controller import TrainingAdminController
 
@@ -45,8 +47,14 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
                 training_id=42, user_id=11, course_id=3, created=True
             )
         )
+        self.package_service = MagicMock()
+        self.content_service = MagicMock()
         self.controller = TrainingAdminController(
-            self.course_service, self.assignment_service, self.database
+            self.course_service,
+            self.assignment_service,
+            self.package_service,
+            self.content_service,
+            self.database,
         )
 
         patcher = patch("backend.training.training_admin_controller.api_response")
@@ -74,6 +82,7 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         for path, method in [
             ("/training/courses", "POST"),
             ("/training/courses/{course_id}", "PATCH"),
+            ("/training/courses/{course_id}/package", "POST"),
             ("/training/assignments", "POST"),
         ]:
             self.assertEqual(
@@ -110,6 +119,49 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response["status_code"], HTTPStatus.OK)
         self.assertFalse(response["data"]["created"])
+
+    def test_opening_your_own_course_takes_no_permission(self):
+        """Holding the assignment is the grant; the service checks you hold it."""
+        by_method = {
+            (route.path, method): _route_permissions(route)
+            for route in self.controller.router.routes
+            for method in route.methods
+        }
+
+        self.assertIsNone(by_method[("/training/{training_id}/session", "POST")])
+
+    async def test_an_upload_reports_what_it_stored(self):
+        self.package_service.upload_package = AsyncMock(
+            return_value=TrainingPackageUploadResultDto(
+                course_id=7,
+                storage_prefix="training/7/abc/",
+                entry_path="index.html",
+                scorm_version=ScormVersion.SCORM_12,
+                file_count=3,
+                total_bytes=4096,
+            )
+        )
+        upload = MagicMock()
+        upload.read = AsyncMock(return_value=b"zipbytes")
+
+        response = await self.controller.upload_package(7, upload)
+
+        self.assertEqual(response["status_code"], HTTPStatus.CREATED)
+        self.assertEqual(response["data"]["storage_prefix"], "training/7/abc/")
+        self.package_service.upload_package.assert_awaited_once_with(
+            self.session, 7, b"zipbytes"
+        )
+
+    async def test_a_session_is_opened_for_the_caller_not_for_a_named_user(self):
+        """The user id comes from the token, never from the request."""
+        self.content_service.open_session = AsyncMock(
+            return_value={"contentBaseUrl": "https://content.example/p/tok/"}
+        )
+        current_user = MagicMock(user_id=11)
+
+        await self.controller.open_session(42, current_user)
+
+        self.content_service.open_session.assert_awaited_once_with(self.session, 42, 11)
 
     async def test_the_list_includes_deactivated_courses(self):
         """Or they could never be turned back on."""

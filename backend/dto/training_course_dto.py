@@ -76,3 +76,29 @@ class TrainingAssignmentResultDto(BaseDto):
     user_id: int
     course_id: int
     created: bool
+
+
+class TrainingPackageUploadResultDto(BaseDto):
+    """What an upload stored, and what the package says about finishing.
+
+    ``completion_config_readable`` is False for a package built by a toolchain
+    we cannot read. The upload dialog has to say so rather than show nothing:
+    silence there reads as "nothing wrong", which is the mistake this whole
+    box exists to prevent.
+    """
+
+    course_id: int
+    storage_prefix: str
+    entry_path: str
+    scorm_version: ScormVersion
+    file_count: int
+    total_bytes: int
+    package_version: str | None = None
+    reporting_mode: str | None = None
+    # Finishing the surrounding lessons will not complete such a course.
+    completes_via_storyline: bool = False
+    completion_config_readable: bool = False
+    # Declared in the manifest but absent from the archive. A warning only.
+    missing_declared_files: list[str] = Field(default_factory=list)
+    # Unfinished learners whose resume data this upload wiped.
+    learners_reset: int = 0

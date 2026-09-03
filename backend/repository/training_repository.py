@@ -92,3 +92,21 @@ class TrainingRepository:
             )
         )
         return result.scalars().one_or_none()
+
+    async def get_training_by_id(
+        self, session: AsyncSession, training_id: int
+    ) -> TrainingEntity | None:
+        """
+        Fetch one assignment by its primary key.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            training_id (int): The assignment to fetch.
+
+        Returns:
+            TrainingEntity | None: The assignment, or None.
+        """
+        result = await session.execute(
+            select(TrainingEntity).where(TrainingEntity.training_id == training_id)
+        )
+        return result.scalars().one_or_none()
