@@ -93,24 +93,20 @@ class TestTrainingRepository(BaseRepositoryTestLib):
     async def test_a_row_pointing_at_a_course_carries_that_course_name(self):
         course = TrainingCourseEntity(name="Mentor Onboarding", is_active=True)
         await self.insert_entities([course])
-        await self.insert_entities(
-            [
-                TrainingEntity(
-                    user_id=self.user2.user_id,
-                    status=TrainingStatus.TO_DO,
-                    course_id=course.course_id,
-                )
-            ]
-        )
+        await self.insert_entities([
+            TrainingEntity(
+                user_id=self.user2.user_id,
+                status=TrainingStatus.TO_DO,
+                course_id=course.course_id,
+            )
+        ])
 
         result = await self.repo.get_training_with_course_name_by_user_id(
             self.session, self.user2.user_id
         )
 
         names = {row.training_id: name for row, name in result}
-        assigned = next(
-            row for row, _ in result if row.course_id == course.course_id
-        )
+        assigned = next(row for row, _ in result if row.course_id == course.course_id)
         self.assertEqual(names[assigned.training_id], "Mentor Onboarding")
 
     async def test_a_row_with_no_course_still_comes_back(self):

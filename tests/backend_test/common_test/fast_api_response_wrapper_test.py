@@ -161,7 +161,6 @@ class TestApiResponseWrapper(TestCase):
         self.assertEqual(payload["data"], {"is_active": True})
         self.assertEqual(payload["message"], "Boolean Test")
 
-
     def test_a_dto_is_serialised_by_alias(self):
         """What `data` accepts is what decides whether the wire is camelCase.
 

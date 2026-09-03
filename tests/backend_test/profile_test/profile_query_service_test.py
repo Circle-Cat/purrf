@@ -74,9 +74,7 @@ class TestProfileQueryService(unittest.IsolatedAsyncioTestCase):
         mock_exp = MagicMock()
         mock_trainings = [(MagicMock(), "Mentor Onboarding"), (MagicMock(), None)]
         self.mock_experience_repo.get_experience_by_user_id.return_value = mock_exp
-        self.mock_training_repo.get_training_with_course_name_by_user_id.return_value = (
-            mock_trainings
-        )
+        self.mock_training_repo.get_training_with_course_name_by_user_id.return_value = mock_trainings
         self.mock_mapper.map_to_profile_dto.return_value = self.mock_profile_dto
 
         profile_dto = await self.service.get_profile(

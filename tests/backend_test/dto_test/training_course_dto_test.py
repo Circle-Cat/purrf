@@ -23,9 +23,10 @@ class TestTrainingCourseCreateDto(unittest.TestCase):
 
     def test_an_unknown_key_is_refused(self):
         with self.assertRaises(pydantic.ValidationError):
-            TrainingCourseCreateDto.model_validate(
-                {"name": "Onboarding", "category": "mentorship_mentor_onboarding"}
-            )
+            TrainingCourseCreateDto.model_validate({
+                "name": "Onboarding",
+                "category": "mentorship_mentor_onboarding",
+            })
 
 
 class TestTrainingCourseUpdateDto(unittest.TestCase):
@@ -35,16 +36,21 @@ class TestTrainingCourseUpdateDto(unittest.TestCase):
 
     def test_an_unknown_key_is_refused(self):
         with self.assertRaises(pydantic.ValidationError):
-            TrainingCourseUpdateDto.model_validate({"isActive": False, "verified": True})
+            TrainingCourseUpdateDto.model_validate({
+                "isActive": False,
+                "verified": True,
+            })
 
 
 class TestTrainingAssignmentRequestDto(unittest.TestCase):
     def test_an_unknown_key_is_refused(self):
         """A body naming its own training_id must not be silently ignored."""
         with self.assertRaises(pydantic.ValidationError):
-            TrainingAssignmentRequestDto.model_validate(
-                {"userId": 1, "courseId": 2, "trainingId": 9}
-            )
+            TrainingAssignmentRequestDto.model_validate({
+                "userId": 1,
+                "courseId": 2,
+                "trainingId": 9,
+            })
 
     def test_the_camel_case_body_the_page_sends_is_accepted(self):
         dto = TrainingAssignmentRequestDto.model_validate({"userId": 1, "courseId": 2})
