@@ -28,7 +28,10 @@ import PackageHealthBox from "@/pages/AdminTraining/components/PackageHealthBox"
  * closes the dialog.
  *
  * @param {Object} props
- * @param {{courseId: number, packageVersion?: string|null, assignedCount: number, unfinishedCount: number}} props.course
+ * @param {{courseId: number, packageUploadedAt?: string|null, packageVersion?: string|null, assignedCount: number, unfinishedCount: number}} props.course
+ *   `packageUploadedAt` is what makes this a replacement; `packageVersion` is
+ *   only the name to call the outgoing package by, and plenty of packages do
+ *   not tell us one.
  * @param {boolean} props.open
  * @param {(open: boolean) => void} [props.onOpenChange]
  * @param {(file: File) => Promise<Object>} [props.onConfirm]
@@ -53,7 +56,11 @@ export default function UploadPackageDialog({
     }
   }, [open]);
 
-  const isReplacing = Boolean(course.packageVersion);
+  // Whether a package is there to be replaced, not whether we could read its
+  // version. An export we cannot read -- Captivate, iSpring, bare Storyline
+  // -- carries no version at all, and replacing that one costs its learners
+  // exactly what replacing any other does.
+  const isReplacing = Boolean(course.packageUploadedAt);
   const completedCount = course.assignedCount - course.unfinishedCount;
 
   const handleSubmit = async () => {
@@ -99,7 +106,9 @@ export default function UploadPackageDialog({
                 style={{ borderColor: "var(--stage-tech)" }}
               >
                 <p className="font-medium">
-                  This replaces package {course.packageVersion}
+                  {course.packageVersion
+                    ? `This replaces package ${course.packageVersion}`
+                    : "This replaces the current package"}
                 </p>
                 <p className="text-muted-foreground">
                   Verification is cleared — the course must be run to completion
@@ -109,9 +118,6 @@ export default function UploadPackageDialog({
                   {course.unfinishedCount} learners in progress will restart
                   from the beginning. {completedCount} completed records are
                   untouched.
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  The previous files are kept for 24 hours.
                 </p>
               </div>
             )}

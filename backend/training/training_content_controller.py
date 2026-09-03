@@ -17,8 +17,9 @@ from backend.common.api_endpoints import TRAINING_CONTENT_ENDPOINT
 from backend.training.byte_range import UnsatisfiableRange, parse_range_header
 from backend.training.training_content_service import InvalidContentToken
 
-# Assets are immutable for as long as the token in their path is: a new upload
-# mints new URLs. Private, because the response is one learner's course.
+# Private, because the response is one learner's course. An hour, not longer:
+# the token in the path carries no prefix, so a replacement package answers at
+# the same URLs, and a browser holds the outgoing file until the entry lapses.
 _CACHE_CONTROL = "private, max-age=3600"
 
 # How much of a rejected Host header is worth keeping. It is whatever the
