@@ -2,12 +2,14 @@
 
 from http import HTTPStatus
 
-from fastapi import APIRouter
+from fastapi import APIRouter, File, UploadFile
 
 from backend.common.api_endpoints import (
     TRAINING_ASSIGNMENTS_ENDPOINT,
     TRAINING_COURSE_ENDPOINT,
+    TRAINING_COURSE_PACKAGE_ENDPOINT,
     TRAINING_COURSES_ENDPOINT,
+    TRAINING_SESSION_ENDPOINT,
 )
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.permissions import Permission
@@ -26,16 +28,28 @@ class TrainingAdminController:
     training needs to see what exists, assigning it is narrower.
     """
 
-    def __init__(self, training_course_service, training_assignment_service, database):
+    def __init__(
+        self,
+        training_course_service,
+        training_assignment_service,
+        training_package_service,
+        training_content_service,
+        database,
+    ):
         """
         Args:
             training_course_service (TrainingCourseService): The catalogue.
             training_assignment_service (TrainingAssignmentService): Manual
                 assignment, and the verification gate in front of it.
+            training_package_service (TrainingPackageService): Uploads.
+            training_content_service (TrainingContentService): Mints the
+                content URL a learner's page loads the course from.
             database: Async session provider.
         """
         self.training_course_service = training_course_service
         self.training_assignment_service = training_assignment_service
+        self.training_package_service = training_package_service
+        self.training_content_service = training_content_service
         self.database = database
         self.router = APIRouter(tags=["training-admin"])
 
@@ -61,6 +75,22 @@ class TrainingAdminController:
                 self.update_course
             ),
             methods=["PATCH"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            TRAINING_COURSE_PACKAGE_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_WRITE])(
+                self.upload_package
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+        # A learner opening their own course needs no permission; holding the
+        # assignment is the grant, and the service checks they hold it.
+        self.router.add_api_route(
+            TRAINING_SESSION_ENDPOINT,
+            endpoint=authenticate()(self.open_session),
+            methods=["POST"],
             response_model=None,
         )
         self.router.add_api_route(
@@ -122,3 +152,28 @@ class TrainingAdminController:
             data=result.model_dump(mode="json"),
             status_code=HTTPStatus.CREATED if result.created else HTTPStatus.OK,
         )
+
+    async def upload_package(self, course_id: int, file: UploadFile = File(...)):
+        """Store a SCORM package and point the course at it.
+
+        Rejections come back as 400 with the rule that was broken, because the
+        admin usually has to forward the reason to whoever exported the file.
+        """
+        archive_bytes = await file.read()
+        async with self.database.session() as session:
+            result = await self.training_package_service.upload_package(
+                session, course_id, archive_bytes
+            )
+        return api_response(
+            message="Package uploaded.",
+            data=result.model_dump(mode="json"),
+            status_code=HTTPStatus.CREATED,
+        )
+
+    async def open_session(self, training_id: int, current_user):
+        """Mint the content URL for the caller's own assignment."""
+        async with self.database.session() as session:
+            payload = await self.training_content_service.open_session(
+                session, training_id, current_user.user_id
+            )
+        return api_response(message="Training session opened.", data=payload)

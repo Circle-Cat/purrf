@@ -129,3 +129,12 @@ NOTIFICATION_TOPIC = "NOTIFICATION_TOPIC"
 # NOTIFICATION_TOPIC does: the route refuses every request instead, rather than
 # crash-looping the whole API over one variable.
 NOTIFICATION_PUSHER_SUBS = "NOTIFICATION_PUSHER_SUBS"
+
+
+# SCORM training. The bucket holding course packages, the hostname they are
+# served from, and the HMAC key signing the tokens in their URLs. All three are
+# absent in local development; the code that needs them raises when used rather
+# than at startup, so the app still boots.
+TRAINING_BUCKET = "TRAINING_BUCKET"
+TRAINING_CONTENT_HOST = "TRAINING_CONTENT_HOST"
+TRAINING_TOKEN_SIGNING_KEY = "TRAINING_TOKEN_SIGNING_KEY"

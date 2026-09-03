@@ -45,6 +45,8 @@ class FastAppFactory:
         recruiting_notification_controller,
         leave_admin_controller,
         training_admin_controller,
+        training_content_controller,
+        training_content_host,
         leave_job_controller,
         leave_request_controller,
         leave_calendar_controller,
@@ -79,6 +81,8 @@ class FastAppFactory:
             recruiting_notification_controller: An instance of RecruitingNotificationController that manages API routes for the caller's own in-app notifications.
             leave_admin_controller: An instance of LeaveAdminController that manages admin-only leave API routes, starting with hand-written balance adjustments.
             training_admin_controller: An instance of TrainingAdminController that manages the course catalogue and manual assignment.
+            training_content_controller: An instance of TrainingContentController that serves course files on the content origin.
+            training_content_host: Hostname course files are served from, or None where content hosting is not configured.
             leave_job_controller: An instance of LeaveJobController that exposes the two scheduled leave jobs to the CronJobs that call them.
             leave_request_controller: An instance of LeaveRequestController that manages the routes employees file leave through and managers decide on.
             leave_calendar_controller: An instance of LeaveCalendarController that manages API routes for the company holiday calendar and the read-only leave policy.
@@ -113,6 +117,8 @@ class FastAppFactory:
         self.recruiting_notification_controller = recruiting_notification_controller
         self.leave_admin_controller = leave_admin_controller
         self.training_admin_controller = training_admin_controller
+        self.training_content_controller = training_content_controller
+        self.training_content_host = training_content_host
         self.leave_job_controller = leave_job_controller
         self.leave_request_controller = leave_request_controller
         self.leave_calendar_controller = leave_calendar_controller
@@ -190,6 +196,7 @@ class FastAppFactory:
             user_identity_service=self.user_identity_service,
             user_permissions_repository=self.user_permissions_repository,
             logger=self.logger,
+            training_content_host=self.training_content_host,
         )
 
         # Include authentication routes
@@ -215,6 +222,9 @@ class FastAppFactory:
         app.include_router(self.leave_calendar_controller.router, prefix="/api")
         app.include_router(self.leave_admin_controller.router, prefix="/api")
         app.include_router(self.training_admin_controller.router, prefix="/api")
+        # No /api prefix and no authenticate(): course files live at /p/<token>/
+        # on the content origin, and the middleware exempts exactly that pair.
+        app.include_router(self.training_content_controller.router)
         app.include_router(self.leave_job_controller.router, prefix="/api")
         app.include_router(self.leave_request_controller.router, prefix="/api")
         # Deliberately NOT authenticate()-gated -- this route has no Auth0
