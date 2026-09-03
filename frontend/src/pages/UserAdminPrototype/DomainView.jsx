@@ -104,6 +104,11 @@ const DomainView = ({
                           ? OUTCOME.approved.label
                           : outcome.label}
                       </Badge>
+                      {request?.status === "pending" && (
+                        <p className="text-xs text-slate-500">
+                          with {request.reviewerName}
+                        </p>
+                      )}
                       {request?.status === "rejected" &&
                         request.decisionNote && (
                           <p className="text-xs text-slate-500">

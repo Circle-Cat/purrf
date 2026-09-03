@@ -105,7 +105,7 @@ const UserAdminPrototype = () => {
       blockedReason: reason,
     });
 
-  const confirmBlockDialog = (reason) => {
+  const confirmBlockDialog = (reason, reviewer) => {
     const target = blocking;
     setBlocking(null);
     if (blockMode === "apply") {
@@ -122,6 +122,8 @@ const UserAdminPrototype = () => {
           view === "recruiting" ? "Screening board" : "Mentorship management",
         raisedOn: TODAY,
         reason,
+        reviewerId: reviewer.userId,
+        reviewerName: reviewer.name,
         status: "pending",
         decidedBy: null,
         decidedOn: null,

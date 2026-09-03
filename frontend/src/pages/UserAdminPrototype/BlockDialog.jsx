@@ -7,9 +7,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import BlockImpact from "@/pages/UserAdminPrototype/BlockImpact";
 import { fullName, impactFor } from "@/pages/UserAdminPrototype/accountState";
+import { USER_ADMIN_HOLDERS } from "@/pages/UserAdminPrototype/mockData";
 
 /**
  * BlockDialog
@@ -22,24 +24,38 @@ import { fullName, impactFor } from "@/pages/UserAdminPrototype/accountState";
  * this happened: the users table keeps current state, not history, so a block
  * with no reason can never be explained afterwards.
  *
+ * Requesting also picks a reviewer from the user.admin holders, the same way a
+ * posting is submitted for review. Naming a person is what makes the request
+ * somebody's to answer; a queue addressed to a permission is addressed to
+ * nobody.
+ *
  * @param {{user: object|null, mode: "apply"|"request", onCancel: Function,
  *   onConfirm: Function}} props
  * @returns {JSX.Element}
  */
 const BlockDialog = ({ user, mode, onCancel, onConfirm }) => {
   const [reason, setReason] = useState("");
+  const [reviewerId, setReviewerId] = useState("");
   if (!user) return null;
 
   const requesting = mode === "request";
-  const ready = reason.trim().length > 0;
+  const ready = reason.trim().length > 0 && (!requesting || reviewerId !== "");
+
+  const reset = () => {
+    setReason("");
+    setReviewerId("");
+  };
 
   const submit = () => {
-    onConfirm(reason.trim());
-    setReason("");
+    const reviewer = USER_ADMIN_HOLDERS.find(
+      (h) => h.userId === Number(reviewerId),
+    );
+    onConfirm(reason.trim(), reviewer ?? null);
+    reset();
   };
 
   const close = () => {
-    setReason("");
+    reset();
     onCancel();
   };
 
@@ -60,6 +76,25 @@ const BlockDialog = ({ user, mode, onCancel, onConfirm }) => {
         </p>
 
         <BlockImpact impact={impactFor(user.userId)} />
+
+        {requesting && (
+          <div className="space-y-1">
+            <Label htmlFor="block-reviewer">Reviewer</Label>
+            <select
+              id="block-reviewer"
+              className="w-full rounded-md border border-slate-300 p-2 text-sm"
+              value={reviewerId}
+              onChange={(e) => setReviewerId(e.target.value)}
+            >
+              <option value="">Select a reviewer…</option>
+              {USER_ADMIN_HOLDERS.map((holder) => (
+                <option key={holder.userId} value={holder.userId}>
+                  {holder.name} ({holder.email})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="space-y-1.5">
           <label

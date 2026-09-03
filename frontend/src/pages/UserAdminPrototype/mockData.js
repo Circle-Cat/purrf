@@ -15,8 +15,23 @@ export const CURRENT_USER_ID = 1042;
 export const ACTOR_NAMES = {
   1042: "Wang, Yanpei",
   1077: "Okonkwo, Ada",
-  1090: "Silva, Marco",
+  1364: "Silva, Marco",
+  1683: "Rahman, Imran",
+  1701: "Ferreira, Bea",
 };
+
+/**
+ * Who a block request can be sent to — the people holding user.admin.
+ *
+ * The requester picks one, the same way a posting is submitted for review. In
+ * the shipped version this list comes from an endpoint that returns holders of
+ * the permission, not from a hand-kept list.
+ */
+export const USER_ADMIN_HOLDERS = [
+  { userId: 1042, name: "Wang, Yanpei", email: "yuji@circlecat.org" },
+  { userId: 1683, name: "Rahman, Imran", email: "imran@circlecat.org" },
+  { userId: 1701, name: "Ferreira, Bea", email: "bea@circlecat.org" },
+];
 
 const email = (local) => `${local}@example.com`;
 
@@ -118,11 +133,11 @@ export const INITIAL_USERS = [
     createdOn: "2025-02-27",
     isActive: false,
     deactivatedAt: "2026-05-02",
-    deactivatedBy: 1090,
+    deactivatedBy: 1364,
     deactivatedReason: "Left the programme and asked to be removed.",
     isBlocked: true,
     blockedAt: "2026-04-28",
-    blockedBy: 1090,
+    blockedBy: 1364,
     blockedReason: "Abusive language toward a mentor in written feedback.",
     emails: [{ address: email("kai.liu"), confirmed: true, primary: true }],
     identities: [],
@@ -257,6 +272,48 @@ export const INITIAL_USERS = [
     identities: [],
   },
   {
+    userId: 1683,
+    firstName: "Rahman",
+    lastName: "Imran",
+    preferredName: null,
+    contactEmail: "imran@circlecat.org",
+    userType: "internal",
+    isSuperAdmin: false,
+    createdOn: "2024-11-04",
+    isActive: true,
+    deactivatedAt: null,
+    deactivatedBy: null,
+    deactivatedReason: null,
+    isBlocked: false,
+    blockedAt: null,
+    blockedBy: null,
+    blockedReason: null,
+    emails: [
+      { address: "imran@circlecat.org", confirmed: true, primary: true },
+    ],
+    identities: [{ provider: "Google", claim: "imran@circlecat.org" }],
+  },
+  {
+    userId: 1701,
+    firstName: "Ferreira",
+    lastName: "Bea",
+    preferredName: "Bea",
+    contactEmail: "bea@circlecat.org",
+    userType: "internal",
+    isSuperAdmin: false,
+    createdOn: "2025-05-19",
+    isActive: true,
+    deactivatedAt: null,
+    deactivatedBy: null,
+    deactivatedReason: null,
+    isBlocked: false,
+    blockedAt: null,
+    blockedBy: null,
+    blockedReason: null,
+    emails: [{ address: "bea@circlecat.org", confirmed: true, primary: true }],
+    identities: [{ provider: "Google", claim: "bea@circlecat.org" }],
+  },
+  {
     userId: 1614,
     firstName: "Andersen",
     lastName: "Freja",
@@ -334,6 +391,8 @@ export const INITIAL_REQUESTS = [
     raisedOn: "2026-09-01",
     reason:
       "Second no-show in the same round; mentor filed a red flag after the missed session on 2026-08-27.",
+    reviewerId: 1042,
+    reviewerName: "Wang, Yanpei",
     status: "pending",
     decidedBy: null,
     decidedOn: null,

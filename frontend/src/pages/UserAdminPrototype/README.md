@@ -47,6 +47,10 @@ not three screens that mention the same person.
 - **Deactivated and blocked are orthogonal.** Open user 1250 (Liu, Kai): the
   row carries two chips at once. They are not steps on one scale — one is "the
   user no longer wants the account", the other is a sanction.
+- **Raising a request names a reviewer.** The request dialog picks one of the
+  `user.admin` holders, the same way a posting is submitted for review, and
+  the row that raised it then shows who it went to. A queue addressed to a
+  permission is addressed to nobody.
 - **Raising a request changes nothing.** Switch to Mentorship, request a block
   on a participant, then look at them in Operations: still active, now carrying
   a third chip so no other operator acts on them blind.

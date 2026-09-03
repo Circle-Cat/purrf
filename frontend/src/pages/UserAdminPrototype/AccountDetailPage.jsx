@@ -116,6 +116,10 @@ const AccountDetailPage = ({
               Raised by {request.raisedBy} from {request.raisedFrom} on{" "}
               {request.raisedOn}
             </p>
+            <p>
+              Sent to {request.reviewerName}
+              {request.reviewerId === CURRENT_USER_ID ? " — that is you" : ""}
+            </p>
             <p className="rounded border border-amber-200 bg-white/70 p-2 text-slate-800">
               {request.reason}
             </p>
@@ -137,6 +141,8 @@ const AccountDetailPage = ({
           <p className="text-xs text-amber-800">
             Approving applies the block immediately, with the same consequences
             shown when it was raised.
+            {request.reviewerId !== CURRENT_USER_ID &&
+              " This request names someone else as reviewer; whether any user.admin holder may decide it, or only the named one, is still an open question."}
           </p>
         </section>
       )}
