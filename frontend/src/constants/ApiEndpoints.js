@@ -113,6 +113,8 @@ export const API_ENDPOINTS = {
   RECRUITING_AUDIT_OVERVIEW: "/recruiting/audit/overview",
   RECRUITING_NOTIFICATIONS: "/recruiting/notifications",
   RECRUITING_NOTIFICATION: (id) => `/recruiting/notifications/${id}`,
+  TRAINING_SESSION: (trainingId) => `/training/${trainingId}/session`,
+  TRAINING_PROGRESS: (trainingId) => `/training/${trainingId}/progress`,
 };
 
 /**

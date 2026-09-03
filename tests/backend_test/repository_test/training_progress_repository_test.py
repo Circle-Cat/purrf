@@ -188,6 +188,60 @@ class TestTrainingProgressRepository(BaseRepositoryTestLib):
             await self.repo.clear_resume_state(self.session, self.course_id), 0
         )
 
+    async def test_upsert_creates_the_row_the_first_time(self):
+        """Reading through get_by_training_id would return the same
+        identity-mapped object without proving anything reached the
+        database; _reload forces an actual read back."""
+        training = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.IN_PROGRESS
+        )
+
+        row = await self.repo.upsert(
+            self.session,
+            training.training_id,
+            lesson_status="incomplete",
+            lesson_location="Summary",
+            suspend_data="blob",
+            session_time_seconds=150,
+        )
+        await self._reload(row)
+
+        self.assertEqual(row.lesson_location, "Summary")
+        self.assertIsNotNone(row.last_accessed_at)
+
+    async def test_upsert_updates_the_row_the_second_time(self):
+        training = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.IN_PROGRESS
+        )
+        first = await self.repo.upsert(
+            self.session, training.training_id, lesson_location="Intro"
+        )
+        await self._reload(first)
+        first_progress_id = first.progress_id
+        first_accessed_at = first.last_accessed_at
+
+        second = await self.repo.upsert(
+            self.session, training.training_id, lesson_location="Summary"
+        )
+        await self._reload(second)
+
+        self.assertEqual(second.progress_id, first_progress_id)
+        self.assertEqual(second.lesson_location, "Summary")
+        self.assertGreater(second.last_accessed_at, first_accessed_at)
+
+    async def test_upsert_stores_suspend_data_far_past_the_scorm_limit(self):
+        training = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.IN_PROGRESS
+        )
+        blob = "z" * 40000
+
+        row = await self.repo.upsert(
+            self.session, training.training_id, suspend_data=blob
+        )
+        await self._reload(row)
+
+        self.assertEqual(row.suspend_data, blob)
+
 
 if __name__ == "__main__":
     unittest.main()

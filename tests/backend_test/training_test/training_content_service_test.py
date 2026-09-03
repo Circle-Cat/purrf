@@ -3,11 +3,13 @@
 import datetime
 import time
 import unittest
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
 from backend.common.mentorship_enums import TrainingStatus
 from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.training_entity import TrainingEntity
+from backend.entity.training_progress_entity import TrainingProgressEntity
 from backend.training.training_content_service import (
     PLAYER_PATH,
     TrainingContentService,
@@ -106,6 +108,9 @@ class _ContentServiceCase(unittest.IsolatedAsyncioTestCase):
         self.course_repository = MagicMock()
         self.course_repository.get_course_by_id = AsyncMock(return_value=self.course)
 
+        self.progress_repository = MagicMock()
+        self.progress_repository.get_by_training_id = AsyncMock(return_value=None)
+
         self.storage = MagicMock()
         self.storage.get = MagicMock(return_value=(b"<html></html>", "text/html"))
 
@@ -115,6 +120,7 @@ class _ContentServiceCase(unittest.IsolatedAsyncioTestCase):
             content_host=_CONTENT_HOST,
             training_repository=self.training_repository,
             training_course_repository=self.course_repository,
+            training_progress_repository=self.progress_repository,
             training_storage=self.storage,
         )
 
@@ -175,6 +181,54 @@ class TestOpenSession(_ContentServiceCase):
 
         with self.assertRaises(ValueError):
             await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+    async def test_the_session_carries_the_learners_stored_progress(self):
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_location="Summary",
+                suspend_data="blob",
+                session_time_seconds=500,
+            )
+        )
+
+        result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+        self.assertEqual(result["progress"]["lessonLocation"], "Summary")
+        self.assertEqual(result["progress"]["suspendData"], "blob")
+        self.assertEqual(result["progress"]["sessionTimeSeconds"], 500)
+
+    async def test_a_session_for_an_untouched_assignment_carries_no_progress(self):
+        self.progress_repository.get_by_training_id.return_value = None
+
+        result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+        self.assertEqual(result["progress"], {})
+
+    async def test_the_session_carries_the_learners_stored_score(self):
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                score_raw=Decimal("82.50"),
+                score_min=Decimal("0.00"),
+                score_max=Decimal("100.00"),
+            )
+        )
+
+        result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+        self.assertEqual(result["progress"]["scoreRaw"], "82.50")
+        self.assertEqual(result["progress"]["scoreMin"], "0.00")
+        self.assertEqual(result["progress"]["scoreMax"], "100.00")
+
+    async def test_a_session_for_a_course_with_no_score_yet_carries_none(self):
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(training_id=_TRAINING_ID)
+        )
+
+        result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+        self.assertIsNone(result["progress"]["scoreRaw"])
 
 
 class TestReadAssetLooksThePrefixUpFresh(_ContentServiceCase):
@@ -257,25 +311,56 @@ class TestReadAssetRejections(_ContentServiceCase):
 
 
 class TestReservedPlayerPath(_ContentServiceCase):
-    async def test_the_player_is_never_looked_up_inside_the_package(self):
-        """Our own name, so a package-supplied file must never answer for it.
+    async def test_the_player_page_is_served_from_our_own_files(self):
+        asset = await self.service.read_asset(
+            self.session, self.valid_token(), PLAYER_PATH
+        )
 
-        Uploads already refuse the name; this keeps the guarantee local, and
-        the runtime slice serves the page from here instead.
-        """
-        with self.assertRaises(FileNotFoundError):
-            await self.service.read_asset(self.session, self.valid_token(), PLAYER_PATH)
-
+        self.assertIn(b"<html", asset.data.lower())
+        self.assertEqual(asset.content_type, "text/html")
         for key in self.fetched_keys():
-            self.assertFalse(
-                str(key).startswith(_OLD_PREFIX), msg=f"{key} came from the package"
-            )
+            self.assertFalse(str(key).startswith(_OLD_PREFIX))
 
-    async def test_no_reserved_name_resolves_against_the_package(self):
+    async def test_the_shim_and_the_bridge_are_served_too(self):
+        for path, content_type in (
+            ("__scorm12.min.js", "text/javascript"),
+            ("__bridge.js", "text/javascript"),
+        ):
+            with self.subTest(path=path):
+                asset = await self.service.read_asset(
+                    self.session, self.valid_token(), path
+                )
+                self.assertTrue(asset.data)
+                self.assertEqual(asset.content_type, content_type)
+
+    async def test_an_unknown_reserved_name_is_still_refused(self):
         with self.assertRaises(FileNotFoundError):
             await self.service.read_asset(
                 self.session, self.valid_token(), "__internal/shim.js"
             )
+
+    async def test_a_reserved_asset_needs_no_course_package(self):
+        """The player has to load even when the course row is half set up."""
+        self.course.storage_prefix = None
+
+        asset = await self.service.read_asset(
+            self.session, self.valid_token(), PLAYER_PATH
+        )
+
+        self.assertTrue(asset.data)
+
+    async def test_a_reserved_asset_is_read_from_disk_once_not_per_request(self):
+        """The FORCED_COMMIT_TIME cadence (spec 6.4) means this route answers
+        every ~20 seconds per learner; re-reading the same static file off
+        disk on each request is pure waste."""
+        first = await self.service.read_asset(
+            self.session, self.valid_token(), PLAYER_PATH
+        )
+        second = await self.service.read_asset(
+            self.session, self.valid_token(), PLAYER_PATH
+        )
+
+        self.assertIs(first.data, second.data)
 
 
 class TestReadAssetResult(_ContentServiceCase):

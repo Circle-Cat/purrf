@@ -168,6 +168,7 @@ py_library(
         "//backend/training:training_content_service",
         "//backend/training:training_course_service",
         "//backend/training:training_package_service",
+        "//backend/training:training_progress_service",
         "//backend/training:training_storage",
         "//backend/user_identity:user_identity_service",
         "@pypi//asyncpg",
