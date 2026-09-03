@@ -59,6 +59,18 @@ export const readCompletionConfig = (courseId) =>
  * @param {File} file
  * @returns {Promise<{data: Object}>} `TrainingPackageUploadResultDto`.
  */
+/**
+ * Assign a verified course to one person. Repeating an assignment for the
+ * same (user, course) pair is a no-op on the backend, not an error --
+ * `created` in the result says whether this call was the one that did it.
+ * @param {{userId: number, courseId: number, deadline?: string}} payload
+ *   `deadline` must be left out entirely when there is none: the request
+ *   DTO forbids unknown fields and rejects an empty string for this one.
+ * @returns {Promise<{data: {trainingId: number, userId: number, courseId: number, created: boolean}}>}
+ */
+export const assignCourse = (payload) =>
+  request.post(API_ENDPOINTS.TRAINING_ASSIGNMENTS, payload);
+
 export const uploadPackage = (courseId, file) => {
   const form = new FormData();
   form.append("file", file);

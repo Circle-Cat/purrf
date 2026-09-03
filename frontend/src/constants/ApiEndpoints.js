@@ -120,6 +120,7 @@ export const API_ENDPOINTS = {
   TRAINING_COURSE_TRIAL: (courseId) => `/training/courses/${courseId}/trial`,
   TRAINING_COURSE_PACKAGE: (courseId) =>
     `/training/courses/${courseId}/package`,
+  TRAINING_ASSIGNMENTS: "/training/assignments",
 };
 
 /**

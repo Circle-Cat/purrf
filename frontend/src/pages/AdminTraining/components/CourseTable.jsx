@@ -13,7 +13,8 @@ import {
 } from "@/components/ui/table";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { canAssign, statusLabel } from "@/pages/AdminTraining/utils";
-import { updateCourse, uploadPackage } from "@/api/trainingApi";
+import { assignCourse, updateCourse, uploadPackage } from "@/api/trainingApi";
+import AssignDialog from "@/pages/AdminTraining/components/AssignDialog";
 import DeactivateDialog from "@/pages/AdminTraining/components/DeactivateDialog";
 import UploadPackageDialog from "@/pages/AdminTraining/components/UploadPackageDialog";
 
@@ -61,7 +62,7 @@ function ToggleActiveButton({ course, onDeactivate, onActivate }) {
 // The row's one main action. Assign stays on screen even when it cannot be
 // clicked yet -- hiding it would hide the rule (spec §4.1); the hover title
 // is the only place that rule is taught, so it isn't optional here.
-function RowActions({ course, onDeactivate, onActivate, onUpload }) {
+function RowActions({ course, onDeactivate, onActivate, onUpload, onAssign }) {
   const toggle = (
     <ToggleActiveButton
       course={course}
@@ -96,6 +97,7 @@ function RowActions({ course, onDeactivate, onActivate, onUpload }) {
         variant="outline"
         disabled={!assignable}
         title={assignable ? undefined : "Run this course to completion first"}
+        onClick={() => onAssign(course)}
       >
         Assign
       </Button>
@@ -150,6 +152,7 @@ function PackageCell({ course }) {
 export default function CourseTable({ courses, onCoursesChanged }) {
   const [deactivating, setDeactivating] = useState(null);
   const [uploading, setUploading] = useState(null);
+  const [assigning, setAssigning] = useState(null);
 
   const handleActivate = async (course) => {
     try {
@@ -177,6 +180,15 @@ export default function CourseTable({ courses, onCoursesChanged }) {
     const { data } = await uploadPackage(uploading.courseId, file);
     await onCoursesChanged?.();
     return data;
+  };
+
+  // The dialog itself calls `assignCourse` (it defaults `onConfirm` to that
+  // call); this wrapper is what makes the row close and refetch afterwards.
+  const handleConfirmAssign = async (payload) => {
+    const result = await assignCourse(payload);
+    setAssigning(null);
+    await onCoursesChanged?.();
+    return result;
   };
 
   return (
@@ -217,6 +229,7 @@ export default function CourseTable({ courses, onCoursesChanged }) {
                   onDeactivate={setDeactivating}
                   onActivate={handleActivate}
                   onUpload={setUploading}
+                  onAssign={setAssigning}
                 />
               </TableCell>
             </TableRow>
@@ -237,6 +250,14 @@ export default function CourseTable({ courses, onCoursesChanged }) {
           open
           onOpenChange={(open) => !open && setUploading(null)}
           onConfirm={handleConfirmUpload}
+        />
+      )}
+      {assigning && (
+        <AssignDialog
+          course={assigning}
+          open
+          onOpenChange={(open) => !open && setAssigning(null)}
+          onConfirm={handleConfirmAssign}
         />
       )}
     </>
