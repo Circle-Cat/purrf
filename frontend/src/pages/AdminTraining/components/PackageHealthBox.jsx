@@ -16,8 +16,11 @@ import { AlertTriangle, HelpCircle, CheckCircle2 } from "lucide-react";
  * @param {{completionConfigReadable: boolean, completesViaStoryline?: boolean, completionPercentage?: number|null}} props.config
  */
 export default function PackageHealthBox({ config }) {
-  const { completionConfigReadable, completesViaStoryline, completionPercentage } =
-    config;
+  const {
+    completionConfigReadable,
+    completesViaStoryline,
+    completionPercentage,
+  } = config;
 
   if (!completionConfigReadable) {
     return (
@@ -31,9 +34,9 @@ export default function PackageHealthBox({ config }) {
             Completion behaviour could not be determined
           </p>
           <p className="text-muted-foreground">
-            This package was not built with a toolchain we can read. The
-            trial run is the only check — it will not be assignable until
-            someone finishes it.
+            This package was not built with a toolchain we can read. The trial
+            run is the only check — it will not be assignable until someone
+            finishes it.
           </p>
         </div>
       </div>

@@ -36,7 +36,12 @@ import { Label } from "@/components/ui/label";
  * @param {(open: boolean) => void} [props.onOpenChange]
  * @param {(payload: {userId: number, courseId: number, deadline?: string}) => Promise<Object>} props.onConfirm
  */
-export default function AssignDialog({ course, open, onOpenChange, onConfirm }) {
+export default function AssignDialog({
+  course,
+  open,
+  onOpenChange,
+  onConfirm,
+}) {
   const [personId, setPersonId] = useState("");
   const [deadline, setDeadline] = useState("");
   const [busy, setBusy] = useState(false);
@@ -76,8 +81,8 @@ export default function AssignDialog({ course, open, onOpenChange, onConfirm }) 
         <DialogHeader>
           <DialogTitle>Assign course</DialogTitle>
           <DialogDescription>
-            Already assigned to {course.assignedCount} people. Assigning
-            someone a second time does nothing.
+            Already assigned to {course.assignedCount} people. Assigning someone
+            a second time does nothing.
           </DialogDescription>
         </DialogHeader>
 

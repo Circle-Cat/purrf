@@ -102,8 +102,8 @@ export default function UploadPackageDialog({
                   This replaces package {course.packageVersion}
                 </p>
                 <p className="text-muted-foreground">
-                  Verification is cleared — the course must be run to
-                  completion again before anyone can be assigned.
+                  Verification is cleared — the course must be run to completion
+                  again before anyone can be assigned.
                 </p>
                 <p className="text-muted-foreground">
                   {course.unfinishedCount} learners in progress will restart

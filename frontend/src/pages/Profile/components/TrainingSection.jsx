@@ -28,7 +28,10 @@ const formatTrainingDate = (iso, timezone) => {
 // see that they are partway through it, now that the shim actually writes
 // "in_progress".
 const STATUS_BADGE = {
-  to_do: { label: "Not Started", className: "bg-primary text-primary-foreground" },
+  to_do: {
+    label: "Not Started",
+    className: "bg-primary text-primary-foreground",
+  },
   in_progress: {
     label: "In Progress",
     className: "bg-secondary text-secondary-foreground",

@@ -31,7 +31,9 @@ describe("UploadPackageDialog", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/verification is cleared/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/3 learners in progress will restart from the beginning/i),
+      screen.getByText(
+        /3 learners in progress will restart from the beginning/i,
+      ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/121 completed records are untouched/i),
@@ -54,13 +56,20 @@ describe("UploadPackageDialog", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: /^upload/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^upload/i }),
+    ).toBeInTheDocument();
   });
 
   it("disables submit until a package file is chosen", () => {
     render(
       <UploadPackageDialog
-        course={{ courseId: 5, packageVersion: null, assignedCount: 0, unfinishedCount: 0 }}
+        course={{
+          courseId: 5,
+          packageVersion: null,
+          assignedCount: 0,
+          unfinishedCount: 0,
+        }}
         open
         onConfirm={vi.fn()}
       />,
@@ -79,7 +88,12 @@ describe("UploadPackageDialog", () => {
 
     render(
       <UploadPackageDialog
-        course={{ courseId: 5, packageVersion: null, assignedCount: 0, unfinishedCount: 0 }}
+        course={{
+          courseId: 5,
+          packageVersion: null,
+          assignedCount: 0,
+          unfinishedCount: 0,
+        }}
         open
         onConfirm={onConfirm}
       />,
@@ -94,9 +108,7 @@ describe("UploadPackageDialog", () => {
         /finishing every rise lesson will not mark this course complete/i,
       ),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /^done$/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^done$/i })).toBeInTheDocument();
   });
 
   it("shows a rejection message verbatim, not a paraphrase, and leaves Upload on screen", async () => {
@@ -108,7 +120,12 @@ describe("UploadPackageDialog", () => {
 
     render(
       <UploadPackageDialog
-        course={{ courseId: 5, packageVersion: null, assignedCount: 0, unfinishedCount: 0 }}
+        course={{
+          courseId: 5,
+          packageVersion: null,
+          assignedCount: 0,
+          unfinishedCount: 0,
+        }}
         open
         onConfirm={onConfirm}
       />,

@@ -27,7 +27,9 @@ describe("AssignDialog", () => {
   });
 
   it("sends no deadline field at all when none was given", async () => {
-    const onConfirm = vi.fn().mockResolvedValue({ trainingId: 9, created: true });
+    const onConfirm = vi
+      .fn()
+      .mockResolvedValue({ trainingId: 9, created: true });
     render(
       <AssignDialog
         course={{ courseId: 5, assignedCount: 0 }}

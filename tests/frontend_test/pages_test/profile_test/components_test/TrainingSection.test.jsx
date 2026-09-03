@@ -380,15 +380,38 @@ describe("TrainingSection Component", () => {
     renderInRouter(
       <TrainingSection
         list={[
-          { id: 1, courseId: 7, name: "A", status: "to_do", link: null, ...BASE_TIMESTAMPS },
-          { id: 2, courseId: 7, name: "B", status: "in_progress", link: null, ...BASE_TIMESTAMPS },
-          { id: 3, courseId: 7, name: "C", status: "done", link: null, ...BASE_TIMESTAMPS },
+          {
+            id: 1,
+            courseId: 7,
+            name: "A",
+            status: "to_do",
+            link: null,
+            ...BASE_TIMESTAMPS,
+          },
+          {
+            id: 2,
+            courseId: 7,
+            name: "B",
+            status: "in_progress",
+            link: null,
+            ...BASE_TIMESTAMPS,
+          },
+          {
+            id: 3,
+            courseId: 7,
+            name: "C",
+            status: "done",
+            link: null,
+            ...BASE_TIMESTAMPS,
+          },
         ]}
       />,
     );
 
     expect(screen.getByRole("link", { name: /^start$/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /^continue$/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /^continue$/i }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /^review$/i })).toBeInTheDocument();
   });
 
@@ -397,7 +420,16 @@ describe("TrainingSection Component", () => {
     // Retake invites the learner to expect that it would.
     renderInRouter(
       <TrainingSection
-        list={[{ id: 3, courseId: 7, name: "C", status: "done", link: null, ...BASE_TIMESTAMPS }]}
+        list={[
+          {
+            id: 3,
+            courseId: 7,
+            name: "C",
+            status: "done",
+            link: null,
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
       />,
     );
 

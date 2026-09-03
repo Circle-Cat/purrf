@@ -114,13 +114,16 @@ describe("CourseTable", () => {
     renderTable([needsTrialRun]);
 
     expect(screen.getByText("Needs trial run")).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: /trial run/i }),
-    ).toHaveAttribute("href", "/admin/training/2/trial");
+    expect(screen.getByRole("link", { name: /trial run/i })).toHaveAttribute(
+      "href",
+      "/admin/training/2/trial",
+    );
   });
 
   it("keeps Assign visible but disabled until the course is verified", () => {
-    render(<CourseTable courses={[needsTrialRun]} />, { wrapper: MemoryRouter });
+    render(<CourseTable courses={[needsTrialRun]} />, {
+      wrapper: MemoryRouter,
+    });
 
     const assign = screen.getByRole("button", { name: /assign/i });
     expect(assign).toBeDisabled();
@@ -136,7 +139,9 @@ describe("CourseTable", () => {
     expect(
       screen.getByRole("button", { name: /upload package/i }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /assign/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /assign/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows an external-link course as such, with the link", () => {
@@ -155,9 +160,7 @@ describe("CourseTable", () => {
   it("opens the deactivate dialog naming this row's headcounts", async () => {
     renderTable([externalLink]);
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /deactivate/i }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /deactivate/i }));
 
     expect(
       screen.getByText(/61 people already assigned keep their access/i),
@@ -172,9 +175,7 @@ describe("CourseTable", () => {
     const onCoursesChanged = vi.fn();
     renderTable([verified], onCoursesChanged);
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /deactivate/i }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /deactivate/i }));
     await userEvent.click(
       screen.getByRole("button", { name: /turn off course/i }),
     );
@@ -187,9 +188,7 @@ describe("CourseTable", () => {
     expect(onCoursesChanged).toHaveBeenCalledTimes(1);
     // CourseTable never patches `courses` itself -- the dialog is gone, but
     // the row still reads whatever `courses` says until a fresh prop arrives.
-    expect(
-      screen.queryByText(/nothing is deleted/i),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/nothing is deleted/i)).not.toBeInTheDocument();
   });
 
   it("activates a course directly with no dialog, and only reflects it once fresh courses arrive", async () => {
@@ -200,9 +199,7 @@ describe("CourseTable", () => {
 
     const { rerender } = renderTable([inactive], onCoursesChanged);
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /^activate$/i }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /^activate$/i }));
 
     await waitFor(() =>
       expect(api.updateCourse).toHaveBeenCalledWith(inactive.courseId, {
@@ -217,7 +214,10 @@ describe("CourseTable", () => {
     ).toBeInTheDocument();
 
     rerender(
-      <CourseTable courses={[reactivated]} onCoursesChanged={onCoursesChanged} />,
+      <CourseTable
+        courses={[reactivated]}
+        onCoursesChanged={onCoursesChanged}
+      />,
     );
 
     expect(
@@ -226,7 +226,9 @@ describe("CourseTable", () => {
   });
 
   it("opens the upload dialog for a course with no package, uploads, and refetches on success", async () => {
-    const file = new File(["zip-bytes"], "course.zip", { type: "application/zip" });
+    const file = new File(["zip-bytes"], "course.zip", {
+      type: "application/zip",
+    });
     api.uploadPackage.mockResolvedValue({
       data: {
         completionConfigReadable: true,
@@ -251,7 +253,12 @@ describe("CourseTable", () => {
 
   it("opens the assign dialog for a verified course, assigns, and refetches on success", async () => {
     api.assignCourse.mockResolvedValue({
-      data: { trainingId: 9, userId: 11, courseId: verified.courseId, created: true },
+      data: {
+        trainingId: 9,
+        userId: 11,
+        courseId: verified.courseId,
+        created: true,
+      },
     });
     const onCoursesChanged = vi.fn();
     renderTable([verified], onCoursesChanged);

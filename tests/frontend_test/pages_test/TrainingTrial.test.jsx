@@ -344,9 +344,9 @@ describe("TrainingTrial", () => {
         },
       });
     renderTrialWithNav();
-    expect(
-      await screen.findByTestId("trial-package-notes"),
-    ).toHaveTextContent(/storyline/i);
+    expect(await screen.findByTestId("trial-package-notes")).toHaveTextContent(
+      /storyline/i,
+    );
 
     await userEvent.click(screen.getByRole("button", { name: /next/i }));
 

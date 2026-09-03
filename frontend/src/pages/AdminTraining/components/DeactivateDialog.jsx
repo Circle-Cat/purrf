@@ -54,9 +54,9 @@ export default function DeactivateDialog({
           </DialogDescription>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
-          The {course.assignedCount} people already assigned keep their
-          access and their progress. {course.unfinishedCount} of them have
-          not finished yet.
+          The {course.assignedCount} people already assigned keep their access
+          and their progress. {course.unfinishedCount} of them have not finished
+          yet.
         </p>
         <p className="text-sm text-muted-foreground">
           You can turn it back on at any time. Nothing is deleted.
@@ -69,11 +69,7 @@ export default function DeactivateDialog({
           >
             Cancel
           </Button>
-          <Button
-            variant="destructive"
-            onClick={handleConfirm}
-            disabled={busy}
-          >
+          <Button variant="destructive" onClick={handleConfirm} disabled={busy}>
             {busy ? "Turning off..." : "Turn off course"}
           </Button>
         </DialogFooter>
