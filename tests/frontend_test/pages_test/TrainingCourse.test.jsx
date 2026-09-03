@@ -39,6 +39,7 @@ const postCommit = (cmi) =>
 const SESSION = {
   data: {
     contentBaseUrl: "https://test-training-content.purrf.io/p/tok/",
+    sessionToken: "signed.token",
     entryPath: "scormdriver/indexAPI.html",
     playerPath: "__player.html",
     expiresAt: 1788400000,
@@ -87,6 +88,7 @@ describe("TrainingCourse", () => {
     await waitFor(() =>
       expect(saveProgress).toHaveBeenCalledWith("42", {
         cmi: { "cmi.suspend_data": "blob" },
+        sessionToken: "signed.token",
       }),
     );
   });
@@ -279,6 +281,7 @@ describe("TrainingCourse", () => {
     expect(JSON.parse(options.body)).toEqual({
       cmi: { "cmi.suspend_data": "blob" },
       final: true,
+      sessionToken: "signed.token",
     });
     // The parting save does not also re-trigger the axios save.
     expect(saveProgress).toHaveBeenCalledTimes(1);

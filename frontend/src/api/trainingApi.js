@@ -4,7 +4,7 @@ import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 /**
  * Mint a content session for the caller's own training assignment.
  * @param {string|number} trainingId
- * @returns {Promise<{data: {contentBaseUrl: string, entryPath: string, playerPath: string, expiresAt: number, progress?: object}}>}
+ * @returns {Promise<{data: {contentBaseUrl: string, sessionToken: string, entryPath: string, playerPath: string, expiresAt: number, progress?: object}}>}
  */
 export const openSession = (trainingId) =>
   request.post(API_ENDPOINTS.TRAINING_SESSION(trainingId));
@@ -12,7 +12,11 @@ export const openSession = (trainingId) =>
 /**
  * Store one commit reported by the course.
  * @param {string|number} trainingId
- * @param {{cmi: Object<string, string>}} payload
+ * @param {{cmi: Object<string, string>, sessionToken?: string, final?: boolean}} payload
+ *   `sessionToken` is the one `openSession` handed back. It names the run this
+ *   commit came from, which is what lets the server refuse a finishing status
+ *   reported by a tab left open across a package replacement.
+ * @returns {Promise<{data: {status: string, courseVerified?: boolean|null}}>}
  */
 export const saveProgress = (trainingId, payload) =>
   request.post(API_ENDPOINTS.TRAINING_PROGRESS(trainingId), payload);

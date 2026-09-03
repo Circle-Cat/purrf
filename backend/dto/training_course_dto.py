@@ -127,6 +127,14 @@ class TrainingProgressSaveDto(BaseDto):
     """
 
     status: TrainingStatus
+    # Whether the course carries its verification stamp, answered only by a
+    # commit that reported completion -- the one path that already has the
+    # course row in hand. None on every other commit, which is most of them:
+    # the heartbeat arrives every twenty seconds and often stores nothing, so
+    # it must not grow a query. The trial page needs this because the
+    # assignment's own status cannot stand in for it: a verifier re-running a
+    # replaced package was already DONE, so their run moves nothing.
+    course_verified: bool | None = None
 
 
 class TrainingCompletionConfigDto(BaseDto):
@@ -174,6 +182,11 @@ class TrainingSessionDto(BaseDto):
     """
 
     content_base_url: str
+    # The same token the URL above carries, handed over on its own so the page
+    # can name this session on every commit it posts back. That is what lets
+    # the server refuse a commit from a tab that opened against a package
+    # since replaced.
+    session_token: str
     entry_path: str
     player_path: str
     expires_at: int

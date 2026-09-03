@@ -10,6 +10,7 @@ from backend.training.training_content_token import (
     ContentTokenClaims,
     InvalidContentToken,
     issue_content_token,
+    read_session_start,
     verify_content_token,
 )
 
@@ -198,16 +199,59 @@ class TestTokenCarriesNoStoragePrefix(unittest.TestCase):
             self.assertNotIn("training/", rendered, msg=f"{key} looks like a prefix")
             self.assertNotIn("/", rendered, msg=f"{key} looks like an object path")
 
-    def test_the_claims_expose_only_training_user_and_expiry(self):
+    def test_the_claims_say_who_and_when_and_never_where(self):
+        """The mint time is not the prefix in disguise: it resolves to no
+        file, and the package it gets compared against is read from the
+        course row."""
         names = {field.name for field in dataclasses.fields(ContentTokenClaims)}
 
-        self.assertEqual(names, {"training_id", "user_id", "expires_at"})
+        self.assertEqual(
+            names, {"training_id", "user_id", "expires_at", "issued_at"}
+        )
 
     def test_the_claims_are_frozen(self):
         claims = verify_content_token(_KEY, self.token, now=_NOW)
 
         with self.assertRaises(dataclasses.FrozenInstanceError):
             claims.training_id = 1
+
+
+class TestReadingWhenTheRunBegan(unittest.TestCase):
+    """A commit posted back on the app origin names the run it came from, and
+    the server reads its mint time from the signature rather than trusting the
+    body -- otherwise a stale tab could just claim to be a fresh one."""
+
+    def test_the_mint_time_comes_back(self):
+        token, _ = issue_content_token(_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
+
+        self.assertEqual(read_session_start(_KEY, token), _NOW)
+
+    def test_an_expired_token_still_says_when_its_run_began(self):
+        """Here the token is not the credential, and refusing an overrun one
+        would cost the longest sitting its stamp."""
+        token, _ = issue_content_token(_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
+
+        self.assertEqual(
+            read_session_start(_KEY, token), _NOW
+        )
+        with self.assertRaises(InvalidContentToken):
+            verify_content_token(_KEY, token, now=_NOW + TOKEN_LIFETIME_SECONDS)
+
+    def test_a_token_signed_with_another_key_is_refused(self):
+        token, _ = issue_content_token(_OTHER_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
+
+        with self.assertRaises(InvalidContentToken):
+            read_session_start(_KEY, token)
+
+    def test_an_altered_mint_time_is_refused(self):
+        token, _ = issue_content_token(_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
+        payload, signature = _split(token)
+        claims = json.loads(_decode_segment(payload))
+        claims["i"] = _NOW + 999
+
+        forged = _encode_segment(json.dumps(claims).encode("utf-8")) + "." + signature
+        with self.assertRaises(InvalidContentToken):
+            read_session_start(_KEY, forged)
 
 
 if __name__ == "__main__":

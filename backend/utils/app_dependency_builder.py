@@ -987,6 +987,7 @@ class AppDependencyBuilder:
         )
         self.training_progress_service = TrainingProgressService(
             logger=self.logger,
+            signing_key=os.getenv(TRAINING_TOKEN_SIGNING_KEY),
             training_repository=self.training_repository,
             training_progress_repository=self.training_progress_repository,
             training_course_repository=self.training_course_repository,

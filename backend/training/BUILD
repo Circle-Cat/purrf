@@ -106,6 +106,8 @@ py_library(
     srcs = ["training_progress_service.py"],
     deps = [
         ":completion",
+        ":training_content_token",
+        "//backend/common:exceptions",
         "//backend/common:mentorship_enums",
         "//backend/dto",
         "//backend/repository:repositories",

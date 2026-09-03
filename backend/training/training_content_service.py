@@ -146,10 +146,11 @@ class TrainingContentService:
             user_id (int): Who is opening it.
 
         Returns:
-            TrainingSessionDto: Where the course loads from, when the token
-                behind that URL expires, and the learner's stored progress to
-                seed the CMI model with (None if this assignment has never
-                been opened before).
+            TrainingSessionDto: Where the course loads from, the token that
+                names this run when the page posts progress back, when that
+                token expires, and the learner's stored progress to seed the
+                CMI model with (None if this assignment has never been opened
+                before).
 
         Raises:
             ValueError: Not configured, or no such assignment.
@@ -193,6 +194,7 @@ class TrainingContentService:
         )
         return TrainingSessionDto(
             content_base_url=f"https://{self.content_host}/p/{token}/",
+            session_token=token,
             entry_path=course.entry_path,
             player_path=PLAYER_PATH,
             expires_at=expires_at,

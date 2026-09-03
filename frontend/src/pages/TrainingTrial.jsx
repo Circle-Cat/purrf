@@ -105,7 +105,7 @@ export default function TrainingTrial() {
     frameRef,
     playerSrc,
     writes,
-    status,
+    courseVerified,
   } = useTrainingRuntime(trainingId, user);
 
   const tz = resolveViewerTimezone();
@@ -117,24 +117,12 @@ export default function TrainingTrial() {
     [writes],
   );
   const lessonStatus = latestCmi["cmi.core.lesson_status"];
-  const isComplete = verified;
+  // The stamp lands on the commit that reported completion, and that save's
+  // own response says so. The assignment's status cannot stand in for it: a
+  // verifier re-running a replaced package is already DONE, so their first
+  // commit of the new run reads done and every one after it does too.
+  const isComplete = verified || courseVerified;
   const hasSuspendData = "cmi.suspend_data" in latestCmi;
-
-  // The stamp lands on the commit that finishes the course, so the answer
-  // this page shows is only stale once: ask again when a save comes back
-  // saying the assignment is done.
-  useEffect(() => {
-    if (status !== "done" || verified) return;
-    let cancelled = false;
-    readCompletionConfig(courseId)
-      .then(({ data }) => {
-        if (!cancelled) setVerified(Boolean(data.verified));
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [status, verified, courseId]);
 
   const firstWrite = writes[0];
   // The write we were on when the server first said done. Held rather than

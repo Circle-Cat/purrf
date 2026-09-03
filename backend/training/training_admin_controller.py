@@ -295,6 +295,10 @@ class TrainingAdminController:
         payload: a course reporting itself finished must not be able to claim
         the grant that unlocks it for everybody else.
 
+        ``sessionToken`` names the run this commit came from. It is signed, so
+        the payload can only name a run that really was opened; a commit that
+        names none is still stored, but it cannot vouch for a package.
+
         The response says where the assignment now stands. Which lesson_status
         finishes a course is decided here; a page that judged the same values
         itself would be a second answer free to disagree with this one.
@@ -313,5 +317,6 @@ class TrainingAdminController:
                 may_verify_course=current_user.has_permission(
                     Permission.TRAINING_ADMIN_WRITE
                 ),
+                session_token=payload.get("sessionToken"),
             )
         return api_response(message="Progress saved.", data=saved)

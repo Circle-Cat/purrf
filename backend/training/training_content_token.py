@@ -2,13 +2,19 @@
 
 Course files are served from a hostname with no Access application and no
 cookie, so this signature is the only thing between a URL and somebody else's
-course. It is deliberately small: three fields and an expiry.
+course. It is deliberately small: who, which assignment, when the session was
+minted, and when it stops working.
 
 It does NOT carry the storage prefix. A token outlives an upload, and a prefix
 baked into one would keep pointing at files that the overwrite cleanup is about
 to delete -- the learner's page would start 404ing mid-session. The prefix is
 read from the database on every request instead, which is also what makes
 "everybody sees the new package immediately" true.
+
+The mint time is not the prefix in disguise. It says nothing about which files
+a request resolves to; it only lets the server ask the database whether the
+package moved on after this tab opened, which is what keeps a tab left open
+across a replacement from vouching for the package it never ran.
 """
 
 import base64
@@ -30,11 +36,16 @@ class InvalidContentToken(ValueError):
 
 @dataclass(frozen=True)
 class ContentTokenClaims:
-    """Who this token is for, and which assignment."""
+    """Who this token is for, which assignment, and when the run began."""
 
     training_id: int
     user_id: int
     expires_at: int
+    # When this session was minted. Not the package it was minted for -- that
+    # would be the prefix this token refuses to carry -- but enough for the
+    # server to compare a run against the course's own package_uploaded_at
+    # and tell a run of the current package from one of its predecessor.
+    issued_at: int
 
 
 def _b64encode(raw: bytes) -> str:
@@ -77,9 +88,10 @@ def issue_content_token(
         # Which variable is missing is logged by the caller, which has a
         # logger; this message reaches a browser.
         raise ValueError("Training content is not available.")
-    expires_at = int(now if now is not None else time.time()) + lifetime_seconds
+    issued_at = int(now if now is not None else time.time())
+    expires_at = issued_at + lifetime_seconds
     payload = json.dumps(
-        {"t": training_id, "u": user_id, "e": expires_at},
+        {"t": training_id, "u": user_id, "e": expires_at, "i": issued_at},
         separators=(",", ":"),
         sort_keys=True,
     ).encode("utf-8")
@@ -87,21 +99,11 @@ def issue_content_token(
     return f"{encoded}.{_signature(signing_key, payload)}", expires_at
 
 
-def verify_content_token(
-    signing_key: str, token: str, now: int | None = None
-) -> ContentTokenClaims:
-    """Check a token's signature and expiry, and read its claims.
-
-    Args:
-        signing_key (str): TRAINING_TOKEN_SIGNING_KEY.
-        token (str): The token from the URL path.
-        now (int | None): Unix seconds, for tests.
-
-    Returns:
-        ContentTokenClaims: What the token asserts.
+def _authentic_claims(signing_key: str, token: str) -> ContentTokenClaims:
+    """Read a token's claims once its signature is proven, expiry aside.
 
     Raises:
-        InvalidContentToken: Malformed, altered, or expired.
+        InvalidContentToken: Malformed or altered.
         ValueError: No signing key configured.
     """
     if not signing_key:
@@ -132,12 +134,59 @@ def verify_content_token(
         training_id = int(claims["t"])
         user_id = int(claims["u"])
         expires_at = int(claims["e"])
+        issued_at = int(claims["i"])
     except (ValueError, KeyError, TypeError) as error:
         raise InvalidContentToken("Malformed content token.") from error
 
-    if expires_at <= int(now if now is not None else time.time()):
-        raise InvalidContentToken("Content token has expired.")
-
     return ContentTokenClaims(
-        training_id=training_id, user_id=user_id, expires_at=expires_at
+        training_id=training_id,
+        user_id=user_id,
+        expires_at=expires_at,
+        issued_at=issued_at,
     )
+
+
+def verify_content_token(
+    signing_key: str, token: str, now: int | None = None
+) -> ContentTokenClaims:
+    """Check a token's signature and expiry, and read its claims.
+
+    Args:
+        signing_key (str): TRAINING_TOKEN_SIGNING_KEY.
+        token (str): The token from the URL path.
+        now (int | None): Unix seconds, for tests.
+
+    Returns:
+        ContentTokenClaims: What the token asserts.
+
+    Raises:
+        InvalidContentToken: Malformed, altered, or expired.
+        ValueError: No signing key configured.
+    """
+    claims = _authentic_claims(signing_key, token)
+    if claims.expires_at <= int(now if now is not None else time.time()):
+        raise InvalidContentToken("Content token has expired.")
+    return claims
+
+
+def read_session_start(signing_key: str, token: str) -> int:
+    """When the run in the tab holding this token began.
+
+    Expiry is not consulted. Here the token is not the credential -- the
+    caller reached the app origin with its own Access identity -- and the one
+    question is which package that tab opened against. A twelve-hour sitting
+    that overran its token still answers it, and refusing one would cost the
+    longest run its stamp.
+
+    Args:
+        signing_key (str): TRAINING_TOKEN_SIGNING_KEY.
+        token (str): The token the page was given when it opened the course.
+
+    Returns:
+        int: Unix seconds at which the session was minted.
+
+    Raises:
+        InvalidContentToken: Malformed or altered.
+        ValueError: No signing key configured.
+    """
+    return _authentic_claims(signing_key, token).issued_at

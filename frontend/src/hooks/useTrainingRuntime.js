@@ -21,6 +21,8 @@ import { MESSAGE_TYPES, isTrustedMessage } from "@/training/scormBridge";
  *   frameRef: import("react").RefObject<HTMLIFrameElement>,
  *   playerSrc: string|null,
  *   writes: Array<{type: "commit"|"finish", cmi: Object<string, string>, receivedAt: number}>,
+ *   status: string|null,
+ *   courseVerified: boolean,
  * }}
  */
 // fetch refuses a keepalive request once the bodies in flight exceed 64 KiB,
@@ -32,11 +34,11 @@ import { MESSAGE_TYPES, isTrustedMessage } from "@/training/scormBridge";
 // carried it; the time was not, so the blob is what gives way.
 const KEEPALIVE_BODY_LIMIT = 60 * 1024;
 
-const partingBody = (cmi) => {
-  const whole = JSON.stringify({ cmi, final: true });
+const partingBody = (cmi, sessionToken) => {
+  const whole = JSON.stringify({ cmi, final: true, sessionToken });
   if (new Blob([whole]).size < KEEPALIVE_BODY_LIMIT) return whole;
   const { "cmi.suspend_data": _blob, ...rest } = cmi ?? {};
-  return JSON.stringify({ cmi: rest, final: true });
+  return JSON.stringify({ cmi: rest, final: true, sessionToken });
 };
 
 export default function useTrainingRuntime(trainingId, user) {
@@ -54,6 +56,11 @@ export default function useTrainingRuntime(trainingId, user) {
   // Which lesson_status finishes a course is decided there, so nothing here
   // reads the raw value to reach its own answer.
   const [status, setStatus] = useState(null);
+  // Whether the course itself is verified, as the save that reported
+  // completion answered it. Latched, because a course never loses its stamp
+  // mid-run, and only a commit that reported completion carries an answer at
+  // all -- every other save leaves this alone rather than clearing it.
+  const [courseVerified, setCourseVerified] = useState(false);
   // One save per assignment on the wire at a time. A course reports
   // `incomplete` and then `completed` within the same second, and two such
   // requests in flight together each decide the assignment's next status from
@@ -66,6 +73,7 @@ export default function useTrainingRuntime(trainingId, user) {
     setSession(null);
     setLoadError(null);
     setWrites([]);
+    setCourseVerified(false);
     openSession(trainingId)
       .then((response) => {
         if (!cancelled) setSession(response.data);
@@ -88,9 +96,17 @@ export default function useTrainingRuntime(trainingId, user) {
     if (!session) return undefined;
     const contentOrigin = new URL(session.contentBaseUrl).origin;
 
+    // Every save names the content session it came from. The token is signed,
+    // so the server can tell a run of the current package from one reported
+    // by a tab that was open when the package was replaced -- whose in-memory
+    // CMI model still holds the old package's finishing lesson_status.
     const queueSave = (cmi, extra) => {
       const queued = saveChainRef.current.then(() =>
-        saveProgress(trainingId, { cmi, ...extra }),
+        saveProgress(trainingId, {
+          cmi,
+          sessionToken: session.sessionToken,
+          ...extra,
+        }),
       );
       // The chain has to survive a rejected save, or one failure strands
       // every save after it.
@@ -151,6 +167,7 @@ export default function useTrainingRuntime(trainingId, user) {
           const saved = await queueSave(event.data.cmi);
           setSaveFailed(false);
           if (saved?.data?.status) setStatus(saved.data.status);
+          if (saved?.data?.courseVerified) setCourseVerified(true);
           post({ type: MESSAGE_TYPES.SAVED, ok: true }, contentOrigin);
         } catch {
           // LMSCommit already answered "true" to the course the moment it
@@ -185,7 +202,7 @@ export default function useTrainingRuntime(trainingId, user) {
           credentials: "include",
           keepalive: true,
           headers: { "Content-Type": "application/json" },
-          body: partingBody(lastCmiRef.current),
+          body: partingBody(lastCmiRef.current, session.sessionToken),
         },
       ).catch((error) => {
         // Usually nothing is left to notice this. A page that is hidden and
@@ -233,5 +250,6 @@ export default function useTrainingRuntime(trainingId, user) {
     playerSrc,
     writes,
     status,
+    courseVerified,
   };
 }

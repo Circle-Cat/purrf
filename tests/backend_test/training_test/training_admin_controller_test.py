@@ -40,6 +40,7 @@ def _session_dto():
     """A content session as the content service hands one back."""
     return TrainingSessionDto(
         content_base_url="https://content.example/p/tok/",
+        session_token="tok",
         entry_path="scormcontent/index.html",
         player_path="__player.html",
         expires_at=1788400000,
@@ -304,6 +305,20 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
             {"cmi.core.lesson_location": "Summary"},
             final=False,
             may_verify_course=False,
+            session_token=None,
+        )
+
+    async def test_the_commit_names_the_content_session_it_came_from(self):
+        """A finishing status can only vouch for a package when the server
+        can tell which run reported it."""
+        await self.save_progress({
+            "cmi": {"cmi.core.lesson_status": "passed"},
+            "sessionToken": "signed.token",
+        })
+
+        self.assertEqual(
+            self.progress_service.save.await_args.kwargs["session_token"],
+            "signed.token",
         )
 
     async def test_the_pages_parting_save_is_passed_through_as_final(self):
@@ -542,6 +557,7 @@ class TestTrainingResponsesOnTheWire(unittest.TestCase):
             response.json()["data"],
             {
                 "contentBaseUrl": "https://content.example/p/tok/",
+                "sessionToken": "tok",
                 "entryPath": "scormcontent/index.html",
                 "playerPath": "__player.html",
                 "expiresAt": 1788400000,
@@ -562,6 +578,7 @@ class TestTrainingResponsesOnTheWire(unittest.TestCase):
         self.content_service.open_session = AsyncMock(
             return_value=TrainingSessionDto(
                 content_base_url="https://content.example/p/tok/",
+                session_token="tok",
                 entry_path="scormcontent/index.html",
                 player_path="__player.html",
                 expires_at=1788400000,

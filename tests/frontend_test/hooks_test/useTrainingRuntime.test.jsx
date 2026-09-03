@@ -16,6 +16,7 @@ const CONTENT_ORIGIN = "https://content.test";
 // opened yet: progress is null, not an empty object.
 const SESSION = {
   contentBaseUrl: `${CONTENT_ORIGIN}/packages/1/`,
+  sessionToken: "signed.token",
   entryPath: "index.html",
   playerPath: "player.html",
   expiresAt: 1788400000,
@@ -179,7 +180,48 @@ describe("useTrainingRuntime parting save", () => {
     expect(JSON.parse(init.body)).toEqual({
       cmi: cmiWith("incomplete"),
       final: true,
+      sessionToken: "signed.token",
     });
+  });
+
+  it("names the content session on every save it posts", async () => {
+    // A finishing status can only vouch for a package when the server can
+    // tell which run reported it, and the run the token names is signed.
+    api.saveProgress.mockResolvedValue({});
+    await renderRuntime();
+
+    await act(async () => {
+      window.dispatchEvent(commit(cmiWith("incomplete")));
+    });
+
+    expect(api.saveProgress.mock.calls[0][1].sessionToken).toBe("signed.token");
+  });
+
+  it("reports the course verified when the save that finished it says so", async () => {
+    // The assignment's own status cannot stand in for this: a verifier
+    // re-running a replaced package is already DONE, so nothing moves.
+    api.saveProgress.mockResolvedValue({
+      data: { status: "done", courseVerified: true },
+    });
+    const { result } = await renderRuntime();
+
+    await act(async () => {
+      window.dispatchEvent(commit(cmiWith("completed")));
+    });
+
+    await waitFor(() => expect(result.current.courseVerified).toBe(true));
+  });
+
+  it("leaves the course unverified when a save says nothing about it", async () => {
+    api.saveProgress.mockResolvedValue({ data: { status: "done" } });
+    const { result } = await renderRuntime();
+
+    await act(async () => {
+      window.dispatchEvent(commit(cmiWith("completed")));
+    });
+
+    await waitFor(() => expect(api.saveProgress).toHaveBeenCalled());
+    expect(result.current.courseVerified).toBe(false);
   });
 
   it("sends nothing when no commit is owed", async () => {
@@ -242,6 +284,7 @@ describe("useTrainingRuntime parting save", () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
       cmi: cmiWith("incomplete"),
       final: true,
+      sessionToken: "signed.token",
     });
   });
 

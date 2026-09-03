@@ -62,6 +62,7 @@ const TRIAL = {
 const SESSION = {
   data: {
     contentBaseUrl: "https://test-training-content.purrf.io/p/tok/",
+    sessionToken: "signed.token",
     entryPath: "scormdriver/indexAPI.html",
     playerPath: "__player.html",
     expiresAt: 1788400000,
@@ -128,24 +129,9 @@ describe("TrainingTrial", () => {
   });
 
   it("shows the course as verified once the server says the course is", async () => {
-    saveProgress.mockResolvedValue({ data: { status: "done" } });
-    readCompletionConfig
-      .mockResolvedValueOnce({
-        data: {
-          verified: false,
-          completionPercentage: 100,
-          completesViaStoryline: false,
-          completionConfigReadable: true,
-        },
-      })
-      .mockResolvedValue({
-        data: {
-          verified: true,
-          completionPercentage: 100,
-          completesViaStoryline: false,
-          completionConfigReadable: true,
-        },
-      });
+    saveProgress.mockResolvedValue({
+      data: { status: "done", courseVerified: true },
+    });
     renderTrial();
     await screen.findByTitle(/course/i);
 
@@ -159,6 +145,34 @@ describe("TrainingTrial", () => {
       await screen.findByText(/completed — this course can now be assigned/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/now verified and unlocked/i)).toBeInTheDocument();
+  });
+
+  it("still reaches the verdict when the assignment was already done", async () => {
+    // The normal re-export loop: the verifier finished the previous package,
+    // so their very first commit of the new run comes back done and nothing
+    // about the assignment ever moves again. The stamp arrives twenty minutes
+    // later, on the commit that actually finishes the run.
+    saveProgress
+      .mockResolvedValueOnce({ data: { status: "done" } })
+      .mockResolvedValue({ data: { status: "done", courseVerified: true } });
+    renderTrial();
+    await screen.findByTitle(/course/i);
+
+    postFromContent({
+      type: MESSAGE_TYPES.COMMIT,
+      cmi: { "cmi.core.lesson_status": "incomplete" },
+    });
+    await waitFor(() => expect(saveProgress).toHaveBeenCalledTimes(1));
+    expect(screen.getByText(/not complete yet/i)).toBeInTheDocument();
+
+    postFromContent({
+      type: MESSAGE_TYPES.COMMIT,
+      cmi: { "cmi.core.lesson_status": "completed" },
+    });
+
+    expect(
+      await screen.findByText(/completed — this course can now be assigned/i),
+    ).toBeInTheDocument();
   });
 
   it("does not claim the course is unlocked while the stamp is still missing", async () => {
