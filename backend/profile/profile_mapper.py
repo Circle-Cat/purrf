@@ -17,7 +17,7 @@ class ProfileMapper:
         self,
         user: UsersEntity,
         experience: ExperienceEntity | None,
-        trainings: list[tuple[TrainingEntity, str | None]] | None,
+        trainings: list[tuple[TrainingEntity, str | None, str | None]] | None,
         include_work_history: bool = True,
         include_education: bool = True,
         primary_email: str = "",
@@ -35,8 +35,8 @@ class ProfileMapper:
             else [],
             education=self._map_education(experience) if include_education else [],
             training=[
-                self._map_training(entity, course_name)
-                for entity, course_name in (trainings or [])
+                self._map_training(entity, course_name, storage_prefix)
+                for entity, course_name, storage_prefix in (trainings or [])
             ],
         )
 
@@ -92,13 +92,22 @@ class ProfileMapper:
         ]
 
     def _map_training(
-        self, entity: TrainingEntity, course_name: str | None
+        self,
+        entity: TrainingEntity,
+        course_name: str | None,
+        storage_prefix: str | None,
     ) -> TrainingDto:
-        """Map a training record and the name of the course it points at."""
+        """Map a training record and the course it points at.
+
+        Only whether the course has a prefix crosses the wire, never the
+        prefix itself: it is an object key, and nothing in the browser has
+        any business with one.
+        """
         return TrainingDto(
             id=entity.training_id,
             course_id=entity.course_id,
             name=course_name,
+            is_hosted=bool(storage_prefix),
             category=entity.category,
             status=entity.status,
             link=entity.link,

@@ -24,9 +24,8 @@ const formatTrainingDate = (iso, timezone) => {
   return formatInTz(iso, timezone, "MMM d, yyyy");
 };
 
-// Three states, not two: a learner partway through a course must be able to
-// see that they are partway through it, now that the shim actually writes
-// "in_progress".
+// Three states, not two: a learner partway through a course can see that they
+// are partway through it.
 const STATUS_BADGE = {
   to_do: {
     label: "Not Started",
@@ -41,7 +40,9 @@ const STATUS_BADGE = {
 
 // Opening an in-app course is named after where the learner is, not what
 // they'd be doing. A finished course is always "Review", never "Retake":
-// reopening it must not read as a way back out of Done.
+// reopening it must not read as a way back out of Done. Offered only for a
+// course we actually serve -- a row whose course has no package cannot be
+// opened at all, and inviting the click would land the learner on an error.
 const IN_APP_ACTION_LABEL = {
   to_do: "Start",
   in_progress: "Continue",
@@ -119,7 +120,7 @@ const TrainingSection = ({ list, timezone }) => {
                       >
                         View Link
                       </a>
-                    ) : training.courseId ? (
+                    ) : training.courseId && training.isHosted ? (
                       <Link to={ROUTE_PATHS.TRAINING_COURSE(training.id)}>
                         {actionLabel}
                       </Link>

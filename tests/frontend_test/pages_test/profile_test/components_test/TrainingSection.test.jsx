@@ -334,6 +334,7 @@ describe("TrainingSection Component", () => {
           {
             id: 42,
             courseId: 7,
+            isHosted: true,
             name: "Mentor Onboarding",
             category: null,
             status: "to_do",
@@ -383,6 +384,7 @@ describe("TrainingSection Component", () => {
           {
             id: 1,
             courseId: 7,
+            isHosted: true,
             name: "A",
             status: "to_do",
             link: null,
@@ -391,6 +393,7 @@ describe("TrainingSection Component", () => {
           {
             id: 2,
             courseId: 7,
+            isHosted: true,
             name: "B",
             status: "in_progress",
             link: null,
@@ -399,6 +402,7 @@ describe("TrainingSection Component", () => {
           {
             id: 3,
             courseId: 7,
+            isHosted: true,
             name: "C",
             status: "done",
             link: null,
@@ -424,6 +428,7 @@ describe("TrainingSection Component", () => {
           {
             id: 3,
             courseId: 7,
+            isHosted: true,
             name: "C",
             status: "done",
             link: null,
@@ -434,6 +439,30 @@ describe("TrainingSection Component", () => {
     );
 
     expect(screen.queryByText(/retake/i)).not.toBeInTheDocument();
+  });
+
+  it("offers nothing to click on a course with no package and no link", () => {
+    // A seed course nobody has uploaded to, in an environment whose link
+    // variable is unset. Start would open the course and raise.
+    renderInRouter(
+      <TrainingSection
+        list={[
+          {
+            id: 42,
+            courseId: 7,
+            isHosted: false,
+            name: "Residency Onboarding",
+            category: "residency_program_onboarding",
+            status: "to_do",
+            link: null,
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^start$/i)).not.toBeInTheDocument();
   });
 
   it("still names a row the catalogue holds no course for", () => {

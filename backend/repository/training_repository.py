@@ -6,23 +6,31 @@ from backend.common.mentorship_enums import TrainingCategory
 
 
 class TrainingRepository:
-    async def get_training_with_course_name_by_user_id(
+    async def get_training_with_course_by_user_id(
         self, session: AsyncSession, user_id: int
-    ) -> list[tuple[TrainingEntity, str | None]]:
-        """Fetch a user's training records, each with its course name.
+    ) -> list[tuple[TrainingEntity, str | None, str | None]]:
+        """Fetch a user's training records, each with its course name and prefix.
 
         Outer joined: course_id is nullable, and a row without one is still
         the user's assignment and still has to be shown.
+
+        The prefix comes back so the caller can tell a course we serve from
+        one nobody has uploaded to. Only whether it is set is ever used --
+        resolving an actual object key is the content route's job, per request.
         """
         result = await session.execute(
-            select(TrainingEntity, TrainingCourseEntity.name)
+            select(
+                TrainingEntity,
+                TrainingCourseEntity.name,
+                TrainingCourseEntity.storage_prefix,
+            )
             .outerjoin(
                 TrainingCourseEntity,
                 TrainingEntity.course_id == TrainingCourseEntity.course_id,
             )
             .where(TrainingEntity.user_id == user_id)
         )
-        return [(row[0], row[1]) for row in result.all()]
+        return [(row[0], row[1], row[2]) for row in result.all()]
 
     async def get_training_by_user_id_and_category(
         self, session: AsyncSession, user_id: int, category: TrainingCategory

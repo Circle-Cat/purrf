@@ -17,7 +17,7 @@ class TestProfileQueryService(unittest.IsolatedAsyncioTestCase):
         self.mock_experience_repo.get_experience_by_user_id = AsyncMock()
 
         self.mock_training_repo = MagicMock(spec=TrainingRepository)
-        self.mock_training_repo.get_training_with_course_name_by_user_id = AsyncMock()
+        self.mock_training_repo.get_training_with_course_by_user_id = AsyncMock()
 
         self.mock_mapper = MagicMock()
 
@@ -72,9 +72,12 @@ class TestProfileQueryService(unittest.IsolatedAsyncioTestCase):
         self.mock_users_repo.get_user_by_user_id.return_value = self.mock_user
 
         mock_exp = MagicMock()
-        mock_trainings = [(MagicMock(), "Mentor Onboarding"), (MagicMock(), None)]
+        mock_trainings = [
+            (MagicMock(), "Mentor Onboarding", "training/1/abc/"),
+            (MagicMock(), None, None),
+        ]
         self.mock_experience_repo.get_experience_by_user_id.return_value = mock_exp
-        self.mock_training_repo.get_training_with_course_name_by_user_id.return_value = mock_trainings
+        self.mock_training_repo.get_training_with_course_by_user_id.return_value = mock_trainings
         self.mock_mapper.map_to_profile_dto.return_value = self.mock_profile_dto
 
         profile_dto = await self.service.get_profile(
@@ -89,7 +92,7 @@ class TestProfileQueryService(unittest.IsolatedAsyncioTestCase):
         self.mock_experience_repo.get_experience_by_user_id.assert_called_once_with(
             self.session, self.user_id
         )
-        repo_call = self.mock_training_repo.get_training_with_course_name_by_user_id
+        repo_call = self.mock_training_repo.get_training_with_course_by_user_id
         repo_call.assert_called_once_with(self.session, self.user_id)
         self.mock_mapper.map_to_profile_dto.assert_called_once()
         self.assertEqual(
@@ -107,7 +110,7 @@ class TestProfileQueryService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.mock_experience_repo.get_experience_by_user_id.assert_not_called()
-        self.mock_training_repo.get_training_with_course_name_by_user_id.assert_not_called()
+        self.mock_training_repo.get_training_with_course_by_user_id.assert_not_called()
         self.mock_mapper.map_to_profile_dto.assert_called_once()
 
     async def test_get_profile_include_education_triggers_experience_repo(self):
@@ -122,7 +125,7 @@ class TestProfileQueryService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.mock_experience_repo.get_experience_by_user_id.assert_called_once()
-        self.mock_training_repo.get_training_with_course_name_by_user_id.assert_not_called()
+        self.mock_training_repo.get_training_with_course_by_user_id.assert_not_called()
 
 
 if __name__ == "__main__":
