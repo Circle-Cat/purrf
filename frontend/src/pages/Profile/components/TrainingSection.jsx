@@ -24,6 +24,27 @@ const formatTrainingDate = (iso, timezone) => {
   return formatInTz(iso, timezone, "MMM d, yyyy");
 };
 
+// Three states, not two: a learner partway through a course must be able to
+// see that they are partway through it, now that the shim actually writes
+// "in_progress".
+const STATUS_BADGE = {
+  to_do: { label: "Not Started", className: "bg-primary text-primary-foreground" },
+  in_progress: {
+    label: "In Progress",
+    className: "bg-secondary text-secondary-foreground",
+  },
+  done: { label: "Completed", className: "bg-accent text-primary" },
+};
+
+// Opening an in-app course is named after where the learner is, not what
+// they'd be doing. A finished course is always "Review", never "Retake":
+// reopening it must not read as a way back out of Done.
+const IN_APP_ACTION_LABEL = {
+  to_do: "Start",
+  in_progress: "Continue",
+  done: "Review",
+};
+
 const TrainingSection = ({ list, timezone }) => {
   return (
     <div className="mb-12">
@@ -55,6 +76,11 @@ const TrainingSection = ({ list, timezone }) => {
             {list.map((training) => {
               const required = isIncompleteOnboarding(training);
               const safeLink = safeHttpUrl(training.link);
+              const statusBadge =
+                STATUS_BADGE[training.status] ?? STATUS_BADGE.to_do;
+              const actionLabel =
+                IN_APP_ACTION_LABEL[training.status] ??
+                IN_APP_ACTION_LABEL.to_do;
               return (
                 <tr
                   key={training.id}
@@ -73,16 +99,8 @@ const TrainingSection = ({ list, timezone }) => {
                       training.category}
                   </td>
                   <td>
-                    <Badge
-                      className={
-                        training.status === "done"
-                          ? "bg-accent text-primary"
-                          : "bg-primary text-primary-foreground"
-                      }
-                    >
-                      {training.status === "done"
-                        ? "Completed"
-                        : "Not Completed"}
+                    <Badge className={statusBadge.className}>
+                      {statusBadge.label}
                     </Badge>
                   </td>
                   <td>
@@ -100,7 +118,7 @@ const TrainingSection = ({ list, timezone }) => {
                       </a>
                     ) : training.courseId ? (
                       <Link to={ROUTE_PATHS.TRAINING_COURSE(training.id)}>
-                        Open Course
+                        {actionLabel}
                       </Link>
                     ) : (
                       "-"

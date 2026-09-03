@@ -201,9 +201,29 @@ describe("TrainingSection Component", () => {
     expect(completedTag).toBeInTheDocument();
     expect(completedTag).toHaveClass("bg-accent", "text-primary");
 
-    const pendingTag = screen.getByText("Not Completed");
-    expect(pendingTag).toBeInTheDocument();
-    expect(pendingTag).toHaveClass("bg-primary", "text-primary-foreground");
+    const notStartedTag = screen.getByText("Not Started");
+    expect(notStartedTag).toBeInTheDocument();
+    expect(notStartedTag).toHaveClass("bg-primary", "text-primary-foreground");
+  });
+
+  it("gives the in-progress status its own badge, distinct from the other two", () => {
+    render(
+      <TrainingSection
+        list={[
+          {
+            id: 1,
+            category: "mentorship_mentor_onboarding",
+            status: "in_progress",
+            link: "",
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
+      />,
+    );
+
+    const badge = screen.getByText("In Progress");
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveClass("bg-secondary", "text-secondary-foreground");
   });
 
   it("renders the timestamp in the user's profile timezone when provided", () => {
@@ -324,7 +344,7 @@ describe("TrainingSection Component", () => {
       />,
     );
 
-    expect(screen.getByRole("link", { name: /open course/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /^start$/i })).toHaveAttribute(
       "href",
       "/training/42",
     );
@@ -352,8 +372,36 @@ describe("TrainingSection Component", () => {
       "http://test.com",
     );
     expect(
-      screen.queryByRole("link", { name: /open course/i }),
+      screen.queryByRole("link", { name: /^review$/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("names the action after where the learner actually is", () => {
+    renderInRouter(
+      <TrainingSection
+        list={[
+          { id: 1, courseId: 7, name: "A", status: "to_do", link: null, ...BASE_TIMESTAMPS },
+          { id: 2, courseId: 7, name: "B", status: "in_progress", link: null, ...BASE_TIMESTAMPS },
+          { id: 3, courseId: 7, name: "C", status: "done", link: null, ...BASE_TIMESTAMPS },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: /^start$/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^continue$/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^review$/i })).toBeInTheDocument();
+  });
+
+  it("calls reopening a finished course Review, never Retake", () => {
+    // Opening a completed course must not move it out of Done. Naming it
+    // Retake invites the learner to expect that it would.
+    renderInRouter(
+      <TrainingSection
+        list={[{ id: 3, courseId: 7, name: "C", status: "done", link: null, ...BASE_TIMESTAMPS }]}
+      />,
+    );
+
+    expect(screen.queryByText(/retake/i)).not.toBeInTheDocument();
   });
 
   it("still names a row the catalogue holds no course for", () => {
