@@ -116,6 +116,7 @@ export const API_ENDPOINTS = {
   TRAINING_SESSION: (trainingId) => `/training/${trainingId}/session`,
   TRAINING_PROGRESS: (trainingId) => `/training/${trainingId}/progress`,
   TRAINING_COURSES: "/training/courses",
+  TRAINING_COURSE: (courseId) => `/training/courses/${courseId}`,
   TRAINING_COURSE_TRIAL: (courseId) => `/training/courses/${courseId}/trial`,
   TRAINING_COURSE_PACKAGE: (courseId) =>
     `/training/courses/${courseId}/package`,

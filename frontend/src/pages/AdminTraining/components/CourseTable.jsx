@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,6 +13,8 @@ import {
 } from "@/components/ui/table";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { canAssign, statusLabel } from "@/pages/AdminTraining/utils";
+import { updateCourse } from "@/api/trainingApi";
+import DeactivateDialog from "@/pages/AdminTraining/components/DeactivateDialog";
 
 // Only the three states with a hosted package get a dot -- External link
 // isn't ours to color, it just says where the course actually lives.
@@ -36,15 +40,43 @@ function StatusBadge({ state }) {
   );
 }
 
+// Deactivating stops new assignments only; reactivating undoes that with no
+// consequences worth counting, so it needs no confirmation of its own.
+function ToggleActiveButton({ course, onDeactivate, onActivate }) {
+  if (!course.isActive) {
+    return (
+      <Button size="sm" variant="ghost" onClick={() => onActivate(course)}>
+        Activate
+      </Button>
+    );
+  }
+  return (
+    <Button size="sm" variant="ghost" onClick={() => onDeactivate(course)}>
+      Deactivate
+    </Button>
+  );
+}
+
 // The row's one main action. Assign stays on screen even when it cannot be
 // clicked yet -- hiding it would hide the rule (spec §4.1); the hover title
 // is the only place that rule is taught, so it isn't optional here.
-function RowActions({ course }) {
+function RowActions({ course, onDeactivate, onActivate }) {
+  const toggle = (
+    <ToggleActiveButton
+      course={course}
+      onDeactivate={onDeactivate}
+      onActivate={onActivate}
+    />
+  );
+
   if (course.state === "no_package" || course.state === "external_link") {
     return (
-      <Button size="sm" variant="outline">
-        Upload package
-      </Button>
+      <div className="flex justify-end gap-2">
+        <Button size="sm" variant="outline">
+          Upload package
+        </Button>
+        {toggle}
+      </div>
     );
   }
 
@@ -66,6 +98,7 @@ function RowActions({ course }) {
       >
         Assign
       </Button>
+      {toggle}
     </div>
   );
 }
@@ -95,46 +128,88 @@ function PackageCell({ course }) {
 
 /**
  * The admin course catalogue: Course / Package / Status / Assigned / action.
+ *
+ * A row's dialog opens by naming the course it is for in one piece of local
+ * state (`deactivating` here); the dialog itself is rendered once, outside
+ * the row loop, keyed off that state, and closes by setting it back to
+ * `null`. Assign and Upload follow the same shape.
+ *
  * @param {{courses: Array<Object>}} props `TrainingCourseDto`-shaped rows.
  */
 export default function CourseTable({ courses }) {
+  const [rows, setRows] = useState(courses);
+  useEffect(() => setRows(courses), [courses]);
+
+  const [deactivating, setDeactivating] = useState(null);
+
+  const patchCourse = (courseId, patch) =>
+    setRows((prev) =>
+      prev.map((c) => (c.courseId === courseId ? { ...c, ...patch } : c)),
+    );
+
+  const handleActivate = async (course) => {
+    try {
+      await updateCourse(course.courseId, { isActive: true });
+      patchCourse(course.courseId, { isActive: true });
+    } catch (error) {
+      toast.error(error.message);
+    }
+  };
+
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Course</TableHead>
-          <TableHead>Package</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead className="text-right">Assigned</TableHead>
-          <TableHead className="text-right">Action</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {courses.map((course) => (
-          <TableRow key={course.courseId}>
-            <TableCell>
-              <div className="font-medium">{course.name}</div>
-              {course.description && (
-                <div className="text-xs text-muted-foreground">
-                  {course.description}
-                </div>
-              )}
-            </TableCell>
-            <TableCell>
-              <PackageCell course={course} />
-            </TableCell>
-            <TableCell>
-              <StatusBadge state={course.state} />
-            </TableCell>
-            <TableCell className="text-right">
-              {course.assignedCount}
-            </TableCell>
-            <TableCell className="text-right">
-              <RowActions course={course} />
-            </TableCell>
+    <>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Course</TableHead>
+            <TableHead>Package</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead className="text-right">Assigned</TableHead>
+            <TableHead className="text-right">Action</TableHead>
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {rows.map((course) => (
+            <TableRow key={course.courseId}>
+              <TableCell>
+                <div className="font-medium">{course.name}</div>
+                {course.description && (
+                  <div className="text-xs text-muted-foreground">
+                    {course.description}
+                  </div>
+                )}
+              </TableCell>
+              <TableCell>
+                <PackageCell course={course} />
+              </TableCell>
+              <TableCell>
+                <StatusBadge state={course.state} />
+              </TableCell>
+              <TableCell className="text-right">
+                {course.assignedCount}
+              </TableCell>
+              <TableCell className="text-right">
+                <RowActions
+                  course={course}
+                  onDeactivate={setDeactivating}
+                  onActivate={handleActivate}
+                />
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      {deactivating && (
+        <DeactivateDialog
+          course={deactivating}
+          open
+          onOpenChange={(open) => !open && setDeactivating(null)}
+          onDeactivated={() => {
+            patchCourse(deactivating.courseId, { isActive: false });
+            setDeactivating(null);
+          }}
+        />
+      )}
+    </>
   );
 }

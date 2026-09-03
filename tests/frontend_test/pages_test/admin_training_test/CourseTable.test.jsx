@@ -1,10 +1,14 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import "@testing-library/jest-dom";
 
 import CourseTable from "@/pages/AdminTraining/components/CourseTable";
+import * as api from "@/api/trainingApi";
+
+vi.mock("@/api/trainingApi");
 
 // One fixture per `TrainingCourseState`, shaped like the wire DTO
 // (backend/dto/training_course_dto.py -> TrainingCourseDto), from the state
@@ -84,6 +88,10 @@ const externalLink = {
 const renderTable = (courses) =>
   render(<CourseTable courses={courses} />, { wrapper: MemoryRouter });
 
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
 describe("CourseTable", () => {
   it("shows a verified course as assignable", () => {
     renderTable([verified]);
@@ -138,6 +146,42 @@ describe("CourseTable", () => {
     );
     expect(
       screen.getByRole("button", { name: /upload package/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the deactivate dialog naming this row's headcounts", async () => {
+    renderTable([externalLink]);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /deactivate/i }),
+    );
+
+    expect(
+      screen.getByText(/61 people already assigned keep their access/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/23 of them have not finished yet/i),
+    ).toBeInTheDocument();
+  });
+
+  it("turns a course off through the dialog and flips the row to Activate", async () => {
+    api.updateCourse.mockResolvedValue({ data: {} });
+    renderTable([verified]);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /deactivate/i }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: /turn off course/i }),
+    );
+
+    await waitFor(() =>
+      expect(api.updateCourse).toHaveBeenCalledWith(verified.courseId, {
+        isActive: false,
+      }),
+    );
+    expect(
+      screen.getByRole("button", { name: /^activate$/i }),
     ).toBeInTheDocument();
   });
 });
