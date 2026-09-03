@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime, timedelta, timezone as dt_timezone, date
-from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +9,7 @@ from backend.common.mentorship_enums import (
     PairStatus,
 )
 from backend.common.name_utils import user_display_name
+from backend.common.wall_clock import wall_clock_to_utc
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.dto.meeting_dto import MeetingDto
 from backend.dto.meeting_create_dto import MeetingCreateDto
@@ -24,6 +24,13 @@ from backend.dto.user_context_dto import UserContextDto
 from backend.common.permissions import Permission
 from backend.dto.google_meeting_delete_response_dto import (
     GoogleMeetingDeleteResponseDto,
+)
+from backend.common.exceptions import MeetingGoneError
+
+# Mirrors the recruiting wording for the same situation: the row and the
+# Calendar event have diverged, and the way out is cancel-then-rebook.
+_MEETING_GONE_MESSAGE = (
+    "This meeting no longer exists on the calendar. Cancel it here and book a new one."
 )
 
 
@@ -441,19 +448,23 @@ class MeetingService:
         interval_weeks: int,
         count: int,
     ) -> list[tuple[datetime, datetime]]:
-        """Expand wall-clock recurrence into DST-correct (start_utc, end_utc) pairs."""
-        tz = ZoneInfo(timezone)
-        hour, minute = (int(p) for p in start_time.split(":"))
-        naive_start = datetime(
-            start_date.year, start_date.month, start_date.day, hour, minute
-        )
-        pairs = []
-        for i in range(count):
-            naive_i = naive_start + timedelta(weeks=interval_weeks * i)
-            start_utc = naive_i.replace(tzinfo=tz).astimezone(dt_timezone.utc)
-            end_utc = start_utc + timedelta(minutes=duration_minutes)
-            pairs.append((start_utc, end_utc))
-        return pairs
+        """Expand wall-clock recurrence into DST-correct (start_utc, end_utc) pairs.
+
+        Each occurrence is converted from its own local date, so a series that
+        spans a daylight-saving change keeps every session at the same local
+        time and lands them on different UTC offsets. Advancing a UTC instant
+        by seven days instead would hold the UTC hour and move the local one,
+        which is not what either participant agreed to.
+        """
+        return [
+            wall_clock_to_utc(
+                day=start_date + timedelta(weeks=interval_weeks * i),
+                start_time=start_time,
+                duration_minutes=duration_minutes,
+                timezone_name=timezone,
+            )
+            for i in range(count)
+        ]
 
     async def create_google_meetings_batch(
         self,
@@ -524,6 +535,162 @@ class MeetingService:
             len(failed),
         )
         return GoogleMeetingBatchCreateResponseDto(created=created, failed=failed)
+
+    async def reschedule_google_meeting(
+        self,
+        session: AsyncSession,
+        user_context: UserContextDto,
+        meeting_id: str,
+        round_id: int,
+        partner_id: int,
+        timezone: str,
+        start_date: date,
+        start_time: str,
+        duration_minutes: int,
+    ) -> GoogleMeetingResponseDetailDto:
+        """Move one already-booked Google meeting to a new slot.
+
+        An in-place edit, never a delete plus a create: `meeting_id` IS the
+        Calendar event id and a patch does not change it, so the row keeps
+        its identity, its Meet link, and Google's `created_datetime` (the
+        ordering tiebreaker). Attendees see the time move rather than a
+        cancellation followed by a fresh invite.
+
+        Only a SCHEDULED meeting may be moved -- not completed, and not one
+        whose slot has already passed. A completed meeting is a record of
+        something that happened; a past uncompleted one is history the
+        attendance sweep never closed out.
+
+        Args:
+            session (AsyncSession): The SQLAlchemy async session.
+            user_context (UserContextDto): The authenticated caller.
+            meeting_id (str): The Calendar event id of the meeting to move.
+            round_id (int): The mentorship round ID.
+            partner_id (int): The user ID of the mentorship partner.
+            timezone (str): IANA zone the wall-clock inputs are meant in.
+            start_date (date): New local start date.
+            start_time (str): New local start time, "HH:MM".
+            duration_minutes (int): New duration.
+
+        Returns:
+            GoogleMeetingResponseDetailDto: The moved meeting.
+
+        Raises:
+            ValueError: No active pair with that partner; the meeting is not
+                a GOOGLE row of that pair; the meeting is not SCHEDULED; or
+                the Calendar event is gone (recoverable -- cancel and
+                rebook).
+        """
+        current_user = await self.users_repository.get_user_by_user_id(
+            session=session, user_id=user_context.user_id
+        )
+
+        # The same lookup creation uses, not deletion's: moving a meeting
+        # puts it into a live pairing, and this call also yields the partner
+        # whose user_id the attendee list needs.
+        pair_result = await self.mentorship_pairs_repository.get_pair_with_partner_by_round_and_users_and_status(
+            session=session,
+            round_id=round_id,
+            user_id=current_user.user_id,
+            partner_id=partner_id,
+            status=PairStatus.ACTIVE,
+            with_lock=True,
+        )
+        if pair_result is None:
+            raise ValueError(
+                "No mentorship pair found for the specified partner in this round."
+            )
+        pair, partner = pair_result
+
+        existing = await self.mentorship_meeting_repository.get_meetings_by_pair(
+            session=session, pair_id=pair.pair_id
+        )
+        meeting = next(
+            (
+                m
+                for m in existing
+                if m.meeting_id == meeting_id and m.source == MeetingSource.GOOGLE
+            ),
+            None,
+        )
+        if meeting is None:
+            raise ValueError("Meeting not found for the specified pair.")
+
+        if meeting.is_completed:
+            raise ValueError("A completed meeting cannot be rescheduled.")
+        if meeting.start_datetime <= datetime.now(dt_timezone.utc):
+            raise ValueError(
+                "A meeting that has already started cannot be rescheduled."
+            )
+
+        start_utc, end_utc = self._expand_occurrences(
+            timezone=timezone,
+            start_date=start_date,
+            start_time=start_time,
+            duration_minutes=duration_minutes,
+            interval_weeks=1,
+            count=1,
+        )[0]
+
+        try:
+            await self.meeting_scheduling_service.update(
+                session,
+                event_id=meeting_id,
+                start_utc=start_utc,
+                end_utc=end_utc,
+                attendee_user_ids=[current_user.user_id, partner.user_id],
+                calendar_id=self.mentorship_calendar_id,
+            )
+        except MeetingGoneError as e:
+            self.logger.error(
+                "[MeetingService] Calendar event %s gone for round_id=%s: %s",
+                meeting_id,
+                round_id,
+                e,
+            )
+            raise ValueError(_MEETING_GONE_MESSAGE) from e
+
+        old_start_datetime = meeting.start_datetime
+        old_end_datetime = meeting.end_datetime
+
+        try:
+            await self.mentorship_meeting_repository.update_schedule(
+                session=session,
+                meeting=meeting,
+                start_datetime=start_utc,
+                end_datetime=end_utc,
+            )
+            await session.commit()
+        except Exception as e:
+            self.logger.error(
+                "[MeetingService] DB write failed after Calendar patch, "
+                "meeting_id=%s now diverges from Calendar: old=%s/%s new=%s/%s: %s",
+                meeting_id,
+                old_start_datetime,
+                old_end_datetime,
+                start_utc,
+                end_utc,
+                e,
+                exc_info=True,
+            )
+            raise
+
+        self.logger.info(
+            "[MeetingService] Meeting %s rescheduled for round_id=%s, user_id=%s",
+            meeting_id,
+            round_id,
+            current_user.user_id,
+        )
+
+        return GoogleMeetingResponseDetailDto(
+            meeting_id=meeting.meeting_id,
+            meet_link=meeting.meet_link or "",
+            attendees=[current_user.user_id, partner.user_id],
+            start_datetime=start_utc.isoformat(),
+            end_datetime=end_utc.isoformat(),
+            is_completed=meeting.is_completed,
+            entry_points=meeting.entry_points or [],
+        )
 
     async def delete_google_meetings(
         self,

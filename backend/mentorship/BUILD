@@ -15,6 +15,8 @@ py_library(
         "//backend/common:name_utils",
         "//backend/common:permissions",
         "//backend/common:recruiting_enums",
+        "//backend/common:training_links",
+        "//backend/common:wall_clock",
         "//backend/communication",
         "//backend/dto",
         "//backend/entity:entities",

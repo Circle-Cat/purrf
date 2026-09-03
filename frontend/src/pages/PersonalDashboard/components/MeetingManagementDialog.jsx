@@ -6,13 +6,10 @@ import {
   Plus,
   CalendarDays,
   ChevronDown,
-  Trash2 as TrashIcon,
-  Video,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogTrigger,
@@ -27,7 +24,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { isWithinJoinWindow } from "@/utils/meetingStatusCalculator";
 import { cn } from "@/lib/utils";
 
 import TimezoneSelector from "@/components/common/TimezoneSelector";
@@ -35,7 +31,6 @@ import MeetingLogForm from "@/pages/PersonalDashboard/components/MeetingLogForm"
 import { useMeetingManagement } from "@/pages/PersonalDashboard/hooks/useMeetingManagement";
 import {
   HALF_HOUR_SLOTS,
-  formatInTz,
   formatLocalYmd,
   hhMmToMinutes,
   isSameLocalDay,
@@ -44,13 +39,7 @@ import {
   nowInTz,
   todayInTz,
 } from "@/utils/dateTime";
-
-const DURATION_OPTIONS = [
-  { value: "30", label: "30 minutes" },
-  { value: "45", label: "45 minutes" },
-  { value: "60", label: "1 hour" },
-  { value: "90", label: "1.5 hours" },
-];
+import { DURATION_OPTIONS } from "@/utils/meetingSlot";
 
 const INTERVAL_OPTIONS = [
   { value: "1", label: "1 week" },
@@ -91,20 +80,15 @@ export default function MeetingManagementDialog({
   onLogged,
   userTimezone,
 }) {
-  // Booking a meeting and cancelling one both need a round that is open for
-  // scheduling; logging a meeting already held does not, which is why it reads
-  // `roundId` directly. Passing null here also keeps the hook from fetching
-  // for a round nothing on this side can act on.
+  // Booking a meeting needs a round that is open for scheduling; logging a
+  // meeting already held does not, which is why it reads `roundId` directly.
+  // Passing null here also keeps the hook from fetching for a round nothing on
+  // this side can act on.
   const scheduleRoundId =
     canSchedule && !scheduleUnavailableReason ? roundId : null;
 
-  const {
-    partners,
-    bookMeeting,
-    uncompletedMeetings = [],
-    cancelMeetings,
-    isLoading,
-  } = useMeetingManagement(scheduleRoundId);
+  const { partners, bookMeeting, isLoading } =
+    useMeetingManagement(scheduleRoundId);
 
   // Which tabs this viewer is offered at all, and which of those can be acted
   // on right now. Both the trigger button and the tab the dialog opens on are
@@ -114,11 +98,6 @@ export default function MeetingManagementDialog({
     tabs.push({
       value: "schedule",
       label: "Schedule Meeting",
-      unavailableReason: scheduleUnavailableReason,
-    });
-    tabs.push({
-      value: "uncompleted",
-      label: "Uncompleted",
       unavailableReason: scheduleUnavailableReason,
     });
   }
@@ -139,8 +118,6 @@ export default function MeetingManagementDialog({
   const [selectedTime, setSelectedTime] = useState("");
   const [calendarOpen, setCalendarOpen] = useState(false);
 
-  const [selectedIds, setSelectedIds] = useState(new Set());
-
   const initialFormState = {
     partnerId: "",
     duration: "30",
@@ -153,71 +130,6 @@ export default function MeetingManagementDialog({
   useEffect(() => {
     setFormData((prev) => ({ ...prev, timezone: userTimezone }));
   }, [userTimezone]);
-
-  const uncompletedLength = uncompletedMeetings.length;
-  useEffect(() => {
-    setSelectedIds(new Set());
-  }, [isOpen, activeTab, uncompletedMeetings.length]);
-
-  const isAllChecked = useMemo(() => {
-    return uncompletedLength > 0 && selectedIds.size === uncompletedLength;
-  }, [selectedIds, uncompletedLength]);
-
-  const handleToggleAll = () => {
-    if (isAllChecked) {
-      setSelectedIds(new Set());
-    } else {
-      const allIds = uncompletedMeetings.map((m) => m.meetingId);
-      setSelectedIds(new Set(allIds));
-    }
-  };
-
-  // Toggle single item selection
-  const handleToggleItem = (meetingId) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(meetingId)) {
-        next.delete(meetingId);
-      } else {
-        next.add(meetingId);
-      }
-      return next;
-    });
-  };
-
-  // Trigger batch deletion
-  const handleDeleteSelected = async () => {
-    if (selectedIds.size === 0) return;
-
-    // Construct the full selected meeting objects for processing in cancelMeetings
-    const selectedMeetings = uncompletedMeetings.filter((m) =>
-      selectedIds.has(m.meetingId),
-    );
-
-    try {
-      await cancelMeetings(selectedMeetings);
-      toast.success("Meetings cancelled successfully!");
-      setSelectedIds(new Set()); // Clear checked states upon success
-
-      await onBooked?.();
-    } catch (error) {
-      console.error("Failed to delete meetings in UI:", error);
-      toast.error("Failed to cancel selected meetings.");
-    }
-  };
-
-  // Helper function: Format meeting card details based on user's local timezone
-  const formatCardDetails = (startStr, endStr, userTimezone) => {
-    const durationMin = Math.round(
-      (new Date(endStr) - new Date(startStr)) / 1000 / 60,
-    );
-    return {
-      dateStr: formatInTz(startStr, userTimezone, "EEE, MMM d, yyyy"),
-      timeStr: `${formatInTz(startStr, userTimezone, "HH:mm")} - ${formatInTz(endStr, userTimezone, "HH:mm")}`,
-      durationStr: `${durationMin} mins`,
-      timezoneStr: userTimezone,
-    };
-  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -339,10 +251,9 @@ export default function MeetingManagementDialog({
     }
   };
 
-  // The map doubles as the name lookup for meetings already held, so it
-  // carries pairings that have ended. Those are not somewhere a new meeting
-  // can be booked -- the backend refuses one without a live pair -- so only
-  // current partners are offered.
+  // The map carries every pairing of the round, ended ones included. Those are
+  // not somewhere a new meeting can be booked -- the backend refuses one
+  // without a live pair -- so only current partners are offered.
   const partnerList = partners
     ? Array.from(partners.values()).filter(
         (partner) => partner.isActive !== false,
@@ -395,34 +306,189 @@ export default function MeetingManagementDialog({
           {/* Content Area */}
           <div className="p-4 sm:p-5">
             {canSchedule && (
-              <>
-                {/* Schedule Meeting Form */}
-                <TabsContent
-                  value="schedule"
-                  className="mt-0 focus-visible:outline-none"
-                >
-                  {scheduleUnavailableReason ? (
-                    <UnavailableNotice reason={scheduleUnavailableReason} />
-                  ) : (
-                    <form onSubmit={handleSubmit} className="space-y-3.5">
-                      {/* Mentor / Mentee Selection Dropdown */}
+              /* Schedule Meeting Form */
+              <TabsContent
+                value="schedule"
+                className="mt-0 focus-visible:outline-none"
+              >
+                {scheduleUnavailableReason ? (
+                  <UnavailableNotice reason={scheduleUnavailableReason} />
+                ) : (
+                  <form onSubmit={handleSubmit} className="space-y-3.5">
+                    {/* Mentor / Mentee Selection Dropdown */}
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium text-gray-700">
+                        Select Partner *
+                      </label>
+                      <div className="relative">
+                        <select
+                          name="partnerId"
+                          aria-label="Select Partner"
+                          value={formData.partnerId}
+                          onChange={handleInputChange}
+                          className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-gray-900 focus:border-[#6035F3] focus:ring-2 focus:ring-[#6035F3]/20 outline-none transition-all"
+                          required
+                        >
+                          <option value="">Choose a partner</option>
+                          {partnerList.map((partner) => (
+                            <option key={partner.id} value={partner.id}>
+                              {userDisplayName(partner)}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                          <ChevronDown className="w-4 h-4" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      {/* Timezone */}
+                      <div className="space-y-1.5 min-w-0">
+                        <label className="text-sm font-medium text-gray-700">
+                          Timezone
+                        </label>
+                        <div className="w-full">
+                          <TimezoneSelector
+                            value={formData.timezone}
+                            onChange={handleTimezoneChange}
+                            labelSource="value"
+                            menuPlacement="auto"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Date Picker (Popover + Calendar) */}
                       <div className="space-y-1.5">
                         <label className="text-sm font-medium text-gray-700">
-                          Select Partner *
+                          Start Date *
+                        </label>
+                        <Popover
+                          open={calendarOpen}
+                          onOpenChange={setCalendarOpen}
+                        >
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full justify-start text-left font-normal h-[42px] rounded-lg border-gray-300 px-4",
+                                !selectedDate && "text-gray-400",
+                              )}
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4 text-gray-400" />
+                              {selectedDate ? (
+                                format(selectedDate, "PPP")
+                              ) : (
+                                <span>Pick a date</span>
+                              )}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={selectedDate}
+                              onSelect={(date) => {
+                                if (date) {
+                                  setSelectedDate(date);
+                                  setCalendarOpen(false);
+                                }
+                              }}
+                              disabled={{ before: disableBeforeDate }}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                    </div>
+
+                    {/* Time Picker and Meeting Duration*/}
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-gray-700">
+                          Start Time *
+                        </label>
+                        <div className="w-full min-w-0 relative">
+                          <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 z-10 pointer-events-none" />
+                          <Select
+                            aria-label="Start Time"
+                            options={TIME_SLOTS}
+                            value={
+                              selectedTime && !isPastTime(selectedTime)
+                                ? TIME_SLOTS.find(
+                                    (opt) => opt.value === selectedTime,
+                                  )
+                                : null
+                            }
+                            onChange={(opt) => setSelectedTime(opt.value)}
+                            isOptionDisabled={(opt) => isPastTime(opt.value)}
+                            placeholder="Pick a start time"
+                            menuPlacement="auto"
+                            styles={{
+                              control: (provided) => ({
+                                ...provided,
+                                height: "42px",
+                                borderRadius: "8px",
+                                borderColor: "#d1d5db",
+                                boxShadow: "none",
+                                paddingLeft: "26px",
+                                "&:hover": { borderColor: "#d1d5db" },
+                              }),
+                              menu: (provided) => ({
+                                ...provided,
+                                zIndex: 50,
+                              }),
+                              menuList: (provided) => ({
+                                ...provided,
+                                maxHeight: "180px",
+                              }),
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-gray-700">
+                          Duration *
                         </label>
                         <div className="relative">
                           <select
-                            name="partnerId"
-                            aria-label="Select Partner"
-                            value={formData.partnerId}
+                            name="duration"
+                            aria-label="Duration"
+                            value={formData.duration}
                             onChange={handleInputChange}
                             className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-gray-900 focus:border-[#6035F3] focus:ring-2 focus:ring-[#6035F3]/20 outline-none transition-all"
                             required
                           >
-                            <option value="">Choose a partner</option>
-                            {partnerList.map((partner) => (
-                              <option key={partner.id} value={partner.id}>
-                                {userDisplayName(partner)}
+                            {DURATION_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                            <ChevronDown className="w-4 h-4" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Recurrence: interval + number of sessions */}
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-gray-700">
+                          Repeat every
+                        </label>
+                        <div className="relative">
+                          <select
+                            name="intervalWeeks"
+                            aria-label="Repeat every"
+                            value={formData.intervalWeeks}
+                            onChange={handleInputChange}
+                            className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-gray-900 focus:border-[#6035F3] focus:ring-2 focus:ring-[#6035F3]/20 outline-none transition-all"
+                          >
+                            {INTERVAL_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
                               </option>
                             ))}
                           </select>
@@ -432,358 +498,49 @@ export default function MeetingManagementDialog({
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        {/* Timezone */}
-                        <div className="space-y-1.5 min-w-0">
-                          <label className="text-sm font-medium text-gray-700">
-                            Timezone
-                          </label>
-                          <div className="w-full">
-                            <TimezoneSelector
-                              value={formData.timezone}
-                              onChange={handleTimezoneChange}
-                              labelSource="value"
-                              menuPlacement="auto"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Date Picker (Popover + Calendar) */}
-                        <div className="space-y-1.5">
-                          <label className="text-sm font-medium text-gray-700">
-                            Start Date *
-                          </label>
-                          <Popover
-                            open={calendarOpen}
-                            onOpenChange={setCalendarOpen}
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-gray-700">
+                          Number of sessions
+                        </label>
+                        <div className="relative">
+                          <select
+                            name="count"
+                            aria-label="Number of sessions"
+                            value={formData.count}
+                            onChange={handleInputChange}
+                            className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-gray-900 focus:border-[#6035F3] focus:ring-2 focus:ring-[#6035F3]/20 outline-none transition-all"
                           >
-                            <PopoverTrigger asChild>
-                              <Button
-                                variant="outline"
-                                className={cn(
-                                  "w-full justify-start text-left font-normal h-[42px] rounded-lg border-gray-300 px-4",
-                                  !selectedDate && "text-gray-400",
-                                )}
-                              >
-                                <CalendarIcon className="mr-2 h-4 w-4 text-gray-400" />
-                                {selectedDate ? (
-                                  format(selectedDate, "PPP")
-                                ) : (
-                                  <span>Pick a date</span>
-                                )}
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent
-                              className="w-auto p-0"
-                              align="start"
-                            >
-                              <Calendar
-                                mode="single"
-                                selected={selectedDate}
-                                onSelect={(date) => {
-                                  if (date) {
-                                    setSelectedDate(date);
-                                    setCalendarOpen(false);
-                                  }
-                                }}
-                                disabled={{ before: disableBeforeDate }}
-                                initialFocus
-                              />
-                            </PopoverContent>
-                          </Popover>
-                        </div>
-                      </div>
-
-                      {/* Time Picker and Meeting Duration*/}
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <div className="space-y-1.5">
-                          <label className="text-sm font-medium text-gray-700">
-                            Start Time *
-                          </label>
-                          <div className="w-full min-w-0 relative">
-                            <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 z-10 pointer-events-none" />
-                            <Select
-                              aria-label="Start Time"
-                              options={TIME_SLOTS}
-                              value={
-                                selectedTime && !isPastTime(selectedTime)
-                                  ? TIME_SLOTS.find(
-                                      (opt) => opt.value === selectedTime,
-                                    )
-                                  : null
-                              }
-                              onChange={(opt) => setSelectedTime(opt.value)}
-                              isOptionDisabled={(opt) => isPastTime(opt.value)}
-                              placeholder="Pick a start time"
-                              menuPlacement="auto"
-                              styles={{
-                                control: (provided) => ({
-                                  ...provided,
-                                  height: "42px",
-                                  borderRadius: "8px",
-                                  borderColor: "#d1d5db",
-                                  boxShadow: "none",
-                                  paddingLeft: "26px",
-                                  "&:hover": { borderColor: "#d1d5db" },
-                                }),
-                                menu: (provided) => ({
-                                  ...provided,
-                                  zIndex: 50,
-                                }),
-                                menuList: (provided) => ({
-                                  ...provided,
-                                  maxHeight: "180px",
-                                }),
-                              }}
-                            />
+                            {SESSION_COUNT_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+                            <ChevronDown className="w-4 h-4" />
                           </div>
                         </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-sm font-medium text-gray-700">
-                            Duration *
-                          </label>
-                          <div className="relative">
-                            <select
-                              name="duration"
-                              aria-label="Duration"
-                              value={formData.duration}
-                              onChange={handleInputChange}
-                              className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-gray-900 focus:border-[#6035F3] focus:ring-2 focus:ring-[#6035F3]/20 outline-none transition-all"
-                              required
-                            >
-                              {DURATION_OPTIONS.map((opt) => (
-                                <option key={opt.value} value={opt.value}>
-                                  {opt.label}
-                                </option>
-                              ))}
-                            </select>
-                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-                              <ChevronDown className="w-4 h-4" />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Recurrence: interval + number of sessions */}
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <div className="space-y-1.5">
-                          <label className="text-sm font-medium text-gray-700">
-                            Repeat every
-                          </label>
-                          <div className="relative">
-                            <select
-                              name="intervalWeeks"
-                              aria-label="Repeat every"
-                              value={formData.intervalWeeks}
-                              onChange={handleInputChange}
-                              className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-gray-900 focus:border-[#6035F3] focus:ring-2 focus:ring-[#6035F3]/20 outline-none transition-all"
-                            >
-                              {INTERVAL_OPTIONS.map((opt) => (
-                                <option key={opt.value} value={opt.value}>
-                                  {opt.label}
-                                </option>
-                              ))}
-                            </select>
-                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-                              <ChevronDown className="w-4 h-4" />
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-sm font-medium text-gray-700">
-                            Number of sessions
-                          </label>
-                          <div className="relative">
-                            <select
-                              name="count"
-                              aria-label="Number of sessions"
-                              value={formData.count}
-                              onChange={handleInputChange}
-                              className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-gray-900 focus:border-[#6035F3] focus:ring-2 focus:ring-[#6035F3]/20 outline-none transition-all"
-                            >
-                              {SESSION_COUNT_OPTIONS.map((opt) => (
-                                <option key={opt.value} value={opt.value}>
-                                  {opt.label}
-                                </option>
-                              ))}
-                            </select>
-                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-                              <ChevronDown className="w-4 h-4" />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Confirm Booking Button */}
-                      <div className="flex justify-end pt-4 border-t">
-                        <button
-                          type="submit"
-                          disabled={isLoading}
-                          className="flex items-center gap-2 rounded-lg bg-[#6035F3] hover:bg-[#4d2ac2] px-6 py-2.5 font-medium text-white shadow-md transition-all active:scale-95 disabled:bg-gray-400 disabled:active:scale-100"
-                        >
-                          {isLoading ? (
-                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          ) : (
-                            <Plus className="w-5 h-5" />
-                          )}
-                          Confirm Booking
-                        </button>
-                      </div>
-                    </form>
-                  )}
-                </TabsContent>
-
-                {/* Uncompleted Tab */}
-                <TabsContent
-                  value="uncompleted"
-                  className="mt-0 focus-visible:outline-none"
-                >
-                  {scheduleUnavailableReason ? (
-                    <UnavailableNotice reason={scheduleUnavailableReason} />
-                  ) : uncompletedLength === 0 ? (
-                    /* Empty state placeholder text preserved */
-                    <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-gray-100 rounded-xl bg-gray-50/50 my-auto">
-                      <CalendarDays className="w-12 h-12 text-gray-200 mb-2" />
-                      <p className="text-gray-400 font-medium">
-                        No uncompleted meetings found
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col min-h-0 justify-between flex-1 overflow-hidden">
-                      <div className="overflow-hidden">
-                        {/* Top Control Bar: Select All Checkbox */}
-                        <div className="flex items-center space-x-3 pb-3 mb-4 border-b border-gray-100 flex-shrink-0">
-                          <Checkbox
-                            id="select-all-uncompleted"
-                            checked={isAllChecked}
-                            onCheckedChange={handleToggleAll}
-                            disabled={isLoading}
-                          />
-                          <label
-                            htmlFor="select-all-uncompleted"
-                            className="text-sm font-semibold text-gray-700 cursor-pointer select-none"
-                          >
-                            Select All
-                          </label>
-                        </div>
-
-                        {/* Card List */}
-                        <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-200">
-                          {uncompletedMeetings.map((meeting) => {
-                            const isChecked = selectedIds.has(
-                              meeting.meetingId,
-                            );
-                            const {
-                              dateStr,
-                              timeStr,
-                              durationStr,
-                              timezoneStr,
-                            } = formatCardDetails(
-                              meeting.startDatetime,
-                              meeting.endDatetime,
-                              userTimezone,
-                            );
-
-                            return (
-                              <div
-                                key={meeting.meetingId}
-                                className={cn(
-                                  "flex items-center p-4 border rounded-xl transition-all duration-200",
-                                  isChecked
-                                    ? "border-[#6035F3] bg-[#6035F3]/5 shadow-sm"
-                                    : "border-gray-200 bg-white hover:border-gray-300",
-                                )}
-                              >
-                                {/* Single Selection Checkbox */}
-                                <div className="mr-4 flex items-center">
-                                  <Checkbox
-                                    id={`check-${meeting.meetingId}`}
-                                    checked={isChecked}
-                                    onCheckedChange={() =>
-                                      handleToggleItem(meeting.meetingId)
-                                    }
-                                    disabled={isLoading}
-                                  />
-                                </div>
-
-                                {/* Core Card Content Display */}
-                                <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                                  {/* Left Side: Partner Info */}
-                                  <div className="flex flex-col justify-center">
-                                    <h4 className="font-semibold text-gray-900 flex items-center gap-2 flex-wrap">
-                                      {meeting.partnerName}
-                                    </h4>
-                                  </div>
-
-                                  {/* Right Side: Formatted Date/Time & Duration in User's Timezone */}
-                                  <div className="sm:text-right flex flex-col justify-center space-y-0.5">
-                                    <p className="font-medium text-gray-800">
-                                      {dateStr}
-                                    </p>
-                                    <p className="text-xs font-mono text-[#6035F3] font-semibold">
-                                      {timeStr}
-                                    </p>
-                                    <p className="text-[11px] text-gray-400">
-                                      Duration:{" "}
-                                      <span className="text-gray-700 font-medium">
-                                        {durationStr}
-                                      </span>
-                                      <span className="mx-1.5 text-gray-300">
-                                        |
-                                      </span>
-                                      TZ:{" "}
-                                      <span className="text-gray-700">
-                                        {timezoneStr}
-                                      </span>
-                                    </p>
-                                    {/* No completion check needed: this list is
-                                    already filtered to uncompleted meetings.
-                                    It is NOT filtered by time, though, so a
-                                    meeting nobody attended lingers here --
-                                    hence the join window. A manually logged
-                                    meeting has no link and so gets no
-                                    button. */}
-                                    {meeting.meetLink &&
-                                      isWithinJoinWindow(
-                                        meeting.endDatetime,
-                                      ) && (
-                                        <a
-                                          href={meeting.meetLink}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="inline-flex items-center gap-1 self-start sm:self-end mt-1.5 rounded border border-[#6035F3] px-2 py-1 text-xs font-medium text-[#6035F3] transition-colors hover:bg-[#6035F3] hover:text-white"
-                                        >
-                                          <Video className="w-3.5 h-3.5" />
-                                          Join
-                                        </a>
-                                      )}
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Delete Button */}
-                      <div className="flex justify-end mt-2 pt-2 border-t border-gray-50 bg-white flex-shrink-0">
-                        <Button
-                          variant="destructive"
-                          size="lg"
-                          className="px-6 font-medium text-white shadow-md transition-all active:scale-95 disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none disabled:active:scale-100"
-                          disabled={selectedIds.size === 0 || isLoading}
-                          onClick={handleDeleteSelected}
-                        >
-                          <TrashIcon className="w-4 h-4" />
-                          Delete ({selectedIds.size})
-                        </Button>
                       </div>
                     </div>
-                  )}
-                </TabsContent>
-              </>
+
+                    {/* Confirm Booking Button */}
+                    <div className="flex justify-end pt-4 border-t">
+                      <button
+                        type="submit"
+                        disabled={isLoading}
+                        className="flex items-center gap-2 rounded-lg bg-[#6035F3] hover:bg-[#4d2ac2] px-6 py-2.5 font-medium text-white shadow-md transition-all active:scale-95 disabled:bg-gray-400 disabled:active:scale-100"
+                      >
+                        {isLoading ? (
+                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        ) : (
+                          <Plus className="w-5 h-5" />
+                        )}
+                        Confirm Booking
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </TabsContent>
             )}
 
             {canLogPast && (

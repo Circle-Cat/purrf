@@ -14,9 +14,6 @@ class TimelineCreateDto(BaseRequestDto):
     meetings_completion_deadline_at: datetime
     feedback_start_at: datetime | None = None
     feedback_deadline_at: datetime | None = None
-    review_start_at: datetime | None = None
-    acceptance_notification_at: datetime | None = None
-    first_meeting_deadline_at: datetime | None = None
 
 
 class RoundsCreateDto(BaseRequestDto):

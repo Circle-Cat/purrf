@@ -3,6 +3,8 @@ from datetime import datetime, timedelta, timezone
 
 from backend.repository.training_repository import TrainingRepository
 from backend.entity.training_entity import TrainingEntity
+
+from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.users_entity import UsersEntity
 from backend.common.mentorship_enums import (
     TrainingStatus,
@@ -74,17 +76,78 @@ class TestTrainingRepository(BaseRepositoryTestLib):
         ]
         await self.insert_entities(trainings)
 
-    async def test_get_training_by_user_id_existing(self):
-        result = await self.repo.get_training_by_user_id(
+    async def test_get_training_with_course_by_user_id_existing(self):
+        result = await self.repo.get_training_with_course_by_user_id(
             self.session, self.user1.user_id
         )
 
         self.assertEqual(len(result), 2)
-        self.assertTrue(all(t.user_id == self.user1.user_id for t in result))
+        self.assertTrue(all(t.user_id == self.user1.user_id for t, _, _ in result))
 
-    async def test_get_training_by_user_id_non_existent(self):
-        result = await self.repo.get_training_by_user_id(self.session, 9999)
+    async def test_get_training_with_course_by_user_id_non_existent(self):
+        result = await self.repo.get_training_with_course_by_user_id(self.session, 9999)
         self.assertEqual(result, [])
+
+    async def test_a_row_pointing_at_a_course_carries_that_course_name(self):
+        course = TrainingCourseEntity(name="Mentor Onboarding", is_active=True)
+        await self.insert_entities([course])
+        await self.insert_entities([
+            TrainingEntity(
+                user_id=self.user2.user_id,
+                status=TrainingStatus.TO_DO,
+                course_id=course.course_id,
+            )
+        ])
+
+        result = await self.repo.get_training_with_course_by_user_id(
+            self.session, self.user2.user_id
+        )
+
+        names = {row.training_id: name for row, name, _ in result}
+        assigned = next(
+            row for row, _, _ in result if row.course_id == course.course_id
+        )
+        self.assertEqual(names[assigned.training_id], "Mentor Onboarding")
+
+    async def test_a_row_says_whether_its_course_has_a_package(self):
+        """A course nobody has uploaded to cannot be opened, and the profile
+        page has to offer something other than a way in."""
+        hosted = TrainingCourseEntity(
+            name="Mentor Onboarding",
+            is_active=True,
+            storage_prefix="training/1/abc/",
+        )
+        unhosted = TrainingCourseEntity(name="Residency Onboarding", is_active=True)
+        await self.insert_entities([hosted, unhosted])
+        await self.insert_entities([
+            TrainingEntity(
+                user_id=self.user2.user_id,
+                status=TrainingStatus.TO_DO,
+                course_id=hosted.course_id,
+            ),
+            TrainingEntity(
+                user_id=self.user2.user_id,
+                status=TrainingStatus.TO_DO,
+                course_id=unhosted.course_id,
+            ),
+        ])
+
+        result = await self.repo.get_training_with_course_by_user_id(
+            self.session, self.user2.user_id
+        )
+
+        prefixes = {row.course_id: prefix for row, _, prefix in result}
+        self.assertEqual(prefixes[hosted.course_id], "training/1/abc/")
+        self.assertIsNone(prefixes[unhosted.course_id])
+
+    async def test_a_row_with_no_course_still_comes_back(self):
+        """course_id is nullable and really is null for legacy rows."""
+        result = await self.repo.get_training_with_course_by_user_id(
+            self.session, self.user1.user_id
+        )
+
+        self.assertEqual(len(result), 2)
+        self.assertTrue(all(name is None for _, name, _ in result))
 
     async def test_get_training_by_user_id_and_category_existing(self):
         result = await self.repo.get_training_by_user_id_and_category(
@@ -126,9 +189,12 @@ class TestTrainingRepository(BaseRepositoryTestLib):
 
     async def test_upsert_training_update(self):
         """Test updating an existing TrainingEntity."""
-        existing = await self.repo.get_training_by_user_id(
-            self.session, self.user1.user_id
-        )
+        existing = [
+            row
+            for row, _, _ in await self.repo.get_training_with_course_by_user_id(
+                self.session, self.user1.user_id
+            )
+        ]
         updated_entity = TrainingEntity(
             training_id=existing[0].training_id,
             user_id=self.user1.user_id,
@@ -175,6 +241,69 @@ class TestTrainingRepository(BaseRepositoryTestLib):
             self.session, [999], [TrainingCategory.CORPORATE_CULTURE_COURSE]
         )
         self.assertEqual(result, [])
+
+    async def _sql_of_get_training_by_id(self, **kwargs) -> list[str]:
+        """Every statement the call sends, compiled for Postgres."""
+        from sqlalchemy import event
+        from sqlalchemy.dialects import postgresql
+
+        captured = []
+
+        def capture(conn, clauseelement, multiparams, params, execution_options):
+            captured.append(clauseelement)
+
+        training = await self.repo.get_training_by_user_id_and_category(
+            self.session,
+            self.user1.user_id,
+            TrainingCategory.CORPORATE_CULTURE_COURSE,
+        )
+        event.listen(self.connection.sync_connection, "before_execute", capture)
+        try:
+            await self.repo.get_training_by_id(
+                self.session, training.training_id, **kwargs
+            )
+        finally:
+            event.remove(self.connection.sync_connection, "before_execute", capture)
+
+        return [
+            str(statement.compile(dialect=postgresql.dialect()))
+            for statement in captured
+            if hasattr(statement, "compile")
+        ]
+
+    async def test_the_read_a_progress_save_makes_locks_the_row(self):
+        """A save reads the status, decides the next one from it and writes it
+        back. Without the lock two commits a second apart both read the old
+        status, and the one that decided "not finished" can land last."""
+        sqls = await self._sql_of_get_training_by_id(for_update=True)
+
+        self.assertTrue(
+            any("FOR UPDATE" in sql for sql in sqls),
+            f"Expected FOR UPDATE when for_update=True. Got: {sqls}",
+        )
+
+    async def test_a_plain_read_takes_no_lock(self):
+        """Locking by default would make every reader of an assignment wait
+        behind whoever is saving progress on it."""
+        sqls = await self._sql_of_get_training_by_id()
+
+        self.assertFalse(
+            any("FOR UPDATE" in sql for sql in sqls),
+            f"Expected no FOR UPDATE by default. Got: {sqls}",
+        )
+
+    async def test_get_training_by_id_returns_the_assignment(self):
+        expected = await self.repo.get_training_by_user_id_and_category(
+            self.session,
+            self.user1.user_id,
+            TrainingCategory.CORPORATE_CULTURE_COURSE,
+        )
+
+        result = await self.repo.get_training_by_id(
+            self.session, expected.training_id, for_update=True
+        )
+
+        self.assertEqual(result.training_id, expected.training_id)
 
 
 if __name__ == "__main__":

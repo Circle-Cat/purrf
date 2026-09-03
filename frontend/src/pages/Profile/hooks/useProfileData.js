@@ -75,6 +75,12 @@ export const useProfileData = () => {
       company: currentJob.companyOrOrganization || "",
       completedTraining: training.map((t) => ({
         id: t.id,
+        // Names the row, and says whether it opens in the app at all.
+        courseId: t.courseId,
+        name: t.name,
+        // Whether the course has a package we serve -- gates the in-app
+        // Start/Continue/Review link.
+        isHosted: t.isHosted,
         category: t.category,
         status: t.status,
         // Pass the API timestamps through unchanged. TrainingSection wants

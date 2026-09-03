@@ -95,6 +95,7 @@ py_test(
     srcs = ["fast_api_response_wrapper_test.py"],
     deps = [
         "//backend/common:fast_api_response_wrapper",
+        "//backend/dto",
         "@pypi//fastapi",
         "@pypi//httpx",
     ],
@@ -185,5 +186,19 @@ py_test(
     srcs = ["identity_type_test.py"],
     deps = [
         "//backend/common:identity_type",
+    ],
+)
+
+py_test(
+    name = "training_links_test",
+    srcs = ["training_links_test.py"],
+    deps = ["//backend/common:training_links"],
+)
+
+py_test(
+    name = "wall_clock_test",
+    srcs = ["wall_clock_test.py"],
+    deps = [
+        "//backend/common:wall_clock",
     ],
 )

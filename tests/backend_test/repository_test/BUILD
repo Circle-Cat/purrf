@@ -315,3 +315,27 @@ py_test(
         "//backend/repository:repositories",
     ],
 )
+
+py_test(
+    name = "training_progress_repository_test",
+    srcs = ["training_progress_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "training_course_repository_test",
+    srcs = ["training_course_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)

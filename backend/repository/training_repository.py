@@ -1,21 +1,36 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from backend.entity.training_entity import TrainingEntity
+from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.common.mentorship_enums import TrainingCategory
 
 
 class TrainingRepository:
-    async def get_training_by_user_id(
+    async def get_training_with_course_by_user_id(
         self, session: AsyncSession, user_id: int
-    ) -> list[TrainingEntity]:
-        """
-        Fetch all training records for a given user_id.
+    ) -> list[tuple[TrainingEntity, str | None, str | None]]:
+        """Fetch a user's training records, each with its course name and prefix.
+
+        Outer joined: course_id is nullable, and a row without one is still
+        the user's assignment and still has to be shown.
+
+        The prefix comes back so the caller can tell a course we serve from
+        one nobody has uploaded to. Only whether it is set is ever used --
+        resolving an actual object key is the content route's job, per request.
         """
         result = await session.execute(
-            select(TrainingEntity).where(TrainingEntity.user_id == user_id)
+            select(
+                TrainingEntity,
+                TrainingCourseEntity.name,
+                TrainingCourseEntity.storage_prefix,
+            )
+            .outerjoin(
+                TrainingCourseEntity,
+                TrainingEntity.course_id == TrainingCourseEntity.course_id,
+            )
+            .where(TrainingEntity.user_id == user_id)
         )
-        trainings = result.scalars().all()
-        return trainings
+        return [(row[0], row[1], row[2]) for row in result.all()]
 
     async def get_training_by_user_id_and_category(
         self, session: AsyncSession, user_id: int, category: TrainingCategory
@@ -68,3 +83,55 @@ class TrainingRepository:
         merged_entity = await session.merge(entity)
         await session.flush()
         return merged_entity
+
+    async def get_training_by_user_id_and_course_id(
+        self, session: AsyncSession, user_id: int, course_id: int
+    ) -> TrainingEntity | None:
+        """
+        Fetch the assignment a user holds for one course, if any.
+
+        The read behind idempotent assignment.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user the assignment belongs to.
+            course_id (int): The course being assigned.
+
+        Returns:
+            TrainingEntity | None: The existing assignment, or None.
+        """
+        result = await session.execute(
+            select(TrainingEntity).where(
+                TrainingEntity.user_id == user_id,
+                TrainingEntity.course_id == course_id,
+            )
+        )
+        return result.scalars().one_or_none()
+
+    async def get_training_by_id(
+        self, session: AsyncSession, training_id: int, for_update: bool = False
+    ) -> TrainingEntity | None:
+        """
+        Fetch one assignment by its primary key.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            training_id (int): The assignment to fetch.
+            for_update (bool): Take a row lock, held until this transaction
+                commits. Anyone else reading the same row this way waits, and
+                then reads the status this transaction wrote rather than the
+                one they would otherwise still see. Required of anything that
+                decides the assignment's next status from its current one; a
+                plain read must not ask for it.
+
+        Returns:
+            TrainingEntity | None: The assignment, or None.
+        """
+        stmt = select(TrainingEntity).where(TrainingEntity.training_id == training_id)
+        if for_update:
+            # populate_existing so the row the lock re-read wins over anything
+            # this session already had in memory for it -- the point of the
+            # lock is to read what the other transaction just committed.
+            stmt = stmt.with_for_update().execution_options(populate_existing=True)
+        result = await session.execute(stmt)
+        return result.scalars().one_or_none()

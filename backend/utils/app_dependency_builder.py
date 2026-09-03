@@ -136,6 +136,15 @@ from backend.leave.leave_calendar_service import LeaveCalendarService
 from backend.leave.leave_calendar_controller import LeaveCalendarController
 from backend.leave.leave_adjustment_service import LeaveAdjustmentService
 from backend.leave.leave_admin_controller import LeaveAdminController
+from backend.training.content_host import resolve_content_host
+from backend.training.training_admin_controller import TrainingAdminController
+from backend.training.training_assignment_service import TrainingAssignmentService
+from backend.training.training_content_controller import TrainingContentController
+from backend.training.training_content_service import TrainingContentService
+from backend.training.training_course_service import TrainingCourseService
+from backend.training.training_package_service import TrainingPackageService
+from backend.training.training_progress_service import TrainingProgressService
+from backend.training.training_storage import TrainingStorage
 from backend.leave.leave_engine_service import LeaveEngineService
 from backend.leave.leave_job_controller import LeaveJobController
 from backend.leave.leave_request_service import LeaveRequestService
@@ -153,7 +162,13 @@ from backend.notification_management.delivery_service import DeliveryService
 from backend.notification_management.delivery_controller import (
     NotificationDeliveryController,
 )
-from backend.common.environment_constants import RESUME_BUCKET
+from backend.common.environment_constants import (
+    RESUME_BUCKET,
+    APP_ORIGINS,
+    TRAINING_BUCKET,
+    TRAINING_CONTENT_HOST,
+    TRAINING_TOKEN_SIGNING_KEY,
+)
 from backend.common.auth0_client import Auth0Client
 from backend.repository.users_repository import UsersRepository
 from backend.repository.user_identities_repository import UserIdentitiesRepository
@@ -165,6 +180,12 @@ from backend.communication.email_conversation_service import EmailConversationSe
 from backend.communication.meeting_scheduling_service import MeetingSchedulingService
 from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.repository.experience_repository import ExperienceRepository
+from backend.repository.training_course_repository import (
+    TrainingCourseRepository,
+)
+from backend.repository.training_progress_repository import (
+    TrainingProgressRepository,
+)
 from backend.repository.training_repository import TrainingRepository
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from backend.repository.mentorship_pairs_repository import MentorshipPairsRepository
@@ -532,11 +553,13 @@ class AppDependencyBuilder:
         self.user_identities_repository = UserIdentitiesRepository()
         self.user_permissions_repository = UserPermissionsRepository()
         self.training_repository = TrainingRepository()
-        # Built here, next to its repository, because both ApplicationService
+        self.training_course_repository = TrainingCourseRepository()
+        # Built here, next to its repositories, because both ApplicationService
         # and BoardService take it and are constructed further down.
         self.onboarding_training_service = OnboardingTrainingService(
             logger=self.logger,
             training_repository=self.training_repository,
+            training_course_repository=self.training_course_repository,
         )
         self.user_identity_service = UserIdentityService(
             logger=self.logger,
@@ -926,6 +949,64 @@ class AppDependencyBuilder:
             self.leave_engine_service,
             self.database,
         )
+        self.training_course_service = TrainingCourseService(
+            logger=self.logger,
+            training_course_repository=self.training_course_repository,
+        )
+        self.training_assignment_service = TrainingAssignmentService(
+            logger=self.logger,
+            training_course_repository=self.training_course_repository,
+            training_repository=self.training_repository,
+        )
+        self.training_progress_repository = TrainingProgressRepository()
+        self.training_storage = TrainingStorage(
+            os.getenv(TRAINING_BUCKET), logger=self.logger
+        )
+        # Nothing downstream can tell a content host apart from the app's own
+        # host: set them equal and every request still succeeds, with course
+        # JavaScript same-origin with the API. A host that cannot be shown to
+        # differ resolves to None, which disables the exemption and the route
+        # together rather than taking the whole app down over one feature.
+        self.training_content_host = resolve_content_host(
+            os.getenv(TRAINING_CONTENT_HOST), os.getenv(APP_ORIGINS), self.logger
+        )
+        self.training_package_service = TrainingPackageService(
+            logger=self.logger,
+            training_course_repository=self.training_course_repository,
+            training_progress_repository=self.training_progress_repository,
+            training_storage=self.training_storage,
+        )
+        self.training_content_service = TrainingContentService(
+            logger=self.logger,
+            signing_key=os.getenv(TRAINING_TOKEN_SIGNING_KEY),
+            content_host=self.training_content_host,
+            training_repository=self.training_repository,
+            training_course_repository=self.training_course_repository,
+            training_progress_repository=self.training_progress_repository,
+            training_storage=self.training_storage,
+        )
+        self.training_progress_service = TrainingProgressService(
+            logger=self.logger,
+            signing_key=os.getenv(TRAINING_TOKEN_SIGNING_KEY),
+            training_repository=self.training_repository,
+            training_progress_repository=self.training_progress_repository,
+            training_course_repository=self.training_course_repository,
+        )
+        self.training_admin_controller = TrainingAdminController(
+            self.training_course_service,
+            self.training_assignment_service,
+            self.training_package_service,
+            self.training_content_service,
+            self.training_progress_service,
+            self.database,
+        )
+        self.training_content_controller = TrainingContentController(
+            self.training_content_service,
+            self.training_content_host,
+            self.database,
+            self.logger,
+        )
+
         self.leave_request_repository = LeaveRequestRepository()
         self.leave_request_service = LeaveRequestService(
             logger=self.logger,
@@ -964,6 +1045,9 @@ class AppDependencyBuilder:
             audit_controller=self.audit_controller,
             recruiting_notification_controller=self.recruiting_notification_controller,
             leave_admin_controller=self.leave_admin_controller,
+            training_admin_controller=self.training_admin_controller,
+            training_content_controller=self.training_content_controller,
+            training_content_host=self.training_content_host,
             leave_job_controller=self.leave_job_controller,
             leave_request_controller=self.leave_request_controller,
             leave_calendar_controller=self.leave_calendar_controller,

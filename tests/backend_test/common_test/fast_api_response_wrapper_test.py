@@ -4,8 +4,14 @@ from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.testclient import TestClient
 from backend.common.fast_api_response_wrapper import api_response
+from backend.dto.base_dto import BaseDto
 from datetime import datetime
 from uuid import UUID
+
+
+class _SampleDto(BaseDto):
+    course_id: int
+    display_name: str
 
 
 def route_success(request):
@@ -53,6 +59,18 @@ def route_none(request):
     return api_response("No Data", True, None, HTTPStatus.OK)
 
 
+def route_dto(request):
+    return api_response(
+        "Dto Test", True, _SampleDto(course_id=7, display_name="Onboarding")
+    )
+
+
+def route_dto_list(request):
+    return api_response(
+        "Dto List Test", True, [_SampleDto(course_id=7, display_name="Onboarding")]
+    )
+
+
 class TestApiResponseWrapper(TestCase):
     def setUp(self):
         # Create a minimal Starlette app to test JSONResponse
@@ -67,6 +85,8 @@ class TestApiResponseWrapper(TestCase):
                 Route("/test_string", route_string),
                 Route("/test_float", route_float),
                 Route("/test_boolean", route_boolean),
+                Route("/test_dto", route_dto),
+                Route("/test_dto_list", route_dto_list),
             ]
         )
         self.client = TestClient(self.app)
@@ -140,6 +160,25 @@ class TestApiResponseWrapper(TestCase):
         payload = res.json()
         self.assertEqual(payload["data"], {"is_active": True})
         self.assertEqual(payload["message"], "Boolean Test")
+
+    def test_a_dto_is_serialised_by_alias(self):
+        """What `data` accepts is what decides whether the wire is camelCase.
+
+        Handing this a dict built by hand skips the aliases and answers
+        snake_case, which every reader of it then reads as undefined.
+        """
+        res = self.client.get("/test_dto")
+
+        self.assertEqual(
+            res.json()["data"], {"courseId": 7, "displayName": "Onboarding"}
+        )
+
+    def test_a_list_of_dtos_is_serialised_by_alias_too(self):
+        res = self.client.get("/test_dto_list")
+
+        self.assertEqual(
+            res.json()["data"], [{"courseId": 7, "displayName": "Onboarding"}]
+        )
 
 
 if __name__ == "__main__":

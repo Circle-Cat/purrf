@@ -129,3 +129,19 @@ NOTIFICATION_TOPIC = "NOTIFICATION_TOPIC"
 # NOTIFICATION_TOPIC does: the route refuses every request instead, rather than
 # crash-looping the whole API over one variable.
 NOTIFICATION_PUSHER_SUBS = "NOTIFICATION_PUSHER_SUBS"
+
+
+# Every origin the app itself answers on, comma-separated, e.g.
+# "https://purrf.io,https://api.purrf.io" -- the same values the Cloudflare
+# ruleset allows as CORS origins. Read at startup only, to assert that course
+# content is served from a hostname that is none of them; a course served from
+# an app origin would be same-origin with the API and the Access cookie.
+APP_ORIGINS = "APP_ORIGINS"
+
+# SCORM training. The bucket holding course packages, the hostname they are
+# served from, and the HMAC key signing the tokens in their URLs. All three are
+# absent in local development; the code that needs them raises when used rather
+# than at startup, so the app still boots.
+TRAINING_BUCKET = "TRAINING_BUCKET"
+TRAINING_CONTENT_HOST = "TRAINING_CONTENT_HOST"
+TRAINING_TOKEN_SIGNING_KEY = "TRAINING_TOKEN_SIGNING_KEY"

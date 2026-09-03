@@ -6,13 +6,13 @@ becomes — and delegates every Google call to the shared
 ``MeetingSchedulingService``.
 """
 
-from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exceptions import MeetingGoneError
 from backend.common.name_utils import display_name_of
+from backend.common.wall_clock import wall_clock_to_utc
 from backend.common.recruiting_enums import ApplicationStage, RecruitingEvent
 from backend.dto.interview_dto import InterviewDto, InterviewScheduleRequestDto
 from backend.dto.user_context_dto import UserContextDto
@@ -38,22 +38,6 @@ _MEETING_GONE_MESSAGE = (
     "This meeting no longer exists on the calendar. Cancel it here and "
     "schedule a new one."
 )
-
-
-def _to_utc(day, start_time, duration_minutes, timezone_name):
-    """Wall-clock (date, HH:MM, zone) -> tz-aware UTC start/end.
-
-    Built by attaching the zone to a naive local datetime so the offset comes
-    from the zone's rules on that date — the same wall-clock contract
-    mentorship uses. Subtracting a fixed offset would silently shift meetings
-    booked across a DST change.
-    """
-    hour, minute = (int(part) for part in start_time.split(":"))
-    naive = datetime(day.year, day.month, day.day, hour, minute)
-    start_utc = naive.replace(tzinfo=ZoneInfo(timezone_name)).astimezone(
-        ZoneInfo("UTC")
-    )
-    return start_utc, start_utc + timedelta(minutes=duration_minutes)
 
 
 def _meeting_title(candidate_first_name: str, stage: ApplicationStage) -> str:
@@ -218,7 +202,7 @@ class InterviewSchedulingService:
             candidate.first_name if candidate is not None else "",
             application.stage,
         )
-        start_utc, end_utc = _to_utc(
+        start_utc, end_utc = wall_clock_to_utc(
             dto.date, dto.start_time, dto.duration_minutes, dto.timezone
         )
         attendee_ids = [application.user_id, dto.assignee_id, current_user.user_id]
@@ -351,7 +335,7 @@ class InterviewSchedulingService:
         from_assignee_id = (
             existing_assignment.assignee_id if existing_assignment else None
         )
-        start_utc, end_utc = _to_utc(
+        start_utc, end_utc = wall_clock_to_utc(
             dto.date, dto.start_time, dto.duration_minutes, dto.timezone
         )
         attendee_ids = [application.user_id, dto.assignee_id, interview.scheduled_by]

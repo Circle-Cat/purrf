@@ -28,6 +28,40 @@ _PERMISSION_BY_VALUE = {p.value: p for p in Permission}
 # of the origin -- the request cannot arrive without passing both.
 _UNAUTHENTICATED_PATHS = frozenset({f"/api{NOTIFICATION_DELIVER_ENDPOINT}"})
 
+# Course files are requested by the course's own JavaScript, which cannot
+# present an Access JWT; a signature in the URL path stands in for one.
+#
+# The exemption is on (host, path prefix), never on the path alone. Matching
+# only the path would exempt /p/... on the API host too, and a course that
+# reached that origin would be same-origin with the API -- able to read the
+# Access cookie, which is deliberately JS-readable, and to call any endpoint as
+# the learner. A course knows the token in its own URL, so nothing but this
+# check stops it navigating there itself.
+_CONTENT_PATH_PREFIX = "/p/"
+
+
+def _is_content_origin_request(request: Request, content_host: str | None) -> bool:
+    """Whether this is a course-file request on the content origin.
+
+    Returns False when no content host is configured, so a missing environment
+    variable authenticates everything rather than exempting everything.
+    """
+    if not content_host:
+        return False
+    # Lowercased for the same reason the content route lowercases it: Host is
+    # case-insensitive, and this exemption has to apply exactly where that
+    # route answers, or a mixed-case Host turns a 404 into a 401.
+    host = request.headers.get("host", "").split(":")[0].lower()
+    return host == content_host and request.url.path.startswith(_CONTENT_PATH_PREFIX)
+
+
+class AccountDeactivatedError(PermissionError):
+    """Authenticated, but the account is not active."""
+
+
+class AccountSuspendedError(PermissionError):
+    """Authenticated, but the account is blacklisted."""
+
 
 class AuthMiddleware(BaseHTTPMiddleware):
     """
@@ -89,6 +123,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         user_identity_service,
         user_permissions_repository,
         logger,
+        training_content_host=None,
     ):
         super().__init__(app)
         self.auth_service = auth_service
@@ -96,6 +131,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self.user_identity_service = user_identity_service
         self.user_permissions_repository = user_permissions_repository
         self.logger = logger
+        self.training_content_host = training_content_host
 
     async def dispatch(self, request: Request, call_next):
         """
@@ -122,6 +158,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if request.url.path in _UNAUTHENTICATED_PATHS:
             return await call_next(request)
 
+        if _is_content_origin_request(request, self.training_content_host):
+            return await call_next(request)
+
         try:
             # authenticate_request is synchronous and may issue a blocking
             # JWKS HTTP fetch on cache miss. Offload to a worker thread so
@@ -144,6 +183,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
         except ValueError as e:
             return api_response(
                 message=str(e), status_code=HTTPStatus.BAD_REQUEST, data=None
+            )
+        except AccountSuspendedError as e:
+            self.logger.warning(
+                "[AuthMiddleware] %s %s denied: %s",
+                request.method,
+                request.url.path,
+                e,
+            )
+            return api_response(
+                message=("Your account has been suspended. Contact an administrator."),
+                status_code=HTTPStatus.FORBIDDEN,
+                data=None,
             )
         except PermissionError as e:
             self.logger.warning(
@@ -239,10 +290,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
                             # Not the race — a real bug. Must surface.
                             raise
 
-                # A deactivated account still authenticates (valid token, real
-                # user) but must not be allowed to act.
+                # A deactivated or blacklisted account still authenticates
+                # (valid token, real user) but must not be allowed to act.
+                # is_active is checked first: an account that is both reads as
+                # deactivated, the broader of the two states.
                 if not user.is_active:
-                    raise PermissionError("User account is deactivated")
+                    raise AccountDeactivatedError("User account is deactivated")
+                if user.is_blocked:
+                    raise AccountSuspendedError("User account is blocked")
 
                 await self._resolve_permissions(session, user, user_context)
 
