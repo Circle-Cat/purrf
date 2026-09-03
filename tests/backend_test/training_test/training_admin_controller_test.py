@@ -18,6 +18,7 @@ from backend.common.api_endpoints import (
 from backend.common.mentorship_enums import ScormVersion
 from backend.common.permissions import Permission
 from backend.dto.training_course_dto import (
+    TrainingCompletionConfigDto,
     TrainingAssignmentRequestDto,
     TrainingAssignmentResultDto,
     TrainingCourseCreateDto,
@@ -152,10 +153,15 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
             for method in route.methods
         }
 
-        self.assertEqual(
-            by_method[("/training/courses", "GET")],
-            [Permission.TRAINING_ADMIN_READ],
-        )
+        for path, method in [
+            ("/training/courses", "GET"),
+            ("/training/courses/{course_id}/package", "GET"),
+        ]:
+            self.assertEqual(
+                by_method[(path, method)],
+                [Permission.TRAINING_ADMIN_READ],
+                msg=f"{method} {path}",
+            )
         for path, method in [
             ("/training/courses", "POST"),
             ("/training/courses/{course_id}", "PATCH"),
@@ -168,6 +174,23 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
                 [Permission.TRAINING_ADMIN_WRITE],
                 msg=f"{method} {path}",
             )
+
+    async def test_reading_a_packages_completion_config_answers_what_it_says(self):
+        self.package_service.read_completion_config = AsyncMock(
+            return_value=TrainingCompletionConfigDto(
+                completion_percentage=100,
+                completes_via_storyline=True,
+                completion_config_readable=True,
+            )
+        )
+
+        response = await self.controller.read_completion_config(7)
+
+        self.package_service.read_completion_config.assert_awaited_once_with(
+            self.session, 7
+        )
+        self.assertEqual(response["status_code"], HTTPStatus.OK)
+        self.assertTrue(response["data"].completes_via_storyline)
 
     async def test_create_returns_created(self):
         response = await self.controller.create_course(

@@ -8,12 +8,18 @@ vi.mock("@/api/trainingApi", () => ({
   startTrial: vi.fn(),
   openSession: vi.fn(),
   saveProgress: vi.fn(),
+  readCompletionConfig: vi.fn(),
 }));
 vi.mock("@/context/auth", () => ({
   useAuth: vi.fn(),
 }));
 
-import { startTrial, openSession, saveProgress } from "@/api/trainingApi";
+import {
+  startTrial,
+  openSession,
+  saveProgress,
+  readCompletionConfig,
+} from "@/api/trainingApi";
 import { useAuth } from "@/context/auth";
 
 const renderTrial = () =>
@@ -56,6 +62,13 @@ describe("TrainingTrial", () => {
     startTrial.mockResolvedValue(TRIAL);
     openSession.mockResolvedValue(SESSION);
     saveProgress.mockResolvedValue({});
+    readCompletionConfig.mockResolvedValue({
+      data: {
+        completionPercentage: 100,
+        completesViaStoryline: false,
+        completionConfigReadable: true,
+      },
+    });
     useAuth.mockReturnValue({
       user: { userId: 7, email: "admin@example.com" },
     });
@@ -143,6 +156,52 @@ describe("TrainingTrial", () => {
       writesLog.queryByText("cmi.core.lesson_status"),
     ).not.toBeInTheDocument();
     expect(writesLog.getByText(/no cmi traffic received/i)).toBeInTheDocument();
+  });
+
+  it("warns before the run that this course only finishes via Storyline", async () => {
+    readCompletionConfig.mockResolvedValue({
+      data: {
+        completionPercentage: 100,
+        completesViaStoryline: true,
+        completionConfigReadable: true,
+      },
+    });
+
+    renderTrial();
+
+    expect(await screen.findByTestId("trial-package-notes")).toHaveTextContent(
+      /storyline/i,
+    );
+  });
+
+  it("says so when the package's completion settings cannot be read", async () => {
+    readCompletionConfig.mockResolvedValue({
+      data: {
+        completionPercentage: null,
+        completesViaStoryline: false,
+        completionConfigReadable: false,
+      },
+    });
+
+    renderTrial();
+
+    expect(await screen.findByTestId("trial-package-notes")).toHaveTextContent(
+      /could not read/i,
+    );
+  });
+
+  it("stays quiet for a package that completes the ordinary way", async () => {
+    renderTrial();
+    await screen.findByTitle(/course/i);
+
+    expect(screen.queryByTestId("trial-package-notes")).not.toBeInTheDocument();
+  });
+
+  it("reads the package settings for the course being trialled", async () => {
+    renderTrial();
+    await screen.findByTitle(/course/i);
+
+    expect(readCompletionConfig).toHaveBeenCalledWith("5");
   });
 
   it("shows suspend_data as a size only, never a limit", async () => {

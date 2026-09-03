@@ -25,9 +25,7 @@ class TestExternalLinkFor(unittest.TestCase):
 
     def test_a_category_that_never_had_a_link_resolves_to_nothing(self):
         """Only the two mentorship onboarding courses are hosted elsewhere."""
-        self.assertIsNone(
-            external_link_for(TrainingCategory.CORPORATE_CULTURE_COURSE)
-        )
+        self.assertIsNone(external_link_for(TrainingCategory.CORPORATE_CULTURE_COURSE))
 
     def test_a_course_with_no_category_resolves_to_nothing(self):
         self.assertIsNone(external_link_for(None))

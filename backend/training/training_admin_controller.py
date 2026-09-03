@@ -127,6 +127,14 @@ class TrainingAdminController:
             methods=["POST"],
             response_model=None,
         )
+        self.router.add_api_route(
+            TRAINING_COURSE_PACKAGE_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_READ])(
+                self.read_completion_config
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
         # A learner opening their own course needs no permission; holding the
         # assignment is the grant, and the service checks they hold it.
         self.router.add_api_route(
@@ -247,6 +255,17 @@ class TrainingAdminController:
             message="Package uploaded.",
             data=result,
             status_code=HTTPStatus.CREATED,
+        )
+
+    async def read_completion_config(self, course_id: int):
+        """What the stored package says it takes to finish this course."""
+        async with self.database.session() as session:
+            config = await self.training_package_service.read_completion_config(
+                session, course_id
+            )
+        return api_response(
+            message="Package completion configuration read.",
+            data=config,
         )
 
     async def open_session(self, training_id: int, current_user):

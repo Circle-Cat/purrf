@@ -111,6 +111,22 @@ class TrainingPackageUploadResultDto(BaseDto):
     learners_reset: int = 0
 
 
+class TrainingCompletionConfigDto(BaseDto):
+    """What the stored package says it takes to finish the course.
+
+    Re-read from the package rather than stored on the course row: an
+    overwrite would leave a stored copy describing the package it replaced.
+    """
+
+    # How much of the course the driver requires before it reports completion.
+    completion_percentage: float | None = None
+    # Finishing the surrounding lessons will not complete such a course.
+    completes_via_storyline: bool = False
+    # False for a package built by a toolchain we cannot read. Saying nothing
+    # reads as "nothing wrong", which is the mistake this answer prevents.
+    completion_config_readable: bool = False
+
+
 class TrainingProgressDto(BaseDto):
     """The learner's stored CMI state, seeded back into the course.
 

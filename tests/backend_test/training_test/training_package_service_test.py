@@ -603,5 +603,79 @@ class TestReplacedPrefixDeletion(_PackageServiceTestCase):
         self.logger.exception.assert_called_once()
 
 
+class TestReadCompletionConfig(_PackageServiceTestCase):
+    """What the stored package says about finishing, re-read on demand.
+
+    The three answers here are shown once in the upload dialog and then never
+    again, so the trial page asks for them rather than the course row storing
+    a copy that a re-upload could leave stale.
+    """
+
+    def _stored(self, driver_config=_DRIVER_CONFIG):
+        self.storage.get.return_value = (_entry_page(driver_config), "text/html")
+
+    async def test_it_reads_the_entry_page_under_the_courses_own_prefix(self):
+        self._course(storage_prefix=_LIVE_PREFIX, entry_path=_ENTRY_PATH)
+        self._stored()
+
+        await self.service.read_completion_config(self.session, _COURSE_ID)
+
+        self.storage.get.assert_called_once()
+        key = self.storage.get.call_args.args[0]
+        self.assertEqual(key, f"{_LIVE_PREFIX}{_ENTRY_PATH}")
+
+    async def test_it_reports_what_the_package_requires_before_completion(self):
+        self._course(storage_prefix=_LIVE_PREFIX, entry_path=_ENTRY_PATH)
+        self._stored()
+
+        result = await self.service.read_completion_config(self.session, _COURSE_ID)
+
+        self.assertTrue(result.completion_config_readable)
+        self.assertEqual(result.completion_percentage, 100)
+        self.assertFalse(result.completes_via_storyline)
+
+    async def test_a_course_that_only_completes_via_storyline_says_so(self):
+        """Finishing the surrounding lessons will not complete such a course."""
+        self._course(storage_prefix=_LIVE_PREFIX, entry_path=_ENTRY_PATH)
+        self._stored({**_DRIVER_CONFIG, "storylineId": "5xKq"})
+
+        result = await self.service.read_completion_config(self.session, _COURSE_ID)
+
+        self.assertTrue(result.completes_via_storyline)
+
+    async def test_a_package_we_cannot_read_says_so_rather_than_failing(self):
+        """Silence here reads as "nothing wrong", which is the whole mistake."""
+        self._course(storage_prefix=_LIVE_PREFIX, entry_path=_ENTRY_PATH)
+        self._stored(None)
+
+        result = await self.service.read_completion_config(self.session, _COURSE_ID)
+
+        self.assertFalse(result.completion_config_readable)
+        self.assertIsNone(result.completion_percentage)
+        self.assertFalse(result.completes_via_storyline)
+
+    async def test_a_course_with_no_package_is_refused(self):
+        self._course(storage_prefix=None)
+
+        with self.assertRaises(ValueError):
+            await self.service.read_completion_config(self.session, _COURSE_ID)
+
+        self.storage.get.assert_not_called()
+
+    async def test_a_course_that_does_not_exist_is_refused(self):
+        self.course_repository.get_course_by_id.return_value = None
+
+        with self.assertRaises(ValueError):
+            await self.service.read_completion_config(self.session, _COURSE_ID)
+
+    async def test_an_entry_page_gone_from_storage_is_a_clean_not_found(self):
+        """A missing object is a fault to fix, not a package we cannot read."""
+        self._course(storage_prefix=_LIVE_PREFIX, entry_path=_ENTRY_PATH)
+        self.storage.get.return_value = None
+
+        with self.assertRaises(FileNotFoundError):
+            await self.service.read_completion_config(self.session, _COURSE_ID)
+
+
 if __name__ == "__main__":
     unittest.main()

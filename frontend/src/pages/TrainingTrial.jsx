@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useAuth } from "@/context/auth";
-import { startTrial } from "@/api/trainingApi";
+import { readCompletionConfig, startTrial } from "@/api/trainingApi";
 import useTrainingRuntime from "@/hooks/useTrainingRuntime";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +48,7 @@ export default function TrainingTrial() {
   const { user } = useAuth() ?? {};
   const [trainingId, setTrainingId] = useState(null);
   const [trialError, setTrialError] = useState(null);
+  const [packageNotes, setPackageNotes] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +61,38 @@ export default function TrainingTrial() {
           setTrialError("Could not start a trial run of this course.");
         }
       });
+    return () => {
+      cancelled = true;
+    };
+  }, [courseId]);
+
+  // Read before the run, not after: whoever is about to click through a
+  // course needs to know it can only be finished from inside a Storyline
+  // block, or that we cannot tell. A failure to read is left silent -- it
+  // says nothing about the package, and the run itself is the real answer.
+  useEffect(() => {
+    let cancelled = false;
+    readCompletionConfig(courseId)
+      .then(({ data }) => {
+        if (cancelled) return;
+        const notes = [];
+        if (!data.completionConfigReadable) {
+          notes.push(
+            "We could not read this package's completion settings. It was " +
+              "built by a toolchain we do not recognise, so nothing below " +
+              "predicts whether it can report completion.",
+          );
+        } else if (data.completesViaStoryline) {
+          notes.push(
+            "This course completes from inside an embedded Storyline block. " +
+              "Finishing the surrounding lessons will not finish it.",
+          );
+        }
+        // Nothing to say is the common case; re-rendering to say it would
+        // be a state update after the page has settled.
+        if (notes.length > 0) setPackageNotes(notes);
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -100,6 +133,17 @@ export default function TrainingTrial() {
           Course #{courseId}
         </p>
       </div>
+
+      {packageNotes.length > 0 && (
+        <Card
+          className="border-amber-500/40 bg-amber-500/10 p-4 text-sm"
+          data-testid="trial-package-notes"
+        >
+          {packageNotes.map((note) => (
+            <p key={note}>{note}</p>
+          ))}
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[1.7fr_1fr]">
         <Card className="overflow-hidden py-0">

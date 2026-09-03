@@ -25,3 +25,12 @@ export const saveProgress = (trainingId, payload) =>
  */
 export const startTrial = (courseId) =>
   request.post(API_ENDPOINTS.TRAINING_COURSE_TRIAL(courseId));
+
+/**
+ * What the course's stored package says it takes to finish it. Re-read from
+ * the package, so it survives the upload dialog that showed it once.
+ * @param {string|number} courseId
+ * @returns {Promise<{data: {completionPercentage: number|null, completesViaStoryline: boolean, completionConfigReadable: boolean}}>}
+ */
+export const readCompletionConfig = (courseId) =>
+  request.get(API_ENDPOINTS.TRAINING_COURSE_PACKAGE(courseId));
