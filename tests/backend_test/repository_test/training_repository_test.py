@@ -3,6 +3,9 @@ from datetime import datetime, timedelta, timezone
 
 from backend.repository.training_repository import TrainingRepository
 from backend.entity.training_entity import TrainingEntity
+
+# Registers the table training.course_id points at.
+from backend.entity.training_course_entity import TrainingCourseEntity  # noqa: F401
 from backend.entity.users_entity import UsersEntity
 from backend.common.mentorship_enums import (
     TrainingStatus,
