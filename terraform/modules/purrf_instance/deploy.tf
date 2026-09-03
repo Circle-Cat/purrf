@@ -89,6 +89,14 @@ resource "kubernetes_secret" "purrf_app" {
     NOTIFICATION_PUSHER_SUBS = google_service_account.notification_pusher.unique_id
 
     GOOGLE_SERVICE_ACCOUNT_SUBS = data.google_service_account.purrf_service.unique_id
+
+    # Every origin this environment answers on. The backend reads these only to
+    # assert that SCORM course content is served from a hostname that is none of
+    # them -- course JavaScript same-origin with the API could read the
+    # deliberately JS-readable Access cookie and call any endpoint as the learner.
+    # Course hosting stays disabled until this is set, so it belongs with
+    # TRAINING_CONTENT_HOST rather than with the code that reads it.
+    APP_ORIGINS = "https://${local.domains.main},https://${local.domains.api}"
   }
 }
 
