@@ -132,6 +132,26 @@ describe("CourseTable", () => {
     );
   });
 
+  it("keeps Assign disabled on a deactivated course, which the API answers 409 for", () => {
+    // The backend gate is verified AND active. A still-clickable Assign sends
+    // the admin through the whole form to reach a rejection.
+    renderTable([{ ...verified, isActive: false }]);
+
+    expect(screen.getByRole("button", { name: /^assign$/i })).toBeDisabled();
+  });
+
+  it("names deactivation as the reason, not the verification rule", () => {
+    // Two rules, two sentences: one is answered by running the course, the
+    // other by turning it back on.
+    renderTable([{ ...verified, isActive: false }]);
+
+    const assign = screen.getByRole("button", { name: /^assign$/i });
+    expect(assign).toHaveAccessibleDescription(
+      /deactivated\. turn it back on to assign it/i,
+    );
+    expect(assign).not.toHaveAccessibleDescription(/run this course/i);
+  });
+
   it("offers to upload a package for a course that has never had one", () => {
     renderTable([noPackage]);
 

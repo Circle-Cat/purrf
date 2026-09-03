@@ -12,7 +12,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
-import { canAssign, statusLabel } from "@/pages/AdminTraining/utils";
+import {
+  assignBlockedReason,
+  canAssign,
+  statusLabel,
+} from "@/pages/AdminTraining/utils";
 import { assignCourse, updateCourse, uploadPackage } from "@/api/trainingApi";
 import AssignDialog from "@/pages/AdminTraining/components/AssignDialog";
 import DeactivateDialog from "@/pages/AdminTraining/components/DeactivateDialog";
@@ -61,7 +65,8 @@ function ToggleActiveButton({ course, onDeactivate, onActivate }) {
 
 // The row's one main action. Assign stays on screen even when it cannot be
 // clicked yet -- hiding it would hide the rule (spec §4.1); the hover title
-// is the only place that rule is taught, so it isn't optional here.
+// is the only place that rule is taught, so it isn't optional here, and it
+// names which of the two rules is unmet rather than the commoner one.
 function RowActions({ course, onDeactivate, onActivate, onUpload, onAssign }) {
   const toggle = (
     <ToggleActiveButton
@@ -96,7 +101,7 @@ function RowActions({ course, onDeactivate, onActivate, onUpload, onAssign }) {
         size="sm"
         variant="outline"
         disabled={!assignable}
-        title={assignable ? undefined : "Run this course to completion first"}
+        title={assignable ? undefined : assignBlockedReason(course)}
         onClick={() => onAssign(course)}
       >
         Assign
