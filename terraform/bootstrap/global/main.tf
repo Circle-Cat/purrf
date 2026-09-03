@@ -1,10 +1,7 @@
-# Access-Control-Allow-Origin for the API hosts. The backend itself sets no
-# CORS headers at all, so this ruleset and the Access applications below are
-# the whole of purrf's CORS policy.
-#
-# 🔴 Never add a training-content host here. It exists to run third-party
-# course JavaScript at arm's length; letting it read API responses defeats the
-# separate origin entirely.
+# The backend sets no CORS headers, so this ruleset and the Access
+# applications below are the whole of purrf's CORS policy. Never add a
+# training-content host: it runs third-party course JavaScript, which must not
+# be able to read API responses.
 resource "cloudflare_ruleset" "cors_headers" {
   zone_id = local.zone_id
   name    = "default"
@@ -482,27 +479,17 @@ resource "cloudflare_dns_record" "root_test" {
   }
 }
 
-# Origin serving SCORM course files, test only for now. Same tunnel and same
-# backend as test-api; what makes it a separate origin is only the hostname.
+# SCORM course files, test only for now. Same tunnel and backend as test-api;
+# only the hostname makes it a separate origin.
 #
-# 🔴 This host must stay OUT of the Access application below and OUT of the
-# CORS ruleset at the top of this file. Course JavaScript is third-party code
-# that we do not review, and it gets to run here. Two consequences:
-#
-#   * Access cookies are host-only, so a course cannot read the app's
-#     CF_Authorization -- but only for as long as this host has no Access
-#     application of its own. Putting one here would hand every course a
-#     readable identity token (http_only_cookie_attribute = false).
-#   * Access's CORS block is what issues Access-Control-Allow-Origin for this
-#     zone; the backend sets no CORS headers of its own. Adding this host to
-#     any allowed_origins list would let course JavaScript read purrf API
-#     responses cross-origin.
-#
-# Requests are authenticated by a signed token in the URL path instead
+# This host must stay out of the Access application below and out of the CORS
+# ruleset at the top of this file. Access cookies are host-only and readable
+# from JavaScript (http_only_cookie_attribute = false), so an Access
+# application here would hand every course package a valid identity token.
+# Requests carry a signed path token instead
 # (random_password.training_token_signing_key in the purrf_instance module).
 #
-# staging and prod get the same record when the feature promotes; nothing in
-# this file is per-environment-conditional, so they are added by hand then.
+# staging and prod get the same record by hand when the feature promotes.
 resource "cloudflare_dns_record" "training_content_test" {
   zone_id = local.zone_id
   name    = "test-training-content"
@@ -586,6 +573,9 @@ resource "cloudflare_zero_trust_access_application" "purrf_app" {
   name       = "purrf"
   domain     = local.environments.prod.origin_web
   type       = "self_hosted"
+  # Never add a training-content host: Access cookies are host-only and
+  # JS-readable, so an application here would give course JavaScript a valid
+  # identity token. See cloudflare_dns_record.training_content_test.
   destinations = [
     { type = "public", uri = local.environments.prod.origin_web },
     { type = "public", uri = local.environments.prod.api_host },
@@ -761,10 +751,8 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_test" {
   name       = "purrf_test"
   domain     = local.environments.test.origin_web
   type       = "self_hosted"
-  # 🔴 test-training-content.purrf.io is deliberately NOT listed. Access
-  # cookies are host-only and JS-readable, so protecting the course origin
-  # would hand every course package a valid identity token. It authenticates
-  # with a signed path token instead -- see the DNS record above.
+  # test-training-content.purrf.io is deliberately absent: an Access
+  # application here would give course JavaScript a readable identity token.
   destinations = [
     { type = "public", uri = local.environments.test.origin_web },
     { type = "public", uri = local.environments.test.api_host },
@@ -805,6 +793,9 @@ resource "cloudflare_zero_trust_access_application" "purrf_app_staging" {
   name       = "purrf_staging"
   domain     = local.environments.staging.origin_web
   type       = "self_hosted"
+  # Never add a training-content host: Access cookies are host-only and
+  # JS-readable, so an application here would give course JavaScript a valid
+  # identity token. See cloudflare_dns_record.training_content_test.
   destinations = [
     { type = "public", uri = local.environments.staging.origin_web },
     { type = "public", uri = local.environments.staging.api_host },

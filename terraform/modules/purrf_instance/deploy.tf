@@ -41,10 +41,8 @@ resource "kubernetes_secret" "purrf_app" {
     MENTORSHIP_MENTEE_ONBOARDING_LINK = "https://learn.circlecat.cn/course/view.php?id=16"
     RESUME_BUCKET                     = google_storage_bucket.resumes.name
 
-    # SCORM training. The content host is a separate origin on purpose (see
-    # local.domains.training_content): course JavaScript must not be able to
-    # read the app's Access cookie. The backend hands learners a signed
-    # TRAINING_CONTENT_HOST URL and validates the signature on the way back in.
+    # The content host is a separate origin so course JavaScript cannot read
+    # the app's Access cookie; see local.domains.training_content.
     TRAINING_BUCKET            = google_storage_bucket.training.name
     TRAINING_CONTENT_HOST      = local.domains.training_content
     TRAINING_TOKEN_SIGNING_KEY = random_password.training_token_signing_key.result
@@ -91,11 +89,8 @@ resource "kubernetes_secret" "purrf_app" {
     GOOGLE_SERVICE_ACCOUNT_SUBS = data.google_service_account.purrf_service.unique_id
 
     # Every origin this environment answers on. The backend reads these only to
-    # assert that SCORM course content is served from a hostname that is none of
-    # them -- course JavaScript same-origin with the API could read the
-    # deliberately JS-readable Access cookie and call any endpoint as the learner.
-    # Course hosting stays disabled until this is set, so it belongs with
-    # TRAINING_CONTENT_HOST rather than with the code that reads it.
+    # refuse a TRAINING_CONTENT_HOST that matches one of them. Course hosting
+    # stays disabled until this is set.
     APP_ORIGINS = "https://${local.domains.main},https://${local.domains.api}"
   }
 }

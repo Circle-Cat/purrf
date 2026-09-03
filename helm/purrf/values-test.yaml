@@ -27,11 +27,8 @@ ingress:
       paths:
         - path: /
           pathType: Prefix
-    # SCORM course files. Same pods as test-api; a separate hostname is the
-    # whole point -- course JavaScript runs on this origin and must not be able
-    # to read the app's Access cookie or call the API as the learner. This host
-    # is deliberately not covered by any Cloudflare Access application, so
-    # every request must carry a signed token in its path.
+    # SCORM course files, same pods as test-api. Not covered by any Cloudflare
+    # Access application, so every request carries a signed path token.
     - host: test-training-content.purrf.io
       paths:
         - path: /
