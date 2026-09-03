@@ -208,6 +208,25 @@ class TestTrainingCourseService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(existing.name, "Legacy Safety Briefing")
         self.session.commit.assert_awaited_once()
 
+    async def test_update_reports_the_real_unfinished_count(self):
+        """The deactivate dialog weighs the decision by counting heads.
+
+        A stubbed-away or mixed-up count here would tell an administrator
+        nobody is mid-course when 23 people are.
+        """
+        existing = TrainingCourseEntity(
+            course_id=5, name="Legacy Safety Briefing", is_active=True
+        )
+        self.repository.get_course_by_id.return_value = existing
+        self.repository.count_assignments.return_value = 61
+        self.repository.count_unfinished_assignments.return_value = 23
+
+        course = await self.service.update_course(
+            self.session, 5, TrainingCourseUpdateDto(is_active=False)
+        )
+
+        self.assertEqual(course.unfinished_count, 23)
+
     async def test_the_rename_lands_before_the_commit(self):
         existing = TrainingCourseEntity(course_id=5, name="Old Name", is_active=True)
         self.repository.get_course_by_id.return_value = existing
