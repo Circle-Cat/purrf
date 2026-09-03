@@ -3,7 +3,11 @@ from enum import StrEnum
 
 from pydantic import Field
 
-from backend.common.mentorship_enums import ScormVersion, TrainingCategory
+from backend.common.mentorship_enums import (
+    ScormVersion,
+    TrainingCategory,
+    TrainingStatus,
+)
 from backend.dto.base_dto import BaseDto
 from backend.dto.base_request_dto import BaseRequestDto
 
@@ -109,6 +113,17 @@ class TrainingPackageUploadResultDto(BaseDto):
     missing_declared_files: list[str] = Field(default_factory=list)
     # Unfinished learners whose resume data this upload wiped.
     learners_reset: int = 0
+
+
+class TrainingProgressSaveDto(BaseDto):
+    """Where the assignment stands after one commit.
+
+    The server decides which lesson_status finishes a course, so it says so
+    here rather than leaving the page to judge the same values a second time
+    and disagree.
+    """
+
+    status: TrainingStatus
 
 
 class TrainingCompletionConfigDto(BaseDto):

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
 from backend.common.mentorship_enums import TrainingStatus
+from backend.dto.training_course_dto import TrainingProgressSaveDto
 from backend.training.completion import next_training_status
 
 # SCORM 1.2's CMITimespan needs at least two digits of hours. A single-digit
@@ -189,7 +190,8 @@ class TrainingProgressService:
                 unlock the course for everybody else.
 
         Returns:
-            TrainingProgressEntity: The stored row.
+            TrainingProgressSaveDto: Where the assignment stands afterwards,
+            including for a commit that stored nothing.
 
         Raises:
             ValueError: No such assignment, or an element over its length cap.
@@ -320,11 +322,10 @@ class TrainingProgressService:
             # commit is skipped. That is accepted: touching it would require
             # the write this skip exists to avoid, and nothing reads the
             # column today.
-            return existing
+            return TrainingProgressSaveDto(status=assignment.status)
 
-        row = existing
         if not unchanged:
-            row = await self.training_progress_repository.upsert(
+            await self.training_progress_repository.upsert(
                 session, training_id, **columns
             )
 
@@ -338,7 +339,7 @@ class TrainingProgressService:
                 )
 
         await session.commit()
-        return row
+        return TrainingProgressSaveDto(status=assignment.status)
 
     async def _stamp_if_unverified(
         self, session, assignment, user_id: int, may_verify_course: bool

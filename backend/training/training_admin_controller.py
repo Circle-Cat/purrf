@@ -294,13 +294,17 @@ class TrainingAdminController:
         permissions the middleware resolved from the database, never from the
         payload: a course reporting itself finished must not be able to claim
         the grant that unlocks it for everybody else.
+
+        The response says where the assignment now stands. Which lesson_status
+        finishes a course is decided here; a page that judged the same values
+        itself would be a second answer free to disagree with this one.
         """
         payload = await _read_progress_body(request)
         cmi = payload.get("cmi", {})
         if not isinstance(cmi, dict):
             raise ValueError("cmi must be an object.")
         async with self.database.session() as session:
-            await self.training_progress_service.save(
+            saved = await self.training_progress_service.save(
                 session,
                 training_id,
                 current_user.user_id,
@@ -310,4 +314,4 @@ class TrainingAdminController:
                     Permission.TRAINING_ADMIN_WRITE
                 ),
             )
-        return api_response(message="Progress saved.")
+        return api_response(message="Progress saved.", data=saved)

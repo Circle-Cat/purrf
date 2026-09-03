@@ -367,6 +367,33 @@ class TestSave(_ProgressServiceCase):
         self.assertEqual(assignment.status, TrainingStatus.DONE)
         self.assertIsNotNone(assignment.completed_timestamp)
 
+    async def test_the_save_reports_the_status_it_left_the_assignment_in(self):
+        """The page shows this rather than judging the lesson_status itself."""
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.IN_PROGRESS
+
+        result = await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "passed"},
+        )
+
+        self.assertEqual(result.status, TrainingStatus.DONE)
+
+    async def test_a_save_that_moves_nothing_still_reports_where_it_stands(self):
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.IN_PROGRESS
+
+        result = await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "incomplete"},
+        )
+
+        self.assertEqual(result.status, TrainingStatus.IN_PROGRESS)
+
     async def test_reopening_a_finished_course_does_not_undo_it(self):
         """Mentor onboarding writes `incomplete` on its way to `completed`."""
         assignment = self.training_repository.get_training_by_id.return_value
@@ -812,6 +839,22 @@ class TestFinalSave(_ProgressServiceCase):
         )
 
         self.progress_repository.upsert.assert_not_awaited()
+
+    async def test_a_skipped_save_still_reports_where_the_assignment_stands(self):
+        """A parked tab gets the same answer as a tab that stored something."""
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.DONE
+        self.progress_repository.get_by_training_id.return_value = self._row_matching()
+
+        result = await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "01:00:00"},
+        )
+
+        self.progress_repository.upsert.assert_not_awaited()
+        self.assertEqual(result.status, TrainingStatus.DONE)
 
     async def test_a_final_save_does_not_move_a_finished_assignment(self):
         assignment = self.training_repository.get_training_by_id.return_value

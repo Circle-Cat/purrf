@@ -15,10 +15,11 @@ from backend.common.api_endpoints import (
     TRAINING_COURSES_ENDPOINT,
     TRAINING_SESSION_ENDPOINT,
 )
-from backend.common.mentorship_enums import ScormVersion
+from backend.common.mentorship_enums import ScormVersion, TrainingStatus
 from backend.common.permissions import Permission
 from backend.dto.training_course_dto import (
     TrainingCompletionConfigDto,
+    TrainingProgressSaveDto,
     TrainingAssignmentRequestDto,
     TrainingAssignmentResultDto,
     TrainingCourseCreateDto,
@@ -113,7 +114,9 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         self.package_service = MagicMock()
         self.content_service = MagicMock()
         self.progress_service = MagicMock()
-        self.progress_service.save = AsyncMock()
+        self.progress_service.save = AsyncMock(
+            return_value=TrainingProgressSaveDto(status=TrainingStatus.IN_PROGRESS)
+        )
         self.controller = TrainingAdminController(
             self.course_service,
             self.assignment_service,
@@ -145,6 +148,18 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         return await self.controller.save_progress(
             42, _request(body, chunk_size), current_user or _user()
         )
+
+    async def test_a_save_answers_with_where_the_assignment_now_stands(self):
+        """So the page shows the server's verdict instead of reaching its own."""
+        self.progress_service.save = AsyncMock(
+            return_value=TrainingProgressSaveDto(status=TrainingStatus.DONE)
+        )
+
+        response = await self.save_progress({
+            "cmi": {"cmi.core.lesson_status": "passed"}
+        })
+
+        self.assertEqual(response["data"].status, TrainingStatus.DONE)
 
     def test_reading_the_catalogue_and_changing_it_are_separate_grants(self):
         by_method = {
@@ -473,7 +488,9 @@ class TestTrainingResponsesOnTheWire(unittest.TestCase):
         self.content_service.open_session = AsyncMock(return_value=_session_dto())
 
         self.progress_service = MagicMock()
-        self.progress_service.save = AsyncMock()
+        self.progress_service.save = AsyncMock(
+            return_value=TrainingProgressSaveDto(status=TrainingStatus.IN_PROGRESS)
+        )
 
         database = MagicMock()
         database.session = lambda: _FakeSession()
