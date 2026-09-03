@@ -1121,6 +1121,29 @@ class TestARunAgainstAReplacedPackage(_ProgressServiceCase):
                 )
                 self.assertIsNone(course.verified_completable_at)
 
+    async def test_a_learner_without_the_grant_is_never_refused_for_staleness(self):
+        """The staleness check exists only to stop a false verification, and
+        it is reached only after the TRAINING_ADMIN_WRITE grant check above
+        it. A learner without the grant returns before that check runs, so a
+        tab that spans a package replacement must not cost them their own
+        completion -- hoisting the (cheap) session-token check above the
+        grant check would start refusing every such learner."""
+        course = self.course_repository.get_course_by_id.return_value
+        course.verified_completable_at = None
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.IN_PROGRESS
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "passed"},
+            may_verify_course=False,
+            session_token=_session_token(_OPENED_BEFORE),
+        )
+
+        self.progress_repository.upsert.assert_awaited()
+
     async def test_a_course_with_no_package_has_nothing_to_have_moved_on(self):
         course = self.course_repository.get_course_by_id.return_value
         course.verified_completable_at = None

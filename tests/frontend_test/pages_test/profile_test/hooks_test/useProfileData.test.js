@@ -166,6 +166,7 @@ describe("useProfileData Hook", () => {
             id: 32,
             courseId: 7,
             name: "Mentee Onboarding",
+            isHosted: true,
             category: "mentorship_mentee_onboarding",
             completedTimestamp: "1970-01-01T00:00:00Z",
             status: "to_do",
@@ -189,6 +190,10 @@ describe("useProfileData Hook", () => {
     // Both have to survive the whitelist below or the row renders nameless.
     expect(training.courseId).toBe(7);
     expect(training.name).toBe("Mentee Onboarding");
+    // isHosted gates the in-app Start/Continue/Review link -- it is the
+    // learner's only way into a hosted course, so it must survive the
+    // whitelist just like courseId above.
+    expect(training.isHosted).toBe(true);
     // Raw API timestamps pass through unchanged so TrainingSection can
     // format the actual day, not just month/year.
     expect(training.completedTimestamp).toBe("1970-01-01T00:00:00Z");
