@@ -64,9 +64,16 @@ not three screens that mention the same person.
 - **Search covers the block reason.** Type `no-show` into the search box. That
   is behaviour the recruiting blacklist page had, and absorbing that page must
   not lose it.
-- **Permissions are a link, not a section.** The drawer ends with a link out to
-  the permission-management page rather than embedding it. That page keeps its
-  own gate; duplicating the check here would put one rule in two places.
+- **Permissions are a link, not a section.** The detail page ends with a link
+  out to the permission-management page rather than embedding it. That page
+  keeps its own gate; duplicating the check here would put one rule in two
+  places.
+- **Opening someone is a page, and coming back keeps your place.** Filter to
+  Blocked, open a row, then use the back link: the filter survives and the row
+  you came from is highlighted. This follows the recruiting detail pages, whose
+  `BackToBoardLink` carries `jobId` and `focus` back to the board for the same
+  reason. In the shipped version it is a real route; here the parent holds that
+  state, which is the same behaviour without a router.
 
 ## What this prototype deliberately does not show
 
@@ -83,7 +90,7 @@ not three screens that mention the same person.
 | ------------------------------------ | ----------------------------------------------------------------------- |
 | `index.jsx`                          | Shell, view switcher, all shared state and transitions                  |
 | `AccountsPage.jsx`                   | The operator's list: search, filters, pending-request banner            |
-| `AccountDrawer.jsx`                  | One person: identity, state, sign-in methods, actions, pending decision |
+| `AccountDetailPage.jsx`              | One person: identity, state, sign-in methods, actions, pending decision |
 | `BlockDialog.jsx`                    | Both blocking and requesting a block — same evidence, different verb    |
 | `BlockImpact.jsx`                    | The pre-flight, including the untouched-mentorship warning              |
 | `DeactivateDialog.jsx`               | Deactivation, with its optional note                                    |

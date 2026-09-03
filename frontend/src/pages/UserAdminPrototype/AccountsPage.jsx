@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -55,21 +55,26 @@ const matchesStatus = (user, status, pending) => {
  * search in the product — with the account-state filters that make it useful
  * for triage.
  *
- * @param {{users: object[], requests: object[], onOpen: Function,
- *   statusFilter: string, onStatusFilter: Function}} props
+ * Search, filters and page live in the parent rather than here, so opening a
+ * person and coming back lands on the same list rather than a reset one. In
+ * the shipped version that state is in the query string; here the parent holds
+ * it, which is the same behaviour without a router.
+ *
+ * @param {{users: object[], requests: object[], filters: object,
+ *   onFilters: Function, page: number, onPage: Function,
+ *   focusUserId: number|null, onOpen: Function}} props
  * @returns {JSX.Element}
  */
 const AccountsPage = ({
   users,
   requests,
+  filters,
+  onFilters,
+  page,
+  onPage,
+  focusUserId,
   onOpen,
-  statusFilter,
-  onStatusFilter,
 }) => {
-  const [term, setTerm] = useState("");
-  const [type, setType] = useState("all");
-  const [page, setPage] = useState(0);
-
   const pendingIds = useMemo(
     () =>
       new Set(
@@ -84,11 +89,11 @@ const AccountsPage = ({
     () =>
       users.filter(
         (u) =>
-          matchesSearch(u, term) &&
-          matchesStatus(u, statusFilter, pendingIds.has(u.userId)) &&
-          (type === "all" || u.userType === type),
+          matchesSearch(u, filters.term) &&
+          matchesStatus(u, filters.status, pendingIds.has(u.userId)) &&
+          (filters.type === "all" || u.userType === filters.type),
       ),
-    [users, term, statusFilter, type, pendingIds],
+    [users, filters, pendingIds],
   );
 
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
@@ -99,9 +104,10 @@ const AccountsPage = ({
   );
   const pendingCount = pendingIds.size;
 
-  const reset = (fn) => (value) => {
-    setPage(0);
-    fn(value);
+  /** Any filter change invalidates the page number, so reset it together. */
+  const setFilter = (key) => (value) => {
+    onPage(0);
+    onFilters({ ...filters, [key]: value });
   };
 
   return (
@@ -122,7 +128,7 @@ const AccountsPage = ({
         </Badge>
       </div>
 
-      {pendingCount > 0 && statusFilter !== "requested" && (
+      {pendingCount > 0 && filters.status !== "requested" && (
         <div className="flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2">
           <p className="text-sm text-amber-900">
             {pendingCount} block request{pendingCount === 1 ? "" : "s"} awaiting
@@ -132,7 +138,7 @@ const AccountsPage = ({
             variant="outline"
             size="sm"
             className="border-amber-400 bg-white"
-            onClick={() => onStatusFilter("requested")}
+            onClick={() => setFilter("status")("requested")}
           >
             Show them
           </Button>
@@ -148,11 +154,11 @@ const AccountsPage = ({
           <Input
             className="pl-8"
             placeholder="Name, email, user ID, or block reason"
-            value={term}
-            onChange={(e) => reset(setTerm)(e.target.value)}
+            value={filters.term}
+            onChange={(e) => setFilter("term")(e.target.value)}
           />
         </div>
-        <Select value={type} onValueChange={reset(setType)}>
+        <Select value={filters.type} onValueChange={setFilter("type")}>
           <SelectTrigger className="w-36">
             <SelectValue placeholder="Type" />
           </SelectTrigger>
@@ -162,7 +168,7 @@ const AccountsPage = ({
             <SelectItem value="external">External</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={statusFilter} onValueChange={reset(onStatusFilter)}>
+        <Select value={filters.status} onValueChange={setFilter("status")}>
           <SelectTrigger className="w-44">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
@@ -191,7 +197,11 @@ const AccountsPage = ({
             {visible.map((user) => (
               <TableRow
                 key={user.userId}
-                className="cursor-pointer"
+                className={`cursor-pointer ${
+                  user.userId === focusUserId
+                    ? "bg-blue-50 ring-2 ring-inset ring-blue-300"
+                    : ""
+                }`}
                 onClick={() => onOpen(user.userId)}
               >
                 <TableCell className="tabular-nums text-slate-500">
@@ -237,7 +247,7 @@ const AccountsPage = ({
           variant="outline"
           size="sm"
           disabled={current === 0}
-          onClick={() => setPage(current - 1)}
+          onClick={() => onPage(current - 1)}
         >
           Previous
         </Button>
@@ -248,7 +258,7 @@ const AccountsPage = ({
           variant="outline"
           size="sm"
           disabled={current >= pageCount - 1}
-          onClick={() => setPage(current + 1)}
+          onClick={() => onPage(current + 1)}
         >
           Next
         </Button>

@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { GraduationCap, Briefcase, ShieldCheck } from "lucide-react";
 import AccountsPage from "@/pages/UserAdminPrototype/AccountsPage";
-import AccountDrawer from "@/pages/UserAdminPrototype/AccountDrawer";
+import AccountDetailPage from "@/pages/UserAdminPrototype/AccountDetailPage";
 import BlockDialog from "@/pages/UserAdminPrototype/BlockDialog";
 import DeactivateDialog from "@/pages/UserAdminPrototype/DeactivateDialog";
 import DomainView from "@/pages/UserAdminPrototype/DomainView";
@@ -62,7 +62,13 @@ const UserAdminPrototype = () => {
   const [users, setUsers] = useState(INITIAL_USERS);
   const [requests, setRequests] = useState(INITIAL_REQUESTS);
   const [openUserId, setOpenUserId] = useState(null);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [focusUserId, setFocusUserId] = useState(null);
+  const [filters, setFilters] = useState({
+    term: "",
+    type: "all",
+    status: "all",
+  });
+  const [page, setPage] = useState(0);
   const [deactivating, setDeactivating] = useState(null);
   const [blocking, setBlocking] = useState(null);
   const [blockMode, setBlockMode] = useState("apply");
@@ -145,6 +151,12 @@ const UserAdminPrototype = () => {
   const openUser = userById(openUserId) ?? null;
   const openRequest = openUserId ? pendingFor(openUserId) : null;
 
+  /** Opening a person remembers the row, so the trip back can highlight it. */
+  const openAccount = (userId) => {
+    setFocusUserId(userId);
+    setOpenUserId(userId);
+  };
+
   const domainProps = useMemo(
     () => ({
       userById,
@@ -194,15 +206,47 @@ const UserAdminPrototype = () => {
       </nav>
 
       <main className="mx-auto max-w-5xl p-6">
-        {view === "ops" && (
-          <AccountsPage
-            users={users}
-            requests={requests}
-            onOpen={setOpenUserId}
-            statusFilter={statusFilter}
-            onStatusFilter={setStatusFilter}
-          />
-        )}
+        {view === "ops" &&
+          (openUser ? (
+            <AccountDetailPage
+              user={openUser}
+              request={openRequest}
+              onBack={() => setOpenUserId(null)}
+              onDeactivate={setDeactivating}
+              onReactivate={(user) =>
+                patchUser(user.userId, {
+                  isActive: true,
+                  deactivatedAt: null,
+                  deactivatedBy: null,
+                  deactivatedReason: null,
+                })
+              }
+              onUnblock={(user) =>
+                patchUser(user.userId, {
+                  isBlocked: false,
+                  blockedAt: null,
+                  blockedBy: null,
+                  blockedReason: null,
+                })
+              }
+              onBlock={(user) => {
+                setBlockMode("apply");
+                setBlocking(user);
+              }}
+              onDecide={decideRequest}
+            />
+          ) : (
+            <AccountsPage
+              users={users}
+              requests={requests}
+              filters={filters}
+              onFilters={setFilters}
+              page={page}
+              onPage={setPage}
+              focusUserId={focusUserId}
+              onOpen={openAccount}
+            />
+          ))}
 
         {view === "recruiting" && (
           <DomainView
@@ -231,34 +275,6 @@ const UserAdminPrototype = () => {
           />
         )}
       </main>
-
-      <AccountDrawer
-        user={openUser}
-        request={openRequest}
-        onClose={() => setOpenUserId(null)}
-        onDeactivate={setDeactivating}
-        onReactivate={(user) =>
-          patchUser(user.userId, {
-            isActive: true,
-            deactivatedAt: null,
-            deactivatedBy: null,
-            deactivatedReason: null,
-          })
-        }
-        onUnblock={(user) =>
-          patchUser(user.userId, {
-            isBlocked: false,
-            blockedAt: null,
-            blockedBy: null,
-            blockedReason: null,
-          })
-        }
-        onBlock={(user) => {
-          setBlockMode("apply");
-          setBlocking(user);
-        }}
-        onDecide={decideRequest}
-      />
 
       <DeactivateDialog
         user={deactivating}
