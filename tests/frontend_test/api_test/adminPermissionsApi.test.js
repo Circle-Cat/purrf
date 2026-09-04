@@ -4,7 +4,6 @@ import {
   getPermissionCatalog,
   getUsers,
   getUserPermissions,
-  getPermissionHolders,
   getAuditLog,
   grantPermissions,
   revokePermissions,
@@ -36,6 +35,7 @@ describe("adminPermissionsApi", () => {
       order: "desc",
       isSuperAdmin: true,
       userType: "internal",
+      permissionName: "permission.manage",
     });
     expect(request.get).toHaveBeenCalledWith("/admin/users", {
       params: {
@@ -46,6 +46,7 @@ describe("adminPermissionsApi", () => {
         order: "desc",
         is_super_admin: true,
         user_type: "internal",
+        permission_name: "permission.manage",
       },
     });
   });
@@ -54,18 +55,6 @@ describe("adminPermissionsApi", () => {
     request.get.mockResolvedValue({ data: {} });
     await getUserPermissions(7);
     expect(request.get).toHaveBeenCalledWith("/admin/users/7/permissions");
-  });
-
-  it("getPermissionHolders encodes the name and passes filter params as snake_case", async () => {
-    request.get.mockResolvedValue({ data: { grants: [] } });
-    await getPermissionHolders("mentorship.admin.read", {
-      includeRevoked: true,
-      grantedSource: "manual",
-    });
-    expect(request.get).toHaveBeenCalledWith(
-      "/admin/permissions/mentorship.admin.read/users",
-      { params: { include_revoked: true, granted_source: "manual" } },
-    );
   });
 
   it("getAuditLog passes all filter params mapped to snake_case", async () => {

@@ -54,20 +54,6 @@ class TestUserPermissionsRepository(BaseRepositoryTestLib):
         )
         self.assertEqual(len(full), 2)
 
-    async def test_get_users_with_permission_reverse_lookup(self):
-        perm = f"test.{uuid.uuid4().hex[:8]}"
-        await self.repo.grant(self.session, self.u1.user_id, [perm], "admin")
-        await self.repo.grant(self.session, self.u2.user_id, [perm], "system_internal")
-        await self.repo.revoke(self.session, self.u2.user_id, [perm])
-
-        active = await self.repo.get_users_with_permission(self.session, perm)
-        self.assertEqual({r.user_id for r in active}, {self.u1.user_id})
-
-        admin_only = await self.repo.get_users_with_permission(
-            self.session, perm, include_revoked=True, granted_source="admin"
-        )
-        self.assertEqual({r.user_id for r in admin_only}, {self.u1.user_id})
-
     async def test_get_active_users_with_permission_dedups_and_skips_inactive(self):
         perm = f"approve.{uuid.uuid4().hex[:8]}"
         # u1 holds two active grants -> must appear exactly once.
