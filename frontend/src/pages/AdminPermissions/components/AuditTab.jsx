@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/select";
 import Table from "@/components/common/Table";
 import { displayPermission } from "@/pages/AdminPermissions/utils/permissionLabels";
+import { actorLabel } from "@/pages/AdminPermissions/utils/grantPeople";
 import { useAuditLog } from "@/pages/AdminPermissions/hooks/useAuditLog";
 
 const ALL = "__all__";
@@ -40,7 +41,10 @@ const AuditTab = ({ catalog }) => {
 
   const columns = [
     { header: "When", accessor: "when" },
-    { header: "User", accessor: "userId" },
+    { header: "User ID", accessor: "userId" },
+    { header: "First Name", accessor: "firstName" },
+    { header: "Last Name", accessor: "lastName" },
+    { header: "Preferred Name", accessor: "preferredName" },
     { header: "Permission", accessor: "permission" },
     { header: "Action", accessor: "action" },
     { header: "Source", accessor: "grantedSource" },
@@ -52,10 +56,15 @@ const AuditTab = ({ catalog }) => {
     : entries.map((g) => ({
         when: g.isActive ? g.grantedTimestamp : g.revokedTimestamp,
         userId: g.userId,
+        firstName: g.user?.firstName ?? "—",
+        lastName: g.user?.lastName ?? "—",
+        preferredName: g.user?.preferredName ?? "—",
         permission: displayPermission(g.permissionName),
         action: g.isActive ? "granted" : "revoked",
         grantedSource: g.grantedSource,
-        by: g.isActive ? (g.grantedBy ?? "—") : (g.revokedBy ?? "—"),
+        by: g.isActive
+          ? actorLabel(g.grantedByUser, g.grantedBy)
+          : actorLabel(g.revokedByUser, g.revokedBy),
       }));
 
   return (
