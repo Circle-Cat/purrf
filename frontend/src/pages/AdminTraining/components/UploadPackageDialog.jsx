@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import PackageHealthBox from "@/pages/AdminTraining/components/PackageHealthBox";
 
 /**
@@ -34,7 +36,11 @@ import PackageHealthBox from "@/pages/AdminTraining/components/PackageHealthBox"
  *   not tell us one.
  * @param {boolean} props.open
  * @param {(open: boolean) => void} [props.onOpenChange]
- * @param {(file: File) => Promise<Object>} [props.onConfirm]
+ * @param {(file: File, onProgress: (percent: number) => void) => Promise<Object>} [props.onConfirm]
+ *   `onProgress` is handed the whole-number percentage of the archive that
+ *   has reached the server. A caller that cannot measure the transfer simply
+ *   never calls it, and the dialog falls back to saying nothing more than
+ *   that an upload is running.
  */
 export default function UploadPackageDialog({
   course,
@@ -43,14 +49,20 @@ export default function UploadPackageDialog({
   onConfirm,
 }) {
   const [file, setFile] = useState(null);
-  const [busy, setBusy] = useState(false);
+  // null while idle, then which half of the wait we are in: "uploading" is
+  // the transfer, "validating" is everything the server does once it holds
+  // the whole archive.
+  const [phase, setPhase] = useState(null);
+  const [percent, setPercent] = useState(null);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+  const busy = phase !== null;
 
   useEffect(() => {
     if (open) {
       setFile(null);
-      setBusy(false);
+      setPhase(null);
+      setPercent(null);
       setError(null);
       setResult(null);
     }
@@ -65,19 +77,33 @@ export default function UploadPackageDialog({
 
   const handleSubmit = async () => {
     if (!file) return;
-    setBusy(true);
+    setPhase("uploading");
+    setPercent(null);
     setError(null);
     try {
-      const data = await onConfirm?.(file);
+      // The last byte arriving is the end of the only stretch anyone can
+      // measure. What follows -- unzipping the archive, reading the
+      // manifest, storing a couple of hundred files -- reports nothing, and
+      // on the packages we ship is the longer half of the two, so the count
+      // stops here rather than resting at 100%.
+      const data = await onConfirm?.(file, (reached) => {
+        setPercent(reached);
+        if (reached >= 100) setPhase("validating");
+      });
       setResult(data);
     } catch (err) {
       setError(err.message);
     } finally {
-      setBusy(false);
+      setPhase(null);
     }
   };
 
   const handleClose = () => onOpenChange?.(false);
+
+  const idleLabel = isReplacing ? "Replace package" : "Upload package";
+  const submitLabel =
+    { uploading: "Uploading...", validating: "Checking..." }[phase] ??
+    idleLabel;
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && handleClose()}>
@@ -133,6 +159,23 @@ export default function UploadPackageDialog({
               />
             </div>
 
+            {phase === "uploading" && percent !== null && (
+              <div className="space-y-1.5" aria-live="polite">
+                <Progress value={percent} />
+                <p className="text-xs text-muted-foreground">{percent}%</p>
+              </div>
+            )}
+
+            {phase === "validating" && (
+              <p
+                className="flex items-center gap-2 text-sm text-muted-foreground"
+                aria-live="polite"
+              >
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                Checking package...
+              </p>
+            )}
+
             {error && (
               <div className="space-y-1 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
                 <p>{error}</p>
@@ -153,11 +196,7 @@ export default function UploadPackageDialog({
                 Cancel
               </Button>
               <Button onClick={handleSubmit} disabled={busy || !file}>
-                {busy
-                  ? "Uploading..."
-                  : isReplacing
-                    ? "Replace package"
-                    : "Upload package"}
+                {submitLabel}
               </Button>
             </>
           )}
