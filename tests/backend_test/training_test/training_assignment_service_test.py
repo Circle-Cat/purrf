@@ -26,8 +26,6 @@ def _course(**overrides):
         "name": "Mentee Onboarding",
         "category": TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
         "is_active": True,
-        "storage_prefix": "training/3/abc/",
-        "verified_completable_at": _VERIFIED_AT,
     }
     return TrainingCourseEntity(**{**defaults, **overrides})
 
@@ -88,9 +86,7 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([step[0] for step in self.calls], ["add", "flush", "commit"])
 
     async def test_refuses_to_assign_a_course_whose_live_package_is_unverified(self):
-        """The refusal is the whole point of the gate. The course row still
-        carries its own (verified) stamp from _course()'s defaults, so this
-        only passes if the gate reads the package's stamp, not the course's."""
+        """The refusal is the whole point of the gate."""
         self.package_repository.get_by_state.return_value = MagicMock(
             verified_completable_at=None
         )
@@ -102,8 +98,6 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.session.commit.assert_not_awaited()
 
     async def test_refuses_to_assign_a_course_with_no_live_package(self):
-        """Same course row as above, still carrying a verified stamp; only
-        the absence of a LIVE package row should block this."""
         self.package_repository.get_by_state.return_value = None
 
         with self.assertRaises(ConflictError):
@@ -113,12 +107,6 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.session.commit.assert_not_awaited()
 
     async def test_assigns_when_the_live_package_carries_a_stamp(self):
-        """The course row itself is unverified; assignment must still
-        succeed because the gate reads the package, not the course."""
-        self.courses.get_course_by_id.return_value = _course(
-            verified_completable_at=None
-        )
-
         result = await self.service.assign(self.session, self.payload)
 
         self.assertTrue(result.created)
@@ -204,17 +192,11 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.session.add.call_args.args[0].category)
 
     async def test_a_trial_opens_an_assignment_on_an_unverified_course(self):
-        """The gate that refuses assignment is exactly what the trial answers.
-
-        The course's own verified_completable_at is not set here: start_trial
-        never reads it, only the package's, so setting it would prove
-        nothing.
-        """
+        """The gate that refuses assignment is exactly what the trial answers."""
         self.course_repository.get_course_by_id.return_value = TrainingCourseEntity(
             course_id=_COURSE_ID,
             name="Mentor Onboarding",
             is_active=True,
-            storage_prefix="training/3/abc/",
         )
         self.package_repository.get_by_state.return_value = MagicMock(
             verified_completable_at=None
@@ -241,13 +223,10 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.created)
 
     async def test_a_trial_on_a_course_with_no_package_is_refused(self):
-        """The course row still claims a storage_prefix; only the absence of
-        a LIVE package row should block the trial."""
         self.course_repository.get_course_by_id.return_value = TrainingCourseEntity(
             course_id=_COURSE_ID,
             name="Empty",
             is_active=True,
-            storage_prefix="training/3/abc/",
         )
         self.package_repository.get_by_state.return_value = None
 
@@ -261,7 +240,6 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
             name="Mentor Onboarding",
             category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
             is_active=True,
-            storage_prefix="training/3/abc/",
         )
 
         await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)
@@ -276,7 +254,6 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
             course_id=_COURSE_ID,
             name="Mentor Onboarding",
             is_active=False,
-            storage_prefix="training/3/abc/",
         )
 
         result = await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)

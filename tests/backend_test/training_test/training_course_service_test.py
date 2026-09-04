@@ -149,18 +149,11 @@ class TestExternalLinkOnTheCourseRow(unittest.TestCase):
         self.assertEqual(dto.state, TrainingCourseState.NO_PACKAGE)
         self.assertIsNone(dto.link)
 
-    def test_the_dto_reads_package_fields_from_the_package_not_the_course(self):
-        """Legacy course columns are still dual-written by the upload path;
-        the DTO has to read the package row and ignore them."""
+    def test_the_dto_reads_package_fields_from_the_package(self):
         course = TrainingCourseEntity(
             course_id=1,
             name="Cat Care",
             is_active=True,
-            scorm_version=ScormVersion.SCORM_2004,
-            package_version="stale-course-column",
-            reporting_mode="stale-mode",
-            verified_completable_at=_VERIFIED_AT,
-            verified_by_user_id=404,
         )
         package = _package(
             scorm_version=ScormVersion.SCORM_12,

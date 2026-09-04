@@ -148,26 +148,6 @@ class TestTrainingCoursePackageRepository(BaseRepositoryTestLib):
         )
         self.assertEqual(found.storage_prefix, "training/1/b/")
 
-    async def test_names_only_the_courses_that_have_something_live(self):
-        # The profile page and the course list both ask this about a batch of
-        # courses at once; asking per row would be a query per line.
-        await self.repo.add(
-            self.session,
-            self._package(self.course_id, TrainingPackageState.LIVE, "training/1/a/"),
-        )
-        await self.repo.add(
-            self.session,
-            self._package(
-                self.other_course_id, TrainingPackageState.PENDING, "training/2/a/"
-            ),
-        )
-
-        with_live = await self.repo.live_course_ids(
-            self.session, [self.course_id, self.other_course_id]
-        )
-
-        self.assertEqual(with_live, {self.course_id})
-
 
 if __name__ == "__main__":
     unittest.main()

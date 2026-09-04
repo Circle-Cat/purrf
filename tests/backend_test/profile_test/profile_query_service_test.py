@@ -73,8 +73,8 @@ class TestProfileQueryService(unittest.IsolatedAsyncioTestCase):
 
         mock_exp = MagicMock()
         mock_trainings = [
-            (MagicMock(), "Mentor Onboarding", "training/1/abc/"),
-            (MagicMock(), None, None),
+            (MagicMock(), "Mentor Onboarding", True),
+            (MagicMock(), None, False),
         ]
         self.mock_experience_repo.get_experience_by_user_id.return_value = mock_exp
         self.mock_training_repo.get_training_with_course_by_user_id.return_value = (

@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import TrainingStatus
+from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.training_entity import TrainingEntity
 from backend.entity.training_progress_entity import TrainingProgressEntity
 from backend.training.training_content_token import issue_content_token
@@ -54,19 +55,15 @@ class _ProgressServiceCase(unittest.IsolatedAsyncioTestCase):
                 training_id=training_id, **columns
             )
         )
-        self.course_repository = AsyncMock()
         self.package_repository = AsyncMock()
         # A package row always knows when it landed, and a bare MagicMock
         # here would compare against a datetime rather than answer.
-        self.package_repository.get_by_state.return_value.uploaded_at = (
-            _PACKAGE_LANDED
-        )
+        self.package_repository.get_by_state.return_value.uploaded_at = _PACKAGE_LANDED
         self.service = TrainingProgressService(
             logger=self.logger,
             signing_key=_SIGNING_KEY,
             training_repository=self.training_repository,
             training_progress_repository=self.progress_repository,
-            training_course_repository=self.course_repository,
             training_course_package_repository=self.package_repository,
         )
 
@@ -515,9 +512,9 @@ class TestSave(_ProgressServiceCase):
         """Replacing a package clears the stamp and keeps every assignment,
         so an assignee could otherwise post a finishing status and make the
         new package assignable to everybody without opening it."""
-        course = self.course_repository.get_course_by_id.return_value
-        course.verified_completable_at = None
-        course.verified_by_user_id = None
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = None
+        package.verified_by_user_id = None
         assignment = self.training_repository.get_training_by_id.return_value
         assignment.status = TrainingStatus.IN_PROGRESS
 
@@ -528,14 +525,12 @@ class TestSave(_ProgressServiceCase):
             {**_COMMIT, "cmi.core.lesson_status": "completed"},
         )
 
-        self.assertIsNone(course.verified_completable_at)
-        self.assertIsNone(course.verified_by_user_id)
+        self.assertIsNone(package.verified_completable_at)
+        self.assertIsNone(package.verified_by_user_id)
 
     async def test_a_learner_without_the_grant_still_finishes_their_own_training(self):
         """The gate is on unlocking the course for everybody else, not on a
         learner reporting their own assignment done."""
-        course = self.course_repository.get_course_by_id.return_value
-        course.verified_completable_at = None
         assignment = self.training_repository.get_training_by_id.return_value
         assignment.status = TrainingStatus.IN_PROGRESS
 
@@ -1165,8 +1160,6 @@ class TestARunAgainstAReplacedPackage(_ProgressServiceCase):
 
 class TestTheStampLandsOnThePackage(_ProgressServiceCase):
     async def test_the_stamp_lands_on_the_package_not_the_course(self):
-        course = self.course_repository.get_course_by_id.return_value
-        course.verified_completable_at = None
         package = self.package_repository.get_by_state.return_value
         package.verified_completable_at = None
         package.verified_by_user_id = None
@@ -1183,9 +1176,9 @@ class TestTheStampLandsOnThePackage(_ProgressServiceCase):
 
         self.assertIsNotNone(package.verified_completable_at)
         self.assertEqual(package.verified_by_user_id, _USER_ID)
-        # The course columns still exist at this point in the slice; only
-        # Task 8's column drop makes them not exist at all (hasattr).
-        self.assertIsNone(course.verified_completable_at)
+        # There is no course-side stamp left to land on: the column is gone.
+        course = TrainingCourseEntity(course_id=3, name="Cat Care", is_active=True)
+        self.assertFalse(hasattr(course, "verified_completable_at"))
 
 
 class TestTheSaveReportsWhetherTheCourseIsVerified(_ProgressServiceCase):

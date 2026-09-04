@@ -43,8 +43,7 @@ class TrainingPackageService:
             training_progress_repository: Clears resume data for learners who
                 had not finished.
             training_course_package_repository (TrainingCoursePackageRepository):
-                Records each upload as its own row, alongside the course
-                columns it still writes.
+                Records each upload as its own row.
             training_storage (TrainingStorage): Object storage.
         """
         self.logger = logger
@@ -115,20 +114,23 @@ class TrainingPackageService:
             raise
 
         moment = now or datetime.now(timezone.utc)
-        previous_prefix = course.storage_prefix
 
-        course.storage_prefix = new_prefix
-        course.entry_path = contents.manifest.entry_path
-        course.scorm_version = contents.manifest.scorm_version
-        course.package_uploaded_at = moment
-        if contents.driver_config is not None:
-            course.package_version = contents.driver_config.course_package_version
-            course.reporting_mode = contents.driver_config.reporting
-        else:
-            course.package_version = None
-            course.reporting_mode = None
-        course.verified_completable_at = None
-        course.verified_by_user_id = None
+        previous_package = await self.training_course_package_repository.get_by_state(
+            session, course_id, TrainingPackageState.LIVE
+        )
+        previous_prefix = (
+            previous_package.storage_prefix if previous_package is not None else None
+        )
+        package_version = (
+            contents.driver_config.course_package_version
+            if contents.driver_config is not None
+            else None
+        )
+        reporting_mode = (
+            contents.driver_config.reporting
+            if contents.driver_config is not None
+            else None
+        )
 
         cleared = 0
         if previous_prefix:
@@ -136,9 +138,6 @@ class TrainingPackageService:
                 session, course_id
             )
 
-        previous_package = await self.training_course_package_repository.get_by_state(
-            session, course_id, TrainingPackageState.LIVE
-        )
         if previous_package is not None:
             await self.training_course_package_repository.delete(
                 session, previous_package
@@ -151,8 +150,8 @@ class TrainingPackageService:
                 storage_prefix=new_prefix,
                 entry_path=contents.manifest.entry_path,
                 scorm_version=contents.manifest.scorm_version,
-                package_version=course.package_version,
-                reporting_mode=course.reporting_mode,
+                package_version=package_version,
+                reporting_mode=reporting_mode,
                 uploaded_at=moment,
             ),
         )
@@ -224,10 +223,14 @@ class TrainingPackageService:
         )
         if course is None:
             raise ValueError(f"No training course with id {course_id}.")
-        if not course.storage_prefix or not course.entry_path:
+
+        package = await self.training_course_package_repository.get_by_state(
+            session, course_id, TrainingPackageState.LIVE
+        )
+        if package is None:
             raise ValueError("This course has no package to read.")
 
-        object_key = f"{course.storage_prefix}{course.entry_path}"
+        object_key = f"{package.storage_prefix}{package.entry_path}"
         stored = self.training_storage.get(object_key)
         if stored is None:
             self.logger.error(
@@ -239,7 +242,7 @@ class TrainingPackageService:
 
         config = parse_driver_config(stored[0])
         return TrainingCompletionConfigDto(
-            verified=course.verified_completable_at is not None,
+            verified=package.verified_completable_at is not None,
             completion_percentage=config.completion_percentage if config else None,
             completes_via_storyline=bool(config and config.storyline_id),
             completion_config_readable=config is not None,

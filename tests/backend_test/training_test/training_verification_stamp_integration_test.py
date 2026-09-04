@@ -27,7 +27,6 @@ from backend.entity.users_entity import UsersEntity
 from backend.repository.training_course_package_repository import (
     TrainingCoursePackageRepository,
 )
-from backend.repository.training_course_repository import TrainingCourseRepository
 from backend.repository.training_progress_repository import (
     TrainingProgressRepository,
 )
@@ -45,7 +44,6 @@ _SIGNING_KEY = "integration-test-signing-key"
 class TestACompletedRunDerivesVerifiedEndToEnd(BaseRepositoryTestLib):
     async def asyncSetUp(self):
         await super().asyncSetUp()
-        self.course_repository = TrainingCourseRepository()
         self.package_repository = TrainingCoursePackageRepository()
         self.training_repository = TrainingRepository()
         self.progress_repository = TrainingProgressRepository()
@@ -54,7 +52,6 @@ class TestACompletedRunDerivesVerifiedEndToEnd(BaseRepositoryTestLib):
             signing_key=_SIGNING_KEY,
             training_repository=self.training_repository,
             training_progress_repository=self.progress_repository,
-            training_course_repository=self.course_repository,
             training_course_package_repository=self.package_repository,
         )
 

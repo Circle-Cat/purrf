@@ -54,25 +54,6 @@ class TrainingCoursePackageRepository:
         await session.delete(package)
         await session.flush()
 
-    async def live_course_ids(
-        self, session: AsyncSession, course_ids: list[int]
-    ) -> set[int]:
-        """Which of these courses have something live.
-
-        A batch answer rather than a lookup per course: the callers asking it
-        -- the course list, a person's profile -- are already holding a page
-        of rows when they ask.
-        """
-        if not course_ids:
-            return set()
-        result = await session.execute(
-            select(TrainingCoursePackageEntity.course_id).where(
-                TrainingCoursePackageEntity.course_id.in_(course_ids),
-                TrainingCoursePackageEntity.state == TrainingPackageState.LIVE,
-            )
-        )
-        return set(result.scalars().all())
-
     async def live_packages_for(
         self, session: AsyncSession, course_ids: list[int]
     ) -> dict[int, TrainingCoursePackageEntity]:

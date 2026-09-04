@@ -9,7 +9,6 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.common.mentorship_enums import TrainingStatus
-from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.training_entity import TrainingEntity
 from backend.entity.training_progress_entity import TrainingProgressEntity
 from backend.training.byte_range import RangeSpec, UnsatisfiableRange
@@ -97,24 +96,14 @@ class _ContentServiceCase(unittest.IsolatedAsyncioTestCase):
             course_id=_COURSE_ID,
             status=TrainingStatus.IN_PROGRESS,
         )
-        self.course = TrainingCourseEntity(
-            course_id=_COURSE_ID,
-            name="Mentee Onboarding",
-            storage_prefix=_OLD_PREFIX,
-            entry_path="scormcontent/index.html",
-            is_active=True,
-        )
-
         self.training_repository = MagicMock()
         self.training_repository.get_training_by_id = AsyncMock(
             return_value=self.training
         )
-        self.course_repository = MagicMock()
-        self.course_repository.get_course_by_id = AsyncMock(return_value=self.course)
 
         self.package = MagicMock(
-            storage_prefix=self.course.storage_prefix,
-            entry_path=self.course.entry_path,
+            storage_prefix=_OLD_PREFIX,
+            entry_path="scormcontent/index.html",
         )
         self.package_repository = MagicMock()
         self.package_repository.get_by_state = AsyncMock(return_value=self.package)
@@ -135,7 +124,6 @@ class _ContentServiceCase(unittest.IsolatedAsyncioTestCase):
             signing_key=_KEY,
             content_host=_CONTENT_HOST,
             training_repository=self.training_repository,
-            training_course_repository=self.course_repository,
             training_course_package_repository=self.package_repository,
             training_progress_repository=self.progress_repository,
             training_storage=self.storage,
@@ -283,17 +271,6 @@ class TestReadAssetLooksThePrefixUpFresh(_ContentServiceCase):
 
         self.assertEqual(self.package_repository.get_by_state.await_count, 2)
 
-    async def test_reads_the_prefix_from_the_package_not_the_course(self):
-        self.course.storage_prefix = _OLD_PREFIX
-        self.package.storage_prefix = _NEW_PREFIX
-        self.package.entry_path = "scormcontent/index.html"
-
-        await self.service.read_asset(
-            self.session, self.valid_token(), "scormcontent/x.js"
-        )
-
-        self.assertEqual(self.fetched_keys(), [_NEW_PREFIX + "scormcontent/x.js"])
-
 
 class TestReadAssetRejections(_ContentServiceCase):
     async def test_path_traversal_is_refused_without_touching_storage(self):
@@ -363,7 +340,6 @@ class TestUnconfiguredContentHosting(_ContentServiceCase):
             signing_key=overrides.get("signing_key", _KEY),
             content_host=overrides.get("content_host", _CONTENT_HOST),
             training_repository=self.training_repository,
-            training_course_repository=self.course_repository,
             training_course_package_repository=self.package_repository,
             training_progress_repository=self.progress_repository,
             training_storage=self.storage,

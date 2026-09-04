@@ -149,7 +149,6 @@ class TrainingProgressService:
         signing_key,
         training_repository,
         training_progress_repository,
-        training_course_repository,
         training_course_package_repository,
     ):
         """
@@ -160,9 +159,6 @@ class TrainingProgressService:
                 nothing here issues one.
             training_repository (TrainingRepository): The assignment being saved.
             training_progress_repository (TrainingProgressRepository): The row.
-            training_course_repository (TrainingCourseRepository): Unused now
-                that the verification stamp lives on the package row; kept
-                while other readers still migrate over.
             training_course_package_repository (TrainingCoursePackageRepository):
                 Reads the LIVE package being finished, to stamp it on first
                 completion.
@@ -171,7 +167,6 @@ class TrainingProgressService:
         self.signing_key = signing_key
         self.training_repository = training_repository
         self.training_progress_repository = training_progress_repository
-        self.training_course_repository = training_course_repository
         self.training_course_package_repository = training_course_package_repository
 
     async def save(

@@ -131,7 +131,6 @@ class TrainingContentService:
         signing_key,
         content_host,
         training_repository,
-        training_course_repository,
         training_course_package_repository,
         training_progress_repository,
         training_storage,
@@ -143,9 +142,6 @@ class TrainingContentService:
             content_host (str | None): TRAINING_CONTENT_HOST.
             training_repository (TrainingRepository): The assignment a token
                 is issued against.
-            training_course_repository (TrainingCourseRepository): Unused by
-                this service now that a course's storage prefix lives on its
-                package row; kept while other readers still migrate over.
             training_course_package_repository (TrainingCoursePackageRepository):
                 Resolves the LIVE package a course serves content from.
             training_progress_repository (TrainingProgressRepository): The
@@ -156,7 +152,6 @@ class TrainingContentService:
         self.signing_key = signing_key
         self.content_host = content_host
         self.training_repository = training_repository
-        self.training_course_repository = training_course_repository
         self.training_course_package_repository = training_course_package_repository
         self.training_progress_repository = training_progress_repository
         self.training_storage = training_storage
