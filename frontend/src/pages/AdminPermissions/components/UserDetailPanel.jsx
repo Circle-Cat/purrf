@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/context/auth";
+import { legalName } from "@/utils/userName";
 import { PERMISSIONS } from "@/constants/Permissions";
 import { useUserPermissions } from "@/pages/AdminPermissions/hooks/useUserPermissions";
 import PermissionChecklist from "@/pages/AdminPermissions/components/PermissionChecklist";
@@ -55,7 +56,10 @@ const UserDetailPanel = ({
     }
   };
 
-  const displayName = `${selectedUser.firstName} ${selectedUser.lastName}`;
+  // The dialog title has room for one line, so it carries the legal name
+  // and the preferred name follows on the sub-line -- all three fields, shown
+  // verbatim, which is the rule for an admin view.
+  const displayName = legalName(selectedUser);
   const subLine = [
     selectedUser.preferredName ? `"${selectedUser.preferredName}"` : null,
     selectedUser.primaryEmail,

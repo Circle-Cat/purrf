@@ -22,3 +22,23 @@ export function userDisplayName(person) {
 
   return `${person.firstName ?? ""} ${person.lastName ?? ""}`.trim();
 }
+
+/**
+ * Render a person's legal name for a place that has room for one cell only.
+ *
+ * Admin and audit views show `firstName`, `lastName` and `preferredName`
+ * separately and verbatim, which is what the wide tables do. A single cell —
+ * the "By" column of an audit row, say — cannot hold three fields, so it falls
+ * back to the legal name and drops the preferred one.
+ *
+ * Dropping the preferred name loses a nickname. *Substituting* it, the way
+ * `userDisplayName` does, loses the identity the view exists to confirm — so
+ * that is the one thing a cell like this must never do.
+ *
+ * @param {{firstName?: string, lastName?: string}} [person]
+ * @returns {string} Empty string when nothing usable is provided.
+ */
+export function legalName(person) {
+  if (!person) return "";
+  return `${person.firstName ?? ""} ${person.lastName ?? ""}`.trim();
+}

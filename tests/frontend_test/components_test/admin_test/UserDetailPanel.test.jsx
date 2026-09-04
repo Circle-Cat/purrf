@@ -30,7 +30,10 @@ const makeHistory = (count) =>
     permissionName: "mentorship.admin.read",
     isActive: true,
     grantedSource: "manual",
-    grantedBy: `admin-${i}`,
+    // granted_by is an int on the wire, not a string. The panel renders it
+    // through the shared actor label, which names the person when the payload
+    // resolves one and otherwise keeps the id visible.
+    grantedBy: i,
     grantedTimestamp: "2026-07-28T00:00:00Z",
     revokedBy: null,
     revokedTimestamp: null,
@@ -76,7 +79,7 @@ describe("UserDetailPanel", () => {
     expect(box).toHaveClass("overflow-y-auto");
     // The rows still render in full - they are reachable by scrolling the box,
     // not truncated away.
-    expect(await screen.findByText("admin-39")).toBeInTheDocument();
+    expect(await screen.findByText("User 39")).toBeInTheDocument();
   });
 
   it("wraps the history in the scroll box even when there is none", async () => {

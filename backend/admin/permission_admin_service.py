@@ -12,6 +12,7 @@ from backend.dto.admin_permission_dto import (
     AdminUserDto,
     AuditListDto,
     GrantDto,
+    GrantPersonDto,
     PermissionCatalogEntryDto,
     UserListDto,
     UserPermissionsViewDto,
@@ -152,6 +153,7 @@ class PermissionAdminService:
             session, user_id, include_revoked=True
         )
         history = [self._to_grant_dto(g) for g in grants]
+        await self._resolve_grant_people(session, history)
         active = [g.permission_name for g in history if g.is_active]
         return UserPermissionsViewDto(user_id=user_id, active=active, history=history)
 
@@ -187,7 +189,9 @@ class PermissionAdminService:
             limit=limit,
             offset=offset,
         )
-        return AuditListDto(entries=[self._to_grant_dto(r) for r in rows], total=total)
+        entries = [self._to_grant_dto(r) for r in rows]
+        await self._resolve_grant_people(session, entries)
+        return AuditListDto(entries=entries, total=total)
 
     def _validate_names(self, permission_names: list[str]) -> list[str]:
         """
@@ -384,6 +388,55 @@ class PermissionAdminService:
             preferred_name=user.preferred_name,
             user_type=user_type,
         )
+
+    async def _resolve_grant_people(self, session, grants: list[GrantDto]) -> None:
+        """
+        Fill in the people behind every user id on a page of grants, in place.
+
+        A grant row carries three ids -- the holder, whoever granted it and
+        whoever revoked it -- and the views built on it rendered all of them as
+        bare integers, so reading one row meant leaving the tab. Every distinct
+        id on the page is resolved in **one** users lookup; doing it per row
+        would be a query per id.
+
+        An id with no users row leaves its field None rather than raising: a
+        grant can outlive the account it names, and a super-admin-derived row
+        seeded without a marker has no actor at all.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            grants (list[GrantDto]): The page to annotate. Mutated in place.
+        """
+        if not grants:
+            return
+
+        ids = set()
+        for grant in grants:
+            ids.update(
+                i
+                for i in (grant.user_id, grant.granted_by, grant.revoked_by)
+                if i is not None
+            )
+        if not ids:
+            return
+
+        users = await self._users.get_all_by_ids(session, sorted(ids))
+        person_by_id = {
+            u.user_id: GrantPersonDto(
+                user_id=u.user_id,
+                first_name=u.first_name,
+                last_name=u.last_name,
+                preferred_name=u.preferred_name,
+            )
+            for u in users
+        }
+
+        for grant in grants:
+            grant.user = person_by_id.get(grant.user_id)
+            if grant.granted_by is not None:
+                grant.granted_by_user = person_by_id.get(grant.granted_by)
+            if grant.revoked_by is not None:
+                grant.revoked_by_user = person_by_id.get(grant.revoked_by)
 
     @staticmethod
     def _to_grant_dto(row, *, is_super_admin: bool = False) -> GrantDto:
