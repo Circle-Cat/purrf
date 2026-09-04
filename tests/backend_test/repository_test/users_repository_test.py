@@ -8,6 +8,7 @@ from backend.entity.users_entity import UsersEntity
 from backend.entity.experience_entity import ExperienceEntity
 from backend.entity.user_identities_entity import UserIdentitiesEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
+from backend.entity.user_permissions_entity import UserPermissionsEntity
 from backend.common.mentorship_enums import CommunicationMethod
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
@@ -814,27 +815,144 @@ class TestUsersRepository(BaseRepositoryTestLib):
             msg="desc should list internal before external",
         )
 
-    async def test_get_super_admins_returns_only_flagged_users(self):
-        """get_super_admins returns exactly the users with is_super_admin True."""
-        super_admin = UsersEntity(
-            first_name="Sa",
-            last_name="Admin",
-            timezone="UTC",
-            timezone_updated_at=datetime.now(timezone.utc),
-            communication_channel=CommunicationMethod.EMAIL,
-            is_active=True,
-            is_super_admin=True,
-            updated_timestamp=datetime.now(timezone.utc),
+    def _grant_row(self, user_id, name, *, revoked=False, source="admin"):
+        """A grant row for the permission filter's fixtures."""
+        row = UserPermissionsEntity(
+            user_id=user_id,
+            permission_name=name,
+            granted_source=source,
+            granted_by=None,
         )
-        await self.insert_entities([super_admin])
+        if revoked:
+            row.revoked_timestamp = datetime.now(timezone.utc)
+        return row
 
-        result = await self.repo.get_super_admins(self.session)
+    async def test_list_users_filter_permission_name_keeps_only_holders(self):
+        """PUR-626: the permission is a filter on the user list, not a second view."""
+        token = uuid.uuid4().hex[:10]
+        holder = self._make_user(email=f"hold-{token}@example.com")
+        other = self._make_user(email=f"none-{token}@example.com")
+        await self.insert_entities([holder, other])
+        await self.insert_entities([
+            self._grant_row(holder.user_id, "permission.manage")
+        ])
 
-        ids = {u.user_id for u in result}
-        self.assertIn(super_admin.user_id, ids)
-        # The non-super-admin users from setUp must not be returned.
-        self.assertNotIn(self.users[0].user_id, ids)
-        self.assertTrue(all(u.is_super_admin for u in result))
+        rows, total = await self.repo.list_users(
+            self.session, search=token, permission_name="permission.manage"
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual([r[0].user_id for r in rows], [holder.user_id])
+
+    async def test_list_users_filter_permission_name_includes_super_admins(self):
+        """A super admin holds every permission via the flag, with no grant row."""
+        token = uuid.uuid4().hex[:10]
+        super_user = self._make_user(email=f"sup-{token}@example.com")
+        other = self._make_user(email=f"none-{token}@example.com")
+        await self.insert_entities([super_user, other])
+        await self.repo.set_super_admin(self.session, super_user.user_id, True)
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, permission_name="permission.manage"
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual([r[0].user_id for r in rows], [super_user.user_id])
+
+    async def test_list_users_filter_permission_name_ignores_revoked_grants(self):
+        """A revoked grant is not held. The audit feed is where it still shows."""
+        token = uuid.uuid4().hex[:10]
+        former = self._make_user(email=f"gone-{token}@example.com")
+        await self.insert_entities([former])
+        await self.insert_entities([
+            self._grant_row(former.user_id, "permission.manage", revoked=True)
+        ])
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, permission_name="permission.manage"
+        )
+        self.assertEqual(total, 0)
+        self.assertEqual(rows, [])
+
+    async def test_list_users_permission_with_super_admin_false_means_real_grants(self):
+        """The two filters compose into "real holders only" with no special case.
+
+        ``is_super_admin = false AND (is_super_admin OR grant_exists)`` reduces
+        to ``is_super_admin = false AND grant_exists``, which is exactly the
+        question "who was actually granted this" -- the one the old holders view
+        needed a source filter to answer.
+        """
+        token = uuid.uuid4().hex[:10]
+        holder = self._make_user(email=f"hold-{token}@example.com")
+        super_user = self._make_user(email=f"sup-{token}@example.com")
+        await self.insert_entities([holder, super_user])
+        await self.repo.set_super_admin(self.session, super_user.user_id, True)
+        await self.insert_entities([
+            self._grant_row(holder.user_id, "permission.manage")
+        ])
+
+        rows, total = await self.repo.list_users(
+            self.session,
+            search=token,
+            permission_name="permission.manage",
+            is_super_admin=False,
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual([r[0].user_id for r in rows], [holder.user_id])
+
+    async def test_list_users_filter_permission_name_dedupes_multiple_grants(self):
+        """Two grant rows for one person is one row on the page, not two.
+
+        This is what an EXISTS buys over a join: a join would multiply the
+        person by their grant rows and break both the page size and the total.
+        """
+        token = uuid.uuid4().hex[:10]
+        holder = self._make_user(email=f"hold-{token}@example.com")
+        await self.insert_entities([holder])
+        await self.insert_entities([
+            self._grant_row(holder.user_id, "permission.manage"),
+            self._grant_row(
+                holder.user_id, "permission.manage", source="system_internal"
+            ),
+        ])
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, permission_name="permission.manage"
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual(len(rows), 1)
+
+    async def test_list_users_filter_permission_name_composes_with_user_type(self):
+        """The combination neither tab could answer: external holders of X."""
+        token = uuid.uuid4().hex[:10]
+        internal_holder = self._make_user(email=f"int-{token}@example.com")
+        external_holder = self._make_user(email=f"ext-{token}@example.com")
+        await self.insert_entities([internal_holder, external_holder])
+        await self.repo.set_internal(self.session, internal_holder.user_id)
+        await self.insert_entities([
+            self._grant_row(internal_holder.user_id, "permission.manage"),
+            self._grant_row(external_holder.user_id, "permission.manage"),
+        ])
+
+        rows, total = await self.repo.list_users(
+            self.session,
+            search=token,
+            permission_name="permission.manage",
+            user_type="external",
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual([r[0].user_id for r in rows], [external_holder.user_id])
+
+    async def test_list_users_without_permission_filter_is_unchanged(self):
+        """The filter defaults off: a non-holder still appears when it is unset."""
+        token = uuid.uuid4().hex[:10]
+        holder = self._make_user(email=f"hold-{token}@example.com")
+        other = self._make_user(email=f"none-{token}@example.com")
+        await self.insert_entities([holder, other])
+        await self.insert_entities([
+            self._grant_row(holder.user_id, "permission.manage")
+        ])
+
+        _, total = await self.repo.list_users(self.session, search=token)
+        self.assertEqual(total, 2)
 
 
 if __name__ == "__main__":

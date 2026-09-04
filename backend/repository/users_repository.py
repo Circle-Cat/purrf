@@ -1,5 +1,6 @@
 from backend.entity.users_entity import UsersEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
+from backend.entity.user_permissions_entity import UserPermissionsEntity
 from backend.common.identity_type import IdentityType
 from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -137,6 +138,7 @@ class UsersRepository:
         order: str = "asc",
         is_super_admin: bool | None = None,
         user_type: str | None = None,
+        permission_name: str | None = None,
     ) -> tuple[list[tuple[UsersEntity, bool]], int]:
         """
         Paginated user list with optional case-insensitive substring search,
@@ -164,6 +166,11 @@ class UsersRepository:
             user_type (str | None): When ``"internal"`` keeps only users whose
                 ``is_internal`` flag is set; when ``"external"`` keeps only
                 users whose flag is unset; otherwise no filter.
+            permission_name (str | None): When set, keeps only users who hold
+                that permission -- either through a grant row that has not been
+                revoked, or by being a super admin, who holds every permission
+                via the flag rather than through grant rows. None means no
+                filter. The name is not validated here; the service owns that.
 
         Returns:
             tuple[list[tuple[UsersEntity, bool]], int]: (page rows where each
@@ -207,6 +214,25 @@ class UsersRepository:
             filters.append(UsersEntity.is_internal.is_(True))
         elif user_type == IdentityType.EXTERNAL:
             filters.append(UsersEntity.is_internal.is_(False))
+        if permission_name is not None:
+            # A correlated EXISTS rather than a join: a user can hold several
+            # grant rows for one permission, and a join would multiply them
+            # into several rows, breaking both the page size and the total.
+            # The same shape as get_active_users_with_permission.
+            grant_exists = (
+                select(UserPermissionsEntity.user_id)
+                .where(
+                    UserPermissionsEntity.user_id == UsersEntity.user_id,
+                    UserPermissionsEntity.permission_name == str(permission_name),
+                    UserPermissionsEntity.revoked_timestamp.is_(None),
+                )
+                .exists()
+            )
+            # Combined with is_super_admin=False this reduces to
+            # "is_super_admin = false AND grant_exists", which is exactly the
+            # real-grant-holders-only question the old holders view needed a
+            # source filter to express.
+            filters.append(or_(UsersEntity.is_super_admin.is_(True), grant_exists))
 
         is_internal_col = UsersEntity.is_internal.label("is_internal")
 
@@ -231,25 +257,6 @@ class UsersRepository:
             .offset(offset)
         )
         return list(result.tuples().all()), int(total or 0)
-
-    async def get_super_admins(self, session: AsyncSession) -> list[UsersEntity]:
-        """
-        All users currently flagged as super admins.
-
-        Super admins hold every permission via the ``is_super_admin`` flag rather
-        than per-permission grant rows, so the permission-holders reverse lookup
-        needs this authoritative set to synthesize derived holders.
-
-        Args:
-            session (AsyncSession): The active async database session.
-
-        Returns:
-            list[UsersEntity]: User rows whose ``is_super_admin`` flag is True.
-        """
-        result = await session.execute(
-            select(UsersEntity).where(UsersEntity.is_super_admin.is_(True))
-        )
-        return list(result.scalars().all())
 
     async def is_internal(self, session: AsyncSession, user_id: int) -> bool:
         """

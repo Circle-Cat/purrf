@@ -44,13 +44,14 @@ beforeEach(() => {
 });
 
 describe("AdminPermissions page", () => {
-  it("renders the three tab triggers and loads the catalog", async () => {
+  it("renders the two tab triggers and loads the catalog", async () => {
     render(<AdminPermissions />);
     await waitFor(() => expect(api.getPermissionCatalog).toHaveBeenCalled());
     expect(screen.getByRole("tab", { name: "Users" })).toBeInTheDocument();
+    // PUR-626: the holders tab folded into Users as a permission filter.
     expect(
-      screen.getByRole("tab", { name: "Permission Holders" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("tab", { name: "Permission Holders" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Audit Log" })).toBeInTheDocument();
   });
 

@@ -1,7 +1,6 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePermissionCatalog } from "@/pages/AdminPermissions/hooks/usePermissionCatalog";
 import UsersTab from "@/pages/AdminPermissions/components/UsersTab";
-import PermissionHoldersTab from "@/pages/AdminPermissions/components/PermissionHoldersTab";
 import AuditTab from "@/pages/AdminPermissions/components/AuditTab";
 import UnderstandPermissionsPanel from "@/pages/AdminPermissions/components/UnderstandPermissionsPanel";
 
@@ -26,12 +25,6 @@ const AdminPermissions = () => {
             Users
           </TabsTrigger>
           <TabsTrigger
-            value="holders"
-            className="px-4 data-[state=active]:shadow-sm"
-          >
-            Permission Holders
-          </TabsTrigger>
-          <TabsTrigger
             value="audit"
             className="px-4 data-[state=active]:shadow-sm"
           >
@@ -40,9 +33,6 @@ const AdminPermissions = () => {
         </TabsList>
         <TabsContent value="users">
           <UsersTab catalog={catalog} />
-        </TabsContent>
-        <TabsContent value="holders">
-          <PermissionHoldersTab catalog={catalog} />
         </TabsContent>
         <TabsContent value="audit">
           <AuditTab catalog={catalog} />

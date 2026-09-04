@@ -66,7 +66,6 @@ class TestPermissionAdminController(unittest.TestCase):
         self.service.get_user_permissions = AsyncMock(
             return_value=UserPermissionsViewDto(user_id=1, active=[], history=[])
         )
-        self.service.list_permission_users = AsyncMock(return_value=[])
         self.service.list_audit = AsyncMock(
             return_value=AuditListDto(entries=[], total=0)
         )
@@ -144,6 +143,17 @@ class TestPermissionAdminController(unittest.TestCase):
         self.assertEqual(kwargs["is_super_admin"], True)
         self.assertEqual(kwargs["user_type"], "internal")
 
+    def test_users_passes_the_permission_filter(self):
+        """PUR-626: the permission is a query param on this route now, not a
+        route of its own."""
+        client = _client(self.service, permissions={Permission.PERMISSION_MANAGE})
+        resp = client.get(
+            ADMIN_USERS_ENDPOINT, params={"permission_name": "permission.manage"}
+        )
+        self.assertEqual(resp.status_code, HTTPStatus.OK)
+        kwargs = self.service.list_users.await_args.kwargs
+        self.assertEqual(kwargs["permission_name"], "permission.manage")
+
     def test_users_sort_filter_defaults_when_omitted(self):
         """Controller sends None defaults for sort/filter when params are absent."""
         client = _client(self.service, permissions={Permission.PERMISSION_MANAGE})
@@ -154,6 +164,7 @@ class TestPermissionAdminController(unittest.TestCase):
         self.assertEqual(kwargs["order"], "asc")
         self.assertIsNone(kwargs["is_super_admin"])
         self.assertIsNone(kwargs["user_type"])
+        self.assertIsNone(kwargs["permission_name"])
 
     def test_audit_passes_filters(self):
         client = _client(self.service, permissions={Permission.PERMISSION_MANAGE})

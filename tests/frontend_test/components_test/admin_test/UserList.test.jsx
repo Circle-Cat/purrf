@@ -157,4 +157,20 @@ describe("UserList", () => {
     await user.click(screen.getByRole("button", { name: "Search" }));
     expect(baseProps.onSearch).toHaveBeenCalledTimes(1);
   });
+
+  it("renders the holds-permission filter from the catalog", () => {
+    // The dropdown itself is Radix and not driveable in jsdom, so this pins
+    // that the control is wired and labelled; the hook and api tests cover the
+    // value reaching the request.
+    render(
+      <UserList
+        {...baseProps}
+        catalog={[{ name: "permission.manage", description: "d" }]}
+      />,
+    );
+    expect(
+      screen.getByRole("combobox", { name: "Holds permission" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Any permission")).toBeInTheDocument();
+  });
 });

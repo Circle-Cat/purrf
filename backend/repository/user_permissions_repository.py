@@ -91,39 +91,6 @@ class UserPermissionsRepository:
         stmt = stmt.order_by(UserPermissionsEntity.granted_timestamp.desc())
         return list((await session.execute(stmt)).scalars().all())
 
-    async def get_users_with_permission(
-        self,
-        session: AsyncSession,
-        permission_name: str,
-        *,
-        include_revoked: bool = False,
-        granted_source: str | None = None,
-    ) -> list[UserPermissionsEntity]:
-        """
-        Reverse lookup: grant rows holding a given permission, newest first.
-
-        Args:
-            session (AsyncSession): The active async database session.
-            permission_name (str): The permission to look up holders of.
-            include_revoked (bool): When True, include soft-deleted rows as well
-                as active ones; when False, only currently-active grants.
-            granted_source (str | None): When set, restrict to rows granted from
-                this source (e.g. 'admin', 'system_internal'); None means any.
-
-        Returns:
-            list[UserPermissionsEntity]: Matching rows ordered by
-            ``granted_timestamp`` descending.
-        """
-        stmt = select(UserPermissionsEntity).where(
-            UserPermissionsEntity.permission_name == str(permission_name)
-        )
-        if not include_revoked:
-            stmt = stmt.where(UserPermissionsEntity.revoked_timestamp.is_(None))
-        if granted_source is not None:
-            stmt = stmt.where(UserPermissionsEntity.granted_source == granted_source)
-        stmt = stmt.order_by(UserPermissionsEntity.granted_timestamp.desc())
-        return list((await session.execute(stmt)).scalars().all())
-
     async def get_active_users_with_permission(
         self, session: AsyncSession, permission_name: str
     ) -> list[UsersEntity]:

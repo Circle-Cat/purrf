@@ -193,4 +193,31 @@ describe("useUserAdmin", () => {
 
     expect(result.current.users).toEqual([{ userId: 2 }]);
   });
+
+  it("submitSearch sends the permission filter when one is chosen", async () => {
+    // PUR-626: holders-of is a filter on this list, not a separate endpoint.
+    const { result } = renderHook(() => useUserAdmin());
+    act(() => result.current.setPermissionName("permission.manage"));
+    act(() => result.current.submitSearch());
+    await act(async () => {});
+    expect(api.getUsers).toHaveBeenCalledWith(
+      expect.objectContaining({ permissionName: "permission.manage" }),
+    );
+  });
+
+  it("omits the permission filter when none is chosen", async () => {
+    const { result } = renderHook(() => useUserAdmin());
+    act(() => result.current.submitSearch());
+    await act(async () => {});
+    expect(api.getUsers).toHaveBeenCalledWith(
+      expect.objectContaining({ permissionName: undefined }),
+    );
+  });
+
+  it("a draft permission choice does not fetch until submitSearch", async () => {
+    const { result } = renderHook(() => useUserAdmin());
+    act(() => result.current.setPermissionName("permission.manage"));
+    await act(async () => {});
+    expect(api.getUsers).not.toHaveBeenCalled();
+  });
 });
