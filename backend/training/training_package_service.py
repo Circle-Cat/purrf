@@ -6,9 +6,13 @@ import uuid
 import zipfile
 from datetime import datetime, timezone
 
+from backend.common.mentorship_enums import TrainingPackageState
 from backend.dto.training_course_dto import (
     TrainingCompletionConfigDto,
     TrainingPackageUploadResultDto,
+)
+from backend.entity.training_course_package_entity import (
+    TrainingCoursePackageEntity,
 )
 from backend.training.scorm_manifest import ManifestRejected, parse_driver_config
 from backend.training.scorm_package import PackageRejected, read_package
@@ -28,6 +32,7 @@ class TrainingPackageService:
         logger,
         training_course_repository,
         training_progress_repository,
+        training_course_package_repository,
         training_storage,
     ):
         """
@@ -37,11 +42,15 @@ class TrainingPackageService:
                 being uploaded to.
             training_progress_repository: Clears resume data for learners who
                 had not finished.
+            training_course_package_repository (TrainingCoursePackageRepository):
+                Records each upload as its own row, alongside the course
+                columns it still writes.
             training_storage (TrainingStorage): Object storage.
         """
         self.logger = logger
         self.training_course_repository = training_course_repository
         self.training_progress_repository = training_progress_repository
+        self.training_course_package_repository = training_course_package_repository
         self.training_storage = training_storage
 
     async def upload_package(
@@ -126,6 +135,27 @@ class TrainingPackageService:
             cleared = await self.training_progress_repository.clear_resume_state(
                 session, course_id
             )
+
+        previous_package = await self.training_course_package_repository.get_by_state(
+            session, course_id, TrainingPackageState.LIVE
+        )
+        if previous_package is not None:
+            await self.training_course_package_repository.delete(
+                session, previous_package
+            )
+        await self.training_course_package_repository.add(
+            session,
+            TrainingCoursePackageEntity(
+                course_id=course_id,
+                state=TrainingPackageState.LIVE,
+                storage_prefix=new_prefix,
+                entry_path=contents.manifest.entry_path,
+                scorm_version=contents.manifest.scorm_version,
+                package_version=course.package_version,
+                reporting_mode=course.reporting_mode,
+                uploaded_at=moment,
+            ),
+        )
 
         await session.commit()
 

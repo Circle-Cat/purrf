@@ -7,7 +7,7 @@ import unittest
 import zipfile
 from unittest.mock import AsyncMock, MagicMock
 
-from backend.common.mentorship_enums import ScormVersion
+from backend.common.mentorship_enums import ScormVersion, TrainingPackageState
 from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.training.scorm_package import PackageRejected
 from backend.training.training_package_service import TrainingPackageService
@@ -146,10 +146,13 @@ class _PackageServiceTestCase(unittest.IsolatedAsyncioTestCase):
         self.storage = MagicMock()
         self.storage.put.return_value = None
         self.storage.delete_prefix.return_value = 0
+        self.package_repository = AsyncMock()
+        self.package_repository.get_by_state.return_value = None
         self.service = TrainingPackageService(
             logger=self.logger,
             training_course_repository=self.course_repository,
             training_progress_repository=self.progress_repository,
+            training_course_package_repository=self.package_repository,
             training_storage=self.storage,
         )
 
@@ -535,6 +538,52 @@ class TestUploadPackage(_PackageServiceTestCase):
             )
 
         self.session.commit.assert_not_awaited()
+
+    async def test_upload_stores_the_package_as_a_row(self):
+        course = self._course(storage_prefix=None)
+
+        await self.service.upload_package(
+            self.session, _COURSE_ID, _zip(_members()), now=_NOW
+        )
+
+        stored = self.package_repository.add.await_args.args[1]
+        self.assertEqual(stored.course_id, _COURSE_ID)
+        self.assertEqual(stored.state, TrainingPackageState.LIVE)
+        self.assertEqual(stored.storage_prefix, course.storage_prefix)
+        self.assertEqual(stored.entry_path, _ENTRY_PATH)
+        self.assertEqual(stored.scorm_version, ScormVersion.SCORM_12)
+        self.assertEqual(stored.package_version, "qPpo9zHD")
+        self.assertEqual(stored.reporting_mode, "passed-incomplete")
+        self.assertEqual(stored.uploaded_at, _NOW)
+        self.assertIsNone(stored.verified_completable_at)
+
+    async def test_upload_drops_the_row_it_replaces(self):
+        # Two live rows for one course is refused by the database, so the
+        # service has to free the slot before it fills it again.
+        self._course(storage_prefix=_LIVE_PREFIX, entry_path=_ENTRY_PATH)
+        previous = MagicMock()
+        self.package_repository.get_by_state.return_value = previous
+
+        await self.service.upload_package(
+            self.session, _COURSE_ID, _zip(_members()), now=_NOW
+        )
+
+        self.package_repository.delete.assert_awaited_once_with(
+            self.session, previous
+        )
+        self.assertTrue(self.package_repository.add.await_count, 1)
+
+    async def test_a_rejected_upload_stores_no_row(self):
+        # The rejection happens before anything is written, and a row for a
+        # package that was refused would make the course unopenable.
+        self._course(storage_prefix=None)
+
+        with self.assertRaises(PackageRejected):
+            await self.service.upload_package(
+                self.session, _COURSE_ID, b"not a zip", now=_NOW
+            )
+
+        self.package_repository.add.assert_not_awaited()
 
 
 class TestReplacedPrefixDeletion(_PackageServiceTestCase):

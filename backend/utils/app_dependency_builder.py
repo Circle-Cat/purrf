@@ -186,6 +186,9 @@ from backend.repository.training_course_repository import (
 from backend.repository.training_progress_repository import (
     TrainingProgressRepository,
 )
+from backend.repository.training_course_package_repository import (
+    TrainingCoursePackageRepository,
+)
 from backend.repository.training_repository import TrainingRepository
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from backend.repository.mentorship_pairs_repository import MentorshipPairsRepository
@@ -959,6 +962,7 @@ class AppDependencyBuilder:
             training_repository=self.training_repository,
         )
         self.training_progress_repository = TrainingProgressRepository()
+        self.training_course_package_repository = TrainingCoursePackageRepository()
         self.training_storage = TrainingStorage(
             os.getenv(TRAINING_BUCKET), logger=self.logger
         )
@@ -974,6 +978,7 @@ class AppDependencyBuilder:
             logger=self.logger,
             training_course_repository=self.training_course_repository,
             training_progress_repository=self.training_progress_repository,
+            training_course_package_repository=self.training_course_package_repository,
             training_storage=self.training_storage,
         )
         self.training_content_service = TrainingContentService(
