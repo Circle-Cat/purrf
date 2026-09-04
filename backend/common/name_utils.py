@@ -16,6 +16,12 @@ The product rule is:
 
 This module owns the second rule so every surface that names another person
 resolves it the same way.
+
+The first rule needs no helper on this side -- the fields travel separately and
+each view renders them as it sees fit. Where a view has room for one cell only
+(the "By" column of an audit row, say), the frontend's ``legalName`` drops the
+preferred name rather than substituting it: dropping a nickname is a small loss,
+substituting it defeats the point of an identity-confirming view.
 """
 
 

@@ -90,3 +90,71 @@ describe("AuditTab", () => {
     expect(screen.queryByText("*")).toBeNull();
   });
 });
+
+describe("AuditTab name resolution (PUR-625)", () => {
+  it("names the subject and the actor instead of showing bare ids", async () => {
+    api.getAuditLog.mockResolvedValue({
+      data: {
+        entries: [
+          {
+            id: 1,
+            userId: 5,
+            permissionName: "permission.manage",
+            grantedSource: "manual",
+            grantedBy: 9,
+            grantedTimestamp: "2026-06-01T00:00:00Z",
+            revokedTimestamp: null,
+            isActive: true,
+            user: {
+              userId: 5,
+              firstName: "Zhao",
+              lastName: "Minhua",
+              preferredName: "Min",
+            },
+            grantedByUser: {
+              userId: 9,
+              firstName: "Wang",
+              lastName: "Yanpei",
+            },
+          },
+        ],
+        total: 1,
+      },
+    });
+    const user = userEvent.setup();
+    render(<AuditTab catalog={catalog} />);
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    // Three verbatim columns, exactly as the Users tab shows them.
+    expect(screen.getByText("First Name")).toBeInTheDocument();
+    expect(screen.getByText("Zhao")).toBeInTheDocument();
+    expect(screen.getByText("Minhua")).toBeInTheDocument();
+    expect(screen.getByText("Min")).toBeInTheDocument();
+    // The By cell has room for one field, so it carries the legal name.
+    expect(screen.getByText("Wang Yanpei")).toBeInTheDocument();
+  });
+
+  it("keeps a revoker's id visible when the account is gone", async () => {
+    api.getAuditLog.mockResolvedValue({
+      data: {
+        entries: [
+          {
+            id: 1,
+            userId: 5,
+            permissionName: "permission.manage",
+            grantedSource: "manual",
+            grantedBy: 9,
+            grantedTimestamp: "2026-06-01T00:00:00Z",
+            revokedBy: 42,
+            revokedTimestamp: "2026-07-01T00:00:00Z",
+            isActive: false,
+          },
+        ],
+        total: 1,
+      },
+    });
+    const user = userEvent.setup();
+    render(<AuditTab catalog={catalog} />);
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    expect(screen.getByText("User 42")).toBeInTheDocument();
+  });
+});
