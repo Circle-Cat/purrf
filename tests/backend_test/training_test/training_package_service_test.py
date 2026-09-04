@@ -18,7 +18,6 @@ from backend.training.training_package_service import TrainingPackageService
 _COURSE_ID = 7
 _ENTRY_PATH = "index.html"
 _LIVE_PREFIX = "training/7/9cf1e0d2/"
-_OTHER_ENTRY_PATH = "old_index.html"
 _NOW = datetime.datetime(2026, 9, 2, 9, 0, tzinfo=datetime.timezone.utc)
 _VERIFIED_AT = datetime.datetime(2026, 8, 30, 12, 0, tzinfo=datetime.timezone.utc)
 
@@ -258,12 +257,7 @@ class TestUploadPackage(_PackageServiceTestCase):
 
     async def test_an_upload_that_dies_partway_leaves_the_live_package_alone(self):
         self._course()
-        self._live_package(
-            storage_prefix=_LIVE_PREFIX,
-            entry_path=_OTHER_ENTRY_PATH,
-            verified_completable_at=_VERIFIED_AT,
-            verified_by_user_id=3,
-        )
+        self._live_package()
         stored = []
 
         def _die_on_the_second_file(object_key, *args, **kwargs):
@@ -517,6 +511,9 @@ class TestUploadPackage(_PackageServiceTestCase):
             self.session, _COURSE_ID, _zip(_members()), now=_NOW
         )
 
+        self.package_repository.get_by_state.assert_awaited_once_with(
+            self.session, _COURSE_ID, TrainingPackageState.LIVE
+        )
         stored = self.package_repository.add.await_args.args[1]
         self.assertEqual(stored.course_id, _COURSE_ID)
         self.assertEqual(stored.state, TrainingPackageState.LIVE)
@@ -644,6 +641,9 @@ class TestReadCompletionConfig(_PackageServiceTestCase):
 
         await self.service.read_completion_config(self.session, _COURSE_ID)
 
+        self.package_repository.get_by_state.assert_awaited_once_with(
+            self.session, _COURSE_ID, TrainingPackageState.LIVE
+        )
         self.storage.get.assert_called_once()
         key = self.storage.get.call_args.args[0]
         self.assertEqual(key, f"{_LIVE_PREFIX}{_ENTRY_PATH}")

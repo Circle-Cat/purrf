@@ -65,12 +65,13 @@ class TrainingPackageService:
         Finished records are left alone.
 
         The previous prefix's files are deleted only after the transaction
-        that moves the course onto the new one commits. A content token never
-        carries the prefix -- every asset request looks it up fresh -- so
-        nobody can still be reading the old prefix once the course row has
-        flipped, and deleting beforehand would risk leaving the course
-        pointing at files that a rollback never restores. A delete that fails
-        is logged, not raised: the upload has already succeeded, and the only
+        that replaces the previous LIVE package row with the new one commits.
+        A content token never carries the prefix -- every asset request
+        resolves the course's LIVE package row fresh -- so once that
+        transaction commits, nobody can still resolve to the old prefix, and
+        deleting beforehand would risk a rollback finding the files already
+        gone under a package row that is still live. A delete that fails is
+        logged, not raised: the upload has already succeeded, and the only
         cost is some storage left behind.
 
         Args:
@@ -186,8 +187,8 @@ class TrainingPackageService:
             scorm_version=contents.manifest.scorm_version,
             file_count=len(contents.file_names),
             total_bytes=contents.total_uncompressed_bytes,
-            package_version=config.course_package_version if config else None,
-            reporting_mode=config.reporting if config else None,
+            package_version=package_version,
+            reporting_mode=reporting_mode,
             completion_percentage=config.completion_percentage if config else None,
             completes_via_storyline=bool(config and config.storyline_id),
             completion_config_readable=config is not None,

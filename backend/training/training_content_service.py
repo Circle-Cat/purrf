@@ -313,7 +313,7 @@ class TrainingContentService:
         # one against the package could only ever serve a file that arrived
         # some other way -- exactly the collision the reservation prevents.
         # Ahead of the course lookup: the player has to load even when the
-        # course row has no package yet.
+        # course has no package yet.
         if normalised.startswith(RESERVED_PREFIX):
             known = PLAYER_ASSETS.get(normalised)
             if known is None:
