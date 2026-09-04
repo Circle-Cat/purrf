@@ -204,13 +204,20 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.session.add.call_args.args[0].category)
 
     async def test_a_trial_opens_an_assignment_on_an_unverified_course(self):
-        """The gate that refuses assignment is exactly what the trial answers."""
+        """The gate that refuses assignment is exactly what the trial answers.
+
+        The course's own verified_completable_at is not set here: start_trial
+        never reads it, only the package's, so setting it would prove
+        nothing.
+        """
         self.course_repository.get_course_by_id.return_value = TrainingCourseEntity(
             course_id=_COURSE_ID,
             name="Mentor Onboarding",
             is_active=True,
             storage_prefix="training/3/abc/",
-            verified_completable_at=None,
+        )
+        self.package_repository.get_by_state.return_value = MagicMock(
+            verified_completable_at=None
         )
 
         result = await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)
