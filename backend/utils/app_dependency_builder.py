@@ -987,6 +987,7 @@ class AppDependencyBuilder:
             content_host=self.training_content_host,
             training_repository=self.training_repository,
             training_course_repository=self.training_course_repository,
+            training_course_package_repository=self.training_course_package_repository,
             training_progress_repository=self.training_progress_repository,
             training_storage=self.training_storage,
         )

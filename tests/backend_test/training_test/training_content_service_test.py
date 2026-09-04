@@ -112,6 +112,13 @@ class _ContentServiceCase(unittest.IsolatedAsyncioTestCase):
         self.course_repository = MagicMock()
         self.course_repository.get_course_by_id = AsyncMock(return_value=self.course)
 
+        self.package = MagicMock(
+            storage_prefix=self.course.storage_prefix,
+            entry_path=self.course.entry_path,
+        )
+        self.package_repository = MagicMock()
+        self.package_repository.get_by_state = AsyncMock(return_value=self.package)
+
         self.progress_repository = MagicMock()
         self.progress_repository.get_by_training_id = AsyncMock(return_value=None)
 
@@ -129,6 +136,7 @@ class _ContentServiceCase(unittest.IsolatedAsyncioTestCase):
             content_host=_CONTENT_HOST,
             training_repository=self.training_repository,
             training_course_repository=self.course_repository,
+            training_course_package_repository=self.package_repository,
             training_progress_repository=self.progress_repository,
             training_storage=self.storage,
         )
@@ -187,13 +195,19 @@ class TestOpenSession(_ContentServiceCase):
 
     async def test_a_course_with_a_package_but_no_entry_page_cannot_be_opened(self):
         """The player has nowhere to point, and null is not an answer for it."""
-        self.course.entry_path = None
+        self.package.entry_path = None
 
         with self.assertRaises(ValueError):
             await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
 
     async def test_a_training_that_does_not_exist_cannot_be_opened(self):
         self.training_repository.get_training_by_id.return_value = None
+
+        with self.assertRaises(ValueError):
+            await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+    async def test_a_course_with_no_live_package_cannot_be_opened(self):
+        self.package_repository.get_by_state.return_value = None
 
         with self.assertRaises(ValueError):
             await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
@@ -256,18 +270,29 @@ class TestReadAssetLooksThePrefixUpFresh(_ContentServiceCase):
         result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
         token = self.token_from(result)
 
-        self.course.storage_prefix = _NEW_PREFIX
+        self.package.storage_prefix = _NEW_PREFIX
         await self.service.read_asset(self.session, token, "scormcontent/index.html")
 
         self.assertEqual(self.fetched_keys(), [_NEW_PREFIX + "scormcontent/index.html"])
 
-    async def test_the_course_is_re_read_on_every_asset_request(self):
+    async def test_the_package_is_re_read_on_every_asset_request(self):
         token = self.valid_token()
 
         await self.service.read_asset(self.session, token, "scormcontent/index.html")
         await self.service.read_asset(self.session, token, "scormcontent/styles.css")
 
-        self.assertEqual(self.course_repository.get_course_by_id.await_count, 2)
+        self.assertEqual(self.package_repository.get_by_state.await_count, 2)
+
+    async def test_reads_the_prefix_from_the_package_not_the_course(self):
+        self.course.storage_prefix = _OLD_PREFIX
+        self.package.storage_prefix = _NEW_PREFIX
+        self.package.entry_path = "scormcontent/index.html"
+
+        await self.service.read_asset(
+            self.session, self.valid_token(), "scormcontent/x.js"
+        )
+
+        self.assertEqual(self.fetched_keys(), [_NEW_PREFIX + "scormcontent/x.js"])
 
 
 class TestReadAssetRejections(_ContentServiceCase):
@@ -289,7 +314,7 @@ class TestReadAssetRejections(_ContentServiceCase):
             self.assertTrue(str(key).startswith(_OLD_PREFIX))
 
     async def test_a_course_without_a_package_is_refused(self):
-        self.course.storage_prefix = None
+        self.package_repository.get_by_state.return_value = None
 
         with self.assertRaises(FileNotFoundError):
             await self.service.read_asset(
@@ -339,6 +364,7 @@ class TestUnconfiguredContentHosting(_ContentServiceCase):
             content_host=overrides.get("content_host", _CONTENT_HOST),
             training_repository=self.training_repository,
             training_course_repository=self.course_repository,
+            training_course_package_repository=self.package_repository,
             training_progress_repository=self.progress_repository,
             training_storage=self.storage,
         )
@@ -393,7 +419,7 @@ class TestReadAssetLogging(_ContentServiceCase):
         self.assertIn(str(_TRAINING_ID), logged)
 
     async def test_a_course_with_no_package_says_which_course(self):
-        self.course.storage_prefix = None
+        self.package_repository.get_by_state.return_value = None
 
         with self.assertRaises(FileNotFoundError):
             await self.service.read_asset(
@@ -482,8 +508,8 @@ class TestReservedPlayerPath(_ContentServiceCase):
             )
 
     async def test_a_reserved_asset_needs_no_course_package(self):
-        """The player has to load even when the course row is half set up."""
-        self.course.storage_prefix = None
+        """The player has to load even when the course has no live package."""
+        self.package_repository.get_by_state.return_value = None
 
         asset = await self.service.read_asset(
             self.session, self.valid_token(), PLAYER_PATH
@@ -751,7 +777,7 @@ class TestReadAssetReusesTheAssignmentLookup(_ContentServiceCase):
     """Which course a token names cannot change; where its files live can.
 
     So the assignment behind a token is read once and held briefly, while the
-    course row -- and with it the storage prefix -- stays a fresh read on
+    package row -- and with it the storage prefix -- stays a fresh read on
     every request (spec 5.1, pinned by TestReadAssetLooksThePrefixUpFresh).
     """
 
@@ -763,13 +789,13 @@ class TestReadAssetReusesTheAssignmentLookup(_ContentServiceCase):
 
         self.assertEqual(self.training_repository.get_training_by_id.await_count, 1)
 
-    async def test_the_course_is_still_read_for_every_one_of_them(self):
+    async def test_the_package_is_still_read_for_every_one_of_them(self):
         token = self.valid_token()
 
         for name in ("a.css", "b.css", "c.js"):
             await self.service.read_asset(self.session, token, name)
 
-        self.assertEqual(self.course_repository.get_course_by_id.await_count, 3)
+        self.assertEqual(self.package_repository.get_by_state.await_count, 3)
 
     async def test_two_assignments_do_not_share_a_lookup(self):
         # Keyed on the training the token names, so one learner's page cannot
