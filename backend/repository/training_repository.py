@@ -2,27 +2,41 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from backend.entity.training_entity import TrainingEntity
 from backend.entity.training_course_entity import TrainingCourseEntity
-from backend.common.mentorship_enums import TrainingCategory
+from backend.entity.training_course_package_entity import (
+    TrainingCoursePackageEntity,
+)
+from backend.common.mentorship_enums import TrainingCategory, TrainingPackageState
 
 
 class TrainingRepository:
     async def get_training_with_course_by_user_id(
         self, session: AsyncSession, user_id: int
-    ) -> list[tuple[TrainingEntity, str | None, str | None]]:
-        """Fetch a user's training records, each with its course name and prefix.
+    ) -> list[tuple[TrainingEntity, str | None, bool]]:
+        """Fetch a user's training records, each with its course name and
+        whether that course has a live package.
 
         Outer joined: course_id is nullable, and a row without one is still
         the user's assignment and still has to be shown.
 
-        The prefix comes back so the caller can tell a course we serve from
-        one nobody has uploaded to. Only whether it is set is ever used --
-        resolving an actual object key is the content route's job, per request.
+        The boolean is what tells the caller a course we serve apart from one
+        nobody has uploaded to, or has only a package still pending
+        verification. Resolving an actual object key is the content route's
+        job, per request.
         """
+        has_live_package = (
+            select(TrainingCoursePackageEntity.package_id)
+            .where(
+                TrainingCoursePackageEntity.course_id
+                == TrainingCourseEntity.course_id,
+                TrainingCoursePackageEntity.state == TrainingPackageState.LIVE,
+            )
+            .exists()
+        )
         result = await session.execute(
             select(
                 TrainingEntity,
                 TrainingCourseEntity.name,
-                TrainingCourseEntity.storage_prefix,
+                has_live_package,
             )
             .outerjoin(
                 TrainingCourseEntity,

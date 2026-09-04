@@ -557,12 +557,14 @@ class AppDependencyBuilder:
         self.user_permissions_repository = UserPermissionsRepository()
         self.training_repository = TrainingRepository()
         self.training_course_repository = TrainingCourseRepository()
+        self.training_course_package_repository = TrainingCoursePackageRepository()
         # Built here, next to its repositories, because both ApplicationService
         # and BoardService take it and are constructed further down.
         self.onboarding_training_service = OnboardingTrainingService(
             logger=self.logger,
             training_repository=self.training_repository,
             training_course_repository=self.training_course_repository,
+            training_course_package_repository=self.training_course_package_repository,
         )
         self.user_identity_service = UserIdentityService(
             logger=self.logger,
@@ -952,7 +954,6 @@ class AppDependencyBuilder:
             self.leave_engine_service,
             self.database,
         )
-        self.training_course_package_repository = TrainingCoursePackageRepository()
         self.training_course_service = TrainingCourseService(
             logger=self.logger,
             training_course_repository=self.training_course_repository,

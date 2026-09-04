@@ -5,10 +5,15 @@ from backend.repository.training_repository import TrainingRepository
 from backend.entity.training_entity import TrainingEntity
 
 from backend.entity.training_course_entity import TrainingCourseEntity
+from backend.entity.training_course_package_entity import (
+    TrainingCoursePackageEntity,
+)
 from backend.entity.users_entity import UsersEntity
 from backend.common.mentorship_enums import (
+    ScormVersion,
     TrainingStatus,
     TrainingCategory,
+    TrainingPackageState,
     CommunicationMethod,
 )
 from tests.backend_test.repository_test.base_repository_test_lib import (
@@ -109,26 +114,49 @@ class TestTrainingRepository(BaseRepositoryTestLib):
         )
         self.assertEqual(names[assigned.training_id], "Mentor Onboarding")
 
-    async def test_a_row_says_whether_its_course_has_a_package(self):
-        """A course nobody has uploaded to cannot be opened, and the profile
-        page has to offer something other than a way in."""
-        hosted = TrainingCourseEntity(
-            name="Mentor Onboarding",
-            is_active=True,
-            storage_prefix="training/1/abc/",
+    def _package(self, course_id, state):
+        return TrainingCoursePackageEntity(
+            course_id=course_id,
+            state=state,
+            storage_prefix="training/1/aaa/",
+            entry_path="scormcontent/index.html",
+            scorm_version=ScormVersion.SCORM_12,
+            uploaded_at=self.now,
         )
-        unhosted = TrainingCourseEntity(name="Residency Onboarding", is_active=True)
-        await self.insert_entities([hosted, unhosted])
+
+    async def test_a_row_says_whether_its_course_has_a_live_package(self):
+        """A course with no live package cannot be opened, and the profile
+        page has to offer something other than a way in.
+
+        A course holding only a PENDING package must count as unhosted too:
+        that package has not been published, so nobody but a verifier can
+        reach it.
+        """
+        live = TrainingCourseEntity(name="Mentor Onboarding", is_active=True)
+        pending_only = TrainingCourseEntity(
+            name="Mentee Onboarding", is_active=True
+        )
+        none_at_all = TrainingCourseEntity(name="Residency Onboarding", is_active=True)
+        await self.insert_entities([live, pending_only, none_at_all])
+        await self.insert_entities([
+            self._package(live.course_id, TrainingPackageState.LIVE),
+            self._package(pending_only.course_id, TrainingPackageState.PENDING),
+        ])
         await self.insert_entities([
             TrainingEntity(
                 user_id=self.user2.user_id,
                 status=TrainingStatus.TO_DO,
-                course_id=hosted.course_id,
+                course_id=live.course_id,
             ),
             TrainingEntity(
                 user_id=self.user2.user_id,
                 status=TrainingStatus.TO_DO,
-                course_id=unhosted.course_id,
+                course_id=pending_only.course_id,
+            ),
+            TrainingEntity(
+                user_id=self.user2.user_id,
+                status=TrainingStatus.TO_DO,
+                course_id=none_at_all.course_id,
             ),
         ])
 
@@ -136,9 +164,10 @@ class TestTrainingRepository(BaseRepositoryTestLib):
             self.session, self.user2.user_id
         )
 
-        prefixes = {row.course_id: prefix for row, _, prefix in result}
-        self.assertEqual(prefixes[hosted.course_id], "training/1/abc/")
-        self.assertIsNone(prefixes[unhosted.course_id])
+        has_live = {row.course_id: value for row, _, value in result}
+        self.assertIs(has_live[live.course_id], True)
+        self.assertIs(has_live[pending_only.course_id], False)
+        self.assertIs(has_live[none_at_all.course_id], False)
 
     async def test_a_row_with_no_course_still_comes_back(self):
         """course_id is nullable and really is null for legacy rows."""
