@@ -55,9 +55,10 @@ class _ProgressServiceCase(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.course_repository = AsyncMock()
-        # A course row always knows when its package landed, and a bare
-        # MagicMock here would compare against a datetime rather than answer.
-        self.course_repository.get_course_by_id.return_value.package_uploaded_at = (
+        self.package_repository = AsyncMock()
+        # A package row always knows when it landed, and a bare MagicMock
+        # here would compare against a datetime rather than answer.
+        self.package_repository.get_by_state.return_value.uploaded_at = (
             _PACKAGE_LANDED
         )
         self.service = TrainingProgressService(
@@ -66,6 +67,7 @@ class _ProgressServiceCase(unittest.IsolatedAsyncioTestCase):
             training_repository=self.training_repository,
             training_progress_repository=self.progress_repository,
             training_course_repository=self.course_repository,
+            training_course_package_repository=self.package_repository,
         )
 
     def _saved_columns(self):
@@ -423,8 +425,8 @@ class TestSave(_ProgressServiceCase):
         """
         assignment = self.training_repository.get_training_by_id.return_value
         assignment.status = TrainingStatus.DONE
-        course = self.course_repository.get_course_by_id.return_value
-        course.verified_completable_at = None
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = None
 
         await self.service.save(
             self.session,
@@ -435,8 +437,8 @@ class TestSave(_ProgressServiceCase):
             session_token=_session_token(_OPENED_AFTER),
         )
 
-        self.assertIsNotNone(course.verified_completable_at)
-        self.assertEqual(course.verified_by_user_id, _USER_ID)
+        self.assertIsNotNone(package.verified_completable_at)
+        self.assertEqual(package.verified_by_user_id, _USER_ID)
 
     async def test_reopening_a_finished_course_does_not_undo_it(self):
         """Mentor onboarding writes `incomplete` on its way to `completed`."""
@@ -492,8 +494,8 @@ class TestSave(_ProgressServiceCase):
         self.assertEqual(saved, {"suspend_data": "", "lesson_location": ""})
 
     async def test_finishing_an_unverified_course_unlocks_it(self):
-        course = self.course_repository.get_course_by_id.return_value
-        course.verified_completable_at = None
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = None
         assignment = self.training_repository.get_training_by_id.return_value
         assignment.status = TrainingStatus.IN_PROGRESS
 
@@ -506,8 +508,8 @@ class TestSave(_ProgressServiceCase):
             session_token=_session_token(_OPENED_AFTER),
         )
 
-        self.assertIsNotNone(course.verified_completable_at)
-        self.assertEqual(course.verified_by_user_id, _USER_ID)
+        self.assertIsNotNone(package.verified_completable_at)
+        self.assertEqual(package.verified_by_user_id, _USER_ID)
 
     async def test_a_learner_without_the_grant_cannot_unlock_the_course(self):
         """Replacing a package clears the stamp and keeps every assignment,
@@ -548,9 +550,9 @@ class TestSave(_ProgressServiceCase):
         self.assertIsNotNone(assignment.completed_timestamp)
 
     async def test_an_already_verified_course_keeps_its_first_verifier(self):
-        course = self.course_repository.get_course_by_id.return_value
-        course.verified_completable_at = _EARLIER
-        course.verified_by_user_id = 99
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = _EARLIER
+        package.verified_by_user_id = 99
         assignment = self.training_repository.get_training_by_id.return_value
         assignment.status = TrainingStatus.IN_PROGRESS
 
@@ -563,12 +565,12 @@ class TestSave(_ProgressServiceCase):
             session_token=_session_token(_OPENED_AFTER),
         )
 
-        self.assertEqual(course.verified_completable_at, _EARLIER)
-        self.assertEqual(course.verified_by_user_id, 99)
+        self.assertEqual(package.verified_completable_at, _EARLIER)
+        self.assertEqual(package.verified_by_user_id, 99)
 
     async def test_not_finishing_it_leaves_the_course_locked(self):
-        course = self.course_repository.get_course_by_id.return_value
-        course.verified_completable_at = None
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = None
 
         await self.service.save(
             self.session,
@@ -579,7 +581,7 @@ class TestSave(_ProgressServiceCase):
             session_token=_session_token(_OPENED_AFTER),
         )
 
-        self.assertIsNone(course.verified_completable_at)
+        self.assertIsNone(package.verified_completable_at)
 
     async def test_an_assignment_with_no_course_does_not_crash_the_save(self):
         """Legacy link-only rows carry no course_id."""
@@ -1031,9 +1033,9 @@ class TestARunAgainstAReplacedPackage(_ProgressServiceCase):
     so the database clear an upload performs is undone from the browser."""
 
     async def test_a_run_that_began_before_the_package_cannot_verify_it(self):
-        course = self.course_repository.get_course_by_id.return_value
-        course.verified_completable_at = None
-        course.verified_by_user_id = None
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = None
+        package.verified_by_user_id = None
         assignment = self.training_repository.get_training_by_id.return_value
         assignment.status = TrainingStatus.DONE
 
@@ -1047,14 +1049,14 @@ class TestARunAgainstAReplacedPackage(_ProgressServiceCase):
                 session_token=_session_token(_OPENED_BEFORE),
             )
 
-        self.assertIsNone(course.verified_completable_at)
-        self.assertIsNone(course.verified_by_user_id)
+        self.assertIsNone(package.verified_completable_at)
+        self.assertIsNone(package.verified_by_user_id)
 
     async def test_the_stale_finishing_status_is_never_committed(self):
         """Storing it would put the finishing value back in the row the upload
         cleared, where the next run would seed it and report it again."""
-        course = self.course_repository.get_course_by_id.return_value
-        course.verified_completable_at = None
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = None
 
         with self.assertRaises(ConflictError):
             await self.service.save(
@@ -1069,8 +1071,8 @@ class TestARunAgainstAReplacedPackage(_ProgressServiceCase):
         self.session.commit.assert_not_awaited()
 
     async def test_a_run_opened_after_the_package_landed_verifies_it(self):
-        course = self.course_repository.get_course_by_id.return_value
-        course.verified_completable_at = None
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = None
 
         await self.service.save(
             self.session,
@@ -1081,13 +1083,13 @@ class TestARunAgainstAReplacedPackage(_ProgressServiceCase):
             session_token=_session_token(_OPENED_AFTER),
         )
 
-        self.assertIsNotNone(course.verified_completable_at)
+        self.assertIsNotNone(package.verified_completable_at)
 
     async def test_a_commit_naming_no_session_stores_but_does_not_verify(self):
         """The guard rests on knowing when the tab opened. Without that the
         commit is still the learner's progress, but it vouches for nothing."""
-        course = self.course_repository.get_course_by_id.return_value
-        course.verified_completable_at = None
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = None
 
         await self.service.save(
             self.session,
@@ -1097,12 +1099,12 @@ class TestARunAgainstAReplacedPackage(_ProgressServiceCase):
             may_verify_course=True,
         )
 
-        self.assertIsNone(course.verified_completable_at)
+        self.assertIsNone(package.verified_completable_at)
         self.progress_repository.upsert.assert_awaited()
 
     async def test_a_forged_session_token_cannot_claim_a_fresh_run(self):
-        course = self.course_repository.get_course_by_id.return_value
-        course.verified_completable_at = None
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = None
         payload, _, _ = _session_token(_OPENED_BEFORE).partition(".")
         forged, _ = issue_content_token(
             "some-other-key", _TRAINING_ID, _USER_ID, now=_OPENED_AFTER
@@ -1110,7 +1112,7 @@ class TestARunAgainstAReplacedPackage(_ProgressServiceCase):
 
         for token in (forged, payload + ".notasignature", 12345, ""):
             with self.subTest(token=token):
-                course.verified_completable_at = None
+                package.verified_completable_at = None
                 await self.service.save(
                     self.session,
                     _TRAINING_ID,
@@ -1119,7 +1121,7 @@ class TestARunAgainstAReplacedPackage(_ProgressServiceCase):
                     may_verify_course=True,
                     session_token=token,
                 )
-                self.assertIsNone(course.verified_completable_at)
+                self.assertIsNone(package.verified_completable_at)
 
     async def test_a_learner_without_the_grant_is_never_refused_for_staleness(self):
         """The staleness check exists only to stop a false verification, and
@@ -1128,8 +1130,8 @@ class TestARunAgainstAReplacedPackage(_ProgressServiceCase):
         tab that spans a package replacement must not cost them their own
         completion -- hoisting the (cheap) session-token check above the
         grant check would start refusing every such learner."""
-        course = self.course_repository.get_course_by_id.return_value
-        course.verified_completable_at = None
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = None
         assignment = self.training_repository.get_training_by_id.return_value
         assignment.status = TrainingStatus.IN_PROGRESS
 
@@ -1144,10 +1146,10 @@ class TestARunAgainstAReplacedPackage(_ProgressServiceCase):
 
         self.progress_repository.upsert.assert_awaited()
 
-    async def test_a_course_with_no_package_has_nothing_to_have_moved_on(self):
-        course = self.course_repository.get_course_by_id.return_value
-        course.verified_completable_at = None
-        course.package_uploaded_at = None
+    async def test_a_package_with_no_uploaded_at_has_nothing_to_have_moved_on(self):
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = None
+        package.uploaded_at = None
 
         await self.service.save(
             self.session,
@@ -1158,7 +1160,32 @@ class TestARunAgainstAReplacedPackage(_ProgressServiceCase):
             session_token=_session_token(_OPENED_BEFORE),
         )
 
-        self.assertIsNotNone(course.verified_completable_at)
+        self.assertIsNotNone(package.verified_completable_at)
+
+
+class TestTheStampLandsOnThePackage(_ProgressServiceCase):
+    async def test_the_stamp_lands_on_the_package_not_the_course(self):
+        course = self.course_repository.get_course_by_id.return_value
+        course.verified_completable_at = None
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = None
+        package.verified_by_user_id = None
+        package.uploaded_at = _PACKAGE_LANDED
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+            may_verify_course=True,
+            session_token=_session_token(_OPENED_AFTER),
+        )
+
+        self.assertIsNotNone(package.verified_completable_at)
+        self.assertEqual(package.verified_by_user_id, _USER_ID)
+        # The course columns still exist at this point in the slice; only
+        # Task 8's column drop makes them not exist at all (hasattr).
+        self.assertIsNone(course.verified_completable_at)
 
 
 class TestTheSaveReportsWhetherTheCourseIsVerified(_ProgressServiceCase):
@@ -1167,8 +1194,8 @@ class TestTheSaveReportsWhetherTheCourseIsVerified(_ProgressServiceCase):
     moves nothing and the status never changes."""
 
     async def test_the_commit_that_stamps_the_course_says_so(self):
-        course = self.course_repository.get_course_by_id.return_value
-        course.verified_completable_at = None
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = None
         assignment = self.training_repository.get_training_by_id.return_value
         assignment.status = TrainingStatus.DONE
 
@@ -1184,8 +1211,8 @@ class TestTheSaveReportsWhetherTheCourseIsVerified(_ProgressServiceCase):
         self.assertIs(result.course_verified, True)
 
     async def test_an_already_stamped_course_reads_verified_too(self):
-        course = self.course_repository.get_course_by_id.return_value
-        course.verified_completable_at = _EARLIER
+        package = self.package_repository.get_by_state.return_value
+        package.verified_completable_at = _EARLIER
 
         result = await self.service.save(
             self.session,
@@ -1211,7 +1238,7 @@ class TestTheSaveReportsWhetherTheCourseIsVerified(_ProgressServiceCase):
         )
 
         self.assertIsNone(result.course_verified)
-        self.course_repository.get_course_by_id.assert_not_awaited()
+        self.package_repository.get_by_state.assert_not_awaited()
 
     async def test_a_learner_without_the_grant_is_told_nothing_either_way(self):
         result = await self.service.save(
