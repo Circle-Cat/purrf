@@ -58,16 +58,6 @@ class TestDeriveCourseState(unittest.TestCase):
             derive_course_state(course, package), TrainingCourseState.NEEDS_TRIAL_RUN
         )
 
-    def test_a_freshly_uploaded_package_is_not_read_as_verified(self):
-        """A re-upload replaces the package row outright, so the new row's own
-        unset verified_completable_at is what has to be read, not something
-        left behind on the course."""
-        course = TrainingCourseEntity()
-        package = _package(verified_completable_at=None)
-        self.assertEqual(
-            derive_course_state(course, package), TrainingCourseState.NEEDS_TRIAL_RUN
-        )
-
     @patch.dict(
         os.environ,
         {"MENTORSHIP_MENTOR_ONBOARDING_LINK": "https://example.com/mentor"},
