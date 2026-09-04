@@ -952,9 +952,11 @@ class AppDependencyBuilder:
             self.leave_engine_service,
             self.database,
         )
+        self.training_course_package_repository = TrainingCoursePackageRepository()
         self.training_course_service = TrainingCourseService(
             logger=self.logger,
             training_course_repository=self.training_course_repository,
+            training_course_package_repository=self.training_course_package_repository,
         )
         self.training_assignment_service = TrainingAssignmentService(
             logger=self.logger,
@@ -962,7 +964,6 @@ class AppDependencyBuilder:
             training_repository=self.training_repository,
         )
         self.training_progress_repository = TrainingProgressRepository()
-        self.training_course_package_repository = TrainingCoursePackageRepository()
         self.training_storage = TrainingStorage(
             os.getenv(TRAINING_BUCKET), logger=self.logger
         )

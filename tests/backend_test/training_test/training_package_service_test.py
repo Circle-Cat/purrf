@@ -568,9 +568,7 @@ class TestUploadPackage(_PackageServiceTestCase):
             self.session, _COURSE_ID, _zip(_members()), now=_NOW
         )
 
-        self.package_repository.delete.assert_awaited_once_with(
-            self.session, previous
-        )
+        self.package_repository.delete.assert_awaited_once_with(self.session, previous)
         self.assertEqual(self.package_repository.add.await_count, 1)
 
     async def test_a_rejected_upload_stores_no_row(self):

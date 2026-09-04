@@ -72,3 +72,22 @@ class TrainingCoursePackageRepository:
             )
         )
         return set(result.scalars().all())
+
+    async def live_packages_for(
+        self, session: AsyncSession, course_ids: list[int]
+    ) -> dict[int, TrainingCoursePackageEntity]:
+        """Every one of these courses' live packages, keyed by course_id.
+
+        For a caller that renders package fields -- not just whether one
+        exists -- so one batched query serves the whole page instead of a
+        lookup per row.
+        """
+        if not course_ids:
+            return {}
+        result = await session.execute(
+            select(TrainingCoursePackageEntity).where(
+                TrainingCoursePackageEntity.course_id.in_(course_ids),
+                TrainingCoursePackageEntity.state == TrainingPackageState.LIVE,
+            )
+        )
+        return {package.course_id: package for package in result.scalars().all()}
