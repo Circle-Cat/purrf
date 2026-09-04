@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import "@testing-library/jest-dom";
@@ -179,13 +179,107 @@ describe("UploadPackageDialog", () => {
     await pick(file);
     await userEvent.click(screen.getByRole("button", { name: /^upload/i }));
 
-    expect(onConfirm).toHaveBeenCalledWith(file);
+    expect(onConfirm).toHaveBeenCalledWith(file, expect.any(Function));
     expect(
       await screen.findByText(
         /finishing every rise lesson will not mark this course complete/i,
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^done$/i })).toBeInTheDocument();
+  });
+
+  it("shows how far the bytes have got while they are still going", async () => {
+    const file = zipFile();
+    let report;
+    // Never settles: the dialog stays in the state it holds mid-transfer.
+    const onConfirm = vi.fn((_file, onProgress) => {
+      report = onProgress;
+      return new Promise(() => {});
+    });
+
+    render(
+      <UploadPackageDialog
+        course={{
+          courseId: 5,
+          packageVersion: null,
+          assignedCount: 0,
+          unfinishedCount: 0,
+        }}
+        open
+        onConfirm={onConfirm}
+      />,
+    );
+
+    await pick(file);
+    await userEvent.click(screen.getByRole("button", { name: /^upload/i }));
+    act(() => report(42));
+
+    expect(screen.getByRole("progressbar")).toHaveAttribute(
+      "aria-valuenow",
+      "42",
+    );
+    expect(screen.getByText("42%")).toBeInTheDocument();
+  });
+
+  it("stops counting and says it is checking once the last byte is sent", async () => {
+    // The server still has to unzip the archive and store every file in it,
+    // and that stretch is not measured by anything. A bar sitting at 100%
+    // would claim it were.
+    const file = zipFile();
+    let report;
+    const onConfirm = vi.fn((_file, onProgress) => {
+      report = onProgress;
+      return new Promise(() => {});
+    });
+
+    render(
+      <UploadPackageDialog
+        course={{
+          courseId: 5,
+          packageVersion: null,
+          assignedCount: 0,
+          unfinishedCount: 0,
+        }}
+        open
+        onConfirm={onConfirm}
+      />,
+    );
+
+    await pick(file);
+    await userEvent.click(screen.getByRole("button", { name: /^upload/i }));
+    act(() => report(100));
+
+    expect(screen.getByText(/checking package\.\.\./i)).toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(screen.queryByText(/100%/)).not.toBeInTheDocument();
+  });
+
+  it("shows no bar when the browser cannot tell how big the upload is", async () => {
+    // Without a Content-Length there is no total to divide by, so the API
+    // layer reports nothing and a determinate bar would be a fabrication.
+    const file = zipFile();
+    const onConfirm = vi.fn(() => new Promise(() => {}));
+
+    render(
+      <UploadPackageDialog
+        course={{
+          courseId: 5,
+          packageVersion: null,
+          assignedCount: 0,
+          unfinishedCount: 0,
+        }}
+        open
+        onConfirm={onConfirm}
+      />,
+    );
+
+    await pick(file);
+    await userEvent.click(screen.getByRole("button", { name: /^upload/i }));
+
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /uploading\.\.\./i }),
+    ).toBeInTheDocument();
   });
 
   it("shows a rejection message verbatim, not a paraphrase, and leaves Upload on screen", async () => {

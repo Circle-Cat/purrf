@@ -181,8 +181,8 @@ export default function CourseTable({ courses, onCoursesChanged }) {
   // Refetch as soon as the upload lands, so the row's state and counts are
   // fresh while the dialog is still open showing the health box -- rejection
   // is left to the dialog itself, which renders the backend message inline.
-  const handleConfirmUpload = async (file) => {
-    const { data } = await uploadPackage(uploading.courseId, file);
+  const handleConfirmUpload = async (file, onProgress) => {
+    const { data } = await uploadPackage(uploading.courseId, file, onProgress);
     await onCoursesChanged?.();
     return data;
   };

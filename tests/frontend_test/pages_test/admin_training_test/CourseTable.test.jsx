@@ -265,8 +265,14 @@ describe("CourseTable", () => {
     await userEvent.upload(screen.getByLabelText(/scorm package/i), file);
     await userEvent.click(screen.getByRole("button", { name: /^upload/i }));
 
+    // The third argument is the dialog's own progress callback, handed
+    // straight through so the bar it draws is fed by the real transfer.
     await waitFor(() =>
-      expect(api.uploadPackage).toHaveBeenCalledWith(noPackage.courseId, file),
+      expect(api.uploadPackage).toHaveBeenCalledWith(
+        noPackage.courseId,
+        file,
+        expect.any(Function),
+      ),
     );
     expect(onCoursesChanged).toHaveBeenCalledTimes(1);
   });
