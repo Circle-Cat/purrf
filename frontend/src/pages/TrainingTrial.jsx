@@ -142,7 +142,7 @@ export default function TrainingTrial() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-5 p-6">
+    <div className="space-y-5 p-6">
       <div>
         <h1 className="text-xl font-semibold">Trial run</h1>
         <p className="mt-0.5 font-mono text-sm text-muted-foreground">
