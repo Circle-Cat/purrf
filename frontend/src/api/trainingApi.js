@@ -75,12 +75,20 @@ export const readCompletionConfig = (courseId) =>
 export const assignCourse = (payload) =>
   request.post(API_ENDPOINTS.TRAINING_ASSIGNMENTS, payload);
 
-export const uploadPackage = (courseId, file) => {
+export const uploadPackage = (courseId, file, onProgress) => {
   const form = new FormData();
   form.append("file", file);
   return request.post(API_ENDPOINTS.TRAINING_COURSE_PACKAGE(courseId), form, {
     headers: { "Content-Type": "multipart/form-data" },
     // A zip upload is a bigger budget than the shared 10s request timeout.
     timeout: 120000,
+    // Only the transfer is measurable, and only when the browser knows the
+    // size. Everything the server does afterwards -- unzip, read the
+    // manifest, store a couple of hundred files -- is silent, so this stops
+    // at 100% rather than standing in for the whole wait.
+    onUploadProgress: (event) => {
+      if (!event.total) return;
+      onProgress?.(Math.round((event.loaded / event.total) * 100));
+    },
   });
 };
