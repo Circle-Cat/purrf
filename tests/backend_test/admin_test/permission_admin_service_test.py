@@ -37,19 +37,6 @@ def _marker(id, user_id, granted_by=9):
     return row
 
 
-def _route(holders, markers):
-    """
-    side_effect for get_users_with_permission: the reverse-lookup uses one call
-    for the requested permission and a second (name='*') for the super-admin
-    markers; route each to its own canned result.
-    """
-
-    def _impl(session, name, *, include_revoked=False, granted_source=None):
-        return markers if name == "*" else holders
-
-    return _impl
-
-
 class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.users = AsyncMock()
@@ -60,8 +47,6 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
         self.user_emails.get_contact_email.return_value = None
         self.service = PermissionAdminService(self.users, self.perms, self.user_emails)
         self.session = AsyncMock()
-        # Default: no super admins (most tests are about plain grant rows).
-        self.users.get_super_admins.return_value = []
 
     def test_catalog_is_full_enum_sorted(self):
         catalog = self.service.list_permission_catalog()
@@ -88,141 +73,6 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
         self.users.get_user_by_user_id.return_value = None
         with self.assertRaises(ValueError):
             await self.service.get_user_permissions(self.session, 999)
-
-    async def test_list_permission_users_rejects_unknown_permission(self):
-        with self.assertRaises(ValueError):
-            await self.service.list_permission_users(
-                self.session,
-                "not.a.real.permission",
-                include_revoked=False,
-                granted_source=None,
-            )
-
-    async def test_list_permission_users_returns_grant_dtos(self):
-        self.perms.get_users_with_permission.return_value = [
-            _grant(5, 7, "permission.manage")
-        ]
-        out = await self.service.list_permission_users(
-            self.session,
-            "permission.manage",
-            include_revoked=False,
-            granted_source=None,
-        )
-        self.assertEqual(len(out), 1)
-        self.assertEqual(out[0].user_id, 7)
-        self.assertTrue(out[0].is_active)
-        self.assertFalse(out[0].is_super_admin)
-
-    async def test_list_permission_users_super_admin_appears_as_derived(self):
-        """A super admin with no real grant shows up as a derived holder."""
-        self.perms.get_users_with_permission.side_effect = _route([], [_marker(1, 7)])
-        self.users.get_super_admins.return_value = [
-            UsersEntity(user_id=7, is_super_admin=True)
-        ]
-        out = await self.service.list_permission_users(
-            self.session,
-            "permission.manage",
-            include_revoked=False,
-            granted_source=None,
-        )
-        self.assertEqual(len(out), 1)
-        self.assertEqual(out[0].user_id, 7)
-        self.assertEqual(out[0].granted_source, "super_admin")
-        self.assertEqual(out[0].permission_name, "permission.manage")
-        self.assertTrue(out[0].is_super_admin)
-        self.assertTrue(out[0].is_active)
-        # Metadata sourced from the audit marker.
-        self.assertEqual(out[0].id, 1)
-        self.assertEqual(out[0].granted_by, 9)
-        self.assertIsNotNone(out[0].granted_timestamp)
-
-    async def test_list_permission_users_super_admin_with_grant_not_duplicated(self):
-        """A super admin holding a real active grant shows once, source-flagged."""
-        self.perms.get_users_with_permission.side_effect = _route(
-            [_grant(5, 7, "permission.manage")], [_marker(1, 7)]
-        )
-        self.users.get_super_admins.return_value = [
-            UsersEntity(user_id=7, is_super_admin=True)
-        ]
-        out = await self.service.list_permission_users(
-            self.session,
-            "permission.manage",
-            include_revoked=False,
-            granted_source=None,
-        )
-        self.assertEqual(len(out), 1)
-        self.assertEqual(out[0].granted_source, "admin")  # real source kept
-        self.assertTrue(out[0].is_super_admin)  # still annotated
-
-    async def test_list_permission_users_derived_without_marker_uses_sentinels(self):
-        """A seeded super admin (no marker) gets sentinel id and null metadata."""
-        self.perms.get_users_with_permission.side_effect = _route([], [])
-        self.users.get_super_admins.return_value = [
-            UsersEntity(user_id=7, is_super_admin=True)
-        ]
-        out = await self.service.list_permission_users(
-            self.session,
-            "permission.manage",
-            include_revoked=False,
-            granted_source=None,
-        )
-        self.assertEqual(len(out), 1)
-        self.assertEqual(out[0].id, -7)
-        self.assertIsNone(out[0].granted_by)
-        self.assertIsNone(out[0].granted_timestamp)
-        self.assertTrue(out[0].is_super_admin)
-
-    async def test_list_permission_users_source_filter_excludes_derived(self):
-        """A non-super_admin source filter never surfaces derived holders."""
-        self.perms.get_users_with_permission.side_effect = _route(
-            [_grant(5, 7, "permission.manage")], [_marker(1, 8)]
-        )
-        self.users.get_super_admins.return_value = [
-            UsersEntity(user_id=8, is_super_admin=True)
-        ]
-        out = await self.service.list_permission_users(
-            self.session,
-            "permission.manage",
-            include_revoked=False,
-            granted_source="admin",
-        )
-        self.assertEqual(len(out), 1)
-        self.assertEqual(out[0].user_id, 7)
-        self.users.get_super_admins.assert_not_awaited()
-
-    async def test_list_permission_users_source_filter_super_admin_only_derived(self):
-        """granted_source='super_admin' returns only the derived holders."""
-        self.perms.get_users_with_permission.side_effect = _route([], [_marker(1, 8)])
-        self.users.get_super_admins.return_value = [
-            UsersEntity(user_id=8, is_super_admin=True)
-        ]
-        out = await self.service.list_permission_users(
-            self.session,
-            "permission.manage",
-            include_revoked=False,
-            granted_source="super_admin",
-        )
-        self.assertEqual(len(out), 1)
-        self.assertEqual(out[0].user_id, 8)
-        self.assertEqual(out[0].granted_source, "super_admin")
-
-    async def test_list_permission_users_revoked_grant_coexists_with_derived(self):
-        """A super admin with only a revoked grant: revoked row plus derived row."""
-        self.perms.get_users_with_permission.side_effect = _route(
-            [_grant(5, 7, "permission.manage", revoked=True)], [_marker(1, 7)]
-        )
-        self.users.get_super_admins.return_value = [
-            UsersEntity(user_id=7, is_super_admin=True)
-        ]
-        out = await self.service.list_permission_users(
-            self.session, "permission.manage", include_revoked=True, granted_source=None
-        )
-        self.assertEqual(len(out), 2)
-        by_source = {g.granted_source: g for g in out}
-        self.assertEqual(set(by_source), {"admin", "super_admin"})
-        self.assertFalse(by_source["admin"].is_active)
-        self.assertTrue(by_source["super_admin"].is_active)
-        self.assertTrue(all(g.is_super_admin for g in out))
 
     async def test_list_users_wraps_repo_result(self):
         self.users.list_users.return_value = (
@@ -437,6 +287,50 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(dto.is_super_admin)
         self.assertEqual(dto.user_type, "external")
         self.session.commit.assert_awaited_once()
+
+
+class TestListUsersPermissionFilter(unittest.IsolatedAsyncioTestCase):
+    """PUR-626: the permission is a filter on the user list, not a second view."""
+
+    def setUp(self):
+        self.users = AsyncMock()
+        self.perms = AsyncMock()
+        self.user_emails = AsyncMock()
+        self.user_emails.get_contact_emails_by_user_ids.return_value = {}
+        self.users.list_users.return_value = ([], 0)
+        self.service = PermissionAdminService(self.users, self.perms, self.user_emails)
+        self.session = AsyncMock()
+
+    async def test_passes_the_permission_through_to_the_repository(self):
+        await self.service.list_users(
+            self.session,
+            search=None,
+            limit=20,
+            offset=0,
+            permission_name="permission.manage",
+        )
+        _, kwargs = self.users.list_users.await_args
+        self.assertEqual(kwargs["permission_name"], "permission.manage")
+
+    async def test_unknown_permission_is_rejected_before_the_query(self):
+        with self.assertRaises(ValueError):
+            await self.service.list_users(
+                self.session,
+                search=None,
+                limit=20,
+                offset=0,
+                permission_name="not.a.real.permission",
+            )
+        self.users.list_users.assert_not_awaited()
+
+    async def test_no_permission_filter_passes_none(self):
+        await self.service.list_users(self.session, search=None, limit=20, offset=0)
+        _, kwargs = self.users.list_users.await_args
+        self.assertIsNone(kwargs["permission_name"])
+
+    async def test_the_holders_view_is_gone(self):
+        """The reverse lookup folded into list_users; nothing should call it."""
+        self.assertFalse(hasattr(self.service, "list_permission_users"))
 
 
 if __name__ == "__main__":

@@ -27,6 +27,8 @@ export const useUserAdmin = () => {
   const [userId, setUserId] = useState("");
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [userType, setUserType] = useState("");
+  // A permission is a filter on this population, not a separate view of it.
+  const [permissionName, setPermissionName] = useState("");
 
   // Committed query: null until the user runs a search. A new object reference
   // is set on every submit so re-submitting the same criteria still refetches.
@@ -52,6 +54,7 @@ export const useUserAdmin = () => {
         order,
         isSuperAdmin: query.isSuperAdmin || undefined,
         userType: query.userType || undefined,
+        permissionName: query.permissionName || undefined,
       });
       // Ignore a superseded response so rapid sort/page changes can't land an
       // earlier query's rows under the newer query's sort/page state.
@@ -76,7 +79,7 @@ export const useUserAdmin = () => {
   /** Commit the current draft inputs as the active query and load page 1. */
   const submitSearch = () => {
     setOffset(0);
-    setQuery({ search, userId, isSuperAdmin, userType });
+    setQuery({ search, userId, isSuperAdmin, userType, permissionName });
   };
 
   const nextPage = () => {
@@ -133,6 +136,8 @@ export const useUserAdmin = () => {
     isSuperAdmin,
     setIsSuperAdmin,
     userType,
+    permissionName,
+    setPermissionName,
     setUserType,
     submitSearch,
     // Pagination

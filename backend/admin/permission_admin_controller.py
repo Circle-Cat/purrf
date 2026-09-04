@@ -10,7 +10,6 @@ from fastapi import APIRouter
 
 from backend.common.api_endpoints import (
     ADMIN_AUDIT_PERMISSION_CHANGES_ENDPOINT,
-    ADMIN_PERMISSION_USERS_ENDPOINT,
     ADMIN_PERMISSIONS_ENDPOINT,
     ADMIN_USER_GRANT_PERMISSIONS_ENDPOINT,
     ADMIN_USER_PERMISSIONS_ENDPOINT,
@@ -53,12 +52,6 @@ class PermissionAdminController:
         self.router.add_api_route(
             ADMIN_USER_PERMISSIONS_ENDPOINT,
             endpoint=authenticate(permissions=_GATE)(self.get_user_permissions),
-            methods=["GET"],
-            response_model=None,
-        )
-        self.router.add_api_route(
-            ADMIN_PERMISSION_USERS_ENDPOINT,
-            endpoint=authenticate(permissions=_GATE)(self.list_permission_users),
             methods=["GET"],
             response_model=None,
         )
@@ -122,6 +115,7 @@ class PermissionAdminController:
         order: str = "asc",
         is_super_admin: bool | None = None,
         user_type: str | None = None,
+        permission_name: str | None = None,
     ):
         """
         Paginated user list with optional email/name search, sorting, and
@@ -139,6 +133,8 @@ class PermissionAdminController:
             is_super_admin (bool | None): When not None, restricts to matching
                 super-admin flag.
             user_type (str | None): ``"internal"`` / ``"external"`` / None.
+            permission_name (str | None): When set, keeps only holders of that
+                permission. Replaced the separate holders route.
 
         Returns:
             A standardized API response wrapping a ``UserListDto``.
@@ -154,6 +150,7 @@ class PermissionAdminController:
                 order=order,
                 is_super_admin=is_super_admin,
                 user_type=user_type,
+                permission_name=permission_name,
             )
         return api_response(message="Users", data=view)
 
@@ -172,35 +169,6 @@ class PermissionAdminController:
         async with self._database.session() as session:
             view = await self._service.get_user_permissions(session, user_id)
         return api_response(message="User permissions", data=view)
-
-    async def list_permission_users(
-        self,
-        current_user: UserContextDto,
-        permission_name: str,
-        include_revoked: bool = False,
-        granted_source: str | None = None,
-    ):
-        """
-        Reverse lookup: who holds a given permission.
-
-        Args:
-            current_user (UserContextDto): The authenticated caller (injected).
-            permission_name (str): Permission to find holders of, from the path.
-            include_revoked (bool): Include soft-deleted grants when True.
-            granted_source (str | None): Restrict to one grant source, or any.
-
-        Returns:
-            A standardized API response wrapping ``{"grants": [GrantDto, ...]}``.
-            Unknown ``permission_name`` surfaces as 400 from the service.
-        """
-        async with self._database.session() as session:
-            grants = await self._service.list_permission_users(
-                session,
-                permission_name,
-                include_revoked=include_revoked,
-                granted_source=granted_source,
-            )
-        return api_response(message="Users with permission", data={"grants": grants})
 
     async def list_audit(
         self,

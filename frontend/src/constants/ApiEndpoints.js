@@ -44,7 +44,6 @@ export const API_ENDPOINTS = {
   ADMIN_PERMISSIONS: "/admin/permissions",
   ADMIN_USERS: "/admin/users",
   ADMIN_USER_PERMISSIONS: (userId) => `/admin/users/${userId}/permissions`,
-  ADMIN_PERMISSION_USERS: (name) => `/admin/permissions/${name}/users`,
   ADMIN_AUDIT_PERMISSION_CHANGES: "/admin/audit/permission-changes",
   ADMIN_USER_GRANT: (userId) => `/admin/users/${userId}/permissions/grant`,
   ADMIN_USER_REVOKE: (userId) => `/admin/users/${userId}/permissions/revoke`,
