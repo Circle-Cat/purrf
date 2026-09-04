@@ -131,7 +131,7 @@ class TrainingProgressSaveDto(BaseDto):
     status: TrainingStatus
     # Whether the course carries its verification stamp, answered only by a
     # commit that reported completion -- the one path that already has the
-    # course row in hand. None on every other commit, which is most of them:
+    # package row in hand. None on every other commit, which is most of them:
     # the heartbeat arrives every twenty seconds and often stores nothing, so
     # it must not grow a query. The trial page needs this because the
     # assignment's own status cannot stand in for it: a verifier re-running a

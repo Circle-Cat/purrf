@@ -26,8 +26,7 @@ class TrainingRepository:
         has_live_package = (
             select(TrainingCoursePackageEntity.package_id)
             .where(
-                TrainingCoursePackageEntity.course_id
-                == TrainingCourseEntity.course_id,
+                TrainingCoursePackageEntity.course_id == TrainingCourseEntity.course_id,
                 TrainingCoursePackageEntity.state == TrainingPackageState.LIVE,
             )
             .exists()

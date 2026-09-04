@@ -114,8 +114,14 @@ class TestACompletedRunDerivesVerifiedEndToEnd(BaseRepositoryTestLib):
             session_token=self._token_opened_after_upload(),
         )
 
-        # A fresh read, the way the admin course list actually reads it --
-        # not the same Python object the service just wrote through.
+        # expire_on_commit=False means the session would otherwise hand back
+        # the same identity-mapped object the service just wrote through --
+        # expire it first so this really re-selects the row from Postgres,
+        # the way the admin course list's own fresh session would. Only the
+        # package: expiring the whole session would also expire self.course
+        # and force a lazy load outside the async context when it is read
+        # below.
+        self.session.expire(before)
         after = await self.package_repository.get_by_state(
             self.session, self.course.course_id, TrainingPackageState.LIVE
         )

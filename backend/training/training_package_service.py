@@ -23,8 +23,8 @@ class TrainingPackageService:
     """Turning an uploaded zip into a course somebody could learn.
 
     Nothing is overwritten in place. Files go to a fresh prefix, and only once
-    every one of them has landed does the course start pointing at it -- an
-    upload that dies halfway leaves the live course untouched.
+    every one of them has landed does the new row replace the course's LIVE
+    package -- an upload that dies halfway leaves the live package untouched.
     """
 
     def __init__(
@@ -55,14 +55,14 @@ class TrainingPackageService:
     async def upload_package(
         self, session, course_id: int, archive_bytes: bytes, now: datetime | None = None
     ) -> TrainingPackageUploadResultDto:
-        """Validate a zip, store it, and point the course at it.
+        """Validate a zip, store it, and make it the course's package.
 
         Replacing a package has two consequences the admin was shown before
-        clicking, and both happen here: verification is cleared, because a new
-        export is a new thing and the old proof does not carry over; and resume
-        data is wiped for everyone who had not finished, because the previous
-        package's suspend_data means nothing to the new one and can hang it.
-        Finished records are left alone.
+        clicking, and both happen here: the new package row is born unstamped
+        -- a new export is a new thing, and no proof carries over from the one
+        it replaces -- and resume data is wiped for everyone who had not
+        finished, because the previous package's suspend_data means nothing to
+        the new one and can hang it. Finished records are left alone.
 
         The previous prefix's files are deleted only after the transaction
         that replaces the previous LIVE package row with the new one commits.

@@ -122,9 +122,7 @@ class OnboardingTrainingService:
         course_id = course.course_id if course is not None else None
         has_live_package = course is not None and (
             await self.training_course_package_repo.get_by_state(
-                session=session,
-                course_id=course.course_id,
-                state=TrainingPackageState.LIVE,
+                session, course.course_id, TrainingPackageState.LIVE
             )
             is not None
         )

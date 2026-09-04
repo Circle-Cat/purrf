@@ -354,9 +354,9 @@ class TrainingProgressService:
                 assignment.completed_timestamp = datetime.now(timezone.utc)
 
         # Keyed on what the course reported, not on where the assignment
-        # moved. A re-upload clears the stamp and leaves the verifier's row
-        # DONE, so their next run moves nothing -- and it is the run most
-        # likely to be proving the replacement package.
+        # moved. A re-upload installs a new, unstamped package while leaving
+        # the verifier's row DONE, so their next run moves nothing -- and it
+        # is the run most likely to be proving the replacement package.
         course_verified = None
         if reports_completion(cmi.get(_LESSON_STATUS)):
             course_verified = await self._stamp_if_unverified(
@@ -373,13 +373,14 @@ class TrainingProgressService:
     ) -> bool | None:
         """Record that somebody with the grant ran this course to the end.
 
-        Holding an assignment is not enough. Replacing a package clears the
-        stamp and keeps every existing assignment, so after a re-upload any
-        assignee could post a finishing lesson_status with no course involved
-        and unlock the new package for the whole organisation. Reporting your
-        own assignment DONE stays open to anybody -- a course reports its own
-        completion and it costs nobody but the learner -- but the stamp that
-        makes a course assignable needs TRAINING_ADMIN_WRITE.
+        Holding an assignment is not enough. Replacing a package installs a
+        new, unstamped row and keeps every existing assignment, so after a
+        re-upload any assignee could post a finishing lesson_status with no
+        course involved and unlock the new package for the whole
+        organisation. Reporting your own assignment DONE stays open to
+        anybody -- a course reports its own completion and it costs nobody
+        but the learner -- but the stamp that makes a course assignable needs
+        TRAINING_ADMIN_WRITE.
 
         Returns:
             bool | None: Whether the course is verified, for the page to show.

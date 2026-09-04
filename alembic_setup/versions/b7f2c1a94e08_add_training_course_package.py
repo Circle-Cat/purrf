@@ -52,9 +52,7 @@ def upgrade() -> None:
         sa.Column("reporting_mode", sa.String(), nullable=True),
         sa.Column("uploaded_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("uploaded_by_user_id", sa.Integer(), nullable=True),
-        sa.Column(
-            "verified_completable_at", sa.DateTime(timezone=True), nullable=True
-        ),
+        sa.Column("verified_completable_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("verified_by_user_id", sa.Integer(), nullable=True),
         sa.ForeignKeyConstraint(
             ["course_id"], ["training_course.course_id"], ondelete="CASCADE"

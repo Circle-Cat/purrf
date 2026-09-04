@@ -117,7 +117,7 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
     async def test_deactivated_course_is_refused(self):
         self.courses.get_course_by_id.return_value = _course(is_active=False)
 
-        with self.assertRaises(ConflictError):
+        with self.assertRaisesRegex(ConflictError, "deactivated"):
             await self.service.assign(self.session, self.payload)
 
         self.session.add.assert_not_called()

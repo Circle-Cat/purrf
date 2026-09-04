@@ -133,9 +133,7 @@ class TestTrainingRepository(BaseRepositoryTestLib):
         reach it.
         """
         live = TrainingCourseEntity(name="Mentor Onboarding", is_active=True)
-        pending_only = TrainingCourseEntity(
-            name="Mentee Onboarding", is_active=True
-        )
+        pending_only = TrainingCourseEntity(name="Mentee Onboarding", is_active=True)
         none_at_all = TrainingCourseEntity(name="Residency Onboarding", is_active=True)
         await self.insert_entities([live, pending_only, none_at_all])
         await self.insert_entities([

@@ -148,6 +148,45 @@ class TestTrainingCoursePackageRepository(BaseRepositoryTestLib):
         )
         self.assertEqual(found.storage_prefix, "training/1/b/")
 
+    async def test_live_packages_for_batches_by_course_id(self):
+        await self.repo.add(
+            self.session,
+            self._package(self.course_id, TrainingPackageState.LIVE, "training/1/a/"),
+        )
+        await self.repo.add(
+            self.session,
+            self._package(
+                self.other_course_id, TrainingPackageState.PENDING, "training/2/a/"
+            ),
+        )
+
+        found = await self.repo.live_packages_for(
+            self.session, [self.course_id, self.other_course_id]
+        )
+
+        self.assertEqual(set(found), {self.course_id})
+        self.assertEqual(found[self.course_id].storage_prefix, "training/1/a/")
+
+    async def test_live_packages_for_ignores_ids_outside_the_request(self):
+        await self.repo.add(
+            self.session,
+            self._package(self.course_id, TrainingPackageState.LIVE, "training/1/a/"),
+        )
+
+        found = await self.repo.live_packages_for(self.session, [self.other_course_id])
+
+        self.assertEqual(found, {})
+
+    async def test_live_packages_for_short_circuits_on_an_empty_list(self):
+        await self.repo.add(
+            self.session,
+            self._package(self.course_id, TrainingPackageState.LIVE, "training/1/a/"),
+        )
+
+        found = await self.repo.live_packages_for(self.session, [])
+
+        self.assertEqual(found, {})
+
 
 if __name__ == "__main__":
     unittest.main()
