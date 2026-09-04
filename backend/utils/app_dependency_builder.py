@@ -962,6 +962,7 @@ class AppDependencyBuilder:
             logger=self.logger,
             training_course_repository=self.training_course_repository,
             training_repository=self.training_repository,
+            training_course_package_repository=self.training_course_package_repository,
         )
         self.training_progress_repository = TrainingProgressRepository()
         self.training_storage = TrainingStorage(
