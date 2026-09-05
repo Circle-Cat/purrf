@@ -10,16 +10,18 @@ import * as api from "@/api/trainingApi";
 
 vi.mock("@/api/trainingApi");
 
-// One fixture per `TrainingCourseState`, shaped like the wire DTO
-// (backend/dto/training_course_dto.py -> TrainingCourseDto), from the state
-// table in docs/superpowers/specs/2026-09-01-scorm-training-ui-design.md §4.1.
+// One fixture per `TrainingCourseLiveState`, shaped like the wire DTO
+// (backend/dto/training_course_dto.py -> TrainingCourseDto). `verified` and
+// `needsTrialRun` are both live packages now -- a staged package's own
+// verification (task 9's sub-row) is what used to separate them, and no
+// longer gates assigning a package that is already live.
 const verified = {
   courseId: 1,
   name: "Mentor Onboarding",
   description: "What a mentor needs before their first pairing.",
   category: "mentorship_mentor_onboarding",
   isActive: true,
-  state: "verified",
+  liveState: "live",
   link: null,
   scormVersion: "1.2",
   packageVersion: "qPpo9zHD",
@@ -37,7 +39,7 @@ const needsTrialRun = {
   description: null,
   category: "mentorship_mentee_onboarding",
   isActive: true,
-  state: "needs_trial_run",
+  liveState: "live",
   link: null,
   scormVersion: "1.2",
   packageVersion: "cm171zxgx006v",
@@ -55,7 +57,7 @@ const noPackage = {
   description: null,
   category: "corporate_culture_course",
   isActive: true,
-  state: "no_package",
+  liveState: "no_package",
   link: null,
   scormVersion: null,
   packageVersion: null,
@@ -73,7 +75,7 @@ const externalLink = {
   description: null,
   category: "residency_program_onboarding",
   isActive: true,
-  state: "external_link",
+  liveState: "external_link",
   link: "https://example.com/mentor",
   scormVersion: null,
   packageVersion: null,
@@ -96,10 +98,10 @@ beforeEach(() => {
 });
 
 describe("CourseTable", () => {
-  it("shows a verified course as assignable", () => {
+  it("shows a live course as assignable", () => {
     renderTable([verified]);
 
-    expect(screen.getByText("Verified")).toBeInTheDocument();
+    expect(screen.getByText("Live")).toBeInTheDocument();
     const assign = screen.getByRole("button", { name: /assign/i });
     expect(assign).not.toBeDisabled();
   });
@@ -110,26 +112,13 @@ describe("CourseTable", () => {
     expect(screen.getByText("124")).toBeInTheDocument();
   });
 
-  it("offers a trial run for a course that has never been finished", () => {
+  it("keeps Assign enabled on a live course even without its own verification stamp", () => {
+    // The verification stamp only gates publishing a staged package now --
+    // once a package is live, assigning it no longer re-checks that stamp.
     renderTable([needsTrialRun]);
 
-    expect(screen.getByText("Needs trial run")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /trial run/i })).toHaveAttribute(
-      "href",
-      "/admin/training/2/trial",
-    );
-  });
-
-  it("keeps Assign visible but disabled until the course is verified", () => {
-    render(<CourseTable courses={[needsTrialRun]} />, {
-      wrapper: MemoryRouter,
-    });
-
-    const assign = screen.getByRole("button", { name: /assign/i });
-    expect(assign).toBeDisabled();
-    expect(assign).toHaveAccessibleDescription(
-      /run this course to completion first/i,
-    );
+    const assign = screen.getByRole("button", { name: /^assign$/i });
+    expect(assign).not.toBeDisabled();
   });
 
   it("keeps Assign disabled on a deactivated course, which the API answers 409 for", () => {
@@ -140,16 +129,16 @@ describe("CourseTable", () => {
     expect(screen.getByRole("button", { name: /^assign$/i })).toBeDisabled();
   });
 
-  it("names deactivation as the reason, not the verification rule", () => {
-    // Two rules, two sentences: one is answered by running the course, the
-    // other by turning it back on.
+  it("names deactivation as the reason, not the publish rule", () => {
+    // Two rules, two sentences: one is answered by publishing a package, the
+    // other by turning the course back on.
     renderTable([{ ...verified, isActive: false }]);
 
     const assign = screen.getByRole("button", { name: /^assign$/i });
     expect(assign).toHaveAccessibleDescription(
       /deactivated\. turn it back on to assign it/i,
     );
-    expect(assign).not.toHaveAccessibleDescription(/run this course/i);
+    expect(assign).not.toHaveAccessibleDescription(/publish a package/i);
   });
 
   it("offers to upload a package for a course that has never had one", () => {

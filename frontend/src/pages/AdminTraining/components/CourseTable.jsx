@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,27 +10,25 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import {
   assignBlockedReason,
   canAssign,
-  statusLabel,
+  liveStateLabel,
 } from "@/pages/AdminTraining/utils";
 import { assignCourse, updateCourse, uploadPackage } from "@/api/trainingApi";
 import AssignDialog from "@/pages/AdminTraining/components/AssignDialog";
 import DeactivateDialog from "@/pages/AdminTraining/components/DeactivateDialog";
 import UploadPackageDialog from "@/pages/AdminTraining/components/UploadPackageDialog";
 
-// Only the three states with a hosted package get a dot -- External link
+// Only the two live states with a hosted package get a dot -- External link
 // isn't ours to color, it just says where the course actually lives.
-const STATE_DOT_COLOR = {
-  verified: "var(--stage-hired)",
-  needs_trial_run: "var(--stage-tech)",
+const LIVE_STATE_DOT_COLOR = {
+  live: "var(--stage-hired)",
   no_package: "var(--stage-rejected)",
 };
 
-function StatusBadge({ state }) {
-  const dotColor = STATE_DOT_COLOR[state];
+function StatusBadge({ liveState }) {
+  const dotColor = LIVE_STATE_DOT_COLOR[liveState];
   return (
     <Badge variant="outline" className="gap-1.5">
       {dotColor && (
@@ -41,7 +38,7 @@ function StatusBadge({ state }) {
           style={{ backgroundColor: dotColor }}
         />
       )}
-      {statusLabel(state)}
+      {liveStateLabel(liveState)}
     </Badge>
   );
 }
@@ -76,7 +73,10 @@ function RowActions({ course, onDeactivate, onActivate, onUpload, onAssign }) {
     />
   );
 
-  if (course.state === "no_package" || course.state === "external_link") {
+  if (
+    course.liveState === "no_package" ||
+    course.liveState === "external_link"
+  ) {
     return (
       <div className="flex justify-end gap-2">
         <Button size="sm" variant="outline" onClick={() => onUpload(course)}>
@@ -90,13 +90,6 @@ function RowActions({ course, onDeactivate, onActivate, onUpload, onAssign }) {
   const assignable = canAssign(course);
   return (
     <div className="flex justify-end gap-2">
-      {course.state === "needs_trial_run" && (
-        <Button size="sm" asChild>
-          <Link to={ROUTE_PATHS.TRAINING_TRIAL(course.courseId)}>
-            Trial run
-          </Link>
-        </Button>
-      )}
       <Button
         size="sm"
         variant="outline"
@@ -223,7 +216,7 @@ export default function CourseTable({ courses, onCoursesChanged }) {
                 <PackageCell course={course} />
               </TableCell>
               <TableCell>
-                <StatusBadge state={course.state} />
+                <StatusBadge liveState={course.liveState} />
               </TableCell>
               <TableCell className="text-right">
                 {course.assignedCount}

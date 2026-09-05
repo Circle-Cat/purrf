@@ -75,6 +75,33 @@ export const readCompletionConfig = (courseId) =>
 export const assignCourse = (payload) =>
   request.post(API_ENDPOINTS.TRAINING_ASSIGNMENTS, payload);
 
+/**
+ * Publish a course's staged package, moving it into the live slot that
+ * learners actually see.
+ * @param {string|number} courseId
+ * @returns {Promise<{data: Object}>} `TrainingPackagePublishResultDto`.
+ */
+export const publishPackage = (courseId) =>
+  request.post(API_ENDPOINTS.TRAINING_COURSE_PUBLISH(courseId));
+
+/**
+ * Drop a course's staged package without publishing it. The live package,
+ * if any, is untouched.
+ * @param {string|number} courseId
+ * @returns {Promise<{data: Object}>}
+ */
+export const discardPackage = (courseId) =>
+  request.delete(API_ENDPOINTS.TRAINING_COURSE_PACKAGE(courseId));
+
+/**
+ * Mint a content session against a training's staged package, so an admin
+ * can verify it before it is published.
+ * @param {string|number} trainingId
+ * @returns {Promise<{data: Object}>} same shape as `openSession`.
+ */
+export const openTrialSession = (trainingId) =>
+  request.post(API_ENDPOINTS.TRAINING_TRIAL_SESSION(trainingId));
+
 export const uploadPackage = (courseId, file, onProgress) => {
   const form = new FormData();
   form.append("file", file);

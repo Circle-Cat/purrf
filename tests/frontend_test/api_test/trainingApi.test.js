@@ -1,6 +1,11 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import request from "@/utils/request";
-import { uploadPackage } from "@/api/trainingApi";
+import {
+  uploadPackage,
+  publishPackage,
+  discardPackage,
+  openTrialSession,
+} from "@/api/trainingApi";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
 vi.mock("@/utils/request", () => {
@@ -9,6 +14,7 @@ vi.mock("@/utils/request", () => {
       get: vi.fn(),
       post: vi.fn(),
       patch: vi.fn(),
+      delete: vi.fn(),
     },
   };
 });
@@ -77,5 +83,41 @@ describe("uploadPackage", () => {
     expect(() =>
       sentProgressHandler()?.({ loaded: 1, total: 2 }),
     ).not.toThrow();
+  });
+});
+
+describe("publishPackage", () => {
+  it("posts to the course's publish endpoint", async () => {
+    request.post.mockResolvedValue({ data: {} });
+
+    await publishPackage(5);
+
+    expect(request.post).toHaveBeenCalledWith(
+      API_ENDPOINTS.TRAINING_COURSE_PUBLISH(5),
+    );
+  });
+});
+
+describe("discardPackage", () => {
+  it("deletes the course's staged package", async () => {
+    request.delete.mockResolvedValue({ data: {} });
+
+    await discardPackage(5);
+
+    expect(request.delete).toHaveBeenCalledWith(
+      API_ENDPOINTS.TRAINING_COURSE_PACKAGE(5),
+    );
+  });
+});
+
+describe("openTrialSession", () => {
+  it("posts to the training's trial-session endpoint", async () => {
+    request.post.mockResolvedValue({ data: {} });
+
+    await openTrialSession(9);
+
+    expect(request.post).toHaveBeenCalledWith(
+      API_ENDPOINTS.TRAINING_TRIAL_SESSION(9),
+    );
   });
 });
