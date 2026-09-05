@@ -135,6 +135,12 @@ describe("PipelineConfigEditor", () => {
     );
   });
 
+  it("shows an unresolved owner with the unavailable suffix", () => {
+    const onChange = vi.fn();
+    renderEditor({ ownerIds: [99], stages: [] }, onChange);
+    expect(screen.getByText("User 99 — unavailable")).toBeInTheDocument();
+  });
+
   it("does not offer an already-selected owner in the add-owner pool", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

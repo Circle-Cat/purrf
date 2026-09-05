@@ -621,7 +621,10 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     renderPage();
     await waitLoaded();
 
-    expect(screen.getByText(/Evaluated by: User 77/)).toBeInTheDocument();
+    // Bare, unlike an owner/assignee site's unresolved label: a historical
+    // evaluator can't be removed, so no action suffix belongs here. Exact
+    // match (not a substring regex) so an appended suffix would fail this.
+    expect(screen.getByText("Evaluated by: User 77")).toBeInTheDocument();
   });
 
   it("assignee-only viewer sees the rubric form pre-filled from their draft, no decision footer", async () => {

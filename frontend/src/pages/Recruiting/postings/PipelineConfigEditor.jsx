@@ -3,6 +3,7 @@ import TermHint from "@/pages/Recruiting/components/TermHint";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
+import { unavailablePersonLabel } from "@/pages/Recruiting/components/personLabel";
 
 const STAGES = ["recruiter_screening", "behavioral", "tech", "board_review"];
 const ASSIGNABLE = new Set(["recruiter_screening", "behavioral"]);
@@ -43,7 +44,7 @@ const PipelineConfigEditor = ({
   const ownerIds =
     value.ownerIds ?? (value.ownerId != null ? [value.ownerId] : []);
   const ownerName = (id) =>
-    jobOwners.find((u) => u.userId === id)?.name ?? `#${id}`;
+    jobOwners.find((u) => u.userId === id)?.name ?? unavailablePersonLabel(id);
   const availableOwners = jobOwners.filter((u) => !ownerIds.includes(u.userId));
 
   /** Emit a new owner list, dropping the deprecated `ownerId` key. */
