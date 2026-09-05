@@ -6,14 +6,13 @@ import threading
 import time
 import unittest
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from backend.common.mentorship_enums import TrainingStatus
 from backend.entity.training_entity import TrainingEntity
 from backend.entity.training_progress_entity import TrainingProgressEntity
 from backend.training.byte_range import RangeSpec, UnsatisfiableRange
 from backend.training.training_content_service import (
-    ASSIGNMENT_CACHE_SECONDS,
     PLAYER_PATH,
     TrainingContentService,
 )
@@ -31,6 +30,7 @@ _TRAINING_ID = 4242
 _USER_ID = 77
 _OTHER_USER_ID = 999
 _COURSE_ID = 9
+_PACKAGE_ID = 31
 _OLD_PREFIX = "training/9/old-package/"
 _NEW_PREFIX = "training/9/new-package/"
 
@@ -102,11 +102,16 @@ class _ContentServiceCase(unittest.IsolatedAsyncioTestCase):
         )
 
         self.package = MagicMock(
+            package_id=_PACKAGE_ID,
             storage_prefix=_OLD_PREFIX,
             entry_path="scormcontent/index.html",
         )
         self.package_repository = MagicMock()
+        # Opening a session resolves the course's live package; serving a file
+        # resolves the package the token names, which is a different question
+        # the moment a replacement lands.
         self.package_repository.get_by_state = AsyncMock(return_value=self.package)
+        self.package_repository.get_by_id = AsyncMock(return_value=self.package)
 
         self.progress_repository = MagicMock()
         self.progress_repository.get_by_training_id = AsyncMock(return_value=None)
@@ -146,7 +151,9 @@ class _ContentServiceCase(unittest.IsolatedAsyncioTestCase):
         return base_url[len(head) : -1]
 
     def valid_token(self):
-        token, _ = issue_content_token(_KEY, _TRAINING_ID, _USER_ID)
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID
+        )
         return token
 
     def expired_token(self):
@@ -154,6 +161,7 @@ class _ContentServiceCase(unittest.IsolatedAsyncioTestCase):
             _KEY,
             _TRAINING_ID,
             _USER_ID,
+            package_id=_PACKAGE_ID,
             now=int(time.time()) - 2 * TOKEN_LIFETIME_SECONDS,
         )
         return token
@@ -252,16 +260,35 @@ class TestOpenSession(_ContentServiceCase):
         self.assertIsNone(result.progress.score_raw)
 
 
-class TestReadAssetLooksThePrefixUpFresh(_ContentServiceCase):
-    async def test_a_re_upload_after_minting_redirects_the_same_token(self):
-        """The whole reason the prefix stays out of the token (spec 5.1)."""
-        result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
-        token = self.token_from(result)
+class TestReadAssetResolvesTheTokensOwnPackage(_ContentServiceCase):
+    async def test_the_prefix_comes_from_the_package_the_token_names(self):
+        token = self.valid_token()
 
-        self.package.storage_prefix = _NEW_PREFIX
         await self.service.read_asset(self.session, token, "scormcontent/index.html")
 
-        self.assertEqual(self.fetched_keys(), [_NEW_PREFIX + "scormcontent/index.html"])
+        self.package_repository.get_by_id.assert_awaited_with(self.session, _PACKAGE_ID)
+        self.assertEqual(self.fetched_keys(), [_OLD_PREFIX + "scormcontent/index.html"])
+
+    async def test_a_replacement_does_not_redirect_a_token_at_the_new_package(self):
+        """The tab has to fail visibly rather than be handed a package it
+        never started: its in-memory CMI model still belongs to the old one.
+        """
+        result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+        token = self.token_from(result)
+        # The replacement deletes the row this token names and inserts its own.
+        self.package_repository.get_by_id.return_value = None
+        self.package_repository.get_by_state.return_value = MagicMock(
+            package_id=_PACKAGE_ID + 1,
+            storage_prefix=_NEW_PREFIX,
+            entry_path="scormcontent/index.html",
+        )
+
+        with self.assertRaises(FileNotFoundError):
+            await self.service.read_asset(
+                self.session, token, "scormcontent/index.html"
+            )
+
+        self.storage.get.assert_not_called()
 
     async def test_the_package_is_re_read_on_every_asset_request(self):
         token = self.valid_token()
@@ -269,7 +296,7 @@ class TestReadAssetLooksThePrefixUpFresh(_ContentServiceCase):
         await self.service.read_asset(self.session, token, "scormcontent/index.html")
         await self.service.read_asset(self.session, token, "scormcontent/styles.css")
 
-        self.assertEqual(self.package_repository.get_by_state.await_count, 2)
+        self.assertEqual(self.package_repository.get_by_id.await_count, 2)
 
 
 class TestReadAssetRejections(_ContentServiceCase):
@@ -290,8 +317,8 @@ class TestReadAssetRejections(_ContentServiceCase):
         for key in self.fetched_keys():
             self.assertTrue(str(key).startswith(_OLD_PREFIX))
 
-    async def test_a_course_without_a_package_is_refused(self):
-        self.package_repository.get_by_state.return_value = None
+    async def test_a_token_whose_package_is_gone_is_refused(self):
+        self.package_repository.get_by_id.return_value = None
 
         with self.assertRaises(FileNotFoundError):
             await self.service.read_asset(
@@ -394,16 +421,19 @@ class TestReadAssetLogging(_ContentServiceCase):
         self.assertIn(_OLD_PREFIX + "scormcontent/gone.png", logged)
         self.assertIn(str(_TRAINING_ID), logged)
 
-    async def test_a_course_with_no_package_says_which_course(self):
-        self.package_repository.get_by_state.return_value = None
+    async def test_a_token_whose_package_is_gone_says_which_package(self):
+        """Info rather than warning: an open tab produces one of these for
+        every file it still asks for after a replacement, and the answer is a
+        reload rather than an investigation."""
+        self.package_repository.get_by_id.return_value = None
 
         with self.assertRaises(FileNotFoundError):
             await self.service.read_asset(
                 self.session, self.valid_token(), "scormcontent/index.html"
             )
 
-        logged = self.rendered(self.logger.warning)
-        self.assertIn(str(_COURSE_ID), logged)
+        logged = self.rendered(self.logger.info)
+        self.assertIn(str(_PACKAGE_ID), logged)
 
     async def test_a_path_that_escapes_the_package_is_logged(self):
         with self.assertRaises(PermissionError):
@@ -483,9 +513,10 @@ class TestReservedPlayerPath(_ContentServiceCase):
                 self.session, self.valid_token(), "__internal/shim.js"
             )
 
-    async def test_a_reserved_asset_needs_no_course_package(self):
-        """The player has to load even when the course has no live package."""
-        self.package_repository.get_by_state.return_value = None
+    async def test_a_reserved_asset_needs_no_package(self):
+        """The player has to load even when the package behind the token is
+        gone -- it is what tells the learner to reload."""
+        self.package_repository.get_by_id.return_value = None
 
         asset = await self.service.read_asset(
             self.session, self.valid_token(), PLAYER_PATH
@@ -749,66 +780,27 @@ class TestReadAssetLeavesTheEventLoopFree(_ContentServiceCase):
         self.assertEqual(self.storage.get.call_count, 2)
 
 
-class TestReadAssetReusesTheAssignmentLookup(_ContentServiceCase):
-    """Which course a token names cannot change; where its files live can.
-
-    So the assignment behind a token is read once and held briefly, while the
-    package row -- and with it the storage prefix -- stays a fresh read on
-    every request (spec 5.1, pinned by TestReadAssetLooksThePrefixUpFresh).
+class TestReadAssetNeverReadsTheAssignment(_ContentServiceCase):
+    """The token names the package outright, so serving a file asks the
+    database one question instead of two -- and a course load asks for
+    hundreds of files.
     """
 
-    async def test_the_assignment_is_read_once_for_many_files(self):
+    async def test_no_assignment_lookup_for_a_package_file(self):
         token = self.valid_token()
 
         for name in ("a.css", "b.css", "c.js"):
             await self.service.read_asset(self.session, token, name)
 
-        self.assertEqual(self.training_repository.get_training_by_id.await_count, 1)
+        self.training_repository.get_training_by_id.assert_not_awaited()
 
-    async def test_the_package_is_still_read_for_every_one_of_them(self):
+    async def test_one_package_read_per_file_and_nothing_else(self):
         token = self.valid_token()
 
         for name in ("a.css", "b.css", "c.js"):
             await self.service.read_asset(self.session, token, name)
 
-        self.assertEqual(self.package_repository.get_by_state.await_count, 3)
-
-    async def test_two_assignments_do_not_share_a_lookup(self):
-        # Keyed on the training the token names, so one learner's page cannot
-        # answer from another's lookup.
-        other, _ = issue_content_token(_KEY, _TRAINING_ID + 1, _OTHER_USER_ID)
-
-        await self.service.read_asset(self.session, self.valid_token(), "a.css")
-        await self.service.read_asset(self.session, other, "a.css")
-
-        self.assertEqual(self.training_repository.get_training_by_id.await_count, 2)
-
-    async def test_the_assignment_is_read_again_once_the_entry_is_stale(self):
-        token = self.valid_token()
-        await self.service.read_asset(self.session, token, "a.css")
-
-        with patch(
-            "backend.training.training_content_service._now",
-            return_value=time.monotonic() + ASSIGNMENT_CACHE_SECONDS + 1,
-        ):
-            await self.service.read_asset(self.session, token, "b.css")
-
-        self.assertEqual(self.training_repository.get_training_by_id.await_count, 2)
-
-    async def test_an_assignment_that_is_gone_is_not_remembered_as_gone(self):
-        # Only a resolved assignment is held. Caching the refusal would keep
-        # refusing a learner whose row arrived a moment later.
-        token = self.valid_token()
-        self.training_repository.get_training_by_id = AsyncMock(return_value=None)
-        with self.assertRaises(FileNotFoundError):
-            await self.service.read_asset(self.session, token, "a.css")
-
-        self.training_repository.get_training_by_id = AsyncMock(
-            return_value=self.training
-        )
-        await self.service.read_asset(self.session, token, "a.css")
-
-        self.assertEqual(self.training_repository.get_training_by_id.await_count, 1)
+        self.assertEqual(self.package_repository.get_by_id.await_count, 3)
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ import { MESSAGE_TYPES, isTrustedMessage } from "@/training/scormBridge";
  *   writes: Array<{type: "commit"|"finish", cmi: Object<string, string>, receivedAt: number}>,
  *   status: string|null,
  *   courseVerified: boolean,
+ *   sessionStale: boolean,
  * }}
  */
 // fetch refuses a keepalive request once the bodies in flight exceed 64 KiB,
@@ -33,6 +34,10 @@ import { MESSAGE_TYPES, isTrustedMessage } from "@/training/scormBridge";
 // closing page still has out. The blob was already stored by the commit that
 // carried it; the time was not, so the blob is what gives way.
 const KEEPALIVE_BODY_LIMIT = 60 * 1024;
+
+// What the server answers a commit whose run names a package it no longer
+// serves. Every later commit from this page gets the same answer.
+const HTTP_CONFLICT = 409;
 
 const partingBody = (cmi, sessionToken) => {
   const whole = JSON.stringify({ cmi, final: true, sessionToken });
@@ -45,6 +50,13 @@ export default function useTrainingRuntime(trainingId, user) {
   const [session, setSession] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [saveFailed, setSaveFailed] = useState(false);
+  // The server refused a save because the run this page is holding is no
+  // longer one it serves -- the package was replaced under an open tab. Kept
+  // apart from saveFailed because the two need opposite advice: an ordinary
+  // failure is retried by the next commit twenty seconds from now, and this
+  // one never will be. Latched: nothing this page can do afterwards makes the
+  // run current again.
+  const [sessionStale, setSessionStale] = useState(false);
   const [writes, setWrites] = useState([]);
   const frameRef = useRef(null);
   // The last cmi a commit or finish carried, and whether the safety net below
@@ -74,6 +86,7 @@ export default function useTrainingRuntime(trainingId, user) {
     setLoadError(null);
     setWrites([]);
     setCourseVerified(false);
+    setSessionStale(false);
     openSession(trainingId)
       .then((response) => {
         if (!cancelled) setSession(response.data);
@@ -169,10 +182,11 @@ export default function useTrainingRuntime(trainingId, user) {
           if (saved?.data?.status) setStatus(saved.data.status);
           if (saved?.data?.courseVerified) setCourseVerified(true);
           post({ type: MESSAGE_TYPES.SAVED, ok: true }, contentOrigin);
-        } catch {
+        } catch (error) {
           // LMSCommit already answered "true" to the course the moment it
           // posted; only this page can tell the learner the save did not land.
           setSaveFailed(true);
+          if (error?.response?.status === HTTP_CONFLICT) setSessionStale(true);
           post({ type: MESSAGE_TYPES.SAVED, ok: false }, contentOrigin);
         }
       }
@@ -251,5 +265,6 @@ export default function useTrainingRuntime(trainingId, user) {
     writes,
     status,
     courseVerified,
+    sessionStale,
   };
 }

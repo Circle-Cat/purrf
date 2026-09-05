@@ -3,7 +3,6 @@
 import asyncio
 import pathlib
 import posixpath
-import time
 from dataclasses import dataclass
 
 from backend.common.mentorship_enums import TrainingPackageState
@@ -43,24 +42,6 @@ PLAYER_ASSETS = {
 _PLAYER_ASSET_BYTES = {
     path: (_PLAYER_DIR / name).read_bytes() for path, (name, _) in PLAYER_ASSETS.items()
 }
-
-# How long the assignment behind a token is reused for. Which course a token
-# names cannot change, so this is bounded only to let a deleted assignment
-# stop answering; the storage prefix is deliberately not cached with it.
-ASSIGNMENT_CACHE_SECONDS = 60
-
-# Entries are only evicted when they are read, so an assignment nobody comes
-# back to would otherwise sit here for the life of the process.
-_ASSIGNMENT_CACHE_LIMIT = 512
-
-
-def _now() -> float:
-    """The clock the assignment cache ages against.
-
-    Its own function so a test can move it without patching time.monotonic,
-    which the running event loop also reads.
-    """
-    return time.monotonic()
 
 
 def _score(value) -> str | None:
@@ -141,9 +122,12 @@ class TrainingContentService:
             signing_key (str | None): TRAINING_TOKEN_SIGNING_KEY.
             content_host (str | None): TRAINING_CONTENT_HOST.
             training_repository (TrainingRepository): The assignment a token
-                is issued against.
+                is issued against. Read when a session opens and never again:
+                a token names its package outright, so serving a file has no
+                assignment to look up.
             training_course_package_repository (TrainingCoursePackageRepository):
-                Resolves the LIVE package a course serves content from.
+                Resolves the course's LIVE package when a session opens, and
+                the package a token names when a file is asked for.
             training_progress_repository (TrainingProgressRepository): The
                 learner's stored progress, seeded back into the page.
             training_storage (TrainingStorage): Object storage.
@@ -155,10 +139,6 @@ class TrainingContentService:
         self.training_course_package_repository = training_course_package_repository
         self.training_progress_repository = training_progress_repository
         self.training_storage = training_storage
-        # training_id -> (course_id, monotonic deadline). Not keyed on the
-        # token: the token is the credential, and two tokens naming the same
-        # assignment resolve to the same course anyway.
-        self._assignments: dict[int, tuple[int, float]] = {}
 
     async def open_session(
         self, session, training_id: int, user_id: int
@@ -205,15 +185,18 @@ class TrainingContentService:
             session, training_id
         )
 
-        token, expires_at = issue_content_token(self.signing_key, training_id, user_id)
+        token, expires_at = issue_content_token(
+            self.signing_key, training_id, user_id, package_id=package.package_id
+        )
         # One line per course opening, not per file: this is the only record
         # tying a burst of content requests back to a person and a package.
         self.logger.info(
             "[TrainingContentService] user %s opened training %s (course %s, "
-            "prefix %s); token expires at %s",
+            "package %s, prefix %s); token expires at %s",
             user_id,
             training_id,
             assignment.course_id,
+            package.package_id,
             package.storage_prefix,
             expires_at,
         )
@@ -259,9 +242,16 @@ class TrainingContentService:
     ) -> ContentAsset:
         """Resolve one file requested from the content origin.
 
-        The prefix is looked up here, per request, never carried in the token:
-        a token outlives an upload, and one holding a stale prefix would start
-        404ing the moment the cleanup ran.
+        The token names a package by id; the prefix behind that id is looked
+        up here, per request, and never carried in the token. A package's own
+        prefix does not move, so this is not about staleness -- it is what
+        keeps an object key out of a URL the course's own JavaScript can read.
+
+        A replacement deletes the row the open tab's token names, so its next
+        file 404s and the player says so. That is the point: the alternative,
+        resolving the course's current live package instead, hands a tab a
+        package it never started while its in-memory CMI model still belongs
+        to the old one.
 
         A range changes only how much of the file comes back. Every check
         below runs first and unchanged: a range is not a way past the token,
@@ -280,7 +270,7 @@ class TrainingContentService:
 
         Raises:
             InvalidContentToken: Bad or expired token.
-            FileNotFoundError: No such file, or the course has no package.
+            FileNotFoundError: No such file, or the token's package is gone.
             PermissionError: The path escapes the package.
             UnsatisfiableRange: The range names no byte of the file.
         """
@@ -329,19 +319,19 @@ class TrainingContentService:
                 _PLAYER_ASSET_BYTES[normalised], content_type, byte_range
             )
 
-        course_id = await self._course_id_behind(session, claims.training_id)
-
-        package = await self.training_course_package_repository.get_by_state(
-            session, course_id, TrainingPackageState.LIVE
+        package = await self.training_course_package_repository.get_by_id(
+            session, claims.package_id
         )
         if package is None:
-            self.logger.warning(
-                "[TrainingContentService] course %s behind training %s has no "
-                "package to serve",
-                course_id,
+            # Info, not warning: every file an open tab still asks for after a
+            # replacement produces one of these, and the fix is a reload.
+            self.logger.info(
+                "[TrainingContentService] package %s behind training %s is "
+                "gone; the tab holding this token needs to reload",
+                claims.package_id,
                 claims.training_id,
             )
-            raise FileNotFoundError("This course has no package.")
+            raise FileNotFoundError("This package is no longer served.")
 
         object_key = posixpath.join(package.storage_prefix, normalised)
         if byte_range is not None:
@@ -361,62 +351,6 @@ class TrainingContentService:
             content_type,
         )
         return ContentAsset(data=data, content_type=content_type)
-
-    async def _course_id_behind(self, session, training_id: int) -> int:
-        """Which course a token's assignment names, read once and held.
-
-        A course load asks for hundreds of files and every one of them used to
-        re-read the assignment, whose answer cannot change: an assignment is
-        never re-pointed at a different course. Only the storage prefix moves,
-        and that is read fresh per request one caller up.
-
-        A missing assignment is not remembered. Caching the refusal would keep
-        refusing a learner whose row is created a moment later.
-
-        Raises:
-            FileNotFoundError: No assignment, or it has no course.
-        """
-        cached = self._assignments.get(training_id)
-        if cached is not None:
-            course_id, deadline = cached
-            if _now() < deadline:
-                return course_id
-            del self._assignments[training_id]
-
-        assignment = await self.training_repository.get_training_by_id(
-            session, training_id
-        )
-        if assignment is None or assignment.course_id is None:
-            self.logger.warning(
-                "[TrainingContentService] token for training %s has no course "
-                "behind it; the assignment is %s",
-                training_id,
-                "gone" if assignment is None else "not attached to a course",
-            )
-            raise FileNotFoundError("No course behind this token.")
-
-        if len(self._assignments) >= _ASSIGNMENT_CACHE_LIMIT:
-            self._evict_stale_assignments()
-        self._assignments[training_id] = (
-            assignment.course_id,
-            _now() + ASSIGNMENT_CACHE_SECONDS,
-        )
-        return assignment.course_id
-
-    def _evict_stale_assignments(self) -> None:
-        """Drop what has expired, and everything if that was not enough.
-
-        Clearing outright costs one extra read per learner still on a course,
-        which is cheaper than tracking use order for a table this small.
-        """
-        now = _now()
-        self._assignments = {
-            training_id: entry
-            for training_id, entry in self._assignments.items()
-            if now < entry[1]
-        }
-        if len(self._assignments) >= _ASSIGNMENT_CACHE_LIMIT:
-            self._assignments.clear()
 
     async def _read_range(
         self, training_id: int, object_key: str, byte_range: RangeSpec

@@ -383,3 +383,43 @@ describe("useTrainingRuntime parting save", () => {
     expect(body.cmi).not.toHaveProperty("cmi.suspend_data");
   });
 });
+
+describe("useTrainingRuntime and a run the server no longer serves", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const refusal = (status) =>
+    Object.assign(new Error("refused"), { response: { status } });
+
+  it("marks the session stale when a save is refused as a replaced package", async () => {
+    // 409 is what the server answers a commit whose run names a package it
+    // has stopped serving. Telling this learner to keep the tab open would
+    // leave them on a page that can never save again.
+    api.saveProgress.mockRejectedValue(refusal(409));
+    const { result } = await renderRuntime();
+
+    await act(async () => {
+      window.dispatchEvent(commit(cmiWith("incomplete")));
+    });
+
+    await waitFor(() => expect(result.current.sessionStale).toBe(true));
+  });
+
+  it("leaves an ordinary save failure retryable", async () => {
+    api.saveProgress.mockRejectedValue(refusal(500));
+    const { result } = await renderRuntime();
+
+    await act(async () => {
+      window.dispatchEvent(commit(cmiWith("incomplete")));
+    });
+
+    await waitFor(() => expect(result.current.saveFailed).toBe(true));
+    expect(result.current.sessionStale).toBe(false);
+  });
+});

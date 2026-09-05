@@ -5,12 +5,12 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
 from backend.common.exceptions import ConflictError
-from backend.common.mentorship_enums import TrainingPackageState, TrainingStatus
+from backend.common.mentorship_enums import TrainingStatus
 from backend.dto.training_course_dto import TrainingProgressSaveDto
 from backend.training.completion import next_training_status, reports_completion
 from backend.training.training_content_token import (
     InvalidContentToken,
-    read_session_start,
+    read_session_package,
 )
 
 # SCORM 1.2's CMITimespan needs at least two digits of hours. A single-digit
@@ -155,13 +155,14 @@ class TrainingProgressService:
         Args:
             logger: Injected logger.
             signing_key (str | None): TRAINING_TOKEN_SIGNING_KEY. Reads the
-                mint time out of the session token a commit names itself with;
+                package out of the session token a commit names itself with;
                 nothing here issues one.
             training_repository (TrainingRepository): The assignment being saved.
             training_progress_repository (TrainingProgressRepository): The row.
             training_course_package_repository (TrainingCoursePackageRepository):
-                Reads the LIVE package being finished, to stamp it on first
-                completion.
+                Reads the package a commit's own run was opened against --
+                which is what decides whether the commit is stored at all,
+                and what a first completion stamps.
         """
         self.logger = logger
         self.signing_key = signing_key
@@ -201,10 +202,9 @@ class TrainingProgressService:
                 Defaults to False so a caller nobody vouched for cannot
                 unlock the course for everybody else.
             session_token: The content session this commit was reported in,
-                as the page was handed it. Signed, so the run it names cannot
-                be backdated; anything else reads as a run that names no
-                session at all, which can store progress but never vouch for
-                a package.
+                as the page was handed it. Signed, so it can only name a
+                package a run really was opened against. Required: a commit
+                that cannot name a package still being served is refused.
 
         Returns:
             TrainingProgressSaveDto: Where the assignment stands afterwards,
@@ -213,8 +213,9 @@ class TrainingProgressService:
         Raises:
             ValueError: No such assignment, or an element over its length cap.
             PermissionError: The assignment belongs to somebody else.
-            ConflictError: The run reporting completion began before the
-                course's current package did.
+            ConflictError: The run this commit came from is not running a
+                package we still serve -- because the token names none we can
+                read, or because the package it names has been replaced.
         """
         _reject_unstorable(cmi)
 
@@ -232,6 +233,8 @@ class TrainingProgressService:
             raise ValueError(f"No training assignment with id {training_id}.")
         if assignment.user_id != user_id:
             raise PermissionError("This training belongs to somebody else.")
+
+        package = await self._package_behind(session, session_token, training_id)
 
         existing = await self.training_progress_repository.get_by_training_id(
             session, training_id
@@ -359,8 +362,8 @@ class TrainingProgressService:
         # is the run most likely to be proving the replacement package.
         course_verified = None
         if reports_completion(cmi.get(_LESSON_STATUS)):
-            course_verified = await self._stamp_if_unverified(
-                session, assignment, user_id, may_verify_course, session_token
+            course_verified = self._stamp_if_unverified(
+                package, user_id, may_verify_course
             )
 
         await session.commit()
@@ -368,105 +371,92 @@ class TrainingProgressService:
             status=assignment.status, course_verified=course_verified
         )
 
-    async def _stamp_if_unverified(
-        self, session, assignment, user_id: int, may_verify_course: bool, session_token
-    ) -> bool | None:
-        """Record that somebody with the grant ran this course to the end.
+    async def _package_behind(self, session, session_token, training_id: int):
+        """The package the run this commit came from is running.
 
-        Holding an assignment is not enough. Replacing a package installs a
-        new, unstamped row and keeps every existing assignment, so after a
-        re-upload any assignee could post a finishing lesson_status with no
-        course involved and unlock the new package for the whole
-        organisation. Reporting your own assignment DONE stays open to
-        anybody -- a course reports its own completion and it costs nobody
-        but the learner -- but the stamp that makes a course assignable needs
-        TRAINING_ADMIN_WRITE.
+        The token is signed, so a commit cannot claim to be running a package
+        it is not. Expiry is not consulted: the caller already authenticated
+        on the app origin, and refusing a sitting that overran its twelve
+        hours would cost the longest run its last save.
 
-        Returns:
-            bool | None: Whether the course is verified, for the page to show.
-            None when this commit did not look -- no course attached, no
-            grant, or no live package -- rather than False, which would claim
-            an answer nothing here went and got.
+        A commit that cannot name a package we still serve is refused rather
+        than stored. The tab is holding a CMI model belonging to a package
+        that is gone, and every twenty seconds it offers that model again --
+        stored, it writes the old bookmark and the old finishing status back
+        over the row the replacement cleared, and the learner reopens onto a
+        lesson the new package does not have. Our own player always sends the
+        token it was handed, so nothing legitimate arrives without one.
 
         Raises:
-            ConflictError: The run began before the package's current upload.
+            ConflictError: The token names no readable package, or names one
+                that is no longer served.
         """
-        if assignment.course_id is None:
-            return None
-        if not may_verify_course:
-            self.logger.info(
-                "[TrainingProgressService] user %s finished course %s without "
-                "training.admin.write; leaving it unverified",
-                user_id,
-                assignment.course_id,
+        package_id = None
+        if isinstance(session_token, str) and session_token:
+            try:
+                package_id = read_session_package(self.signing_key, session_token)
+            except (InvalidContentToken, ValueError):
+                package_id = None
+
+        package = (
+            None
+            if package_id is None
+            else await self.training_course_package_repository.get_by_id(
+                session, package_id
             )
-            return None
-        package = await self.training_course_package_repository.get_by_state(
-            session, assignment.course_id, TrainingPackageState.LIVE
         )
         if package is None:
-            return None
-
-        started_at = self._session_started_at(session_token)
-        if started_at is None:
-            # A commit that cannot say which run it belongs to is stored, but
-            # it cannot vouch for a package: the whole guard below rests on
-            # knowing when the tab opened.
             self.logger.info(
-                "[TrainingProgressService] user %s finished course %s from a "
-                "commit that names no content session; leaving the stamp as it is",
-                user_id,
-                assignment.course_id,
-            )
-            return package.verified_completable_at is not None
-
-        if package.uploaded_at is not None and started_at < package.uploaded_at:
-            # The tab was open across a replacement. Its in-memory CMI model
-            # still holds the old package's finishing lesson_status, and the
-            # driver re-commits the whole model every twenty seconds -- so
-            # without this the replacement gets stamped, and assignment opens
-            # for a package nobody has run. Refused rather than merely left
-            # unstamped: storing that status would put it back in the row the
-            # upload cleared, where the next run seeds it and reports it again.
-            self.logger.warning(
-                "[TrainingProgressService] refused a completion for course %s "
-                "from user %s: the run began at %s, before the current package "
-                "landed at %s",
-                assignment.course_id,
-                user_id,
-                started_at,
-                package.uploaded_at,
+                "[TrainingProgressService] refused a commit to training %s: "
+                "its run names package %s, which is not served any more",
+                training_id,
+                package_id,
             )
             raise ConflictError(
                 "This course's package was replaced while this page was open. "
                 "Reload the page to run the new one."
             )
+        return package
+
+    def _stamp_if_unverified(
+        self, package, user_id: int, may_verify_course: bool
+    ) -> bool | None:
+        """Record that somebody with the grant ran this package to the end.
+
+        The stamp lands on the package the run was opened against, which the
+        token names -- never on whatever is live when the commit arrives. A
+        run whose package is gone never reaches this: it was refused before
+        anything was read.
+
+        Holding an assignment is not enough. Replacing a package installs a
+        new, unstamped row and keeps every existing assignment, so without
+        this any assignee could post a finishing lesson_status with no course
+        involved and unlock the new package for the whole organisation.
+        Reporting your own assignment DONE stays open to anybody -- a course
+        reports its own completion and it costs nobody but the learner -- but
+        the stamp that makes a course assignable needs TRAINING_ADMIN_WRITE.
+
+        Returns:
+            bool | None: Whether the package is verified, for the page to
+            show. None when this commit did not look -- no grant -- rather
+            than False, which would claim an answer nothing here went and got.
+        """
+        if not may_verify_course:
+            self.logger.info(
+                "[TrainingProgressService] user %s finished package %s without "
+                "training.admin.write; leaving it unverified",
+                user_id,
+                package.package_id,
+            )
+            return None
 
         if package.verified_completable_at is not None:
             return True
         package.verified_completable_at = datetime.now(timezone.utc)
         package.verified_by_user_id = user_id
         self.logger.info(
-            "[TrainingProgressService] course %s verified completable by user %s",
-            assignment.course_id,
+            "[TrainingProgressService] package %s verified completable by user %s",
+            package.package_id,
             user_id,
         )
         return True
-
-    def _session_started_at(self, session_token) -> datetime | None:
-        """When the run this commit came from opened, or None if it cannot say.
-
-        The token is signed, so the answer cannot be backdated by whoever
-        posts the commit. It is read for its mint time only -- the caller
-        already authenticated on the app origin -- so an expired one still
-        answers, and the prefix it deliberately never carries is not wanted
-        here either: the package it is compared against comes from the
-        package row.
-        """
-        if not isinstance(session_token, str) or not session_token:
-            return None
-        try:
-            started_at = read_session_start(self.signing_key, session_token)
-        except (InvalidContentToken, ValueError):
-            return None
-        return datetime.fromtimestamp(started_at, timezone.utc)

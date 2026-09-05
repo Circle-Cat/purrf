@@ -10,7 +10,7 @@ from backend.training.training_content_token import (
     ContentTokenClaims,
     InvalidContentToken,
     issue_content_token,
-    read_session_start,
+    read_session_package,
     verify_content_token,
 )
 
@@ -19,6 +19,7 @@ _OTHER_KEY = "a-different-signing-key"
 _NOW = 1_756_000_000
 _TRAINING_ID = 4242
 _USER_ID = 77
+_PACKAGE_ID = 91
 
 
 def _split(token):
@@ -43,15 +44,42 @@ def _payload(token):
 
 class TestIssueAndVerify(unittest.TestCase):
     def test_a_token_verifies_back_to_the_pair_it_was_issued_for(self):
-        token, _ = issue_content_token(_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
 
         claims = verify_content_token(_KEY, token, now=_NOW)
 
         self.assertEqual(claims.training_id, _TRAINING_ID)
         self.assertEqual(claims.user_id, _USER_ID)
 
+    def test_a_token_names_the_package_the_run_opened_against(self):
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
+
+        claims = verify_content_token(_KEY, token, now=_NOW)
+
+        self.assertEqual(claims.package_id, _PACKAGE_ID)
+
+    def test_a_token_from_the_old_payload_shape_is_refused(self):
+        """A tab that was open across the deploy holds one of these. Refusing
+        it is what stops its stale CMI model from being written back."""
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
+        payload, signature = _split(token)
+        claims = json.loads(_decode_segment(payload))
+        del claims["p"]
+        stale = _encode_segment(json.dumps(claims).encode("utf-8")) + "." + signature
+
+        with self.assertRaises(InvalidContentToken):
+            verify_content_token(_KEY, stale, now=_NOW)
+
     def test_the_returned_expiry_is_the_one_the_claims_carry(self):
-        token, expires_at = issue_content_token(_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
+        token, expires_at = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
 
         claims = verify_content_token(_KEY, token, now=_NOW)
 
@@ -61,13 +89,20 @@ class TestIssueAndVerify(unittest.TestCase):
         """Long enough that a lesson cannot outlive the token it loaded under."""
         self.assertEqual(TOKEN_LIFETIME_SECONDS, 12 * 60 * 60)
 
-        _, expires_at = issue_content_token(_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
+        _, expires_at = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
 
         self.assertEqual(expires_at, _NOW + TOKEN_LIFETIME_SECONDS)
 
     def test_an_explicit_lifetime_overrides_the_default(self):
         _, expires_at = issue_content_token(
-            _KEY, _TRAINING_ID, _USER_ID, now=_NOW, lifetime_seconds=60
+            _KEY,
+            _TRAINING_ID,
+            _USER_ID,
+            package_id=_PACKAGE_ID,
+            now=_NOW,
+            lifetime_seconds=60,
         )
 
         self.assertEqual(expires_at, _NOW + 60)
@@ -76,7 +111,7 @@ class TestIssueAndVerify(unittest.TestCase):
 class TestExpiry(unittest.TestCase):
     def setUp(self):
         self.token, self.expires_at = issue_content_token(
-            _KEY, _TRAINING_ID, _USER_ID, now=_NOW
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
         )
 
     def test_a_token_is_still_valid_one_second_before_its_expiry(self):
@@ -96,7 +131,9 @@ class TestExpiry(unittest.TestCase):
 
 class TestForgery(unittest.TestCase):
     def setUp(self):
-        self.token, _ = issue_content_token(_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
+        self.token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
 
     def test_a_token_signed_with_another_key_is_refused(self):
         with self.assertRaises(InvalidContentToken):
@@ -152,24 +189,32 @@ class TestGarbageInput(unittest.TestCase):
     def test_a_non_ascii_signature_is_refused_not_a_500(self):
         """hmac.compare_digest raises TypeError rather than answering False,
         and anybody can put a non-ASCII character in a URL."""
-        token, _ = issue_content_token(_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
         payload, _ = _split(token)
         self._assert_only_invalid_content_token(payload + ".sign\u00e9")
 
     def test_a_non_ascii_payload_segment_is_refused_not_a_500(self):
-        token, _ = issue_content_token(_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
         _, signature = _split(token)
         self._assert_only_invalid_content_token("caf\u00e9." + signature)
 
     def test_base64_that_is_not_the_expected_json_is_refused(self):
-        token, _ = issue_content_token(_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
         _, signature = _split(token)
         self._assert_only_invalid_content_token(
             _encode_segment(b"this is not json") + "." + signature
         )
 
     def test_json_of_the_wrong_shape_is_refused(self):
-        token, _ = issue_content_token(_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
         _, signature = _split(token)
         self._assert_only_invalid_content_token(
             _encode_segment(json.dumps(["not", "an", "object"]).encode())
@@ -189,7 +234,9 @@ class TestTokenCarriesNoStoragePrefix(unittest.TestCase):
     """
 
     def setUp(self):
-        self.token, _ = issue_content_token(_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
+        self.token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
 
     def test_the_payload_holds_no_storage_prefix(self):
         payload = _payload(self.token)
@@ -199,13 +246,12 @@ class TestTokenCarriesNoStoragePrefix(unittest.TestCase):
             self.assertNotIn("training/", rendered, msg=f"{key} looks like a prefix")
             self.assertNotIn("/", rendered, msg=f"{key} looks like an object path")
 
-    def test_the_claims_say_who_and_when_and_never_where(self):
-        """The mint time is not the prefix in disguise: it resolves to no
-        file, and the package it gets compared against is read from the
-        course row."""
+    def test_the_claims_name_a_package_by_id_and_never_a_path(self):
+        """A package id resolves to no file on its own -- the prefix behind it
+        is read from the database on every request."""
         names = {field.name for field in dataclasses.fields(ContentTokenClaims)}
 
-        self.assertEqual(names, {"training_id", "user_id", "expires_at", "issued_at"})
+        self.assertEqual(names, {"training_id", "user_id", "expires_at", "package_id"})
 
     def test_the_claims_are_frozen(self):
         claims = verify_content_token(_KEY, self.token, now=_NOW)
@@ -214,40 +260,49 @@ class TestTokenCarriesNoStoragePrefix(unittest.TestCase):
             claims.training_id = 1
 
 
-class TestReadingWhenTheRunBegan(unittest.TestCase):
+class TestReadingTheRunsPackage(unittest.TestCase):
     """A commit posted back on the app origin names the run it came from, and
-    the server reads its mint time from the signature rather than trusting the
-    body -- otherwise a stale tab could just claim to be a fresh one."""
+    the server reads which package that run opened against out of the
+    signature rather than trusting the body -- otherwise a tab left open
+    across a replacement could just claim to be running the current one."""
 
-    def test_the_mint_time_comes_back(self):
-        token, _ = issue_content_token(_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
+    def test_the_package_comes_back(self):
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
 
-        self.assertEqual(read_session_start(_KEY, token), _NOW)
+        self.assertEqual(read_session_package(_KEY, token), _PACKAGE_ID)
 
-    def test_an_expired_token_still_says_when_its_run_began(self):
+    def test_an_expired_token_still_says_which_package_it_ran(self):
         """Here the token is not the credential, and refusing an overrun one
-        would cost the longest sitting its stamp."""
-        token, _ = issue_content_token(_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
+        would cost the longest sitting its last save."""
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
 
-        self.assertEqual(read_session_start(_KEY, token), _NOW)
+        self.assertEqual(read_session_package(_KEY, token), _PACKAGE_ID)
         with self.assertRaises(InvalidContentToken):
             verify_content_token(_KEY, token, now=_NOW + TOKEN_LIFETIME_SECONDS)
 
     def test_a_token_signed_with_another_key_is_refused(self):
-        token, _ = issue_content_token(_OTHER_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
+        token, _ = issue_content_token(
+            _OTHER_KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
 
         with self.assertRaises(InvalidContentToken):
-            read_session_start(_KEY, token)
+            read_session_package(_KEY, token)
 
-    def test_an_altered_mint_time_is_refused(self):
-        token, _ = issue_content_token(_KEY, _TRAINING_ID, _USER_ID, now=_NOW)
+    def test_an_altered_package_is_refused(self):
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
         payload, signature = _split(token)
         claims = json.loads(_decode_segment(payload))
-        claims["i"] = _NOW + 999
+        claims["p"] = _PACKAGE_ID + 1
 
         forged = _encode_segment(json.dumps(claims).encode("utf-8")) + "." + signature
         with self.assertRaises(InvalidContentToken):
-            read_session_start(_KEY, forged)
+            read_session_package(_KEY, forged)
 
 
 if __name__ == "__main__":

@@ -102,6 +102,7 @@ export default function TrainingTrial() {
     session,
     loadError,
     saveFailed,
+    sessionStale,
     frameRef,
     playerSrc,
     writes,
@@ -165,8 +166,9 @@ export default function TrainingTrial() {
           <div className="flex aspect-video flex-col">
             {saveFailed && (
               <div className="border-b bg-destructive/10 px-4 py-2 text-sm">
-                Your progress could not be saved. Keep this tab open; the course
-                saves again automatically.
+                {sessionStale
+                  ? "This course's package was replaced while this page was open. Reload the page to run the new one; this page cannot save any more."
+                  : "Your progress could not be saved. Keep this tab open; the course saves again automatically."}
               </div>
             )}
             <iframe
