@@ -46,7 +46,8 @@ def reports_completion(lesson_status: str | None) -> bool:
     Distinct from next_training_status, which answers where the assignment
     moves. An assignment already DONE moves nowhere, and the run still has to
     count as proof that the course can be completed -- which is exactly the
-    case after a re-upload clears the stamp and leaves the verifier DONE.
+    case after a re-upload installs a new, unstamped package and leaves the
+    verifier DONE.
 
     Args:
         lesson_status (str | None): What the course just reported.

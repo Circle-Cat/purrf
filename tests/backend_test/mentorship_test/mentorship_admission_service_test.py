@@ -26,6 +26,9 @@ from backend.mentorship.mentorship_admission_service import (
 )
 from backend.mentorship.onboarding_training_service import OnboardingTrainingService
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
+from backend.repository.training_course_package_repository import (
+    TrainingCoursePackageRepository,
+)
 from backend.repository.training_course_repository import TrainingCourseRepository
 from backend.repository.training_progress_repository import TrainingProgressRepository
 from backend.repository.training_repository import TrainingRepository
@@ -71,6 +74,7 @@ class MentorshipAdmissionServiceTest(BaseRepositoryTestLib):
                 logger=logging.getLogger(__name__),
                 training_repository=TrainingRepository(),
                 training_course_repository=self.course_repository,
+                training_course_package_repository=TrainingCoursePackageRepository(),
             ),
             mentorship_round_repository=MentorshipRoundRepository(),
         )

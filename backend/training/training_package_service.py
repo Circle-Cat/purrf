@@ -6,9 +6,13 @@ import uuid
 import zipfile
 from datetime import datetime, timezone
 
+from backend.common.mentorship_enums import TrainingPackageState
 from backend.dto.training_course_dto import (
     TrainingCompletionConfigDto,
     TrainingPackageUploadResultDto,
+)
+from backend.entity.training_course_package_entity import (
+    TrainingCoursePackageEntity,
 )
 from backend.training.scorm_manifest import ManifestRejected, parse_driver_config
 from backend.training.scorm_package import PackageRejected, read_package
@@ -19,8 +23,8 @@ class TrainingPackageService:
     """Turning an uploaded zip into a course somebody could learn.
 
     Nothing is overwritten in place. Files go to a fresh prefix, and only once
-    every one of them has landed does the course start pointing at it -- an
-    upload that dies halfway leaves the live course untouched.
+    every one of them has landed does the new row replace the course's LIVE
+    package -- an upload that dies halfway leaves the live package untouched.
     """
 
     def __init__(
@@ -28,6 +32,7 @@ class TrainingPackageService:
         logger,
         training_course_repository,
         training_progress_repository,
+        training_course_package_repository,
         training_storage,
     ):
         """
@@ -37,32 +42,36 @@ class TrainingPackageService:
                 being uploaded to.
             training_progress_repository: Clears resume data for learners who
                 had not finished.
+            training_course_package_repository (TrainingCoursePackageRepository):
+                Records each upload as its own row.
             training_storage (TrainingStorage): Object storage.
         """
         self.logger = logger
         self.training_course_repository = training_course_repository
         self.training_progress_repository = training_progress_repository
+        self.training_course_package_repository = training_course_package_repository
         self.training_storage = training_storage
 
     async def upload_package(
         self, session, course_id: int, archive_bytes: bytes, now: datetime | None = None
     ) -> TrainingPackageUploadResultDto:
-        """Validate a zip, store it, and point the course at it.
+        """Validate a zip, store it, and make it the course's package.
 
         Replacing a package has two consequences the admin was shown before
-        clicking, and both happen here: verification is cleared, because a new
-        export is a new thing and the old proof does not carry over; and resume
-        data is wiped for everyone who had not finished, because the previous
-        package's suspend_data means nothing to the new one and can hang it.
-        Finished records are left alone.
+        clicking, and both happen here: the new package row is born unstamped
+        -- a new export is a new thing, and no proof carries over from the one
+        it replaces -- and resume data is wiped for everyone who had not
+        finished, because the previous package's suspend_data means nothing to
+        the new one and can hang it. Finished records are left alone.
 
         The previous prefix's files are deleted only after the transaction
-        that moves the course onto the new one commits. A content token never
-        carries the prefix -- every asset request looks it up fresh -- so
-        nobody can still be reading the old prefix once the course row has
-        flipped, and deleting beforehand would risk leaving the course
-        pointing at files that a rollback never restores. A delete that fails
-        is logged, not raised: the upload has already succeeded, and the only
+        that replaces the previous LIVE package row with the new one commits.
+        A content token never carries the prefix -- every asset request
+        resolves the course's LIVE package row fresh -- so once that
+        transaction commits, nobody can still resolve to the old prefix, and
+        deleting beforehand would risk a rollback finding the files already
+        gone under a package row that is still live. A delete that fails is
+        logged, not raised: the upload has already succeeded, and the only
         cost is some storage left behind.
 
         Args:
@@ -106,26 +115,47 @@ class TrainingPackageService:
             raise
 
         moment = now or datetime.now(timezone.utc)
-        previous_prefix = course.storage_prefix
 
-        course.storage_prefix = new_prefix
-        course.entry_path = contents.manifest.entry_path
-        course.scorm_version = contents.manifest.scorm_version
-        course.package_uploaded_at = moment
-        if contents.driver_config is not None:
-            course.package_version = contents.driver_config.course_package_version
-            course.reporting_mode = contents.driver_config.reporting
-        else:
-            course.package_version = None
-            course.reporting_mode = None
-        course.verified_completable_at = None
-        course.verified_by_user_id = None
+        previous_package = await self.training_course_package_repository.get_by_state(
+            session, course_id, TrainingPackageState.LIVE
+        )
+        previous_prefix = (
+            previous_package.storage_prefix if previous_package is not None else None
+        )
+        package_version = (
+            contents.driver_config.course_package_version
+            if contents.driver_config is not None
+            else None
+        )
+        reporting_mode = (
+            contents.driver_config.reporting
+            if contents.driver_config is not None
+            else None
+        )
 
         cleared = 0
         if previous_prefix:
             cleared = await self.training_progress_repository.clear_resume_state(
                 session, course_id
             )
+
+        if previous_package is not None:
+            await self.training_course_package_repository.delete(
+                session, previous_package
+            )
+        await self.training_course_package_repository.add(
+            session,
+            TrainingCoursePackageEntity(
+                course_id=course_id,
+                state=TrainingPackageState.LIVE,
+                storage_prefix=new_prefix,
+                entry_path=contents.manifest.entry_path,
+                scorm_version=contents.manifest.scorm_version,
+                package_version=package_version,
+                reporting_mode=reporting_mode,
+                uploaded_at=moment,
+            ),
+        )
 
         await session.commit()
 
@@ -157,8 +187,8 @@ class TrainingPackageService:
             scorm_version=contents.manifest.scorm_version,
             file_count=len(contents.file_names),
             total_bytes=contents.total_uncompressed_bytes,
-            package_version=config.course_package_version if config else None,
-            reporting_mode=config.reporting if config else None,
+            package_version=package_version,
+            reporting_mode=reporting_mode,
             completion_percentage=config.completion_percentage if config else None,
             completes_via_storyline=bool(config and config.storyline_id),
             completion_config_readable=config is not None,
@@ -194,10 +224,14 @@ class TrainingPackageService:
         )
         if course is None:
             raise ValueError(f"No training course with id {course_id}.")
-        if not course.storage_prefix or not course.entry_path:
+
+        package = await self.training_course_package_repository.get_by_state(
+            session, course_id, TrainingPackageState.LIVE
+        )
+        if package is None:
             raise ValueError("This course has no package to read.")
 
-        object_key = f"{course.storage_prefix}{course.entry_path}"
+        object_key = f"{package.storage_prefix}{package.entry_path}"
         stored = self.training_storage.get(object_key)
         if stored is None:
             self.logger.error(
@@ -209,7 +243,7 @@ class TrainingPackageService:
 
         config = parse_driver_config(stored[0])
         return TrainingCompletionConfigDto(
-            verified=course.verified_completable_at is not None,
+            verified=package.verified_completable_at is not None,
             completion_percentage=config.completion_percentage if config else None,
             completes_via_storyline=bool(config and config.storyline_id),
             completion_config_readable=config is not None,
