@@ -50,3 +50,18 @@ py_library(
         "@pypi//fastapi",
     ],
 )
+
+py_library(
+    name = "user_account_controller",
+    srcs = ["user_account_controller.py"],
+    deps = [
+        ":block_service",
+        ":user_account_service",
+        "//backend/common:api_endpoints",
+        "//backend/common:fast_api_response_wrapper",
+        "//backend/common:permissions",
+        "//backend/dto",
+        "//backend/utils:permission_decorators",
+        "@pypi//fastapi",
+    ],
+)
