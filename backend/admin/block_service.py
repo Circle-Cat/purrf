@@ -22,7 +22,11 @@ from backend.common.user_enums import (
     BlockRequestStatus,
     UserEvent,
 )
-from backend.dto.block_dto import BlockPreflightDto, BlockRequestDto
+from backend.dto.block_dto import (
+    BlockPreflightDto,
+    BlockRequestDto,
+    ReviewerOptionDto,
+)
 from backend.notification_management.event_recorder import record_event
 
 
@@ -496,6 +500,34 @@ class BlockService:
         """
         rows = await self._requests.list_pending_for_reviewer(session, reviewer_id)
         return await self._to_dtos(session, rows)
+
+    async def list_user_admins(self, session) -> list[ReviewerOptionDto]:
+        """The people who can be named as reviewer on a block request.
+
+        Reads the same holder lookup every other picker uses, which already
+        excludes blocked accounts (PUR-632). Do not reimplement the query here:
+        naming a reviewer who can never sign in makes the request a dead
+        letter, and that exclusion is exactly what stops it.
+
+        Args:
+            session (AsyncSession): Active database async session.
+
+        Returns:
+            list[ReviewerOptionDto]: Active, unblocked USER_ADMIN holders,
+                by name.
+        """
+        holders = await self._permissions.get_active_users_with_permission(
+            session, Permission.USER_ADMIN.value
+        )
+        return sorted(
+            (
+                ReviewerOptionDto(
+                    user_id=holder.user_id, name=display_name_of(holder)
+                )
+                for holder in holders
+            ),
+            key=lambda option: (option.name, option.user_id),
+        )
 
     # -- helpers ------------------------------------------------------------
 

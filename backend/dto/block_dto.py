@@ -17,6 +17,17 @@ class BlockPreflightDto(BaseDto):
     interview_times: list[datetime]
 
 
+class ReviewerOptionDto(BaseDto):
+    """One pickable reviewer for the "who should decide this" dropdown.
+
+    An id and a name, nothing else: the raiser is choosing a colleague to send
+    a question to, and the account console's own fields are not theirs to see.
+    """
+
+    user_id: int
+    name: str
+
+
 class BlockRequestDto(BaseDto):
     """One block request, named people resolved for display."""
 

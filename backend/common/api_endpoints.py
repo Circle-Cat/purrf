@@ -88,6 +88,14 @@ ADMIN_ACCOUNT_DEACTIVATE_ENDPOINT = "/admin/accounts/{user_id}/deactivate"
 ADMIN_ACCOUNT_REACTIVATE_ENDPOINT = "/admin/accounts/{user_id}/reactivate"
 ADMIN_ACCOUNT_UNBLOCK_ENDPOINT = "/admin/accounts/{user_id}/unblock"
 ADMIN_ACCOUNT_BLOCK_ENDPOINT = "/admin/accounts/{user_id}/block"
+
+# Blocking as a request someone else decides. Not under /admin: the raiser is
+# standing on a domain page and holds no console permission at all.
+BLOCK_PREFLIGHT_ENDPOINT = "/block-preflight/{user_id}"
+BLOCK_REQUESTS_ENDPOINT = "/block-requests"
+BLOCK_REQUEST_REASSIGN_ENDPOINT = "/block-requests/{request_id}/reassign"
+BLOCK_REQUEST_DECIDE_ENDPOINT = "/block-requests/{request_id}/decide"
+ADMIN_USER_ADMINS_ENDPOINT = "/admin/user-admins"
 RECRUITING_JOBS_ENDPOINT = "/recruiting/jobs"
 RECRUITING_JOB_ENDPOINT = "/recruiting/jobs/{job_id}"
 RECRUITING_JOB_SUBMIT_ENDPOINT = "/recruiting/jobs/{job_id}/submit"
