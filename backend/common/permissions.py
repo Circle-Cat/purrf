@@ -38,6 +38,13 @@ class Permission(StrEnum):
     # is the grant.
     TRAINING_ADMIN_READ = "training.admin.read"
     TRAINING_ADMIN_WRITE = "training.admin.write"
+    # The account console: who someone is, what state their account is in,
+    # how they sign in, plus deactivate / reactivate / unblock / block and
+    # deciding block requests. Deliberately separate from PERMISSION_MANAGE,
+    # which is effectively root: every action behind USER_ADMIN is reversible
+    # and its holder count grows with the user base, while PERMISSION_MANAGE
+    # must stay at one or two people forever.
+    USER_ADMIN = "user.admin"
     PERMISSION_MANAGE = "permission.manage"
     SUPER_ADMIN_REVOKE = "super_admin.revoke"
 

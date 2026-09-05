@@ -12,7 +12,7 @@ class TestPermissions(unittest.TestCase):
     # The count is a tripwire: a new permission also needs an entry in
     # permission_descriptions.py. Bump it and write the description.
     def test_catalog_values_are_unique_and_dotted(self):
-        self.assertEqual(len(Permission), 22)
+        self.assertEqual(len(Permission), 23)
         values = [p.value for p in Permission]
         self.assertEqual(len(values), len(set(values)))
         for value in values:
@@ -47,6 +47,19 @@ class TestPermissions(unittest.TestCase):
                 Permission.SYSTEM_SYNC,
             }),
         )
+
+    def test_user_admin_is_not_in_internal_employee_bundle(self):
+        """USER_ADMIN must never be auto-granted on corp sign-in.
+
+        INTERNAL_EMPLOYEE_PERMISSIONS is granted by internal_lifecycle on first
+        corp-email login; putting the account console in it would hand every
+        employee the power to deactivate and block colleagues.
+        """
+        self.assertNotIn(Permission.USER_ADMIN, INTERNAL_EMPLOYEE_PERMISSIONS)
+
+    def test_user_admin_is_not_implied_by_permission_manage(self):
+        """PERMISSION_MANAGE is not a bundle -- only is_super_admin expands."""
+        self.assertIn(Permission.USER_ADMIN, SUPER_ADMIN_PERMISSIONS)
 
 
 if __name__ == "__main__":
