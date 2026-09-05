@@ -177,13 +177,13 @@ class _PackageServiceCase(unittest.IsolatedAsyncioTestCase):
 
         self.package_repository.get_by_state.side_effect = _get_by_state
 
-    def _live_package(self, **overrides) -> TrainingCoursePackageEntity:
+    def _package_in_either_slot(self, **overrides) -> TrainingCoursePackageEntity:
         """A package row, answered for whichever state `get_by_state` is
         asked about -- `return_value` rather than `_slots`, so it does not
         care which state it was called with.
 
         Used by upload tests and most `read_completion_config` tests that
-        just need some row to exist without caring what becomes of it; a
+        just need some row to exist without caring which slot holds it; a
         test that cares which slot was read uses `_slots` instead.
         """
         package = self._package(**overrides)
@@ -730,7 +730,9 @@ class TestReadCompletionConfig(_PackageServiceCase):
 
     async def test_it_reads_the_entry_page_under_the_packages_own_prefix(self):
         self._course()
-        self._live_package(storage_prefix=_LIVE_PREFIX, entry_path=_ENTRY_PATH)
+        self._package_in_either_slot(
+            storage_prefix=_LIVE_PREFIX, entry_path=_ENTRY_PATH
+        )
         self._stored()
 
         await self.service.read_completion_config(self.session, _COURSE_ID)
@@ -763,7 +765,7 @@ class TestReadCompletionConfig(_PackageServiceCase):
 
     async def test_it_reports_what_the_package_requires_before_completion(self):
         self._course()
-        self._live_package()
+        self._package_in_either_slot()
         self._stored()
 
         result = await self.service.read_completion_config(self.session, _COURSE_ID)
@@ -775,7 +777,7 @@ class TestReadCompletionConfig(_PackageServiceCase):
     async def test_a_course_that_only_completes_via_storyline_says_so(self):
         """Finishing the surrounding lessons will not complete such a course."""
         self._course()
-        self._live_package()
+        self._package_in_either_slot()
         self._stored({**_DRIVER_CONFIG, "storylineId": "5xKq"})
 
         result = await self.service.read_completion_config(self.session, _COURSE_ID)
@@ -785,7 +787,7 @@ class TestReadCompletionConfig(_PackageServiceCase):
     async def test_a_package_we_cannot_read_says_so_rather_than_failing(self):
         """Silence here reads as "nothing wrong", which is the whole mistake."""
         self._course()
-        self._live_package()
+        self._package_in_either_slot()
         self._stored(None)
 
         result = await self.service.read_completion_config(self.session, _COURSE_ID)
@@ -802,7 +804,7 @@ class TestReadCompletionConfig(_PackageServiceCase):
         before anybody had finished it.
         """
         self._course()
-        self._live_package(verified_completable_at=_VERIFIED_AT)
+        self._package_in_either_slot(verified_completable_at=_VERIFIED_AT)
         self._stored()
 
         result = await self.service.read_completion_config(self.session, _COURSE_ID)
@@ -811,14 +813,14 @@ class TestReadCompletionConfig(_PackageServiceCase):
 
     async def test_a_course_awaiting_its_trial_run_is_not_verified(self):
         self._course()
-        self._live_package()
+        self._package_in_either_slot()
         self._stored()
 
         result = await self.service.read_completion_config(self.session, _COURSE_ID)
 
         self.assertFalse(result.verified)
 
-    async def test_a_course_with_no_live_package_is_refused(self):
+    async def test_a_course_with_nothing_staged_is_refused(self):
         self._course()
 
         with self.assertRaises(ValueError):
@@ -835,7 +837,7 @@ class TestReadCompletionConfig(_PackageServiceCase):
     async def test_an_entry_page_gone_from_storage_is_a_clean_not_found(self):
         """A missing object is a fault to fix, not a package we cannot read."""
         self._course()
-        self._live_package()
+        self._package_in_either_slot()
         self.storage.get.return_value = None
 
         with self.assertRaises(FileNotFoundError):

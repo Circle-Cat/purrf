@@ -66,6 +66,19 @@ py_test(
 )
 
 py_test(
+    name = "training_publish_integration_test",
+    srcs = ["training_publish_integration_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+        "//backend/training:training_package_service",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)
+
+py_test(
     name = "completion_test",
     srcs = ["completion_test.py"],
     deps = [

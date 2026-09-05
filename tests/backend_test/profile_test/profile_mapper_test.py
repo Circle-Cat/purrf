@@ -163,31 +163,6 @@ class TestProfileMapper(unittest.TestCase):
         self.assertIs(self.mapper._map_training(*hosted).is_hosted, True)
         self.assertIs(self.mapper._map_training(*unhosted).is_hosted, False)
 
-    def test_a_course_with_only_a_staged_package_is_not_hosted(self):
-        """A pending package is invisible to learners, so the profile page
-        must not offer a link into it.
-
-        `has_live_package` -- the third element of the row the repository
-        hands the mapper -- already answers "live", not "any package at
-        all"; this pins that a course whose only package is staged keeps
-        reaching this method as `False`, same as a course with no package.
-        """
-        training = TrainingEntity(
-            training_id=3,
-            user_id=self.users_entity.user_id,
-            category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
-            status=TrainingStatus.IN_PROGRESS,
-            course_id=9,
-        )
-
-        dto = self.mapper.map_to_profile_dto(
-            self.users_entity,
-            None,
-            [(training, "Mentee Onboarding", False)],
-        )
-
-        self.assertFalse(dto.training[0].is_hosted)
-
     def test_the_course_name_reaches_the_wire_as_camel_case(self):
         profile_dto = self.mapper.map_to_profile_dto(
             self.users_entity, self.experience_entity, self.training_rows
