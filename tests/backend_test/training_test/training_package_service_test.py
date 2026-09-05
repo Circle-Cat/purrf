@@ -178,11 +178,13 @@ class _PackageServiceCase(unittest.IsolatedAsyncioTestCase):
         self.package_repository.get_by_state.side_effect = _get_by_state
 
     def _live_package(self, **overrides) -> TrainingCoursePackageEntity:
-        """The row `get_by_state(..., LIVE)` returns for this course.
+        """A package row, answered for whichever state `get_by_state` is
+        asked about -- `return_value` rather than `_slots`, so it does not
+        care which state it was called with.
 
-        Used by `read_completion_config`, which only ever asks for LIVE, and
-        by upload tests that just need some row to exist without caring what
-        becomes of it.
+        Used by upload tests and most `read_completion_config` tests that
+        just need some row to exist without caring what becomes of it; a
+        test that cares which slot was read uses `_slots` instead.
         """
         package = self._package(**overrides)
         self.package_repository.get_by_state.return_value = package
@@ -728,11 +730,26 @@ class TestReadCompletionConfig(_PackageServiceCase):
         await self.service.read_completion_config(self.session, _COURSE_ID)
 
         self.package_repository.get_by_state.assert_awaited_once_with(
-            self.session, _COURSE_ID, TrainingPackageState.LIVE
+            self.session, _COURSE_ID, TrainingPackageState.PENDING
         )
         self.storage.get.assert_called_once()
         key = self.storage.get.call_args.args[0]
         self.assertEqual(key, f"{_LIVE_PREFIX}{_ENTRY_PATH}")
+
+    async def test_the_completion_config_describes_the_staged_package(self):
+        # The trial page reads this before running, and what it is about to
+        # run is the staged package.
+        self._slots(live=self._package(package_id=1, storage_prefix="training/9/live/"),
+                    pending=self._package(package_id=2,
+                                          state=TrainingPackageState.PENDING,
+                                          storage_prefix="training/9/staged/"))
+        self._stored()
+
+        await self.service.read_completion_config(self.session, _COURSE_ID)
+
+        self.assertTrue(
+            self.storage.get.call_args.args[0].startswith("training/9/staged/")
+        )
 
     async def test_it_reports_what_the_package_requires_before_completion(self):
         self._course()

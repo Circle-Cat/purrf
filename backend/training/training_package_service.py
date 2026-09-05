@@ -312,12 +312,14 @@ class TrainingPackageService:
     async def read_completion_config(
         self, session, course_id: int
     ) -> TrainingCompletionConfigDto:
-        """What the course's stored package says it takes to finish it.
+        """What the course's staged package says it takes to finish it.
 
-        The upload dialog shows this once and is then gone. Whoever is about
-        to spend an hour proving the course can be completed needs it before
-        they start, so it is re-read from the package on request instead of
-        copied onto the course row where an overwrite could leave it stale.
+        Reads PENDING, not LIVE: the trial page shows this right before
+        running a trial, and what the trial is about to run is the staged
+        package, not whatever is already live. The upload dialog shows this
+        once and is then gone, so it is re-read from the package on request
+        instead of copied onto the course row where an overwrite could leave
+        it stale.
 
         Args:
             session: The active async database session.
@@ -329,7 +331,7 @@ class TrainingPackageService:
             understand.
 
         Raises:
-            ValueError: No such course, or it has no package.
+            ValueError: No such course, or it has nothing staged.
             FileNotFoundError: The stored entry page is gone.
         """
         course = await self.training_course_repository.get_course_by_id(
@@ -339,10 +341,10 @@ class TrainingPackageService:
             raise ValueError(f"No training course with id {course_id}.")
 
         package = await self.training_course_package_repository.get_by_state(
-            session, course_id, TrainingPackageState.LIVE
+            session, course_id, TrainingPackageState.PENDING
         )
         if package is None:
-            raise ValueError("This course has no package to read.")
+            raise ValueError("This course has no staged package to read.")
 
         object_key = f"{package.storage_prefix}{package.entry_path}"
         stored = self.training_storage.get(object_key)
