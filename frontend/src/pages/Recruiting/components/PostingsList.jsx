@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import PostingStatusBadges from "@/pages/Recruiting/components/PostingStatusBadges";
+import { unavailablePersonLabel } from "@/pages/Recruiting/components/personLabel";
 
 /**
  * Read-only, browse-only table of postings — status Badge, "Recruiter"
@@ -37,7 +38,7 @@ const PostingsList = ({ jobs, ownersById = {}, onRowClick }) => (
                     {i === 0 ? " " : ", "}
                     {ownersById[oid] == null ? (
                       <span className="text-red-600">
-                        {`#${oid} — no permission, remove`}
+                        {unavailablePersonLabel(oid)}
                       </span>
                     ) : (
                       ownersById[oid]

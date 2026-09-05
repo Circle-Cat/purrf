@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import { Badge } from "@/components/ui/badge";
+import { unavailablePersonLabel } from "@/pages/Recruiting/components/personLabel";
 
 /** Human label for a stage key, e.g. "recruiter_screening" -> "Recruiter screening". */
 const stageLabel = (key) =>
@@ -7,22 +8,23 @@ const stageLabel = (key) =>
     .replace(/_/g, " ")
     .replace(/^\w/, (c) => c.toUpperCase());
 
-/** true when id isn't in pool: lost (or never had) the permission that made them pickable. */
+/** true when id isn't in pool: not selectable by this viewer, for reasons the viewer may not be told. */
 const isUnresolved = (pool, id) => !pool.some((p) => p.userId === id);
 
-/** "Name (#id)" when resolved, else "#id — no permission, remove". */
+/** "Name (#id)" when resolved, else "User {id} — unavailable". */
 const personLabel = (pool, id) => {
   if (id == null) return null;
   const u = pool.find((p) => p.userId === id);
-  return u ? `${u.name} (#${id})` : `#${id} — no permission, remove`;
+  return u ? `${u.name} (#${id})` : unavailablePersonLabel(id);
 };
 
 /**
  * Reviewer-facing readable summary of a posting's interview pipeline: owners
  * and the ordered stages with sessions and assignee tags.
  * Owner and default-assignee ids are resolved to names via the provided
- * pools. An id no longer in its pool (permission revoked) renders in red
- * with a 'no permission, remove' suffix instead of a resolved name.
+ * pools. An id no longer in its pool renders in red with an 'unavailable'
+ * suffix instead of a resolved name; the label does not say why it didn't
+ * resolve.
  *
  * @param {{pipelineConfig?: {ownerIds?: number[], ownerId?: number,
  *          stages?: object[]},
