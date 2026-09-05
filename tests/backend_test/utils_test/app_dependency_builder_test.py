@@ -615,7 +615,6 @@ class TestAppDependencyBuilder(TestCase):
             recruiting_controller=ANY,
             application_controller=ANY,
             board_controller=ANY,
-            blacklist_controller=ANY,
             evaluation_controller=ANY,
             audit_controller=ANY,
             recruiting_notification_controller=ANY,

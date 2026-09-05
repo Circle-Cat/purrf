@@ -173,24 +173,6 @@ py_test(
 )
 
 py_test(
-    name = "blacklist_service_test",
-    srcs = ["blacklist_service_test.py"],
-    deps = [
-        "//backend/entity:entities",
-        "//backend/recruiting",
-    ],
-)
-
-py_test(
-    name = "blacklist_controller_test",
-    srcs = ["blacklist_controller_test.py"],
-    deps = [
-        "//backend/dto",
-        "//backend/recruiting",
-    ],
-)
-
-py_test(
     name = "evaluation_controller_test",
     srcs = ["evaluation_controller_test.py"],
     deps = [

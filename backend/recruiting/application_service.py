@@ -618,7 +618,7 @@ class ApplicationService:
         function of the recorded answers and not of which write recorded them.
 
         The blacklist is deliberately not re-checked here: it is swept
-        separately across every application (see ``BlacklistService``), and
+        separately across every application (see ``BlockService``), and
         that sweep, not an applicant's own edit, is what should act on it.
 
         Args:

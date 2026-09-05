@@ -27,7 +27,6 @@ class Permission(StrEnum):
     RECRUITING_INTERVIEW_EVALUATE = "recruiting.interview.evaluate"
     RECRUITING_APPLICATION_ADVANCE = "recruiting.application.advance"
     RECRUITING_APPLICATION_READ_ALL = "recruiting.application.read.all"
-    RECRUITING_BLACKLIST_WRITE = "recruiting.blacklist.write"
     RECRUITING_AUDIT_READ = "recruiting.audit.read"
     # Entering the company holiday calendar and adjusting balances by hand.
     # Reading the calendar needs no permission -- it is reference information
