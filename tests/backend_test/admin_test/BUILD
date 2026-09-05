@@ -56,3 +56,17 @@ py_test(
         "@pypi//httpx",
     ],
 )
+
+py_test(
+    name = "user_account_controller_test",
+    srcs = ["user_account_controller_test.py"],
+    deps = [
+        "//backend/admin:user_account_controller",
+        "//backend/common:api_endpoints",
+        "//backend/common:fast_api_error_handler",
+        "//backend/common:permissions",
+        "//backend/dto",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+    ],
+)

@@ -77,6 +77,17 @@ ADMIN_AUDIT_PERMISSION_CHANGES_ENDPOINT = "/admin/audit/permission-changes"
 ADMIN_USER_GRANT_PERMISSIONS_ENDPOINT = "/admin/users/{user_id}/permissions/grant"
 ADMIN_USER_REVOKE_PERMISSIONS_ENDPOINT = "/admin/users/{user_id}/permissions/revoke"
 ADMIN_USER_SUPER_ADMIN_ENDPOINT = "/admin/users/{user_id}/super-admin"
+
+# The account console. Separate from the permission routes above on purpose:
+# the two pages coexist, and USER_ADMIN gates these without touching those.
+# The three writes are single-verb POSTs rather than noun POST/DELETE pairs --
+# they are one-way state transitions with no resource to create or destroy.
+ADMIN_ACCOUNTS_ENDPOINT = "/admin/accounts"
+ADMIN_ACCOUNT_SIGN_IN_METHODS_ENDPOINT = "/admin/accounts/{user_id}/sign-in-methods"
+ADMIN_ACCOUNT_DEACTIVATE_ENDPOINT = "/admin/accounts/{user_id}/deactivate"
+ADMIN_ACCOUNT_REACTIVATE_ENDPOINT = "/admin/accounts/{user_id}/reactivate"
+ADMIN_ACCOUNT_UNBLOCK_ENDPOINT = "/admin/accounts/{user_id}/unblock"
+ADMIN_ACCOUNT_BLOCK_ENDPOINT = "/admin/accounts/{user_id}/block"
 RECRUITING_JOBS_ENDPOINT = "/recruiting/jobs"
 RECRUITING_JOB_ENDPOINT = "/recruiting/jobs/{job_id}"
 RECRUITING_JOB_SUBMIT_ENDPOINT = "/recruiting/jobs/{job_id}/submit"
