@@ -53,9 +53,7 @@ class TestPublishingOverALivePackageEndToEnd(BaseRepositoryTestLib):
             training_storage=self.storage,
         )
 
-        self.course = TrainingCourseEntity(
-            name="Cat Care Fundamentals", is_active=True
-        )
+        self.course = TrainingCourseEntity(name="Cat Care Fundamentals", is_active=True)
         await self.insert_entities([self.course])
 
         now = datetime.now(timezone.utc)
@@ -86,9 +84,7 @@ class TestPublishingOverALivePackageEndToEnd(BaseRepositoryTestLib):
         )
 
     async def test_the_staged_package_takes_the_slot_the_outgoing_one_vacates(self):
-        result = await self.service.publish_package(
-            self.session, self.course.course_id
-        )
+        result = await self.service.publish_package(self.session, self.course.course_id)
 
         self.assertEqual(result.package_id, self.incoming.package_id)
         live = await self._slot(TrainingPackageState.LIVE)
