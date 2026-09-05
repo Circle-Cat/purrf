@@ -6,6 +6,7 @@ py_library(
     name = "recruiting",
     srcs = glob(["*.py"]),
     deps = [
+        "//backend/admin:block_service",
         "//backend/common:api_endpoints",
         "//backend/common:communication_enums",
         "//backend/common:exceptions",
