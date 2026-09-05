@@ -126,7 +126,7 @@ class UserPermissionsRepository:
             # offering it as a pick or passing it through a validator creates a
             # dead letter. is_active alone does not cover this: blocking
             # deliberately does not touch is_active -- the two flags stay
-            # orthogonal (see the account-console design, "语义").
+            # orthogonal (see PUR-632).
             UsersEntity.is_blocked.is_(False),
             or_(UsersEntity.is_super_admin.is_(True), grant_exists),
         )
