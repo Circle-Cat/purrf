@@ -17,7 +17,11 @@ from datetime import datetime, timezone
 from backend.common.name_utils import display_name_of
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage, RecruitingEvent
-from backend.common.user_enums import BlockRequestStatus
+from backend.common.user_enums import (
+    USER_SUBJECT_TYPE,
+    BlockRequestStatus,
+    UserEvent,
+)
 from backend.dto.block_dto import BlockPreflightDto, BlockRequestDto
 from backend.notification_management.event_recorder import record_event
 
@@ -128,6 +132,19 @@ async def apply_block_kernel(
             actor_id,
             via="blacklisted",
         )
+
+    # The user-subject counterpart of the per-application events above. It
+    # reaches nobody by design (see user_recipient_resolvers) -- it exists so
+    # the account's own timeline says when and why this happened, which the
+    # application events cannot: they belong to applications.
+    await record_event(
+        session,
+        subject_type=USER_SUBJECT_TYPE,
+        subject_id=user_id,
+        actor_id=actor_id,
+        event_type=UserEvent.BLOCKED,
+        details={"reason": reason},
+    )
 
 
 async def _freeze_current_submission(
@@ -316,6 +333,14 @@ class BlockService:
             reason=reason,
             reviewer_id=reviewer_id,
         )
+        await record_event(
+            session,
+            subject_type=USER_SUBJECT_TYPE,
+            subject_id=user_id,
+            actor_id=actor_id,
+            event_type=UserEvent.BLOCK_REQUESTED,
+            details={"requestId": row.request_id},
+        )
         await session.commit()
         return await self._to_dto(session, row)
 
@@ -347,7 +372,19 @@ class BlockService:
             raise PermissionError("Only the person who raised a request may reassign it")
         await self._validate_reviewer(session, reviewer_id, raiser_id=actor_id)
 
+        previous_reviewer_id = row.reviewer_id
         await self._requests.set_reviewer(session, request_id, reviewer_id)
+        await record_event(
+            session,
+            subject_type=USER_SUBJECT_TYPE,
+            subject_id=row.target_user_id,
+            actor_id=actor_id,
+            event_type=UserEvent.BLOCK_REQUEST_REASSIGNED,
+            details={
+                "requestId": request_id,
+                "previousReviewerId": previous_reviewer_id,
+            },
+        )
         await session.commit()
         return await self._to_dto(session, await self._requests.get(session, request_id))
 
@@ -394,6 +431,14 @@ class BlockService:
             ),
             decided_by=actor_id,
             decision_note=note,
+        )
+        await record_event(
+            session,
+            subject_type=USER_SUBJECT_TYPE,
+            subject_id=row.target_user_id,
+            actor_id=actor_id,
+            event_type=UserEvent.BLOCK_REQUEST_DECIDED,
+            details={"requestId": request_id, "approved": approved},
         )
         await session.commit()
         return await self._to_dto(session, await self._requests.get(session, request_id))

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.admin.block_service import BlockService
 from backend.common.recruiting_enums import ApplicationStage
+from backend.common.user_enums import USER_SUBJECT_TYPE, UserEvent
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_submission_entity import ApplicationSubmissionEntity
 from backend.entity.users_entity import UsersEntity
@@ -125,6 +126,26 @@ class _BlockServiceTestBase(unittest.IsolatedAsyncioTestCase):
         self.sub_repo.update = AsyncMock(side_effect=lambda _s, row: row)
         return by_id
 
+    def _application_events(self):
+        """The per-application events only.
+
+        apply_block also records one user-subject event, which reaches nobody
+        and exists so the account's own timeline says what happened. Counting
+        both together would make every sweep assertion read one too high.
+        """
+        return [
+            call
+            for call in self.record_event.call_args_list
+            if call.kwargs["subject_type"] == "application"
+        ]
+
+    def _user_events(self):
+        return [
+            call
+            for call in self.record_event.call_args_list
+            if call.kwargs["subject_type"] == USER_SUBJECT_TYPE
+        ]
+
     async def _apply(self, reason="Fabricated credentials"):
         await self.service.apply_block(
             self.session, actor_id=ACTOR, user_id=TARGET, reason=reason
@@ -200,15 +221,18 @@ class TestBlockServiceApply(_BlockServiceTestBase):
 
         await self._apply()
 
-        self.record_event.assert_awaited_once_with(
-            self.session,
-            subject_type="application",
-            subject_id=10,
-            actor_id=ACTOR,
-            event_type="recruiting.blacklisted",
-            details={
-                "fromStage": ApplicationStage.TECH.value,
-                "reason": "Fabricated credentials",
+        self.assertEqual(len(self._application_events()), 1)
+        self.assertEqual(
+            self._application_events()[0].kwargs,
+            {
+                "subject_type": "application",
+                "subject_id": 10,
+                "actor_id": ACTOR,
+                "event_type": "recruiting.blacklisted",
+                "details": {
+                    "fromStage": ApplicationStage.TECH.value,
+                    "reason": "Fabricated credentials",
+                },
             },
         )
 
@@ -242,9 +266,9 @@ class TestBlockServiceApply(_BlockServiceTestBase):
         self.assertEqual(rejected.current_round, 4)
 
         self.app_repo.list_by_user.assert_awaited_once_with(self.session, TARGET)
-        self.assertEqual(self.record_event.call_count, 4)
+        self.assertEqual(len(self._application_events()), 4)
         by_app = {
-            call.kwargs["subject_id"]: call for call in self.record_event.call_args_list
+            call.kwargs["subject_id"]: call for call in self._application_events()
         }
         self.assertEqual(
             by_app[12].kwargs["details"]["fromStage"], ApplicationStage.HIRED.value
@@ -267,8 +291,36 @@ class TestBlockServiceApply(_BlockServiceTestBase):
         self.assertEqual(prior.stage, ApplicationStage.REJECTED)
         self.assertEqual(prior.tags, {"blacklisted": True})
         self.assertEqual(prior.current_round, 5)
-        self.assertEqual(self.record_event.call_count, 1)
-        self.assertEqual(self.record_event.call_args_list[0].kwargs["subject_id"], 10)
+        self.assertEqual(len(self._application_events()), 1)
+        self.assertEqual(self._application_events()[0].kwargs["subject_id"], 10)
+
+    async def test_records_a_user_subject_event_for_the_account_timeline(self):
+        """The per-application events belong to applications; the account's own
+        timeline needs one of its own to say when and why it was blocked."""
+        self._seed([self._application(10)])
+
+        await self._apply(reason="second no-show")
+
+        self.assertEqual(len(self._user_events()), 1)
+        self.assertEqual(
+            self._user_events()[0].kwargs,
+            {
+                "subject_type": USER_SUBJECT_TYPE,
+                "subject_id": TARGET,
+                "actor_id": ACTOR,
+                "event_type": UserEvent.BLOCKED,
+                "details": {"reason": "second no-show"},
+            },
+        )
+
+    async def test_the_user_event_is_recorded_even_with_no_applications(self):
+        """An org-level block need not have any recruiting footprint at all."""
+        self._seed([])
+
+        await self._apply()
+
+        self.assertEqual(len(self._application_events()), 0)
+        self.assertEqual(len(self._user_events()), 1)
 
     # -- the meeting sweep --------------------------------------------------
 

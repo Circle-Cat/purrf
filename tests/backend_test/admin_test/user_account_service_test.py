@@ -129,8 +129,8 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
     async def test_unblock_is_idempotent(self):
         self.users.get_user_by_user_id.return_value = _user(TARGET)
 
-        await self.service.unblock(self.session, TARGET)
-        await self.service.unblock(self.session, TARGET)
+        await self.service.unblock(self.session, actor_id=ME, user_id=TARGET)
+        await self.service.unblock(self.session, actor_id=ME, user_id=TARGET)
 
         self.assertEqual(self.users.clear_block.await_count, 2)
         self.assertEqual(self.session.commit.await_count, 2)
@@ -139,7 +139,7 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
         self.users.get_user_by_user_id.return_value = None
 
         with self.assertRaises(ValueError):
-            await self.service.unblock(self.session, 999999)
+            await self.service.unblock(self.session, actor_id=ME, user_id=999999)
 
     # ---- list -------------------------------------------------------------
 

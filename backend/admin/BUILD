@@ -31,7 +31,9 @@ py_library(
     deps = [
         "//backend/common:identity_type",
         "//backend/common:name_utils",
+        "//backend/common:user_enums",
         "//backend/dto",
+        "//backend/notification_management:event_recorder",
     ],
 )
 

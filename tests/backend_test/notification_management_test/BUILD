@@ -125,3 +125,15 @@ py_test(
         "@pypi//httpx",
     ],
 )
+
+py_test(
+    name = "user_recipient_resolvers_test",
+    srcs = ["user_recipient_resolvers_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:user_enums",
+        "//backend/notification_management:recipient_registry",
+        "//backend/user_identity:user_recipient_resolvers",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)

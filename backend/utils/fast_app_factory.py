@@ -10,6 +10,10 @@ from backend.mentorship import (  # noqa: F401 (registers)
 )
 from backend.recruiting import notification_renderers  # noqa: F401 (registers)
 from backend.recruiting import recipient_resolvers  # noqa: F401 (registers)
+from backend.user_identity import (  # noqa: F401 (registers)
+    notification_renderers as user_notification_renderers,
+    user_recipient_resolvers,
+)
 from backend.utils.auth_middleware import AuthMiddleware
 
 

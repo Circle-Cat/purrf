@@ -17,6 +17,7 @@ py_test(
     deps = [
         "//backend/admin:block_service",
         "//backend/common:recruiting_enums",
+        "//backend/common:user_enums",
         "//backend/entity:entities",
     ],
 )
