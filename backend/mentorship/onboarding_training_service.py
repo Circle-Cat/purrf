@@ -6,6 +6,7 @@ from backend.common.training_links import external_link_for
 from backend.common.mentorship_enums import (
     ParticipantRole,
     TrainingCategory,
+    TrainingPackageState,
     TrainingStatus,
 )
 from backend.common.recruiting_enums import JobKind
@@ -28,17 +29,26 @@ class OnboardingTrainingService:
     the first time the user registers for a round.
     """
 
-    def __init__(self, logger, training_repository, training_course_repository):
+    def __init__(
+        self,
+        logger,
+        training_repository,
+        training_course_repository,
+        training_course_package_repository,
+    ):
         """
         Args:
             logger: Application logger.
             training_repository (TrainingRepository): Training data access.
             training_course_repository (TrainingCourseRepository): Resolves the
                 category into the course the row must point at.
+            training_course_package_repository (TrainingCoursePackageRepository):
+                Reads whether the course has a live package.
         """
         self.logger = logger
         self.training_repo = training_repository
         self.training_course_repo = training_course_repository
+        self.training_course_package_repo = training_course_package_repository
 
     async def ensure_for_admitted(
         self, session: AsyncSession, user_id: int, job
@@ -110,15 +120,17 @@ class OnboardingTrainingService:
         )
         course = await self._course_for(session=session, category=category)
         course_id = course.course_id if course is not None else None
+        has_live_package = course is not None and (
+            await self.training_course_package_repo.get_by_state(
+                session, course.course_id, TrainingPackageState.LIVE
+            )
+            is not None
+        )
         # Nothing once we serve the package ourselves. The profile page prefers
         # a stored link over the in-app course, so a link written here after an
         # upload is what the learner follows -- and nothing out there is ever
         # recorded against this row.
-        link = (
-            None
-            if course is not None and course.storage_prefix
-            else (external_link_for(category))
-        )
+        link = None if has_live_package else (external_link_for(category))
 
         if existing is None:
             created = await self.training_repo.upsert_training(

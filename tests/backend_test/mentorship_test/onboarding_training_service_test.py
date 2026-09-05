@@ -6,6 +6,7 @@ from backend.mentorship.onboarding_training_service import OnboardingTrainingSer
 from backend.common.mentorship_enums import (
     ParticipantRole,
     TrainingCategory,
+    TrainingPackageState,
     TrainingStatus,
 )
 from backend.common.recruiting_enums import JobKind
@@ -23,7 +24,7 @@ def _job(kind=JobKind.ACTIVITY, mentorship_role=ParticipantRole.MENTEE):
     return job
 
 
-def _seed_course(category, storage_prefix=None):
+def _seed_course(category):
     """The catalogue row the migration seeds for a category."""
     ids = {
         TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING: _MENTEE_COURSE_ID,
@@ -34,7 +35,6 @@ def _seed_course(category, storage_prefix=None):
         name=category.value,
         category=category,
         is_active=True,
-        storage_prefix=storage_prefix,
     )
 
 
@@ -51,10 +51,13 @@ class TestOnboardingTrainingService(unittest.IsolatedAsyncioTestCase):
         self.mock_course_repo.get_course_by_category = AsyncMock(
             side_effect=lambda session, category: _seed_course(category)
         )
+        self.mock_package_repo = MagicMock()
+        self.mock_package_repo.get_by_state = AsyncMock(return_value=None)
         self.service = OnboardingTrainingService(
             logger=self.mock_logger,
             training_repository=self.mock_training_repo,
             training_course_repository=self.mock_course_repo,
+            training_course_package_repository=self.mock_package_repo,
         )
 
     async def test_creates_mentee_onboarding_with_no_deadline(self):
@@ -82,9 +85,11 @@ class TestOnboardingTrainingService(unittest.IsolatedAsyncioTestCase):
         link written here after an upload is what a learner follows -- and
         nothing they do out there is ever recorded.
         """
-        self.mock_course_repo.get_course_by_category = AsyncMock(
-            side_effect=lambda session, category: _seed_course(
-                category, storage_prefix="training/5/abc/"
+        self.mock_package_repo.get_by_state = AsyncMock(
+            side_effect=lambda session, course_id, state: (
+                MagicMock(course_id=course_id)
+                if course_id == _MENTEE_COURSE_ID and state == TrainingPackageState.LIVE
+                else None
             )
         )
 
@@ -98,6 +103,27 @@ class TestOnboardingTrainingService(unittest.IsolatedAsyncioTestCase):
         entity = self.mock_training_repo.upsert_training.await_args.kwargs["entity"]
         self.assertIsNone(entity.link)
         self.assertEqual(entity.course_id, _MENTEE_COURSE_ID)
+
+    async def test_a_course_with_only_a_pending_package_still_gets_the_external_link(
+        self,
+    ):
+        """A pending package has not been published: nothing about it should
+        change what the learner is offered."""
+        self.mock_package_repo.get_by_state = AsyncMock(
+            side_effect=lambda session, course_id, state: (
+                None if state == TrainingPackageState.LIVE else MagicMock()
+            )
+        )
+
+        with patch.dict(
+            "os.environ", {"MENTORSHIP_MENTEE_ONBOARDING_LINK": "https://mentee"}
+        ):
+            await self.service.ensure_for_admitted(
+                session=self.mock_session, user_id=7, job=_job()
+            )
+
+        entity = self.mock_training_repo.upsert_training.await_args.kwargs["entity"]
+        self.assertEqual(entity.link, "https://mentee")
 
     async def test_creates_mentor_onboarding_with_the_mentor_link(self):
         with patch.dict(

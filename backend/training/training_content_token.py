@@ -43,7 +43,7 @@ class ContentTokenClaims:
     expires_at: int
     # When this session was minted. Not the package it was minted for -- that
     # would be the prefix this token refuses to carry -- but enough for the
-    # server to compare a run against the course's own package_uploaded_at
+    # server to compare a run against the live package's own uploaded_at
     # and tell a run of the current package from one of its predecessor.
     issued_at: int
 

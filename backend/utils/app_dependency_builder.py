@@ -186,6 +186,9 @@ from backend.repository.training_course_repository import (
 from backend.repository.training_progress_repository import (
     TrainingProgressRepository,
 )
+from backend.repository.training_course_package_repository import (
+    TrainingCoursePackageRepository,
+)
 from backend.repository.training_repository import TrainingRepository
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from backend.repository.mentorship_pairs_repository import MentorshipPairsRepository
@@ -554,12 +557,14 @@ class AppDependencyBuilder:
         self.user_permissions_repository = UserPermissionsRepository()
         self.training_repository = TrainingRepository()
         self.training_course_repository = TrainingCourseRepository()
+        self.training_course_package_repository = TrainingCoursePackageRepository()
         # Built here, next to its repositories, because both ApplicationService
         # and BoardService take it and are constructed further down.
         self.onboarding_training_service = OnboardingTrainingService(
             logger=self.logger,
             training_repository=self.training_repository,
             training_course_repository=self.training_course_repository,
+            training_course_package_repository=self.training_course_package_repository,
         )
         self.user_identity_service = UserIdentityService(
             logger=self.logger,
@@ -952,11 +957,13 @@ class AppDependencyBuilder:
         self.training_course_service = TrainingCourseService(
             logger=self.logger,
             training_course_repository=self.training_course_repository,
+            training_course_package_repository=self.training_course_package_repository,
         )
         self.training_assignment_service = TrainingAssignmentService(
             logger=self.logger,
             training_course_repository=self.training_course_repository,
             training_repository=self.training_repository,
+            training_course_package_repository=self.training_course_package_repository,
         )
         self.training_progress_repository = TrainingProgressRepository()
         self.training_storage = TrainingStorage(
@@ -974,6 +981,7 @@ class AppDependencyBuilder:
             logger=self.logger,
             training_course_repository=self.training_course_repository,
             training_progress_repository=self.training_progress_repository,
+            training_course_package_repository=self.training_course_package_repository,
             training_storage=self.training_storage,
         )
         self.training_content_service = TrainingContentService(
@@ -981,7 +989,7 @@ class AppDependencyBuilder:
             signing_key=os.getenv(TRAINING_TOKEN_SIGNING_KEY),
             content_host=self.training_content_host,
             training_repository=self.training_repository,
-            training_course_repository=self.training_course_repository,
+            training_course_package_repository=self.training_course_package_repository,
             training_progress_repository=self.training_progress_repository,
             training_storage=self.training_storage,
         )
@@ -990,7 +998,7 @@ class AppDependencyBuilder:
             signing_key=os.getenv(TRAINING_TOKEN_SIGNING_KEY),
             training_repository=self.training_repository,
             training_progress_repository=self.training_progress_repository,
-            training_course_repository=self.training_course_repository,
+            training_course_package_repository=self.training_course_package_repository,
         )
         self.training_admin_controller = TrainingAdminController(
             self.training_course_service,

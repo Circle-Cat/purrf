@@ -5,7 +5,11 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock
 
 from backend.common.exceptions import ConflictError
-from backend.common.mentorship_enums import TrainingCategory, TrainingStatus
+from backend.common.mentorship_enums import (
+    TrainingCategory,
+    TrainingPackageState,
+    TrainingStatus,
+)
 from backend.dto.training_course_dto import TrainingAssignmentRequestDto
 from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.training_entity import TrainingEntity
@@ -22,8 +26,6 @@ def _course(**overrides):
         "name": "Mentee Onboarding",
         "category": TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
         "is_active": True,
-        "storage_prefix": "training/3/abc/",
-        "verified_completable_at": _VERIFIED_AT,
     }
     return TrainingCourseEntity(**{**defaults, **overrides})
 
@@ -40,10 +42,15 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.trainings.get_training_by_user_id_and_category = AsyncMock(
             return_value=None
         )
+        self.package_repository = MagicMock()
+        self.package_repository.get_by_state = AsyncMock(
+            return_value=MagicMock(verified_completable_at=_VERIFIED_AT)
+        )
         self.service = TrainingAssignmentService(
             logger=MagicMock(),
             training_course_repository=self.courses,
             training_repository=self.trainings,
+            training_course_package_repository=self.package_repository,
         )
         self.payload = TrainingAssignmentRequestDto(user_id=11, course_id=3)
         # Aliases matching the repositories' role in start_trial's tests.
@@ -78,9 +85,9 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(added.course_id, 3)
         self.assertEqual([step[0] for step in self.calls], ["add", "flush", "commit"])
 
-    async def test_unverified_course_is_refused(self):
+    async def test_refuses_to_assign_a_course_whose_live_package_is_unverified(self):
         """The refusal is the whole point of the gate."""
-        self.courses.get_course_by_id.return_value = _course(
+        self.package_repository.get_by_state.return_value = MagicMock(
             verified_completable_at=None
         )
 
@@ -90,10 +97,27 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.session.add.assert_not_called()
         self.session.commit.assert_not_awaited()
 
+    async def test_refuses_to_assign_a_course_with_no_live_package(self):
+        self.package_repository.get_by_state.return_value = None
+
+        with self.assertRaises(ConflictError):
+            await self.service.assign(self.session, self.payload)
+
+        self.session.add.assert_not_called()
+        self.session.commit.assert_not_awaited()
+
+    async def test_assigns_when_the_live_package_carries_a_stamp(self):
+        result = await self.service.assign(self.session, self.payload)
+
+        self.assertTrue(result.created)
+        self.package_repository.get_by_state.assert_awaited_once_with(
+            self.session, 3, TrainingPackageState.LIVE
+        )
+
     async def test_deactivated_course_is_refused(self):
         self.courses.get_course_by_id.return_value = _course(is_active=False)
 
-        with self.assertRaises(ConflictError):
+        with self.assertRaisesRegex(ConflictError, "deactivated"):
             await self.service.assign(self.session, self.payload)
 
         self.session.add.assert_not_called()
@@ -173,8 +197,9 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
             course_id=_COURSE_ID,
             name="Mentor Onboarding",
             is_active=True,
-            storage_prefix="training/3/abc/",
-            verified_completable_at=None,
+        )
+        self.package_repository.get_by_state.return_value = MagicMock(
+            verified_completable_at=None
         )
 
         result = await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)
@@ -182,6 +207,9 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.user_id, _USER_ID)
         self.assertEqual(result.course_id, _COURSE_ID)
         self.assertTrue(result.created)
+        self.package_repository.get_by_state.assert_awaited_once_with(
+            self.session, _COURSE_ID, TrainingPackageState.LIVE
+        )
 
     async def test_a_second_trial_reuses_the_first_assignment(self):
         """So a verifier who stops and comes back resumes where they were."""
@@ -196,8 +224,11 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_trial_on_a_course_with_no_package_is_refused(self):
         self.course_repository.get_course_by_id.return_value = TrainingCourseEntity(
-            course_id=_COURSE_ID, name="Empty", is_active=True, storage_prefix=None
+            course_id=_COURSE_ID,
+            name="Empty",
+            is_active=True,
         )
+        self.package_repository.get_by_state.return_value = None
 
         with self.assertRaises(ConflictError):
             await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)
@@ -209,7 +240,6 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
             name="Mentor Onboarding",
             category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
             is_active=True,
-            storage_prefix="training/3/abc/",
         )
 
         await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)
@@ -224,7 +254,6 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
             course_id=_COURSE_ID,
             name="Mentor Onboarding",
             is_active=False,
-            storage_prefix="training/3/abc/",
         )
 
         result = await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)

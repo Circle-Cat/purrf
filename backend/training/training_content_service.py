@@ -6,6 +6,7 @@ import posixpath
 import time
 from dataclasses import dataclass
 
+from backend.common.mentorship_enums import TrainingPackageState
 from backend.dto.training_course_dto import TrainingProgressDto, TrainingSessionDto
 from backend.training.byte_range import (
     RangeSpec,
@@ -130,7 +131,7 @@ class TrainingContentService:
         signing_key,
         content_host,
         training_repository,
-        training_course_repository,
+        training_course_package_repository,
         training_progress_repository,
         training_storage,
     ):
@@ -141,8 +142,8 @@ class TrainingContentService:
             content_host (str | None): TRAINING_CONTENT_HOST.
             training_repository (TrainingRepository): The assignment a token
                 is issued against.
-            training_course_repository (TrainingCourseRepository): Resolves the
-                live storage prefix.
+            training_course_package_repository (TrainingCoursePackageRepository):
+                Resolves the LIVE package a course serves content from.
             training_progress_repository (TrainingProgressRepository): The
                 learner's stored progress, seeded back into the page.
             training_storage (TrainingStorage): Object storage.
@@ -151,7 +152,7 @@ class TrainingContentService:
         self.signing_key = signing_key
         self.content_host = content_host
         self.training_repository = training_repository
-        self.training_course_repository = training_course_repository
+        self.training_course_package_repository = training_course_package_repository
         self.training_progress_repository = training_progress_repository
         self.training_storage = training_storage
         # training_id -> (course_id, monotonic deadline). Not keyed on the
@@ -192,12 +193,12 @@ class TrainingContentService:
         if assignment.course_id is None:
             raise ValueError("This training has no course attached.")
 
-        course = await self.training_course_repository.get_course_by_id(
-            session, assignment.course_id
+        package = await self.training_course_package_repository.get_by_state(
+            session, assignment.course_id, TrainingPackageState.LIVE
         )
-        if course is None or not course.storage_prefix:
+        if package is None:
             raise ValueError("This course has no package to open.")
-        if not course.entry_path:
+        if not package.entry_path:
             raise ValueError("This course has no entry page to open.")
 
         progress = await self.training_progress_repository.get_by_training_id(
@@ -212,14 +213,14 @@ class TrainingContentService:
             "prefix %s); token expires at %s",
             user_id,
             training_id,
-            course.course_id,
-            course.storage_prefix,
+            assignment.course_id,
+            package.storage_prefix,
             expires_at,
         )
         return TrainingSessionDto(
             content_base_url=f"https://{self.content_host}/p/{token}/",
             session_token=token,
-            entry_path=course.entry_path,
+            entry_path=package.entry_path,
             player_path=PLAYER_PATH,
             expires_at=expires_at,
             progress=_progress_payload(progress),
@@ -312,7 +313,7 @@ class TrainingContentService:
         # one against the package could only ever serve a file that arrived
         # some other way -- exactly the collision the reservation prevents.
         # Ahead of the course lookup: the player has to load even when the
-        # course row has no package yet.
+        # course has no package yet.
         if normalised.startswith(RESERVED_PREFIX):
             known = PLAYER_ASSETS.get(normalised)
             if known is None:
@@ -330,10 +331,10 @@ class TrainingContentService:
 
         course_id = await self._course_id_behind(session, claims.training_id)
 
-        course = await self.training_course_repository.get_course_by_id(
-            session, course_id
+        package = await self.training_course_package_repository.get_by_state(
+            session, course_id, TrainingPackageState.LIVE
         )
-        if course is None or not course.storage_prefix:
+        if package is None:
             self.logger.warning(
                 "[TrainingContentService] course %s behind training %s has no "
                 "package to serve",
@@ -342,7 +343,7 @@ class TrainingContentService:
             )
             raise FileNotFoundError("This course has no package.")
 
-        object_key = posixpath.join(course.storage_prefix, normalised)
+        object_key = posixpath.join(package.storage_prefix, normalised)
         if byte_range is not None:
             return await self._read_range(claims.training_id, object_key, byte_range)
 

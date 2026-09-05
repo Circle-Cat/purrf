@@ -13,7 +13,7 @@ beside it.
 """
 
 from backend.common.exceptions import ConflictError
-from backend.common.mentorship_enums import TrainingStatus
+from backend.common.mentorship_enums import TrainingPackageState, TrainingStatus
 from backend.dto.training_course_dto import (
     TrainingAssignmentRequestDto,
     TrainingAssignmentResultDto,
@@ -24,7 +24,13 @@ from backend.entity.training_entity import TrainingEntity
 class TrainingAssignmentService:
     """The one gate between the admin side and the learner side."""
 
-    def __init__(self, logger, training_course_repository, training_repository):
+    def __init__(
+        self,
+        logger,
+        training_course_repository,
+        training_repository,
+        training_course_package_repository,
+    ):
         """
         Args:
             logger: Injected logger.
@@ -32,10 +38,14 @@ class TrainingAssignmentService:
                 course being assigned.
             training_repository (TrainingRepository): Reads and writes the
                 assignment rows.
+            training_course_package_repository (TrainingCoursePackageRepository):
+                Reads the course's live package, which is what decides
+                assignability now.
         """
         self.logger = logger
         self.training_course_repository = training_course_repository
         self.training_repository = training_repository
+        self.training_course_package_repository = training_course_package_repository
 
     async def assign(
         self, session, payload: TrainingAssignmentRequestDto
@@ -70,7 +80,10 @@ class TrainingAssignmentService:
         if course is None:
             raise ValueError(f"No training course with id {payload.course_id}.")
 
-        if course.verified_completable_at is None:
+        package = await self.training_course_package_repository.get_by_state(
+            session, course.course_id, TrainingPackageState.LIVE
+        )
+        if package is None or package.verified_completable_at is None:
             raise ConflictError(
                 "This course has not been run to completion yet, so it cannot "
                 "be assigned. Start a trial run and finish it first."
@@ -150,7 +163,10 @@ class TrainingAssignmentService:
         if course is None:
             raise ValueError(f"No training course with id {course_id}.")
 
-        if course.storage_prefix is None:
+        package = await self.training_course_package_repository.get_by_state(
+            session, course_id, TrainingPackageState.LIVE
+        )
+        if package is None:
             raise ConflictError(
                 "This course has no package uploaded yet, so there is nothing to run."
             )

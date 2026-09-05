@@ -6,6 +6,7 @@ py_library(
     name = "training_course_service",
     srcs = ["training_course_service.py"],
     deps = [
+        "//backend/common:mentorship_enums",
         "//backend/common:training_links",
         "//backend/dto",
         "//backend/entity:entities",
@@ -74,7 +75,9 @@ py_library(
         ":scorm_manifest",
         ":scorm_package",
         ":training_storage",
+        "//backend/common:mentorship_enums",
         "//backend/dto",
+        "//backend/entity:entities",
         "//backend/repository:repositories",
     ],
 )
@@ -88,6 +91,7 @@ py_library(
         ":scorm_package",
         ":training_content_token",
         ":training_storage",
+        "//backend/common:mentorship_enums",
         "//backend/dto",
         "//backend/repository:repositories",
     ],

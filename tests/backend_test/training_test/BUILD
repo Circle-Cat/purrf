@@ -50,6 +50,22 @@ py_test(
 )
 
 py_test(
+    name = "training_verification_stamp_integration_test",
+    srcs = ["training_verification_stamp_integration_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/dto",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+        "//backend/training:training_content_token",
+        "//backend/training:training_course_service",
+        "//backend/training:training_progress_service",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)
+
+py_test(
     name = "completion_test",
     srcs = ["completion_test.py"],
     deps = [

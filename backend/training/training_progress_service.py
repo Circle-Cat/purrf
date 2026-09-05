@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
 from backend.common.exceptions import ConflictError
-from backend.common.mentorship_enums import TrainingStatus
+from backend.common.mentorship_enums import TrainingPackageState, TrainingStatus
 from backend.dto.training_course_dto import TrainingProgressSaveDto
 from backend.training.completion import next_training_status, reports_completion
 from backend.training.training_content_token import (
@@ -149,7 +149,7 @@ class TrainingProgressService:
         signing_key,
         training_repository,
         training_progress_repository,
-        training_course_repository,
+        training_course_package_repository,
     ):
         """
         Args:
@@ -159,14 +159,15 @@ class TrainingProgressService:
                 nothing here issues one.
             training_repository (TrainingRepository): The assignment being saved.
             training_progress_repository (TrainingProgressRepository): The row.
-            training_course_repository (TrainingCourseRepository): Reads the
-                course being finished, to stamp it on first completion.
+            training_course_package_repository (TrainingCoursePackageRepository):
+                Reads the LIVE package being finished, to stamp it on first
+                completion.
         """
         self.logger = logger
         self.signing_key = signing_key
         self.training_repository = training_repository
         self.training_progress_repository = training_progress_repository
-        self.training_course_repository = training_course_repository
+        self.training_course_package_repository = training_course_package_repository
 
     async def save(
         self,
@@ -353,9 +354,9 @@ class TrainingProgressService:
                 assignment.completed_timestamp = datetime.now(timezone.utc)
 
         # Keyed on what the course reported, not on where the assignment
-        # moved. A re-upload clears the stamp and leaves the verifier's row
-        # DONE, so their next run moves nothing -- and it is the run most
-        # likely to be proving the replacement package.
+        # moved. A re-upload installs a new, unstamped package while leaving
+        # the verifier's row DONE, so their next run moves nothing -- and it
+        # is the run most likely to be proving the replacement package.
         course_verified = None
         if reports_completion(cmi.get(_LESSON_STATUS)):
             course_verified = await self._stamp_if_unverified(
@@ -372,22 +373,23 @@ class TrainingProgressService:
     ) -> bool | None:
         """Record that somebody with the grant ran this course to the end.
 
-        Holding an assignment is not enough. Replacing a package clears the
-        stamp and keeps every existing assignment, so after a re-upload any
-        assignee could post a finishing lesson_status with no course involved
-        and unlock the new package for the whole organisation. Reporting your
-        own assignment DONE stays open to anybody -- a course reports its own
-        completion and it costs nobody but the learner -- but the stamp that
-        makes a course assignable needs TRAINING_ADMIN_WRITE.
+        Holding an assignment is not enough. Replacing a package installs a
+        new, unstamped row and keeps every existing assignment, so after a
+        re-upload any assignee could post a finishing lesson_status with no
+        course involved and unlock the new package for the whole
+        organisation. Reporting your own assignment DONE stays open to
+        anybody -- a course reports its own completion and it costs nobody
+        but the learner -- but the stamp that makes a course assignable needs
+        TRAINING_ADMIN_WRITE.
 
         Returns:
             bool | None: Whether the course is verified, for the page to show.
             None when this commit did not look -- no course attached, no
-            grant, or no such course -- rather than False, which would claim
+            grant, or no live package -- rather than False, which would claim
             an answer nothing here went and got.
 
         Raises:
-            ConflictError: The run began before the course's current package.
+            ConflictError: The run began before the package's current upload.
         """
         if assignment.course_id is None:
             return None
@@ -399,10 +401,10 @@ class TrainingProgressService:
                 assignment.course_id,
             )
             return None
-        course = await self.training_course_repository.get_course_by_id(
-            session, assignment.course_id
+        package = await self.training_course_package_repository.get_by_state(
+            session, assignment.course_id, TrainingPackageState.LIVE
         )
-        if course is None:
+        if package is None:
             return None
 
         started_at = self._session_started_at(session_token)
@@ -414,14 +416,11 @@ class TrainingProgressService:
                 "[TrainingProgressService] user %s finished course %s from a "
                 "commit that names no content session; leaving the stamp as it is",
                 user_id,
-                course.course_id,
+                assignment.course_id,
             )
-            return course.verified_completable_at is not None
+            return package.verified_completable_at is not None
 
-        if (
-            course.package_uploaded_at is not None
-            and started_at < course.package_uploaded_at
-        ):
+        if package.uploaded_at is not None and started_at < package.uploaded_at:
             # The tab was open across a replacement. Its in-memory CMI model
             # still holds the old package's finishing lesson_status, and the
             # driver re-commits the whole model every twenty seconds -- so
@@ -433,23 +432,23 @@ class TrainingProgressService:
                 "[TrainingProgressService] refused a completion for course %s "
                 "from user %s: the run began at %s, before the current package "
                 "landed at %s",
-                course.course_id,
+                assignment.course_id,
                 user_id,
                 started_at,
-                course.package_uploaded_at,
+                package.uploaded_at,
             )
             raise ConflictError(
                 "This course's package was replaced while this page was open. "
                 "Reload the page to run the new one."
             )
 
-        if course.verified_completable_at is not None:
+        if package.verified_completable_at is not None:
             return True
-        course.verified_completable_at = datetime.now(timezone.utc)
-        course.verified_by_user_id = user_id
+        package.verified_completable_at = datetime.now(timezone.utc)
+        package.verified_by_user_id = user_id
         self.logger.info(
             "[TrainingProgressService] course %s verified completable by user %s",
-            course.course_id,
+            assignment.course_id,
             user_id,
         )
         return True
@@ -461,8 +460,8 @@ class TrainingProgressService:
         posts the commit. It is read for its mint time only -- the caller
         already authenticated on the app origin -- so an expired one still
         answers, and the prefix it deliberately never carries is not wanted
-        here either: the package it is compared against comes from the course
-        row.
+        here either: the package it is compared against comes from the
+        package row.
         """
         if not isinstance(session_token, str) or not session_token:
             return None

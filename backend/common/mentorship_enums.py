@@ -92,6 +92,17 @@ class ScormVersion(str, Enum):
     SCORM_2004 = "2004"
 
 
+class TrainingPackageState(str, Enum):
+    """Which slot a course package occupies.
+
+    A course serves its live package and nothing else. A pending one has been
+    uploaded but not published, and only a verifier ever reaches it.
+    """
+
+    LIVE = "live"
+    PENDING = "pending"
+
+
 class TrainingStatus(str, Enum):
     TO_DO = "to_do"
     IN_PROGRESS = "in_progress"

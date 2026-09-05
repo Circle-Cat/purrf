@@ -15,8 +15,10 @@ from backend.dto.base_request_dto import BaseRequestDto
 class TrainingCourseState(StrEnum):
     """What the course list shows in its Status column.
 
-    Derived from ``storage_prefix`` and ``verified_completable_at``, never
-    stored, so the admin page and the assignment check cannot disagree.
+    Derived from a course's live package row, never stored: VERIFIED or
+    NEEDS_TRIAL_RUN when one exists, depending on whether it carries a
+    verification stamp; EXTERNAL_LINK or NO_PACKAGE when it does not,
+    depending on whether the course's category resolves a link.
     """
 
     # The only state that can be assigned.
@@ -129,7 +131,7 @@ class TrainingProgressSaveDto(BaseDto):
     status: TrainingStatus
     # Whether the course carries its verification stamp, answered only by a
     # commit that reported completion -- the one path that already has the
-    # course row in hand. None on every other commit, which is most of them:
+    # package row in hand. None on every other commit, which is most of them:
     # the heartbeat arrives every twenty seconds and often stores nothing, so
     # it must not grow a query. The trial page needs this because the
     # assignment's own status cannot stand in for it: a verifier re-running a
