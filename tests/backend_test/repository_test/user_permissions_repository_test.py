@@ -21,14 +21,18 @@ class TestUserPermissionsRepository(BaseRepositoryTestLib):
         self.admin = self._make_user("admin")
         await self.insert_entities([self.u1, self.u2, self.admin])
 
-    def _make_user(self, tag):
+    def _make_user(
+        self, tag, *, is_active=True, is_blocked=False, is_super_admin=False
+    ):
         return UsersEntity(
             first_name=tag,
             last_name="T",
             timezone="UTC",
             timezone_updated_at=datetime.now(timezone.utc),
             communication_channel=CommunicationMethod.EMAIL,
-            is_active=True,
+            is_active=is_active,
+            is_blocked=is_blocked,
+            is_super_admin=is_super_admin,
             updated_timestamp=datetime.now(timezone.utc),
         )
 
@@ -95,6 +99,52 @@ class TestUserPermissionsRepository(BaseRepositoryTestLib):
 
         self.assertIn(active_sa.user_id, user_ids)
         self.assertNotIn(inactive_sa.user_id, user_ids)
+
+    async def test_blocked_holder_is_excluded(self):
+        """A blocked holder can never sign in, so offering them as a pick
+        creates a dead letter: the job/request lands on someone unreachable."""
+        perm = f"approve.{uuid.uuid4().hex[:8]}"
+        blocked = self._make_user("blocked", is_active=True, is_blocked=True)
+        await self.insert_entities([blocked])
+        await self.repo.grant(self.session, blocked.user_id, [perm], "admin")
+
+        users = await self.repo.get_active_users_with_permission(self.session, perm)
+
+        self.assertNotIn(blocked.user_id, {u.user_id for u in users})
+
+    async def test_blocked_super_admin_is_excluded(self):
+        """The super-admin branch is an OR, so it must be gated too."""
+        perm = f"approve.{uuid.uuid4().hex[:8]}"
+        blocked_sa = self._make_user(
+            "blocked_sa", is_active=True, is_blocked=True, is_super_admin=True
+        )
+        await self.insert_entities([blocked_sa])
+
+        users = await self.repo.get_active_users_with_permission(self.session, perm)
+
+        self.assertNotIn(blocked_sa.user_id, {u.user_id for u in users})
+
+    async def test_active_unblocked_holder_still_returned(self):
+        """Non-regression: the existing behaviour is unchanged for clean rows."""
+        perm = f"approve.{uuid.uuid4().hex[:8]}"
+        clean = self._make_user("clean", is_active=True, is_blocked=False)
+        await self.insert_entities([clean])
+        await self.repo.grant(self.session, clean.user_id, [perm], "admin")
+
+        users = await self.repo.get_active_users_with_permission(self.session, perm)
+
+        self.assertIn(clean.user_id, {u.user_id for u in users})
+
+    async def test_deactivated_holder_still_excluded(self):
+        """Non-regression: is_active filtering must not be lost."""
+        perm = f"approve.{uuid.uuid4().hex[:8]}"
+        gone = self._make_user("gone", is_active=False, is_blocked=False)
+        await self.insert_entities([gone])
+        await self.repo.grant(self.session, gone.user_id, [perm], "admin")
+
+        users = await self.repo.get_active_users_with_permission(self.session, perm)
+
+        self.assertNotIn(gone.user_id, {u.user_id for u in users})
 
     async def test_list_audit_filters_and_paginates(self):
         await self.repo.grant(
