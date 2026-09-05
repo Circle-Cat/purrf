@@ -1,6 +1,10 @@
 import unittest
 from unittest.mock import MagicMock, patch, AsyncMock
 from fastapi import FastAPI, APIRouter
+from backend.common.api_endpoints import (
+    ADMIN_ACCOUNTS_ENDPOINT,
+    BLOCK_REQUESTS_ENDPOINT,
+)
 from backend.utils.fast_app_factory import FastAppFactory
 
 
@@ -26,6 +30,8 @@ class TestFastAppFactory(unittest.TestCase):
             mentorship_admin_controller=self.mock_controller,
             email_management_controller=self.mock_controller,
             permission_admin_controller=self.mock_controller,
+            user_account_controller=self.mock_controller,
+            block_controller=self.mock_controller,
             recruiting_controller=self.mock_controller,
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
@@ -112,6 +118,8 @@ class TestFastAppFactory(unittest.TestCase):
             mentorship_admin_controller=self.mock_controller,
             email_management_controller=self.mock_controller,
             permission_admin_controller=self.mock_controller,
+            user_account_controller=self.mock_controller,
+            block_controller=self.mock_controller,
             recruiting_controller=recruiting,
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
@@ -162,6 +170,8 @@ class TestFastAppFactory(unittest.TestCase):
             mentorship_admin_controller=self.mock_controller,
             email_management_controller=self.mock_controller,
             permission_admin_controller=self.mock_controller,
+            user_account_controller=self.mock_controller,
+            block_controller=self.mock_controller,
             recruiting_controller=self.mock_controller,
             application_controller=application,
             board_controller=self.mock_controller,
@@ -215,6 +225,8 @@ class TestFastAppFactory(unittest.TestCase):
             mentorship_admin_controller=self.mock_controller,
             email_management_controller=self.mock_controller,
             permission_admin_controller=self.mock_controller,
+            user_account_controller=self.mock_controller,
+            block_controller=self.mock_controller,
             recruiting_controller=self.mock_controller,
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
@@ -265,6 +277,8 @@ class TestFastAppFactory(unittest.TestCase):
             mentorship_admin_controller=self.mock_controller,
             email_management_controller=self.mock_controller,
             permission_admin_controller=self.mock_controller,
+            user_account_controller=self.mock_controller,
+            block_controller=self.mock_controller,
             recruiting_controller=self.mock_controller,
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
@@ -315,6 +329,8 @@ class TestFastAppFactory(unittest.TestCase):
             mentorship_admin_controller=self.mock_controller,
             email_management_controller=self.mock_controller,
             permission_admin_controller=self.mock_controller,
+            user_account_controller=self.mock_controller,
+            block_controller=self.mock_controller,
             recruiting_controller=self.mock_controller,
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
@@ -367,6 +383,8 @@ class TestFastAppFactory(unittest.TestCase):
             mentorship_admin_controller=self.mock_controller,
             email_management_controller=self.mock_controller,
             permission_admin_controller=self.mock_controller,
+            user_account_controller=self.mock_controller,
+            block_controller=self.mock_controller,
             recruiting_controller=self.mock_controller,
             application_controller=self.mock_controller,
             board_controller=board,
@@ -420,6 +438,8 @@ class TestFastAppFactory(unittest.TestCase):
             mentorship_admin_controller=self.mock_controller,
             email_management_controller=self.mock_controller,
             permission_admin_controller=self.mock_controller,
+            user_account_controller=self.mock_controller,
+            block_controller=self.mock_controller,
             recruiting_controller=self.mock_controller,
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
@@ -472,6 +492,8 @@ class TestFastAppFactory(unittest.TestCase):
             mentorship_admin_controller=self.mock_controller,
             email_management_controller=self.mock_controller,
             permission_admin_controller=self.mock_controller,
+            user_account_controller=self.mock_controller,
+            block_controller=self.mock_controller,
             recruiting_controller=self.mock_controller,
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
@@ -533,6 +555,8 @@ class TestFastAppFactory(unittest.TestCase):
             mentorship_admin_controller=self.mock_controller,
             email_management_controller=self.mock_controller,
             permission_admin_controller=self.mock_controller,
+            user_account_controller=self.mock_controller,
+            block_controller=self.mock_controller,
             recruiting_controller=self.mock_controller,
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
@@ -595,6 +619,8 @@ class TestFastAppFactory(unittest.TestCase):
             mentorship_admin_controller=self.mock_controller,
             email_management_controller=self.mock_controller,
             permission_admin_controller=self.mock_controller,
+            user_account_controller=self.mock_controller,
+            block_controller=self.mock_controller,
             recruiting_controller=self.mock_controller,
             application_controller=application_controller,
             board_controller=board_controller,
@@ -680,6 +706,8 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
             mentorship_admin_controller=self.mock_controller,
             email_management_controller=self.mock_controller,
             permission_admin_controller=self.mock_controller,
+            user_account_controller=self.mock_controller,
+            block_controller=self.mock_controller,
             recruiting_controller=self.mock_controller,
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
@@ -710,6 +738,75 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
             pass
 
         self.mock_database.close.assert_awaited_once()
+
+
+class TestAccountConsoleRoutes(unittest.TestCase):
+    """The console's routers reach the app under /api, or the whole thing is
+    unreachable while every unit test stays green."""
+
+    def test_account_console_routers_are_mounted(self):
+        controller = MagicMock()
+        controller.router = APIRouter()
+
+        account_router = APIRouter()
+
+        @account_router.get(ADMIN_ACCOUNTS_ENDPOINT)
+        async def _accounts():  # pragma: no cover - route shape only
+            return None
+
+        block_router = APIRouter()
+
+        @block_router.get(BLOCK_REQUESTS_ENDPOINT)
+        async def _requests():  # pragma: no cover - route shape only
+            return None
+
+        account_controller = MagicMock()
+        account_controller.router = account_router
+        block_controller = MagicMock()
+        block_controller.router = block_router
+
+        factory = FastAppFactory(
+            authentication_controller=controller,
+            authentication_service=MagicMock(),
+            user_identity_service=MagicMock(),
+            user_permissions_repository=MagicMock(),
+            notification_controller=controller,
+            historical_controller=controller,
+            consumer_controller=controller,
+            internal_activity_controller=controller,
+            profile_controller=controller,
+            mentorship_controller=controller,
+            mentorship_admin_controller=controller,
+            email_management_controller=controller,
+            permission_admin_controller=controller,
+            user_account_controller=account_controller,
+            block_controller=block_controller,
+            recruiting_controller=controller,
+            application_controller=controller,
+            board_controller=controller,
+            blacklist_controller=controller,
+            evaluation_controller=controller,
+            audit_controller=controller,
+            recruiting_notification_controller=controller,
+            leave_admin_controller=controller,
+            training_admin_controller=controller,
+            training_content_controller=controller,
+            training_content_host=None,
+            leave_job_controller=controller,
+            leave_request_controller=controller,
+            leave_calendar_controller=controller,
+            notification_delivery_controller=controller,
+            notification_publisher=MagicMock(),
+            notification_topic_path="projects/p/topics/t",
+            launchdarkly_client=MagicMock(),
+            database=MagicMock(),
+            logger=MagicMock(),
+        )
+
+        paths = {route.path for route in factory.create_app().routes}
+
+        self.assertIn(f"/api{ADMIN_ACCOUNTS_ENDPOINT}", paths)
+        self.assertIn(f"/api{BLOCK_REQUESTS_ENDPOINT}", paths)
 
 
 if __name__ == "__main__":

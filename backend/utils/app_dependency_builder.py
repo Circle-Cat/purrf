@@ -92,7 +92,11 @@ from backend.authentication.email_management_controller import (
     EmailManagementController,
 )
 from backend.admin.permission_admin_service import PermissionAdminService
+from backend.admin.block_controller import BlockController
+from backend.admin.block_service import BlockService
 from backend.admin.permission_admin_controller import PermissionAdminController
+from backend.admin.user_account_controller import UserAccountController
+from backend.admin.user_account_service import UserAccountService
 from backend.repository.job_repository import JobRepository
 from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.event_repository import EventRepository
@@ -178,6 +182,7 @@ from backend.repository.email_message_repository import EmailMessageRepository
 from backend.common.gmail_client import GmailClient
 from backend.communication.email_conversation_service import EmailConversationService
 from backend.communication.meeting_scheduling_service import MeetingSchedulingService
+from backend.repository.block_request_repository import BlockRequestRepository
 from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.repository.experience_repository import ExperienceRepository
 from backend.repository.training_course_repository import (
@@ -555,6 +560,7 @@ class AppDependencyBuilder:
         )
         self.user_identities_repository = UserIdentitiesRepository()
         self.user_permissions_repository = UserPermissionsRepository()
+        self.block_request_repository = BlockRequestRepository()
         self.training_repository = TrainingRepository()
         self.training_course_repository = TrainingCourseRepository()
         self.training_course_package_repository = TrainingCoursePackageRepository()
@@ -889,6 +895,32 @@ class AppDependencyBuilder:
             self.database,
             self.interview_scheduling_service,
         )
+        self.user_account_service = UserAccountService(
+            self.users_repository,
+            self.user_emails_repository,
+            self.user_identities_repository,
+            self.block_request_repository,
+            logger=self.logger,
+        )
+        self.block_service = BlockService(
+            self.users_repository,
+            self.application_repository,
+            self.application_submission_repository,
+            self.application_interview_repository,
+            self.interview_scheduling_service,
+            self.block_request_repository,
+            self.user_permissions_repository,
+            logger=self.logger,
+        )
+        self.user_account_controller = UserAccountController(
+            self.user_account_service,
+            self.block_service,
+            self.database,
+        )
+        self.block_controller = BlockController(
+            self.block_service,
+            self.database,
+        )
         self.blacklist_service = BlacklistService(
             self.users_repository, self.user_emails_repository
         )
@@ -1045,6 +1077,8 @@ class AppDependencyBuilder:
             mentorship_admin_controller=self.mentorship_admin_controller,
             email_management_controller=self.email_management_controller,
             permission_admin_controller=self.permission_admin_controller,
+            user_account_controller=self.user_account_controller,
+            block_controller=self.block_controller,
             recruiting_controller=self.recruiting_controller,
             application_controller=self.application_controller,
             board_controller=self.board_controller,

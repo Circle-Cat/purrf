@@ -40,6 +40,8 @@ class FastAppFactory:
         mentorship_admin_controller,
         email_management_controller,
         permission_admin_controller,
+        user_account_controller,
+        block_controller,
         recruiting_controller,
         application_controller,
         board_controller,
@@ -112,6 +114,8 @@ class FastAppFactory:
         self.mentorship_admin_controller = mentorship_admin_controller
         self.email_management_controller = email_management_controller
         self.permission_admin_controller = permission_admin_controller
+        self.user_account_controller = user_account_controller
+        self.block_controller = block_controller
         self.recruiting_controller = recruiting_controller
         self.application_controller = application_controller
         self.board_controller = board_controller
@@ -214,6 +218,8 @@ class FastAppFactory:
         app.include_router(self.mentorship_admin_controller.router, prefix="/api")
         app.include_router(self.email_management_controller.router, prefix="/api")
         app.include_router(self.permission_admin_controller.router, prefix="/api")
+        app.include_router(self.user_account_controller.router, prefix="/api")
+        app.include_router(self.block_controller.router, prefix="/api")
         app.include_router(self.recruiting_controller.router, prefix="/api")
         app.include_router(self.application_controller.router, prefix="/api")
         app.include_router(self.board_controller.router, prefix="/api")
