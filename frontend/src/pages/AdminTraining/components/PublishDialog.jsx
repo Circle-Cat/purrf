@@ -79,13 +79,13 @@ export default function PublishDialog({
             {unfinishedCount} learners in progress will restart from the
             beginning. {completedCount} completed records are untouched.
           </p>
+          <p>
+            Anyone with the course open right now will see it stop loading
+            until they reload.
+          </p>
           {isLive && (
-            <p>
-              Anyone with the course open right now will see it stop loading
-              until they reload.
-            </p>
+            <p>{currentName} is deleted and cannot be brought back.</p>
           )}
-          <p>{currentName} is deleted and cannot be brought back.</p>
         </div>
         <DialogFooter>
           <Button

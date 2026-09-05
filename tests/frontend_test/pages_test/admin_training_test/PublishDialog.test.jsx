@@ -60,7 +60,7 @@ describe("PublishDialog", () => {
     ).toBeInTheDocument();
   });
 
-  it("says the staged package becomes the course's package when nothing is live yet, and drops the mid-session line", () => {
+  it("says the staged package becomes the course's package when nothing is live yet, and drops the deletion line since there is no outgoing package", () => {
     render(
       <PublishDialog
         course={{
@@ -81,7 +81,10 @@ describe("PublishDialog", () => {
       screen.getByText("RaOvlxxJ becomes the package this course serves."),
     ).toBeInTheDocument();
     expect(
-      screen.queryByText(/see it stop loading until they reload/),
+      screen.getByText(/see it stop loading until they reload/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/is deleted and cannot be brought back/),
     ).not.toBeInTheDocument();
   });
 

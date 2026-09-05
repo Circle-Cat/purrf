@@ -416,6 +416,41 @@ describe("CourseTable staged sub-row", () => {
     expect(api.publishPackage).not.toHaveBeenCalled();
   });
 
+  it("opens the publish dialog from a verified staged package, then publishes and refetches", async () => {
+    api.publishPackage.mockResolvedValue({ data: {} });
+    const onCoursesChanged = vi.fn();
+    renderTable(
+      [
+        staged({
+          assignedCount: 48,
+          unfinishedCount: 3,
+          staged: {
+            packageId: 2,
+            packageVersion: "RaOvlxxJ",
+            uploadedAt: "2026-09-05T03:41:00Z",
+            verifiedCompletableAt: "2026-09-05T04:10:00Z",
+          },
+        }),
+      ],
+      onCoursesChanged,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Publish" }));
+
+    expect(
+      screen.getByText(
+        "RaOvlxxJ replaces qPpo9zHD for everyone on this course.",
+      ),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /publish package/i }),
+    );
+
+    await waitFor(() => expect(api.publishPackage).toHaveBeenCalledWith(9));
+    expect(onCoursesChanged).toHaveBeenCalledTimes(1);
+  });
+
   it("names the staged package without a version when it has none, instead of leaving a gap", () => {
     renderTable([
       staged({
