@@ -20,6 +20,7 @@ import {
 import {
   assignCourse,
   discardPackage,
+  publishPackage,
   updateCourse,
   uploadPackage,
 } from "@/api/trainingApi";
@@ -27,6 +28,7 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { formatDateTimeWithZone, resolveViewerTimezone } from "@/utils/dateTime";
 import AssignDialog from "@/pages/AdminTraining/components/AssignDialog";
 import DeactivateDialog from "@/pages/AdminTraining/components/DeactivateDialog";
+import PublishDialog from "@/pages/AdminTraining/components/PublishDialog";
 import UploadPackageDialog from "@/pages/AdminTraining/components/UploadPackageDialog";
 
 // Only the two live states with a hosted package get a dot -- External link
@@ -219,9 +221,8 @@ function StagedRow({ course, onDiscard, onPublish }) {
  * `null`. Assign and Upload follow the same shape.
  *
  * The staged sub-row's Publish button follows that same shape through
- * `setPublishing`, but its dialog does not exist yet -- a later task adds
- * the paired `publishing` state read and renders `<PublishDialog>` here,
- * the same way `deactivating` drives `DeactivateDialog` above.
+ * `publishing` / `setPublishing`, driving `<PublishDialog>` the same way
+ * `deactivating` drives `DeactivateDialog` above.
  *
  * @param {{courses: Array<Object>, onCoursesChanged: () => (void|Promise<void>)}} props
  *   `courses` are `TrainingCourseDto`-shaped rows; `onCoursesChanged` refetches them.
@@ -230,11 +231,7 @@ export default function CourseTable({ courses, onCoursesChanged }) {
   const [deactivating, setDeactivating] = useState(null);
   const [uploading, setUploading] = useState(null);
   const [assigning, setAssigning] = useState(null);
-  // Named and shaped like the state above so a later task can attach
-  // `<PublishDialog>` here without touching anything else in this file --
-  // the read side is unused until that dialog exists, so it stays unnamed
-  // here rather than tripping the unused-var lint rule.
-  const [, setPublishing] = useState(null);
+  const [publishing, setPublishing] = useState(null);
 
   const handleActivate = async (course) => {
     try {
@@ -278,6 +275,19 @@ export default function CourseTable({ courses, onCoursesChanged }) {
   const handleDiscard = async (course) => {
     try {
       await discardPackage(course.courseId);
+      await onCoursesChanged?.();
+    } catch (error) {
+      toast.error(error.message);
+    }
+  };
+
+  // Moves the staged package into the live slot; the dialog already told
+  // the admin what that costs. Same refetch-on-success rule as every
+  // mutation above -- counts like `assignedCount` only the server knows.
+  const handleConfirmPublish = async () => {
+    try {
+      await publishPackage(publishing.courseId);
+      setPublishing(null);
       await onCoursesChanged?.();
     } catch (error) {
       toast.error(error.message);
@@ -360,6 +370,14 @@ export default function CourseTable({ courses, onCoursesChanged }) {
           open
           onOpenChange={(open) => !open && setAssigning(null)}
           onConfirm={handleConfirmAssign}
+        />
+      )}
+      {publishing && (
+        <PublishDialog
+          course={publishing}
+          open
+          onOpenChange={(open) => !open && setPublishing(null)}
+          onConfirm={handleConfirmPublish}
         />
       )}
     </>
