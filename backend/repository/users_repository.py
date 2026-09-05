@@ -139,6 +139,7 @@ class UsersRepository:
         is_super_admin: bool | None = None,
         user_type: str | None = None,
         permission_name: str | None = None,
+        is_active: bool | None = None,
         is_blocked: bool | None = None,
         search_blocked_reason: bool = False,
     ) -> tuple[list[tuple[UsersEntity, bool]], int]:
@@ -173,6 +174,8 @@ class UsersRepository:
                 revoked, or by being a super admin, who holds every permission
                 via the flag rather than through grant rows. None means no
                 filter. The name is not validated here; the service owns that.
+            is_active (bool | None): When not None, restricts results to users
+                whose ``is_active`` flag matches this value.
             is_blocked (bool | None): When not None, restricts results to users
                 whose ``is_blocked`` flag matches this value. Independent of
                 ``is_active``: a user can be both deactivated and blocked, and
@@ -223,6 +226,8 @@ class UsersRepository:
             filters.append(UsersEntity.user_id == user_id)
         if is_super_admin is not None:
             filters.append(UsersEntity.is_super_admin == is_super_admin)
+        if is_active is not None:
+            filters.append(UsersEntity.is_active.is_(is_active))
         if is_blocked is not None:
             filters.append(UsersEntity.is_blocked.is_(is_blocked))
         if user_type == IdentityType.INTERNAL:

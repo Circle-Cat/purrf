@@ -13,6 +13,16 @@ py_library(
 )
 
 py_library(
+    name = "user_account_service",
+    srcs = ["user_account_service.py"],
+    deps = [
+        "//backend/common:identity_type",
+        "//backend/common:name_utils",
+        "//backend/dto",
+    ],
+)
+
+py_library(
     name = "permission_admin_controller",
     srcs = ["permission_admin_controller.py"],
     deps = [
