@@ -283,6 +283,36 @@ class TestOpenTrialSession(_ContentServiceCase):
         claims = verify_content_token(_KEY, self.token_from(result))
         self.assertEqual(claims.package_id, _PENDING_PACKAGE_ID)
 
+    async def test_a_trial_carries_no_progress_to_resume_from(self):
+        """A trial is always ab initio, whatever the assignment's row holds.
+
+        The row is keyed per assignment, not per package, so what it holds was
+        written by whichever package last ran on it -- never by the staged one
+        a trial opens. The finishing lesson_status is the dangerous case:
+        seeded into the CMI model, the player re-sends it on its first commit
+        and the staged package is stamped verified with nobody having run it.
+        """
+        self.package_repository.get_by_state = AsyncMock(
+            side_effect=lambda session, course_id, state: (
+                self.pending if state is TrainingPackageState.PENDING else self.package
+            )
+        )
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="completed",
+                lesson_location="Summary",
+                suspend_data="blob",
+                session_time_seconds=500,
+            )
+        )
+
+        result = await self.service.open_trial_session(
+            self.session, _TRAINING_ID, _USER_ID
+        )
+
+        self.assertIsNone(result.progress)
+
     async def test_a_course_with_nothing_staged_cannot_open_a_trial(self):
         self.package_repository.get_by_state = AsyncMock(return_value=None)
 

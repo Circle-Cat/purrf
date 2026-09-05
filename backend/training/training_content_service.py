@@ -188,7 +188,8 @@ class TrainingContentService:
 
         Returns:
             TrainingSessionDto: Same shape as `open_session`, naming the
-                course's pending package instead of its live one.
+                course's pending package instead of its live one, and never
+                carrying progress to resume from.
 
         Raises:
             ValueError: Not configured, no such assignment, or nothing is
@@ -229,9 +230,20 @@ class TrainingContentService:
         if not package.entry_path:
             raise ValueError("This course has no entry page to open.")
 
-        progress = await self.training_progress_repository.get_by_training_id(
-            session, training_id
-        )
+        # A trial starts from nothing, whatever this assignment's row holds.
+        # The progress row is keyed per assignment, not per package, so what
+        # it holds was written by whichever package last ran on it -- never by
+        # the staged one being tried. Seeded back in, that state resumes the
+        # trial onto a bookmark from a different package, and a row carrying a
+        # finishing lesson_status is worse: the player re-sends the whole
+        # model on its first commit, and the staged package is stamped
+        # verified with nobody having run it. The row itself is left alone,
+        # because it is a learner's.
+        progress = None
+        if state is TrainingPackageState.LIVE:
+            progress = await self.training_progress_repository.get_by_training_id(
+                session, training_id
+            )
 
         token, expires_at = issue_content_token(
             self.signing_key, training_id, user_id, package_id=package.package_id
