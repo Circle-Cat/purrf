@@ -9,10 +9,12 @@ from backend.common.api_endpoints import (
     TRAINING_ASSIGNMENTS_ENDPOINT,
     TRAINING_COURSE_ENDPOINT,
     TRAINING_COURSE_PACKAGE_ENDPOINT,
+    TRAINING_COURSE_PUBLISH_ENDPOINT,
     TRAINING_COURSE_TRIAL_ENDPOINT,
     TRAINING_COURSES_ENDPOINT,
     TRAINING_PROGRESS_ENDPOINT,
     TRAINING_SESSION_ENDPOINT,
+    TRAINING_TRIAL_SESSION_ENDPOINT,
 )
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.permissions import Permission
@@ -79,7 +81,10 @@ class TrainingAdminController:
         Args:
             training_course_service (TrainingCourseService): The catalogue.
             training_assignment_service (TrainingAssignmentService): Manual
-                assignment, and the verification gate in front of it.
+                assignment, gated on the course already having a live
+                package -- verification itself is enforced upstream, at
+                publish, so by the time a package is live it has already
+                been run clean.
             training_package_service (TrainingPackageService): Uploads.
             training_content_service (TrainingContentService): Mints the
                 content URL a learner's page loads the course from.
@@ -135,11 +140,39 @@ class TrainingAdminController:
             methods=["GET"],
             response_model=None,
         )
+        self.router.add_api_route(
+            TRAINING_COURSE_PUBLISH_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_WRITE])(
+                self.publish_package
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            TRAINING_COURSE_PACKAGE_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_WRITE])(
+                self.discard_package
+            ),
+            methods=["DELETE"],
+            response_model=None,
+        )
         # A learner opening their own course needs no permission; holding the
         # assignment is the grant, and the service checks they hold it.
         self.router.add_api_route(
             TRAINING_SESSION_ENDPOINT,
             endpoint=authenticate()(self.open_session),
+            methods=["POST"],
+            response_model=None,
+        )
+        # Unlike the route above, this one opens the pending package, not the
+        # live one, so it needs the write grant the learner-facing route does
+        # not: it is how a verifier runs a staged package before anybody may
+        # publish it.
+        self.router.add_api_route(
+            TRAINING_TRIAL_SESSION_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_WRITE])(
+                self.open_trial_session
+            ),
             methods=["POST"],
             response_model=None,
         )
@@ -204,8 +237,11 @@ class TrainingAdminController:
     async def assign(self, payload: TrainingAssignmentRequestDto):
         """Assign one course to one person.
 
-        Answers 409 for a course nobody has finished, whatever the admin page
-        shows -- the disabled button there explains the rule, it is not the rule.
+        Answers 409 for a course with nothing published yet, whatever the
+        admin page shows -- the disabled button there explains the rule, it
+        is not the rule. A live package is proof enough that it was verified:
+        publish only ever promotes a staged package that already carried a
+        verification stamp.
         """
         async with self.database.session() as session:
             result = await self.training_assignment_service.assign(session, payload)
@@ -222,9 +258,11 @@ class TrainingAdminController:
     async def start_trial(self, course_id: int, current_user):
         """Open the caller's own assignment on a course so they can verify it.
 
-        Answers the deadlock at the assignment gate: nobody may be assigned an
-        unverified course, so a verifier gets one this way instead, from
-        their own identity, never a named user in the request.
+        Answers the deadlock at the assign gate: a course cannot go live until
+        its staged package carries a verification stamp, and a stamp can only
+        come from someone actually running that package -- so a verifier gets
+        an assignment against it this way, from their own identity, never a
+        named user in the request.
         """
         async with self.database.session() as session:
             result = await self.training_assignment_service.start_trial(
@@ -268,6 +306,41 @@ class TrainingAdminController:
             data=config,
         )
 
+    async def publish_package(self, course_id: int):
+        """Make the staged package the one this course serves.
+
+        409 for a course with nothing staged, and for one whose staged
+        package has never been run to completion by somebody who holds the
+        write grant -- the disabled button on the admin page explains that
+        rule, it is not the rule.
+
+        Args:
+            course_id (int): The course being published on.
+
+        Returns:
+            JSONResponse: The new live package, and how many progress rows
+            were reset.
+        """
+        async with self.database.session() as session:
+            result = await self.training_package_service.publish_package(
+                session, course_id
+            )
+        return api_response(message="Package published.", data=result)
+
+    async def discard_package(self, course_id: int):
+        """Throw away the staged package. The live one is untouched.
+
+        Args:
+            course_id (int): The course whose staged package is discarded.
+
+        Returns:
+            JSONResponse: No data. Nothing about the course changes for a
+            learner.
+        """
+        async with self.database.session() as session:
+            await self.training_package_service.discard_package(session, course_id)
+        return api_response(message="Staged package discarded.", data=None)
+
     async def open_session(self, training_id: int, current_user):
         """Mint the content URL for the caller's own assignment."""
         async with self.database.session() as session:
@@ -275,6 +348,28 @@ class TrainingAdminController:
                 session, training_id, current_user.user_id
             )
         return api_response(message="Training session opened.", data=training_session)
+
+    async def open_trial_session(self, training_id: int, current_user):
+        """Mint the content URL for the caller's own trial assignment.
+
+        Names the course's pending package, not its live one -- the run this
+        route opens is how a verifier earns the stamp `publish_package` and
+        `assign` both require.
+
+        Args:
+            training_id (int): The trial assignment being opened.
+            current_user: The caller, from the authenticated session; the
+                assignment must be theirs.
+
+        Returns:
+            JSONResponse: Where the pending package loads from, and what the
+            caller's own trial run resumes with.
+        """
+        async with self.database.session() as session:
+            result = await self.training_content_service.open_trial_session(
+                session, training_id, current_user.user_id
+            )
+        return api_response(message="Trial session opened.", data=result)
 
     async def save_progress(self, training_id: int, request: Request, current_user):
         """Store one commit from the caller's own course.
