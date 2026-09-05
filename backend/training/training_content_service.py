@@ -237,8 +237,8 @@ class TrainingContentService:
         # trial onto a bookmark from a different package, and a row carrying a
         # finishing lesson_status is worse: the player re-sends the whole
         # model on its first commit, and the staged package is stamped
-        # verified with nobody having run it. The row itself is left alone,
-        # because it is a learner's.
+        # verified with nobody having run it. This read leaves the row alone;
+        # the trial's own commits still overwrite it afterwards.
         progress = None
         if state is TrainingPackageState.LIVE:
             progress = await self.training_progress_repository.get_by_training_id(
