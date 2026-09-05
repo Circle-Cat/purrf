@@ -39,8 +39,9 @@ class TrainingAssignmentService:
             training_repository (TrainingRepository): Reads and writes the
                 assignment rows.
             training_course_package_repository (TrainingCoursePackageRepository):
-                Reads the course's live package, which is what decides
-                assignability now.
+                Reads the course's package slots -- the live one is what
+                decides assignability, the pending one is what a trial run
+                verifies.
         """
         self.logger = logger
         self.training_course_repository = training_course_repository
@@ -52,9 +53,14 @@ class TrainingAssignmentService:
     ) -> TrainingAssignmentResultDto:
         """Give one person one course.
 
-        A course nobody has finished cannot be assigned: an unfinishable course
-        holds everyone assigned to it at the mentorship matching gate,
-        silently, and looks like our bug. Neither can a deactivated one.
+        The gate is a live package plus `is_active`. A live package is proof
+        enough on its own: `publish_package` only promotes a pending package
+        that already carries a verification stamp, so an unverified course
+        can no longer reach this point at all. That is what the gate is for
+        -- an unfinishable course holds everyone assigned to it at the
+        mentorship matching gate, silently, and looks like our bug. A course
+        with nothing live yet is refused for that same reason. Neither can a
+        deactivated one.
 
         Assigning twice is a no-op rather than an error, and never rewrites the
         existing row -- in particular a deadline already stamped by
@@ -71,8 +77,8 @@ class TrainingAssignmentService:
 
         Raises:
             ValueError: No such course.
-            ConflictError: The course is unverified or deactivated. Surfaces as
-                409.
+            ConflictError: The course has no live package, or is deactivated.
+                Surfaces as 409.
         """
         course = await self.training_course_repository.get_course_by_id(
             session, payload.course_id
@@ -83,10 +89,11 @@ class TrainingAssignmentService:
         package = await self.training_course_package_repository.get_by_state(
             session, course.course_id, TrainingPackageState.LIVE
         )
-        if package is None or package.verified_completable_at is None:
+        if package is None:
             raise ConflictError(
-                "This course has not been run to completion yet, so it cannot "
-                "be assigned. Start a trial run and finish it first."
+                "This course has nothing published yet, so it cannot be "
+                "assigned. Upload a package, run it to completion, and "
+                "publish it first."
             )
 
         if not course.is_active:
@@ -132,18 +139,19 @@ class TrainingAssignmentService:
     async def start_trial(
         self, session, course_id: int, user_id: int
     ) -> TrainingAssignmentResultDto:
-        """Open the caller's own assignment so they can verify a course.
+        """Open the caller's own assignment so they can verify a package.
 
-        Deliberately skips two checks `assign` enforces. The verification
-        gate (`verified_completable_at`) is what this call exists to answer,
-        so it cannot also require it. The `is_active` check is skipped too:
-        stamping a deactivated course still leaves it deactivated, since
-        `assign` checks `is_active` on its own, so skipping it here buys no
-        safety back -- and it supports a real sequence, a broken course gets
-        deactivated, re-exported, re-uploaded, trialled, then reactivated.
-        Beyond that it is an ordinary assignment, because a trial that ran
-        through different code would prove less than one that runs through
-        the learner's own path.
+        Reads the PENDING slot, not the LIVE one `assign` reads: a trial run
+        exists to verify a package before it can be published, and a staged
+        package is exactly what a trial is for -- requiring it to already be
+        live would be circular. This is also why `start_trial` can skip
+        `assign`'s `is_active` check: stamping a deactivated course still
+        leaves it deactivated, since `assign` checks `is_active` on its own,
+        so skipping it here buys no safety back -- and it supports a real
+        sequence, a broken course gets deactivated, re-exported, re-uploaded,
+        trialled, then reactivated. Beyond that it is an ordinary assignment,
+        because a trial that ran through different code would prove less
+        than one that runs through the learner's own path.
 
         Args:
             session: The active async database session.
@@ -155,7 +163,7 @@ class TrainingAssignmentService:
 
         Raises:
             ValueError: No such course.
-            ConflictError: The course has no package to run.
+            ConflictError: The course has no staged package to run.
         """
         course = await self.training_course_repository.get_course_by_id(
             session, course_id
@@ -164,11 +172,12 @@ class TrainingAssignmentService:
             raise ValueError(f"No training course with id {course_id}.")
 
         package = await self.training_course_package_repository.get_by_state(
-            session, course_id, TrainingPackageState.LIVE
+            session, course_id, TrainingPackageState.PENDING
         )
         if package is None:
             raise ConflictError(
-                "This course has no package uploaded yet, so there is nothing to run."
+                "There is no staged package on this course to run. Upload one "
+                "first."
             )
 
         existing = await self._existing_assignment(session, user_id, course)
