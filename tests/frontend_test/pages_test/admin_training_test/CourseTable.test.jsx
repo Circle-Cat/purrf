@@ -7,8 +7,16 @@ import "@testing-library/jest-dom";
 
 import CourseTable from "@/pages/AdminTraining/components/CourseTable";
 import * as api from "@/api/trainingApi";
+import { formatDateTimeWithZone } from "@/utils/dateTime";
 
 vi.mock("@/api/trainingApi");
+
+// Pins the viewer's zone so the upload timestamp is asserted end to end
+// (the real formatter, a fixed zone) rather than trusting the wiring blind.
+vi.mock("@/utils/dateTime", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, resolveViewerTimezone: () => "America/New_York" };
+});
 
 // One fixture per `TrainingCourseLiveState`, shaped like the wire DTO
 // (backend/dto/training_course_dto.py -> TrainingCourseDto). `verified` and
@@ -406,6 +414,43 @@ describe("CourseTable staged sub-row", () => {
     );
     expect(onCoursesChanged).toHaveBeenCalledTimes(1);
     expect(api.publishPackage).not.toHaveBeenCalled();
+  });
+
+  it("names the staged package without a version when it has none, instead of leaving a gap", () => {
+    renderTable([
+      staged({
+        staged: {
+          packageId: 2,
+          packageVersion: null,
+          uploadedAt: "2026-09-05T03:41:00Z",
+          verifiedCompletableAt: null,
+        },
+      }),
+    ]);
+
+    expect(
+      screen.getByText("⬆ the staged package — not run yet"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/⬆ +staged/)).not.toBeInTheDocument();
+  });
+
+  it("says learners still see the current package when the live package has no version", () => {
+    renderTable([staged({ packageVersion: null })]);
+
+    expect(
+      screen.getByText("Learners still see the current package."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/still see \./)).not.toBeInTheDocument();
+  });
+
+  it("shows the staged package's upload time in the viewer's timezone", () => {
+    renderTable([staged()]);
+
+    const expected = formatDateTimeWithZone(
+      "2026-09-05T03:41:00Z",
+      "America/New_York",
+    );
+    expect(screen.getByText(expected)).toBeInTheDocument();
   });
 
   it("offers a Trial run link into the course's own trial route", () => {

@@ -149,6 +149,15 @@ function StagedRow({ course, onDiscard, onPublish }) {
     staged.uploadedAt,
     resolveViewerTimezone(),
   );
+  // A package built by a toolchain we cannot read (Captivate, iSpring, a
+  // bare Storyline export) carries no version at all -- same class of
+  // package PackageHealthBox already warns about. Name the thing without a
+  // version rather than leave a gap in the sentence, matching how
+  // UploadPackageDialog picks between "package {version}" and "the current
+  // package" on this same nullability.
+  const stagedName = staged.packageVersion
+    ? `${staged.packageVersion} staged`
+    : "the staged package";
 
   return (
     <TableRow>
@@ -157,8 +166,8 @@ function StagedRow({ course, onDiscard, onPublish }) {
           <div className="flex items-center justify-between gap-4">
             <span>
               {verified
-                ? `✓ ${staged.packageVersion} staged — verified`
-                : `⬆ ${staged.packageVersion} staged — not run yet`}
+                ? `✓ ${stagedName} — verified`
+                : `⬆ ${stagedName} — not run yet`}
             </span>
             <span className="text-xs text-muted-foreground">
               {uploadedLabel}
@@ -166,7 +175,9 @@ function StagedRow({ course, onDiscard, onPublish }) {
           </div>
           <p className="text-xs text-muted-foreground">
             {course.liveState === "live"
-              ? `Learners still see ${course.packageVersion}.`
+              ? course.packageVersion
+                ? `Learners still see ${course.packageVersion}.`
+                : "Learners still see the current package."
               : "Nothing is live yet; publishing makes this course assignable."}
           </p>
           <div className="flex justify-end gap-2 pt-1">
