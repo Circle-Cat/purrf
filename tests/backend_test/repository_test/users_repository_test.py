@@ -954,6 +954,111 @@ class TestUsersRepository(BaseRepositoryTestLib):
         _, total = await self.repo.list_users(self.session, search=token)
         self.assertEqual(total, 2)
 
+    async def test_list_users_filter_is_blocked_three_ways(self):
+        """True keeps only blocked rows, False only unblocked, None neither.
+
+        Blocking and deactivation are independent: a row that is both must
+        answer the is_blocked question on its block flag alone.
+        """
+        token = uuid.uuid4().hex[:10]
+        clean = self._make_user(email=f"clean-{token}@example.com")
+        blocked = self._make_user(email=f"blocked-{token}@example.com")
+        blocked.is_blocked = True
+        blocked.blocked_reason = "no-show twice"
+        gone = self._make_user(email=f"gone-{token}@example.com")
+        gone.is_active = False
+        both = self._make_user(email=f"both-{token}@example.com")
+        both.is_active = False
+        both.is_blocked = True
+        await self.insert_entities([clean, blocked, gone, both])
+
+        rows, _ = await self.repo.list_users(
+            self.session, search=token, is_blocked=True, limit=50
+        )
+        self.assertEqual(
+            {u.user_id for u, _ in rows}, {blocked.user_id, both.user_id}
+        )
+
+        rows, _ = await self.repo.list_users(
+            self.session, search=token, is_blocked=False, limit=50
+        )
+        self.assertEqual({u.user_id for u, _ in rows}, {clean.user_id, gone.user_id})
+
+        rows, _ = await self.repo.list_users(self.session, search=token, limit=50)
+        self.assertEqual(
+            {u.user_id for u, _ in rows},
+            {clean.user_id, blocked.user_id, gone.user_id, both.user_id},
+        )
+
+    async def test_list_users_blocked_reason_search_is_off_by_default(self):
+        """Pins that the existing list endpoint's result set does not change.
+
+        A user whose only match is a word someone else wrote in their block
+        reason must not surface until the caller asks for that leg.
+        """
+        token = uuid.uuid4().hex[:10]
+        target = self._make_user(
+            last_name="Bb", email=f"{uuid.uuid4()}@example.com"
+        )
+        target.is_blocked = True
+        target.blocked_reason = f"repeated {token} incidents"
+        await self.insert_entities([target])
+
+        rows, _ = await self.repo.list_users(self.session, search=token, limit=50)
+        self.assertNotIn(target.user_id, {u.user_id for u, _ in rows})
+
+        rows, _ = await self.repo.list_users(
+            self.session, search=token, search_blocked_reason=True, limit=50
+        )
+        self.assertIn(target.user_id, {u.user_id for u, _ in rows})
+
+    async def test_deactivate_sets_all_four_fields(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"deact-{token}@example.com")
+        actor = self._make_user(email=f"actor-{token}@example.com")
+        await self.insert_entities([user, actor])
+
+        await self.repo.deactivate(
+            self.session, user.user_id, actor.user_id, "requested by email"
+        )
+
+        refetched = await self.repo.get_user_by_user_id(self.session, user.user_id)
+        self.assertFalse(refetched.is_active)
+        self.assertEqual(refetched.deactivated_by, actor.user_id)
+        self.assertIsNotNone(refetched.deactivated_at)
+        self.assertEqual(refetched.deactivated_reason, "requested by email")
+
+    async def test_reactivate_clears_all_four_fields(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"react-{token}@example.com")
+        actor = self._make_user(email=f"reactor-{token}@example.com")
+        await self.insert_entities([user, actor])
+        await self.repo.deactivate(
+            self.session, user.user_id, actor.user_id, "note"
+        )
+
+        await self.repo.reactivate(self.session, user.user_id)
+
+        refetched = await self.repo.get_user_by_user_id(self.session, user.user_id)
+        self.assertTrue(refetched.is_active)
+        self.assertIsNone(refetched.deactivated_by)
+        self.assertIsNone(refetched.deactivated_at)
+        self.assertIsNone(refetched.deactivated_reason)
+
+    async def test_reactivate_on_active_user_is_a_noop_success(self):
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"already-active-{token}@example.com")
+        await self.insert_entities([user])
+
+        await self.repo.reactivate(self.session, user.user_id)
+        await self.repo.reactivate(self.session, user.user_id)
+
+        refetched = await self.repo.get_user_by_user_id(self.session, user.user_id)
+        self.assertTrue(refetched.is_active)
+
+    async def test_reactivate_missing_user_is_a_noop_success(self):
+        await self.repo.reactivate(self.session, 9_999_999)  # must not raise
+
 
 if __name__ == "__main__":
     unittest.main()

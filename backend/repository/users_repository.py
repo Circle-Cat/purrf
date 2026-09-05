@@ -139,6 +139,8 @@ class UsersRepository:
         is_super_admin: bool | None = None,
         user_type: str | None = None,
         permission_name: str | None = None,
+        is_blocked: bool | None = None,
+        search_blocked_reason: bool = False,
     ) -> tuple[list[tuple[UsersEntity, bool]], int]:
         """
         Paginated user list with optional case-insensitive substring search,
@@ -171,6 +173,14 @@ class UsersRepository:
                 revoked, or by being a super admin, who holds every permission
                 via the flag rather than through grant rows. None means no
                 filter. The name is not validated here; the service owns that.
+            is_blocked (bool | None): When not None, restricts results to users
+                whose ``is_blocked`` flag matches this value. Independent of
+                ``is_active``: a user can be both deactivated and blocked, and
+                this filter reads the block flag alone.
+            search_blocked_reason (bool): When True, ``search`` also matches
+                ``blocked_reason``. Off by default on purpose -- turning it on
+                changes the result set, since a user can then be found by a
+                word someone else wrote about them.
 
         Returns:
             tuple[list[tuple[UsersEntity, bool]], int]: (page rows where each
@@ -199,17 +209,22 @@ class UsersRepository:
         filters = []
         if search:
             pattern = f"%{search.lower()}%"
-            filters.append(
-                or_(
-                    func.lower(UsersEntity.first_name).like(pattern),
-                    func.lower(UsersEntity.last_name).like(pattern),
-                    self._any_email_matches(pattern),
+            search_targets = [
+                func.lower(UsersEntity.first_name).like(pattern),
+                func.lower(UsersEntity.last_name).like(pattern),
+                self._any_email_matches(pattern),
+            ]
+            if search_blocked_reason:
+                search_targets.append(
+                    func.lower(UsersEntity.blocked_reason).like(pattern)
                 )
-            )
+            filters.append(or_(*search_targets))
         if user_id is not None:
             filters.append(UsersEntity.user_id == user_id)
         if is_super_admin is not None:
             filters.append(UsersEntity.is_super_admin == is_super_admin)
+        if is_blocked is not None:
+            filters.append(UsersEntity.is_blocked.is_(is_blocked))
         if user_type == IdentityType.INTERNAL:
             filters.append(UsersEntity.is_internal.is_(True))
         elif user_type == IdentityType.EXTERNAL:
@@ -385,6 +400,52 @@ class UsersRepository:
             select(UsersEntity).where(*filters).order_by(UsersEntity.blocked_at.desc())
         )
         return list(result.scalars().all())
+
+    async def deactivate(
+        self, session: AsyncSession, user_id: int, actor_id: int, reason: str | None
+    ) -> None:
+        """
+        Mark an account deactivated and record who did it, when, and why.
+        Does not commit -- the calling service owns the transaction.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user to deactivate.
+            actor_id (int): The user performing the deactivation.
+            reason (str | None): Free-text note. Optional: deactivation is not
+                a finding of fault, unlike blocking, which demands a reason.
+        """
+        await session.execute(
+            update(UsersEntity)
+            .where(UsersEntity.user_id == user_id)
+            .values(
+                is_active=False,
+                deactivated_by=actor_id,
+                deactivated_at=func.now(),
+                deactivated_reason=reason,
+            )
+        )
+
+    async def reactivate(self, session: AsyncSession, user_id: int) -> None:
+        """
+        Restore an account and clear the deactivation trio. Idempotent: a no-op
+        (still succeeds) if the user is missing or already active. Does not
+        commit -- the calling service owns the transaction.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user to reactivate.
+        """
+        await session.execute(
+            update(UsersEntity)
+            .where(UsersEntity.user_id == user_id)
+            .values(
+                is_active=True,
+                deactivated_by=None,
+                deactivated_at=None,
+                deactivated_reason=None,
+            )
+        )
 
     async def clear_block(self, session: AsyncSession, user_id: int) -> None:
         """
