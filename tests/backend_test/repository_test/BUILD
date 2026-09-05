@@ -16,6 +16,16 @@ py_library(
 )
 
 py_test(
+    name = "block_request_repository_test",
+    srcs = ["block_request_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:user_enums",
+    ],
+)
+
+py_test(
     name = "users_repository_test",
     srcs = ["users_repository_test.py"],
     env_inherit = ["DATABASE_URL"],
