@@ -340,13 +340,13 @@ describe("CourseTable staged sub-row", () => {
   it("says what learners still see while a package is staged", () => {
     renderTable([staged()]);
 
-    expect(screen.getByText("Learners still see qPpo9zHD.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Learners still see qPpo9zHD."),
+    ).toBeInTheDocument();
   });
 
   it("says nothing is live when the course has never published", () => {
-    renderTable([
-      staged({ liveState: "no_package", packageVersion: null }),
-    ]);
+    renderTable([staged({ liveState: "no_package", packageVersion: null })]);
 
     expect(
       screen.getByText(
@@ -384,7 +384,9 @@ describe("CourseTable staged sub-row", () => {
   it("shows the staged package's upload time and version marker", () => {
     renderTable([staged()]);
 
-    expect(screen.getByText(/⬆ RaOvlxxJ staged — not run yet/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/⬆ RaOvlxxJ staged — not run yet/),
+    ).toBeInTheDocument();
   });
 
   it("marks a verified staged package with a check instead of the upload arrow", () => {
@@ -399,7 +401,9 @@ describe("CourseTable staged sub-row", () => {
       }),
     ]);
 
-    expect(screen.getByText(/✓ RaOvlxxJ staged — verified/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/✓ RaOvlxxJ staged — verified/),
+    ).toBeInTheDocument();
   });
 
   it("discards the staged package and refetches, without touching the live package", async () => {
@@ -409,9 +413,7 @@ describe("CourseTable staged sub-row", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /^discard$/i }));
 
-    await waitFor(() =>
-      expect(api.discardPackage).toHaveBeenCalledWith(9),
-    );
+    await waitFor(() => expect(api.discardPackage).toHaveBeenCalledWith(9));
     expect(onCoursesChanged).toHaveBeenCalledTimes(1);
     expect(api.publishPackage).not.toHaveBeenCalled();
   });

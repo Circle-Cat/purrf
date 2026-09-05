@@ -176,8 +176,7 @@ class TrainingAssignmentService:
         )
         if package is None:
             raise ConflictError(
-                "There is no staged package on this course to run. Upload one "
-                "first."
+                "There is no staged package on this course to run. Upload one first."
             )
 
         existing = await self._existing_assignment(session, user_id, course)

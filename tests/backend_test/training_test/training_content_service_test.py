@@ -287,9 +287,7 @@ class TestOpenTrialSession(_ContentServiceCase):
         self.package_repository.get_by_state = AsyncMock(return_value=None)
 
         with self.assertRaises(ValueError):
-            await self.service.open_trial_session(
-                self.session, _TRAINING_ID, _USER_ID
-            )
+            await self.service.open_trial_session(self.session, _TRAINING_ID, _USER_ID)
 
     async def test_the_learner_endpoint_still_signs_the_live_package(self):
         self.package_repository.get_by_state = AsyncMock(

@@ -25,7 +25,10 @@ import {
   uploadPackage,
 } from "@/api/trainingApi";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
-import { formatDateTimeWithZone, resolveViewerTimezone } from "@/utils/dateTime";
+import {
+  formatDateTimeWithZone,
+  resolveViewerTimezone,
+} from "@/utils/dateTime";
 import AssignDialog from "@/pages/AdminTraining/components/AssignDialog";
 import DeactivateDialog from "@/pages/AdminTraining/components/DeactivateDialog";
 import PublishDialog from "@/pages/AdminTraining/components/PublishDialog";

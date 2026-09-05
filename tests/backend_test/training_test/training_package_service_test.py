@@ -244,8 +244,11 @@ class TestUploadStagesRatherThanPublishes(_PackageServiceCase):
         self.progress_repository.clear_resume_state.assert_not_awaited()
 
     async def test_a_second_upload_replaces_the_staged_one(self):
-        pending = self._package(package_id=2, state=TrainingPackageState.PENDING,
-                                storage_prefix="training/9/old-pending/")
+        pending = self._package(
+            package_id=2,
+            state=TrainingPackageState.PENDING,
+            storage_prefix="training/9/old-pending/",
+        )
         self._slots(live=None, pending=pending)
 
         await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE)
@@ -254,8 +257,11 @@ class TestUploadStagesRatherThanPublishes(_PackageServiceCase):
         self.storage.delete_prefix.assert_called_once_with("training/9/old-pending/")
 
     async def test_the_replaced_pending_prefix_goes_only_after_the_commit(self):
-        pending = self._package(package_id=2, state=TrainingPackageState.PENDING,
-                                storage_prefix="training/9/old-pending/")
+        pending = self._package(
+            package_id=2,
+            state=TrainingPackageState.PENDING,
+            storage_prefix="training/9/old-pending/",
+        )
         self._slots(live=None, pending=pending)
         order = []
         self.session.commit.side_effect = lambda: order.append("commit")
@@ -739,10 +745,14 @@ class TestReadCompletionConfig(_PackageServiceCase):
     async def test_the_completion_config_describes_the_staged_package(self):
         # The trial page reads this before running, and what it is about to
         # run is the staged package.
-        self._slots(live=self._package(package_id=1, storage_prefix="training/9/live/"),
-                    pending=self._package(package_id=2,
-                                          state=TrainingPackageState.PENDING,
-                                          storage_prefix="training/9/staged/"))
+        self._slots(
+            live=self._package(package_id=1, storage_prefix="training/9/live/"),
+            pending=self._package(
+                package_id=2,
+                state=TrainingPackageState.PENDING,
+                storage_prefix="training/9/staged/",
+            ),
+        )
         self._stored()
 
         await self.service.read_completion_config(self.session, _COURSE_ID)
@@ -885,8 +895,11 @@ class TestPublish(_PackageServiceCase):
         self.assertEqual(result.learners_reset, 48)
 
     async def test_the_outgoing_prefix_is_deleted_after_the_commit(self):
-        live = self._package(package_id=1, state=TrainingPackageState.LIVE,
-                             storage_prefix="training/9/outgoing/")
+        live = self._package(
+            package_id=1,
+            state=TrainingPackageState.LIVE,
+            storage_prefix="training/9/outgoing/",
+        )
         self._slots(live=live, pending=self._verified_pending())
         order = []
         self.session.commit.side_effect = lambda: order.append("commit")
@@ -897,8 +910,11 @@ class TestPublish(_PackageServiceCase):
         self.assertEqual(order, ["commit", "training/9/outgoing/"])
 
     async def test_a_failed_delete_does_not_fail_the_publish(self):
-        live = self._package(package_id=1, state=TrainingPackageState.LIVE,
-                             storage_prefix="training/9/outgoing/")
+        live = self._package(
+            package_id=1,
+            state=TrainingPackageState.LIVE,
+            storage_prefix="training/9/outgoing/",
+        )
         self._slots(live=live, pending=self._verified_pending())
         self.storage.delete_prefix.side_effect = RuntimeError("gcs is down")
 
@@ -910,8 +926,11 @@ class TestPublish(_PackageServiceCase):
 
 class TestDiscard(_PackageServiceCase):
     async def test_discarding_removes_the_staged_row_and_its_files(self):
-        pending = self._package(package_id=2, state=TrainingPackageState.PENDING,
-                                storage_prefix="training/9/staged/")
+        pending = self._package(
+            package_id=2,
+            state=TrainingPackageState.PENDING,
+            storage_prefix="training/9/staged/",
+        )
         self._slots(live=self._package(package_id=1), pending=pending)
 
         await self.service.discard_package(self.session, _COURSE_ID)
@@ -921,8 +940,10 @@ class TestDiscard(_PackageServiceCase):
 
     async def test_the_live_package_survives_a_discard(self):
         live = self._package(package_id=1, state=TrainingPackageState.LIVE)
-        self._slots(live=live, pending=self._package(package_id=2,
-                                                     state=TrainingPackageState.PENDING))
+        self._slots(
+            live=live,
+            pending=self._package(package_id=2, state=TrainingPackageState.PENDING),
+        )
 
         await self.service.discard_package(self.session, _COURSE_ID)
 

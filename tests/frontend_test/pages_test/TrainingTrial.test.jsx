@@ -199,7 +199,9 @@ describe("TrainingTrial", () => {
     expect(
       await screen.findByText(/completed — this package can now be published/i),
     ).toBeInTheDocument();
-    expect(screen.getByText(/now verified and can be published/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/now verified and can be published/i),
+    ).toBeInTheDocument();
   });
 
   it("still reaches the verdict when the assignment was already done", async () => {
@@ -278,7 +280,9 @@ describe("TrainingTrial", () => {
       screen.getByText(/unlocks for publishing the moment it reports/),
     ).toBeInTheDocument();
     expect(screen.queryByText(/can now be published/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/unlocks for assignment/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/unlocks for assignment/i),
+    ).not.toBeInTheDocument();
   });
 
   it("does not claim completion on a finishing status the server did not accept", async () => {
@@ -457,7 +461,9 @@ describe("TrainingTrial", () => {
     expect(
       await screen.findByText(/running staged package RaOvlxxJ/),
     ).toBeInTheDocument();
-    expect(screen.getByText("Learners still see qPpo9zHD.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Learners still see qPpo9zHD."),
+    ).toBeInTheDocument();
   });
 
   it("names the staged and current packages without a version when neither has one", async () => {
@@ -475,9 +481,7 @@ describe("TrainingTrial", () => {
     renderTrial({ liveState: "no_package", packageVersion: null });
     await screen.findByTitle(/course/i);
 
-    expect(
-      screen.queryByText(/Learners still see/),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Learners still see/)).not.toBeInTheDocument();
   });
 
   it("offers to publish from the completion banner", async () => {
@@ -516,7 +520,9 @@ describe("TrainingTrial", () => {
 
     await waitFor(() => expect(publishPackage).toHaveBeenCalledWith("5"));
     await waitFor(() =>
-      expect(screen.queryByText(/running staged package/i)).not.toBeInTheDocument(),
+      expect(
+        screen.queryByText(/running staged package/i),
+      ).not.toBeInTheDocument(),
     );
     // No navigation, and no new "published" copy invented -- the banner
     // still reads exactly as it did before the publish.

@@ -223,9 +223,7 @@ class TrainingPackageService:
             session, course_id, TrainingPackageState.PENDING
         )
         if pending is None:
-            raise ConflictError(
-                "There is no staged package on this course to publish."
-            )
+            raise ConflictError("There is no staged package on this course to publish.")
         if pending.verified_completable_at is None:
             raise ConflictError(
                 "This package has not been run to completion yet, so it "
@@ -294,9 +292,7 @@ class TrainingPackageService:
             session, course_id, TrainingPackageState.PENDING
         )
         if pending is None:
-            raise ConflictError(
-                "There is no staged package on this course to discard."
-            )
+            raise ConflictError("There is no staged package on this course to discard.")
 
         prefix = pending.storage_prefix
         await self.training_course_package_repository.delete(session, pending)

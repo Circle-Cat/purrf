@@ -63,9 +63,7 @@ def to_course_dto(
         category=course.category,
         is_active=course.is_active,
         live_state=derive_live_state(course, live_package),
-        link=(
-            external_link_for(course.category) if live_package is None else None
-        ),
+        link=(external_link_for(course.category) if live_package is None else None),
         scorm_version=(
             live_package.scorm_version if live_package is not None else None
         ),
@@ -209,6 +207,4 @@ class TrainingCourseService:
         pending = await self.training_course_package_repository.get_by_state(
             session, course_id, TrainingPackageState.PENDING
         )
-        return to_course_dto(
-            course, package, pending, assigned_count, unfinished_count
-        )
+        return to_course_dto(course, package, pending, assigned_count, unfinished_count)

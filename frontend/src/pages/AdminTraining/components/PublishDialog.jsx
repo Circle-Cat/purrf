@@ -61,10 +61,7 @@ export default function PublishDialog({
   const currentName = packageVersion ?? "the current package";
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => !next && onOpenChange?.(false)}
-    >
+    <Dialog open={open} onOpenChange={(next) => !next && onOpenChange?.(false)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Publish package</DialogTitle>
@@ -80,8 +77,8 @@ export default function PublishDialog({
             beginning. {completedCount} completed records are untouched.
           </p>
           <p>
-            Anyone with the course open right now will see it stop loading
-            until they reload.
+            Anyone with the course open right now will see it stop loading until
+            they reload.
           </p>
           {isLive && (
             <p>{currentName} is deleted and cannot be brought back.</p>

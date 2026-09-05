@@ -45,9 +45,9 @@ describe("assignBlockedReason", () => {
   });
 
   it("names publishing a package when the course has none live", () => {
-    expect(
-      assignBlockedReason({ ...live, liveState: "no_package" }),
-    ).toBe("Publish a package to this course first");
+    expect(assignBlockedReason({ ...live, liveState: "no_package" })).toBe(
+      "Publish a package to this course first",
+    );
   });
 
   it("names turning the course back on when that is what is missing", () => {

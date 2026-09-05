@@ -56,7 +56,9 @@ describe("PublishDialog", () => {
     );
 
     expect(
-      screen.getByText("RaOvlxxJ replaces qPpo9zHD for everyone on this course."),
+      screen.getByText(
+        "RaOvlxxJ replaces qPpo9zHD for everyone on this course.",
+      ),
     ).toBeInTheDocument();
   });
 
