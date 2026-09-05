@@ -30,12 +30,13 @@ import PackageHealthBox from "@/pages/AdminTraining/components/PackageHealthBox"
  * closes the dialog.
  *
  * @param {Object} props
- * @param {{courseId: number, liveState?: string, packageVersion?: string|null}} props.course
+ * @param {{courseId: number, liveState?: string, packageVersion?: string|null, staged?: Object|null}} props.course
  *   `liveState === "live"` is what makes this a replacement, not whether a
  *   package was ever uploaded -- a course can already hold a staged,
  *   unpublished package and still show "Upload", because nothing is being
  *   served yet. `packageVersion` is only the name to call the outgoing
- *   package by, and plenty of packages do not tell us one.
+ *   package by, and plenty of packages do not tell us one. `staged` is that
+ *   pending package, which this upload deletes.
  * @param {boolean} props.open
  * @param {(open: boolean) => void} [props.onOpenChange]
  * @param {(file: File, onProgress: (percent: number) => void) => Promise<Object>} [props.onConfirm]
@@ -75,6 +76,10 @@ export default function UploadPackageDialog({
   // that already has one staged but unpublished still shows "Upload" here,
   // because nothing about what learners see changes until a publish.
   const isReplacing = course.liveState === "live";
+  // An upload takes the course's one PENDING slot, so it deletes whatever is
+  // staged there and that package's files with it. Nothing else in this
+  // dialog says so, and the admin loses a trial run they may have finished.
+  const hasStaged = Boolean(course.staged);
 
   const handleSubmit = async () => {
     if (!file) return;
@@ -119,6 +124,8 @@ export default function UploadPackageDialog({
                   course.packageVersion ?? "the current package"
                 } until you publish it.`
               : "This course has no package yet. Nothing is served until you publish."}
+            {hasStaged &&
+              " The package you have staged is replaced and cannot be brought back."}
           </DialogDescription>
         </DialogHeader>
 

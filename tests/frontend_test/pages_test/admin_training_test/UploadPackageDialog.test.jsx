@@ -128,6 +128,51 @@ describe("UploadPackageDialog", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("says the staged package this upload lands on top of goes with it", () => {
+    // Uploading over a staged package deletes that pending row and its
+    // objects before the new one is written, and the only way back to it is
+    // the zip it came from.
+    render(
+      <UploadPackageDialog
+        course={{
+          courseId: 5,
+          packageVersion: "qPpo9zHD",
+          liveState: "live",
+          staged: { packageId: 2, packageVersion: "RaOvlxxJ" },
+          assignedCount: 124,
+          unfinishedCount: 3,
+        }}
+        open
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        /The package you have staged is replaced and cannot be brought back/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing about a staged package on a course that has none", () => {
+    render(
+      <UploadPackageDialog
+        course={{
+          courseId: 5,
+          packageVersion: "qPpo9zHD",
+          liveState: "live",
+          staged: null,
+          assignedCount: 124,
+          unfinishedCount: 3,
+        }}
+        open
+      />,
+    );
+
+    expect(
+      screen.queryByText(/package you have staged/),
+    ).not.toBeInTheDocument();
+  });
+
   it("calls the first upload Upload, not Replace", () => {
     render(
       <UploadPackageDialog

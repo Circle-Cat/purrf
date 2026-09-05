@@ -34,7 +34,7 @@ import DeactivateDialog from "@/pages/AdminTraining/components/DeactivateDialog"
 import PublishDialog from "@/pages/AdminTraining/components/PublishDialog";
 import UploadPackageDialog from "@/pages/AdminTraining/components/UploadPackageDialog";
 
-// Only the two live states with a hosted package get a dot -- External link
+// Only the two live states with a hosted course get a dot -- External link
 // isn't ours to color, it just says where the course actually lives.
 const LIVE_STATE_DOT_COLOR = {
   live: "var(--stage-hired)",
@@ -147,7 +147,7 @@ function PackageCell({ course }) {
 // The sub-row a staged package gets directly under the course it belongs to
 // (spec §8). Spans every column rather than living in one of them, since it
 // is describing the row above, not adding another cell to it.
-function StagedRow({ course, onDiscard, onPublish }) {
+function StagedRow({ course, onDiscard, onPublish, discarding }) {
   const { staged } = course;
   const verified = Boolean(staged.verifiedCompletableAt);
   const uploadedLabel = formatDateTimeWithZone(
@@ -199,7 +199,12 @@ function StagedRow({ course, onDiscard, onPublish }) {
             >
               Publish
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => onDiscard(course)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={discarding}
+              onClick={() => onDiscard(course)}
+            >
               Discard
             </Button>
           </div>
@@ -235,6 +240,11 @@ export default function CourseTable({ courses, onCoursesChanged }) {
   const [uploading, setUploading] = useState(null);
   const [assigning, setAssigning] = useState(null);
   const [publishing, setPublishing] = useState(null);
+  // Which course's Discard is waiting on its DELETE. Discard has no dialog to
+  // hold a busy flag for it, so the row holds one: a second click while the
+  // first is in flight deletes nothing and comes back as a red toast on an
+  // action that worked.
+  const [discarding, setDiscarding] = useState(null);
 
   const handleActivate = async (course) => {
     try {
@@ -276,11 +286,14 @@ export default function CourseTable({ courses, onCoursesChanged }) {
   // Drops the staged package without publishing it; the live package, if
   // any, is untouched. Same refetch-on-success rule as every mutation above.
   const handleDiscard = async (course) => {
+    setDiscarding(course.courseId);
     try {
       await discardPackage(course.courseId);
       await onCoursesChanged?.();
     } catch (error) {
       toast.error(error.message);
+    } finally {
+      setDiscarding(null);
     }
   };
 
@@ -345,6 +358,7 @@ export default function CourseTable({ courses, onCoursesChanged }) {
                   course={course}
                   onDiscard={handleDiscard}
                   onPublish={setPublishing}
+                  discarding={discarding === course.courseId}
                 />
               )}
             </Fragment>

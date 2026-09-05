@@ -418,6 +418,29 @@ describe("CourseTable staged sub-row", () => {
     expect(api.publishPackage).not.toHaveBeenCalled();
   });
 
+  it("sends one DELETE however fast Discard is double-clicked", async () => {
+    // Nothing stands between the click and the request -- spec 6.2 shows a
+    // bare Discard, and re-uploading the zip is the way back -- so the button
+    // itself has to latch. The second DELETE finds nothing staged and reaches
+    // the admin as a red toast on an action that worked.
+    let land;
+    api.discardPackage.mockReturnValue(
+      new Promise((resolve) => {
+        land = resolve;
+      }),
+    );
+    const onCoursesChanged = vi.fn();
+    renderTable([staged()], onCoursesChanged);
+
+    const discard = screen.getByRole("button", { name: /^discard$/i });
+    await userEvent.click(discard);
+    await userEvent.click(discard);
+
+    expect(api.discardPackage).toHaveBeenCalledTimes(1);
+    land({ data: {} });
+    await waitFor(() => expect(onCoursesChanged).toHaveBeenCalledTimes(1));
+  });
+
   it("opens the publish dialog from a verified staged package, then publishes and refetches", async () => {
     api.publishPackage.mockResolvedValue({ data: {} });
     const onCoursesChanged = vi.fn();
