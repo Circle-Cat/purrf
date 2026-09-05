@@ -39,7 +39,7 @@ describe("PostingsList", () => {
     expect(screen.queryByText(/Recruiter/)).not.toBeInTheDocument();
   });
 
-  it("shows an unresolved owner in red with an 'unavailable, remove' suffix, alongside a resolved one", () => {
+  it("shows an unresolved owner in red with an 'unavailable' suffix, alongside a resolved one", () => {
     render(
       <PostingsList
         jobs={[job]}
@@ -49,9 +49,7 @@ describe("PostingsList", () => {
     );
 
     expect(screen.getByText(/Alice/)).toBeInTheDocument();
-    expect(
-      screen.getByText("User 3 — unavailable, remove"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("User 3 — unavailable")).toBeInTheDocument();
   });
 
   it("calls onRowClick with the job when the row is clicked", () => {

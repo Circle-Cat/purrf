@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import PipelineSummary, {
+import PipelineSummary from "@/pages/Recruiting/components/PipelineSummary";
+import {
   unresolvedPersonLabel,
-  unresolvedPersonLabelWithAction,
-} from "@/pages/Recruiting/components/PipelineSummary";
+  unavailablePersonLabel,
+} from "@/pages/Recruiting/components/personLabel";
 
 describe("PipelineSummary", () => {
   it("renders ordered stages with rounds and tags", () => {
@@ -30,7 +31,7 @@ describe("PipelineSummary", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("2. Tech — 2 sessions")).toBeInTheDocument();
     expect(
-      screen.getByText("Assignee User 7 — unavailable, remove"),
+      screen.getByText("Assignee User 7 — unavailable"),
     ).toBeInTheDocument();
     // The "Recruiter:" prefix and this id's flagged text are separate DOM
     // nodes (the id is wrapped in its own <span> for red styling), so
@@ -39,9 +40,7 @@ describe("PipelineSummary", () => {
     // as one string. Assert on the flagged span's own text instead; the
     // "Recruiter: Name (#id)" full-prefix case is covered by the other
     // tests below, where the resolved label is a plain sibling text node.
-    expect(
-      screen.getByText("User 42 — unavailable, remove"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("User 42 — unavailable")).toBeInTheDocument();
   });
 
   it("shows an empty note when there are no stages", () => {
@@ -84,10 +83,8 @@ describe("PipelineSummary", () => {
 });
 
 describe("unresolved person label shapes", () => {
-  it("bare has no action suffix; the removable shape does", () => {
+  it("bare has no suffix; the unavailable shape does", () => {
     expect(unresolvedPersonLabel(42)).toBe("User 42");
-    expect(unresolvedPersonLabelWithAction(42)).toBe(
-      "User 42 — unavailable, remove",
-    );
+    expect(unavailablePersonLabel(42)).toBe("User 42 — unavailable");
   });
 });

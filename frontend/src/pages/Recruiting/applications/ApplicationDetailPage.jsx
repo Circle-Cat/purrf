@@ -46,7 +46,7 @@ import TermHint from "@/pages/Recruiting/components/TermHint";
 import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
 import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
 import AnswersSection from "@/pages/Recruiting/components/AnswersSection";
-import { unresolvedPersonLabel } from "@/pages/Recruiting/components/PipelineSummary";
+import { unresolvedPersonLabel } from "@/pages/Recruiting/components/personLabel";
 import ComposeEmailDialog from "@/pages/Recruiting/applications/ComposeEmailDialog";
 import EvaluationRubricForm from "@/pages/Recruiting/applications/EvaluationRubricForm";
 import { rubricFor } from "@/pages/Recruiting/applications/evaluationRubric";
@@ -1804,7 +1804,9 @@ const ApplicationDetailPage = () => {
   );
   const assigneeName =
     interviewPool.find((u) => u.userId === detail.assigneeId)?.name ??
-    (detail.assigneeId != null ? unresolvedPersonLabel(detail.assigneeId) : null);
+    (detail.assigneeId != null
+      ? unresolvedPersonLabel(detail.assigneeId)
+      : null);
 
   return (
     <div className="flex flex-col gap-6 p-6">
