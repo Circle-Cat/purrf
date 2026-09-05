@@ -891,5 +891,33 @@ class TestPublish(_PackageServiceCase):
         self.logger.exception.assert_called()
 
 
+class TestDiscard(_PackageServiceCase):
+    async def test_discarding_removes_the_staged_row_and_its_files(self):
+        pending = self._package(package_id=2, state=TrainingPackageState.PENDING,
+                                storage_prefix="training/9/staged/")
+        self._slots(live=self._package(package_id=1), pending=pending)
+
+        await self.service.discard_package(self.session, _COURSE_ID)
+
+        self.package_repository.delete.assert_awaited_once_with(self.session, pending)
+        self.storage.delete_prefix.assert_called_once_with("training/9/staged/")
+
+    async def test_the_live_package_survives_a_discard(self):
+        live = self._package(package_id=1, state=TrainingPackageState.LIVE)
+        self._slots(live=live, pending=self._package(package_id=2,
+                                                     state=TrainingPackageState.PENDING))
+
+        await self.service.discard_package(self.session, _COURSE_ID)
+
+        deleted = [c.args[1] for c in self.package_repository.delete.await_args_list]
+        self.assertNotIn(live, deleted)
+
+    async def test_nothing_staged_is_a_conflict(self):
+        self._slots(live=self._package(package_id=1), pending=None)
+
+        with self.assertRaises(ConflictError):
+            await self.service.discard_package(self.session, _COURSE_ID)
+
+
 if __name__ == "__main__":
     unittest.main()

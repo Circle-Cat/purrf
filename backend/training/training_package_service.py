@@ -281,6 +281,34 @@ class TrainingPackageService:
                 course_id,
             )
 
+    async def discard_package(self, session, course_id: int) -> None:
+        """Throw away the staged package without publishing it.
+
+        The way out of an upload that turned out to be the wrong file. It
+        touches nothing a learner can see.
+
+        Raises:
+            ConflictError: There is nothing staged on this course.
+        """
+        pending = await self.training_course_package_repository.get_by_state(
+            session, course_id, TrainingPackageState.PENDING
+        )
+        if pending is None:
+            raise ConflictError(
+                "There is no staged package on this course to discard."
+            )
+
+        prefix = pending.storage_prefix
+        await self.training_course_package_repository.delete(session, pending)
+        await session.commit()
+
+        self.logger.info(
+            "[TrainingPackageService] course %s discarded staged package %s",
+            course_id,
+            pending.package_id,
+        )
+        self._delete_prefix_quietly(prefix, course_id)
+
     async def read_completion_config(
         self, session, course_id: int
     ) -> TrainingCompletionConfigDto:
