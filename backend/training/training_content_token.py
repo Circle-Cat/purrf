@@ -5,16 +5,18 @@ cookie, so this signature is the only thing between a URL and somebody else's
 course. It is deliberately small: who, which assignment, when the session was
 minted, and when it stops working.
 
-It does NOT carry the storage prefix. A token outlives an upload, and a prefix
-baked into one would keep pointing at files that the overwrite cleanup is about
-to delete -- the learner's page would start 404ing mid-session. The prefix is
-read from the database on every request instead, which is also what makes
-"everybody sees the new package immediately" true.
+It names the package by id, never by storage prefix. A prefix baked into a
+token would keep pointing at files the replacement cleanup is about to delete;
+an id is resolved against the database on every request, so the prefix behind
+it can move without the token meaning anything different.
 
-The mint time is not the prefix in disguise. It says nothing about which files
-a request resolves to; it only lets the server ask the database whether the
-package moved on after this tab opened, which is what keeps a tab left open
-across a replacement from vouching for the package it never ran.
+Naming the package at all is what binds a run to the thing it is actually
+running. A tab left open across a replacement holds a token for a package that
+no longer exists, so every answer it gets -- files, and the progress it posts
+back -- is refused rather than quietly served or stored against its successor.
+Without that binding, the tab's in-memory CMI model gets written back over the
+resume state the replacement just cleared, and the learner reopens onto a
+bookmark that names a lesson the new package does not have.
 """
 
 import base64
@@ -36,16 +38,16 @@ class InvalidContentToken(ValueError):
 
 @dataclass(frozen=True)
 class ContentTokenClaims:
-    """Who this token is for, which assignment, and when the run began."""
+    """Who this token is for, which assignment, and which package it runs."""
 
     training_id: int
     user_id: int
     expires_at: int
-    # When this session was minted. Not the package it was minted for -- that
-    # would be the prefix this token refuses to carry -- but enough for the
-    # server to compare a run against the live package's own uploaded_at
-    # and tell a run of the current package from one of its predecessor.
-    issued_at: int
+    # The package this run opened against, by id. Not its storage prefix --
+    # that is read fresh per request -- but enough to refuse a run whose
+    # package has since been replaced, and to land a verification stamp on
+    # the package that was actually run rather than on whatever is live now.
+    package_id: int
 
 
 def _b64encode(raw: bytes) -> str:
@@ -66,15 +68,22 @@ def issue_content_token(
     signing_key: str,
     training_id: int,
     user_id: int,
+    *,
+    package_id: int,
     now: int | None = None,
     lifetime_seconds: int = TOKEN_LIFETIME_SECONDS,
 ) -> tuple[str, int]:
-    """Sign a token for one person's access to one assignment.
+    """Sign a token for one person's run of one package.
+
+    ``package_id`` is keyword-only: it joined three parameters that are all
+    plain ints, where a silently mis-ordered call would mint a token naming
+    the wrong package and be caught by nothing.
 
     Args:
         signing_key (str): TRAINING_TOKEN_SIGNING_KEY.
         training_id (int): The assignment being opened.
         user_id (int): Who is opening it.
+        package_id (int): The package this run opens against.
         now (int | None): Unix seconds, for tests.
         lifetime_seconds (int): How long the token lasts.
 
@@ -88,10 +97,9 @@ def issue_content_token(
         # Which variable is missing is logged by the caller, which has a
         # logger; this message reaches a browser.
         raise ValueError("Training content is not available.")
-    issued_at = int(now if now is not None else time.time())
-    expires_at = issued_at + lifetime_seconds
+    expires_at = int(now if now is not None else time.time()) + lifetime_seconds
     payload = json.dumps(
-        {"t": training_id, "u": user_id, "e": expires_at, "i": issued_at},
+        {"p": package_id, "t": training_id, "u": user_id, "e": expires_at},
         separators=(",", ":"),
         sort_keys=True,
     ).encode("utf-8")
@@ -134,7 +142,7 @@ def _authentic_claims(signing_key: str, token: str) -> ContentTokenClaims:
         training_id = int(claims["t"])
         user_id = int(claims["u"])
         expires_at = int(claims["e"])
-        issued_at = int(claims["i"])
+        package_id = int(claims["p"])
     except (ValueError, KeyError, TypeError) as error:
         raise InvalidContentToken("Malformed content token.") from error
 
@@ -142,7 +150,7 @@ def _authentic_claims(signing_key: str, token: str) -> ContentTokenClaims:
         training_id=training_id,
         user_id=user_id,
         expires_at=expires_at,
-        issued_at=issued_at,
+        package_id=package_id,
     )
 
 
@@ -169,24 +177,25 @@ def verify_content_token(
     return claims
 
 
-def read_session_start(signing_key: str, token: str) -> int:
-    """When the run in the tab holding this token began.
+def read_session_package(signing_key: str, token: str) -> int:
+    """Which package the run in the tab holding this token is running.
 
     Expiry is not consulted. Here the token is not the credential -- the
     caller reached the app origin with its own Access identity -- and the one
     question is which package that tab opened against. A twelve-hour sitting
     that overran its token still answers it, and refusing one would cost the
-    longest run its stamp.
+    longest run its last save.
 
     Args:
         signing_key (str): TRAINING_TOKEN_SIGNING_KEY.
         token (str): The token the page was given when it opened the course.
 
     Returns:
-        int: Unix seconds at which the session was minted.
+        int: The package the run opened against.
 
     Raises:
-        InvalidContentToken: Malformed or altered.
+        InvalidContentToken: Malformed, altered, or of the payload shape that
+            predates packages carrying an id.
         ValueError: No signing key configured.
     """
-    return _authentic_claims(signing_key, token).issued_at
+    return _authentic_claims(signing_key, token).package_id

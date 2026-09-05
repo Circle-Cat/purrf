@@ -88,10 +88,12 @@ class TestACompletedRunDerivesVerifiedEndToEnd(BaseRepositoryTestLib):
         )
         await self.insert_entities([self.assignment])
 
-    def _token_opened_after_upload(self) -> str:
-        opened_at = int((self.uploaded_at + timedelta(minutes=5)).timestamp())
+    def _token_for_the_live_package(self) -> str:
         token, _ = issue_content_token(
-            _SIGNING_KEY, self.assignment.training_id, self.user_id, now=opened_at
+            _SIGNING_KEY,
+            self.assignment.training_id,
+            self.user_id,
+            package_id=self.package.package_id,
         )
         return token
 
@@ -111,7 +113,7 @@ class TestACompletedRunDerivesVerifiedEndToEnd(BaseRepositoryTestLib):
             self.user_id,
             {"cmi.core.lesson_status": "completed"},
             may_verify_course=True,
-            session_token=self._token_opened_after_upload(),
+            session_token=self._token_for_the_live_package(),
         )
 
         # expire_on_commit=False means the session would otherwise hand back
