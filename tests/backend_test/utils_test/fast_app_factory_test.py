@@ -36,7 +36,6 @@ class TestFastAppFactory(unittest.TestCase):
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
             audit_controller=self.mock_controller,
-            blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
@@ -124,7 +123,6 @@ class TestFastAppFactory(unittest.TestCase):
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
             audit_controller=self.mock_controller,
-            blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
@@ -176,7 +174,6 @@ class TestFastAppFactory(unittest.TestCase):
             application_controller=application,
             board_controller=self.mock_controller,
             audit_controller=self.mock_controller,
-            blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
@@ -230,7 +227,6 @@ class TestFastAppFactory(unittest.TestCase):
             recruiting_controller=self.mock_controller,
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
-            blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             audit_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
@@ -282,7 +278,6 @@ class TestFastAppFactory(unittest.TestCase):
             recruiting_controller=self.mock_controller,
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
-            blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             audit_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
@@ -334,7 +329,6 @@ class TestFastAppFactory(unittest.TestCase):
             recruiting_controller=self.mock_controller,
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
-            blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             audit_controller=audit,
             recruiting_notification_controller=self.mock_controller,
@@ -389,7 +383,6 @@ class TestFastAppFactory(unittest.TestCase):
             application_controller=self.mock_controller,
             board_controller=board,
             audit_controller=self.mock_controller,
-            blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
@@ -414,59 +407,6 @@ class TestFastAppFactory(unittest.TestCase):
             {route.path for route in app.routes},
         )
 
-    def test_blacklist_routes_are_mounted(self):
-        """The blacklist controller's router is mounted under /api."""
-        blacklist = MagicMock()
-        router = APIRouter()
-
-        @router.get("/recruiting/blacklist/ping")
-        def _ping():
-            return {}
-
-        blacklist.router = router
-        factory = FastAppFactory(
-            authentication_controller=self.mock_controller,
-            authentication_service=self.mock_service,
-            user_identity_service=MagicMock(),
-            user_permissions_repository=MagicMock(),
-            notification_controller=self.mock_controller,
-            historical_controller=self.mock_controller,
-            consumer_controller=self.mock_controller,
-            internal_activity_controller=self.mock_controller,
-            profile_controller=self.mock_profile_controller,
-            mentorship_controller=self.mock_controller,
-            mentorship_admin_controller=self.mock_controller,
-            email_management_controller=self.mock_controller,
-            permission_admin_controller=self.mock_controller,
-            user_account_controller=self.mock_controller,
-            block_controller=self.mock_controller,
-            recruiting_controller=self.mock_controller,
-            application_controller=self.mock_controller,
-            board_controller=self.mock_controller,
-            audit_controller=self.mock_controller,
-            blacklist_controller=blacklist,
-            evaluation_controller=self.mock_controller,
-            recruiting_notification_controller=self.mock_controller,
-            leave_admin_controller=self.mock_controller,
-            training_admin_controller=self.mock_controller,
-            training_content_controller=self.mock_controller,
-            training_content_host="test-training-content.purrf.io",
-            leave_job_controller=self.mock_controller,
-            leave_request_controller=self.mock_controller,
-            leave_calendar_controller=self.mock_controller,
-            notification_delivery_controller=self.mock_controller,
-            notification_publisher=MagicMock(),
-            notification_topic_path="projects/p/topics/t",
-            launchdarkly_client=MagicMock(),
-            database=MagicMock(),
-            logger=MagicMock(),
-        )
-
-        app = factory.create_app()
-
-        self.assertIn(
-            "/api/recruiting/blacklist/ping", {route.path for route in app.routes}
-        )
 
     def test_evaluation_routes_are_mounted(self):
         """The evaluation controller's router is mounted under /api."""
@@ -498,7 +438,6 @@ class TestFastAppFactory(unittest.TestCase):
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
             audit_controller=self.mock_controller,
-            blacklist_controller=self.mock_controller,
             evaluation_controller=evaluation,
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
@@ -561,7 +500,6 @@ class TestFastAppFactory(unittest.TestCase):
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
             audit_controller=self.mock_controller,
-            blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
@@ -625,7 +563,6 @@ class TestFastAppFactory(unittest.TestCase):
             application_controller=application_controller,
             board_controller=board_controller,
             audit_controller=self.mock_controller,
-            blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
@@ -712,7 +649,6 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
             application_controller=self.mock_controller,
             board_controller=self.mock_controller,
             audit_controller=self.mock_controller,
-            blacklist_controller=self.mock_controller,
             evaluation_controller=self.mock_controller,
             recruiting_notification_controller=self.mock_controller,
             leave_admin_controller=self.mock_controller,
@@ -784,7 +720,6 @@ class TestAccountConsoleRoutes(unittest.TestCase):
             recruiting_controller=controller,
             application_controller=controller,
             board_controller=controller,
-            blacklist_controller=controller,
             evaluation_controller=controller,
             audit_controller=controller,
             recruiting_notification_controller=controller,

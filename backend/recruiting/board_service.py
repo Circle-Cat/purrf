@@ -9,7 +9,6 @@ from backend.dto.board_dto import (
     ApplicationActivityDto,
     ApplicationAggregateDto,
     ApplicationDetailDto,
-    BlacklistDto,
     BoardCardDto,
     BoardJobDto,
     CommentCreateDto,
@@ -21,7 +20,6 @@ from backend.dto.board_dto import (
     RoundChangeDto,
     StageChangeDto,
     SubStatusChangeDto,
-    UpcomingInterviewDto,
 )
 from backend.communication.email_templates import (
     render_all_templates,
@@ -43,7 +41,6 @@ from backend.notification_management.event_recorder import record_event
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.job_entity import JobEntity
 from backend.recruiting import stage_machine
-from backend.admin.block_service import apply_block_kernel
 from backend.recruiting.pipeline_owners import normalized_owner_ids
 
 _MENTION_TOKEN_RE = re.compile(r"@\[(\d+)\]")
@@ -161,10 +158,7 @@ class BoardService:
     Every read here is row-level owner-gated against a job's
     ``pipeline_config`` owner ids (see ``pipeline_owners.normalized_owner_ids``)
     rather than an enum permission — visibility is "did you configure
-    yourself as an owner of this posting", not a role. ``blacklist`` is the
-    one exception: it's an org-level sanction gated only by the
-    ``RECRUITING_BLACKLIST_WRITE`` permission at the route, not by job
-    ownership.
+    yourself as an owner of this posting", not a role.
     """
 
     def __init__(
@@ -1030,8 +1024,8 @@ class BoardService:
                 also passes — used by the read path (``get_application_detail``)
                 now that owners and assignees share one detail page.
                 Mutation paths (``change_stage``,
-                ``set_sub_status``, ``reassign``, ``blacklist``) leave this
-                False and stay owner-only.
+                ``set_sub_status``, ``reassign``) leave this False and stay
+                owner-only.
             allow_self (bool): When True, a caller who is the application's
                 own submitter also passes, regardless of job ownership or
                 assignment — used by ``get_resume`` so a candidate can read
@@ -2118,127 +2112,6 @@ class BoardService:
         return self.recruiting_mapper.to_application_dto(
             application, current_sub, editable=False
         )
-
-    async def blacklist(
-        self,
-        session: AsyncSession,
-        current_user: UserContextDto,
-        dto: BlacklistDto,
-    ) -> ApplicationDto:
-        """Block a user org-wide off one of their applications.
-
-        A thin shell over ``apply_block_kernel``, which owns the sanction
-        itself: this only pins the triggering application, so the route can
-        return it, and commits. The kernel does the three consequences (block
-        flags, the sweep of every application, the cancellation of every
-        upcoming interview) and deliberately does not commit.
-
-        Deliberately NOT owner-gated: unlike every other write in this
-        service, this does not check whether ``current_user`` owns the
-        triggering application's job. It's an org-level sanction -- whoever
-        holds ``Permission.RECRUITING_BLACKLIST_WRITE`` (checked at the
-        route) may blacklist any user off any application, regardless of
-        which posting surfaced the abuse (2026-06-26 decision).
-
-        Args:
-            session (AsyncSession): Active database async session.
-            current_user (UserContextDto): The authenticated caller,
-                recorded as ``blocked_by``.
-            dto (BlacklistDto): The target user/application and the
-                (required, non-blank) reason.
-
-        Returns:
-            ApplicationDto: The now-REJECTED, blacklist-tagged application.
-
-        Raises:
-            ValueError: If the target user is missing, the application is
-                missing, or the application does not belong to
-                ``dto.user_id``.
-        """
-        user = await self.users_repository.get_user_by_user_id(session, dto.user_id)
-        if user is None:
-            raise ValueError(f"user {dto.user_id} not found")
-
-        application = await self.application_repository.get_by_id(
-            session, dto.application_id, for_update=True
-        )
-        if application is None or application.user_id != dto.user_id:
-            raise ValueError(f"application {dto.application_id} not found")
-
-        await apply_block_kernel(
-            session,
-            actor_id=current_user.user_id,
-            user_id=dto.user_id,
-            reason=dto.reason,
-            users_repository=self.users_repository,
-            application_repository=self.application_repository,
-            application_submission_repository=self.application_submission_repository,
-            application_interview_repository=self.application_interview_repository,
-            interview_scheduling_service=self.interview_scheduling_service,
-        )
-
-        current_sub = await self.application_submission_repository.get_current(
-            session, dto.application_id
-        )
-        await session.commit()
-        return self.recruiting_mapper.to_application_dto(
-            application, current_sub, editable=False
-        )
-
-    async def list_upcoming_interviews_for_user(
-        self, session: AsyncSession, user_id: int
-    ) -> list[UpcomingInterviewDto]:
-        """Every still-to-happen interview meeting a blacklist would cancel.
-
-        The pre-flight the blacklist confirm dialog shows, so the sanction
-        never silently deletes a meeting the recruiter didn't know about. It
-        mirrors ``blacklist``'s own sweep exactly: applications already tagged
-        ``blacklisted`` are excluded (that earlier block already cancelled
-        their meetings, and the sweep skips them), and meetings that have
-        already started are excluded (``cancel_for_round`` leaves those alone).
-        Promising anything else here would make the dialog lie.
-
-        Not owner-gated, like ``blacklist`` itself: the route's
-        ``RECRUITING_BLACKLIST_WRITE`` is the whole gate, and this returns no
-        more than the block it precedes is about to act on.
-
-        Args:
-            session (AsyncSession): Active database async session.
-            user_id (int): The candidate about to be blocked.
-
-        Returns:
-            list[UpcomingInterviewDto]: Soonest first; empty when the
-                candidate has nothing booked.
-        """
-        rows = await self.application_repository.list_by_user(session, user_id)
-        live = [
-            (application, job)
-            for application, job in rows
-            if not (application.tags or {}).get("blacklisted")
-        ]
-        job_titles = {
-            application.application_id: job.title for application, job in live
-        }
-        interviews = (
-            await self.application_interview_repository.list_by_application_ids(
-                session, [application.application_id for application, _job in live]
-            )
-        )
-        now = datetime.now(timezone.utc)
-        upcoming = sorted(
-            (interview for interview in interviews if interview.start_at > now),
-            key=lambda interview: interview.start_at,
-        )
-        return [
-            UpcomingInterviewDto(
-                application_id=interview.application_id,
-                job_title=job_titles.get(interview.application_id, ""),
-                stage=interview.stage,
-                round=interview.round,
-                start_at=interview.start_at,
-            )
-            for interview in upcoming
-        ]
 
     async def _mentionable_user_ids(
         self, session: AsyncSession, application: ApplicationEntity, job: JobEntity

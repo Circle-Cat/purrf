@@ -45,7 +45,6 @@ class FastAppFactory:
         recruiting_controller,
         application_controller,
         board_controller,
-        blacklist_controller,
         evaluation_controller,
         audit_controller,
         recruiting_notification_controller,
@@ -81,7 +80,6 @@ class FastAppFactory:
             recruiting_controller: An instance of RecruitingController that manages API routes for job posting lifecycle.
             application_controller: An instance of ApplicationController that manages API routes for candidate application submission.
             board_controller: An instance of BoardController that manages API routes for the owner-facing recruiting application board.
-            blacklist_controller: An instance of BlacklistController that manages API routes for viewing and clearing the org-wide user blacklist.
             evaluation_controller: An instance of EvaluationController that manages API routes for assignee-facing interview evaluation scorecards.
             audit_controller: An instance of AuditController that manages API routes for the cross-posting recruiting audit page.
             recruiting_notification_controller: An instance of RecruitingNotificationController that manages API routes for the caller's own in-app notifications.
@@ -119,7 +117,6 @@ class FastAppFactory:
         self.recruiting_controller = recruiting_controller
         self.application_controller = application_controller
         self.board_controller = board_controller
-        self.blacklist_controller = blacklist_controller
         self.evaluation_controller = evaluation_controller
         self.audit_controller = audit_controller
         self.recruiting_notification_controller = recruiting_notification_controller
@@ -223,7 +220,6 @@ class FastAppFactory:
         app.include_router(self.recruiting_controller.router, prefix="/api")
         app.include_router(self.application_controller.router, prefix="/api")
         app.include_router(self.board_controller.router, prefix="/api")
-        app.include_router(self.blacklist_controller.router, prefix="/api")
         app.include_router(self.evaluation_controller.router, prefix="/api")
         app.include_router(self.audit_controller.router, prefix="/api")
         app.include_router(

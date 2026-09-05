@@ -17,7 +17,6 @@ from backend.repository.notification_repository import NotificationRepository
 from backend.recruiting.recruiting_mapper import RecruitingMapper
 from backend.dto.board_dto import (
     REJECT_REASONS,
-    BlacklistDto,
     CommentCreateDto,
     ReassignDto,
     RoundChangeDto,
@@ -2963,108 +2962,11 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.sub_status, "in_progress")
         self.evaluation_repo.has_confirmed.assert_not_awaited()
 
-    # -- blacklist --
 
-    async def test_blacklist_returns_the_closed_out_application_and_commits(self):
-        """The shell's own job: pin the triggering application so the route can
-        return it, and own the transaction. What it looks like once closed out
-        is the kernel's doing -- see block_service_apply_test."""
-        user = self._user(user_id=3)
-        application = self._application(
-            application_id=10, job_id=1, user_id=3, stage=ApplicationStage.TECH
-        )
-        application.current_round = 2
-        application.sub_status = "in_progress"
-        application.tags = {"existing": "keep-me"}
-        current_sub = self._submission(application_id=10, is_frozen=False)
-        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
-        self.app_repo.get_by_id = AsyncMock(return_value=application)
-        self.app_repo.list_by_user = AsyncMock(
-            return_value=[(application, self._job(job_id=1, owner_ids=(2,)))]
-        )
-        self.sub_repo.get_current = AsyncMock(return_value=current_sub)
 
-        dto = BlacklistDto(
-            user_id=3, application_id=10, reason="Fabricated credentials"
-        )
-        result = await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
 
-        self.assertEqual(result.stage, ApplicationStage.REJECTED)
-        self.assertIsNone(result.sub_status)
-        self.assertEqual(result.tags["existing"], "keep-me")
-        self.assertTrue(result.tags["blacklisted"])
-        self.assertTrue(current_sub.is_frozen)
-        self.app_repo.update.assert_awaited_once()
-        self.session.commit.assert_awaited_once()
-        self.assertEqual(result.current_round, 1)
 
-    async def test_blacklist_row_locks_the_application_before_validating_it(self):
-        user = self._user(user_id=3)
-        application = self._application(application_id=10, job_id=1, user_id=3)
-        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
-        self.app_repo.get_by_id = AsyncMock(return_value=application)
-        self.sub_repo.get_current = AsyncMock(return_value=None)
 
-        dto = BlacklistDto(user_id=3, application_id=10, reason="Spam")
-        await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
-
-        self.app_repo.get_by_id.assert_awaited_once_with(
-            self.session, 10, for_update=True
-        )
-
-    async def test_blacklist_missing_user_raises(self):
-        self.users_repo.get_user_by_user_id = AsyncMock(return_value=None)
-        self.app_repo.get_by_id = AsyncMock(return_value=None)
-
-        dto = BlacklistDto(user_id=3, application_id=10, reason="Spam")
-        with self.assertRaises(ValueError):
-            await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
-        self.app_repo.get_by_id.assert_not_awaited()
-
-    async def test_blacklist_missing_application_raises(self):
-        user = self._user(user_id=3)
-        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
-        self.app_repo.get_by_id = AsyncMock(return_value=None)
-
-        dto = BlacklistDto(user_id=3, application_id=999, reason="Spam")
-        with self.assertRaises(ValueError) as ctx:
-            await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
-        self.assertEqual(str(ctx.exception), "application 999 not found")
-
-    async def test_blacklist_application_belonging_to_other_user_raises(self):
-        user = self._user(user_id=3)
-        application = self._application(application_id=10, job_id=1, user_id=4)
-        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
-        self.app_repo.get_by_id = AsyncMock(return_value=application)
-
-        dto = BlacklistDto(user_id=3, application_id=10, reason="Spam")
-        with self.assertRaises(ValueError) as ctx:
-            await self.service.blacklist(self.session, self._ctx(user_id=99), dto)
-        self.assertEqual(str(ctx.exception), "application 10 not found")
-        self.app_repo.update.assert_not_awaited()
-        self.session.commit.assert_not_awaited()
-
-    async def test_blacklist_is_not_owner_gated(self):
-        """The caller need not own the application's job — only the
-        RECRUITING_BLACKLIST_WRITE permission (checked at the route) gates
-        this action."""
-        user = self._user(user_id=3)
-        application = self._application(application_id=10, job_id=1, user_id=3)
-        self.users_repo.get_user_by_user_id = AsyncMock(return_value=user)
-        self.app_repo.get_by_id = AsyncMock(return_value=application)
-        self.sub_repo.get_current = AsyncMock(return_value=None)
-        # job_repo is deliberately never consulted; blacklist doesn't load
-        # the job or check ownership at all.
-        self.job_repo.get_by_job_id = AsyncMock(
-            side_effect=AssertionError("blacklist must not check job ownership")
-        )
-
-        dto = BlacklistDto(user_id=3, application_id=10, reason="Spam")
-        await self.service.blacklist(self.session, self._ctx(user_id=42), dto)
-
-        self.job_repo.get_by_job_id.assert_not_awaited()
-
-    # -- set_round --
 
     async def test_set_round_advances_to_a_valid_round(self):
         job = self._job(job_id=1, owner_ids=(2,), stages=("tech",), rounds={"tech": 3})
@@ -3367,8 +3269,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.interview_svc.cancel_for_round.assert_not_awaited()
 
-    # -- blacklist: the upcoming meetings it sweeps away --
-
     # Far from any real "now" in both directions, so these never turn into
     # time bombs.
     UPCOMING = datetime(2099, 8, 5, 21, 0, tzinfo=timezone.utc)
@@ -3394,96 +3294,10 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             scheduled_by=2,
         )
 
-    # -- blacklist: the pre-flight preview the confirm dialog shows --
 
-    async def test_list_upcoming_interviews_names_the_posting_and_the_slot(self):
-        application = self._application(
-            application_id=10, job_id=1, user_id=5, stage=ApplicationStage.BEHAVIORAL
-        )
-        application.current_round = 1
-        job = self._job(job_id=1, owner_ids=(2,))
-        self.app_repo.list_by_user = AsyncMock(return_value=[(application, job)])
-        self.interview_repo.list_by_application_ids = AsyncMock(
-            return_value=[self._interview_row(application_id=10)]
-        )
 
-        result = await self.service.list_upcoming_interviews_for_user(self.session, 5)
 
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0].application_id, 10)
-        self.assertEqual(result[0].job_title, "Job 1")
-        self.assertEqual(result[0].stage, ApplicationStage.BEHAVIORAL)
-        self.assertEqual(result[0].round, 1)
-        self.assertEqual(result[0].start_at, self.UPCOMING)
-        # No zone on the projection: the dialog renders this instant in the
-        # reader's own zone, like every other interview time.
-        self.assertFalse(hasattr(result[0], "timezone"))
 
-    async def test_list_upcoming_interviews_omits_meetings_already_underway(self):
-        application = self._application(application_id=10, job_id=1, user_id=5)
-        self.app_repo.list_by_user = AsyncMock(
-            return_value=[(application, self._job(job_id=1))]
-        )
-        self.interview_repo.list_by_application_ids = AsyncMock(
-            return_value=[self._interview_row(application_id=10, start_at=self.STARTED)]
-        )
-
-        result = await self.service.list_upcoming_interviews_for_user(self.session, 5)
-
-        self.assertEqual(result, [])
-
-    async def test_list_upcoming_interviews_omits_already_blacklisted_applications(
-        self,
-    ):
-        """Their meetings were already cancelled by the earlier blacklist, and
-        the sweep skips those rows -- promising to cancel them again would be a
-        lie."""
-        blocked = self._application(application_id=11, job_id=2, user_id=5)
-        blocked.tags = {"blacklisted": True}
-        live = self._application(application_id=10, job_id=1, user_id=5)
-        self.app_repo.list_by_user = AsyncMock(
-            return_value=[
-                (live, self._job(job_id=1)),
-                (blocked, self._job(job_id=2)),
-            ]
-        )
-        self.interview_repo.list_by_application_ids = AsyncMock(return_value=[])
-
-        await self.service.list_upcoming_interviews_for_user(self.session, 5)
-
-        self.interview_repo.list_by_application_ids.assert_awaited_once_with(
-            self.session, [10]
-        )
-
-    async def test_list_upcoming_interviews_orders_by_start_time(self):
-        first = self._application(application_id=10, job_id=1, user_id=5)
-        second = self._application(application_id=11, job_id=2, user_id=5)
-        self.app_repo.list_by_user = AsyncMock(
-            return_value=[
-                (first, self._job(job_id=1)),
-                (second, self._job(job_id=2)),
-            ]
-        )
-        later = self.UPCOMING.replace(year=2100)
-        self.interview_repo.list_by_application_ids = AsyncMock(
-            return_value=[
-                self._interview_row(application_id=11, start_at=later),
-                self._interview_row(application_id=10),
-            ]
-        )
-
-        result = await self.service.list_upcoming_interviews_for_user(self.session, 5)
-
-        self.assertEqual([row.application_id for row in result], [10, 11])
-
-    async def test_list_upcoming_interviews_for_a_candidate_with_nothing_booked(self):
-        self.app_repo.list_by_user = AsyncMock(return_value=[])
-
-        result = await self.service.list_upcoming_interviews_for_user(self.session, 5)
-
-        self.assertEqual(result, [])
-
-    # -- activity timeline logging --
 
     async def test_change_stage_logs_stage_changed_activity(self):
         job = self._job(

@@ -129,8 +129,6 @@ from backend.recruiting.board_service import BoardService
 from backend.recruiting.email_sync_service import EmailSyncService
 from backend.recruiting.board_controller import BoardController
 from backend.recruiting.interview_scheduling_service import InterviewSchedulingService
-from backend.recruiting.blacklist_service import BlacklistService
-from backend.recruiting.blacklist_controller import BlacklistController
 from backend.recruiting.evaluation_service import EvaluationService
 from backend.recruiting.evaluation_controller import EvaluationController
 from backend.recruiting.audit_service import AuditService
@@ -921,13 +919,6 @@ class AppDependencyBuilder:
             self.block_service,
             self.database,
         )
-        self.blacklist_service = BlacklistService(
-            self.users_repository, self.user_emails_repository
-        )
-        self.blacklist_controller = BlacklistController(
-            self.blacklist_service,
-            self.database,
-        )
         self.evaluation_service = EvaluationService(
             self.application_repository,
             self.application_assignment_repository,
@@ -1082,7 +1073,6 @@ class AppDependencyBuilder:
             recruiting_controller=self.recruiting_controller,
             application_controller=self.application_controller,
             board_controller=self.board_controller,
-            blacklist_controller=self.blacklist_controller,
             evaluation_controller=self.evaluation_controller,
             audit_controller=self.audit_controller,
             recruiting_notification_controller=self.recruiting_notification_controller,

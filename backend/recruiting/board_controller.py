@@ -5,7 +5,6 @@ from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage
 from backend.utils.permission_decorators import authenticate
 from backend.dto.board_dto import (
-    BlacklistDto,
     CommentCreateDto,
     ReassignDto,
     RoundChangeDto,
@@ -33,8 +32,6 @@ from backend.common.api_endpoints import (
     RECRUITING_APPLICATION_OTHER_APPLICATIONS_ENDPOINT,
     RECRUITING_APPLICATION_COMMENTS_ENDPOINT,
     RECRUITING_APPLICATION_MENTIONABLE_USERS_ENDPOINT,
-    RECRUITING_BLACKLIST_ENDPOINT,
-    RECRUITING_BLACKLIST_UPCOMING_INTERVIEWS_ENDPOINT,
 )
 
 
@@ -47,10 +44,9 @@ class BoardController:
     configured owner ids, not an enum permission. The decision routes
     (stage/sub-status/reassign/round) are double-gated:
     ``Permission.RECRUITING_APPLICATION_ADVANCE`` at the route, and the same
-    row-level owner check in ``BoardService``. The blacklist route is
-    permission-gated only (``Permission.RECRUITING_BLACKLIST_WRITE``):
-    ``BoardService.blacklist`` deliberately performs no job-ownership check,
-    since it's an org-level sanction rather than a per-posting decision.
+    row-level owner check in ``BoardService``. Blocking a candidate is no
+    longer one of these routes at all: it is an org-level sanction, so it
+    moved to the account console and the request flow behind it (PUR-638).
 
     The comments routes (list/add) are also plain login-gated: like the
     reads above, access is a row-level owner-or-current-assignee check
@@ -195,22 +191,6 @@ class BoardController:
                 permissions=[Permission.RECRUITING_APPLICATION_ADVANCE]
             )(self.set_round),
             methods=["PATCH"],
-            response_model=None,
-        )
-        self.router.add_api_route(
-            RECRUITING_BLACKLIST_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.RECRUITING_BLACKLIST_WRITE])(
-                self.blacklist
-            ),
-            methods=["POST"],
-            response_model=None,
-        )
-        self.router.add_api_route(
-            RECRUITING_BLACKLIST_UPCOMING_INTERVIEWS_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.RECRUITING_BLACKLIST_WRITE])(
-                self.list_blacklist_upcoming_interviews
-            ),
-            methods=["GET"],
             response_model=None,
         )
         # Interview scheduling reuses the advance permission: booking a
@@ -450,30 +430,6 @@ class BoardController:
                 session, current_user, application_id, round_data
             )
         return api_response(message="Application session updated.", data=result)
-
-    async def blacklist(
-        self,
-        current_user: UserContextDto,
-        blacklist_data: BlacklistDto,
-    ):
-        """Block a user org-wide and close out the triggering application."""
-        async with self.database.session() as session:
-            result = await self.board_service.blacklist(
-                session, current_user, blacklist_data
-            )
-        return api_response(message="User blacklisted.", data=result)
-
-    async def list_blacklist_upcoming_interviews(
-        self,
-        current_user: UserContextDto,
-        user_id: int,
-    ):
-        """List the interview meetings a blacklist of this user would cancel."""
-        async with self.database.session() as session:
-            result = await self.board_service.list_upcoming_interviews_for_user(
-                session, user_id
-            )
-        return api_response(message="Upcoming interviews fetched.", data=result)
 
     async def schedule_interview(
         self,

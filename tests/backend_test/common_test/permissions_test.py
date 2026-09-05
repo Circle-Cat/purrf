@@ -12,7 +12,7 @@ class TestPermissions(unittest.TestCase):
     # The count is a tripwire: a new permission also needs an entry in
     # permission_descriptions.py. Bump it and write the description.
     def test_catalog_values_are_unique_and_dotted(self):
-        self.assertEqual(len(Permission), 23)
+        self.assertEqual(len(Permission), 22)
         values = [p.value for p in Permission]
         self.assertEqual(len(values), len(set(values)))
         for value in values:
@@ -60,6 +60,16 @@ class TestPermissions(unittest.TestCase):
     def test_user_admin_is_not_implied_by_permission_manage(self):
         """PERMISSION_MANAGE is not a bundle -- only is_super_admin expands."""
         self.assertIn(Permission.USER_ADMIN, SUPER_ADMIN_PERMISSIONS)
+
+
+class TestRetiredPermissions(unittest.TestCase):
+    def test_blacklist_write_permission_is_gone(self):
+        """Blocking moved behind a request-and-approval flow; the permission
+        that used to guard the one-click version has no gate left to guard."""
+        self.assertFalse(hasattr(Permission, "RECRUITING_BLACKLIST_WRITE"))
+        self.assertNotIn(
+            "recruiting.blacklist.write", {str(p) for p in Permission}
+        )
 
 
 if __name__ == "__main__":

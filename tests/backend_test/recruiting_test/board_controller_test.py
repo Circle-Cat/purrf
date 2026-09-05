@@ -1,11 +1,10 @@
 import unittest
 from http import HTTPStatus
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, create_autospec, patch
 
 from fastapi import HTTPException, Response
 
 from backend.dto.board_dto import (
-    BlacklistDto,
     ReassignDto,
     RoundChangeDto,
     StageChangeDto,
@@ -20,6 +19,7 @@ from backend.common.api_endpoints import (
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import ApplicationStage
 from backend.recruiting.board_controller import BoardController
+from backend.recruiting.board_service import BoardService
 
 
 class TestBoardController(unittest.IsolatedAsyncioTestCase):
@@ -29,14 +29,16 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         self.database.session.return_value.__aenter__.return_value = self.session
         self.database.session.return_value.__aexit__.return_value = None
 
-        self.board_service = MagicMock()
+        # autospec (not a bare MagicMock) so a method disappearing from
+        # BoardService fails here instead of only at request time: every
+        # attribute of a bare MagicMock exists, including ones that do not.
+        self.board_service = create_autospec(BoardService, instance=True)
         self.board_service.list_my_jobs = AsyncMock(return_value=[])
         self.board_service.get_board = AsyncMock(return_value={})
         self.board_service.get_application_detail = AsyncMock(return_value={"id": 10})
         self.board_service.change_stage = AsyncMock(return_value={"id": 10})
         self.board_service.set_sub_status = AsyncMock(return_value={"id": 10})
         self.board_service.set_round = AsyncMock(return_value={"id": 10})
-        self.board_service.blacklist = AsyncMock(return_value={"id": 10})
         self.board_service.get_resume = AsyncMock(return_value=b"%PDF-1.4 data")
         self.board_service.get_application_activity = AsyncMock(return_value=[])
         self.board_service.list_mentionable_users = AsyncMock(return_value=[])
@@ -213,19 +215,6 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(resp["data"], updated)
 
-    async def test_blacklist_delegates(self):
-        updated = {"id": 10, "stage": "rejected"}
-        self.board_service.blacklist = AsyncMock(return_value=updated)
-        dto = BlacklistDto(
-            user_id=3, application_id=10, reason="Fabricated credentials"
-        )
-
-        resp = await self.controller.blacklist(self.ctx, blacklist_data=dto)
-
-        self.board_service.blacklist.assert_awaited_once_with(
-            self.session, self.ctx, dto
-        )
-        self.assertEqual(resp["data"], updated)
 
     async def test_get_resume_returns_raw_pdf_response(self):
         self.board_service.get_resume = AsyncMock(return_value=b"%PDF-1.4 data")
@@ -298,15 +287,14 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
             [Permission.RECRUITING_APPLICATION_ADVANCE],
         )
 
-    def test_blacklist_route_is_post_and_permission_gated(self):
-        routes_by_path = {route.path: route for route in self.controller.router.routes}
+    def test_the_old_blacklist_routes_are_gone(self):
+        """PUR-638: the one-click blacklist is retired in favour of a request
+        someone else decides. Its routes must leave with it, or the flow they
+        bypass is optional."""
+        paths = {route.path for route in self.controller.router.routes}
 
-        blacklist_route = routes_by_path["/recruiting/blacklist"]
-
-        self.assertIn("POST", blacklist_route.methods)
-        self.assertEqual(
-            self._endpoint_permissions(blacklist_route.endpoint),
-            [Permission.RECRUITING_BLACKLIST_WRITE],
+        self.assertFalse(
+            [path for path in paths if path.startswith("/recruiting/blacklist")]
         )
 
     def test_email_templates_route_requires_the_advance_permission(self):
@@ -452,18 +440,6 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(resp["data"], {"interviewId": 1})
 
-    async def test_list_blacklist_upcoming_interviews_delegates(self):
-        rows = [{"applicationId": 10}]
-        self.board_service.list_upcoming_interviews_for_user = AsyncMock(
-            return_value=rows
-        )
-
-        resp = await self.controller.list_blacklist_upcoming_interviews(self.ctx, 5)
-
-        self.board_service.list_upcoming_interviews_for_user.assert_awaited_once_with(
-            self.session, 5
-        )
-        self.assertEqual(resp["data"], rows)
 
     async def test_cancel_interview_delegates(self):
         resp = await self.controller.cancel_interview(self.ctx, 10)
@@ -493,18 +469,6 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
                 f"{method} interview route should require the advance permission",
             )
 
-    def test_blacklist_upcoming_interviews_route_is_get_and_blacklist_gated(self):
-        # Same permission as the block action it precedes: whoever may
-        # blacklist may see what blacklisting is about to cancel.
-        routes_by_path = {route.path: route for route in self.controller.router.routes}
-
-        route = routes_by_path["/recruiting/blacklist/{user_id}/upcoming-interviews"]
-
-        self.assertIn("GET", route.methods)
-        self.assertEqual(
-            self._endpoint_permissions(route.endpoint),
-            [Permission.RECRUITING_BLACKLIST_WRITE],
-        )
 
     def test_board_stage_page_route_is_get_and_plain_authenticated(self):
         routes_by_path = {route.path: route for route in self.controller.router.routes}
