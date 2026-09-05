@@ -65,3 +65,12 @@ py_test(
         "//backend/entity:entities",
     ],
 )
+
+py_test(
+    name = "block_request_entity_test",
+    srcs = ["block_request_entity_test.py"],
+    deps = [
+        "//backend/common:user_enums",
+        "//backend/entity:entities",
+    ],
+)
