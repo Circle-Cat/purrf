@@ -6,9 +6,11 @@ import uuid
 import zipfile
 from datetime import datetime, timezone
 
+from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import TrainingPackageState
 from backend.dto.training_course_dto import (
     TrainingCompletionConfigDto,
+    TrainingPackagePublishResultDto,
     TrainingPackageUploadResultDto,
 )
 from backend.entity.training_course_package_entity import (
@@ -177,6 +179,90 @@ class TrainingPackageService:
             completes_via_storyline=bool(config and config.storyline_id),
             completion_config_readable=config is not None,
             missing_declared_files=contents.missing_declared_files,
+        )
+
+    async def publish_package(
+        self, session, course_id: int
+    ) -> TrainingPackagePublishResultDto:
+        """Make the staged package the one this course serves.
+
+        Everything destructive about a replacement happens here rather than at
+        upload: resume state is cleared for everyone on the course, the
+        outgoing row is deleted, and its files go with it. That is the point
+        of the split -- an admin who has not pressed this has changed nothing
+        for anybody.
+
+        Verification is required, and it is required of the pending row
+        itself. A stamp travels with the package it describes, so there is no
+        way for one package's proof to let another through.
+
+        The outgoing row is deleted before the incoming one turns live: one
+        partial unique index covers `state = 'live'` per course, so the two
+        cannot hold that slot at the same instant.
+
+        Args:
+            session: The active async database session.
+            course_id (int): The course to publish on.
+
+        Returns:
+            TrainingPackagePublishResultDto: What is now live, and how many
+            progress rows were reset. That count includes learners who had
+            already finished -- it is not the number the publish dialog shows.
+
+        Raises:
+            ValueError: No such course.
+            ConflictError: Nothing staged, or what is staged is unverified.
+        """
+        course = await self.training_course_repository.get_course_by_id(
+            session, course_id
+        )
+        if course is None:
+            raise ValueError(f"No training course with id {course_id}.")
+
+        pending = await self.training_course_package_repository.get_by_state(
+            session, course_id, TrainingPackageState.PENDING
+        )
+        if pending is None:
+            raise ConflictError(
+                "There is no staged package on this course to publish."
+            )
+        if pending.verified_completable_at is None:
+            raise ConflictError(
+                "This package has not been run to completion yet, so it "
+                "cannot be published. Start a trial run and finish it first."
+            )
+
+        live = await self.training_course_package_repository.get_by_state(
+            session, course_id, TrainingPackageState.LIVE
+        )
+        outgoing_prefix = live.storage_prefix if live is not None else None
+
+        cleared = await self.training_progress_repository.clear_resume_state(
+            session, course_id
+        )
+        if live is not None:
+            await self.training_course_package_repository.delete(session, live)
+        pending.state = TrainingPackageState.LIVE
+        await session.flush()
+        await session.commit()
+
+        self.logger.info(
+            "[TrainingPackageService] course %s now serves package %s (%s); "
+            "%s progress rows reset",
+            course_id,
+            pending.package_id,
+            pending.storage_prefix,
+            cleared,
+        )
+
+        if outgoing_prefix:
+            self._delete_prefix_quietly(outgoing_prefix, course_id)
+
+        return TrainingPackagePublishResultDto(
+            course_id=course_id,
+            package_id=pending.package_id,
+            package_version=pending.package_version,
+            learners_reset=cleared,
         )
 
     def _delete_prefix_quietly(self, prefix: str, course_id: int) -> None:

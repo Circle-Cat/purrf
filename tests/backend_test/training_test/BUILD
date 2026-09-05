@@ -150,6 +150,7 @@ py_test(
     name = "training_package_service_test",
     srcs = ["training_package_service_test.py"],
     deps = [
+        "//backend/common:exceptions",
         "//backend/common:mentorship_enums",
         "//backend/entity:entities",
         "//backend/training:scorm_manifest",

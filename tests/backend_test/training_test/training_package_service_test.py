@@ -8,6 +8,7 @@ import unittest
 import zipfile
 from unittest.mock import AsyncMock, MagicMock
 
+from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import ScormVersion, TrainingPackageState
 from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.training_course_package_entity import (
@@ -186,6 +187,19 @@ class _PackageServiceCase(unittest.IsolatedAsyncioTestCase):
         package = self._package(**overrides)
         self.package_repository.get_by_state.return_value = package
         return package
+
+    def _verified_pending(self, **overrides) -> TrainingCoursePackageEntity:
+        """A pending package that already carries its verification stamp --
+        the only kind `publish_package` will accept.
+        """
+        fields = {
+            "package_id": 2,
+            "state": TrainingPackageState.PENDING,
+            "storage_prefix": _PENDING_PREFIX,
+            "verified_completable_at": _VERIFIED_AT,
+        }
+        fields.update(overrides)
+        return self._package(**fields)
 
     def _put_keys(self) -> list:
         return [
@@ -799,6 +813,82 @@ class TestReadCompletionConfig(_PackageServiceCase):
 
         with self.assertRaises(FileNotFoundError):
             await self.service.read_completion_config(self.session, _COURSE_ID)
+
+
+class TestPublish(_PackageServiceCase):
+    async def test_a_course_with_nothing_staged_cannot_publish(self):
+        self._slots(live=self._package(package_id=1), pending=None)
+
+        with self.assertRaises(ConflictError):
+            await self.service.publish_package(self.session, _COURSE_ID)
+
+    async def test_an_unverified_staged_package_cannot_publish(self):
+        pending = self._package(package_id=2, state=TrainingPackageState.PENDING)
+        pending.verified_completable_at = None
+        self._slots(live=None, pending=pending)
+
+        with self.assertRaises(ConflictError):
+            await self.service.publish_package(self.session, _COURSE_ID)
+
+        self.progress_repository.clear_resume_state.assert_not_awaited()
+
+    async def test_publishing_turns_the_staged_row_live(self):
+        pending = self._verified_pending()
+        self._slots(live=None, pending=pending)
+
+        await self.service.publish_package(self.session, _COURSE_ID)
+
+        self.assertIs(pending.state, TrainingPackageState.LIVE)
+
+    async def test_the_outgoing_row_is_deleted_before_the_incoming_one_turns_live(self):
+        # Both cannot hold the live slot at once: the partial unique index
+        # refuses it, and the flush order here is what keeps them apart.
+        live = self._package(package_id=1, state=TrainingPackageState.LIVE)
+        pending = self._verified_pending()
+        self._slots(live=live, pending=pending)
+        order = []
+        self.package_repository.delete.side_effect = (
+            lambda session, package: order.append(("delete", package.package_id))
+        )
+        self.session.flush.side_effect = lambda: order.append(("flush", pending.state))
+
+        await self.service.publish_package(self.session, _COURSE_ID)
+
+        self.assertEqual(order[0], ("delete", 1))
+
+    async def test_everyone_on_the_course_is_reset(self):
+        self._slots(live=self._package(package_id=1), pending=self._verified_pending())
+        self.progress_repository.clear_resume_state.return_value = 48
+
+        result = await self.service.publish_package(self.session, _COURSE_ID)
+
+        self.progress_repository.clear_resume_state.assert_awaited_once_with(
+            self.session, _COURSE_ID
+        )
+        self.assertEqual(result.learners_reset, 48)
+
+    async def test_the_outgoing_prefix_is_deleted_after_the_commit(self):
+        live = self._package(package_id=1, state=TrainingPackageState.LIVE,
+                             storage_prefix="training/9/outgoing/")
+        self._slots(live=live, pending=self._verified_pending())
+        order = []
+        self.session.commit.side_effect = lambda: order.append("commit")
+        self.storage.delete_prefix.side_effect = lambda prefix: order.append(prefix)
+
+        await self.service.publish_package(self.session, _COURSE_ID)
+
+        self.assertEqual(order, ["commit", "training/9/outgoing/"])
+
+    async def test_a_failed_delete_does_not_fail_the_publish(self):
+        live = self._package(package_id=1, state=TrainingPackageState.LIVE,
+                             storage_prefix="training/9/outgoing/")
+        self._slots(live=live, pending=self._verified_pending())
+        self.storage.delete_prefix.side_effect = RuntimeError("gcs is down")
+
+        result = await self.service.publish_package(self.session, _COURSE_ID)
+
+        self.assertEqual(result.package_id, 2)
+        self.logger.exception.assert_called()
 
 
 if __name__ == "__main__":

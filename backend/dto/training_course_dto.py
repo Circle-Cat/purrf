@@ -117,6 +117,21 @@ class TrainingPackageUploadResultDto(BaseDto):
     missing_declared_files: list[str] = Field(default_factory=list)
 
 
+class TrainingPackagePublishResultDto(BaseDto):
+    """What a publish put live.
+
+    ``learners_reset`` counts every progress row cleared, finished ones
+    included. The publish dialog's "N learners in progress will restart"
+    comes from the course's own ``unfinished_count`` instead -- these two
+    numbers are different and the smaller one is the honest one to show.
+    """
+
+    course_id: int
+    package_id: int
+    package_version: str | None = None
+    learners_reset: int = 0
+
+
 class TrainingProgressSaveDto(BaseDto):
     """Where the assignment stands after one commit.
 
