@@ -1,10 +1,11 @@
 """Proves the stamp write lands where the course row's fields read it back.
 
 TrainingProgressService writes the verification stamp on the LIVE package row,
-and TrainingCourseService reads that same row's fields into the course DTO.
-Each is unit-tested against mocks on its own; this closes the gap between
-them: a completed run must make a fresh read of the package actually carry
-the stamp, not merely set a field a mock never checked.
+and to_course_dto reads that same row's fields into the course projection the
+admin list actually renders. Each is unit-tested against mocks on its own;
+this closes the gap between them: a completed run must make a fresh read of
+the package, pushed back through to_course_dto, actually carry the stamp --
+not merely set a field a mock never checked.
 """
 
 import logging
@@ -17,7 +18,6 @@ from backend.common.mentorship_enums import (
     TrainingPackageState,
     TrainingStatus,
 )
-from backend.dto.training_course_dto import TrainingCourseLiveState
 from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.training_course_package_entity import (
     TrainingCoursePackageEntity,
@@ -32,7 +32,7 @@ from backend.repository.training_progress_repository import (
 )
 from backend.repository.training_repository import TrainingRepository
 from backend.training.training_content_token import issue_content_token
-from backend.training.training_course_service import derive_live_state
+from backend.training.training_course_service import to_course_dto
 from backend.training.training_progress_service import TrainingProgressService
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
@@ -97,16 +97,14 @@ class TestACompletedRunsStampSurvivesAFreshReadEndToEnd(BaseRepositoryTestLib):
         )
         return token
 
-    async def test_a_completed_run_leaves_its_stamp_on_a_fresh_read(self):
-        # Before the run, the course already reads LIVE -- that only asks
-        # whether the slot is filled -- but the package itself carries no
+    async def test_a_completed_run_reaches_the_course_projection(self):
+        # Before the run, the projection the admin list renders carries no
         # verification stamp yet.
         before = await self.package_repository.get_by_state(
             self.session, self.course.course_id, TrainingPackageState.LIVE
         )
-        self.assertIsNone(before.verified_completable_at)
-        self.assertEqual(
-            derive_live_state(self.course, before), TrainingCourseLiveState.LIVE
+        self.assertIsNone(
+            to_course_dto(self.course, before, None, 0, 0).verified_completable_at
         )
 
         await self.service.save(
@@ -131,11 +129,11 @@ class TestACompletedRunsStampSurvivesAFreshReadEndToEnd(BaseRepositoryTestLib):
         )
         self.assertIsNotNone(after.verified_completable_at)
         self.assertEqual(after.verified_by_user_id, self.user_id)
-        # The stamp changed the package row, not whether a learner can open
-        # it -- the course read LIVE before the run and still does after.
-        self.assertEqual(
-            derive_live_state(self.course, after), TrainingCourseLiveState.LIVE
-        )
+        # The bridge this file exists for: the same fresh row, pushed through
+        # the projection the admin list actually renders, carries the stamp.
+        dto = to_course_dto(self.course, after, None, 0, 0)
+        self.assertIsNotNone(dto.verified_completable_at)
+        self.assertEqual(dto.verified_by_user_id, self.user_id)
 
 
 if __name__ == "__main__":
