@@ -16,7 +16,10 @@ py_library(
     name = "block_service",
     srcs = ["block_service.py"],
     deps = [
+        "//backend/common:name_utils",
+        "//backend/common:permissions",
         "//backend/common:recruiting_enums",
+        "//backend/common:user_enums",
         "//backend/dto",
         "//backend/notification_management:event_recorder",
     ],
