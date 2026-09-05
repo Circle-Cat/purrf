@@ -51,6 +51,12 @@ class TestTrainingCoursePackageRepository(BaseRepositoryTestLib):
             uploaded_at=self.now,
         )
 
+    async def _insert_package(self, course_id, state, prefix="training/1/aaa/"):
+        """Build and store one package row, returning it with its id filled in."""
+        return await self.repo.add(
+            self.session, self._package(course_id, state, prefix)
+        )
+
     async def test_reads_back_the_package_it_stored(self):
         stored = await self.repo.add(
             self.session, self._package(self.course_id, TrainingPackageState.LIVE)
@@ -148,44 +154,41 @@ class TestTrainingCoursePackageRepository(BaseRepositoryTestLib):
         )
         self.assertEqual(found.storage_prefix, "training/1/b/")
 
-    async def test_live_packages_for_batches_by_course_id(self):
-        await self.repo.add(
-            self.session,
-            self._package(self.course_id, TrainingPackageState.LIVE, "training/1/a/"),
-        )
-        await self.repo.add(
-            self.session,
-            self._package(
-                self.other_course_id, TrainingPackageState.PENDING, "training/2/a/"
-            ),
+    async def test_both_slots_come_back_keyed_by_course_and_state(self):
+        live = await self._insert_package(self.course_id, TrainingPackageState.LIVE)
+        pending = await self._insert_package(
+            self.course_id, TrainingPackageState.PENDING, "training/1/bbb/"
         )
 
-        found = await self.repo.live_packages_for(
-            self.session, [self.course_id, self.other_course_id]
+        slots = await self.repo.packages_for(self.session, [self.course_id])
+
+        self.assertEqual(
+            slots[self.course_id][TrainingPackageState.LIVE].package_id,
+            live.package_id,
+        )
+        self.assertEqual(
+            slots[self.course_id][TrainingPackageState.PENDING].package_id,
+            pending.package_id,
         )
 
-        self.assertEqual(set(found), {self.course_id})
-        self.assertEqual(found[self.course_id].storage_prefix, "training/1/a/")
+    async def test_a_course_with_no_packages_is_absent_rather_than_empty(self):
+        slots = await self.repo.packages_for(self.session, [self.course_id])
 
-    async def test_live_packages_for_ignores_ids_outside_the_request(self):
-        await self.repo.add(
-            self.session,
-            self._package(self.course_id, TrainingPackageState.LIVE, "training/1/a/"),
-        )
+        self.assertEqual(slots, {})
 
-        found = await self.repo.live_packages_for(self.session, [self.other_course_id])
+    async def test_packages_for_ignores_ids_outside_the_request(self):
+        await self._insert_package(self.course_id, TrainingPackageState.LIVE)
 
-        self.assertEqual(found, {})
+        slots = await self.repo.packages_for(self.session, [self.other_course_id])
 
-    async def test_live_packages_for_short_circuits_on_an_empty_list(self):
-        await self.repo.add(
-            self.session,
-            self._package(self.course_id, TrainingPackageState.LIVE, "training/1/a/"),
-        )
+        self.assertEqual(slots, {})
 
-        found = await self.repo.live_packages_for(self.session, [])
+    async def test_packages_for_short_circuits_on_an_empty_list(self):
+        await self._insert_package(self.course_id, TrainingPackageState.LIVE)
 
-        self.assertEqual(found, {})
+        slots = await self.repo.packages_for(self.session, [])
+
+        self.assertEqual(slots, {})
 
 
 if __name__ == "__main__":

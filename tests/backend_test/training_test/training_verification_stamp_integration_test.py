@@ -1,10 +1,10 @@
-"""Proves the stamp write and the state read agree, against a real database.
+"""Proves the stamp write lands where the course row's fields read it back.
 
 TrainingProgressService writes the verification stamp on the LIVE package row,
-and TrainingCourseService derives a course's state from that same row. Each is
-unit-tested against mocks on its own; this closes the gap between them: a
-completed run must make the course actually read VERIFIED, not merely set a
-field a mock never checked.
+and TrainingCourseService reads that same row's fields into the course DTO.
+Each is unit-tested against mocks on its own; this closes the gap between
+them: a completed run must make a fresh read of the package actually carry
+the stamp, not merely set a field a mock never checked.
 """
 
 import logging
@@ -17,7 +17,7 @@ from backend.common.mentorship_enums import (
     TrainingPackageState,
     TrainingStatus,
 )
-from backend.dto.training_course_dto import TrainingCourseState
+from backend.dto.training_course_dto import TrainingCourseLiveState
 from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.training_course_package_entity import (
     TrainingCoursePackageEntity,
@@ -32,7 +32,7 @@ from backend.repository.training_progress_repository import (
 )
 from backend.repository.training_repository import TrainingRepository
 from backend.training.training_content_token import issue_content_token
-from backend.training.training_course_service import derive_course_state
+from backend.training.training_course_service import derive_live_state
 from backend.training.training_progress_service import TrainingProgressService
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
@@ -41,7 +41,7 @@ from tests.backend_test.repository_test.base_repository_test_lib import (
 _SIGNING_KEY = "integration-test-signing-key"
 
 
-class TestACompletedRunDerivesVerifiedEndToEnd(BaseRepositoryTestLib):
+class TestACompletedRunsStampSurvivesAFreshReadEndToEnd(BaseRepositoryTestLib):
     async def asyncSetUp(self):
         await super().asyncSetUp()
         self.package_repository = TrainingCoursePackageRepository()
@@ -97,14 +97,16 @@ class TestACompletedRunDerivesVerifiedEndToEnd(BaseRepositoryTestLib):
         )
         return token
 
-    async def test_a_completed_run_makes_the_course_read_verified(self):
-        # Before the run, the course has no proof and reads NEEDS_TRIAL_RUN.
+    async def test_a_completed_run_leaves_its_stamp_on_a_fresh_read(self):
+        # Before the run, the course already reads LIVE -- that only asks
+        # whether the slot is filled -- but the package itself carries no
+        # verification stamp yet.
         before = await self.package_repository.get_by_state(
             self.session, self.course.course_id, TrainingPackageState.LIVE
         )
+        self.assertIsNone(before.verified_completable_at)
         self.assertEqual(
-            derive_course_state(self.course, before),
-            TrainingCourseState.NEEDS_TRIAL_RUN,
+            derive_live_state(self.course, before), TrainingCourseLiveState.LIVE
         )
 
         await self.service.save(
@@ -129,8 +131,10 @@ class TestACompletedRunDerivesVerifiedEndToEnd(BaseRepositoryTestLib):
         )
         self.assertIsNotNone(after.verified_completable_at)
         self.assertEqual(after.verified_by_user_id, self.user_id)
+        # The stamp changed the package row, not whether a learner can open
+        # it -- the course read LIVE before the run and still does after.
         self.assertEqual(
-            derive_course_state(self.course, after), TrainingCourseState.VERIFIED
+            derive_live_state(self.course, after), TrainingCourseLiveState.LIVE
         )
 
 

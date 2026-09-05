@@ -3,9 +3,10 @@
 from backend.common.mentorship_enums import TrainingPackageState
 from backend.common.training_links import external_link_for
 from backend.dto.training_course_dto import (
+    StagedPackageDto,
     TrainingCourseCreateDto,
     TrainingCourseDto,
-    TrainingCourseState,
+    TrainingCourseLiveState,
     TrainingCourseUpdateDto,
 )
 from backend.entity.training_course_entity import TrainingCourseEntity
@@ -14,15 +15,17 @@ from backend.entity.training_course_package_entity import (
 )
 
 
-def derive_course_state(
+def derive_live_state(
     course: TrainingCourseEntity,
-    package: TrainingCoursePackageEntity | None,
-) -> TrainingCourseState:
-    """Read a course's live package as the one status the admin page shows.
+    live_package: TrainingCoursePackageEntity | None,
+) -> TrainingCourseLiveState:
+    """What a learner on this course can open right now.
 
-    A package without proof is NEEDS_TRIAL_RUN, never VERIFIED: a re-upload
-    replaces the package row outright, so a fresh row's own unset
-    ``verified_completable_at`` is what gets read.
+    Only the live slot is consulted. A staged package is not a lesser kind of
+    live -- it is invisible to learners entirely, which is what makes it safe
+    to upload one in the middle of a working day. Whether the live package
+    itself is verified does not change this answer either: an unverified live
+    package still opens for a learner, it only blocks new assignments.
 
     A package-less row is EXTERNAL_LINK only when a link really resolves for
     its category. Two of the four seed categories never had one, and neither
@@ -32,48 +35,69 @@ def derive_course_state(
 
     Args:
         course (TrainingCourseEntity): The row to read.
-        package (TrainingCoursePackageEntity | None): The course's live
+        live_package (TrainingCoursePackageEntity | None): The course's live
             package, or None if it has none.
 
     Returns:
-        TrainingCourseState: The single state for that row.
+        TrainingCourseLiveState: The single state for that row.
     """
-    if package is not None:
-        if package.verified_completable_at is not None:
-            return TrainingCourseState.VERIFIED
-        return TrainingCourseState.NEEDS_TRIAL_RUN
+    if live_package is not None:
+        return TrainingCourseLiveState.LIVE
     if external_link_for(course.category):
-        return TrainingCourseState.EXTERNAL_LINK
-    return TrainingCourseState.NO_PACKAGE
+        return TrainingCourseLiveState.EXTERNAL_LINK
+    return TrainingCourseLiveState.NO_PACKAGE
 
 
 def to_course_dto(
     course: TrainingCourseEntity,
-    package: TrainingCoursePackageEntity | None,
+    live_package: TrainingCoursePackageEntity | None,
+    pending_package: TrainingCoursePackageEntity | None,
     assigned_count: int,
     unfinished_count: int,
 ) -> TrainingCourseDto:
-    """Project one course row, plus its live package and headcounts, for the API."""
+    """Project one course row, its live and pending packages, and headcounts."""
     return TrainingCourseDto(
         course_id=course.course_id,
         name=course.name,
         description=course.description,
         category=course.category,
         is_active=course.is_active,
-        state=derive_course_state(course, package),
-        link=(external_link_for(course.category) if package is None else None),
-        scorm_version=package.scorm_version if package is not None else None,
-        package_version=package.package_version if package is not None else None,
-        reporting_mode=package.reporting_mode if package is not None else None,
-        package_uploaded_at=package.uploaded_at if package is not None else None,
+        live_state=derive_live_state(course, live_package),
+        link=(
+            external_link_for(course.category) if live_package is None else None
+        ),
+        scorm_version=(
+            live_package.scorm_version if live_package is not None else None
+        ),
+        package_version=(
+            live_package.package_version if live_package is not None else None
+        ),
+        reporting_mode=(
+            live_package.reporting_mode if live_package is not None else None
+        ),
+        package_uploaded_at=(
+            live_package.uploaded_at if live_package is not None else None
+        ),
         verified_completable_at=(
-            package.verified_completable_at if package is not None else None
+            live_package.verified_completable_at if live_package is not None else None
         ),
         verified_by_user_id=(
-            package.verified_by_user_id if package is not None else None
+            live_package.verified_by_user_id if live_package is not None else None
         ),
         assigned_count=assigned_count,
         unfinished_count=unfinished_count,
+        staged=(
+            StagedPackageDto(
+                package_id=pending_package.package_id,
+                package_version=pending_package.package_version,
+                uploaded_at=pending_package.uploaded_at,
+                uploaded_by_user_id=pending_package.uploaded_by_user_id,
+                verified_completable_at=pending_package.verified_completable_at,
+                verified_by_user_id=pending_package.verified_by_user_id,
+            )
+            if pending_package is not None
+            else None
+        ),
     )
 
 
@@ -101,18 +125,26 @@ class TrainingCourseService:
     async def list_courses(
         self, session, include_inactive: bool = True
     ) -> list[TrainingCourseDto]:
-        """Every course, with its derived state and headcounts.
+        """Every course, with its derived live state, staged package, and
+        headcounts.
 
-        One batched query fetches every row's live package, not one per row.
+        One batched query fetches every row's live and pending packages, not
+        two lookups per row.
         """
         rows = await self.training_course_repository.list_courses(
             session, include_inactive=include_inactive
         )
-        packages = await self.training_course_package_repository.live_packages_for(
+        slots = await self.training_course_package_repository.packages_for(
             session, [course.course_id for course, _, _ in rows]
         )
         return [
-            to_course_dto(course, packages.get(course.course_id), assigned, unfinished)
+            to_course_dto(
+                course,
+                slots.get(course.course_id, {}).get(TrainingPackageState.LIVE),
+                slots.get(course.course_id, {}).get(TrainingPackageState.PENDING),
+                assigned,
+                unfinished,
+            )
             for course, assigned, unfinished in rows
         ]
 
@@ -135,7 +167,7 @@ class TrainingCourseService:
             course.course_id,
             course.name,
         )
-        return to_course_dto(course, None, 0, 0)
+        return to_course_dto(course, None, None, 0, 0)
 
     async def update_course(
         self, session, course_id: int, payload: TrainingCourseUpdateDto
@@ -174,4 +206,9 @@ class TrainingCourseService:
         package = await self.training_course_package_repository.get_by_state(
             session, course_id, TrainingPackageState.LIVE
         )
-        return to_course_dto(course, package, assigned_count, unfinished_count)
+        pending = await self.training_course_package_repository.get_by_state(
+            session, course_id, TrainingPackageState.PENDING
+        )
+        return to_course_dto(
+            course, package, pending, assigned_count, unfinished_count
+        )

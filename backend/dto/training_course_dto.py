@@ -12,32 +12,57 @@ from backend.dto.base_dto import BaseDto
 from backend.dto.base_request_dto import BaseRequestDto
 
 
-class TrainingCourseState(StrEnum):
-    """What the course list shows in its Status column.
+class TrainingCourseLiveState(StrEnum):
+    """What a learner can open right now, read from the live slot alone.
 
-    Derived from a course's live package row, never stored: VERIFIED or
-    NEEDS_TRIAL_RUN when one exists, depending on whether it carries a
-    verification stamp; EXTERNAL_LINK or NO_PACKAGE when it does not,
-    depending on whether the course's category resolves a link.
+    A staged package never moves this: it is invisible to learners by design,
+    which is what makes uploading one mid-day safe. Whether the live package
+    itself carries a verification stamp does not appear here either -- that
+    lives on the package row (surfaced through the top-level
+    ``verified_completable_at``/``verified_by_user_id`` fields below), because
+    an unverified live package still serves learners fine; it only blocks new
+    assignments.
     """
 
-    # The only state that can be assigned.
-    VERIFIED = "verified"
-    NEEDS_TRIAL_RUN = "needs_trial_run"
+    LIVE = "live"
     # A seed course still pointing at its environment-variable link.
     EXTERNAL_LINK = "external_link"
     NO_PACKAGE = "no_package"
 
 
+class StagedPackageDto(BaseDto):
+    """The pending package behind a course, if one is sitting there.
+
+    Exists only while a package occupies the pending slot: publishing moves
+    its data into the live fields above and this goes back to None,
+    discarding just drops the row. A course is never mid-way between having
+    one and not.
+    """
+
+    package_id: int
+    package_version: str | None = None
+    uploaded_at: datetime
+    uploaded_by_user_id: int | None = None
+    verified_completable_at: datetime | None = None
+    verified_by_user_id: int | None = None
+
+
 class TrainingCourseDto(BaseDto):
-    """One row of the admin course list."""
+    """One row of the admin course list.
+
+    ``live_state`` and the package fields alongside it describe the live
+    slot only -- what a learner can open today. ``staged`` is the other slot,
+    kept in its own block rather than folded into the same fields: a pending
+    package is not a variant of the live one, it is a second, unrelated
+    upload that happens to share a course.
+    """
 
     course_id: int
     name: str
     description: str | None = None
     category: TrainingCategory | None = None
     is_active: bool
-    state: TrainingCourseState
+    live_state: TrainingCourseLiveState
     # Where a course we do not host is served from, resolved from the
     # category's environment variable. Null once we host the course ourselves,
     # so the row never offers the place it used to be.
@@ -53,6 +78,7 @@ class TrainingCourseDto(BaseDto):
     assigned_count: int = 0
     # Everyone still counted here would be restarted by a replacement package.
     unfinished_count: int = 0
+    staged: StagedPackageDto | None = None
 
 
 class TrainingCourseCreateDto(BaseRequestDto):

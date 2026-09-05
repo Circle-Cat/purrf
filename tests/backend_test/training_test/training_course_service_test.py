@@ -1,10 +1,13 @@
-"""The course catalogue, and the state its list column shows."""
+"""The course catalogue, and the live/staged split its list row shows."""
 
 import datetime
 import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from backend.common.environment_constants import (
+    MENTORSHIP_MENTOR_ONBOARDING_LINK,
+)
 from backend.common.mentorship_enums import (
     ScormVersion,
     TrainingCategory,
@@ -12,7 +15,7 @@ from backend.common.mentorship_enums import (
 )
 from backend.dto.training_course_dto import (
     TrainingCourseCreateDto,
-    TrainingCourseState,
+    TrainingCourseLiveState,
     TrainingCourseUpdateDto,
 )
 from backend.entity.training_course_entity import TrainingCourseEntity
@@ -21,7 +24,7 @@ from backend.entity.training_course_package_entity import (
 )
 from backend.training.training_course_service import (
     TrainingCourseService,
-    derive_course_state,
+    derive_live_state,
     to_course_dto,
 )
 
@@ -43,24 +46,25 @@ def _package(**overrides) -> TrainingCoursePackageEntity:
     return TrainingCoursePackageEntity(**fields)
 
 
-class TestDeriveCourseState(unittest.TestCase):
-    def test_package_and_proof_is_verified(self):
-        course = TrainingCourseEntity()
-        package = _package(verified_completable_at=_VERIFIED_AT)
-        self.assertEqual(
-            derive_course_state(course, package), TrainingCourseState.VERIFIED
-        )
+def _course(**overrides) -> TrainingCourseEntity:
+    """A course row, defaulted so each test sets only what it cares about."""
+    fields = dict(course_id=1, name="Cat Care", is_active=True)
+    fields.update(overrides)
+    return TrainingCourseEntity(**fields)
 
-    def test_package_without_proof_needs_a_trial_run(self):
+
+class TestDeriveLiveState(unittest.TestCase):
+    def test_a_live_package_reads_live(self):
+        """Verified or not, a package sitting in the live slot serves learners."""
         course = TrainingCourseEntity()
         package = _package()
         self.assertEqual(
-            derive_course_state(course, package), TrainingCourseState.NEEDS_TRIAL_RUN
+            derive_live_state(course, package), TrainingCourseLiveState.LIVE
         )
 
     @patch.dict(
         os.environ,
-        {"MENTORSHIP_MENTOR_ONBOARDING_LINK": "https://example.com/mentor"},
+        {MENTORSHIP_MENTOR_ONBOARDING_LINK: "https://example.com/mentor"},
     )
     def test_seed_course_without_a_package_keeps_its_external_link(self):
         """Not broken, just not hosted here."""
@@ -68,7 +72,7 @@ class TestDeriveCourseState(unittest.TestCase):
             category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING
         )
         self.assertEqual(
-            derive_course_state(course, None), TrainingCourseState.EXTERNAL_LINK
+            derive_live_state(course, None), TrainingCourseLiveState.EXTERNAL_LINK
         )
 
     def test_a_seed_category_with_no_link_configured_has_nowhere_either(self):
@@ -82,7 +86,7 @@ class TestDeriveCourseState(unittest.TestCase):
             category=TrainingCategory.CORPORATE_CULTURE_COURSE
         )
         self.assertEqual(
-            derive_course_state(course, None), TrainingCourseState.NO_PACKAGE
+            derive_live_state(course, None), TrainingCourseLiveState.NO_PACKAGE
         )
 
     @patch.dict(os.environ, {}, clear=True)
@@ -91,14 +95,57 @@ class TestDeriveCourseState(unittest.TestCase):
             category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING
         )
         self.assertEqual(
-            derive_course_state(course, None), TrainingCourseState.NO_PACKAGE
+            derive_live_state(course, None), TrainingCourseLiveState.NO_PACKAGE
         )
 
     def test_new_course_without_a_package_has_nowhere_to_send_anybody(self):
         course = TrainingCourseEntity(category=None)
         self.assertEqual(
-            derive_course_state(course, None), TrainingCourseState.NO_PACKAGE
+            derive_live_state(course, None), TrainingCourseLiveState.NO_PACKAGE
         )
+
+
+class TestTheCourseDtoSaysWhatLearnersSee(unittest.TestCase):
+    def test_a_course_with_a_live_package_reads_live(self):
+        dto = to_course_dto(_course(), _package(package_id=1), None, 0, 0)
+
+        self.assertIs(dto.live_state, TrainingCourseLiveState.LIVE)
+        self.assertIsNone(dto.staged)
+
+    def test_a_staged_package_does_not_make_a_course_live(self):
+        # The whole point of the split: a course whose only package is staged
+        # serves nothing, and the row has to say so.
+        dto = to_course_dto(_course(), None, _package(package_id=2), 0, 0)
+
+        self.assertIs(dto.live_state, TrainingCourseLiveState.NO_PACKAGE)
+        self.assertEqual(dto.staged.package_id, 2)
+
+    def test_the_staged_block_carries_its_verification(self):
+        pending = _package(
+            package_id=2,
+            verified_completable_at=_VERIFIED_AT,
+            verified_by_user_id=7,
+        )
+
+        dto = to_course_dto(_course(), None, pending, 0, 0)
+
+        self.assertEqual(dto.staged.verified_by_user_id, 7)
+        self.assertEqual(dto.staged.verified_completable_at, _VERIFIED_AT)
+
+    @patch.dict(
+        os.environ,
+        {MENTORSHIP_MENTOR_ONBOARDING_LINK: "https://example.com/mentor"},
+    )
+    def test_a_package_less_course_with_a_link_reads_external(self):
+        dto = to_course_dto(
+            _course(category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING),
+            None,
+            None,
+            0,
+            0,
+        )
+
+        self.assertIs(dto.live_state, TrainingCourseLiveState.EXTERNAL_LINK)
 
 
 class TestExternalLinkOnTheCourseRow(unittest.TestCase):
@@ -106,7 +153,7 @@ class TestExternalLinkOnTheCourseRow(unittest.TestCase):
 
     @patch.dict(
         os.environ,
-        {"MENTORSHIP_MENTOR_ONBOARDING_LINK": "https://example.com/mentor"},
+        {MENTORSHIP_MENTOR_ONBOARDING_LINK: "https://example.com/mentor"},
     )
     def test_a_course_still_on_its_external_link_carries_that_link(self):
         course = TrainingCourseEntity(
@@ -116,14 +163,14 @@ class TestExternalLinkOnTheCourseRow(unittest.TestCase):
             category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
         )
 
-        dto = to_course_dto(course, None, 0, 0)
+        dto = to_course_dto(course, None, None, 0, 0)
 
-        self.assertEqual(dto.state, TrainingCourseState.EXTERNAL_LINK)
+        self.assertEqual(dto.live_state, TrainingCourseLiveState.EXTERNAL_LINK)
         self.assertEqual(dto.link, "https://example.com/mentor")
 
     @patch.dict(
         os.environ,
-        {"MENTORSHIP_MENTOR_ONBOARDING_LINK": "https://example.com/mentor"},
+        {MENTORSHIP_MENTOR_ONBOARDING_LINK: "https://example.com/mentor"},
     )
     def test_a_course_we_now_host_stops_pointing_at_the_old_one(self):
         """The env var still resolves; the course is no longer served from it."""
@@ -135,7 +182,7 @@ class TestExternalLinkOnTheCourseRow(unittest.TestCase):
         )
         package = _package()
 
-        dto = to_course_dto(course, package, 0, 0)
+        dto = to_course_dto(course, package, None, 0, 0)
 
         self.assertIsNone(dto.link)
 
@@ -144,12 +191,12 @@ class TestExternalLinkOnTheCourseRow(unittest.TestCase):
             course_id=2, name="Something New", is_active=True, category=None
         )
 
-        dto = to_course_dto(course, None, 0, 0)
+        dto = to_course_dto(course, None, None, 0, 0)
 
-        self.assertEqual(dto.state, TrainingCourseState.NO_PACKAGE)
+        self.assertEqual(dto.live_state, TrainingCourseLiveState.NO_PACKAGE)
         self.assertIsNone(dto.link)
 
-    def test_the_dto_reads_package_fields_from_the_package(self):
+    def test_the_dto_reads_package_fields_from_the_live_package(self):
         course = TrainingCourseEntity(
             course_id=1,
             name="Cat Care",
@@ -164,7 +211,7 @@ class TestExternalLinkOnTheCourseRow(unittest.TestCase):
             verified_by_user_id=7,
         )
 
-        dto = to_course_dto(course, package, 0, 0)
+        dto = to_course_dto(course, package, None, 0, 0)
 
         self.assertEqual(dto.scorm_version, ScormVersion.SCORM_12)
         self.assertEqual(dto.package_version, "from-package-row")
@@ -183,7 +230,7 @@ class TestTrainingCourseService(unittest.IsolatedAsyncioTestCase):
         self.repository.count_unfinished_assignments = AsyncMock(return_value=0)
 
         self.package_repository = MagicMock()
-        self.package_repository.live_packages_for = AsyncMock(return_value={})
+        self.package_repository.packages_for = AsyncMock(return_value={})
         self.package_repository.get_by_state = AsyncMock(return_value=None)
 
         # Records the order the write and the commit happen in.
@@ -217,7 +264,7 @@ class TestTrainingCourseService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(courses), 1)
         self.assertEqual(courses[0].assigned_count, 61)
         # This category never had an external link, so there is nowhere to go.
-        self.assertEqual(courses[0].state, TrainingCourseState.NO_PACKAGE)
+        self.assertEqual(courses[0].live_state, TrainingCourseLiveState.NO_PACKAGE)
 
     async def test_the_list_carries_how_many_have_not_finished(self):
         """The deactivate and replace dialogs both count heads with this."""
@@ -231,7 +278,7 @@ class TestTrainingCourseService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(courses[0].assigned_count, 61)
         self.assertEqual(courses[0].unfinished_count, 23)
 
-    async def test_list_asks_for_every_courses_package_in_one_call(self):
+    async def test_list_asks_for_every_courses_packages_in_one_call(self):
         """A query per row would not show up in the DTOs, only in the call
         count: this pins it at exactly one batched call for the whole page."""
         course_a = TrainingCourseEntity(course_id=5, name="A", is_active=True)
@@ -240,7 +287,7 @@ class TestTrainingCourseService(unittest.IsolatedAsyncioTestCase):
 
         await self.service.list_courses(self.session)
 
-        self.package_repository.live_packages_for.assert_awaited_once_with(
+        self.package_repository.packages_for.assert_awaited_once_with(
             self.session, [5, 6]
         )
         self.package_repository.get_by_state.assert_not_awaited()
@@ -253,13 +300,30 @@ class TestTrainingCourseService(unittest.IsolatedAsyncioTestCase):
             package_version="from-package-row",
         )
         self.repository.list_courses.return_value = [(course, 0, 0)]
-        self.package_repository.live_packages_for.return_value = {5: package}
+        self.package_repository.packages_for.return_value = {
+            5: {TrainingPackageState.LIVE: package}
+        }
 
         courses = await self.service.list_courses(self.session)
 
-        self.assertEqual(courses[0].state, TrainingCourseState.NEEDS_TRIAL_RUN)
+        self.assertEqual(courses[0].live_state, TrainingCourseLiveState.LIVE)
         self.assertEqual(courses[0].scorm_version, ScormVersion.SCORM_12)
         self.assertEqual(courses[0].package_version, "from-package-row")
+
+    async def test_list_reads_a_staged_package_when_one_exists(self):
+        course = TrainingCourseEntity(course_id=5, name="Cat Care", is_active=True)
+        pending = _package(
+            course_id=5, package_id=9, state=TrainingPackageState.PENDING
+        )
+        self.repository.list_courses.return_value = [(course, 0, 0)]
+        self.package_repository.packages_for.return_value = {
+            5: {TrainingPackageState.PENDING: pending}
+        }
+
+        courses = await self.service.list_courses(self.session)
+
+        self.assertEqual(courses[0].live_state, TrainingCourseLiveState.NO_PACKAGE)
+        self.assertEqual(courses[0].staged.package_id, 9)
 
     async def test_a_new_course_starts_unassignable(self):
         course = await self.service.create_course(
@@ -268,7 +332,7 @@ class TestTrainingCourseService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(course.name, "Safety Briefing")
         self.assertIsNone(course.verified_completable_at)
-        self.assertEqual(course.state, TrainingCourseState.NO_PACKAGE)
+        self.assertEqual(course.live_state, TrainingCourseLiveState.NO_PACKAGE)
         self.assertEqual(self.calls, ["add_course", "commit"])
 
     async def test_deactivating_only_flips_the_flag(self):
@@ -293,18 +357,43 @@ class TestTrainingCourseService(unittest.IsolatedAsyncioTestCase):
             course_id=5, name="Legacy Safety Briefing", is_active=True
         )
         self.repository.get_course_by_id.return_value = existing
-        self.package_repository.get_by_state.return_value = _package(
-            course_id=5, verified_completable_at=_VERIFIED_AT
-        )
+        live_package = _package(course_id=5, verified_completable_at=_VERIFIED_AT)
+
+        async def _get_by_state(_session, _course_id, state):
+            return live_package if state == TrainingPackageState.LIVE else None
+
+        self.package_repository.get_by_state = AsyncMock(side_effect=_get_by_state)
 
         course = await self.service.update_course(
             self.session, 5, TrainingCourseUpdateDto(is_active=False)
         )
 
-        self.package_repository.get_by_state.assert_awaited_once_with(
+        self.package_repository.get_by_state.assert_any_await(
             self.session, 5, TrainingPackageState.LIVE
         )
-        self.assertEqual(course.state, TrainingCourseState.VERIFIED)
+        self.assertEqual(course.live_state, TrainingCourseLiveState.LIVE)
+
+    async def test_update_reads_the_pending_package_for_its_staged_block(self):
+        existing = TrainingCourseEntity(
+            course_id=5, name="Legacy Safety Briefing", is_active=True
+        )
+        self.repository.get_course_by_id.return_value = existing
+
+        async def _get_by_state(_session, _course_id, state):
+            if state == TrainingPackageState.PENDING:
+                return _package(course_id=5, package_id=3)
+            return None
+
+        self.package_repository.get_by_state = AsyncMock(side_effect=_get_by_state)
+
+        course = await self.service.update_course(
+            self.session, 5, TrainingCourseUpdateDto(is_active=False)
+        )
+
+        self.package_repository.get_by_state.assert_any_await(
+            self.session, 5, TrainingPackageState.PENDING
+        )
+        self.assertEqual(course.staged.package_id, 3)
 
     async def test_update_reports_the_real_unfinished_count(self):
         """The deactivate dialog weighs the decision by counting heads.

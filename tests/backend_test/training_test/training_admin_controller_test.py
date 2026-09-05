@@ -3,6 +3,7 @@
 import inspect
 import json
 import unittest
+from datetime import datetime, timezone
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -24,7 +25,8 @@ from backend.dto.training_course_dto import (
     TrainingAssignmentResultDto,
     TrainingCourseCreateDto,
     TrainingCourseDto,
-    TrainingCourseState,
+    TrainingCourseLiveState,
+    StagedPackageDto,
     TrainingPackageUploadResultDto,
     TrainingProgressDto,
     TrainingSessionDto,
@@ -98,7 +100,7 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
                 course_id=7,
                 name="Safety Briefing",
                 is_active=True,
-                state=TrainingCourseState.NO_PACKAGE,
+                live_state=TrainingCourseLiveState.NO_PACKAGE,
             )
         )
         self.assignment_service = MagicMock()
@@ -214,7 +216,9 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(response["status_code"], HTTPStatus.CREATED)
-        self.assertEqual(response["data"].state, TrainingCourseState.NO_PACKAGE)
+        self.assertEqual(
+            response["data"].live_state, TrainingCourseLiveState.NO_PACKAGE
+        )
 
     async def test_a_fresh_assignment_is_201(self):
         response = await self.controller.assign(
@@ -418,17 +422,27 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
 
 
 def _course_dto():
-    """One catalogue row, with a field of every kind the aliaser touches."""
+    """One catalogue row, with a field of every kind the aliaser touches.
+
+    ``staged`` is populated too so the snake-case sweep below also exercises
+    the nested block's own field names, not only the top-level ones.
+    """
     return TrainingCourseDto(
         course_id=7,
         name="Safety Briefing",
         is_active=True,
-        state=TrainingCourseState.VERIFIED,
+        live_state=TrainingCourseLiveState.LIVE,
         scorm_version=ScormVersion.SCORM_12,
         package_version="1.4",
         reporting_mode="passed-incomplete",
         verified_by_user_id=11,
         assigned_count=3,
+        staged=StagedPackageDto(
+            package_id=9,
+            package_version="1.5",
+            uploaded_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+            uploaded_by_user_id=12,
+        ),
     )
 
 
@@ -594,11 +608,14 @@ class TestTrainingResponsesOnTheWire(unittest.TestCase):
         row = response.json()["data"][0]
         self.assertEqual(row["courseId"], 7)
         self.assertIs(row["isActive"], True)
+        self.assertEqual(row["liveState"], "live")
         self.assertEqual(row["scormVersion"], "1.2")
         self.assertEqual(row["packageVersion"], "1.4")
         self.assertEqual(row["reportingMode"], "passed-incomplete")
         self.assertEqual(row["verifiedByUserId"], 11)
         self.assertEqual(row["assignedCount"], 3)
+        self.assertEqual(row["staged"]["packageId"], 9)
+        self.assertEqual(row["staged"]["uploadedByUserId"], 12)
 
     def test_an_upload_answers_with_camel_case(self):
         response = self.client.post(
