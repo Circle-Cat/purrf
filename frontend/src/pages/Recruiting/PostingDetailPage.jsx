@@ -35,6 +35,7 @@ import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicant
 import LoadGate from "@/pages/Recruiting/components/LoadGate";
 import PendingNotice from "@/pages/Recruiting/components/PendingNotice";
 import { GLOSSARY, rejectTermId } from "@/pages/Recruiting/components/glossary";
+import { unresolvedPersonLabelWithAction } from "@/pages/Recruiting/components/PipelineSummary";
 import {
   OPERABLE_STATUSES,
   PENDING_HEADLINE,
@@ -357,7 +358,7 @@ const PostingDetailPage = () => {
                 {i === 0 ? " " : ", "}
                 {ownersById[oid] == null ? (
                   <span className="text-red-600">
-                    {`#${oid} — no permission, remove`}
+                    {unresolvedPersonLabelWithAction(oid)}
                   </span>
                 ) : (
                   ownersById[oid]

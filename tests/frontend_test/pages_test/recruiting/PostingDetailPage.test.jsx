@@ -319,7 +319,7 @@ describe("PostingDetailPage", () => {
     );
   });
 
-  it("shows an unresolved owner in red with a 'no permission, remove' suffix", async () => {
+  it("shows an unresolved owner in red with an 'unavailable, remove' suffix", async () => {
     api.getJob.mockResolvedValue({
       data: {
         id: 1,
@@ -337,7 +337,7 @@ describe("PostingDetailPage", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText("#42 — no permission, remove"),
+        screen.getByText("User 42 — unavailable, remove"),
       ).toBeInTheDocument(),
     );
   });

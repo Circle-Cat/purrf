@@ -46,6 +46,7 @@ import TermHint from "@/pages/Recruiting/components/TermHint";
 import { RowList } from "@/pages/Recruiting/components/ApplicationSnapshotRows";
 import PeoplePicker from "@/pages/Recruiting/components/PeoplePicker";
 import AnswersSection from "@/pages/Recruiting/components/AnswersSection";
+import { unresolvedPersonLabel } from "@/pages/Recruiting/components/PipelineSummary";
 import ComposeEmailDialog from "@/pages/Recruiting/applications/ComposeEmailDialog";
 import EvaluationRubricForm from "@/pages/Recruiting/applications/EvaluationRubricForm";
 import { rubricFor } from "@/pages/Recruiting/applications/evaluationRubric";
@@ -296,7 +297,7 @@ const EvaluationSummaryRow = ({ field, entry }) => {
  */
 const evaluatorName = (evaluatorId, interviewPool) =>
   interviewPool.find((u) => u.userId === evaluatorId)?.name ??
-  `User ${evaluatorId}`;
+  unresolvedPersonLabel(evaluatorId);
 
 /**
  * Read-only summary of every submitted evaluation for an application,
@@ -1803,7 +1804,7 @@ const ApplicationDetailPage = () => {
   );
   const assigneeName =
     interviewPool.find((u) => u.userId === detail.assigneeId)?.name ??
-    (detail.assigneeId != null ? `User ${detail.assigneeId}` : null);
+    (detail.assigneeId != null ? unresolvedPersonLabel(detail.assigneeId) : null);
 
   return (
     <div className="flex flex-col gap-6 p-6">
