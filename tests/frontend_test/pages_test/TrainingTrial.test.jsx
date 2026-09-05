@@ -7,9 +7,15 @@ import { MESSAGE_TYPES } from "@/training/scormBridge";
 
 vi.mock("@/api/trainingApi", () => ({
   startTrial: vi.fn(),
+  // `useTrainingRuntime` still imports `openSession` as its default `open`
+  // -- unused here since the trial page always passes `openTrialSession`
+  // explicitly, but the module import itself must resolve to something.
   openSession: vi.fn(),
+  openTrialSession: vi.fn(),
   saveProgress: vi.fn(),
   readCompletionConfig: vi.fn(),
+  listCourses: vi.fn(),
+  publishPackage: vi.fn(),
 }));
 vi.mock("@/context/auth", () => ({
   useAuth: vi.fn(),
@@ -17,14 +23,60 @@ vi.mock("@/context/auth", () => ({
 
 import {
   startTrial,
-  openSession,
+  openTrialSession,
   saveProgress,
   readCompletionConfig,
+  listCourses,
+  publishPackage,
 } from "@/api/trainingApi";
 import { useAuth } from "@/context/auth";
 
-const renderTrial = () =>
-  render(
+// The row this page is reached from always carries a staged package (it is
+// only linked from `StagedRow`'s "Trial run" button), so the default fixture
+// does too -- individual tests override just the keys they care about.
+const COURSE = {
+  courseId: 5,
+  name: "Mentee Onboarding",
+  packageVersion: "aaaaaaaa",
+  liveState: "live",
+  staged: {
+    packageId: 99,
+    packageVersion: "bbbbbbbb",
+    uploadedAt: "2026-09-01T00:00:00Z",
+    uploadedByUserId: 1,
+    verifiedCompletableAt: null,
+    verifiedByUserId: null,
+  },
+  assignedCount: 10,
+  unfinishedCount: 2,
+  isActive: true,
+};
+
+/**
+ * @param {{verified?: boolean, [key: string]: unknown}} [overrides]
+ *   `verified` feeds `readCompletionConfig`'s response; everything else
+ *   overrides the fetched course row (`listCourses`). Neither mock is
+ *   touched when the corresponding overrides are absent, so a test that
+ *   configures either mock itself before calling this keeps its own setup.
+ */
+const renderTrial = (overrides = {}) => {
+  const { verified, ...courseOverrides } = overrides;
+  if (Object.keys(courseOverrides).length > 0) {
+    listCourses.mockResolvedValue({
+      data: [{ ...COURSE, ...courseOverrides }],
+    });
+  }
+  if (verified !== undefined) {
+    readCompletionConfig.mockResolvedValue({
+      data: {
+        verified,
+        completionPercentage: 100,
+        completesViaStoryline: false,
+        completionConfigReadable: true,
+      },
+    });
+  }
+  return render(
     <MemoryRouter initialEntries={["/admin/training/5/trial"]}>
       <Routes>
         <Route
@@ -34,6 +86,7 @@ const renderTrial = () =>
       </Routes>
     </MemoryRouter>,
   );
+};
 
 const renderTrialWithNav = () => {
   const GoToAnotherCourse = () => {
@@ -82,7 +135,7 @@ describe("TrainingTrial", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     startTrial.mockResolvedValue(TRIAL);
-    openSession.mockResolvedValue(SESSION);
+    openTrialSession.mockResolvedValue(SESSION);
     saveProgress.mockResolvedValue({ data: { status: "in_progress" } });
     readCompletionConfig.mockResolvedValue({
       data: {
@@ -92,6 +145,8 @@ describe("TrainingTrial", () => {
         completionConfigReadable: true,
       },
     });
+    listCourses.mockResolvedValue({ data: [COURSE] });
+    publishPackage.mockResolvedValue({ data: {} });
     useAuth.mockReturnValue({
       user: { userId: 7, email: "admin@example.com" },
     });
@@ -105,7 +160,7 @@ describe("TrainingTrial", () => {
     renderTrial();
 
     await waitFor(() => expect(startTrial).toHaveBeenCalledWith("5"));
-    await waitFor(() => expect(openSession).toHaveBeenCalledWith(42));
+    await waitFor(() => expect(openTrialSession).toHaveBeenCalledWith(42));
 
     const frame = await screen.findByTitle(/course/i);
     expect(frame.src).toContain(
@@ -142,9 +197,9 @@ describe("TrainingTrial", () => {
 
     await waitFor(() => expect(saveProgress).toHaveBeenCalled());
     expect(
-      await screen.findByText(/completed — this course can now be assigned/i),
+      await screen.findByText(/completed — this package can now be published/i),
     ).toBeInTheDocument();
-    expect(screen.getByText(/now verified and unlocked/i)).toBeInTheDocument();
+    expect(screen.getByText(/now verified and can be published/i)).toBeInTheDocument();
   });
 
   it("still reaches the verdict when the assignment was already done", async () => {
@@ -171,7 +226,7 @@ describe("TrainingTrial", () => {
     });
 
     expect(
-      await screen.findByText(/completed — this course can now be assigned/i),
+      await screen.findByText(/completed — this package can now be published/i),
     ).toBeInTheDocument();
   });
 
@@ -188,7 +243,7 @@ describe("TrainingTrial", () => {
     });
 
     await waitFor(() => expect(saveProgress).toHaveBeenCalled());
-    expect(screen.queryByText(/can now be assigned/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/can now be published/i)).not.toBeInTheDocument();
   });
 
   it("shows an already verified course as verified without any commit", async () => {
@@ -204,7 +259,7 @@ describe("TrainingTrial", () => {
     renderTrial();
 
     expect(
-      await screen.findByText(/completed — this course can now be assigned/i),
+      await screen.findByText(/completed — this package can now be published/i),
     ).toBeInTheDocument();
   });
 
@@ -219,7 +274,11 @@ describe("TrainingTrial", () => {
 
     await waitFor(() => expect(saveProgress).toHaveBeenCalled());
     expect(screen.getByText(/not complete yet/i)).toBeInTheDocument();
-    expect(screen.queryByText(/can now be assigned/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/unlocks for publishing the moment it reports/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/can now be published/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/unlocks for assignment/i)).not.toBeInTheDocument();
   });
 
   it("does not claim completion on a finishing status the server did not accept", async () => {
@@ -234,7 +293,7 @@ describe("TrainingTrial", () => {
     });
 
     await waitFor(() => expect(saveProgress).toHaveBeenCalled());
-    expect(screen.queryByText(/can now be assigned/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/can now be published/i)).not.toBeInTheDocument();
     expect(screen.getByText(/not complete yet/i)).toBeInTheDocument();
   });
 
@@ -387,5 +446,103 @@ describe("TrainingTrial", () => {
     expect(size).toBeInTheDocument();
     expect(screen.queryByText(/4096/)).not.toBeInTheDocument();
     expect(size.textContent).not.toMatch(/\//);
+  });
+
+  it("says which package this run is against", async () => {
+    renderTrial({
+      packageVersion: "qPpo9zHD",
+      staged: { packageVersion: "RaOvlxxJ" },
+    });
+
+    expect(
+      await screen.findByText(/running staged package RaOvlxxJ/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Learners still see qPpo9zHD.")).toBeInTheDocument();
+  });
+
+  it("names the staged and current packages without a version when neither has one", async () => {
+    renderTrial({ packageVersion: null, staged: { packageVersion: null } });
+
+    expect(
+      await screen.findByText(/running the staged package/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Learners still see the current package."),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing about the live package once the course has none", async () => {
+    renderTrial({ liveState: "no_package", packageVersion: null });
+    await screen.findByTitle(/course/i);
+
+    expect(
+      screen.queryByText(/Learners still see/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers to publish from the completion banner", async () => {
+    renderTrial({ verified: true });
+
+    expect(
+      await screen.findByRole("button", { name: "Publish package" }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not offer to publish while nothing is staged", async () => {
+    renderTrial({ verified: true, staged: null });
+    await screen.findByTitle(/course/i);
+
+    expect(
+      screen.queryByRole("button", { name: "Publish package" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("drops the staged package line from the header once publishing succeeds", async () => {
+    listCourses
+      .mockResolvedValueOnce({
+        data: [{ ...COURSE, staged: { packageVersion: "RaOvlxxJ" } }],
+      })
+      .mockResolvedValueOnce({ data: [{ ...COURSE, staged: null }] });
+    renderTrial({ verified: true });
+
+    const trigger = await screen.findByRole("button", {
+      name: "Publish package",
+    });
+    await userEvent.click(trigger);
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Publish package" }),
+    );
+
+    await waitFor(() => expect(publishPackage).toHaveBeenCalledWith("5"));
+    await waitFor(() =>
+      expect(screen.queryByText(/running staged package/i)).not.toBeInTheDocument(),
+    );
+    // No navigation, and no new "published" copy invented -- the banner
+    // still reads exactly as it did before the publish.
+    expect(
+      screen.getByText(/completed — this package can now be published/i),
+    ).toBeInTheDocument();
+  });
+
+  it("reports a failed publish instead of leaving it unhandled", async () => {
+    publishPackage.mockRejectedValue(new Error("boom"));
+    renderTrial({ verified: true });
+
+    const trigger = await screen.findByRole("button", {
+      name: "Publish package",
+    });
+    await userEvent.click(trigger);
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Publish package" }),
+    );
+
+    await waitFor(() => expect(publishPackage).toHaveBeenCalled());
+    // PublishDialog's own onConfirm handler has no catch of its own; the
+    // page must catch the rejection itself or this becomes an unhandled
+    // promise rejection. The dialog staying on screen, unclosed, is the
+    // visible proof the rejection landed here rather than escaping.
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 });

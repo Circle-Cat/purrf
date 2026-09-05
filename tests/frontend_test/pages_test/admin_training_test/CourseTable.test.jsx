@@ -299,7 +299,7 @@ describe("CourseTable", () => {
     expect(onCoursesChanged).toHaveBeenCalledTimes(1);
   });
 
-  it("labels the action Replace package for a course that already has one, and warns before replacing", async () => {
+  it("labels the action Replace package for a course that already has one, and says the upload only stages it", async () => {
     renderTable([verified]);
 
     await userEvent.click(
@@ -307,7 +307,7 @@ describe("CourseTable", () => {
     );
 
     expect(
-      screen.getByText(/this replaces package qppo9zhd/i),
+      screen.getByText(/Learners keep seeing qPpo9zHD until you publish it/),
     ).toBeInTheDocument();
   });
 });

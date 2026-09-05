@@ -14,6 +14,12 @@ import { MESSAGE_TYPES, isTrustedMessage } from "@/training/scormBridge";
  *
  * @param {string|number|undefined|null} trainingId Absent until known.
  * @param {{userId?: number, email?: string}} [user]
+ * @param {{open?: (trainingId: string|number) => Promise<{data: object}>}} [options]
+ *   `open` is which session endpoint to mint from. It defaults to the
+ *   learner's, which always resolves the live package; the trial page passes
+ *   `openTrialSession`, which resolves the staged one. Which package a run is
+ *   against is decided by the server at signing time -- this only chooses
+ *   which of the two endpoints to ask.
  * @returns {{
  *   session: object|null,
  *   loadError: string|null,
@@ -46,7 +52,11 @@ const partingBody = (cmi, sessionToken) => {
   return JSON.stringify({ cmi: rest, final: true, sessionToken });
 };
 
-export default function useTrainingRuntime(trainingId, user) {
+export default function useTrainingRuntime(
+  trainingId,
+  user,
+  { open = openSession } = {},
+) {
   const [session, setSession] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [saveFailed, setSaveFailed] = useState(false);
@@ -87,7 +97,7 @@ export default function useTrainingRuntime(trainingId, user) {
     setWrites([]);
     setCourseVerified(false);
     setSessionStale(false);
-    openSession(trainingId)
+    open(trainingId)
       .then((response) => {
         if (!cancelled) setSession(response.data);
       })
