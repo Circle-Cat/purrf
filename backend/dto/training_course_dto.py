@@ -115,9 +115,6 @@ class TrainingPackageUploadResultDto(BaseDto):
     completion_config_readable: bool = False
     # Declared in the manifest but absent from the archive. A warning only.
     missing_declared_files: list[str] = Field(default_factory=list)
-    # Learners whose resume data this upload wiped. Everyone on the course:
-    # a previous package's blob means nothing to this one, finished or not.
-    learners_reset: int = 0
 
 
 class TrainingProgressSaveDto(BaseDto):

@@ -1,4 +1,4 @@
-"""Uploading a course package, and cleaning up the one it replaced."""
+"""Uploading a course package as a staged, pending replacement."""
 
 import io
 import posixpath
@@ -20,11 +20,13 @@ from backend.training.training_storage import content_type_for
 
 
 class TrainingPackageService:
-    """Turning an uploaded zip into a course somebody could learn.
+    """Turning an uploaded zip into a staged course package.
 
     Nothing is overwritten in place. Files go to a fresh prefix, and only once
-    every one of them has landed does the new row replace the course's LIVE
-    package -- an upload that dies halfway leaves the live package untouched.
+    every one of them has landed does the new row take the course's PENDING
+    slot -- an upload that dies halfway leaves both the live package and any
+    previously staged one untouched. The PENDING package replaces nothing a
+    learner can see; that is Publish's job, done deliberately and later.
     """
 
     def __init__(
@@ -55,24 +57,21 @@ class TrainingPackageService:
     async def upload_package(
         self, session, course_id: int, archive_bytes: bytes, now: datetime | None = None
     ) -> TrainingPackageUploadResultDto:
-        """Validate a zip, store it, and make it the course's package.
+        """Validate a zip, store it, and stage it as the course's pending package.
 
-        Replacing a package has two consequences the admin was shown before
-        clicking, and both happen here: the new package row is born unstamped
-        -- a new export is a new thing, and no proof carries over from the one
-        it replaces -- and resume data is wiped for everyone who had not
-        finished, because the previous package's suspend_data means nothing to
-        the new one and can hang it. Finished records are left alone.
+        An upload is not a publication. The new row is written as PENDING,
+        and the course's LIVE package -- what learners are actually served --
+        is not read, not replaced and not cleared against: nobody on the
+        course sees anything change until somebody presses Publish.
 
-        The previous prefix's files are deleted only after the transaction
-        that replaces the previous LIVE package row with the new one commits.
-        A content token never carries the prefix -- every asset request
-        resolves the course's LIVE package row fresh -- so once that
-        transaction commits, nobody can still resolve to the old prefix, and
-        deleting beforehand would risk a rollback finding the files already
-        gone under a package row that is still live. A delete that fails is
-        logged, not raised: the upload has already succeeded, and the only
-        cost is some storage left behind.
+        At most one PENDING row exists per course, so this upload retires
+        whatever pending attempt came before it. That retired package's files
+        are deleted only after the transaction that drops its row commits,
+        for the same reason Publish deletes late: deleting beforehand would
+        risk a rollback finding the files already gone under a row the
+        transaction never actually removed. A delete that fails is logged,
+        not raised -- the upload has already succeeded, and the only cost is
+        some storage left behind.
 
         Args:
             session: The active async database session.
@@ -115,13 +114,6 @@ class TrainingPackageService:
             raise
 
         moment = now or datetime.now(timezone.utc)
-
-        previous_package = await self.training_course_package_repository.get_by_state(
-            session, course_id, TrainingPackageState.LIVE
-        )
-        previous_prefix = (
-            previous_package.storage_prefix if previous_package is not None else None
-        )
         package_version = (
             contents.driver_config.course_package_version
             if contents.driver_config is not None
@@ -133,21 +125,22 @@ class TrainingPackageService:
             else None
         )
 
-        cleared = 0
-        if previous_prefix:
-            cleared = await self.training_progress_repository.clear_resume_state(
-                session, course_id
-            )
+        # Only our own un-published attempt is replaced. The live package is
+        # not read, not deleted and not cleared against: an upload is not a
+        # publication, and nobody on this course sees anything change until
+        # somebody presses Publish.
+        replaced = await self.training_course_package_repository.get_by_state(
+            session, course_id, TrainingPackageState.PENDING
+        )
+        replaced_prefix = replaced.storage_prefix if replaced is not None else None
+        if replaced is not None:
+            await self.training_course_package_repository.delete(session, replaced)
 
-        if previous_package is not None:
-            await self.training_course_package_repository.delete(
-                session, previous_package
-            )
         await self.training_course_package_repository.add(
             session,
             TrainingCoursePackageEntity(
                 course_id=course_id,
-                state=TrainingPackageState.LIVE,
+                state=TrainingPackageState.PENDING,
                 storage_prefix=new_prefix,
                 entry_path=contents.manifest.entry_path,
                 scorm_version=contents.manifest.scorm_version,
@@ -156,28 +149,19 @@ class TrainingPackageService:
                 uploaded_at=moment,
             ),
         )
-
         await session.commit()
 
         self.logger.info(
-            "[TrainingPackageService] course %s now serves %s "
-            "(%s files, %s learners reset)",
+            "[TrainingPackageService] course %s staged %s (%s files)",
             course_id,
             new_prefix,
             len(contents.file_names),
-            cleared,
         )
 
-        if previous_prefix:
-            try:
-                self.training_storage.delete_prefix(previous_prefix)
-            except Exception:
-                self.logger.exception(
-                    "[TrainingPackageService] could not delete replaced prefix %s "
-                    "for course %s",
-                    previous_prefix,
-                    course_id,
-                )
+        if replaced_prefix:
+            # After the commit, for the same reason publish deletes late: until
+            # it lands, the row still names these files.
+            self._delete_prefix_quietly(replaced_prefix, course_id)
 
         config = contents.driver_config
         return TrainingPackageUploadResultDto(
@@ -193,8 +177,23 @@ class TrainingPackageService:
             completes_via_storyline=bool(config and config.storyline_id),
             completion_config_readable=config is not None,
             missing_declared_files=contents.missing_declared_files,
-            learners_reset=cleared,
         )
+
+    def _delete_prefix_quietly(self, prefix: str, course_id: int) -> None:
+        """Drop a prefix nothing points at any more.
+
+        A failure is logged, never raised: the transaction that stopped
+        anything pointing here has already committed, and the only cost of a
+        failed delete is storage left behind.
+        """
+        try:
+            self.training_storage.delete_prefix(prefix)
+        except Exception:
+            self.logger.exception(
+                "[TrainingPackageService] could not delete prefix %s for course %s",
+                prefix,
+                course_id,
+            )
 
     async def read_completion_config(
         self, session, course_id: int
