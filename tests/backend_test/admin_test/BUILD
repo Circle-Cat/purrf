@@ -1,6 +1,16 @@
 load("@rules_python//python:defs.bzl", "py_test")
 
 py_test(
+    name = "user_account_service_test",
+    srcs = ["user_account_service_test.py"],
+    deps = [
+        "//backend/admin:user_account_service",
+        "//backend/common:user_enums",
+        "//backend/entity:entities",
+    ],
+)
+
+py_test(
     name = "permission_admin_service_test",
     srcs = ["permission_admin_service_test.py"],
     deps = [

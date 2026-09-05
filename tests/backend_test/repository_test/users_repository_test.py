@@ -990,6 +990,43 @@ class TestUsersRepository(BaseRepositoryTestLib):
             {clean.user_id, blocked.user_id, gone.user_id, both.user_id},
         )
 
+    async def test_list_users_filter_is_active(self):
+        """The account console's status filter has to reach SQL: filtering a
+        page in Python would leave both the page size and the total wrong."""
+        token = uuid.uuid4().hex[:10]
+        live = self._make_user(email=f"live-{token}@example.com")
+        gone = self._make_user(email=f"off-{token}@example.com")
+        gone.is_active = False
+        await self.insert_entities([live, gone])
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, is_active=False, limit=50
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual({u.user_id for u, _ in rows}, {gone.user_id})
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, is_active=True, limit=50
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual({u.user_id for u, _ in rows}, {live.user_id})
+
+    async def test_list_users_is_active_and_is_blocked_compose(self):
+        """"Active" on the console means neither deactivated nor blocked, so
+        the two filters have to hold at once."""
+        token = uuid.uuid4().hex[:10]
+        clean = self._make_user(email=f"ok-{token}@example.com")
+        blocked = self._make_user(email=f"bad-{token}@example.com")
+        blocked.is_blocked = True
+        await self.insert_entities([clean, blocked])
+
+        rows, total = await self.repo.list_users(
+            self.session, search=token, is_active=True, is_blocked=False, limit=50
+        )
+
+        self.assertEqual(total, 1)
+        self.assertEqual({u.user_id for u, _ in rows}, {clean.user_id})
+
     async def test_list_users_blocked_reason_search_is_off_by_default(self):
         """Pins that the existing list endpoint's result set does not change.
 
