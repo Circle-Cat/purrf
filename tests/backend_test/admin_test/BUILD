@@ -70,3 +70,17 @@ py_test(
         "@pypi//httpx",
     ],
 )
+
+py_test(
+    name = "block_controller_test",
+    srcs = ["block_controller_test.py"],
+    deps = [
+        "//backend/admin:block_controller",
+        "//backend/common:api_endpoints",
+        "//backend/common:fast_api_error_handler",
+        "//backend/common:permissions",
+        "//backend/dto",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+    ],
+)
