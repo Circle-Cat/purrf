@@ -303,3 +303,117 @@ describe("CourseTable", () => {
     ).toBeInTheDocument();
   });
 });
+
+// One staged sub-row per course whose `staged` is non-null (spec §8). Kept
+// separate from the `describe` above because these fixtures shape `staged`
+// directly rather than reusing `verified`/`needsTrialRun`/etc.
+describe("CourseTable staged sub-row", () => {
+  const staged = (over) => ({
+    courseId: 9,
+    name: "Mentee Onboarding",
+    isActive: true,
+    liveState: "live",
+    packageVersion: "qPpo9zHD",
+    staged: {
+      packageId: 2,
+      packageVersion: "RaOvlxxJ",
+      uploadedAt: "2026-09-05T03:41:00Z",
+      verifiedCompletableAt: null,
+    },
+    ...over,
+  });
+
+  it("shows no sub-row for a course with nothing staged", () => {
+    renderTable([staged({ staged: null })]);
+
+    expect(screen.queryByText(/staged/i)).not.toBeInTheDocument();
+  });
+
+  it("says what learners still see while a package is staged", () => {
+    renderTable([staged()]);
+
+    expect(screen.getByText("Learners still see qPpo9zHD.")).toBeInTheDocument();
+  });
+
+  it("says nothing is live when the course has never published", () => {
+    renderTable([
+      staged({ liveState: "no_package", packageVersion: null }),
+    ]);
+
+    expect(
+      screen.getByText(
+        "Nothing is live yet; publishing makes this course assignable.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps Publish on screen but disabled until the package is verified", () => {
+    renderTable([staged()]);
+
+    const publish = screen.getByRole("button", { name: "Publish" });
+    expect(publish).toBeDisabled();
+    expect(publish).toHaveAttribute(
+      "title",
+      "Run this package to completion first",
+    );
+  });
+
+  it("enables Publish once the staged package is verified", () => {
+    renderTable([
+      staged({
+        staged: {
+          packageId: 2,
+          packageVersion: "RaOvlxxJ",
+          uploadedAt: "2026-09-05T03:41:00Z",
+          verifiedCompletableAt: "2026-09-05T04:10:00Z",
+        },
+      }),
+    ]);
+
+    expect(screen.getByRole("button", { name: "Publish" })).toBeEnabled();
+  });
+
+  it("shows the staged package's upload time and version marker", () => {
+    renderTable([staged()]);
+
+    expect(screen.getByText(/⬆ RaOvlxxJ staged — not run yet/)).toBeInTheDocument();
+  });
+
+  it("marks a verified staged package with a check instead of the upload arrow", () => {
+    renderTable([
+      staged({
+        staged: {
+          packageId: 2,
+          packageVersion: "RaOvlxxJ",
+          uploadedAt: "2026-09-05T03:41:00Z",
+          verifiedCompletableAt: "2026-09-05T04:10:00Z",
+        },
+      }),
+    ]);
+
+    expect(screen.getByText(/✓ RaOvlxxJ staged — verified/)).toBeInTheDocument();
+  });
+
+  it("discards the staged package and refetches, without touching the live package", async () => {
+    api.discardPackage.mockResolvedValue({ data: {} });
+    const onCoursesChanged = vi.fn();
+    renderTable([staged()], onCoursesChanged);
+
+    await userEvent.click(screen.getByRole("button", { name: /^discard$/i }));
+
+    await waitFor(() =>
+      expect(api.discardPackage).toHaveBeenCalledWith(9),
+    );
+    expect(onCoursesChanged).toHaveBeenCalledTimes(1);
+    expect(api.publishPackage).not.toHaveBeenCalled();
+  });
+
+  it("offers a Trial run link into the course's own trial route", () => {
+    renderTable([staged()]);
+
+    expect(screen.getByRole("link", { name: /trial run/i })).toHaveAttribute(
+      "href",
+      "/admin/training/9/trial",
+    );
+  });
+});

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,8 +15,16 @@ import {
   assignBlockedReason,
   canAssign,
   liveStateLabel,
+  publishBlockedReason,
 } from "@/pages/AdminTraining/utils";
-import { assignCourse, updateCourse, uploadPackage } from "@/api/trainingApi";
+import {
+  assignCourse,
+  discardPackage,
+  updateCourse,
+  uploadPackage,
+} from "@/api/trainingApi";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import { formatDateTimeWithZone, resolveViewerTimezone } from "@/utils/dateTime";
 import AssignDialog from "@/pages/AdminTraining/components/AssignDialog";
 import DeactivateDialog from "@/pages/AdminTraining/components/DeactivateDialog";
 import UploadPackageDialog from "@/pages/AdminTraining/components/UploadPackageDialog";
@@ -130,6 +139,60 @@ function PackageCell({ course }) {
   return <span className="text-muted-foreground">—</span>;
 }
 
+// The sub-row a staged package gets directly under the course it belongs to
+// (spec §8). Spans every column rather than living in one of them, since it
+// is describing the row above, not adding another cell to it.
+function StagedRow({ course, onDiscard, onPublish }) {
+  const { staged } = course;
+  const verified = Boolean(staged.verifiedCompletableAt);
+  const uploadedLabel = formatDateTimeWithZone(
+    staged.uploadedAt,
+    resolveViewerTimezone(),
+  );
+
+  return (
+    <TableRow>
+      <TableCell colSpan={5}>
+        <div className="flex flex-col gap-1 rounded-md border bg-muted/40 p-3 text-sm">
+          <div className="flex items-center justify-between gap-4">
+            <span>
+              {verified
+                ? `✓ ${staged.packageVersion} staged — verified`
+                : `⬆ ${staged.packageVersion} staged — not run yet`}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {uploadedLabel}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {course.liveState === "live"
+              ? `Learners still see ${course.packageVersion}.`
+              : "Nothing is live yet; publishing makes this course assignable."}
+          </p>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button size="sm" variant="outline" asChild>
+              <Link to={ROUTE_PATHS.TRAINING_TRIAL(course.courseId)}>
+                Trial run
+              </Link>
+            </Button>
+            <Button
+              size="sm"
+              disabled={!verified}
+              title={publishBlockedReason(course)}
+              onClick={() => onPublish(course)}
+            >
+              Publish
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => onDiscard(course)}>
+              Discard
+            </Button>
+          </div>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
 /**
  * The admin course catalogue: Course / Package / Status / Assigned / action.
  *
@@ -144,6 +207,11 @@ function PackageCell({ course }) {
  * the row loop, keyed off that state, and closes by setting it back to
  * `null`. Assign and Upload follow the same shape.
  *
+ * The staged sub-row's Publish button follows that same shape through
+ * `setPublishing`, but its dialog does not exist yet -- a later task adds
+ * the paired `publishing` state read and renders `<PublishDialog>` here,
+ * the same way `deactivating` drives `DeactivateDialog` above.
+ *
  * @param {{courses: Array<Object>, onCoursesChanged: () => (void|Promise<void>)}} props
  *   `courses` are `TrainingCourseDto`-shaped rows; `onCoursesChanged` refetches them.
  */
@@ -151,6 +219,11 @@ export default function CourseTable({ courses, onCoursesChanged }) {
   const [deactivating, setDeactivating] = useState(null);
   const [uploading, setUploading] = useState(null);
   const [assigning, setAssigning] = useState(null);
+  // Named and shaped like the state above so a later task can attach
+  // `<PublishDialog>` here without touching anything else in this file --
+  // the read side is unused until that dialog exists, so it stays unnamed
+  // here rather than tripping the unused-var lint rule.
+  const [, setPublishing] = useState(null);
 
   const handleActivate = async (course) => {
     try {
@@ -189,6 +262,17 @@ export default function CourseTable({ courses, onCoursesChanged }) {
     return result;
   };
 
+  // Drops the staged package without publishing it; the live package, if
+  // any, is untouched. Same refetch-on-success rule as every mutation above.
+  const handleDiscard = async (course) => {
+    try {
+      await discardPackage(course.courseId);
+      await onCoursesChanged?.();
+    } catch (error) {
+      toast.error(error.message);
+    }
+  };
+
   return (
     <>
       <Table>
@@ -203,34 +287,43 @@ export default function CourseTable({ courses, onCoursesChanged }) {
         </TableHeader>
         <TableBody>
           {courses.map((course) => (
-            <TableRow key={course.courseId}>
-              <TableCell>
-                <div className="font-medium">{course.name}</div>
-                {course.description && (
-                  <div className="text-xs text-muted-foreground">
-                    {course.description}
-                  </div>
-                )}
-              </TableCell>
-              <TableCell>
-                <PackageCell course={course} />
-              </TableCell>
-              <TableCell>
-                <StatusBadge liveState={course.liveState} />
-              </TableCell>
-              <TableCell className="text-right">
-                {course.assignedCount}
-              </TableCell>
-              <TableCell className="text-right">
-                <RowActions
+            <Fragment key={course.courseId}>
+              <TableRow>
+                <TableCell>
+                  <div className="font-medium">{course.name}</div>
+                  {course.description && (
+                    <div className="text-xs text-muted-foreground">
+                      {course.description}
+                    </div>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <PackageCell course={course} />
+                </TableCell>
+                <TableCell>
+                  <StatusBadge liveState={course.liveState} />
+                </TableCell>
+                <TableCell className="text-right">
+                  {course.assignedCount}
+                </TableCell>
+                <TableCell className="text-right">
+                  <RowActions
+                    course={course}
+                    onDeactivate={setDeactivating}
+                    onActivate={handleActivate}
+                    onUpload={setUploading}
+                    onAssign={setAssigning}
+                  />
+                </TableCell>
+              </TableRow>
+              {course.staged && (
+                <StagedRow
                   course={course}
-                  onDeactivate={setDeactivating}
-                  onActivate={handleActivate}
-                  onUpload={setUploading}
-                  onAssign={setAssigning}
+                  onDiscard={handleDiscard}
+                  onPublish={setPublishing}
                 />
-              </TableCell>
-            </TableRow>
+              )}
+            </Fragment>
           ))}
         </TableBody>
       </Table>
