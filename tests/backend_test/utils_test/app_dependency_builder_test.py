@@ -610,6 +610,8 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_admin_controller=mock_mentorship_admin_controller_cls.return_value,
             email_management_controller=mock_email_management_controller_cls.return_value,
             permission_admin_controller=mock_permission_admin_controller_cls.return_value,
+            user_account_controller=ANY,
+            block_controller=ANY,
             recruiting_controller=ANY,
             application_controller=ANY,
             board_controller=ANY,
@@ -895,6 +897,25 @@ class TestAppDependencyBuilder(TestCase):
         self.assertIs(
             builder.board_service.notification_repository,
             builder.notification_repository,
+        )
+
+        # The account console. BlockService is built after
+        # interview_scheduling_service, not next to the permission controller:
+        # it needs that service, and a builder reading a not-yet-assigned
+        # attribute fails at startup, where no test would be looking.
+        self.assertIsNotNone(builder.user_account_controller)
+        self.assertIsNotNone(builder.block_controller)
+        self.assertIsNotNone(builder.block_request_repository)
+        self.assertIs(
+            builder.block_service._interview_scheduling,
+            builder.interview_scheduling_service,
+        )
+        self.assertIs(
+            builder.block_service._requests, builder.block_request_repository
+        )
+        self.assertIs(
+            builder.user_account_service._block_requests,
+            builder.block_request_repository,
         )
 
 
