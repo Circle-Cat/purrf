@@ -88,6 +88,16 @@ export default function useTrainingRuntime(
   // requests in flight together each decide the assignment's next status from
   // a server-side read the other has not written to yet.
   const saveChainRef = useRef(Promise.resolve());
+  // Which endpoint to mint from, held in a ref rather than depended on: a
+  // caller passing an inline arrow would otherwise re-open the session on
+  // every render. The effect below opens once per assignment and reads
+  // whatever `open` is by then, so a caller that swaps endpoints mid-run
+  // still gets the new one on the next assignment rather than a stale
+  // closure.
+  const openRef = useRef(open);
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
 
   useEffect(() => {
     if (!trainingId) return undefined;
@@ -97,7 +107,8 @@ export default function useTrainingRuntime(
     setWrites([]);
     setCourseVerified(false);
     setSessionStale(false);
-    open(trainingId)
+    const mint = openRef.current;
+    mint(trainingId)
       .then((response) => {
         if (!cancelled) setSession(response.data);
       })
