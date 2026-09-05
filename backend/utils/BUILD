@@ -82,6 +82,8 @@ py_library(
         "//backend/mentorship",
         "//backend/notification_management:publish_on_commit",
         "//backend/recruiting",
+        "//backend/user_identity:notification_renderers",
+        "//backend/user_identity:user_recipient_resolvers",
         "@pypi//fastapi",
     ],
 )

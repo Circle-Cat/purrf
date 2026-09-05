@@ -11,6 +11,8 @@ Entry-point service: every write method commits its own transaction.
 
 from backend.common.identity_type import IdentityType
 from backend.common.name_utils import display_name_of
+from backend.common.user_enums import USER_SUBJECT_TYPE, UserEvent
+from backend.notification_management.event_recorder import record_event
 from backend.dto.user_account_dto import (
     SignInEmailDto,
     SignInIdentityDto,
@@ -223,6 +225,14 @@ class UserAccountService:
             )
             raise PermissionError("You cannot deactivate your own account")
         await self._users.deactivate(session, user_id, actor_id, note)
+        await record_event(
+            session,
+            subject_type=USER_SUBJECT_TYPE,
+            subject_id=user_id,
+            actor_id=actor_id,
+            event_type=UserEvent.DEACTIVATED,
+            details={"note": note},
+        )
         await session.commit()
 
     async def reactivate(self, session, *, actor_id: int, user_id: int) -> None:
@@ -241,15 +251,24 @@ class UserAccountService:
         """
         await self._require_user(session, user_id)
         await self._users.reactivate(session, user_id)
+        await record_event(
+            session,
+            subject_type=USER_SUBJECT_TYPE,
+            subject_id=user_id,
+            actor_id=actor_id,
+            event_type=UserEvent.REACTIVATED,
+            details={},
+        )
         await session.commit()
 
-    async def unblock(self, session, user_id: int) -> None:
+    async def unblock(self, session, actor_id: int, user_id: int) -> None:
         """
         Lift a block. Idempotent: unblocking someone who is not blocked
         succeeds and changes nothing. Commits.
 
         Args:
             session (AsyncSession): The active async database session.
+            actor_id (int): The operator lifting it.
             user_id (int): The account to unblock.
 
         Raises:
@@ -257,6 +276,14 @@ class UserAccountService:
         """
         await self._require_user(session, user_id)
         await self._users.clear_block(session, user_id)
+        await record_event(
+            session,
+            subject_type=USER_SUBJECT_TYPE,
+            subject_id=user_id,
+            actor_id=actor_id,
+            event_type=UserEvent.UNBLOCKED,
+            details={},
+        )
         await session.commit()
 
     async def _require_user(self, session, user_id: int):
