@@ -71,19 +71,23 @@ export default function PublishDialog({
               : `${stagedName} becomes the package this course serves.`}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-1.5 rounded-md border p-3 text-sm text-muted-foreground">
-          <p>
-            {unfinishedCount} learners in progress will restart from the
-            beginning. {completedCount} completed records are untouched.
-          </p>
-          <p>
-            Anyone with the course open right now will see it stop loading until
-            they reload.
-          </p>
-          {isLive && (
+        {/* All three consequences are consequences of a replacement. With
+            nothing live, nobody has the course open, nobody is part-way
+            through it and there is no outgoing package -- the description
+            above is then the whole truth, so the box does not render. */}
+        {isLive && (
+          <div className="space-y-1.5 rounded-md border p-3 text-sm text-muted-foreground">
+            <p>
+              {unfinishedCount} learners in progress will restart from the
+              beginning. {completedCount} completed records are untouched.
+            </p>
+            <p>
+              Anyone with the course open right now will see it stop loading
+              until they reload.
+            </p>
             <p>{currentName} is deleted and cannot be brought back.</p>
-          )}
-        </div>
+          </div>
+        )}
         <DialogFooter>
           <Button
             variant="outline"

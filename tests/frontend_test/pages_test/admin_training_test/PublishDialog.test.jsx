@@ -62,7 +62,11 @@ describe("PublishDialog", () => {
     ).toBeInTheDocument();
   });
 
-  it("says the staged package becomes the course's package when nothing is live yet, and drops the deletion line since there is no outgoing package", () => {
+  it("states nothing about learners when nothing is live for them to lose", () => {
+    // Publishing onto an empty live slot replaces nothing: no learner can
+    // have this course open, none is part-way through it, and there is no
+    // outgoing package to delete. The description sentence is the whole
+    // truth, so the consequence box has nothing left to say.
     render(
       <PublishDialog
         course={{
@@ -83,8 +87,14 @@ describe("PublishDialog", () => {
       screen.getByText("RaOvlxxJ becomes the package this course serves."),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/see it stop loading until they reload/),
-    ).toBeInTheDocument();
+      screen.queryByText(/learners in progress will restart/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/completed records are untouched/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/see it stop loading until they reload/),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByText(/is deleted and cannot be brought back/),
     ).not.toBeInTheDocument();
@@ -143,7 +153,7 @@ describe("PublishDialog", () => {
     ).toBeInTheDocument();
   });
 
-  it("confirms and closes through onConfirm, not a local mutation", async () => {
+  it("publishes through onConfirm rather than calling the API itself", async () => {
     const onConfirm = vi.fn().mockResolvedValue({});
     render(
       <PublishDialog
