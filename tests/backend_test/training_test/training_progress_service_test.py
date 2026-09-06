@@ -1160,7 +1160,7 @@ class TestAPreviewCannotSaveAnything(_ProgressServiceCase):
             _SIGNING_KEY, None, _USER_ID, package_id=_PACKAGE_ID
         )
 
-        with self.assertRaises(PermissionError):
+        with self.assertRaises(PermissionError) as raised:
             await self.service.save(
                 self.session,
                 _TRAINING_ID,
@@ -1169,7 +1169,11 @@ class TestAPreviewCannotSaveAnything(_ProgressServiceCase):
                 session_token=token,
             )
 
-        # Refused before anything is read or written, not after.
+        self.assertEqual("A preview does not record progress.", str(raised.exception))
+        # Refused before any package or progress read, and before any write.
+        # The assignment itself is still read and row-locked first, and the
+        # ownership check still runs before this -- that ordering is correct
+        # and must win over a preview's refusal.
         self.package_repository.get_by_id.assert_not_awaited()
         self.progress_repository.upsert.assert_not_awaited()
 
