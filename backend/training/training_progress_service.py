@@ -10,7 +10,7 @@ from backend.dto.training_course_dto import TrainingProgressSaveDto
 from backend.training.completion import next_training_status, reports_completion
 from backend.training.training_content_token import (
     InvalidContentToken,
-    read_session_package,
+    read_session_run,
 )
 
 # SCORM 1.2's CMITimespan needs at least two digits of hours. A single-digit
@@ -394,7 +394,7 @@ class TrainingProgressService:
         package_id = None
         if isinstance(session_token, str) and session_token:
             try:
-                package_id = read_session_package(self.signing_key, session_token)
+                package_id = read_session_run(self.signing_key, session_token).package_id
             except (InvalidContentToken, ValueError):
                 package_id = None
 
