@@ -67,8 +67,6 @@ import {
   setApplicationSubStatus,
   setApplicationRound,
   changeApplicationStage,
-  blacklistUser,
-  listBlacklistUpcomingInterviews,
   reassignApplication,
   submitEvaluation,
   postComment,
@@ -79,6 +77,14 @@ import {
   updateInterview,
   cancelInterview,
 } from "@/api/recruitingApi";
+import {
+  createBlockRequest,
+  getBlockPreflight,
+  getUserAdmins,
+  reassignBlockRequest,
+} from "@/api/adminAccountsApi";
+import BlockDialog from "@/pages/AdminAccounts/components/BlockDialog";
+import ReassignDialog from "@/pages/Recruiting/components/ReassignDialog";
 import {
   humanize,
   stageLabel,
@@ -1067,11 +1073,13 @@ const OtherApplicationsSection = ({
  *   that panel is instead gated on real ownership (`detail.isOwner`)
  *   specifically, so a `read.all` viewer sees the same information an owner
  *   does but can't act on it: the sub-status buttons render disabled, the
- *   Reassign trigger and the whole "Operate" decision row (Blacklist/Reject/
- *   Advance) don't render at all. Blacklist is additionally gated on the
- *   `recruiting.blacklist.write` permission (an org-level sanction, not a
- *   per-posting decision — same gate as the backend route): an owner
- *   without it sees the button disabled with a tooltip. For an actual
+ *   Reassign trigger and the whole "Operate" decision row (Request block/
+ *   Reject/Advance) don't render at all. Request block is additionally gated
+ *   on holding the recruiting advance grant, the same gate as the backend
+ *   raise route: an owner without it sees the button disabled with a tooltip.
+ *   The page is still narrower than the route, which has no ownership check --
+ *   deliberately, since the evidence for a block lives on the posting you own.
+ *   For an actual
  *   owner, the workflow only
  *   ever moves forward one step at a time, so Advance is a single button
  *   covering both cases: round-advance (via the job's
@@ -1105,11 +1113,11 @@ const ApplicationDetailPage = () => {
   const evaluatorMode = searchParams.get("mode") === "evaluate";
   const { user, permissions = [] } = useAuth();
   const currentUserId = user?.userId;
-  // Blacklisting is an org-level sanction, permission-gated (not owner-gated)
-  // on the backend route — mirror that here so an owner without the grant
-  // sees a disabled button instead of a post-click error.
-  const canBlacklist = permissions.includes(
-    PERMISSIONS.RECRUITING_BLACKLIST_WRITE,
+  // Raising a block request is gated on standing in the recruiting domain, not
+  // on the console permission -- mirror the backend's raise gate here so an
+  // owner without the grant sees a disabled button, not a post-click error.
+  const canRequestBlock = permissions.includes(
+    PERMISSIONS.RECRUITING_APPLICATION_ADVANCE,
   );
 
   const [detail, setDetail] = useState(null);
@@ -1152,15 +1160,19 @@ const ApplicationDetailPage = () => {
   const [reassignAssigneeId, setReassignAssigneeId] = useState("");
   const [reassigning, setReassigning] = useState(false);
 
-  const [blacklistConfirmOpen, setBlacklistConfirmOpen] = useState(false);
-  const [blacklistReason, setBlacklistReason] = useState("");
-  const [blacklisting, setBlacklisting] = useState(false);
-  // The interviews a block would cancel, read when the dialog opens (never on
-  // page load -- every owner would pay for a query only this button needs).
-  // `null` means "not loaded / couldn't be loaded"; the block itself goes
-  // ahead either way, since the backend cancels them regardless.
-  const [blacklistUpcoming, setBlacklistUpcoming] = useState([]);
-  const [blacklistUpcomingFailed, setBlacklistUpcomingFailed] = useState(false);
+  const [blockDialogOpen, setBlockDialogOpen] = useState(false);
+  const [blockSubmitting, setBlockSubmitting] = useState(false);
+  const [blockPreflight, setBlockPreflight] = useState(null);
+  const [blockPreflightError, setBlockPreflightError] = useState(false);
+  const [reviewerOptions, setReviewerOptions] = useState([]);
+  // Distinct from an empty list: the dialog says something different for
+  // "couldn't read the reviewers" than for "there genuinely are none".
+  const [reviewerOptionsFailed, setReviewerOptionsFailed] = useState(false);
+  // The request this page raised, kept only for as long as the page is open.
+  // There is no backend read scoped to the raiser, so a reload loses it.
+  const [raisedBlockRequest, setRaisedBlockRequest] = useState(null);
+  const [blockReassignOpen, setBlockReassignOpen] = useState(false);
+  const [blockReassigning, setBlockReassigning] = useState(false);
 
   const [interviewDialogOpen, setInterviewDialogOpen] = useState(false);
   const [interviewDialogMode, setInterviewDialogMode] = useState("schedule");
@@ -1628,41 +1640,55 @@ const ApplicationDetailPage = () => {
   };
 
   /**
-   * Open the blacklist confirm dialog and read what the block would cancel.
+   * Open the block-request dialog and read what the block would do.
    *
-   * Best-effort: a failed read shows a caveat instead of the list and still
-   * lets the block proceed — the backend cancels those meetings either way,
-   * so blocking an org-level sanction on a preview query would be backwards.
+   * Best-effort: a failed pre-flight shows a caveat instead of the counts and
+   * still lets the request go out, because the reviewer sees the same
+   * pre-flight before they decide.
    */
-  const handleOpenBlacklist = () => {
-    setBlacklistUpcoming([]);
-    setBlacklistUpcomingFailed(false);
-    setBlacklistConfirmOpen(true);
-    listBlacklistUpcomingInterviews(detail.application.userId)
-      .then(({ data }) => setBlacklistUpcoming(data ?? []))
-      .catch(() => setBlacklistUpcomingFailed(true));
+  const handleOpenBlockRequest = () => {
+    setBlockPreflight(null);
+    setBlockPreflightError(false);
+    setBlockDialogOpen(true);
+    getBlockPreflight(detail.application.userId)
+      .then(({ data }) => setBlockPreflight(data))
+      .catch(() => setBlockPreflightError(true));
+    setReviewerOptionsFailed(false);
+    getUserAdmins()
+      .then(({ data }) => setReviewerOptions(data ?? []))
+      .catch(() => setReviewerOptionsFailed(true));
   };
 
-  const handleCancelBlacklist = () => {
-    setBlacklistConfirmOpen(false);
-    setBlacklistReason("");
-  };
-
-  const handleConfirmBlacklist = () => {
-    if (!blacklistReason.trim() || blacklisting) return;
-    setBlacklisting(true);
-    blacklistUser({
-      userId: detail.application.userId,
-      applicationId,
-      reason: blacklistReason.trim(),
-    })
-      .then(() => {
-        toast.success("Applicant blacklisted.");
-        handleCancelBlacklist();
-        load();
+  const handleConfirmBlockRequest = ({ reason, reviewerId }) => {
+    if (blockSubmitting) return;
+    setBlockSubmitting(true);
+    createBlockRequest(
+      { userId: detail.application.userId, reason, reviewerId },
+      // The page, not the surface it was reached from: the reviewer's card
+      // renders this verbatim, and "recruiting board" would name a page the
+      // request did not come from.
+      "recruiting_application",
+    )
+      .then(({ data }) => {
+        setRaisedBlockRequest(data);
+        setBlockDialogOpen(false);
+        toast.success(`Block requested — sent to ${data.reviewerName}.`);
       })
       .catch((e) => toast.error(e.message))
-      .finally(() => setBlacklisting(false));
+      .finally(() => setBlockSubmitting(false));
+  };
+
+  const handleReassignBlockRequest = (reviewerId) => {
+    if (blockReassigning) return;
+    setBlockReassigning(true);
+    reassignBlockRequest(raisedBlockRequest.id, reviewerId)
+      .then(({ data }) => {
+        setRaisedBlockRequest(data);
+        setBlockReassignOpen(false);
+        toast.success(`Reassigned to ${data.reviewerName}.`);
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setBlockReassigning(false));
   };
 
   const openScheduleInterview = () => {
@@ -1909,16 +1935,32 @@ const ApplicationDetailPage = () => {
                   <Button
                     variant="outline"
                     className="mr-auto"
-                    disabled={blacklisting || !canBlacklist}
-                    title={
-                      canBlacklist
-                        ? undefined
-                        : "Requires the blacklist permission"
+                    disabled={
+                      blockSubmitting ||
+                      !canRequestBlock ||
+                      Boolean(raisedBlockRequest)
                     }
-                    onClick={handleOpenBlacklist}
+                    title={
+                      canRequestBlock
+                        ? undefined
+                        : "Requires the recruiting advance permission"
+                    }
+                    onClick={handleOpenBlockRequest}
                   >
-                    Blacklist
+                    Request block
                   </Button>
+                  {raisedBlockRequest && (
+                    <span className="text-sm text-slate-600">
+                      {`Block requested — sent to ${raisedBlockRequest.reviewerName}`}
+                      <Button
+                        variant="link"
+                        className="px-2"
+                        onClick={() => setBlockReassignOpen(true)}
+                      >
+                        Reassign
+                      </Button>
+                    </span>
+                  )}
                   {isPipelineStage && (
                     <Button
                       variant="outline"
@@ -2123,78 +2165,37 @@ const ApplicationDetailPage = () => {
         </div>
       </div>
 
-      <Dialog
-        open={blacklistConfirmOpen}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) handleCancelBlacklist();
+      <BlockDialog
+        open={blockDialogOpen}
+        onOpenChange={setBlockDialogOpen}
+        mode="request"
+        account={{
+          userId: detail.application.userId,
+          // Recruiting only ever resolves a candidate to one display string,
+          // so there is no first/last pair to hand over here.
+          name: detail.applicantName,
+          primaryEmail: detail.applicantEmail,
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Blacklist this applicant?</DialogTitle>
-          </DialogHeader>
-          {/* The reach of this action is far wider than the page it is taken
-              from, and it was previously only ever stated in a help dialog
-              nobody opens before clicking. It renders unconditionally: the
-              interview list below is conditional, and this must not be. */}
-          <p className="text-sm text-slate-700">
-            This rejects the application you are looking at, blocks the
-            applicant from applying to anything in future, and closes every
-            other application they hold on every posting — including any that
-            already reached Hired. Each one is tagged as blacklisted.
-          </p>
-          <p className="text-sm text-slate-700">
-            This also blocks them from Purrf entirely — they can still sign in,
-            but every page will be inaccessible until they are unblocked.
-          </p>
-          {blacklistUpcoming.length > 0 && (
-            <div className="text-sm text-slate-700">
-              <p>
-                This also cancels the scheduled interviews below, on every
-                posting. All attendees will be notified.
-              </p>
-              <ul className="mt-2 list-disc pl-5">
-                {blacklistUpcoming.map((entry) => (
-                  <li
-                    key={`${entry.applicationId}-${entry.stage}-${entry.round}`}
-                  >
-                    {`${entry.jobTitle} — ${humanize(entry.stage)} session ${
-                      entry.round
-                    } — ${formatInterviewWhen(entry.startAt, viewerTimezone)}`}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {blacklistUpcomingFailed && (
-            <p className="text-sm text-slate-500">
-              Couldn&apos;t check for scheduled interviews. Any still to come
-              will be cancelled anyway.
-            </p>
-          )}
-          <Textarea
-            placeholder="Reason (required)"
-            value={blacklistReason}
-            onChange={(e) => setBlacklistReason(e.target.value)}
-          />
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={handleCancelBlacklist}
-              disabled={blacklisting}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleConfirmBlacklist}
-              disabled={!blacklistReason.trim() || blacklisting}
-            >
-              Confirm blacklist
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        preflight={blockPreflight}
+        preflightError={blockPreflightError}
+        timezone={viewerTimezone}
+        holders={reviewerOptions}
+        holdersError={reviewerOptionsFailed}
+        currentUserId={user?.userId}
+        onConfirm={handleConfirmBlockRequest}
+        submitting={blockSubmitting}
+      />
+
+      <ReassignDialog
+        open={blockReassignOpen}
+        onOpenChange={setBlockReassignOpen}
+        currentReviewerId={raisedBlockRequest?.reviewerId}
+        currentUserId={user?.userId}
+        targetUserId={detail.application.userId}
+        holders={reviewerOptions}
+        onConfirm={handleReassignBlockRequest}
+        submitting={blockReassigning}
+      />
 
       <Dialog
         open={evalReminderFor != null}

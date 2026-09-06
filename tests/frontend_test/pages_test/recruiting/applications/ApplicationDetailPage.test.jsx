@@ -11,8 +11,12 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
 import ApplicationDetailPage from "@/pages/Recruiting/applications/ApplicationDetailPage";
 import * as api from "@/api/recruitingApi";
+import * as adminApi from "@/api/adminAccountsApi";
 
 vi.mock("@/api/recruitingApi");
+// Blocking is no longer a recruiting call: the page raises a request against
+// the account-admin API and never blocks anyone itself.
+vi.mock("@/api/adminAccountsApi");
 // Bazel-sandbox module resolution: `vi.mock("sonner", factory)` doesn't
 // intercept the module the component resolved at import time. Spy on the
 // real toast instead, matching the rest of the recruiting page tests.
@@ -21,9 +25,9 @@ vi.spyOn(toast, "success").mockImplementation(() => {});
 
 // The current user id is read via useAuth(); a hoisted mutable holder lets
 // each test flip who is viewing (owner / assignee / neither) before render.
-// `permissions` defaults to holding the blacklist grant (see beforeEach) so
-// owner-flow tests exercise a fully-empowered owner; the permission-gating
-// tests empty it explicitly.
+// `permissions` defaults to holding the recruiting advance grant (see
+// beforeEach) so owner-flow tests exercise a fully-empowered owner; the
+// permission-gating tests empty it explicitly.
 const authState = vi.hoisted(() => ({ userId: 999, permissions: [] }));
 vi.mock("@/context/auth/AuthContext", () => ({
   useAuth: () => ({
@@ -210,7 +214,11 @@ const confirmedEval = (stage, round = 1, evaluatorId = ASSIGNEE_ID) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   authState.userId = 999;
-  authState.permissions = ["recruiting.blacklist.write"];
+  authState.permissions = ["recruiting.application.advance"];
+  adminApi.getBlockPreflight.mockResolvedValue({
+    data: { applicationCount: 0, interviewTimes: [] },
+  });
+  adminApi.getUserAdmins.mockResolvedValue({ data: [] });
   api.resumeUrl.mockImplementation(
     (id) => `/api/recruiting/applications/${id}/resume`,
   );
@@ -429,7 +437,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
 
     // Decision footer (owner)
     expect(
-      screen.getByRole("button", { name: "Blacklist" }),
+      screen.getByRole("button", { name: "Request block" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
     expect(
@@ -495,30 +503,27 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     expect(screen.getByRole("button", { name: "Status:" })).toBeInTheDocument();
   });
 
-  it("states how far blacklisting reaches before it is confirmed", async () => {
+  it("states how far the block reaches before the request is sent", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
-    authState.permissions = [
-      ...authState.permissions,
-      "recruiting.blacklist.write",
-    ];
     api.getApplicationDetail.mockResolvedValue({
       data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
     });
-    // Opening the dialog also fetches the applicant's upcoming interviews to
-    // list them; an empty list is what proves the blast-radius sentence is
-    // unconditional rather than riding on that list.
-    api.listBlacklistUpcomingInterviews.mockResolvedValue({ data: [] });
+    // An empty pre-flight is what proves the blast-radius wording is
+    // unconditional rather than riding on the counts it comes back with.
+    adminApi.getBlockPreflight.mockResolvedValue({
+      data: { applicationCount: 0, interviewTimes: [] },
+    });
     renderPage();
     await waitLoaded();
 
-    await user.click(screen.getByRole("button", { name: "Blacklist" }));
+    await user.click(screen.getByRole("button", { name: "Request block" }));
 
     expect(
-      await screen.findByText(/closes every other application they hold/),
+      await screen.findByText(/including any already hired/),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/including any that already reached Hired/),
+      screen.getByText(/reinstates none of the above/),
     ).toBeInTheDocument();
   });
 
@@ -657,7 +662,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
 
     // No owner decision footer
     expect(
-      screen.queryByRole("button", { name: "Blacklist" }),
+      screen.queryByRole("button", { name: "Request block" }),
     ).not.toBeInTheDocument();
     // Owner-only follow-up fetches are skipped for a non-owner...
     expect(api.getJob).not.toHaveBeenCalled();
@@ -676,7 +681,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     await waitLoaded();
 
     expect(
-      screen.getByRole("button", { name: "Blacklist" }),
+      screen.getByRole("button", { name: "Request block" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Confirm & Submit" }),
@@ -692,7 +697,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
     await waitLoaded();
 
     expect(
-      screen.queryByRole("button", { name: "Blacklist" }),
+      screen.queryByRole("button", { name: "Request block" }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Confirm & Submit" }),
@@ -713,7 +718,7 @@ describe("ApplicationDetailPage — role-adaptive right column", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Blacklist" }),
+      screen.queryByRole("button", { name: "Request block" }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Confirm & Submit" }),
@@ -1037,7 +1042,7 @@ describe("ApplicationDetailPage — reassign dialog", () => {
 });
 
 describe("ApplicationDetailPage — operate row", () => {
-  it("labels the decision row Operate, with Blacklist/Reject/Advance on it", async () => {
+  it("labels the decision row Operate, with Request block/Reject/Advance on it", async () => {
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({
       data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
@@ -1047,7 +1052,7 @@ describe("ApplicationDetailPage — operate row", () => {
 
     expect(screen.getByText("Operate:")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Blacklist" }),
+      screen.getByRole("button", { name: "Request block" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
     expect(
@@ -1055,7 +1060,9 @@ describe("ApplicationDetailPage — operate row", () => {
     ).toBeInTheDocument();
   });
 
-  it("disables Blacklist for an owner without recruiting.blacklist.write", async () => {
+  it("disables Request block for an owner without the recruiting advance grant", async () => {
+    // Disabled and explained, not hidden: an owner who cannot raise one still
+    // needs to see that raising one is a thing this page does.
     authState.userId = OWNER_ID;
     authState.permissions = [];
     api.getApplicationDetail.mockResolvedValue({
@@ -1064,24 +1071,26 @@ describe("ApplicationDetailPage — operate row", () => {
     renderPage();
     await waitLoaded();
 
-    const blacklistButton = screen.getByRole("button", { name: "Blacklist" });
-    expect(blacklistButton).toBeDisabled();
-    expect(blacklistButton).toHaveAttribute(
+    const requestButton = screen.getByRole("button", { name: "Request block" });
+    expect(requestButton).toBeDisabled();
+    expect(requestButton).toHaveAttribute(
       "title",
-      "Requires the blacklist permission",
+      "Requires the recruiting advance permission",
     );
   });
 
-  it("keeps Blacklist enabled for an owner holding recruiting.blacklist.write", async () => {
+  it("keeps Request block enabled for an owner holding the recruiting advance grant", async () => {
     authState.userId = OWNER_ID;
-    authState.permissions = ["recruiting.blacklist.write"];
+    authState.permissions = ["recruiting.application.advance"];
     api.getApplicationDetail.mockResolvedValue({
       data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
     });
     renderPage();
     await waitLoaded();
 
-    expect(screen.getByRole("button", { name: "Blacklist" })).toBeEnabled();
+    const requestButton = screen.getByRole("button", { name: "Request block" });
+    expect(requestButton).toBeEnabled();
+    expect(requestButton).not.toHaveAttribute("title");
   });
 
   it("shows a single Advance button that advances the round while one remains, not both round and stage buttons", async () => {
@@ -5128,107 +5137,53 @@ describe("ApplicationDetailPage — ghost meeting cleanup", () => {
   });
 });
 
-describe("ApplicationDetailPage — blacklist cancels the upcoming interviews", () => {
-  const UPCOMING = [
-    {
-      applicationId: 101,
-      jobTitle: "Mentor",
-      stage: "behavioral",
-      round: 1,
-      startAt: "2099-08-05T21:00:00Z",
-    },
-    {
-      applicationId: 202,
-      jobTitle: "Backend Engineer",
-      stage: "tech",
-      round: 2,
-      startAt: "2099-08-06T22:00:00Z",
-    },
-  ];
-
+describe("ApplicationDetailPage — block-request reads are deferred", () => {
   beforeEach(() => {
     authState.userId = OWNER_ID;
     api.getApplicationDetail.mockResolvedValue({
       data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
     });
-    api.blacklistUser.mockResolvedValue({ data: {} });
   });
 
-  it("lists every interview the block is about to cancel", async () => {
-    const user = userEvent.setup();
-    api.listBlacklistUpcomingInterviews.mockResolvedValue({ data: UPCOMING });
+  it("reads neither the pre-flight nor the reviewer list on page load", async () => {
+    // Every owner loads this page; nobody should pay for two account-admin
+    // queries unless they actually reach for the button.
     renderPage();
     await waitLoaded();
 
-    await user.click(screen.getByRole("button", { name: "Blacklist" }));
-
-    expect(
-      await screen.findByText(
-        /Mentor — Behavioral session 1 — 2099-08-05 14:00 America\/Los_Angeles/,
-      ),
-    ).toBeInTheDocument();
-    expect(
-      // Rendered in the READER's zone (pinned to Los Angeles by makeDetail),
-      // not in whatever zone each meeting was booked in: 22:00Z is 15:00 there.
-      screen.getByText(
-        /Backend Engineer — Tech session 2 — 2099-08-06 15:00 America\/Los_Angeles/,
-      ),
-    ).toBeInTheDocument();
-    // Scoped to the candidate, not the application being viewed: a block is
-    // org-wide, so it sweeps their other postings too.
-    expect(api.listBlacklistUpcomingInterviews).toHaveBeenCalledWith(5);
+    expect(adminApi.getBlockPreflight).not.toHaveBeenCalled();
+    expect(adminApi.getUserAdmins).not.toHaveBeenCalled();
   });
 
-  it("says nothing about interviews when the candidate has none booked", async () => {
+  it("still lets the request go out when the pre-flight cannot be read", async () => {
+    // The reviewer sees the same pre-flight before they decide, so a failed
+    // read here is a caveat, not a gate.
     const user = userEvent.setup();
-    api.listBlacklistUpcomingInterviews.mockResolvedValue({ data: [] });
+    adminApi.getBlockPreflight.mockRejectedValue(new Error("boom"));
+    adminApi.getUserAdmins.mockResolvedValue({
+      data: [{ userId: 77, name: "Rita Reviewer" }],
+    });
+    adminApi.createBlockRequest.mockResolvedValue({
+      data: { id: 3, reviewerId: 77, reviewerName: "Rita Reviewer" },
+    });
     renderPage();
     await waitLoaded();
 
-    await user.click(screen.getByRole("button", { name: "Blacklist" }));
-
+    await user.click(screen.getByRole("button", { name: "Request block" }));
     expect(
-      screen.getByRole("button", { name: "Confirm blacklist" }),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/scheduled interview/i)).not.toBeInTheDocument();
-  });
-
-  it("still lets the block through when the preview cannot be loaded", async () => {
-    // The backend cancels the meetings either way -- a failed pre-flight read
-    // must not stand between a recruiter and an org-level sanction.
-    const user = userEvent.setup();
-    api.listBlacklistUpcomingInterviews.mockRejectedValue(new Error("boom"));
-    renderPage();
-    await waitLoaded();
-
-    await user.click(screen.getByRole("button", { name: "Blacklist" }));
-    expect(
-      await screen.findByText(/Couldn't check for scheduled interviews/i),
+      await screen.findByText(/Couldn't read what this will affect/i),
     ).toBeInTheDocument();
 
-    await user.type(
-      screen.getByPlaceholderText("Reason (required)"),
-      "spamming",
-    );
-    await user.click(screen.getByRole("button", { name: "Confirm blacklist" }));
+    await user.selectOptions(await screen.findByLabelText("Reviewer"), "77");
+    await user.type(screen.getByLabelText(/^Reason/), "spamming");
+    await user.click(screen.getByRole("button", { name: "Send request" }));
 
     await waitFor(() =>
-      expect(api.blacklistUser).toHaveBeenCalledWith({
-        userId: 5,
-        applicationId: "101",
-        reason: "spamming",
-      }),
+      expect(adminApi.createBlockRequest).toHaveBeenCalledWith(
+        { userId: 5, reason: "spamming", reviewerId: 77 },
+        "recruiting_application",
+      ),
     );
-  });
-
-  it("only reads the preview once the dialog is opened", async () => {
-    // Every owner loads this page; nobody should pay for a blacklist-only
-    // query unless they actually reach for the button.
-    api.listBlacklistUpcomingInterviews.mockResolvedValue({ data: [] });
-    renderPage();
-    await waitLoaded();
-
-    expect(api.listBlacklistUpcomingInterviews).not.toHaveBeenCalled();
   });
 });
 
