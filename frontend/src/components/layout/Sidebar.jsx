@@ -62,6 +62,11 @@ const Sidebar = () => {
       ],
     },
     {
+      label: "Accounts",
+      to: ROUTE_PATHS.ADMIN_ACCOUNTS,
+      permissions: [PERMISSIONS.USER_ADMIN],
+    },
+    {
       label: "User Permissions",
       to: ROUTE_PATHS.ADMIN_USERS,
       permissions: [PERMISSIONS.PERMISSION_MANAGE],
@@ -94,11 +99,6 @@ const Sidebar = () => {
       label: "My Posting Reviews",
       to: ROUTE_PATHS.RECRUITING_REVIEWS,
       permissions: [PERMISSIONS.RECRUITING_JOB_APPROVE],
-    },
-    {
-      label: "Blacklist",
-      to: ROUTE_PATHS.RECRUITING_BLACKLIST,
-      permissions: [PERMISSIONS.RECRUITING_BLACKLIST_WRITE],
     },
     {
       label: "Recruiting Audit",

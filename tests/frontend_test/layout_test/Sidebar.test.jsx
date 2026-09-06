@@ -132,18 +132,27 @@ describe("Sidebar Component", () => {
     expect(screen.queryByText("User Permissions")).not.toBeInTheDocument();
   });
 
-  test("renders Blacklist for a user with recruiting.blacklist.write permission", () => {
-    renderSidebar([PERMISSIONS.RECRUITING_BLACKLIST_WRITE]);
-    const link = screen.getByText("Blacklist");
+  test("renders Accounts for a user with user.admin permission", () => {
+    renderSidebar([PERMISSIONS.USER_ADMIN]);
+    const link = screen.getByText("Accounts");
     expect(link).toBeInTheDocument();
     expect(link.closest("a")).toHaveAttribute(
       "href",
-      ROUTE_PATHS.RECRUITING_BLACKLIST,
+      ROUTE_PATHS.ADMIN_ACCOUNTS,
     );
   });
 
-  test("does not render Blacklist without recruiting.blacklist.write permission", () => {
+  test("does not render Accounts without user.admin", () => {
     renderSidebar([PERMISSIONS.RECRUITING_JOB_APPROVE]);
+    expect(screen.queryByText("Accounts")).not.toBeInTheDocument();
+  });
+
+  test("no longer offers a Blacklist entry to anyone", () => {
+    renderSidebar([
+      PERMISSIONS.USER_ADMIN,
+      PERMISSIONS.RECRUITING_JOB_APPROVE,
+      PERMISSIONS.RECRUITING_APPLICATION_ADVANCE,
+    ]);
     expect(screen.queryByText("Blacklist")).not.toBeInTheDocument();
   });
 
