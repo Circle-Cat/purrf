@@ -158,6 +158,7 @@ class BlockRequestRepository:
         status: BlockRequestStatus,
         decided_by: int,
         decision_note: str | None,
+        expected_reviewer_id: int | None = None,
     ) -> bool:
         """
         Close a request with a terminal status. Does not commit -- the calling
@@ -175,17 +176,25 @@ class BlockRequestRepository:
                 block closed it.
             decided_by (int): The user whose action closed it.
             decision_note (str | None): Free-text note on the decision.
+            expected_reviewer_id (int | None): When given, the row is closed
+                only if it still names this reviewer. The service reads the row
+                before writing, so without it a reviewer who was reassigned
+                away in between still lands the decision -- reassignment would
+                be advisory rather than enforced.
 
         Returns:
             bool: True if this call closed the request, False if it was already
                 closed by someone else.
         """
+        conditions = [
+            BlockRequestEntity.request_id == request_id,
+            BlockRequestEntity.status == BlockRequestStatus.PENDING,
+        ]
+        if expected_reviewer_id is not None:
+            conditions.append(BlockRequestEntity.reviewer_id == expected_reviewer_id)
         result = await session.execute(
             update(BlockRequestEntity)
-            .where(
-                BlockRequestEntity.request_id == request_id,
-                BlockRequestEntity.status == BlockRequestStatus.PENDING,
-            )
+            .where(*conditions)
             .values(
                 status=status,
                 decided_by=decided_by,

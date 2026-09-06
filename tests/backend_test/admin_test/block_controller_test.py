@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from backend.admin.block_controller import BlockController
 from backend.common.api_endpoints import (
-    ADMIN_USER_ADMINS_ENDPOINT,
+    BLOCK_REQUEST_REVIEWERS_ENDPOINT,
     BLOCK_PREFLIGHT_ENDPOINT,
     BLOCK_REQUEST_DECIDE_ENDPOINT,
     BLOCK_REQUEST_REASSIGN_ENDPOINT,
@@ -90,11 +90,10 @@ class TestBlockController(unittest.TestCase):
 
     # -- the gates ----------------------------------------------------------
 
-    def test_preflight_open_to_all_three_roles(self):
+    def test_preflight_open_to_both_roles(self):
         for permission in (
             Permission.USER_ADMIN,
             Permission.RECRUITING_APPLICATION_ADVANCE,
-            Permission.RECRUITING_INTERVIEW_EVALUATE,
         ):
             with self.subTest(permission=permission):
                 client = self._client(permissions=[permission])
@@ -124,7 +123,7 @@ class TestBlockController(unittest.TestCase):
         self.service.raise_request.assert_not_awaited()
 
     def test_recruiter_cannot_decide(self):
-        client = self._client(permissions=[Permission.RECRUITING_INTERVIEW_EVALUATE])
+        client = self._client(permissions=[Permission.RECRUITING_APPLICATION_ADVANCE])
 
         resp = client.post(
             BLOCK_REQUEST_DECIDE_ENDPOINT.format(request_id=REQUEST_ID),
@@ -133,6 +132,30 @@ class TestBlockController(unittest.TestCase):
 
         self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
         self.service.decide.assert_not_awaited()
+
+    def test_interview_evaluator_cannot_raise(self):
+        """Being eligible for the interviewer pool is not standing to sanction
+        anyone. RECRUITING_INTERVIEW_EVALUATE only marks someone assignable as
+        an evaluator -- a row-level assignee check is what puts them on a
+        given application -- so gating raising on it would let the whole pool
+        raise requests about anyone."""
+        client = self._client(permissions=[Permission.RECRUITING_INTERVIEW_EVALUATE])
+
+        resp = client.post(
+            f"{BLOCK_REQUESTS_ENDPOINT}?raised_from=recruiting_board",
+            json={"userId": TARGET, "reason": "second no-show", "reviewerId": REVIEWER},
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
+        self.service.raise_request.assert_not_awaited()
+
+    def test_interview_evaluator_cannot_read_the_preflight(self):
+        client = self._client(permissions=[Permission.RECRUITING_INTERVIEW_EVALUATE])
+
+        resp = client.get(BLOCK_PREFLIGHT_ENDPOINT.format(user_id=TARGET))
+
+        self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
+        self.service.preflight.assert_not_awaited()
 
     def test_user_admin_cannot_reassign(self):
         """Reassigning redirects a question you asked, so it sits with the
@@ -156,14 +179,14 @@ class TestBlockController(unittest.TestCase):
     def test_user_admin_cannot_read_the_reviewer_dropdown(self):
         client = self._client(permissions=[Permission.USER_ADMIN])
 
-        resp = client.get(ADMIN_USER_ADMINS_ENDPOINT)
+        resp = client.get(BLOCK_REQUEST_REVIEWERS_ENDPOINT)
 
         self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
 
     # -- delegation ---------------------------------------------------------
 
     def test_raise_passes_the_actor_and_the_page_it_came_from(self):
-        client = self._client(permissions=[Permission.RECRUITING_INTERVIEW_EVALUATE])
+        client = self._client(permissions=[Permission.RECRUITING_APPLICATION_ADVANCE])
 
         resp = client.post(
             f"{BLOCK_REQUESTS_ENDPOINT}?raised_from=recruiting_interviews",
@@ -178,7 +201,7 @@ class TestBlockController(unittest.TestCase):
         self.assertEqual(kwargs["raised_from"], "recruiting_interviews")
 
     def test_raise_rejects_a_blank_reason(self):
-        client = self._client(permissions=[Permission.RECRUITING_INTERVIEW_EVALUATE])
+        client = self._client(permissions=[Permission.RECRUITING_APPLICATION_ADVANCE])
 
         resp = client.post(
             f"{BLOCK_REQUESTS_ENDPOINT}?raised_from=recruiting_board",
@@ -235,9 +258,9 @@ class TestBlockController(unittest.TestCase):
         self.service.list_user_admins = AsyncMock(
             return_value=[ReviewerOptionDto(user_id=REVIEWER, name="R Eviewer")]
         )
-        client = self._client(permissions=[Permission.RECRUITING_INTERVIEW_EVALUATE])
+        client = self._client(permissions=[Permission.RECRUITING_APPLICATION_ADVANCE])
 
-        resp = client.get(ADMIN_USER_ADMINS_ENDPOINT)
+        resp = client.get(BLOCK_REQUEST_REVIEWERS_ENDPOINT)
 
         self.assertEqual(resp.status_code, HTTPStatus.OK)
         self.assertEqual([row["userId"] for row in resp.json()["data"]], [REVIEWER])
@@ -270,7 +293,7 @@ class TestBlockController(unittest.TestCase):
         self.service.raise_request = AsyncMock(
             side_effect=ValueError("already awaiting a decision")
         )
-        client = self._client(permissions=[Permission.RECRUITING_INTERVIEW_EVALUATE])
+        client = self._client(permissions=[Permission.RECRUITING_APPLICATION_ADVANCE])
 
         resp = client.post(
             f"{BLOCK_REQUESTS_ENDPOINT}?raised_from=recruiting_board",

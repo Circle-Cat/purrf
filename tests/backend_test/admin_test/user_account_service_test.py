@@ -126,7 +126,10 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.service.reactivate(self.session, actor_id=ME, user_id=999999)
 
-    async def test_unblock_is_idempotent(self):
+    async def test_unblock_twice_neither_raises_nor_short_circuits(self):
+        """The service does not guard against unblocking someone who is not
+        blocked -- it always writes and always commits. Idempotency itself is a
+        property of the repository's UPDATE, and is tested there, not here."""
         self.users.get_user_by_user_id.return_value = _user(TARGET)
 
         await self.service.unblock(self.session, actor_id=ME, user_id=TARGET)
@@ -159,7 +162,7 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
         self.users.get_all_by_ids.return_value = [_user(ME)]
 
         rows, total = await self.service.list_accounts(
-            self.session, caller_id=ME, is_blocked=True, limit=50, offset=0
+            self.session, caller_id=ME, status="blocked", limit=50, offset=0
         )
 
         self.assertEqual(total, 1)
@@ -269,6 +272,30 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
         kwargs = self.users.list_users.await_args.kwargs
         self.assertIs(kwargs["is_blocked"], True)
         self.assertIsNone(kwargs["is_active"])
+
+    async def test_blocked_view_is_ordered_by_when_they_were_blocked(self):
+        """Filtering to blocked accounts asks "who did we block, and when" --
+        the job the retired blacklist page did, ordered the same way. Ordering
+        that page by user_id buries the most recent block on an arbitrary
+        page."""
+        self.users.list_users.return_value = ([], 0)
+
+        await self.service.list_accounts(
+            self.session, caller_id=ME, status="blocked", limit=50, offset=0
+        )
+
+        kwargs = self.users.list_users.await_args.kwargs
+        self.assertEqual(kwargs["sort_by"], "blocked_at")
+        self.assertEqual(kwargs["order"], "desc")
+
+    async def test_other_views_keep_the_default_order(self):
+        self.users.list_users.return_value = ([], 0)
+
+        await self.service.list_accounts(
+            self.session, caller_id=ME, status="active", limit=50, offset=0
+        )
+
+        self.assertIsNone(self.users.list_users.await_args.kwargs["sort_by"])
 
     async def test_no_status_filters_nothing(self):
         self.users.list_users.return_value = ([], 0)

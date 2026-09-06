@@ -315,10 +315,15 @@ class BlockService:
             BlockRequestDto: The new pending request.
 
         Raises:
-            ValueError: If the target is unknown, the reviewer is not an
-                eligible USER_ADMIN holder, or a request against this person is
-                already awaiting a decision.
+            ValueError: If the target is unknown or already blocked, the
+                reviewer is not an eligible USER_ADMIN holder, or a request
+                against this person is already awaiting a decision.
         """
+        if user_id == actor_id:
+            # Not a guardrail against self-harm -- it is what stops the
+            # refusals below from being a probe. Someone who suspects a request
+            # names them could otherwise learn it exists by raising one.
+            raise PermissionError("You cannot raise a block request about yourself")
         if not raised_from or len(raised_from) > _RAISED_FROM_MAX_LENGTH:
             raise ValueError(
                 f"raised_from must be 1-{_RAISED_FROM_MAX_LENGTH} characters"
@@ -329,6 +334,15 @@ class BlockService:
         await self._validate_reviewer(
             session, reviewer_id, raiser_id=actor_id, target_id=user_id
         )
+        # After the reviewer check on purpose. Answered first, this endpoint
+        # would report any user's block state to any raiser who names a bogus
+        # reviewer, which is a status oracle over the whole population.
+        if target.is_blocked:
+            # Approving it later would overwrite blocked_by/at/reason and erase
+            # who imposed the original sanction and why. The raiser cannot see
+            # account state, so say it plainly rather than let them find out
+            # from a pre-flight that counts nothing.
+            raise ValueError("This person is already blocked")
 
         pending = await self._requests.list_pending_for_target(session, user_id)
         if pending:
@@ -463,6 +477,14 @@ class BlockService:
             raise PermissionError("You cannot block your own account")
 
         if approved:
+            target = await self._users.get_user_by_user_id(session, row.target_user_id)
+            if target is not None and target.is_blocked:
+                # Same reason raise_request refuses one: re-applying overwrites
+                # blocked_by/at/reason and erases who imposed the sanction that
+                # is already in force. raise_request's check cannot cover this
+                # -- a concurrent pair both pass it, and approving the second
+                # one lands here.
+                raise ValueError("This person is already blocked")
             await self.apply_block(
                 session,
                 actor_id=actor_id,
@@ -477,12 +499,16 @@ class BlockService:
             ),
             decided_by=actor_id,
             decision_note=note,
+            # Re-checked at write time, not just at read time: the raiser may
+            # have reassigned the request away between the two.
+            expected_reviewer_id=actor_id,
         )
         if not closed:
-            # Someone decided it between our read and this write. Raising rolls
-            # the block back with the rest of the transaction, so a double
-            # submit applies once and emails once.
-            raise ValueError("This request has already been decided.")
+            # Decided by someone else, or reassigned away from us, between our
+            # read and this write. Raising rolls the block back with the rest
+            # of the transaction, so a double submit applies once and emails
+            # once.
+            raise ValueError("This request is no longer yours to decide.")
         await record_event(
             session,
             subject_type=USER_SUBJECT_TYPE,
@@ -520,6 +546,12 @@ class BlockService:
         if user_id == actor_id:
             self._logger.warning("Refused self-block for user_id=%s", actor_id)
             raise PermissionError("You cannot block your own account")
+        target = await self._users.get_user_by_user_id(session, user_id)
+        if target is not None and target.is_blocked:
+            # The same refusal raise_request and decide carry. Re-applying
+            # overwrites blocked_by/at/reason, so the record of who imposed the
+            # sanction in force is lost. Lift it first if the reason is wrong.
+            raise ValueError("This person is already blocked")
 
         pending = await self._requests.list_pending_for_target(session, user_id)
         await self.apply_block(

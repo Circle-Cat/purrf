@@ -98,9 +98,24 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
             row.reviewer_id = reviewer_id
             return True
 
-        async def close(_s, request_id, *, status, decided_by, decision_note):
+        async def close(
+            _s,
+            request_id,
+            *,
+            status,
+            decided_by,
+            decision_note,
+            expected_reviewer_id=None,
+        ):
             row = self.rows[request_id]
             if row.status is not BlockRequestStatus.PENDING:
+                return False
+            if (
+                expected_reviewer_id is not None
+                and row.reviewer_id != expected_reviewer_id
+            ):
+                # Mirrors the WHERE clause: a reviewer reassigned away between
+                # the service's read and this write must not land the decision.
                 return False
             row.status = status
             row.decided_by = decided_by
@@ -205,6 +220,78 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         self.perms_repo.get_active_users_with_permission.assert_awaited_once_with(
             self.session, Permission.USER_ADMIN.value
         )
+
+    async def test_cannot_raise_a_request_about_yourself(self):
+        """Not a guardrail against self-harm. Without it the refusals below are
+        a probe: someone who suspects a request names them could learn it
+        exists by raising one about themselves."""
+        with self.assertRaises(PermissionError):
+            await self._raise(actor_id=TARGET)
+
+        self.requests_repo.create.assert_not_awaited()
+
+    async def test_direct_block_refuses_someone_already_blocked(self):
+        """The same refusal the raise and approve paths carry. Without it the
+        one path every operator actually uses is the one that overwrites
+        blocked_by/at/reason and loses who imposed the sanction in force."""
+        self.people[TARGET].is_blocked = True
+
+        with self.assertRaises(ValueError):
+            await self.service.block_directly(
+                self.session, actor_id=ADMIN, user_id=TARGET, reason="again"
+            )
+
+        self.session.commit.assert_not_awaited()
+
+    async def test_approving_refuses_a_target_blocked_since_the_request(self):
+        """raise_request's check cannot cover this: a concurrent pair both pass
+        it, and approving the second lands here."""
+        row = await self._raise()
+        self.people[TARGET].is_blocked = True
+
+        with self.assertRaises(ValueError):
+            await self.service.decide(
+                self.session,
+                actor_id=REVIEWER,
+                request_id=row.id,
+                approved=True,
+                note=None,
+            )
+
+    async def test_a_reviewer_reassigned_away_cannot_still_decide(self):
+        """The service reads the row before it writes. Without the reviewer in
+        the UPDATE's WHERE, a reassignment landing in between is advisory and
+        the removed reviewer still applies the block."""
+        row = await self._raise()
+        # The raiser moves it while the old reviewer is mid-decision.
+        await self.service.reassign(
+            self.session,
+            actor_id=RAISER,
+            request_id=row.id,
+            reviewer_id=OTHER_ADMIN,
+        )
+
+        with self.assertRaises(PermissionError):
+            await self.service.decide(
+                self.session,
+                actor_id=REVIEWER,
+                request_id=row.id,
+                approved=True,
+                note=None,
+            )
+
+        self.assertFalse(self.people[TARGET].is_blocked)
+
+    async def test_cannot_raise_against_someone_already_blocked(self):
+        """Approving it later would overwrite blocked_by/at/reason and erase
+        who imposed the original sanction. The raiser cannot see account state,
+        so the refusal has to say why."""
+        self.people[TARGET].is_blocked = True
+
+        with self.assertRaises(ValueError):
+            await self._raise()
+
+        self.requests_repo.create.assert_not_awaited()
 
     async def test_raiser_cannot_name_themselves_as_reviewer(self):
         """Two people is the whole point of the flow."""
@@ -713,6 +800,10 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
             kwargs["details"], {"requestId": approved_request.id, "approved": True}
         )
 
+        # Approving blocked the target, and a second request against someone
+        # already blocked is refused. Lift it, the way an unblock would, so the
+        # rejected half of this test is reachable at all.
+        self.people[TARGET].is_blocked = False
         rejected_request = await self._raise(actor_id=OTHER_RAISER)
         await self.service.decide(
             self.session,

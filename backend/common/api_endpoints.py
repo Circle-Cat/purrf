@@ -95,7 +95,9 @@ BLOCK_PREFLIGHT_ENDPOINT = "/block-preflight/{user_id}"
 BLOCK_REQUESTS_ENDPOINT = "/block-requests"
 BLOCK_REQUEST_REASSIGN_ENDPOINT = "/block-requests/{request_id}/reassign"
 BLOCK_REQUEST_DECIDE_ENDPOINT = "/block-requests/{request_id}/decide"
-ADMIN_USER_ADMINS_ENDPOINT = "/admin/user-admins"
+# The reviewer picker for a raise. Named for its use, and outside /admin like
+# the rest of this group, because a raiser holds no console permission.
+BLOCK_REQUEST_REVIEWERS_ENDPOINT = "/block-request-reviewers"
 RECRUITING_JOBS_ENDPOINT = "/recruiting/jobs"
 RECRUITING_JOB_ENDPOINT = "/recruiting/jobs/{job_id}"
 RECRUITING_JOB_SUBMIT_ENDPOINT = "/recruiting/jobs/{job_id}/submit"
