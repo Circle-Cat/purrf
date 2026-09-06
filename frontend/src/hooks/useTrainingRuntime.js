@@ -12,7 +12,11 @@ import { MESSAGE_TYPES, isTrustedMessage } from "@/training/scormBridge";
  * Shared by the learner's course page and the admin trial page so the
  * origin check -- the whole security of the bridge -- exists in one place.
  *
- * @param {string|number|undefined|null} trainingId Absent until known.
+ * @param {string|number|undefined|null} trainingId Absent until known. When
+ *   `records` is false the caller passes a course id rather than an
+ *   assignment id -- anything built from this value that reaches the
+ *   network (a save request, an endpoint URL) must therefore sit behind
+ *   `records`.
  * @param {{userId?: number, email?: string}} [user]
  * @param {{
  *   open?: (trainingId: string|number) => Promise<{data: object}>,
@@ -182,10 +186,10 @@ export default function useTrainingRuntime(
         // The player already surfaced this to the course; without a
         // consumer here, a learner's "blank iframe" report leaves nothing
         // behind it to investigate.
-        console.error(
-          `[useTrainingRuntime] scorm:error from training ${trainingId}`,
-          { code: event.data.code, message: event.data.message },
-        );
+        console.error(`[useTrainingRuntime] scorm:error (id ${trainingId})`, {
+          code: event.data.code,
+          message: event.data.message,
+        });
         return;
       }
 
