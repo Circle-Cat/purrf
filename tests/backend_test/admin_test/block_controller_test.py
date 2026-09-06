@@ -240,9 +240,7 @@ class TestBlockController(unittest.TestCase):
         resp = client.get(ADMIN_USER_ADMINS_ENDPOINT)
 
         self.assertEqual(resp.status_code, HTTPStatus.OK)
-        self.assertEqual(
-            [row["userId"] for row in resp.json()["data"]], [REVIEWER]
-        )
+        self.assertEqual([row["userId"] for row in resp.json()["data"]], [REVIEWER])
 
     # -- error mapping ------------------------------------------------------
 

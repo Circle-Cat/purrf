@@ -69,20 +69,25 @@ class BlockRequestRepository:
         )
         return result.scalars().one_or_none()
 
-    async def get_pending_for_target(
+    async def list_pending_for_target(
         self, session: AsyncSession, target_user_id: int
-    ) -> BlockRequestEntity | None:
+    ) -> list[BlockRequestEntity]:
         """
-        The open request against a user, if there is one. Used both to keep a
-        second request from being raised and to supersede the open one when an
-        operator blocks the target directly.
+        The open requests against a user. Used both to keep a second request
+        from being raised and to supersede the open ones when an operator
+        blocks the target directly.
+
+        Returns every pending row rather than the first: the "one pending per
+        target" rule is enforced by a read-then-write in the service, so a
+        concurrent pair can both land, and superseding only one would strand
+        the other on its reviewer's banner.
 
         Args:
             session (AsyncSession): The active async database session.
-            target_user_id (int): The user the request is against.
+            target_user_id (int): The user the requests are against.
 
         Returns:
-            BlockRequestEntity | None: The oldest pending row, or None.
+            list[BlockRequestEntity]: Pending rows, oldest first.
         """
         result = await session.execute(
             select(BlockRequestEntity)
@@ -92,7 +97,7 @@ class BlockRequestRepository:
             )
             .order_by(BlockRequestEntity.created_at)
         )
-        return result.scalars().first()
+        return list(result.scalars().all())
 
     async def list_pending_for_reviewer(
         self, session: AsyncSession, reviewer_id: int
@@ -121,7 +126,7 @@ class BlockRequestRepository:
 
     async def set_reviewer(
         self, session: AsyncSession, request_id: int, reviewer_id: int
-    ) -> None:
+    ) -> bool:
         """
         Hand a pending request to a different reviewer. No extra column: the
         move lives in the event log, not in the row.
@@ -130,12 +135,20 @@ class BlockRequestRepository:
             session (AsyncSession): The active async database session.
             request_id (int): The request to reassign.
             reviewer_id (int): The reviewer to hand it to.
+
+        Returns:
+            bool: True if the move landed, False if the request was closed
+                first.
         """
-        await session.execute(
+        result = await session.execute(
             update(BlockRequestEntity)
-            .where(BlockRequestEntity.request_id == request_id)
+            .where(
+                BlockRequestEntity.request_id == request_id,
+                BlockRequestEntity.status == BlockRequestStatus.PENDING,
+            )
             .values(reviewer_id=reviewer_id)
         )
+        return result.rowcount == 1
 
     async def close(
         self,
@@ -145,10 +158,14 @@ class BlockRequestRepository:
         status: BlockRequestStatus,
         decided_by: int,
         decision_note: str | None,
-    ) -> None:
+    ) -> bool:
         """
         Close a request with a terminal status. Does not commit -- the calling
         service owns the transaction.
+
+        Only a PENDING row is closed, and the caller is told whether one was:
+        the service reads the row before writing, so two decisions racing each
+        other would otherwise both pass that read and both apply.
 
         Args:
             session (AsyncSession): The active async database session.
@@ -158,10 +175,17 @@ class BlockRequestRepository:
                 block closed it.
             decided_by (int): The user whose action closed it.
             decision_note (str | None): Free-text note on the decision.
+
+        Returns:
+            bool: True if this call closed the request, False if it was already
+                closed by someone else.
         """
-        await session.execute(
+        result = await session.execute(
             update(BlockRequestEntity)
-            .where(BlockRequestEntity.request_id == request_id)
+            .where(
+                BlockRequestEntity.request_id == request_id,
+                BlockRequestEntity.status == BlockRequestStatus.PENDING,
+            )
             .values(
                 status=status,
                 decided_by=decided_by,
@@ -169,3 +193,4 @@ class BlockRequestRepository:
                 decision_note=decision_note,
             )
         )
+        return result.rowcount == 1

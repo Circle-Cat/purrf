@@ -63,6 +63,10 @@ class _BlockServiceTestBase(unittest.IsolatedAsyncioTestCase):
     def _user(self, user_id=TARGET):
         row = UsersEntity(first_name="A", last_name="B")
         row.user_id = user_id
+        # Both standing flags are set explicitly. Left unset they arrive as
+        # None, and a gate that reads one would be exercised against a value
+        # no real row ever carries.
+        row.is_active = True
         row.is_blocked = False
         row.blocked_by = None
         row.blocked_at = None
@@ -92,7 +96,11 @@ class _BlockServiceTestBase(unittest.IsolatedAsyncioTestCase):
         )
 
     def _interview_row(
-        self, application_id=10, stage=ApplicationStage.BEHAVIORAL, round=1, start_at=None
+        self,
+        application_id=10,
+        stage=ApplicationStage.BEHAVIORAL,
+        round=1,
+        start_at=None,
     ):
         return SimpleNamespace(
             interview_id=900 + application_id,
@@ -246,8 +254,12 @@ class TestBlockServiceApply(_BlockServiceTestBase):
         hired = self._application(12, stage=ApplicationStage.HIRED)
         rejected = self._application(13, stage=ApplicationStage.REJECTED)
         rejected.current_round = 4
-        self._seed([self._application(10, stage=ApplicationStage.TECH),
-                    in_flight, hired, rejected])
+        self._seed([
+            self._application(10, stage=ApplicationStage.TECH),
+            in_flight,
+            hired,
+            rejected,
+        ])
 
         await self._apply()
 
@@ -367,8 +379,9 @@ class TestBlockServiceApply(_BlockServiceTestBase):
         is not re-cancelled either."""
         self._seed([
             self._application(10, stage=ApplicationStage.BEHAVIORAL),
-            self._application(11, stage=ApplicationStage.TECH,
-                              tags={"blacklisted": True}),
+            self._application(
+                11, stage=ApplicationStage.TECH, tags={"blacklisted": True}
+            ),
         ])
 
         await self._apply()
@@ -403,8 +416,9 @@ class TestBlockServicePreflight(_BlockServiceTestBase):
         self._seed([
             self._application(10, stage=ApplicationStage.TECH),
             self._application(12, stage=ApplicationStage.HIRED),
-            self._application(11, stage=ApplicationStage.REJECTED,
-                              tags={"blacklisted": True}),
+            self._application(
+                11, stage=ApplicationStage.REJECTED, tags={"blacklisted": True}
+            ),
         ])
         self.interview_repo.list_by_application_ids = AsyncMock(
             return_value=[
@@ -421,8 +435,9 @@ class TestBlockServicePreflight(_BlockServiceTestBase):
     async def test_excludes_already_tagged_applications_from_the_interview_scan(self):
         self._seed([
             self._application(10, stage=ApplicationStage.TECH),
-            self._application(11, stage=ApplicationStage.REJECTED,
-                              tags={"blacklisted": True}),
+            self._application(
+                11, stage=ApplicationStage.REJECTED, tags={"blacklisted": True}
+            ),
         ])
 
         await self.service.preflight(self.session, TARGET)
