@@ -245,21 +245,73 @@ class TrainingContentService:
                 session, training_id
             )
 
-        token, expires_at = issue_content_token(
-            self.signing_key, training_id, user_id, package_id=package.package_id
-        )
         # One line per course opening, not per file: this is the only record
         # tying a burst of content requests back to a person and a package.
         self.logger.info(
             "[TrainingContentService] user %s opened training %s (course %s, "
-            "%s package %s, prefix %s); token expires at %s",
+            "%s package %s, prefix %s)",
             user_id,
             training_id,
             assignment.course_id,
             state.value,
             package.package_id,
             package.storage_prefix,
-            expires_at,
+        )
+        return self._mint(package, training_id, user_id, progress)
+
+    async def open_preview_session(
+        self, session, course_id: int, user_id: int
+    ) -> TrainingSessionDto:
+        """Open the live package of a course to look at, not to run.
+
+        There is no assignment here and none is minted: a preview is an
+        administrator asking what learners are being served right now, and an
+        assignment would put a row in the progress table for a run nobody
+        took. The token it signs names no assignment either, which is what
+        every write path refuses on.
+
+        The live slot is the only one this reads. The staged slot has its own
+        door -- the trial run -- which exists precisely because running a
+        staged package is a different act with different consequences.
+
+        Args:
+            session: The active async database session.
+            course_id (int): The course whose live package to open.
+            user_id (int): The administrator looking.
+
+        Returns:
+            TrainingSessionDto: Where the live package loads from, with no
+            progress to resume.
+
+        Raises:
+            ValueError: Not configured, or the course has nothing live.
+        """
+        self._require_configuration()
+
+        package = await self.training_course_package_repository.get_by_state(
+            session, course_id, TrainingPackageState.LIVE
+        )
+        if package is None:
+            raise ValueError("This course has no live package to preview.")
+        if not package.entry_path:
+            raise ValueError("This course has no entry page to open.")
+
+        self.logger.info(
+            "[TrainingContentService] user %s previewed course %s "
+            "(live package %s, prefix %s)",
+            user_id,
+            course_id,
+            package.package_id,
+            package.storage_prefix,
+        )
+        return self._mint(package, None, user_id, None)
+
+    def _mint(
+        self, package, training_id: int | None, user_id: int, progress
+    ) -> TrainingSessionDto:
+        """Sign one run of one package and say where it loads from."""
+        token, expires_at = issue_content_token(
+            self.signing_key, training_id, user_id, package_id=package.package_id
         )
         return TrainingSessionDto(
             content_base_url=f"https://{self.content_host}/p/{token}/",
@@ -414,7 +466,7 @@ class TrainingContentService:
         return ContentAsset(data=data, content_type=content_type)
 
     async def _read_range(
-        self, training_id: int, object_key: str, byte_range: RangeSpec
+        self, training_id: int | None, object_key: str, byte_range: RangeSpec
     ) -> ContentAsset:
         """Fetch only the bytes asked for, never the whole object.
 
@@ -422,6 +474,12 @@ class TrainingContentService:
         nor ``bytes=100-`` means anything until the size comes back. That is
         still far cheaper than pulling a 3 MB video through this process for
         every seek a learner makes.
+
+        Args:
+            training_id (int | None): The run this read is on behalf of, for
+                the log line only. None when the run is a preview.
+            object_key (str): The storage key to read from.
+            byte_range (RangeSpec): The range asked for.
 
         Raises:
             FileNotFoundError: No such object.
@@ -455,13 +513,18 @@ class TrainingContentService:
         )
         return ContentAsset(data=data, content_type=content_type, partial=resolved)
 
-    def _no_object(self, training_id: int, object_key: str):
+    def _no_object(self, training_id: int | None, object_key: str):
         """Report a missing object and refuse.
 
         A course that lost its files 404s on every asset it references, which
         is what a stale prefix, a half-finished upload and a cleanup that
         deleted the wrong prefix all look like from here. Noisy on purpose: a
         healthy package produces none of these.
+
+        Args:
+            training_id (int | None): The run this read is on behalf of, for
+                the log line only. None when the run is a preview.
+            object_key (str): The storage key that was missing.
 
         Raises:
             FileNotFoundError: Always.
