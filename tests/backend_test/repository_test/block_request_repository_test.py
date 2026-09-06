@@ -140,19 +140,33 @@ class TestBlockRequestRepository(BaseRepositoryTestLib):
         self.assertIsNotNone(refetched.decided_at)
         self.assertEqual(refetched.decision_note, "not enough evidence")
 
-    async def test_get_pending_for_target_finds_the_open_one(self):
+    async def test_list_pending_for_target_finds_the_open_ones(self):
         row = await self._create()
 
-        found = await self.repo.get_pending_for_target(
+        found = await self.repo.list_pending_for_target(
             self.session, self.target.user_id
         )
 
-        self.assertEqual(found.request_id, row.request_id)
+        self.assertEqual([r.request_id for r in found], [row.request_id])
+
+    async def test_list_pending_for_target_returns_every_open_row(self):
+        # The service's "one pending per target" rule is a read-then-write, so
+        # a concurrent pair can both land. Superseding must see both.
+        first = await self._create()
+        second = await self._create()
+
+        found = await self.repo.list_pending_for_target(
+            self.session, self.target.user_id
+        )
+
+        self.assertEqual(
+            {r.request_id for r in found}, {first.request_id, second.request_id}
+        )
 
     async def test_closed_request_is_not_pending_for_target(self):
         row = await self._create()
 
-        await self.repo.close(
+        closed = await self.repo.close(
             self.session,
             row.request_id,
             status=BlockRequestStatus.SUPERSEDED,
@@ -160,15 +174,57 @@ class TestBlockRequestRepository(BaseRepositoryTestLib):
             decision_note=None,
         )
 
-        self.assertIsNone(
-            await self.repo.get_pending_for_target(self.session, self.target.user_id)
+        self.assertTrue(closed)
+        self.assertEqual(
+            await self.repo.list_pending_for_target(self.session, self.target.user_id),
+            [],
         )
 
-    async def test_get_pending_for_target_is_none_when_never_requested(self):
-        self.assertIsNone(
-            await self.repo.get_pending_for_target(
+    async def test_closing_an_already_closed_request_reports_no_row(self):
+        row = await self._create()
+        await self.repo.close(
+            self.session,
+            row.request_id,
+            status=BlockRequestStatus.APPROVED,
+            decided_by=self.reviewer.user_id,
+            decision_note=None,
+        )
+
+        again = await self.repo.close(
+            self.session,
+            row.request_id,
+            status=BlockRequestStatus.REJECTED,
+            decided_by=self.reviewer.user_id,
+            decision_note="second click",
+        )
+
+        self.assertFalse(again)
+        refetched = await self.repo.get(self.session, row.request_id)
+        self.assertIs(refetched.status, BlockRequestStatus.APPROVED)
+        self.assertIsNone(refetched.decision_note)
+
+    async def test_set_reviewer_on_a_closed_request_reports_no_row(self):
+        row = await self._create()
+        await self.repo.close(
+            self.session,
+            row.request_id,
+            status=BlockRequestStatus.APPROVED,
+            decided_by=self.reviewer.user_id,
+            decision_note=None,
+        )
+
+        moved = await self.repo.set_reviewer(
+            self.session, row.request_id, self.other_reviewer.user_id
+        )
+
+        self.assertFalse(moved)
+
+    async def test_list_pending_for_target_is_empty_when_never_requested(self):
+        self.assertEqual(
+            await self.repo.list_pending_for_target(
                 self.session, self.other_target.user_id
-            )
+            ),
+            [],
         )
 
 

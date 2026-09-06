@@ -4,7 +4,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.admin.block_service import BlockService
 from backend.common.permissions import Permission
-from backend.common.user_enums import BlockRequestStatus
+from backend.common.user_enums import (
+    USER_SUBJECT_TYPE,
+    BlockRequestStatus,
+    UserEvent,
+)
 from backend.entity.block_request_entity import BlockRequestEntity
 from backend.entity.users_entity import UsersEntity
 
@@ -79,31 +83,35 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         async def get(_s, request_id):
             return self.rows.get(request_id)
 
-        async def get_pending_for_target(_s, target_user_id):
-            return next(
-                (
-                    r
-                    for r in self.rows.values()
-                    if r.target_user_id == target_user_id
-                    and r.status is BlockRequestStatus.PENDING
-                ),
-                None,
-            )
+        async def list_pending_for_target(_s, target_user_id):
+            return [
+                r
+                for r in self.rows.values()
+                if r.target_user_id == target_user_id
+                and r.status is BlockRequestStatus.PENDING
+            ]
 
         async def set_reviewer(_s, request_id, reviewer_id):
-            self.rows[request_id].reviewer_id = reviewer_id
+            row = self.rows[request_id]
+            if row.status is not BlockRequestStatus.PENDING:
+                return False
+            row.reviewer_id = reviewer_id
+            return True
 
         async def close(_s, request_id, *, status, decided_by, decision_note):
             row = self.rows[request_id]
+            if row.status is not BlockRequestStatus.PENDING:
+                return False
             row.status = status
             row.decided_by = decided_by
             row.decided_at = datetime.now(timezone.utc)
             row.decision_note = decision_note
+            return True
 
         self.requests_repo.create = AsyncMock(side_effect=create)
         self.requests_repo.get = AsyncMock(side_effect=get)
-        self.requests_repo.get_pending_for_target = AsyncMock(
-            side_effect=get_pending_for_target
+        self.requests_repo.list_pending_for_target = AsyncMock(
+            side_effect=list_pending_for_target
         )
         self.requests_repo.set_reviewer = AsyncMock(side_effect=set_reviewer)
         self.requests_repo.close = AsyncMock(side_effect=close)
@@ -126,8 +134,14 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
             logger=MagicMock(),
         )
 
-    async def _raise(self, actor_id=RAISER, user_id=TARGET, reason="second no-show",
-                     reviewer_id=REVIEWER, raised_from="recruiting_board"):
+    async def _raise(
+        self,
+        actor_id=RAISER,
+        user_id=TARGET,
+        reason="second no-show",
+        reviewer_id=REVIEWER,
+        raised_from="recruiting_board",
+    ):
         return await self.service.raise_request(
             self.session,
             actor_id=actor_id,
@@ -135,6 +149,25 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
             reason=reason,
             reviewer_id=reviewer_id,
             raised_from=raised_from,
+        )
+
+    async def _seed_request(self, **kwargs):
+        """A row put straight into the repository, bypassing the service.
+
+        For shapes ``raise_request`` refuses to produce: a second pending row
+        against one target, or a request whose reviewer is its own target
+        (rows raised before ``_validate_reviewer`` grew that rule).
+        """
+        return await self.requests_repo.create(
+            self.session,
+            **{
+                "target_user_id": TARGET,
+                "raised_by": RAISER,
+                "raised_from": "recruiting_board",
+                "reason": "second no-show",
+                "reviewer_id": REVIEWER,
+                **kwargs,
+            },
         )
 
     # -- raising ------------------------------------------------------------
@@ -184,6 +217,48 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
 
         self.requests_repo.create.assert_not_awaited()
 
+    async def test_raiser_cannot_name_the_target_as_reviewer(self):
+        """Asking someone to rule on their own blocking is the same failure as
+        letting them block themselves, one step earlier."""
+        # In the pool, so the refusal can only come from the target rule.
+        self.perms_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self.people[REVIEWER], self.people[TARGET]]
+        )
+
+        with self.assertRaises(ValueError):
+            await self._raise(reviewer_id=TARGET)
+
+        self.requests_repo.create.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_raised_from_must_fit_the_column(self):
+        """raised_from is a String(64): a longer value reaches the database as
+        a truncation error and surfaces as a 500 instead of a 400."""
+        for raised_from in ("", "x" * 65):
+            with self.subTest(length=len(raised_from)):
+                with self.assertRaises(ValueError):
+                    await self._raise(raised_from=raised_from)
+
+        self.requests_repo.create.assert_not_awaited()
+
+    async def test_raised_from_at_the_limit_is_accepted(self):
+        out = await self._raise(raised_from="x" * 64)
+
+        self.assertEqual(out.raised_from, "x" * 64)
+
+    async def test_raise_records_the_event_the_reviewer_is_notified_from(self):
+        """``user_recipient_resolvers._request_of`` finds the row through
+        ``details["requestId"]``. Renaming the key here would leave the event
+        with no recipients and nothing on this side would fail."""
+        out = await self._raise()
+
+        kwargs = self.record_event.call_args.kwargs
+        self.assertEqual(kwargs["subject_type"], USER_SUBJECT_TYPE)
+        self.assertEqual(kwargs["subject_id"], TARGET)
+        self.assertEqual(kwargs["actor_id"], RAISER)
+        self.assertEqual(kwargs["event_type"], UserEvent.BLOCK_REQUESTED)
+        self.assertEqual(kwargs["details"], {"requestId": out.id})
+
     async def test_unknown_target_is_rejected(self):
         with self.assertRaises(ValueError):
             await self._raise(user_id=999999)
@@ -208,8 +283,11 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
     async def test_a_second_request_is_fine_once_the_first_is_closed(self):
         first = await self._raise()
         await self.service.decide(
-            self.session, actor_id=REVIEWER, request_id=first.id,
-            approved=False, note="not enough",
+            self.session,
+            actor_id=REVIEWER,
+            request_id=first.id,
+            approved=False,
+            note="not enough",
         )
 
         second = await self._raise(actor_id=OTHER_RAISER)
@@ -223,12 +301,16 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(PermissionError):
             await self.service.reassign(
-                self.session, actor_id=REVIEWER, request_id=request.id,
+                self.session,
+                actor_id=REVIEWER,
+                request_id=request.id,
                 reviewer_id=OTHER_ADMIN,
             )
 
         out = await self.service.reassign(
-            self.session, actor_id=RAISER, request_id=request.id,
+            self.session,
+            actor_id=RAISER,
+            request_id=request.id,
             reviewer_id=OTHER_ADMIN,
         )
         self.assertEqual(out.reviewer_id, OTHER_ADMIN)
@@ -236,19 +318,27 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
     async def test_reassign_moves_the_decision_right(self):
         request = await self._raise()
         await self.service.reassign(
-            self.session, actor_id=RAISER, request_id=request.id,
+            self.session,
+            actor_id=RAISER,
+            request_id=request.id,
             reviewer_id=OTHER_ADMIN,
         )
 
         with self.assertRaises(PermissionError):
             await self.service.decide(
-                self.session, actor_id=REVIEWER, request_id=request.id,
-                approved=True, note=None,
+                self.session,
+                actor_id=REVIEWER,
+                request_id=request.id,
+                approved=True,
+                note=None,
             )
 
         out = await self.service.decide(
-            self.session, actor_id=OTHER_ADMIN, request_id=request.id,
-            approved=True, note=None,
+            self.session,
+            actor_id=OTHER_ADMIN,
+            request_id=request.id,
+            approved=True,
+            note=None,
         )
         self.assertEqual(out.status, BlockRequestStatus.APPROVED.value)
 
@@ -257,27 +347,129 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ValueError):
             await self.service.reassign(
-                self.session, actor_id=RAISER, request_id=request.id,
+                self.session,
+                actor_id=RAISER,
+                request_id=request.id,
                 reviewer_id=OTHER_RAISER,
             )
 
     async def test_reassign_a_closed_request_is_rejected(self):
         request = await self._raise()
         await self.service.decide(
-            self.session, actor_id=REVIEWER, request_id=request.id,
-            approved=False, note=None,
+            self.session,
+            actor_id=REVIEWER,
+            request_id=request.id,
+            approved=False,
+            note=None,
         )
 
         with self.assertRaises(ValueError):
             await self.service.reassign(
-                self.session, actor_id=RAISER, request_id=request.id,
+                self.session,
+                actor_id=RAISER,
+                request_id=request.id,
                 reviewer_id=OTHER_ADMIN,
             )
+
+    async def test_reassign_to_the_current_reviewer_is_rejected(self):
+        """A no-op that would still email both "reviewers" -- the same person
+        twice -- and log a reassignment that never happened."""
+        request = await self._raise()
+
+        with self.assertRaises(ValueError):
+            await self.service.reassign(
+                self.session,
+                actor_id=RAISER,
+                request_id=request.id,
+                reviewer_id=REVIEWER,
+            )
+
+        self.requests_repo.set_reviewer.assert_not_awaited()
+
+    async def test_reassign_cannot_hand_the_request_to_its_target(self):
+        request = await self._raise()
+        self.perms_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self.people[REVIEWER], self.people[TARGET]]
+        )
+
+        with self.assertRaises(ValueError):
+            await self.service.reassign(
+                self.session,
+                actor_id=RAISER,
+                request_id=request.id,
+                reviewer_id=TARGET,
+            )
+
+        self.assertEqual(self.rows[request.id].reviewer_id, REVIEWER)
+
+    async def test_reassign_checks_standing_before_status(self):
+        """A closed request must answer a stranger exactly as an open one
+        does, or the error message becomes a way to probe who has an open
+        block request against them."""
+        request = await self._raise()
+        await self.service.decide(
+            self.session,
+            actor_id=REVIEWER,
+            request_id=request.id,
+            approved=False,
+            note=None,
+        )
+
+        with self.assertRaises(PermissionError):
+            await self.service.reassign(
+                self.session,
+                actor_id=OTHER_RAISER,
+                request_id=request.id,
+                reviewer_id=OTHER_ADMIN,
+            )
+
+    async def test_reassign_raises_when_the_row_was_closed_under_it(self):
+        """set_reviewer only touches a PENDING row and reports whether it did.
+        The row read at the top of reassign can be stale, so False is the only
+        signal that someone decided it in between."""
+        request = await self._raise()
+        self.requests_repo.set_reviewer = AsyncMock(return_value=False)
+        self.record_event.reset_mock()
+        self.session.commit.reset_mock()
+
+        with self.assertRaises(ValueError):
+            await self.service.reassign(
+                self.session,
+                actor_id=RAISER,
+                request_id=request.id,
+                reviewer_id=OTHER_ADMIN,
+            )
+
+        self.record_event.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_reassign_records_where_the_request_came_from_and_went(self):
+        """The old reviewer is a recipient of this event, and the resolver
+        finds them through ``previousReviewerId``."""
+        request = await self._raise()
+        await self.service.reassign(
+            self.session,
+            actor_id=RAISER,
+            request_id=request.id,
+            reviewer_id=OTHER_ADMIN,
+        )
+
+        kwargs = self.record_event.call_args.kwargs
+        self.assertEqual(kwargs["subject_type"], USER_SUBJECT_TYPE)
+        self.assertEqual(kwargs["subject_id"], TARGET)
+        self.assertEqual(kwargs["actor_id"], RAISER)
+        self.assertEqual(kwargs["event_type"], UserEvent.BLOCK_REQUEST_REASSIGNED)
+        self.assertEqual(
+            kwargs["details"],
+            {"requestId": request.id, "previousReviewerId": REVIEWER},
+        )
 
     async def test_reassign_unknown_request_raises(self):
         with self.assertRaises(ValueError):
             await self.service.reassign(
-                self.session, actor_id=RAISER, request_id=999999,
+                self.session,
+                actor_id=RAISER,
+                request_id=999999,
                 reviewer_id=OTHER_ADMIN,
             )
 
@@ -288,16 +480,22 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(PermissionError):
             await self.service.decide(
-                self.session, actor_id=OTHER_ADMIN, request_id=request.id,
-                approved=True, note=None,
+                self.session,
+                actor_id=OTHER_ADMIN,
+                request_id=request.id,
+                approved=True,
+                note=None,
             )
 
     async def test_approve_blocks_the_target(self):
         request = await self._raise()
 
         out = await self.service.decide(
-            self.session, actor_id=REVIEWER, request_id=request.id,
-            approved=True, note=None,
+            self.session,
+            actor_id=REVIEWER,
+            request_id=request.id,
+            approved=True,
+            note=None,
         )
 
         self.assertTrue(self.people[TARGET].is_blocked)
@@ -310,8 +508,11 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         request = await self._raise(reason="second no-show")
 
         await self.service.decide(
-            self.session, actor_id=REVIEWER, request_id=request.id,
-            approved=True, note="agreed",
+            self.session,
+            actor_id=REVIEWER,
+            request_id=request.id,
+            approved=True,
+            note="agreed",
         )
 
         self.assertEqual(self.people[TARGET].blocked_reason, "second no-show")
@@ -320,8 +521,11 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         request = await self._raise()
 
         out = await self.service.decide(
-            self.session, actor_id=REVIEWER, request_id=request.id,
-            approved=False, note="not enough",
+            self.session,
+            actor_id=REVIEWER,
+            request_id=request.id,
+            approved=False,
+            note="not enough",
         )
 
         self.assertFalse(self.people[TARGET].is_blocked)
@@ -335,8 +539,11 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         self.session.commit.reset_mock()
 
         await self.service.decide(
-            self.session, actor_id=REVIEWER, request_id=request.id,
-            approved=True, note=None,
+            self.session,
+            actor_id=REVIEWER,
+            request_id=request.id,
+            approved=True,
+            note=None,
         )
 
         self.session.commit.assert_awaited_once()
@@ -344,21 +551,190 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
     async def test_deciding_twice_is_rejected(self):
         request = await self._raise()
         await self.service.decide(
-            self.session, actor_id=REVIEWER, request_id=request.id,
-            approved=False, note=None,
+            self.session,
+            actor_id=REVIEWER,
+            request_id=request.id,
+            approved=False,
+            note=None,
         )
 
         with self.assertRaises(ValueError):
             await self.service.decide(
-                self.session, actor_id=REVIEWER, request_id=request.id,
-                approved=True, note=None,
+                self.session,
+                actor_id=REVIEWER,
+                request_id=request.id,
+                approved=True,
+                note=None,
             )
+
+    def _decided_events(self):
+        return [
+            call
+            for call in self.record_event.await_args_list
+            if call.kwargs["event_type"] == UserEvent.BLOCK_REQUEST_DECIDED
+        ]
+
+    async def test_the_reviewer_cannot_approve_a_request_against_themselves(self):
+        """Approving it would be blocking yourself through a second door.
+
+        The row is seeded rather than raised: _validate_reviewer refuses to
+        create this shape now, but rows raised before it did still exist.
+        """
+        row = await self._seed_request(target_user_id=REVIEWER, reviewer_id=REVIEWER)
+
+        with self.assertRaises(PermissionError):
+            await self.service.decide(
+                self.session,
+                actor_id=REVIEWER,
+                request_id=row.request_id,
+                approved=True,
+                note=None,
+            )
+
+        self.assertFalse(self.people[REVIEWER].is_blocked)
+        self.assertIs(self.rows[row.request_id].status, BlockRequestStatus.PENDING)
+        self.session.commit.assert_not_awaited()
+
+    async def test_a_superseded_request_cannot_be_decided(self):
+        """Superseded is closed, not pending: its outcome already happened and
+        deciding it again would block the target a second time."""
+        request = await self._raise()
+        await self.service.block_directly(
+            self.session, actor_id=ADMIN, user_id=TARGET, reason="direct"
+        )
+        self.record_event.reset_mock()
+
+        with self.assertRaises(ValueError):
+            await self.service.decide(
+                self.session,
+                actor_id=REVIEWER,
+                request_id=request.id,
+                approved=True,
+                note=None,
+            )
+
+        self.assertIs(self.rows[request.id].status, BlockRequestStatus.SUPERSEDED)
+        self.assertEqual(self.rows[request.id].decided_by, ADMIN)
+        self.assertEqual(self._decided_events(), [])
+
+    async def test_a_second_decision_changes_nothing_and_emails_nobody(self):
+        """A double submit must apply once and notify once."""
+        request = await self._raise()
+        await self.service.decide(
+            self.session,
+            actor_id=REVIEWER,
+            request_id=request.id,
+            approved=False,
+            note="not enough",
+        )
+        self.requests_repo.close.reset_mock()
+        self.record_event.reset_mock()
+        self.session.commit.reset_mock()
+
+        with self.assertRaises(ValueError):
+            await self.service.decide(
+                self.session,
+                actor_id=REVIEWER,
+                request_id=request.id,
+                approved=True,
+                note="changed my mind",
+            )
+
+        self.assertFalse(self.people[TARGET].is_blocked)
+        self.assertIs(self.rows[request.id].status, BlockRequestStatus.REJECTED)
+        self.assertEqual(self.rows[request.id].decision_note, "not enough")
+        self.requests_repo.close.assert_not_awaited()
+        self.record_event.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_decide_raises_when_the_row_was_closed_under_it(self):
+        """The row read at the top of decide can be stale. close only touches
+        a PENDING row and reports whether it did; raising on False rolls the
+        block back with the rest of the transaction, so the concurrent pair
+        blocks once and emails once."""
+        request = await self._raise()
+        self.requests_repo.close = AsyncMock(return_value=False)
+        self.record_event.reset_mock()
+        self.session.commit.reset_mock()
+
+        with self.assertRaises(ValueError):
+            await self.service.decide(
+                self.session,
+                actor_id=REVIEWER,
+                request_id=request.id,
+                approved=True,
+                note=None,
+            )
+
+        # apply_block ran before close refused, so the flags are set in memory.
+        # Nothing commits, which is what keeps them from reaching the database.
+        self.assertEqual(self._decided_events(), [])
+        self.session.commit.assert_not_awaited()
+
+    async def test_decide_checks_standing_before_status(self):
+        """Same reason as reassign: a stranger must not be able to tell a
+        closed request from an open one by which error they get."""
+        request = await self._raise()
+        await self.service.decide(
+            self.session,
+            actor_id=REVIEWER,
+            request_id=request.id,
+            approved=False,
+            note=None,
+        )
+
+        with self.assertRaises(PermissionError):
+            await self.service.decide(
+                self.session,
+                actor_id=OTHER_ADMIN,
+                request_id=request.id,
+                approved=True,
+                note=None,
+            )
+
+    async def test_decide_records_the_outcome_the_email_is_worded_from(self):
+        """The renderer picks "approved" or "rejected" off ``approved``, and
+        finds the request through ``requestId``."""
+        approved_request = await self._raise()
+        await self.service.decide(
+            self.session,
+            actor_id=REVIEWER,
+            request_id=approved_request.id,
+            approved=True,
+            note=None,
+        )
+
+        kwargs = self.record_event.call_args.kwargs
+        self.assertEqual(kwargs["subject_type"], USER_SUBJECT_TYPE)
+        self.assertEqual(kwargs["subject_id"], TARGET)
+        self.assertEqual(kwargs["actor_id"], REVIEWER)
+        self.assertEqual(kwargs["event_type"], UserEvent.BLOCK_REQUEST_DECIDED)
+        self.assertEqual(
+            kwargs["details"], {"requestId": approved_request.id, "approved": True}
+        )
+
+        rejected_request = await self._raise(actor_id=OTHER_RAISER)
+        await self.service.decide(
+            self.session,
+            actor_id=REVIEWER,
+            request_id=rejected_request.id,
+            approved=False,
+            note=None,
+        )
+
+        self.assertEqual(
+            self.record_event.call_args.kwargs["details"],
+            {"requestId": rejected_request.id, "approved": False},
+        )
 
     async def test_decide_unknown_request_raises(self):
         with self.assertRaises(ValueError):
             await self.service.decide(
-                self.session, actor_id=REVIEWER, request_id=999999,
-                approved=True, note=None,
+                self.session,
+                actor_id=REVIEWER,
+                request_id=999999,
+                approved=True,
+                note=None,
             )
 
     # -- blocking directly --------------------------------------------------
@@ -375,6 +751,26 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(self.rows[request.id].status, BlockRequestStatus.SUPERSEDED)
         self.assertEqual(self.rows[request.id].decided_by, ADMIN)
         self.assertTrue(self.people[TARGET].is_blocked)
+
+    async def test_direct_block_supersedes_every_pending_request(self):
+        """raise_request's duplicate check is a read-then-write, so a
+        concurrent pair can both land. A row left PENDING here would sit on
+        its reviewer's banner forever with nothing left to decide."""
+        first = await self._seed_request()
+        second = await self._seed_request(
+            raised_by=OTHER_RAISER, reviewer_id=OTHER_ADMIN
+        )
+
+        await self.service.block_directly(
+            self.session, actor_id=ADMIN, user_id=TARGET, reason="direct"
+        )
+
+        for row in (first, second):
+            with self.subTest(request_id=row.request_id):
+                self.assertIs(
+                    self.rows[row.request_id].status, BlockRequestStatus.SUPERSEDED
+                )
+                self.assertEqual(self.rows[row.request_id].decided_by, ADMIN)
 
     async def test_direct_block_with_no_pending_request_closes_nothing(self):
         await self.service.block_directly(

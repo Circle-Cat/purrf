@@ -3,10 +3,10 @@
 ``apply_block_kernel`` is the whole sanction with no application to hang it on.
 It came out of ``BoardService.blacklist``, which was the same three consequences
 plus one pinned triggering application; drop the anchor and this is what is
-left. Two callers need it -- the recruiting route that still passes a triggering
-application, and the account console, which has none -- and neither can own it.
+left. That recruiting route is gone now, but the kernel stays a module function
+rather than a method so that a future caller outside this service costs nothing.
 
-🔴 The kernel must never commit. Its callers each own their transaction (the
+The kernel must never commit. Its callers each own their transaction (the
 approval flow applies a block mid-transaction and records the decision after
 it), and a commit here would leave a later failure unable to roll the block
 back.
@@ -28,6 +28,10 @@ from backend.dto.block_dto import (
     ReviewerOptionDto,
 )
 from backend.notification_management.event_recorder import record_event
+
+# Matches BlockRequestEntity.raised_from, a String(64): a longer value would
+# reach the database as a truncation error and surface as a 500.
+_RAISED_FROM_MAX_LENGTH = 64
 
 
 async def apply_block_kernel(
@@ -315,13 +319,19 @@ class BlockService:
                 eligible USER_ADMIN holder, or a request against this person is
                 already awaiting a decision.
         """
+        if not raised_from or len(raised_from) > _RAISED_FROM_MAX_LENGTH:
+            raise ValueError(
+                f"raised_from must be 1-{_RAISED_FROM_MAX_LENGTH} characters"
+            )
         target = await self._users.get_user_by_user_id(session, user_id)
         if target is None:
             raise ValueError(f"user {user_id} not found")
-        await self._validate_reviewer(session, reviewer_id, raiser_id=actor_id)
+        await self._validate_reviewer(
+            session, reviewer_id, raiser_id=actor_id, target_id=user_id
+        )
 
-        pending = await self._requests.get_pending_for_target(session, user_id)
-        if pending is not None:
+        pending = await self._requests.list_pending_for_target(session, user_id)
+        if pending:
             # Deliberately says nothing about who raised the open request or
             # why: this caller is not its named reviewer, so the request is not
             # theirs to see. The refusal is the only thing they may learn.
@@ -371,13 +381,26 @@ class BlockService:
                 reviewer is not an eligible USER_ADMIN holder.
             PermissionError: If the caller did not raise the request.
         """
-        row = await self._require_pending(session, request_id)
+        row = await self._load_request(session, request_id)
         if row.raised_by != actor_id:
-            raise PermissionError("Only the person who raised a request may reassign it")
-        await self._validate_reviewer(session, reviewer_id, raiser_id=actor_id)
+            self._logger.warning(
+                "Refused reassign of request_id=%s by non-raiser user_id=%s",
+                request_id,
+                actor_id,
+            )
+            raise PermissionError(
+                "Only the person who raised a request may reassign it"
+            )
+        self._require_open(row)
+        if row.reviewer_id == reviewer_id:
+            raise ValueError("That reviewer already has this request")
+        await self._validate_reviewer(
+            session, reviewer_id, raiser_id=actor_id, target_id=row.target_user_id
+        )
 
         previous_reviewer_id = row.reviewer_id
-        await self._requests.set_reviewer(session, request_id, reviewer_id)
+        if not await self._requests.set_reviewer(session, request_id, reviewer_id):
+            raise ValueError("This request has already been decided.")
         await record_event(
             session,
             subject_type=USER_SUBJECT_TYPE,
@@ -390,10 +413,18 @@ class BlockService:
             },
         )
         await session.commit()
-        return await self._to_dto(session, await self._requests.get(session, request_id))
+        return await self._to_dto(
+            session, await self._requests.get(session, request_id)
+        )
 
     async def decide(
-        self, session, *, actor_id: int, request_id: int, approved: bool, note: str | None
+        self,
+        session,
+        *,
+        actor_id: int,
+        request_id: int,
+        approved: bool,
+        note: str | None,
     ) -> BlockRequestDto:
         """Approve or reject a pending request. Commits.
 
@@ -416,9 +447,20 @@ class BlockService:
             ValueError: If the request is unknown or already closed.
             PermissionError: If the caller is not the named reviewer.
         """
-        row = await self._require_pending(session, request_id)
+        row = await self._load_request(session, request_id)
         if row.reviewer_id != actor_id:
+            self._logger.warning(
+                "Refused decision on request_id=%s by non-reviewer user_id=%s",
+                request_id,
+                actor_id,
+            )
             raise PermissionError("Only the named reviewer may decide this request")
+        self._require_open(row)
+        if row.target_user_id == actor_id:
+            self._logger.warning(
+                "Refused self-block via approval for user_id=%s", actor_id
+            )
+            raise PermissionError("You cannot block your own account")
 
         if approved:
             await self.apply_block(
@@ -427,7 +469,7 @@ class BlockService:
                 user_id=row.target_user_id,
                 reason=row.reason,
             )
-        await self._requests.close(
+        closed = await self._requests.close(
             session,
             request_id,
             status=(
@@ -436,6 +478,11 @@ class BlockService:
             decided_by=actor_id,
             decision_note=note,
         )
+        if not closed:
+            # Someone decided it between our read and this write. Raising rolls
+            # the block back with the rest of the transaction, so a double
+            # submit applies once and emails once.
+            raise ValueError("This request has already been decided.")
         await record_event(
             session,
             subject_type=USER_SUBJECT_TYPE,
@@ -445,7 +492,9 @@ class BlockService:
             details={"requestId": request_id, "approved": approved},
         )
         await session.commit()
-        return await self._to_dto(session, await self._requests.get(session, request_id))
+        return await self._to_dto(
+            session, await self._requests.get(session, request_id)
+        )
 
     async def block_directly(
         self, session, *, actor_id: int, user_id: int, reason: str
@@ -472,14 +521,17 @@ class BlockService:
             self._logger.warning("Refused self-block for user_id=%s", actor_id)
             raise PermissionError("You cannot block your own account")
 
-        pending = await self._requests.get_pending_for_target(session, user_id)
+        pending = await self._requests.list_pending_for_target(session, user_id)
         await self.apply_block(
             session, actor_id=actor_id, user_id=user_id, reason=reason
         )
-        if pending is not None:
+        # Every one of them, not just the oldest: raise_request's check is a
+        # read-then-write, so a concurrent pair can both land, and a row left
+        # PENDING here stays on its reviewer's banner forever.
+        for row in pending:
             await self._requests.close(
                 session,
-                pending.request_id,
+                row.request_id,
                 status=BlockRequestStatus.SUPERSEDED,
                 decided_by=actor_id,
                 decision_note=None,
@@ -521,9 +573,7 @@ class BlockService:
         )
         return sorted(
             (
-                ReviewerOptionDto(
-                    user_id=holder.user_id, name=display_name_of(holder)
-                )
+                ReviewerOptionDto(user_id=holder.user_id, name=display_name_of(holder))
                 for holder in holders
             ),
             key=lambda option: (option.name, option.user_id),
@@ -531,28 +581,43 @@ class BlockService:
 
     # -- helpers ------------------------------------------------------------
 
-    async def _require_pending(self, session, request_id: int):
-        """Load a request that can still be acted on.
+    async def _load_request(self, session, request_id: int):
+        """Load a request without judging whether it is still open.
+
+        Callers check the caller's standing before checking the status, so
+        that someone with no standing cannot tell an open request from a
+        closed one.
 
         Args:
             session (AsyncSession): Active database async session.
             request_id (int): The request to load.
 
         Returns:
-            BlockRequestEntity: The pending row.
+            BlockRequestEntity: The row.
 
         Raises:
-            ValueError: If it is unknown or already closed.
+            ValueError: If it is unknown.
         """
         row = await self._requests.get(session, request_id)
         if row is None:
             raise ValueError(f"block request {request_id} not found")
-        if row.status is not BlockRequestStatus.PENDING:
-            raise ValueError("This request has already been decided.")
         return row
 
+    @staticmethod
+    def _require_open(row) -> None:
+        """Assert a request has not been closed already.
+
+        Args:
+            row (BlockRequestEntity): The request.
+
+        Raises:
+            ValueError: If it has already been decided.
+        """
+        if row.status is not BlockRequestStatus.PENDING:
+            raise ValueError("This request has already been decided.")
+
     async def _validate_reviewer(
-        self, session, reviewer_id: int, *, raiser_id: int
+        self, session, reviewer_id: int, *, raiser_id: int, target_id: int
     ) -> None:
         """Assert a proposed reviewer can actually decide the request.
 
@@ -560,13 +625,16 @@ class BlockService:
             session (AsyncSession): Active database async session.
             reviewer_id (int): The proposed reviewer.
             raiser_id (int): The person raising or reassigning.
+            target_id (int): The person the request is about.
 
         Raises:
-            ValueError: If the reviewer is the raiser, or is not an active
-                USER_ADMIN holder.
+            ValueError: If the reviewer is the raiser or the target, or is not
+                an active USER_ADMIN holder.
         """
         if reviewer_id == raiser_id:
             raise ValueError("A block request must name someone else as reviewer")
+        if reviewer_id == target_id:
+            raise ValueError("A block request cannot be sent to its own target")
         pool = await self._permissions.get_active_users_with_permission(
             session, Permission.USER_ADMIN.value
         )
@@ -631,7 +699,9 @@ class BlockService:
                 status=row.status.value,
                 decided_by=row.decided_by,
                 decided_by_name=(
-                    name_by_id.get(row.decided_by) if row.decided_by is not None else None
+                    name_by_id.get(row.decided_by)
+                    if row.decided_by is not None
+                    else None
                 ),
                 decided_at=row.decided_at,
                 decision_note=row.decision_note,
