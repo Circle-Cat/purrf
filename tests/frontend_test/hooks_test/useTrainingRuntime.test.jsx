@@ -498,4 +498,27 @@ describe("useTrainingRuntime when the run does not record", () => {
 
     expect(global.fetch).not.toHaveBeenCalled();
   });
+
+  it("sends no parting save after it stops recording", async () => {
+    const open = vi.fn().mockResolvedValue({ data: SESSION });
+    const { result, rerender } = renderHook(
+      ({ records }) => useTrainingRuntime(9, USER, { open, records }),
+      { initialProps: { records: true } },
+    );
+    await waitFor(() => expect(result.current.session).toBeTruthy());
+
+    await act(async () => {
+      postFromContent({ type: MESSAGE_TYPES.COMMIT, cmi: { a: "1" } });
+    });
+    await waitFor(() => expect(result.current.writes).toHaveLength(1));
+    // Let the save the recording phase owed actually go out, so the
+    // assertion below cannot be confused by anything it sent.
+    await waitFor(() => expect(api.saveProgress).toHaveBeenCalledTimes(1));
+    global.fetch.mockClear();
+
+    rerender({ records: false });
+    window.dispatchEvent(new Event("pagehide"));
+
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
 });
