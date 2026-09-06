@@ -425,7 +425,9 @@ class TrainingAdminController:
         names none, or names one that is no longer served, comes back 409: it
         belongs to a package replaced under an open tab, and storing it would
         write that tab's stale bookmark back over the resume state the
-        replacement cleared.
+        replacement cleared. A token that names no assignment at all -- a
+        preview -- comes back 403 instead: there is nothing here for it to
+        save into.
 
         The response says where the assignment now stands. Which lesson_status
         finishes a course is decided here; a page that judged the same values
