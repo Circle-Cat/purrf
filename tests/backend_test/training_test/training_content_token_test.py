@@ -2,6 +2,8 @@
 
 import base64
 import dataclasses
+import hashlib
+import hmac
 import json
 import unittest
 
@@ -40,6 +42,21 @@ def _encode_segment(raw):
 def _payload(token):
     payload, _ = _split(token)
     return json.loads(_decode_segment(payload))
+
+
+def _sign(key, claims):
+    """Encode and sign a claims dict for real, unlike the forgery tests
+    above which reattach an ORIGINAL signature to a mutated payload -- those
+    die at the signature check and never reach the JSON-parsing branch."""
+    payload = json.dumps(claims, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    signature = (
+        base64.urlsafe_b64encode(
+            hmac.new(key.encode("utf-8"), payload, hashlib.sha256).digest()
+        )
+        .decode("ascii")
+        .rstrip("=")
+    )
+    return _encode_segment(payload) + "." + signature
 
 
 class TestIssueAndVerify(unittest.TestCase):
@@ -228,6 +245,16 @@ class TestGarbageInput(unittest.TestCase):
             + "."
             + signature
         )
+
+    def test_a_payload_with_no_t_key_at_all_is_refused(self):
+        """`t: null` is now legal (a preview), but a payload that never had a
+        `t` key -- a token minted before package_id existed -- must still be
+        refused. Signed correctly, so this reaches the parsing branch rather
+        than dying at the signature check like the other malformed-shape
+        tests in this class do."""
+        token = _sign(_KEY, {"p": _PACKAGE_ID, "u": _USER_ID, "e": _NOW + 100})
+
+        self._assert_only_invalid_content_token(token)
 
     def test_invalid_content_token_is_a_value_error(self):
         self.assertTrue(issubclass(InvalidContentToken, ValueError))
