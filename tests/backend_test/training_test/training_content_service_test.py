@@ -580,12 +580,16 @@ class TestReadAssetLogging(_ContentServiceCase):
 class TestOpenSessionLogging(_ContentServiceCase):
     async def test_opening_a_course_logs_the_learner_and_the_package(self):
         """One line per opening, which is what the per-file bursts hang off."""
-        await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+        result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
 
         template, *arguments = self.logger.info.call_args.args
         logged = template % tuple(arguments)
         self.assertIn(str(_USER_ID), logged)
         self.assertIn(_OLD_PREFIX, logged)
+        # Pinned so a future extraction of the minting code cannot silently
+        # drop the expiry off this line the way c1f6e6c7 once did: the DTO
+        # and the log have to agree on the same value, not just both exist.
+        self.assertIn(str(result.expires_at), logged)
 
 
 class TestReservedPlayerPath(_ContentServiceCase):
