@@ -323,7 +323,7 @@ describe("CourseTable", () => {
   it("leaves a course with no package with nothing to click", () => {
     renderTable([{ ...verified, packageVersion: null, link: null }]);
 
-    expect(screen.queryByRole("link", { name: /preview/i })).toBeNull();
+    expect(screen.queryByRole("link")).toBeNull();
   });
 
   it("leaves an external-link course pointing outward", () => {
