@@ -278,5 +278,120 @@ class TestCandidateLine(unittest.TestCase):
                 self.assertNotIn("Candidate:", body)
 
 
+class TestEscaping(unittest.TestCase):
+    """Bodies are HTML; subjects are not.
+
+    Every value these templates interpolate is written by a person: a
+    blacklist reason a recruiter typed, a name a candidate chose, a posting
+    title. Recipients never saw the form it was typed into, so a body has to
+    carry that text as text -- while the subject, which a mail client shows
+    as plain text, has to carry it verbatim or the reader sees "&amp;".
+    """
+
+    _MARKUP = '<script>alert("xss")</script>'
+    _ESCAPED = "&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;"
+
+    def test_a_reason_containing_markup_is_escaped_in_the_body(self):
+        """The reachable path: the reason travels from a block request into
+        mail sent to every owner of every posting the target applied to."""
+        _, body = notification_email_copy._blacklisted(_dto(reason=self._MARKUP), None)
+
+        self.assertIn(self._ESCAPED, body)
+        self.assertNotIn("<script", body)
+
+    def test_an_applicant_name_containing_markup_is_escaped_in_the_body(self):
+        """A candidate types their own name, so it is attacker-controlled."""
+        _, body = notification_email_copy._application_submitted(
+            _dto(applicant_name=self._MARKUP), ApplicationStage.RECRUITER_SCREENING
+        )
+
+        self.assertIn(self._ESCAPED, body)
+        self.assertNotIn("<script", body)
+
+    def test_an_actor_name_containing_markup_is_escaped_in_the_body(self):
+        _, body = notification_email_copy._mentioned(
+            _dto(actor_name=self._MARKUP), None
+        )
+
+        self.assertIn(self._ESCAPED, body)
+        self.assertNotIn("<script", body)
+
+    def test_the_candidate_line_escapes_the_name_and_the_address(self):
+        """A helper that interpolates a field is a body site like any other."""
+        _, body = notification_email_copy._stage_changed(
+            _dto(applicant_name=self._MARKUP, applicant_email="<b>a@b.c</b>"),
+            ApplicationStage.TECH,
+        )
+
+        self.assertIn(f"Candidate: {self._ESCAPED} (&lt;b&gt;a@b.c&lt;/b&gt;)", body)
+        self.assertNotIn("<b>", body)
+
+    def test_the_subject_keeps_an_ampersand_as_typed(self):
+        """Escaping a subject would show "&amp;" in the mail client's list."""
+        subject, body = notification_email_copy._blacklisted(
+            _dto(applicant_name="Ada & Co", job_title="Tools & Dies"), None
+        )
+
+        self.assertEqual(subject, "Application blacklisted: Ada & Co (Tools & Dies)")
+        self.assertNotIn("&amp;", subject)
+        self.assertIn("Ada &amp; Co", body)
+
+    def test_no_subject_is_escaped(self):
+        """Swept, so a template added later cannot escape its subject either."""
+        for name, template in _every_template():
+            with self.subTest(template=name):
+                subject, _ = template(
+                    _dto(job_title="Tools & Dies"), ApplicationStage.TECH
+                )
+                self.assertIn("Tools & Dies", subject)
+                self.assertNotIn("&amp;", subject)
+
+    def test_no_body_carries_markup_a_person_wrote(self):
+        """Swept, so a template added later cannot forget to escape.
+
+        A template that interpolated a raw field would deliver whatever a
+        recruiter or a candidate typed as live markup, and nothing else here
+        would notice.
+        """
+        hostile = _dto(
+            job_title=self._MARKUP,
+            applicant_name=self._MARKUP,
+            applicant_email=self._MARKUP,
+            actor_name=self._MARKUP,
+            reason=self._MARKUP,
+            to_sub_status=self._MARKUP,
+        )
+
+        for name, template in _every_template():
+            with self.subTest(template=name):
+                _, body = template(hostile, ApplicationStage.TECH)
+                self.assertNotIn("<script", body)
+                self.assertIn("&lt;script&gt;", body)
+                # The markup the module writes itself stays markup.
+                self.assertIn("<p>", body)
+
+    def test_ordinary_text_renders_exactly_as_before(self):
+        """The change has to be invisible to every normal notification."""
+        subject, body = notification_email_copy._blacklisted(_dto(), None)
+
+        self.assertEqual(
+            subject, "Application blacklisted: Ada Lovelace (Backend Engineer)"
+        )
+        self.assertEqual(
+            body,
+            "<p>Grace Hopper blacklisted Ada Lovelace and rejected their "
+            'application for Backend Engineer, with the reason: "Not a fit".</p>'
+            "<p>Candidate: Ada Lovelace (ada@example.com)</p>",
+        )
+
+    def test_a_missing_name_still_falls_back_to_its_placeholder(self):
+        """The fallbacks moved onto the escaped view, so they are tested there."""
+        _, body = notification_email_copy._blacklisted(
+            _dto(actor_name="", applicant_name=""), None
+        )
+
+        self.assertIn("<p>Someone blacklisted A candidate", body)
+
+
 if __name__ == "__main__":
     unittest.main()
