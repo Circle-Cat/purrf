@@ -100,7 +100,8 @@ class UserAccountController:
             current_user (UserContextDto): The authenticated caller (injected).
                 Scopes ``hasPendingBlockRequest``: a request is visible only to
                 the reviewer it names.
-            search (str | None): Case-insensitive name/email substring filter.
+            search (str | None): Case-insensitive substring filter over name,
+                email and block reason.
             user_id (int | None): When not None, exact-match filter on user_id.
             status (str | None): ``"active"`` / ``"deactivated"`` /
                 ``"blocked"``, or None for no filter. Unknown values surface as
@@ -121,6 +122,9 @@ class UserAccountController:
                 user_id=user_id,
                 status=status,
                 user_type=user_type,
+                # On for this endpoint only. The retired Blacklist page could
+                # search by reason, and the default stays off so the older
+                # permission-page endpoint keeps its exact result set.
                 search_blocked_reason=True,
                 limit=limit,
                 offset=offset,

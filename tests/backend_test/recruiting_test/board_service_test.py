@@ -2962,12 +2962,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.sub_status, "in_progress")
         self.evaluation_repo.has_confirmed.assert_not_awaited()
 
-
-
-
-
-
-
     async def test_set_round_advances_to_a_valid_round(self):
         job = self._job(job_id=1, owner_ids=(2,), stages=("tech",), rounds={"tech": 3})
         application = self._application(
@@ -3293,11 +3287,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             timezone="America/Los_Angeles",
             scheduled_by=2,
         )
-
-
-
-
-
 
     async def test_change_stage_logs_stage_changed_activity(self):
         job = self._job(

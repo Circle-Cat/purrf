@@ -153,9 +153,7 @@ class UserAccountService:
             for user, is_internal in rows
         ], total
 
-    async def get_sign_in_methods(
-        self, session, user_id: int
-    ) -> UserSignInMethodsDto:
+    async def get_sign_in_methods(self, session, user_id: int) -> UserSignInMethodsDto:
         """
         Every way into one account: the addresses that can receive a sign-in
         code, and the federated identities linked to it.
@@ -220,9 +218,7 @@ class UserAccountService:
         if user_id == actor_id:
             # The only guard on this page. Deactivating yourself takes away the
             # door you would need to undo it.
-            self._logger.warning(
-                "Refused self-deactivation for user_id=%s", actor_id
-            )
+            self._logger.warning("Refused self-deactivation for user_id=%s", actor_id)
             raise PermissionError("You cannot deactivate your own account")
         await self._users.deactivate(session, user_id, actor_id, note)
         await record_event(
@@ -261,7 +257,7 @@ class UserAccountService:
         )
         await session.commit()
 
-    async def unblock(self, session, actor_id: int, user_id: int) -> None:
+    async def unblock(self, session, *, actor_id: int, user_id: int) -> None:
         """
         Lift a block. Idempotent: unblocking someone who is not blocked
         succeeds and changes nothing. Commits.

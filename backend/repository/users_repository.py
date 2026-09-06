@@ -373,39 +373,6 @@ class UsersRepository:
         await session.flush()
         return result.rowcount
 
-    async def list_blocked_users(
-        self, session: AsyncSession, *, search: str | None = None
-    ) -> list[UsersEntity]:
-        """
-        All currently-blocked users, optionally filtered by a case-insensitive
-        substring over first_name / last_name / any user_emails address /
-        blocked_reason.
-
-        Args:
-            session (AsyncSession): The active async database session.
-            search (str | None): Case-insensitive substring match over name,
-                email, or blocked reason; None returns every blocked user.
-
-        Returns:
-            list[UsersEntity]: Blocked users ordered by blocked_at descending
-                (most recently blocked first).
-        """
-        filters = [UsersEntity.is_blocked.is_(True)]
-        if search:
-            pattern = f"%{search.lower()}%"
-            filters.append(
-                or_(
-                    func.lower(UsersEntity.first_name).like(pattern),
-                    func.lower(UsersEntity.last_name).like(pattern),
-                    self._any_email_matches(pattern),
-                    func.lower(UsersEntity.blocked_reason).like(pattern),
-                )
-            )
-        result = await session.execute(
-            select(UsersEntity).where(*filters).order_by(UsersEntity.blocked_at.desc())
-        )
-        return list(result.scalars().all())
-
     async def deactivate(
         self, session: AsyncSession, user_id: int, actor_id: int, reason: str | None
     ) -> None:

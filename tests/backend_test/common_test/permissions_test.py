@@ -67,9 +67,7 @@ class TestRetiredPermissions(unittest.TestCase):
         """Blocking moved behind a request-and-approval flow; the permission
         that used to guard the one-click version has no gate left to guard."""
         self.assertFalse(hasattr(Permission, "RECRUITING_BLACKLIST_WRITE"))
-        self.assertNotIn(
-            "recruiting.blacklist.write", {str(p) for p in Permission}
-        )
+        self.assertNotIn("recruiting.blacklist.write", {str(p) for p in Permission})
 
 
 if __name__ == "__main__":

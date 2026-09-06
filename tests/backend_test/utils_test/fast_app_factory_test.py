@@ -407,7 +407,6 @@ class TestFastAppFactory(unittest.TestCase):
             {route.path for route in app.routes},
         )
 
-
     def test_evaluation_routes_are_mounted(self):
         """The evaluation controller's router is mounted under /api."""
         evaluation = MagicMock()
