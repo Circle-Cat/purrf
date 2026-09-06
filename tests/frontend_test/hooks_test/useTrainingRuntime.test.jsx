@@ -11,6 +11,7 @@ vi.mock("@/utils/request", () => ({
 
 const TRAINING_ID = 7;
 const CONTENT_ORIGIN = "https://content.test";
+const USER = { userId: 1, email: "learner@test" };
 
 // The envelope the session endpoint sends for an assignment nobody has
 // opened yet: progress is null, not an empty object.
@@ -33,6 +34,10 @@ const commit = (cmi) =>
     data: { type: MESSAGE_TYPES.COMMIT, cmi },
     origin: CONTENT_ORIGIN,
   });
+
+/** Dispatches a message as though the course frame itself sent it. */
+const postFromContent = (data) =>
+  window.dispatchEvent(new MessageEvent("message", { data, origin: CONTENT_ORIGIN }));
 
 /** A promise the test decides when to settle. */
 const deferred = () => {
@@ -421,5 +426,76 @@ describe("useTrainingRuntime and a run the server no longer serves", () => {
 
     await waitFor(() => expect(result.current.saveFailed).toBe(true));
     expect(result.current.sessionStale).toBe(false);
+  });
+});
+
+describe("useTrainingRuntime when the run does not record", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: true })));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("saves nothing when the session does not record", async () => {
+    const open = vi.fn().mockResolvedValue({ data: SESSION });
+    const { result } = renderHook(() =>
+      useTrainingRuntime(9, USER, { open, records: false }),
+    );
+    await waitFor(() => expect(open).toHaveBeenCalledWith(9));
+    await waitFor(() => expect(result.current.session).toBeTruthy());
+
+    await act(async () => {
+      postFromContent({
+        type: MESSAGE_TYPES.COMMIT,
+        cmi: { "cmi.core.lesson_status": "completed" },
+      });
+    });
+    // The write is still collected even though nothing is sent -- this is
+    // the signal that the message was actually handled, rather than dropped
+    // for arriving before the bridge's listener was attached.
+    await waitFor(() => expect(result.current.writes).toHaveLength(1));
+
+    await waitFor(() => expect(api.saveProgress).not.toHaveBeenCalled());
+  });
+
+  it("still answers the frame's handshake when it does not record", async () => {
+    const open = vi.fn().mockResolvedValue({ data: SESSION });
+    const { result } = renderHook(() =>
+      useTrainingRuntime(9, USER, { open, records: false }),
+    );
+    await waitFor(() => expect(result.current.session).toBeTruthy());
+    const postMessage = vi.fn();
+    result.current.frameRef.current = { contentWindow: { postMessage } };
+
+    postFromContent({ type: MESSAGE_TYPES.READY });
+
+    await waitFor(() =>
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: MESSAGE_TYPES.INIT }),
+        CONTENT_ORIGIN,
+      ),
+    );
+  });
+
+  it("sends no parting save on hide when it does not record", async () => {
+    const open = vi.fn().mockResolvedValue({ data: SESSION });
+    const { result } = renderHook(() =>
+      useTrainingRuntime(9, USER, { open, records: false }),
+    );
+    await waitFor(() => expect(open).toHaveBeenCalled());
+    await waitFor(() => expect(result.current.session).toBeTruthy());
+
+    await act(async () => {
+      postFromContent({ type: MESSAGE_TYPES.COMMIT, cmi: { a: "1" } });
+    });
+    await waitFor(() => expect(result.current.writes).toHaveLength(1));
+
+    window.dispatchEvent(new Event("pagehide"));
+
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });
