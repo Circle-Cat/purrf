@@ -37,7 +37,9 @@ const commit = (cmi) =>
 
 /** Dispatches a message as though the course frame itself sent it. */
 const postFromContent = (data) =>
-  window.dispatchEvent(new MessageEvent("message", { data, origin: CONTENT_ORIGIN }));
+  window.dispatchEvent(
+    new MessageEvent("message", { data, origin: CONTENT_ORIGIN }),
+  );
 
 /** A promise the test decides when to settle. */
 const deferred = () => {
@@ -432,7 +434,10 @@ describe("useTrainingRuntime and a run the server no longer serves", () => {
 describe("useTrainingRuntime when the run does not record", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: true })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve({ ok: true })),
+    );
   });
 
   afterEach(() => {
@@ -496,7 +501,7 @@ describe("useTrainingRuntime when the run does not record", () => {
 
     window.dispatchEvent(new Event("pagehide"));
 
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("sends no parting save after it stops recording", async () => {
@@ -514,11 +519,11 @@ describe("useTrainingRuntime when the run does not record", () => {
     // Let the save the recording phase owed actually go out, so the
     // assertion below cannot be confused by anything it sent.
     await waitFor(() => expect(api.saveProgress).toHaveBeenCalledTimes(1));
-    global.fetch.mockClear();
+    fetch.mockClear();
 
     rerender({ records: false });
     window.dispatchEvent(new Event("pagehide"));
 
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

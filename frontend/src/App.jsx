@@ -306,7 +306,9 @@ function App() {
                       path={ROUTE_PATHS.TRAINING_PREVIEW(":courseId")}
                       element={
                         <ProtectedRoute
-                          requiredPermissions={[PERMISSIONS.TRAINING_ADMIN_READ]}
+                          requiredPermissions={[
+                            PERMISSIONS.TRAINING_ADMIN_READ,
+                          ]}
                         >
                           <TrainingPreview />
                         </ProtectedRoute>

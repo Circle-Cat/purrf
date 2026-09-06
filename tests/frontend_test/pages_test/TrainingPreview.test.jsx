@@ -101,7 +101,9 @@ describe("TrainingPreview", () => {
   it("names the live package it is showing", async () => {
     listCourses.mockResolvedValue({ data: [COURSE] }); // packageVersion: "qPpo9zHD"
     renderPreview();
-    expect(await screen.findByText(/live package qPpo9zHD/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/live package qPpo9zHD/),
+    ).toBeInTheDocument();
   });
 
   it("opens a preview session, not a trial and not a learner session", async () => {
