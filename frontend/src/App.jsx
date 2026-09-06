@@ -37,6 +37,7 @@ import LeaveRequestsPage from "@/pages/Leave/RequestsPage";
 import LeaveAdminPage from "@/pages/Leave/AdminPage";
 import TrainingCourse from "@/pages/TrainingCourse";
 import TrainingTrial from "@/pages/TrainingTrial";
+import TrainingPreview from "@/pages/TrainingPreview";
 import AdminTraining from "@/pages/AdminTraining";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
@@ -296,6 +297,18 @@ function App() {
                           ]}
                         >
                           <TrainingTrial />
+                        </ProtectedRoute>
+                      }
+                    />
+                    {/* Read-only, so the read grant -- the same one the
+                        catalogue this link lives on already requires. */}
+                    <Route
+                      path={ROUTE_PATHS.TRAINING_PREVIEW(":courseId")}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[PERMISSIONS.TRAINING_ADMIN_READ]}
+                        >
+                          <TrainingPreview />
                         </ProtectedRoute>
                       }
                     />
