@@ -320,7 +320,11 @@ describe("CourseTable", () => {
     );
   });
 
-  it("leaves a course with no package with nothing to click", () => {
+  it("leaves a live course whose package version cannot be read with nothing to click", () => {
+    // Deliberate: the version string is itself the entry point into the
+    // preview, so a live package from a toolchain we cannot read renders
+    // "—" and offers no way in. Distinct from `noPackage` above, which
+    // has no package at all.
     renderTable([{ ...verified, packageVersion: null, link: null }]);
 
     expect(screen.queryByRole("link")).toBeNull();
