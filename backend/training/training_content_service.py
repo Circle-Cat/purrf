@@ -406,10 +406,13 @@ class TrainingContentService:
         normalised = posixpath.normpath(asset_path.lstrip("/"))
         if normalised.startswith("..") or posixpath.isabs(normalised):
             # Path is course-controlled, so %r: it is escaped, not pasted.
+            # training_id is None for a preview, so package_id is what still
+            # names the run when this fires during one.
             self.logger.warning(
-                "[TrainingContentService] training %s asked for %r, which "
-                "escapes the package",
+                "[TrainingContentService] training %s package %s asked for "
+                "%r, which escapes the package",
                 claims.training_id,
+                claims.package_id,
                 asset_path,
             )
             raise PermissionError("Asset path escapes the package.")
@@ -450,11 +453,13 @@ class TrainingContentService:
 
         object_key = posixpath.join(package.storage_prefix, normalised)
         if byte_range is not None:
-            return await self._read_range(claims.training_id, object_key, byte_range)
+            return await self._read_range(
+                claims.training_id, claims.package_id, object_key, byte_range
+            )
 
         found = await asyncio.to_thread(self.training_storage.get, object_key)
         if found is None:
-            self._no_object(claims.training_id, object_key)
+            self._no_object(claims.training_id, claims.package_id, object_key)
 
         data, content_type = found
         # Debug: a single course load asks for hundreds of files.
@@ -468,7 +473,11 @@ class TrainingContentService:
         return ContentAsset(data=data, content_type=content_type)
 
     async def _read_range(
-        self, training_id: int | None, object_key: str, byte_range: RangeSpec
+        self,
+        training_id: int | None,
+        package_id: int,
+        object_key: str,
+        byte_range: RangeSpec,
     ) -> ContentAsset:
         """Fetch only the bytes asked for, never the whole object.
 
@@ -480,6 +489,9 @@ class TrainingContentService:
         Args:
             training_id (int | None): The run this read is on behalf of, for
                 the log line only. None when the run is a preview.
+            package_id (int): The package this read is on behalf of, for the
+                log line only -- unlike training_id, never None, so it is
+                what still names a preview's run.
             object_key (str): The storage key to read from.
             byte_range (RangeSpec): The range asked for.
 
@@ -489,7 +501,7 @@ class TrainingContentService:
         """
         described = await asyncio.to_thread(self.training_storage.stat, object_key)
         if described is None:
-            self._no_object(training_id, object_key)
+            self._no_object(training_id, package_id, object_key)
         total_size, content_type = described
 
         resolved = resolve_range(byte_range, total_size)
@@ -502,7 +514,7 @@ class TrainingContentService:
         if data is None:
             # Gone between the two calls, which is what an upload replacing the
             # package underneath an open course looks like from here.
-            self._no_object(training_id, object_key)
+            self._no_object(training_id, package_id, object_key)
 
         self.logger.debug(
             "[TrainingContentService] training %s: served %r bytes %s-%s of %s (%s)",
@@ -515,7 +527,7 @@ class TrainingContentService:
         )
         return ContentAsset(data=data, content_type=content_type, partial=resolved)
 
-    def _no_object(self, training_id: int | None, object_key: str):
+    def _no_object(self, training_id: int | None, package_id: int, object_key: str):
         """Report a missing object and refuse.
 
         A course that lost its files 404s on every asset it references, which
@@ -526,14 +538,18 @@ class TrainingContentService:
         Args:
             training_id (int | None): The run this read is on behalf of, for
                 the log line only. None when the run is a preview.
+            package_id (int): The package this read is on behalf of, for the
+                log line only -- unlike training_id, never None, so it is
+                what still names a preview's run.
             object_key (str): The storage key that was missing.
 
         Raises:
             FileNotFoundError: Always.
         """
         self.logger.warning(
-            "[TrainingContentService] training %s: no object at %r",
+            "[TrainingContentService] training %s package %s: no object at %r",
             training_id,
+            package_id,
             object_key,
         )
         raise FileNotFoundError(object_key)
