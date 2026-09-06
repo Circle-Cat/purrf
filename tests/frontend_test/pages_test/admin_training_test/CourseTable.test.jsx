@@ -310,6 +310,32 @@ describe("CourseTable", () => {
       screen.getByText(/Learners keep seeing qPpo9zHD until you publish it/),
     ).toBeInTheDocument();
   });
+
+  it("makes the live version a link into the preview", () => {
+    renderTable([{ ...verified, courseId: 9, packageVersion: "qPpo9zHD" }]);
+
+    expect(screen.getByRole("link", { name: "qPpo9zHD" })).toHaveAttribute(
+      "href",
+      "/admin/training/9/preview",
+    );
+  });
+
+  it("leaves a course with no package with nothing to click", () => {
+    renderTable([{ ...verified, packageVersion: null, link: null }]);
+
+    expect(screen.queryByRole("link", { name: /preview/i })).toBeNull();
+  });
+
+  it("leaves an external-link course pointing outward", () => {
+    renderTable([
+      { ...verified, link: "https://example.com/c", packageVersion: null },
+    ]);
+
+    expect(screen.getByRole("link", { name: /View/ })).toHaveAttribute(
+      "href",
+      "https://example.com/c",
+    );
+  });
 });
 
 // One staged sub-row per course whose `staged` is non-null (spec §8). Kept
