@@ -12,9 +12,14 @@ Bodies carry no links: the backend holds no frontend base URL to build one
 from, the same reason the recruiting and mentorship copy names its destination
 in words instead. "Accounts" is the label verbatim from the admin navigation.
 
+Free text written by a person -- a request's reason, a decision's note -- and
+every resolved name is HTML-escaped before it reaches a body.
+
 Importing this module registers every renderer. ``fast_app_factory`` imports it
 once at startup for that side effect, alongside ``user_recipient_resolvers``.
 """
+
+import html
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -75,9 +80,7 @@ async def _request_of(session: AsyncSession, event: EventEntity):
     if request_id is None:
         return None
     result = await session.execute(
-        select(BlockRequestEntity).where(
-            BlockRequestEntity.request_id == request_id
-        )
+        select(BlockRequestEntity).where(BlockRequestEntity.request_id == request_id)
     )
     return result.scalars().one_or_none()
 
@@ -90,9 +93,9 @@ def _person(name: str, fallback: str) -> str:
         fallback (str): What to say instead when it is blank.
 
     Returns:
-        str: Something a sentence can be built around.
+        str: Something a sentence can be built around, HTML-escaped.
     """
-    return name or fallback
+    return html.escape(name or fallback)
 
 
 @register_render(UserEvent.BLOCK_REQUESTED)
@@ -103,7 +106,7 @@ async def _render_block_requested(session: AsyncSession, event: EventEntity):
     raiser = _person(
         await _name_of(session, row.raised_by if row else None), "a colleague"
     )
-    reason = row.reason if row else ""
+    reason = html.escape(row.reason if row else "")
     return (
         "A block request is waiting for your decision",
         f"<p>{raiser} has asked you to decide whether {target} should be "
@@ -130,8 +133,8 @@ async def _render_block_request_reassigned(session: AsyncSession, event: EventEn
     return (
         "A block request has been reassigned",
         f"<p>The block request about {target} is now with {reviewer}.</p>"
-        "<p>Open the Accounts page in Purrf to see where it stands.</p>"
-        + _FOOTER,
+        "<p>If that is you, open the Accounts page in Purrf to decide it. "
+        "If it is not, there is nothing left for you to do.</p>" + _FOOTER,
     )
 
 
@@ -151,7 +154,7 @@ async def _render_block_request_decided(session: AsyncSession, event: EventEntit
         else f"<p>{target} has not been blocked.</p>"
     )
     note = row.decision_note if row else None
-    note_html = f"<p>Note: {note}</p>" if note else ""
+    note_html = f"<p>Note: {html.escape(note)}</p>" if note else ""
     return (
         f"Your block request was {outcome}",
         f"<p>{reviewer} has {outcome} the block request you raised about "
