@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import TrainingPreview from "@/pages/TrainingPreview";
+import { MESSAGE_TYPES } from "@/training/scormBridge";
 
 vi.mock("@/api/trainingApi", () => ({
   startTrial: vi.fn(),
@@ -10,6 +11,7 @@ vi.mock("@/api/trainingApi", () => ({
   // explicitly, but the module import itself must resolve to something.
   openSession: vi.fn(),
   openPreviewSession: vi.fn(),
+  saveProgress: vi.fn(),
   listCourses: vi.fn(),
 }));
 vi.mock("@/context/auth", () => ({
@@ -20,6 +22,7 @@ import {
   startTrial,
   openSession,
   openPreviewSession,
+  saveProgress,
   listCourses,
 } from "@/api/trainingApi";
 import { useAuth } from "@/context/auth";
@@ -47,6 +50,14 @@ const SESSION = {
   },
 };
 
+const postFromContent = (data) =>
+  window.dispatchEvent(
+    new MessageEvent("message", {
+      origin: "https://test-training-content.purrf.io",
+      data,
+    }),
+  );
+
 /**
  * @param {{[key: string]: unknown}} [overrides]
  *   Overrides the fetched course row (`listCourses`). The mock is untouched
@@ -73,6 +84,7 @@ describe("TrainingPreview", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     openPreviewSession.mockResolvedValue(SESSION);
+    saveProgress.mockResolvedValue({ data: { status: "in_progress" } });
     listCourses.mockResolvedValue({ data: [COURSE] });
     useAuth.mockReturnValue({
       user: { userId: 7, email: "admin@example.com" },
@@ -112,5 +124,18 @@ describe("TrainingPreview", () => {
     expect(
       await screen.findByText(/This course is not available/i),
     ).toBeInTheDocument();
+  });
+
+  it("records nothing the course reports", async () => {
+    renderPreview();
+    await screen.findByTitle("Course");
+
+    postFromContent({
+      type: MESSAGE_TYPES.COMMIT,
+      cmi: { "cmi.core.lesson_status": "incomplete" },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(saveProgress).not.toHaveBeenCalled();
   });
 });
