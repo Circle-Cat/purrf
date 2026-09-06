@@ -68,7 +68,6 @@ class UserAccountService:
         caller_id: int,
         search: str | None = None,
         user_id: int | None = None,
-        is_blocked: bool | None = None,
         status: str | None = None,
         user_type: str | None = None,
         search_blocked_reason: bool = False,
@@ -86,8 +85,6 @@ class UserAccountService:
                 reviewer it names.
             search (str | None): Case-insensitive substring over name/email.
             user_id (int | None): Restrict to one exact user.
-            is_blocked (bool | None): Raw block-flag filter. Ignored when
-                ``status`` is given, which is what the page actually sends.
             status (str | None): ``"active"`` / ``"deactivated"`` /
                 ``"blocked"``, or None for no filter.
             user_type (str | None): ``"internal"`` / ``"external"`` / None.
@@ -104,10 +101,17 @@ class UserAccountService:
             ValueError: If ``status`` is not a known value (surfaces as 400).
         """
         is_active = None
+        is_blocked = None
         if status is not None:
             if status not in _STATUS_FILTERS:
                 raise ValueError("Unknown status")
             is_active, is_blocked = _STATUS_FILTERS[status]
+
+        # Filtering to blocked accounts is the question "who did we block, and
+        # when" -- the job the retired blacklist page did, and it ordered by
+        # the block date. Every other view has no such natural order, so it
+        # keeps the default.
+        sort_by = "blocked_at" if status == "blocked" else None
 
         rows, total = await self._users.list_users(
             session,
@@ -119,6 +123,8 @@ class UserAccountService:
             is_active=is_active,
             is_blocked=is_blocked,
             search_blocked_reason=search_blocked_reason,
+            sort_by=sort_by,
+            order="desc",
         )
 
         contact_by_user_id = await self._user_emails.get_contact_emails_by_user_ids(

@@ -156,12 +156,12 @@ class UsersRepository:
             limit (int): Max rows to return.
             offset (int): Rows to skip (for pagination).
             sort_by (str | None): Column to sort by. Allowed values:
-                ``"user_id"``, ``"first_name"``, ``"last_name"``,
-                ``"preferred_name"``, ``"is_active"``, ``"is_super_admin"``,
-                ``"user_type"`` (by the persisted internal/external flag).
-                The three name columns are compared case-insensitively and put
-                rows with no value last in both directions. Unknown or None
-                values fall back to deterministic ``user_id`` order.
+                ``user_id``, ``first_name``, ``last_name``, ``preferred_name``,
+                ``is_active``, ``is_super_admin``, ``user_type``,
+                ``blocked_at``. Anything else is ignored and the default order
+                applies. The three name columns are compared case-insensitively;
+                they and ``blocked_at`` put rows with no value last in both
+                directions.
             order (str): ``"asc"`` (default) or ``"desc"``. Only applied when
                 ``sort_by`` resolves to a whitelisted column.
             is_super_admin (bool | None): When not None, restricts results to
@@ -203,11 +203,17 @@ class UsersRepository:
             "is_active": UsersEntity.is_active,
             "is_super_admin": UsersEntity.is_super_admin,
             "user_type": UsersEntity.is_internal,
+            "blocked_at": UsersEntity.blocked_at,
         }
-        # Sortable name columns, which sink rows with no value to the bottom of
-        # the page in both directions rather than letting them head the
-        # descending page (only preferred_name is actually nullable today).
-        _NULLS_LAST_SORTS = frozenset({"first_name", "last_name", "preferred_name"})
+        # Sortable columns that sink rows with no value to the bottom of the
+        # page in both directions rather than letting them head the descending
+        # page. blocked_at is null for everyone who has never been blocked.
+        _NULLS_LAST_SORTS = frozenset({
+            "first_name",
+            "last_name",
+            "preferred_name",
+            "blocked_at",
+        })
 
         filters = []
         if search:

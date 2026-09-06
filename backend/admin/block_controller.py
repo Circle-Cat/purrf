@@ -3,7 +3,7 @@
 Not mounted under /admin, unlike the account console. The person raising a
 request is standing on the domain page that holds the evidence and holds no
 console permission at all -- the gates here say so: raising is bound to the
-recruiting permissions, deciding to ``USER_ADMIN``, and the two sets do not
+recruiting advance permission, deciding to ``USER_ADMIN``, and the two do not
 overlap.
 
 Two of these routes carry a second condition that is **identity, not
@@ -15,7 +15,7 @@ surface here as ``PermissionError`` -> 403.
 from fastapi import APIRouter
 
 from backend.common.api_endpoints import (
-    ADMIN_USER_ADMINS_ENDPOINT,
+    BLOCK_REQUEST_REVIEWERS_ENDPOINT,
     BLOCK_PREFLIGHT_ENDPOINT,
     BLOCK_REQUEST_DECIDE_ENDPOINT,
     BLOCK_REQUEST_REASSIGN_ENDPOINT,
@@ -34,14 +34,16 @@ from backend.utils.permission_decorators import authenticate
 # Raising is bound to standing on a domain page, never to the console
 # permission: the evidence lives there, and someone who can already block
 # directly has no use for a request.
-_RAISE_GATE = [
-    Permission.RECRUITING_APPLICATION_ADVANCE,
-    Permission.RECRUITING_INTERVIEW_EVALUATE,
-]
+#
+# Deliberately NOT RECRUITING_INTERVIEW_EVALUATE. That permission only marks
+# someone eligible to be assigned as an evaluator -- the row-level assignee
+# check is what says they are actually on a given application -- so gating on
+# it would let anyone in the interviewer pool raise a request about anyone.
+_RAISE_GATE = [Permission.RECRUITING_APPLICATION_ADVANCE]
 _DECIDE_GATE = [Permission.USER_ADMIN]
-# The one OR gate across all three roles in this design, and it earns it: every
-# one of them genuinely needs the pre-flight before acting, and it is read-only
-# and answers in counts and dates -- never in which job anyone applied to.
+# The one OR gate in this design, and it earns it: both roles genuinely need
+# the pre-flight before acting, and it is read-only and answers in counts and
+# dates -- never in which job anyone applied to.
 _PREFLIGHT_GATE = _DECIDE_GATE + _RAISE_GATE
 
 
@@ -86,7 +88,7 @@ class BlockController:
             response_model=None,
         )
         self.router.add_api_route(
-            ADMIN_USER_ADMINS_ENDPOINT,
+            BLOCK_REQUEST_REVIEWERS_ENDPOINT,
             endpoint=authenticate(permissions=_RAISE_GATE)(self.list_user_admins),
             methods=["GET"],
             response_model=None,
