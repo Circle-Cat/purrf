@@ -180,5 +180,8 @@ TRAINING_COURSE_PUBLISH_ENDPOINT = "/training/courses/{course_id}/package/publis
 TRAINING_COURSE_TRIAL_ENDPOINT = "/training/courses/{course_id}/trial"
 TRAINING_SESSION_ENDPOINT = "/training/{training_id}/session"
 TRAINING_TRIAL_SESSION_ENDPOINT = "/training/{training_id}/trial-session"
+TRAINING_COURSE_PREVIEW_SESSION_ENDPOINT = (
+    "/training/courses/{course_id}/preview-session"
+)
 TRAINING_PROGRESS_ENDPOINT = "/training/{training_id}/progress"
 TRAINING_CONTENT_ENDPOINT = "/p/{token}/{asset_path:path}"

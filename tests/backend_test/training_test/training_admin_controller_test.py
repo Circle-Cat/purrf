@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from backend.common.api_endpoints import (
     TRAINING_COURSE_PACKAGE_ENDPOINT,
+    TRAINING_COURSE_PREVIEW_SESSION_ENDPOINT,
     TRAINING_COURSE_PUBLISH_ENDPOINT,
     TRAINING_COURSE_TRIAL_ENDPOINT,
     TRAINING_COURSES_ENDPOINT,
@@ -333,6 +334,31 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
 
         self.content_service.open_trial_session.assert_awaited_once_with(
             self.session, 42, 11
+        )
+
+    async def test_preview_session_route_reads_the_courses_live_package(self):
+        self.content_service.open_preview_session = AsyncMock(
+            return_value=_session_dto()
+        )
+        current_user = MagicMock(user_id=7)
+
+        response = await self.controller.open_preview_session(9, current_user)
+
+        self.content_service.open_preview_session.assert_awaited_once_with(
+            self.session, 9, 7
+        )
+        self.assertEqual(response["status_code"], HTTPStatus.OK)
+
+    def test_preview_session_route_is_gated_on_the_read_grant(self):
+        by_method = {
+            (route.path, method): _route_permissions(route)
+            for route in self.controller.router.routes
+            for method in route.methods
+        }
+
+        self.assertEqual(
+            by_method[(TRAINING_COURSE_PREVIEW_SESSION_ENDPOINT, "POST")],
+            [Permission.TRAINING_ADMIN_READ],
         )
 
     async def test_a_commit_is_saved_for_the_caller_not_for_a_named_user(self):

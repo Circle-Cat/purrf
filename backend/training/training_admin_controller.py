@@ -9,6 +9,7 @@ from backend.common.api_endpoints import (
     TRAINING_ASSIGNMENTS_ENDPOINT,
     TRAINING_COURSE_ENDPOINT,
     TRAINING_COURSE_PACKAGE_ENDPOINT,
+    TRAINING_COURSE_PREVIEW_SESSION_ENDPOINT,
     TRAINING_COURSE_PUBLISH_ENDPOINT,
     TRAINING_COURSE_TRIAL_ENDPOINT,
     TRAINING_COURSES_ENDPOINT,
@@ -172,6 +173,18 @@ class TrainingAdminController:
             TRAINING_TRIAL_SESSION_ENDPOINT,
             endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_WRITE])(
                 self.open_trial_session
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+        # Course-scoped, not assignment-scoped, and read-only: looking at the
+        # package learners are on is part of reading the catalogue, so it
+        # asks for the same grant the catalogue does rather than the write
+        # grant the trial run needs.
+        self.router.add_api_route(
+            TRAINING_COURSE_PREVIEW_SESSION_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_READ])(
+                self.open_preview_session
             ),
             methods=["POST"],
             response_model=None,
@@ -370,6 +383,22 @@ class TrainingAdminController:
                 session, training_id, current_user.user_id
             )
         return api_response(message="Trial session opened.", data=result)
+
+    async def open_preview_session(self, course_id: int, current_user):
+        """Mint the content URL for looking at a course's live package.
+
+        Args:
+            course_id (int): The course to look at.
+            current_user: The caller, from the authenticated session.
+
+        Returns:
+            JSONResponse: Where the live package loads from, with no progress.
+        """
+        async with self.database.session() as session:
+            result = await self.training_content_service.open_preview_session(
+                session, course_id, current_user.user_id
+            )
+        return api_response(message="Preview session opened.", data=result)
 
     async def save_progress(self, training_id: int, request: Request, current_user):
         """Store one commit from the caller's own course.
