@@ -245,19 +245,21 @@ class TrainingContentService:
                 session, training_id
             )
 
+        opened = self._mint(package, training_id, user_id, progress)
         # One line per course opening, not per file: this is the only record
         # tying a burst of content requests back to a person and a package.
         self.logger.info(
             "[TrainingContentService] user %s opened training %s (course %s, "
-            "%s package %s, prefix %s)",
+            "%s package %s, prefix %s); token expires at %s",
             user_id,
             training_id,
             assignment.course_id,
             state.value,
             package.package_id,
             package.storage_prefix,
+            opened.expires_at,
         )
-        return self._mint(package, training_id, user_id, progress)
+        return opened
 
     async def open_preview_session(
         self, session, course_id: int, user_id: int
