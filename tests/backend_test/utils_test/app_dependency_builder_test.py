@@ -909,9 +909,7 @@ class TestAppDependencyBuilder(TestCase):
             builder.block_service._interview_scheduling,
             builder.interview_scheduling_service,
         )
-        self.assertIs(
-            builder.block_service._requests, builder.block_request_repository
-        )
+        self.assertIs(builder.block_service._requests, builder.block_request_repository)
         self.assertIs(
             builder.user_account_service._block_requests,
             builder.block_request_repository,

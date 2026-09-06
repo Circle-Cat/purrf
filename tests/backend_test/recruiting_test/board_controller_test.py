@@ -29,10 +29,11 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         self.database.session.return_value.__aenter__.return_value = self.session
         self.database.session.return_value.__aexit__.return_value = None
 
-        # autospec (not a bare MagicMock) so a method disappearing from
-        # BoardService fails here instead of only at request time: every
-        # attribute of a bare MagicMock exists, including ones that do not.
-        self.board_service = create_autospec(BoardService, instance=True)
+        # autospec with spec_set (not a bare MagicMock) so a method
+        # disappearing from BoardService fails here instead of only at request
+        # time. spec_set matters: plain autospec restricts reads but not
+        # writes, so the methods this file reassigns below would go unchecked.
+        self.board_service = create_autospec(BoardService, instance=True, spec_set=True)
         self.board_service.list_my_jobs = AsyncMock(return_value=[])
         self.board_service.get_board = AsyncMock(return_value={})
         self.board_service.get_application_detail = AsyncMock(return_value={"id": 10})
@@ -215,7 +216,6 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(resp["data"], updated)
 
-
     async def test_get_resume_returns_raw_pdf_response(self):
         self.board_service.get_resume = AsyncMock(return_value=b"%PDF-1.4 data")
 
@@ -293,9 +293,9 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         bypass is optional."""
         paths = {route.path for route in self.controller.router.routes}
 
-        self.assertFalse(
-            [path for path in paths if path.startswith("/recruiting/blacklist")]
-        )
+        self.assertFalse([
+            path for path in paths if path.startswith("/recruiting/blacklist")
+        ])
 
     def test_email_templates_route_requires_the_advance_permission(self):
         routes_by_path = {route.path: route for route in self.controller.router.routes}
@@ -440,7 +440,6 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(resp["data"], {"interviewId": 1})
 
-
     async def test_cancel_interview_delegates(self):
         resp = await self.controller.cancel_interview(self.ctx, 10)
         self.interview_scheduling_service.cancel.assert_awaited_once_with(
@@ -468,7 +467,6 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
                 [Permission.RECRUITING_APPLICATION_ADVANCE],
                 f"{method} interview route should require the advance permission",
             )
-
 
     def test_board_stage_page_route_is_get_and_plain_authenticated(self):
         routes_by_path = {route.path: route for route in self.controller.router.routes}

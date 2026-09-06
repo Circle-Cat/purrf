@@ -108,17 +108,20 @@ class TestUserAccountController(unittest.TestCase):
 
     def test_permission_manage_alone_cannot_reach_the_console(self):
         """PERMISSION_MANAGE is not a bundle -- only is_super_admin expands to
-        the full enum. This assertion is easy to write backwards; keep it
-        explicit."""
+        the full enum. Every route, not just the list: the empty-permission
+        loop above only proves the routes are not public, so an accidental
+        ``or PERMISSION_MANAGE`` on one of them would go unnoticed."""
         client = _client(
             self.service,
             self.blocks,
             permissions={Permission.PERMISSION_MANAGE.value},
         )
 
-        resp = client.get(ADMIN_ACCOUNTS_ENDPOINT)
-
-        self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
+        for method, path, body in _ROUTES:
+            with self.subTest(path=path):
+                kwargs = {"json": body} if body is not None else {}
+                resp = getattr(client, method)(path, **kwargs)
+                self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
 
     def test_super_admin_passes(self):
         # AuthMiddleware hands a super admin the whole enum; the decorator only
@@ -191,14 +194,10 @@ class TestUserAccountController(unittest.TestCase):
         )
 
         self.assertEqual(resp.status_code, HTTPStatus.OK)
-        self.assertEqual(
-            self.service.reactivate.await_args.kwargs["user_id"], TARGET
-        )
+        self.assertEqual(self.service.reactivate.await_args.kwargs["user_id"], TARGET)
 
     def test_unblock_delegates(self):
-        resp = self._admin().post(
-            ADMIN_ACCOUNT_UNBLOCK_ENDPOINT.format(user_id=TARGET)
-        )
+        resp = self._admin().post(ADMIN_ACCOUNT_UNBLOCK_ENDPOINT.format(user_id=TARGET))
 
         self.assertEqual(resp.status_code, HTTPStatus.OK)
         self.assertEqual(self.service.unblock.await_args.kwargs["user_id"], TARGET)

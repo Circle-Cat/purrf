@@ -171,9 +171,7 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
     async def test_by_name_uses_preferred_name(self):
         """blocked_by/deactivated_by name a colleague acting, and PUR-609 puts
         colleagues on preferred_name."""
-        row = _user(
-            BLOCKED, is_blocked=True, blocked_by=ME, blocked_reason="cheated"
-        )
+        row = _user(BLOCKED, is_blocked=True, blocked_by=ME, blocked_reason="cheated")
         self.users.list_users.return_value = ([(row, True)], 1)
         self.users.get_all_by_ids.return_value = [_user(ME, preferred="Pei")]
 
@@ -199,9 +197,7 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
     async def test_page_with_no_actors_skips_the_lookup(self):
         self.users.list_users.return_value = ([(_user(TARGET), False)], 1)
 
-        await self.service.list_accounts(
-            self.session, caller_id=ME, limit=50, offset=0
-        )
+        await self.service.list_accounts(self.session, caller_id=ME, limit=50, offset=0)
 
         self.users.get_all_by_ids.assert_not_awaited()
 
@@ -237,9 +233,7 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
             self.session, caller_id=REVIEWER, limit=50, offset=0
         )
 
-        self.assertEqual(
-            self.block_requests.list_pending_for_reviewer.await_count, 1
-        )
+        self.assertEqual(self.block_requests.list_pending_for_reviewer.await_count, 1)
 
     async def test_status_active_means_neither_deactivated_nor_blocked(self):
         self.users.list_users.return_value = ([], 0)
@@ -279,9 +273,7 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
     async def test_no_status_filters_nothing(self):
         self.users.list_users.return_value = ([], 0)
 
-        await self.service.list_accounts(
-            self.session, caller_id=ME, limit=50, offset=0
-        )
+        await self.service.list_accounts(self.session, caller_id=ME, limit=50, offset=0)
 
         kwargs = self.users.list_users.await_args.kwargs
         self.assertIsNone(kwargs["is_active"])

@@ -367,76 +367,6 @@ class TestUsersRepository(BaseRepositoryTestLib):
         updated = await self.repo.set_internal(self.session, 9_999_999)
         self.assertEqual(updated, 0)
 
-    async def test_list_blocked_users_returns_only_blocked(self):
-        token = uuid.uuid4().hex[:10]
-        blocked = self._make_user(
-            first_name=f"Blocked{token}", email=f"blocked-{token}@example.com"
-        )
-        blocked.is_blocked = True
-        blocked.blocked_by = 1
-        blocked.blocked_at = datetime.now(timezone.utc)
-        blocked.blocked_reason = "cheated"
-        not_blocked = self._make_user(
-            first_name=f"Clean{token}", email=f"clean-{token}@example.com"
-        )
-        await self.insert_entities([blocked, not_blocked])
-
-        rows = await self.repo.list_blocked_users(self.session)
-        ids = {u.user_id for u in rows}
-        self.assertIn(blocked.user_id, ids)
-        self.assertNotIn(not_blocked.user_id, ids)
-
-    async def test_list_blocked_users_search_matches_name(self):
-        token = uuid.uuid4().hex[:10]
-        user = self._make_user(
-            first_name=f"Name{token}", email=f"n-{token}@example.com"
-        )
-        user.is_blocked = True
-        user.blocked_reason = "spam"
-        await self.insert_entities([user])
-
-        rows = await self.repo.list_blocked_users(self.session, search=token)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0].user_id, user.user_id)
-
-    async def test_list_blocked_users_search_matches_email(self):
-        # The token appears only in a user_emails row — the email leg of the
-        # search reads user_emails, not the legacy users.primary_email column.
-        token = uuid.uuid4().hex[:10]
-        user = self._make_user(email=f"{uuid.uuid4()}@example.com")
-        user.is_blocked = True
-        user.blocked_reason = "spam"
-        await self.insert_entities([user])
-        await self.insert_entities([
-            UserEmailsEntity(
-                user_id=user.user_id,
-                email=f"findme-{token}@example.com",
-                otp_confirmed=True,
-                is_primary=True,
-            )
-        ])
-
-        rows = await self.repo.list_blocked_users(self.session, search=token)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0].user_id, user.user_id)
-
-    async def test_list_blocked_users_search_matches_reason_case_insensitive(self):
-        token = uuid.uuid4().hex[:10]
-        user = self._make_user(email=f"reason-{token}@example.com")
-        user.is_blocked = True
-        user.blocked_reason = f"Fraud-{token}"
-        await self.insert_entities([user])
-
-        rows = await self.repo.list_blocked_users(self.session, search=token.upper())
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0].user_id, user.user_id)
-
-    async def test_list_blocked_users_search_with_no_match_is_empty(self):
-        rows = await self.repo.list_blocked_users(
-            self.session, search="no-such-token-xyz"
-        )
-        self.assertEqual(rows, [])
-
     async def test_clear_block_resets_all_block_columns(self):
         token = uuid.uuid4().hex[:10]
         user = self._make_user(email=f"clear-{token}@example.com")
@@ -975,9 +905,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
         rows, _ = await self.repo.list_users(
             self.session, search=token, is_blocked=True, limit=50
         )
-        self.assertEqual(
-            {u.user_id for u, _ in rows}, {blocked.user_id, both.user_id}
-        )
+        self.assertEqual({u.user_id for u, _ in rows}, {blocked.user_id, both.user_id})
 
         rows, _ = await self.repo.list_users(
             self.session, search=token, is_blocked=False, limit=50
@@ -1012,7 +940,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
         self.assertEqual({u.user_id for u, _ in rows}, {live.user_id})
 
     async def test_list_users_is_active_and_is_blocked_compose(self):
-        """"Active" on the console means neither deactivated nor blocked, so
+        """ "Active" on the console means neither deactivated nor blocked, so
         the two filters have to hold at once."""
         token = uuid.uuid4().hex[:10]
         clean = self._make_user(email=f"ok-{token}@example.com")
@@ -1034,9 +962,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
         reason must not surface until the caller asks for that leg.
         """
         token = uuid.uuid4().hex[:10]
-        target = self._make_user(
-            last_name="Bb", email=f"{uuid.uuid4()}@example.com"
-        )
+        target = self._make_user(last_name="Bb", email=f"{uuid.uuid4()}@example.com")
         target.is_blocked = True
         target.blocked_reason = f"repeated {token} incidents"
         await self.insert_entities([target])
@@ -1070,9 +996,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
         user = self._make_user(email=f"react-{token}@example.com")
         actor = self._make_user(email=f"reactor-{token}@example.com")
         await self.insert_entities([user, actor])
-        await self.repo.deactivate(
-            self.session, user.user_id, actor.user_id, "note"
-        )
+        await self.repo.deactivate(self.session, user.user_id, actor.user_id, "note")
 
         await self.repo.reactivate(self.session, user.user_id)
 
