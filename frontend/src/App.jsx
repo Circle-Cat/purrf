@@ -25,7 +25,6 @@ import Postings from "@/pages/Recruiting/Postings";
 import PostingEditor from "@/pages/Recruiting/postings/PostingEditor";
 import PostingDetailPage from "@/pages/Recruiting/PostingDetailPage";
 import MyReviews from "@/pages/Recruiting/MyReviews";
-import Blacklist from "@/pages/Recruiting/Blacklist";
 import JobDetailPage from "@/pages/Recruiting/JobDetailPage";
 import MyApplication from "@/pages/Recruiting/MyApplication";
 import JobsBrowse from "@/pages/Recruiting/JobsBrowse";
@@ -218,18 +217,6 @@ function App() {
                           ]}
                         >
                           <MyReviews />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path={ROUTE_PATHS.RECRUITING_BLACKLIST}
-                      element={
-                        <ProtectedRoute
-                          requiredPermissions={[
-                            PERMISSIONS.RECRUITING_BLACKLIST_WRITE,
-                          ]}
-                        >
-                          <Blacklist />
                         </ProtectedRoute>
                       }
                     />
