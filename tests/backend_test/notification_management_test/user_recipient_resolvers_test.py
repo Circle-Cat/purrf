@@ -127,9 +127,7 @@ class TestUserRecipientResolvers(BaseRepositoryTestLib):
         ):
             with self.subTest(event_type=event_type):
                 event = _event(event_type, self.target.user_id, {})
-                self.assertEqual(
-                    await resolve_recipients(self.session, event), set()
-                )
+                self.assertEqual(await resolve_recipients(self.session, event), set())
 
     async def test_target_is_never_a_recipient(self):
         for event_type in (

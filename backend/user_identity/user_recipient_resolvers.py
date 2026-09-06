@@ -50,9 +50,7 @@ async def _request_of(session: AsyncSession, event: EventEntity):
     if request_id is None:
         raise ValueError(f"{event.event_type!r} requires details['requestId']")
     result = await session.execute(
-        select(BlockRequestEntity).where(
-            BlockRequestEntity.request_id == request_id
-        )
+        select(BlockRequestEntity).where(BlockRequestEntity.request_id == request_id)
     )
     row = result.scalars().one_or_none()
     if row is None:
@@ -75,9 +73,7 @@ async def _named_reviewer(session: AsyncSession, event: EventEntity) -> set[int]
     return {row.reviewer_id}
 
 
-@register_recipients(
-    UserEvent.BLOCK_REQUEST_REASSIGNED, subject_type=USER_SUBJECT_TYPE
-)
+@register_recipients(UserEvent.BLOCK_REQUEST_REASSIGNED, subject_type=USER_SUBJECT_TYPE)
 async def _both_reviewers(session: AsyncSession, event: EventEntity) -> set[int]:
     """The new reviewer and the one it was taken from.
 
