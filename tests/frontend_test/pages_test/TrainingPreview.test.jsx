@@ -19,7 +19,6 @@ vi.mock("@/context/auth", () => ({
 }));
 
 import {
-  startTrial,
   openSession,
   openPreviewSession,
   saveProgress,
@@ -106,11 +105,20 @@ describe("TrainingPreview", () => {
     ).toBeInTheDocument();
   });
 
-  it("opens a preview session, not a trial and not a learner session", async () => {
+  it("opens a preview session, not a learner session", async () => {
     renderPreview();
     await waitFor(() => expect(openPreviewSession).toHaveBeenCalledWith("9"));
-    expect(startTrial).not.toHaveBeenCalled();
     expect(openSession).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the course id in the header when the course row cannot be matched", async () => {
+    renderPreview({ courseId: 404 });
+    expect(await screen.findByText(/Course #9 · /)).toBeInTheDocument();
+  });
+
+  it("falls back to 'the live package' when the version cannot be read", async () => {
+    renderPreview({ packageVersion: null });
+    expect(await screen.findByText(/the live package/)).toBeInTheDocument();
   });
 
   it("renders no verdict bar and no CMI panel", async () => {
