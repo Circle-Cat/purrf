@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "@/context/auth";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { legalName } from "@/utils/userName";
 import { PERMISSIONS } from "@/constants/Permissions";
 import { useUserPermissions } from "@/pages/AdminPermissions/hooks/useUserPermissions";
@@ -72,6 +74,15 @@ const UserDetailPanel = ({
       <DialogHeader>
         <DialogTitle>{displayName}</DialogTitle>
         {subLine && <DialogDescription>{subLine}</DialogDescription>}
+        {/* The account console holds the other half of this person: whether
+            they can sign in at all. The two pages are deliberately separate,
+            so each one links to the other. */}
+        <Link
+          to={`${ROUTE_PATHS.ADMIN_ACCOUNTS}?user_id=${selectedUser.userId}`}
+          className="text-sm font-medium text-sky-700 hover:text-sky-900"
+        >
+          Account state →
+        </Link>
       </DialogHeader>
 
       <div className="flex flex-col gap-5">

@@ -42,3 +42,21 @@ export function legalName(person) {
   if (!person) return "";
   return `${person.firstName ?? ""} ${person.lastName ?? ""}`.trim();
 }
+
+/**
+ * What to call the person a dialog or a card is about.
+ *
+ * Three shapes reach these surfaces. The account console passes a row with a
+ * first/last pair. Recruiting has only ever resolved a candidate to one
+ * display string, so it passes `name`. Either may be missing, and an email is
+ * still better than an unnamed dialog.
+ *
+ * @param {{firstName?: string, lastName?: string, name?: string,
+ *          primaryEmail?: string}|null} person
+ * @returns {string} A name to put in a title, or "" when nothing resolves.
+ */
+export function accountLabel(person) {
+  return (
+    legalName(person) || person?.name?.trim() || person?.primaryEmail || ""
+  );
+}

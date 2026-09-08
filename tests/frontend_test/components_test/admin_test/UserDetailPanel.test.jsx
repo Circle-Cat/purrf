@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import UserDetailPanel from "@/pages/AdminPermissions/components/UserDetailPanel";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useAuth } from "@/context/auth";
@@ -43,16 +44,19 @@ const makeHistory = (count) =>
 // Mirror how UsersTab mounts it so the test exercises the real nesting.
 const renderPanel = () =>
   render(
-    <Dialog open>
-      <DialogContent className="sm:max-w-2xl overflow-y-auto max-h-[90vh]">
-        <UserDetailPanel
-          selectedUser={selectedUser}
-          catalog={catalog}
-          onMakeSuperAdmin={vi.fn()}
-          onRevokeSuperAdmin={vi.fn()}
-        />
-      </DialogContent>
-    </Dialog>,
+    // The panel links across to the account console, so it needs a Router.
+    <MemoryRouter>
+      <Dialog open>
+        <DialogContent className="sm:max-w-2xl overflow-y-auto max-h-[90vh]">
+          <UserDetailPanel
+            selectedUser={selectedUser}
+            catalog={catalog}
+            onMakeSuperAdmin={vi.fn()}
+            onRevokeSuperAdmin={vi.fn()}
+          />
+        </DialogContent>
+      </Dialog>
+    </MemoryRouter>,
   );
 
 describe("UserDetailPanel", () => {
@@ -63,6 +67,17 @@ describe("UserDetailPanel", () => {
       isSuperAdmin: true,
       permissions: ["permission.manage"],
     });
+  });
+
+  it("links to the same person's account state", async () => {
+    // The two admin pages were deliberately kept separate rather than merged,
+    // and this per-person cross-link is the only thing left holding them
+    // together. Without a test, deleting it keeps the suite green.
+    api.getUserPermissions.mockResolvedValue({ data: { permissions: [] } });
+    renderPanel();
+
+    const link = await screen.findByRole("link", { name: /Account state/ });
+    expect(link).toHaveAttribute("href", "/admin/accounts?user_id=1");
   });
 
   it("keeps a long history inside its own scroll box so the dialog does not grow", async () => {
