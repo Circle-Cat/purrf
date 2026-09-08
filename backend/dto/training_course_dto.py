@@ -218,7 +218,8 @@ class TrainingProgressDto(BaseDto):
 class TrainingSessionDto(BaseDto):
     """Where one learner's course loads from, and what it resumes with.
 
-    ``progress`` is None for an assignment nobody has opened yet.
+    ``progress`` is None for an assignment nobody has opened yet, and also
+    for a preview, which has no assignment behind it at all.
     """
 
     content_base_url: str

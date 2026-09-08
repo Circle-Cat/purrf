@@ -10,7 +10,7 @@ from backend.dto.training_course_dto import TrainingProgressSaveDto
 from backend.training.completion import next_training_status, reports_completion
 from backend.training.training_content_token import (
     InvalidContentToken,
-    read_session_package,
+    read_session_run,
 )
 
 # SCORM 1.2's CMITimespan needs at least two digits of hours. A single-digit
@@ -205,6 +205,8 @@ class TrainingProgressService:
                 as the page was handed it. Signed, so it can only name a
                 package a run really was opened against. Required: a commit
                 that cannot name a package still being served is refused.
+                A token that names no assignment is a preview and is refused
+                outright: looking at what is live is not a run of it.
 
         Returns:
             TrainingProgressSaveDto: Where the assignment stands afterwards,
@@ -212,7 +214,8 @@ class TrainingProgressService:
 
         Raises:
             ValueError: No such assignment, or an element over its length cap.
-            PermissionError: The assignment belongs to somebody else.
+            PermissionError: The assignment belongs to somebody else, or the
+                session token names a preview with nothing to save into.
             ConflictError: The run this commit came from is not running a
                 package we still serve -- because the token names none we can
                 read, or because the package it names has been replaced.
@@ -388,15 +391,33 @@ class TrainingProgressService:
         token it was handed, so nothing legitimate arrives without one.
 
         Raises:
+            PermissionError: The token names a preview -- one opened with no
+                assignment behind it, which has nothing to save into.
             ConflictError: The token names no readable package, or names one
                 that is no longer served.
         """
-        package_id = None
+        run = None
         if isinstance(session_token, str) and session_token:
             try:
-                package_id = read_session_package(self.signing_key, session_token)
+                run = read_session_run(self.signing_key, session_token)
             except (InvalidContentToken, ValueError):
-                package_id = None
+                run = None
+
+        # A preview names no assignment, so it has nothing to save into and
+        # nothing it may stamp. Refused here rather than trusted not to ask:
+        # the page holding this token reached the app origin with its own
+        # identity, and posting it at an assignment the same person happens
+        # to hold would otherwise land a verification stamp on a live package
+        # nobody ran.
+        if run is not None and run.training_id is None:
+            self.logger.info(
+                "[TrainingProgressService] refused a commit to training %s: "
+                "its run is a preview, which stores nothing",
+                training_id,
+            )
+            raise PermissionError("A preview does not record progress.")
+
+        package_id = None if run is None else run.package_id
 
         package = (
             None

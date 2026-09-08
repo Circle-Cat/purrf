@@ -102,6 +102,20 @@ export const discardPackage = (courseId) =>
 export const openTrialSession = (trainingId) =>
   request.post(API_ENDPOINTS.TRAINING_TRIAL_SESSION(trainingId));
 
+/**
+ * Mint a content session for looking at a course's live package.
+ *
+ * Keyed by course, not by assignment: there is no run behind a preview, so
+ * the token it hands back names no assignment and nothing it reports can be
+ * stored.
+ *
+ * @param {string|number} courseId
+ * @returns {Promise<{data: Object}>} same shape as `openSession`, with no
+ *   `progress`.
+ */
+export const openPreviewSession = (courseId) =>
+  request.post(API_ENDPOINTS.TRAINING_COURSE_PREVIEW_SESSION(courseId));
+
 export const uploadPackage = (courseId, file, onProgress) => {
   const form = new FormData();
   form.append("file", file);

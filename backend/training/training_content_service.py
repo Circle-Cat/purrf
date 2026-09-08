@@ -245,9 +245,7 @@ class TrainingContentService:
                 session, training_id
             )
 
-        token, expires_at = issue_content_token(
-            self.signing_key, training_id, user_id, package_id=package.package_id
-        )
+        opened = self._mint(package, training_id, user_id, progress)
         # One line per course opening, not per file: this is the only record
         # tying a burst of content requests back to a person and a package.
         self.logger.info(
@@ -259,7 +257,63 @@ class TrainingContentService:
             state.value,
             package.package_id,
             package.storage_prefix,
-            expires_at,
+            opened.expires_at,
+        )
+        return opened
+
+    async def open_preview_session(
+        self, session, course_id: int, user_id: int
+    ) -> TrainingSessionDto:
+        """Open the live package of a course to look at, not to run.
+
+        There is no assignment here and none is minted: a preview is an
+        administrator asking what learners are being served right now, and an
+        assignment would put a row in the progress table for a run nobody
+        took. The token it signs names no assignment either, which is what
+        every write path refuses on.
+
+        The live slot is the only one this reads. The staged slot has its own
+        door -- the trial run -- which exists precisely because running a
+        staged package is a different act with different consequences.
+
+        Args:
+            session: The active async database session.
+            course_id (int): The course whose live package to open.
+            user_id (int): The administrator looking.
+
+        Returns:
+            TrainingSessionDto: Where the live package loads from, with no
+            progress to resume.
+
+        Raises:
+            ValueError: Not configured, or the course has nothing live.
+        """
+        self._require_configuration()
+
+        package = await self.training_course_package_repository.get_by_state(
+            session, course_id, TrainingPackageState.LIVE
+        )
+        if package is None:
+            raise ValueError("This course has no live package to preview.")
+        if not package.entry_path:
+            raise ValueError("This course has no entry page to open.")
+
+        self.logger.info(
+            "[TrainingContentService] user %s previewed course %s "
+            "(live package %s, prefix %s)",
+            user_id,
+            course_id,
+            package.package_id,
+            package.storage_prefix,
+        )
+        return self._mint(package, None, user_id, None)
+
+    def _mint(
+        self, package, training_id: int | None, user_id: int, progress
+    ) -> TrainingSessionDto:
+        """Sign one run of one package and say where it loads from."""
+        token, expires_at = issue_content_token(
+            self.signing_key, training_id, user_id, package_id=package.package_id
         )
         return TrainingSessionDto(
             content_base_url=f"https://{self.content_host}/p/{token}/",
@@ -352,10 +406,13 @@ class TrainingContentService:
         normalised = posixpath.normpath(asset_path.lstrip("/"))
         if normalised.startswith("..") or posixpath.isabs(normalised):
             # Path is course-controlled, so %r: it is escaped, not pasted.
+            # training_id is None for a preview, so package_id is what still
+            # names the run when this fires during one.
             self.logger.warning(
-                "[TrainingContentService] training %s asked for %r, which "
-                "escapes the package",
+                "[TrainingContentService] training %s package %s asked for "
+                "%r, which escapes the package",
                 claims.training_id,
+                claims.package_id,
                 asset_path,
             )
             raise PermissionError("Asset path escapes the package.")
@@ -396,11 +453,13 @@ class TrainingContentService:
 
         object_key = posixpath.join(package.storage_prefix, normalised)
         if byte_range is not None:
-            return await self._read_range(claims.training_id, object_key, byte_range)
+            return await self._read_range(
+                claims.training_id, claims.package_id, object_key, byte_range
+            )
 
         found = await asyncio.to_thread(self.training_storage.get, object_key)
         if found is None:
-            self._no_object(claims.training_id, object_key)
+            self._no_object(claims.training_id, claims.package_id, object_key)
 
         data, content_type = found
         # Debug: a single course load asks for hundreds of files.
@@ -414,7 +473,11 @@ class TrainingContentService:
         return ContentAsset(data=data, content_type=content_type)
 
     async def _read_range(
-        self, training_id: int, object_key: str, byte_range: RangeSpec
+        self,
+        training_id: int | None,
+        package_id: int,
+        object_key: str,
+        byte_range: RangeSpec,
     ) -> ContentAsset:
         """Fetch only the bytes asked for, never the whole object.
 
@@ -423,13 +486,22 @@ class TrainingContentService:
         still far cheaper than pulling a 3 MB video through this process for
         every seek a learner makes.
 
+        Args:
+            training_id (int | None): The run this read is on behalf of, for
+                the log line only. None when the run is a preview.
+            package_id (int): The package this read is on behalf of, for the
+                log line only -- unlike training_id, never None, so it is
+                what still names a preview's run.
+            object_key (str): The storage key to read from.
+            byte_range (RangeSpec): The range asked for.
+
         Raises:
             FileNotFoundError: No such object.
             UnsatisfiableRange: The range names no byte of it.
         """
         described = await asyncio.to_thread(self.training_storage.stat, object_key)
         if described is None:
-            self._no_object(training_id, object_key)
+            self._no_object(training_id, package_id, object_key)
         total_size, content_type = described
 
         resolved = resolve_range(byte_range, total_size)
@@ -442,7 +514,7 @@ class TrainingContentService:
         if data is None:
             # Gone between the two calls, which is what an upload replacing the
             # package underneath an open course looks like from here.
-            self._no_object(training_id, object_key)
+            self._no_object(training_id, package_id, object_key)
 
         self.logger.debug(
             "[TrainingContentService] training %s: served %r bytes %s-%s of %s (%s)",
@@ -455,7 +527,7 @@ class TrainingContentService:
         )
         return ContentAsset(data=data, content_type=content_type, partial=resolved)
 
-    def _no_object(self, training_id: int, object_key: str):
+    def _no_object(self, training_id: int | None, package_id: int, object_key: str):
         """Report a missing object and refuse.
 
         A course that lost its files 404s on every asset it references, which
@@ -463,12 +535,21 @@ class TrainingContentService:
         deleted the wrong prefix all look like from here. Noisy on purpose: a
         healthy package produces none of these.
 
+        Args:
+            training_id (int | None): The run this read is on behalf of, for
+                the log line only. None when the run is a preview.
+            package_id (int): The package this read is on behalf of, for the
+                log line only -- unlike training_id, never None, so it is
+                what still names a preview's run.
+            object_key (str): The storage key that was missing.
+
         Raises:
             FileNotFoundError: Always.
         """
         self.logger.warning(
-            "[TrainingContentService] training %s: no object at %r",
+            "[TrainingContentService] training %s package %s: no object at %r",
             training_id,
+            package_id,
             object_key,
         )
         raise FileNotFoundError(object_key)
