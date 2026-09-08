@@ -170,6 +170,24 @@ class MentorAdmittedRendererTest(BaseRepositoryTestLib):
         self.assertIn("<p>Hello,</p>", body)
         self.assertNotIn("Dear", body)
 
+    async def test_a_name_containing_markup_is_escaped_in_the_body(self):
+        """The greeting is HTML, so a name has to reach it as text."""
+        _, body = await self._render(_OPEN_ROUND, preferred_name="<b>Ada</b>")
+
+        self.assertIn("<p>Dear &lt;b&gt;Ada&lt;/b&gt;,</p>", body)
+        self.assertNotIn("<b>", body)
+
+    async def test_a_round_name_containing_markup_is_escaped_in_the_body(self):
+        details = {**_OPEN_ROUND, "roundName": "<i>2026 Fall</i>"}
+
+        _, body = await self._render(details)
+
+        self.assertIn(
+            "registration form for &lt;i&gt;2026 Fall&lt;/i&gt;.",
+            body,
+        )
+        self.assertNotIn("<i>", body)
+
     async def test_a_blank_round_name_drops_the_round_from_the_sentence(self):
         details = {**_OPEN_ROUND, "roundName": "  "}
 
