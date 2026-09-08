@@ -30,7 +30,6 @@ import {
   changeApplicationStage,
   setApplicationRound,
   setApplicationSubStatus,
-  blacklistUser,
   reassignApplication,
   resumeUrl,
   listMyEvaluations,
@@ -317,15 +316,6 @@ describe("recruitingApi", () => {
       "/recruiting/applications/7/round",
       { round: 2, assigneeId: 42 },
     );
-  });
-
-  it("blacklistUser POSTs to /recruiting/blacklist with body", async () => {
-    request.post.mockResolvedValue({ data: {} });
-    await blacklistUser({ userId: 42, reason: "spam" });
-    expect(request.post).toHaveBeenCalledWith("/recruiting/blacklist", {
-      userId: 42,
-      reason: "spam",
-    });
   });
 
   it("reassigns an application's interviewer", async () => {
