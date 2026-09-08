@@ -29,12 +29,14 @@ from tests.backend_test.repository_test.base_repository_test_lib import (
 )
 
 
-def _make_user(is_active: bool = True) -> UsersEntity:
+def _make_user(is_active: bool = True, is_blocked: bool = False) -> UsersEntity:
     """Build a minimal, unsaved user row satisfying every NOT NULL column.
 
     Args:
         is_active (bool): Whether the user is still with the org. Offboarded
             users must not be resolved as recipients.
+        is_blocked (bool): Whether the user is locked out of Purrf. Blocking
+            deliberately leaves is_active alone, so the two are separate.
 
     Returns:
         UsersEntity: The unsaved user.
@@ -46,6 +48,7 @@ def _make_user(is_active: bool = True) -> UsersEntity:
         timezone_updated_at=datetime.now(timezone.utc),
         communication_channel=CommunicationMethod.EMAIL,
         is_active=is_active,
+        is_blocked=is_blocked,
         updated_timestamp=datetime.now(timezone.utc),
     )
 
@@ -310,6 +313,25 @@ class RecipientResolversTest(BaseRepositoryTestLib):
         job = await self._make_job([owner.user_id])
         application = await self._make_application(job.job_id, candidate)
         await self._make_assignment(application.application_id, gone, owner)
+        event = _event(
+            "recruiting.reassigned", "application", application.application_id
+        )
+
+        self.assertEqual(await resolve_recipients(self.session, event), {owner.user_id})
+
+    async def test_a_blocked_assignee_is_not_reached(self):
+        """Someone locked out of Purrf must stop receiving mail about it.
+
+        Blocking leaves is_active True on purpose, so filtering on activity
+        alone keeps mailing an assignee who cannot open the application the
+        mail is about.
+        """
+        owner, candidate = _make_user(), _make_user()
+        blocked = _make_user(is_blocked=True)
+        await self.insert_entities([owner, candidate, blocked])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        await self._make_assignment(application.application_id, blocked, owner)
         event = _event(
             "recruiting.reassigned", "application", application.application_id
         )
