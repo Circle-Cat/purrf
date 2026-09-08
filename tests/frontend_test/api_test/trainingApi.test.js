@@ -5,6 +5,7 @@ import {
   publishPackage,
   discardPackage,
   openTrialSession,
+  openPreviewSession,
 } from "@/api/trainingApi";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
@@ -118,6 +119,16 @@ describe("openTrialSession", () => {
 
     expect(request.post).toHaveBeenCalledWith(
       API_ENDPOINTS.TRAINING_TRIAL_SESSION(9),
+    );
+  });
+});
+
+describe("openPreviewSession", () => {
+  it("opens a preview session against the course, not an assignment", async () => {
+    request.post.mockResolvedValue({ data: { sessionToken: "t" } });
+    await openPreviewSession(9);
+    expect(request.post).toHaveBeenCalledWith(
+      "/training/courses/9/preview-session",
     );
   });
 });

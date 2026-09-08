@@ -135,10 +135,16 @@ function PackageCell({ course }) {
     );
   }
   if (course.packageVersion) {
+    // The version is the natural thing to click when the question is "what
+    // exactly are learners on right now" -- so it is the door to the answer
+    // rather than a separate button competing with the row's own actions.
     return (
-      <span className="font-mono text-xs text-muted-foreground">
+      <Link
+        to={ROUTE_PATHS.TRAINING_PREVIEW(course.courseId)}
+        className="font-mono text-xs text-primary underline-offset-4 hover:underline"
+      >
         {course.packageVersion}
-      </span>
+      </Link>
     );
   }
   return <span className="text-muted-foreground">—</span>;

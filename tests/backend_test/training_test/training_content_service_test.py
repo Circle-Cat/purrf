@@ -332,6 +332,38 @@ class TestOpenTrialSession(_ContentServiceCase):
         self.assertEqual(claims.package_id, _PACKAGE_ID)
 
 
+class TestOpenPreviewSession(_ContentServiceCase):
+    async def test_a_preview_opens_the_live_package_with_no_assignment(self):
+        self.package_repository.get_by_state = AsyncMock(
+            return_value=MagicMock(
+                package_id=42, entry_path="story.html", storage_prefix="courses/9/live"
+            )
+        )
+
+        result = await self.service.open_preview_session(
+            self.session, course_id=_COURSE_ID, user_id=_USER_ID
+        )
+
+        self.package_repository.get_by_state.assert_awaited_once_with(
+            self.session, _COURSE_ID, TrainingPackageState.LIVE
+        )
+        # No assignment is read at all: a preview is not a run of anybody's course.
+        self.training_repository.get_training_by_id.assert_not_awaited()
+        self.progress_repository.get_by_training_id.assert_not_awaited()
+        self.assertIsNone(result.progress)
+        claims = verify_content_token(_KEY, result.session_token)
+        self.assertIsNone(claims.training_id)
+        self.assertEqual(42, claims.package_id)
+
+    async def test_a_preview_of_a_course_with_nothing_live_is_refused(self):
+        self.package_repository.get_by_state.return_value = None
+
+        with self.assertRaises(ValueError):
+            await self.service.open_preview_session(
+                self.session, course_id=_COURSE_ID, user_id=_USER_ID
+            )
+
+
 class TestReadAssetResolvesTheTokensOwnPackage(_ContentServiceCase):
     async def test_the_prefix_comes_from_the_package_the_token_names(self):
         token = self.valid_token()
@@ -548,12 +580,16 @@ class TestReadAssetLogging(_ContentServiceCase):
 class TestOpenSessionLogging(_ContentServiceCase):
     async def test_opening_a_course_logs_the_learner_and_the_package(self):
         """One line per opening, which is what the per-file bursts hang off."""
-        await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+        result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
 
         template, *arguments = self.logger.info.call_args.args
         logged = template % tuple(arguments)
         self.assertIn(str(_USER_ID), logged)
         self.assertIn(_OLD_PREFIX, logged)
+        # Pinned so a future extraction of the minting code cannot silently
+        # drop the expiry off this line the way c1f6e6c7 once did: the DTO
+        # and the log have to agree on the same value, not just both exist.
+        self.assertIn(str(result.expires_at), logged)
 
 
 class TestReservedPlayerPath(_ContentServiceCase):

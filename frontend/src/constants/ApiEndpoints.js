@@ -123,6 +123,8 @@ export const API_ENDPOINTS = {
     `/training/courses/${courseId}/package`,
   TRAINING_COURSE_PUBLISH: (courseId) =>
     `/training/courses/${courseId}/package/publish`,
+  TRAINING_COURSE_PREVIEW_SESSION: (courseId) =>
+    `/training/courses/${courseId}/preview-session`,
   TRAINING_ASSIGNMENTS: "/training/assignments",
 };
 

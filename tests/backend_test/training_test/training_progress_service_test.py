@@ -1151,6 +1151,33 @@ class TestSaveRefusals(_ProgressServiceCase):
         self.session.commit.assert_not_awaited()
 
 
+class TestAPreviewCannotSaveAnything(_ProgressServiceCase):
+    """A preview's token names no assignment, so it has nothing to save into
+    and nothing it may stamp."""
+
+    async def test_a_preview_session_cannot_save_anything(self):
+        token, _ = issue_content_token(
+            _SIGNING_KEY, None, _USER_ID, package_id=_PACKAGE_ID
+        )
+
+        with self.assertRaises(PermissionError) as raised:
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                {"cmi.core.lesson_status": "completed"},
+                session_token=token,
+            )
+
+        self.assertEqual("A preview does not record progress.", str(raised.exception))
+        # Refused before any package or progress read, and before any write.
+        # The assignment itself is still read and row-locked first, and the
+        # ownership check still runs before this -- that ordering is correct
+        # and must win over a preview's refusal.
+        self.package_repository.get_by_id.assert_not_awaited()
+        self.progress_repository.upsert.assert_not_awaited()
+
+
 class TestARunAgainstAReplacedPackage(_ProgressServiceCase):
     """A tab left open across a replacement still holds the old package's CMI
     model, and the driver re-commits the whole of it every twenty seconds.

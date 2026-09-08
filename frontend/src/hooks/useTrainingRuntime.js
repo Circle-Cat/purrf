@@ -12,14 +12,25 @@ import { MESSAGE_TYPES, isTrustedMessage } from "@/training/scormBridge";
  * Shared by the learner's course page and the admin trial page so the
  * origin check -- the whole security of the bridge -- exists in one place.
  *
- * @param {string|number|undefined|null} trainingId Absent until known.
+ * @param {string|number|undefined|null} trainingId Absent until known. When
+ *   `records` is false the caller passes a course id rather than an
+ *   assignment id -- anything built from this value that reaches the
+ *   network (a save request, an endpoint URL) must therefore sit behind
+ *   `records`.
  * @param {{userId?: number, email?: string}} [user]
- * @param {{open?: (trainingId: string|number) => Promise<{data: object}>}} [options]
+ * @param {{
+ *   open?: (trainingId: string|number) => Promise<{data: object}>,
+ *   records?: boolean,
+ * }} [options]
  *   `open` is which session endpoint to mint from. It defaults to the
  *   learner's, which always resolves the live package; the trial page passes
  *   `openTrialSession`, which resolves the staged one. Which package a run is
  *   against is decided by the server at signing time -- this only chooses
  *   which of the two endpoints to ask.
+ *   `records` is whether this run stores anything. The preview page passes
+ *   false: its token names no assignment, so the server refuses every commit
+ *   it could send, and sending them anyway would be a request per twenty
+ *   seconds whose only possible answer is 403.
  * @returns {{
  *   session: object|null,
  *   loadError: string|null,
@@ -55,7 +66,7 @@ const partingBody = (cmi, sessionToken) => {
 export default function useTrainingRuntime(
   trainingId,
   user,
-  { open = openSession } = {},
+  { open = openSession, records = true } = {},
 ) {
   const [session, setSession] = useState(null);
   const [loadError, setLoadError] = useState(null);
@@ -175,10 +186,10 @@ export default function useTrainingRuntime(
         // The player already surfaced this to the course; without a
         // consumer here, a learner's "blank iframe" report leaves nothing
         // behind it to investigate.
-        console.error(
-          `[useTrainingRuntime] scorm:error from training ${trainingId}`,
-          { code: event.data.code, message: event.data.message },
-        );
+        console.error(`[useTrainingRuntime] scorm:error (id ${trainingId})`, {
+          code: event.data.code,
+          message: event.data.message,
+        });
         return;
       }
 
@@ -195,6 +206,10 @@ export default function useTrainingRuntime(
             receivedAt: Date.now(),
           },
         ]);
+        // A preview watches the course run without banking any of it. The
+        // writes above are still collected -- they are what a diagnostics
+        // panel reads -- but nothing leaves the page.
+        if (!records) return;
         lastCmiRef.current = event.data.cmi;
         unsavedRef.current = true;
         try {
@@ -228,6 +243,7 @@ export default function useTrainingRuntime(
     // before the handler returns; the server's row lock orders it against
     // whatever is still in flight.
     const saveOnHide = () => {
+      if (!records) return;
       if (!unsavedRef.current) return;
       unsavedRef.current = false;
       fetch(
@@ -269,7 +285,7 @@ export default function useTrainingRuntime(
       window.removeEventListener("pagehide", saveOnHide);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [session, trainingId, user, post]);
+  }, [session, trainingId, user, post, records]);
 
   const playerSrc = session
     ? `${session.contentBaseUrl}${session.playerPath}?appOrigin=${encodeURIComponent(

@@ -5,6 +5,10 @@ cookie, so this signature is the only thing between a URL and somebody else's
 course. It is deliberately small: who, which assignment, when the session was
 minted, and when it stops working.
 
+A session with no assignment behind it is a preview: it names a package to
+read and nothing to write into, which is why the absent half is what every
+write path checks.
+
 It names the package by id, never by storage prefix. A prefix baked into a
 token would keep pointing at files the replacement cleanup is about to delete;
 an id is resolved against the database on every request, so the prefix behind
@@ -40,7 +44,11 @@ class InvalidContentToken(ValueError):
 class ContentTokenClaims:
     """Who this token is for, which assignment, and which package it runs."""
 
-    training_id: int
+    # None when the run has no assignment behind it: a preview opens a live
+    # package to look at it, and there is nothing for it to save into. Every
+    # write path keys off this being absent rather than off a flag it would
+    # have to be trusted to set.
+    training_id: int | None
     user_id: int
     expires_at: int
     # The package this run opened against, by id. Not its storage prefix --
@@ -66,7 +74,7 @@ def _signature(signing_key: str, payload: bytes) -> str:
 
 def issue_content_token(
     signing_key: str,
-    training_id: int,
+    training_id: int | None,
     user_id: int,
     *,
     package_id: int,
@@ -81,7 +89,8 @@ def issue_content_token(
 
     Args:
         signing_key (str): TRAINING_TOKEN_SIGNING_KEY.
-        training_id (int): The assignment being opened.
+        training_id (int | None): The assignment being opened. None mints a
+            preview session, which cannot save.
         user_id (int): Who is opening it.
         package_id (int): The package this run opens against.
         now (int | None): Unix seconds, for tests.
@@ -139,7 +148,8 @@ def _authentic_claims(signing_key: str, token: str) -> ContentTokenClaims:
 
     try:
         claims = json.loads(payload)
-        training_id = int(claims["t"])
+        raw_training_id = claims["t"]
+        training_id = None if raw_training_id is None else int(raw_training_id)
         user_id = int(claims["u"])
         expires_at = int(claims["e"])
         package_id = int(claims["p"])
@@ -177,25 +187,27 @@ def verify_content_token(
     return claims
 
 
-def read_session_package(signing_key: str, token: str) -> int:
-    """Which package the run in the tab holding this token is running.
+def read_session_run(signing_key: str, token: str) -> ContentTokenClaims:
+    """What the run in the tab holding this token is: which package, and
+    whether it has an assignment behind it at all.
 
     Expiry is not consulted. Here the token is not the credential -- the
-    caller reached the app origin with its own Access identity -- and the one
-    question is which package that tab opened against. A twelve-hour sitting
-    that overran its token still answers it, and refusing one would cost the
-    longest run its last save.
+    caller reached the app origin with its own Access identity -- and the
+    questions are which package that tab opened against and whether it is a
+    run that may store anything. A twelve-hour sitting that overran its token
+    still answers both, and refusing one would cost the longest run its last
+    save.
 
     Args:
         signing_key (str): TRAINING_TOKEN_SIGNING_KEY.
         token (str): The token the page was given when it opened the course.
 
     Returns:
-        int: The package the run opened against.
+        ContentTokenClaims: The run's package, and its assignment or None.
 
     Raises:
         InvalidContentToken: Malformed, altered, or of the payload shape that
             predates packages carrying an id.
         ValueError: No signing key configured.
     """
-    return _authentic_claims(signing_key, token).package_id
+    return _authentic_claims(signing_key, token)

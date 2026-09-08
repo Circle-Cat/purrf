@@ -29,4 +29,5 @@ export const ROUTE_PATHS = {
   TRAINING_COURSE: (trainingId) => `/training/${trainingId}`,
   ADMIN_TRAINING: "/admin/training",
   TRAINING_TRIAL: (courseId) => `/admin/training/${courseId}/trial`,
+  TRAINING_PREVIEW: (courseId) => `/admin/training/${courseId}/preview`,
 };

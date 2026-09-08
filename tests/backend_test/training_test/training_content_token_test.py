@@ -2,6 +2,8 @@
 
 import base64
 import dataclasses
+import hashlib
+import hmac
 import json
 import unittest
 
@@ -10,7 +12,7 @@ from backend.training.training_content_token import (
     ContentTokenClaims,
     InvalidContentToken,
     issue_content_token,
-    read_session_package,
+    read_session_run,
     verify_content_token,
 )
 
@@ -40,6 +42,21 @@ def _encode_segment(raw):
 def _payload(token):
     payload, _ = _split(token)
     return json.loads(_decode_segment(payload))
+
+
+def _sign(key, claims):
+    """Encode and sign a claims dict for real, unlike the forgery tests
+    above which reattach an ORIGINAL signature to a mutated payload -- those
+    die at the signature check and never reach the JSON-parsing branch."""
+    payload = json.dumps(claims, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    signature = (
+        base64.urlsafe_b64encode(
+            hmac.new(key.encode("utf-8"), payload, hashlib.sha256).digest()
+        )
+        .decode("ascii")
+        .rstrip("=")
+    )
+    return _encode_segment(payload) + "." + signature
 
 
 class TestIssueAndVerify(unittest.TestCase):
@@ -106,6 +123,13 @@ class TestIssueAndVerify(unittest.TestCase):
         )
 
         self.assertEqual(expires_at, _NOW + 60)
+
+    def test_a_preview_token_names_no_assignment(self):
+        token, _ = issue_content_token(_KEY, None, 7, package_id=42, now=1_000)
+        claims = verify_content_token(_KEY, token, now=1_100)
+        self.assertIsNone(claims.training_id)
+        self.assertEqual(42, claims.package_id)
+        self.assertEqual(7, claims.user_id)
 
 
 class TestExpiry(unittest.TestCase):
@@ -222,6 +246,16 @@ class TestGarbageInput(unittest.TestCase):
             + signature
         )
 
+    def test_a_payload_with_no_t_key_at_all_is_refused(self):
+        """`t: null` is now legal (a preview), but a payload that never had a
+        `t` key -- a token minted before package_id existed -- must still be
+        refused. Signed correctly, so this reaches the parsing branch rather
+        than dying at the signature check like the other malformed-shape
+        tests in this class do."""
+        token = _sign(_KEY, {"p": _PACKAGE_ID, "u": _USER_ID, "e": _NOW + 100})
+
+        self._assert_only_invalid_content_token(token)
+
     def test_invalid_content_token_is_a_value_error(self):
         self.assertTrue(issubclass(InvalidContentToken, ValueError))
 
@@ -271,7 +305,7 @@ class TestReadingTheRunsPackage(unittest.TestCase):
             _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
         )
 
-        self.assertEqual(read_session_package(_KEY, token), _PACKAGE_ID)
+        self.assertEqual(read_session_run(_KEY, token).package_id, _PACKAGE_ID)
 
     def test_an_expired_token_still_says_which_package_it_ran(self):
         """Here the token is not the credential, and refusing an overrun one
@@ -280,7 +314,7 @@ class TestReadingTheRunsPackage(unittest.TestCase):
             _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
         )
 
-        self.assertEqual(read_session_package(_KEY, token), _PACKAGE_ID)
+        self.assertEqual(read_session_run(_KEY, token).package_id, _PACKAGE_ID)
         with self.assertRaises(InvalidContentToken):
             verify_content_token(_KEY, token, now=_NOW + TOKEN_LIFETIME_SECONDS)
 
@@ -290,7 +324,7 @@ class TestReadingTheRunsPackage(unittest.TestCase):
         )
 
         with self.assertRaises(InvalidContentToken):
-            read_session_package(_KEY, token)
+            read_session_run(_KEY, token)
 
     def test_an_altered_package_is_refused(self):
         token, _ = issue_content_token(
@@ -302,7 +336,19 @@ class TestReadingTheRunsPackage(unittest.TestCase):
 
         forged = _encode_segment(json.dumps(claims).encode("utf-8")) + "." + signature
         with self.assertRaises(InvalidContentToken):
-            read_session_package(_KEY, forged)
+            read_session_run(_KEY, forged)
+
+    def test_read_session_run_answers_both_halves_past_expiry(self):
+        token, _ = issue_content_token(
+            _KEY, None, 7, package_id=42, now=1_000, lifetime_seconds=1
+        )
+        run = read_session_run(_KEY, token)
+        self.assertIsNone(run.training_id)
+        self.assertEqual(42, run.package_id)
+
+    def test_a_learner_token_still_names_its_assignment(self):
+        token, _ = issue_content_token(_KEY, 3, 7, package_id=42, now=1_000)
+        self.assertEqual(3, read_session_run(_KEY, token).training_id)
 
 
 if __name__ == "__main__":
