@@ -323,6 +323,33 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
         # replacement needs a permission these recipients do not hold.
         self.assertNotIn("Blacklist page", body)
 
+    async def test_blacklisted_escapes_the_reason_and_the_names_it_resolves(self):
+        """The whole path, end to end: whoever requested the block typed the
+        reason, the candidate typed their own name, and the body goes to every
+        owner of every posting the candidate applied to. The subject is not
+        HTML, so it keeps the name as typed."""
+        actor, candidate = _make_user("Grace", "Hopper"), _make_user("<b>Ada", "&Co")
+        await self.insert_entities([actor, candidate])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        event = await self._make_event(
+            "recruiting.blacklisted",
+            "application",
+            application.application_id,
+            actor,
+            details={"fromStage": "tech", "reason": "<script>alert(1)</script>"},
+        )
+
+        subject, body = await render_registry.render(self.session, event)
+
+        self.assertEqual(
+            subject, "Application blacklisted: <b>Ada &Co (Backend Engineer)"
+        )
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", body)
+        self.assertIn("&lt;b&gt;Ada &amp;Co", body)
+        self.assertNotIn("<script", body)
+        self.assertNotIn("<b>", body)
+
     async def test_rendered_emails_carry_the_automated_footer(self):
         """Each renderer appends the footer itself -- nothing downstream of
         here adds one -- so a renderer that skipped it would send a body with

@@ -13,8 +13,13 @@ Dashboard" is the label verbatim from ``navItems`` in
 for a menu with any other name finds nothing.
 
 Both variants share a subject line so that someone admitted more than once
-keeps one mail thread.
+keeps one mail thread. It is a constant, so nothing person-written reaches
+a subject here; the two values that do reach a body -- the recipient's own
+name and the round's name -- are HTML-escaped, the same rule the recruiting
+copy and ``user_identity/notification_renderers`` follow.
 """
+
+import html
 
 _FOOTER = (
     "<p>This is an automated message from Purrf. Please do not reply "
@@ -43,7 +48,7 @@ def _greeting(display_name: str) -> str:
     """
     if not display_name.strip():
         return "<p>Hello,</p>"
-    return f"<p>Dear {display_name.strip()},</p>"
+    return f"<p>Dear {html.escape(display_name.strip())},</p>"
 
 
 def _registration_form(round_name: str | None) -> str:
@@ -60,7 +65,10 @@ def _registration_form(round_name: str | None) -> str:
         str: The noun phrase, ending in a full stop.
     """
     if round_name and round_name.strip():
-        return f"complete the mentorship registration form for {round_name.strip()}."
+        return (
+            "complete the mentorship registration form for "
+            f"{html.escape(round_name.strip())}."
+        )
     return "complete the mentorship registration form."
 
 
