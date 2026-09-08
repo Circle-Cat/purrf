@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
 from backend.common.exceptions import ConflictError
-from backend.common.mentorship_enums import TrainingStatus
+from backend.common.mentorship_enums import TrainingPackageState, TrainingStatus
 from backend.dto.training_course_dto import TrainingProgressSaveDto
 from backend.training.completion import next_training_status, reports_completion
 from backend.training.training_content_token import (
@@ -239,6 +239,16 @@ class TrainingProgressService:
 
         package = await self._package_behind(session, session_token, training_id)
 
+        # A trial runs the staged package, and opening one is never seeded
+        # with stored progress, so what a trial writes it can never read
+        # back. Storing it would only leave the staged package's bookmark on
+        # the verifier's own row, for their next run as a learner to resume
+        # against a package that was never live. Refusing the commit outright
+        # the way a preview is refused would be wrong: a trial exists to prove
+        # the staged package can be completed, so it still has to reach the
+        # stamp below.
+        stores_progress = package.state is not TrainingPackageState.PENDING
+
         existing = await self.training_progress_repository.get_by_training_id(
             session, training_id
         )
@@ -349,7 +359,7 @@ class TrainingProgressService:
             # column today.
             return TrainingProgressSaveDto(status=assignment.status)
 
-        if not unchanged:
+        if not unchanged and stores_progress:
             await self.training_progress_repository.upsert(
                 session, training_id, **columns
             )

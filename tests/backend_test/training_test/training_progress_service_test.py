@@ -6,7 +6,7 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
 from backend.common.exceptions import ConflictError
-from backend.common.mentorship_enums import TrainingStatus
+from backend.common.mentorship_enums import TrainingPackageState, TrainingStatus
 from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.training_entity import TrainingEntity
 from backend.entity.training_progress_entity import TrainingProgressEntity
@@ -59,6 +59,7 @@ class _ProgressServiceCase(unittest.IsolatedAsyncioTestCase):
         # the package a fresh token names.
         self.package = self.package_repository.get_by_state.return_value
         self.package.package_id = _PACKAGE_ID
+        self.package.state = TrainingPackageState.LIVE
         self.package_repository.get_by_id.return_value = self.package
         self.service = TrainingProgressService(
             logger=self.logger,
@@ -1149,6 +1150,45 @@ class TestSaveRefusals(_ProgressServiceCase):
 
         self.progress_repository.upsert.assert_not_awaited()
         self.session.commit.assert_not_awaited()
+
+
+class TestATrialStoresNoProgress(_ProgressServiceCase):
+    """A trial runs the staged package, and opening one never seeds it with
+    stored progress, so what a trial writes it can never read back. Storing it
+    would only leave the staged package's bookmark on the verifier's own row,
+    where their next run as a learner picks it up."""
+
+    async def test_a_commit_from_a_trial_stores_no_progress(self):
+        self.package.state = TrainingPackageState.PENDING
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            _COMMIT,
+            session_token=_session_token(),
+        )
+
+        self.progress_repository.upsert.assert_not_awaited()
+
+    async def test_a_trial_that_finishes_still_stamps_its_package(self):
+        # Unlike a preview this is not refused: a trial exists to prove the
+        # staged package can be completed, so it has to reach the stamp.
+        self.package.state = TrainingPackageState.PENDING
+        self.package.verified_completable_at = None
+        self.package.verified_by_user_id = None
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+            may_verify_course=True,
+            session_token=_session_token(),
+        )
+
+        self.assertIsNotNone(self.package.verified_completable_at)
+        self.progress_repository.upsert.assert_not_awaited()
 
 
 class TestAPreviewCannotSaveAnything(_ProgressServiceCase):

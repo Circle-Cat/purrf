@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
+import { Hourglass } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/context/auth";
 import {
@@ -217,6 +218,30 @@ export default function TrainingTrial() {
             }.`}
           </p>
         )}
+      </div>
+
+      <div
+        data-testid="trial-no-resume"
+        className="flex items-start gap-3 rounded-md border-2 p-4"
+        style={{
+          borderColor: "var(--stage-tech)",
+          backgroundColor:
+            "color-mix(in srgb, var(--stage-tech) 10%, transparent)",
+        }}
+      >
+        <Hourglass
+          className="mt-0.5 size-5 shrink-0"
+          style={{ color: "var(--stage-tech)" }}
+          aria-hidden="true"
+        />
+        <div className="space-y-1 text-sm">
+          <p className="font-semibold">This run cannot be resumed</p>
+          <p className="text-muted-foreground">
+            Leaving this page ends the run. The next one starts from the
+            beginning, however far you got, so set aside enough time to reach
+            the end of the course in one sitting.
+          </p>
+        </div>
       </div>
 
       {completionConfig && (
