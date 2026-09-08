@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import UsersTab from "@/pages/AdminPermissions/components/UsersTab";
 import { useAuth } from "@/context/auth";
 import * as api from "@/api/adminPermissionsApi";
@@ -12,6 +13,15 @@ const catalog = [
   { name: "mentorship.admin.read", description: "d1" },
   { name: "permission.manage", description: "d2" },
 ];
+
+// The per-user dialog links across to the account console, so the tree
+// needs a Router even though the tab itself never navigates.
+const renderTab = () =>
+  render(
+    <MemoryRouter>
+      <UsersTab catalog={catalog} />
+    </MemoryRouter>,
+  );
 
 describe("UsersTab", () => {
   beforeEach(() => {
@@ -45,7 +55,7 @@ describe("UsersTab", () => {
 
   it("lists users in the table after Search, without a dialog open initially", async () => {
     const user = userEvent.setup();
-    render(<UsersTab catalog={catalog} />);
+    renderTab();
     await user.click(screen.getByRole("button", { name: "Search" }));
     await waitFor(() => expect(screen.getByText("A")).toBeInTheDocument());
     // Dialog should not be open yet
@@ -54,7 +64,7 @@ describe("UsersTab", () => {
 
   it("opens the dialog when 'Manage permissions' is clicked and loads permissions", async () => {
     const user = userEvent.setup();
-    render(<UsersTab catalog={catalog} />);
+    renderTab();
     await user.click(screen.getByRole("button", { name: "Search" }));
     // Wait for user row to appear
     await waitFor(() =>

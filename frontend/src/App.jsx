@@ -20,6 +20,7 @@ import MentorshipManagement from "@/pages/MentorshipManagement";
 import VerifyRequired from "@/pages/VerifyRequired";
 import SignInSecurity from "@/pages/SignInSecurity";
 import AdminPermissions from "@/pages/AdminPermissions";
+import AdminAccounts from "@/pages/AdminAccounts";
 import Postings from "@/pages/Recruiting/Postings";
 import PostingEditor from "@/pages/Recruiting/postings/PostingEditor";
 import PostingDetailPage from "@/pages/Recruiting/PostingDetailPage";
@@ -154,6 +155,16 @@ function App() {
                           requiredPermissions={[PERMISSIONS.PERMISSION_MANAGE]}
                         >
                           <AdminPermissions />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.ADMIN_ACCOUNTS}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[PERMISSIONS.USER_ADMIN]}
+                        >
+                          <AdminAccounts />
                         </ProtectedRoute>
                       }
                     />

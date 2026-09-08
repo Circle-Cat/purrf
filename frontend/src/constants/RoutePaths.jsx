@@ -9,6 +9,7 @@ export const ROUTE_PATHS = {
   VERIFY_REQUIRED: "/verify-required",
   SIGN_IN_SECURITY: "/settings/sign-in",
   ADMIN_USERS: "/admin/users",
+  ADMIN_ACCOUNTS: "/admin/accounts",
   RECRUITING_POSTINGS: "/recruiting/postings",
   RECRUITING_POSTING_NEW: "/recruiting/postings/new",
   RECRUITING_POSTING_EDIT: (jobId) => `/recruiting/postings/${jobId}/edit`,
