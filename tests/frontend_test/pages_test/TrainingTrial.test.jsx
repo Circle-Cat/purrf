@@ -324,6 +324,14 @@ describe("TrainingTrial", () => {
     expect(writesLog.getByText(/no cmi traffic received/i)).toBeInTheDocument();
   });
 
+  it("warns before the run that a trial cannot be picked up later", async () => {
+    renderTrial();
+
+    const notice = await screen.findByTestId("trial-no-resume");
+    expect(notice).toHaveTextContent(/cannot be resumed/i);
+    expect(notice).toHaveTextContent(/from the beginning/i);
+  });
+
   it("warns before the run that this course only finishes via Storyline", async () => {
     readCompletionConfig.mockResolvedValue({
       data: {
