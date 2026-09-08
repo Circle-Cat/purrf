@@ -139,6 +139,9 @@ class UsersRepository:
         is_super_admin: bool | None = None,
         user_type: str | None = None,
         permission_name: str | None = None,
+        is_active: bool | None = None,
+        is_blocked: bool | None = None,
+        search_blocked_reason: bool = False,
     ) -> tuple[list[tuple[UsersEntity, bool]], int]:
         """
         Paginated user list with optional case-insensitive substring search,
@@ -153,12 +156,12 @@ class UsersRepository:
             limit (int): Max rows to return.
             offset (int): Rows to skip (for pagination).
             sort_by (str | None): Column to sort by. Allowed values:
-                ``"user_id"``, ``"first_name"``, ``"last_name"``,
-                ``"preferred_name"``, ``"is_active"``, ``"is_super_admin"``,
-                ``"user_type"`` (by the persisted internal/external flag).
-                The three name columns are compared case-insensitively and put
-                rows with no value last in both directions. Unknown or None
-                values fall back to deterministic ``user_id`` order.
+                ``user_id``, ``first_name``, ``last_name``, ``preferred_name``,
+                ``is_active``, ``is_super_admin``, ``user_type``,
+                ``blocked_at``. Anything else is ignored and the default order
+                applies. The three name columns are compared case-insensitively;
+                they and ``blocked_at`` put rows with no value last in both
+                directions.
             order (str): ``"asc"`` (default) or ``"desc"``. Only applied when
                 ``sort_by`` resolves to a whitelisted column.
             is_super_admin (bool | None): When not None, restricts results to
@@ -171,6 +174,16 @@ class UsersRepository:
                 revoked, or by being a super admin, who holds every permission
                 via the flag rather than through grant rows. None means no
                 filter. The name is not validated here; the service owns that.
+            is_active (bool | None): When not None, restricts results to users
+                whose ``is_active`` flag matches this value.
+            is_blocked (bool | None): When not None, restricts results to users
+                whose ``is_blocked`` flag matches this value. Independent of
+                ``is_active``: a user can be both deactivated and blocked, and
+                this filter reads the block flag alone.
+            search_blocked_reason (bool): When True, ``search`` also matches
+                ``blocked_reason``. Off by default on purpose -- turning it on
+                changes the result set, since a user can then be found by a
+                word someone else wrote about them.
 
         Returns:
             tuple[list[tuple[UsersEntity, bool]], int]: (page rows where each
@@ -190,26 +203,39 @@ class UsersRepository:
             "is_active": UsersEntity.is_active,
             "is_super_admin": UsersEntity.is_super_admin,
             "user_type": UsersEntity.is_internal,
+            "blocked_at": UsersEntity.blocked_at,
         }
-        # Sortable name columns, which sink rows with no value to the bottom of
-        # the page in both directions rather than letting them head the
-        # descending page (only preferred_name is actually nullable today).
-        _NULLS_LAST_SORTS = frozenset({"first_name", "last_name", "preferred_name"})
+        # Sortable columns that sink rows with no value to the bottom of the
+        # page in both directions rather than letting them head the descending
+        # page. blocked_at is null for everyone who has never been blocked.
+        _NULLS_LAST_SORTS = frozenset({
+            "first_name",
+            "last_name",
+            "preferred_name",
+            "blocked_at",
+        })
 
         filters = []
         if search:
             pattern = f"%{search.lower()}%"
-            filters.append(
-                or_(
-                    func.lower(UsersEntity.first_name).like(pattern),
-                    func.lower(UsersEntity.last_name).like(pattern),
-                    self._any_email_matches(pattern),
+            search_targets = [
+                func.lower(UsersEntity.first_name).like(pattern),
+                func.lower(UsersEntity.last_name).like(pattern),
+                self._any_email_matches(pattern),
+            ]
+            if search_blocked_reason:
+                search_targets.append(
+                    func.lower(UsersEntity.blocked_reason).like(pattern)
                 )
-            )
+            filters.append(or_(*search_targets))
         if user_id is not None:
             filters.append(UsersEntity.user_id == user_id)
         if is_super_admin is not None:
             filters.append(UsersEntity.is_super_admin == is_super_admin)
+        if is_active is not None:
+            filters.append(UsersEntity.is_active.is_(is_active))
+        if is_blocked is not None:
+            filters.append(UsersEntity.is_blocked.is_(is_blocked))
         if user_type == IdentityType.INTERNAL:
             filters.append(UsersEntity.is_internal.is_(True))
         elif user_type == IdentityType.EXTERNAL:
@@ -353,38 +379,51 @@ class UsersRepository:
         await session.flush()
         return result.rowcount
 
-    async def list_blocked_users(
-        self, session: AsyncSession, *, search: str | None = None
-    ) -> list[UsersEntity]:
+    async def deactivate(
+        self, session: AsyncSession, user_id: int, actor_id: int, reason: str | None
+    ) -> None:
         """
-        All currently-blocked users, optionally filtered by a case-insensitive
-        substring over first_name / last_name / any user_emails address /
-        blocked_reason.
+        Mark an account deactivated and record who did it, when, and why.
+        Does not commit -- the calling service owns the transaction.
 
         Args:
             session (AsyncSession): The active async database session.
-            search (str | None): Case-insensitive substring match over name,
-                email, or blocked reason; None returns every blocked user.
-
-        Returns:
-            list[UsersEntity]: Blocked users ordered by blocked_at descending
-                (most recently blocked first).
+            user_id (int): The user to deactivate.
+            actor_id (int): The user performing the deactivation.
+            reason (str | None): Free-text note. Optional: deactivation is not
+                a finding of fault, unlike blocking, which demands a reason.
         """
-        filters = [UsersEntity.is_blocked.is_(True)]
-        if search:
-            pattern = f"%{search.lower()}%"
-            filters.append(
-                or_(
-                    func.lower(UsersEntity.first_name).like(pattern),
-                    func.lower(UsersEntity.last_name).like(pattern),
-                    self._any_email_matches(pattern),
-                    func.lower(UsersEntity.blocked_reason).like(pattern),
-                )
+        await session.execute(
+            update(UsersEntity)
+            .where(UsersEntity.user_id == user_id)
+            .values(
+                is_active=False,
+                deactivated_by=actor_id,
+                deactivated_at=func.now(),
+                deactivated_reason=reason,
             )
-        result = await session.execute(
-            select(UsersEntity).where(*filters).order_by(UsersEntity.blocked_at.desc())
         )
-        return list(result.scalars().all())
+
+    async def reactivate(self, session: AsyncSession, user_id: int) -> None:
+        """
+        Restore an account and clear the deactivation trio. Idempotent: a no-op
+        (still succeeds) if the user is missing or already active. Does not
+        commit -- the calling service owns the transaction.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): The user to reactivate.
+        """
+        await session.execute(
+            update(UsersEntity)
+            .where(UsersEntity.user_id == user_id)
+            .values(
+                is_active=True,
+                deactivated_by=None,
+                deactivated_at=None,
+                deactivated_reason=None,
+            )
+        )
 
     async def clear_block(self, session: AsyncSession, user_id: int) -> None:
         """

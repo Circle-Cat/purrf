@@ -1,5 +1,14 @@
 from datetime import datetime
-from sqlalchemy import Boolean, Integer, String, DateTime, func, text, Enum as SAEnum
+from sqlalchemy import (
+    Boolean,
+    Integer,
+    String,
+    DateTime,
+    ForeignKey,
+    func,
+    text,
+    Enum as SAEnum,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.common.base import Base
 from backend.common.mentorship_enums import CommunicationMethod
@@ -54,6 +63,20 @@ class UsersEntity(Base):
     blocked_by: Mapped[int | None] = mapped_column(Integer)
     blocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     blocked_reason: Mapped[str | None] = mapped_column(String)
+
+    # Deactivation trio, serving the same purpose as the block trio above --
+    # but deactivated_by carries a proper foreign key, which blocked_by never
+    # got. Nullable and not backfilled: every existing row is is_active=true
+    # because no code has ever written false. Reason is optional here and
+    # mandatory for blocking -- deactivation is not a finding of fault, so
+    # demanding a reason would imply one. See PUR-633.
+    # The FK has no ondelete clause, so it defaults to RESTRICT: hard-deleting
+    # a user who has ever deactivated someone would fail at the DB level,
+    # which was never true of blocked_by. There is no hard-delete path for
+    # users today and work addresses are never recycled, so this is latent.
+    deactivated_by: Mapped[int | None] = mapped_column(ForeignKey("users.user_id"))
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deactivated_reason: Mapped[str | None] = mapped_column(String)
 
     updated_timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now(), onupdate=func.now()

@@ -7,6 +7,7 @@ py_library(
     srcs = glob(["*.py"]),
     deps = [
         "//backend/common:communication_enums",
+        "//backend/common:user_enums",
         "//backend/dto",
         "//backend/entity:entities",
         "@pypi//asyncpg",

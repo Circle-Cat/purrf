@@ -263,8 +263,7 @@ def _blacklisted(dto, stage):
         f"Application blacklisted: {applicant} ({dto.job_title})",
         f"<p>{actor} blacklisted {applicant} and rejected their application "
         f'for {dto.job_title}, with the reason: "{dto.reason}".</p>'
-        f"{_candidate_line(dto)}"
-        "<p>Open the Blacklist page in Purrf to review the block.</p>",
+        f"{_candidate_line(dto)}",
     )
 
 

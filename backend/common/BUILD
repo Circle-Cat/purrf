@@ -204,6 +204,11 @@ py_library(
 )
 
 py_library(
+    name = "user_enums",
+    srcs = ["user_enums.py"],
+)
+
+py_library(
     name = "communication_enums",
     srcs = ["communication_enums.py"],
 )

@@ -1,6 +1,38 @@
 load("@rules_python//python:defs.bzl", "py_test")
 
 py_test(
+    name = "block_service_request_test",
+    srcs = ["block_service_request_test.py"],
+    deps = [
+        "//backend/admin:block_service",
+        "//backend/common:permissions",
+        "//backend/common:user_enums",
+        "//backend/entity:entities",
+    ],
+)
+
+py_test(
+    name = "block_service_apply_test",
+    srcs = ["block_service_apply_test.py"],
+    deps = [
+        "//backend/admin:block_service",
+        "//backend/common:recruiting_enums",
+        "//backend/common:user_enums",
+        "//backend/entity:entities",
+    ],
+)
+
+py_test(
+    name = "user_account_service_test",
+    srcs = ["user_account_service_test.py"],
+    deps = [
+        "//backend/admin:user_account_service",
+        "//backend/common:user_enums",
+        "//backend/entity:entities",
+    ],
+)
+
+py_test(
     name = "permission_admin_service_test",
     srcs = ["permission_admin_service_test.py"],
     deps = [
@@ -16,6 +48,34 @@ py_test(
     srcs = ["permission_admin_controller_test.py"],
     deps = [
         "//backend/admin:permission_admin_controller",
+        "//backend/common:api_endpoints",
+        "//backend/common:fast_api_error_handler",
+        "//backend/common:permissions",
+        "//backend/dto",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+    ],
+)
+
+py_test(
+    name = "user_account_controller_test",
+    srcs = ["user_account_controller_test.py"],
+    deps = [
+        "//backend/admin:user_account_controller",
+        "//backend/common:api_endpoints",
+        "//backend/common:fast_api_error_handler",
+        "//backend/common:permissions",
+        "//backend/dto",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+    ],
+)
+
+py_test(
+    name = "block_controller_test",
+    srcs = ["block_controller_test.py"],
+    deps = [
+        "//backend/admin:block_controller",
         "//backend/common:api_endpoints",
         "//backend/common:fast_api_error_handler",
         "//backend/common:permissions",
