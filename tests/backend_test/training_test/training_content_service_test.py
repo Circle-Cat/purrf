@@ -8,7 +8,7 @@ import unittest
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
-from backend.common.mentorship_enums import TrainingStatus
+from backend.common.mentorship_enums import TrainingPackageState, TrainingStatus
 from backend.entity.training_entity import TrainingEntity
 from backend.entity.training_progress_entity import TrainingProgressEntity
 from backend.training.byte_range import RangeSpec, UnsatisfiableRange
@@ -31,6 +31,7 @@ _USER_ID = 77
 _OTHER_USER_ID = 999
 _COURSE_ID = 9
 _PACKAGE_ID = 31
+_PENDING_PACKAGE_ID = 32
 _OLD_PREFIX = "training/9/old-package/"
 _NEW_PREFIX = "training/9/new-package/"
 
@@ -106,10 +107,17 @@ class _ContentServiceCase(unittest.IsolatedAsyncioTestCase):
             storage_prefix=_OLD_PREFIX,
             entry_path="scormcontent/index.html",
         )
+        self.pending = MagicMock(
+            package_id=_PENDING_PACKAGE_ID,
+            storage_prefix="training/9/staged-package/",
+            entry_path="scormcontent/index.html",
+        )
         self.package_repository = MagicMock()
         # Opening a session resolves the course's live package; serving a file
         # resolves the package the token names, which is a different question
-        # the moment a replacement lands.
+        # the moment a replacement lands. Plain return value by default -- a
+        # test that cares which slot was asked for swaps in a state-dispatching
+        # side_effect of its own.
         self.package_repository.get_by_state = AsyncMock(return_value=self.package)
         self.package_repository.get_by_id = AsyncMock(return_value=self.package)
 
@@ -258,6 +266,70 @@ class TestOpenSession(_ContentServiceCase):
         result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
 
         self.assertIsNone(result.progress.score_raw)
+
+
+class TestOpenTrialSession(_ContentServiceCase):
+    async def test_the_token_names_the_staged_package(self):
+        self.package_repository.get_by_state = AsyncMock(
+            side_effect=lambda session, course_id, state: (
+                self.pending if state is TrainingPackageState.PENDING else self.package
+            )
+        )
+
+        result = await self.service.open_trial_session(
+            self.session, _TRAINING_ID, _USER_ID
+        )
+
+        claims = verify_content_token(_KEY, self.token_from(result))
+        self.assertEqual(claims.package_id, _PENDING_PACKAGE_ID)
+
+    async def test_a_trial_carries_no_progress_to_resume_from(self):
+        """A trial is always ab initio, whatever the assignment's row holds.
+
+        The row is keyed per assignment, not per package, so what it holds was
+        written by whichever package last ran on it -- never by the staged one
+        a trial opens. The finishing lesson_status is the dangerous case:
+        seeded into the CMI model, the player re-sends it on its first commit
+        and the staged package is stamped verified with nobody having run it.
+        """
+        self.package_repository.get_by_state = AsyncMock(
+            side_effect=lambda session, course_id, state: (
+                self.pending if state is TrainingPackageState.PENDING else self.package
+            )
+        )
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="completed",
+                lesson_location="Summary",
+                suspend_data="blob",
+                session_time_seconds=500,
+            )
+        )
+
+        result = await self.service.open_trial_session(
+            self.session, _TRAINING_ID, _USER_ID
+        )
+
+        self.assertIsNone(result.progress)
+
+    async def test_a_course_with_nothing_staged_cannot_open_a_trial(self):
+        self.package_repository.get_by_state = AsyncMock(return_value=None)
+
+        with self.assertRaises(ValueError):
+            await self.service.open_trial_session(self.session, _TRAINING_ID, _USER_ID)
+
+    async def test_the_learner_endpoint_still_signs_the_live_package(self):
+        self.package_repository.get_by_state = AsyncMock(
+            side_effect=lambda session, course_id, state: (
+                self.pending if state is TrainingPackageState.PENDING else self.package
+            )
+        )
+
+        result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+        claims = verify_content_token(_KEY, self.token_from(result))
+        self.assertEqual(claims.package_id, _PACKAGE_ID)
 
 
 class TestReadAssetResolvesTheTokensOwnPackage(_ContentServiceCase):

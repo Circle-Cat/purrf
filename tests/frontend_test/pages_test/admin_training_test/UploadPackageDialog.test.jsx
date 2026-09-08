@@ -13,14 +13,16 @@ const pick = async (file) =>
   userEvent.upload(screen.getByLabelText(/scorm package/i), file);
 
 describe("UploadPackageDialog", () => {
-  it("says what replacing costs, with numbers, before the click", () => {
+  it("says the upload changes nothing for learners", () => {
+    // Uploading only stages a package now -- a live course keeps serving
+    // its current package until a deliberate publish, so the copy must not
+    // claim anyone is disrupted by the upload itself.
     render(
       <UploadPackageDialog
         course={{
           courseId: 5,
-          state: "verified",
           packageVersion: "qPpo9zHD",
-          packageUploadedAt: "2026-08-20T00:00:00Z",
+          liveState: "live",
           assignedCount: 124,
           unfinishedCount: 3,
         }}
@@ -29,35 +31,68 @@ describe("UploadPackageDialog", () => {
     );
 
     expect(
-      screen.getByText(/this replaces package qPpo9zHD/i),
+      screen.getByText(/Learners keep seeing qPpo9zHD until you publish it/),
     ).toBeInTheDocument();
-    expect(screen.getByText(/verification is cleared/i)).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        /3 learners in progress will restart from the beginning/i,
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/121 completed records are untouched/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /replace package/i }),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/will restart/)).not.toBeInTheDocument();
   });
 
-  it("counts heads for a replacement whose package we cannot read", () => {
+  it("names the outgoing package only when the package says", () => {
     // A Captivate export carries no driver config, so packageVersion is
-    // legitimately null. That is the package we understand least, and the
-    // consequences of replacing it are exactly the same.
+    // legitimately null. Name the thing without a version rather than leave
+    // a gap in the sentence.
     render(
       <UploadPackageDialog
         course={{
           courseId: 5,
-          state: "verified",
           packageVersion: null,
-          packageUploadedAt: "2026-08-20T00:00:00Z",
+          liveState: "live",
           assignedCount: 61,
           unfinishedCount: 12,
+        }}
+        open
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        /Learners keep seeing the current package until you publish it/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing is served yet when the course has no live package", () => {
+    render(
+      <UploadPackageDialog
+        course={{
+          courseId: 5,
+          packageVersion: null,
+          liveState: "no_package",
+          assignedCount: 0,
+          unfinishedCount: 0,
+        }}
+        open
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "This course has no package yet. Nothing is served until you publish.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/will restart/)).not.toBeInTheDocument();
+  });
+
+  it("still calls it Replace when the course is live", () => {
+    // The row action is still labelled Replace; only what the dialog says
+    // about the consequences changed.
+    render(
+      <UploadPackageDialog
+        course={{
+          courseId: 5,
+          packageVersion: "qPpo9zHD",
+          liveState: "live",
+          assignedCount: 124,
+          unfinishedCount: 3,
         }}
         open
       />,
@@ -66,34 +101,8 @@ describe("UploadPackageDialog", () => {
     expect(
       screen.getByRole("heading", { name: /replace package/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/verification is cleared/i)).toBeInTheDocument();
     expect(
-      screen.getByText(
-        /12 learners in progress will restart from the beginning/i,
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/49 completed records are untouched/i),
-    ).toBeInTheDocument();
-  });
-
-  it("names the package it replaces only when the package says", () => {
-    render(
-      <UploadPackageDialog
-        course={{
-          courseId: 5,
-          state: "verified",
-          packageVersion: null,
-          packageUploadedAt: "2026-08-20T00:00:00Z",
-          assignedCount: 61,
-          unfinishedCount: 12,
-        }}
-        open
-      />,
-    );
-
-    expect(
-      screen.getByText(/this replaces the current package/i),
+      screen.getByRole("button", { name: /replace package/i }),
     ).toBeInTheDocument();
   });
 
@@ -104,9 +113,8 @@ describe("UploadPackageDialog", () => {
       <UploadPackageDialog
         course={{
           courseId: 5,
-          state: "verified",
           packageVersion: "qPpo9zHD",
-          packageUploadedAt: "2026-08-20T00:00:00Z",
+          liveState: "live",
           assignedCount: 124,
           unfinishedCount: 3,
         }}
@@ -117,6 +125,51 @@ describe("UploadPackageDialog", () => {
     expect(screen.queryByText(/24 hours/i)).not.toBeInTheDocument();
     expect(
       screen.queryByText(/previous files are kept/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says the staged package this upload lands on top of goes with it", () => {
+    // Uploading over a staged package deletes that pending row and its
+    // objects before the new one is written, and the only way back to it is
+    // the zip it came from.
+    render(
+      <UploadPackageDialog
+        course={{
+          courseId: 5,
+          packageVersion: "qPpo9zHD",
+          liveState: "live",
+          staged: { packageId: 2, packageVersion: "RaOvlxxJ" },
+          assignedCount: 124,
+          unfinishedCount: 3,
+        }}
+        open
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        /The package you have staged is replaced and cannot be brought back/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing about a staged package on a course that has none", () => {
+    render(
+      <UploadPackageDialog
+        course={{
+          courseId: 5,
+          packageVersion: "qPpo9zHD",
+          liveState: "live",
+          staged: null,
+          assignedCount: 124,
+          unfinishedCount: 3,
+        }}
+        open
+      />,
+    );
+
+    expect(
+      screen.queryByText(/package you have staged/),
     ).not.toBeInTheDocument();
   });
 

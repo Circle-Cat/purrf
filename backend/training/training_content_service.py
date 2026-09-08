@@ -145,6 +145,13 @@ class TrainingContentService:
     ) -> TrainingSessionDto:
         """Mint a content URL for one person's own assignment.
 
+        Always the course's live package, whoever is calling. An admin opening
+        their own assignment is a learner here; the staged package is reached
+        through open_trial_session and nowhere else. The content origin has no
+        cookie and no Access application, so the token is the whole credential
+        -- which package it names has to be decided at signing time, never by
+        a caller asking for one.
+
         Args:
             session: The active async database session.
             training_id (int): The assignment being opened.
@@ -161,6 +168,48 @@ class TrainingContentService:
             ValueError: Not configured, or no such assignment.
             PermissionError: The assignment belongs to somebody else.
         """
+        return await self._open(
+            session, training_id, user_id, TrainingPackageState.LIVE
+        )
+
+    async def open_trial_session(
+        self, session, training_id: int, user_id: int
+    ) -> TrainingSessionDto:
+        """Mint a content URL for a verifier's run of the staged package.
+
+        Everything but which package it names is the learner's own path, on
+        purpose: a trial that ran through different code would prove less than
+        one that runs through the code a learner will.
+
+        Args:
+            session: The active async database session.
+            training_id (int): The trial assignment being opened.
+            user_id (int): Who is opening it.
+
+        Returns:
+            TrainingSessionDto: Same shape as `open_session`, naming the
+                course's pending package instead of its live one, and never
+                carrying progress to resume from.
+
+        Raises:
+            ValueError: Not configured, no such assignment, or nothing is
+                staged on this course to try.
+            PermissionError: The assignment belongs to somebody else.
+        """
+        return await self._open(
+            session, training_id, user_id, TrainingPackageState.PENDING
+        )
+
+    async def _open(
+        self, session, training_id: int, user_id: int, state
+    ) -> TrainingSessionDto:
+        """The body both session endpoints share, minus which slot they read.
+
+        Raises:
+            ValueError: Not configured, no such assignment, no course, or the
+                slot this session wanted is empty.
+            PermissionError: The assignment belongs to somebody else.
+        """
         self._require_configuration()
 
         assignment = await self.training_repository.get_training_by_id(
@@ -174,16 +223,27 @@ class TrainingContentService:
             raise ValueError("This training has no course attached.")
 
         package = await self.training_course_package_repository.get_by_state(
-            session, assignment.course_id, TrainingPackageState.LIVE
+            session, assignment.course_id, state
         )
         if package is None:
             raise ValueError("This course has no package to open.")
         if not package.entry_path:
             raise ValueError("This course has no entry page to open.")
 
-        progress = await self.training_progress_repository.get_by_training_id(
-            session, training_id
-        )
+        # A trial starts from nothing, whatever this assignment's row holds.
+        # The progress row is keyed per assignment, not per package, so what
+        # it holds was written by whichever package last ran on it -- never by
+        # the staged one being tried. Seeded back in, that state resumes the
+        # trial onto a bookmark from a different package, and a row carrying a
+        # finishing lesson_status is worse: the player re-sends the whole
+        # model on its first commit, and the staged package is stamped
+        # verified with nobody having run it. This read leaves the row alone;
+        # the trial's own commits still overwrite it afterwards.
+        progress = None
+        if state is TrainingPackageState.LIVE:
+            progress = await self.training_progress_repository.get_by_training_id(
+                session, training_id
+            )
 
         token, expires_at = issue_content_token(
             self.signing_key, training_id, user_id, package_id=package.package_id
@@ -192,10 +252,11 @@ class TrainingContentService:
         # tying a burst of content requests back to a person and a package.
         self.logger.info(
             "[TrainingContentService] user %s opened training %s (course %s, "
-            "package %s, prefix %s); token expires at %s",
+            "%s package %s, prefix %s); token expires at %s",
             user_id,
             training_id,
             assignment.course_id,
+            state.value,
             package.package_id,
             package.storage_prefix,
             expires_at,

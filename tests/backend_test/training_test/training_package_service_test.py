@@ -1,4 +1,5 @@
-"""Uploading a package over a live course, and clearing up after it."""
+"""Uploading a package as a staged pending replacement, and reading back what
+is live."""
 
 import datetime
 import io
@@ -7,6 +8,7 @@ import unittest
 import zipfile
 from unittest.mock import AsyncMock, MagicMock
 
+from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import ScormVersion, TrainingPackageState
 from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.training_course_package_entity import (
@@ -18,6 +20,7 @@ from backend.training.training_package_service import TrainingPackageService
 _COURSE_ID = 7
 _ENTRY_PATH = "index.html"
 _LIVE_PREFIX = "training/7/9cf1e0d2/"
+_PENDING_PREFIX = "training/7/1a2b3c4d/"
 _NOW = datetime.datetime(2026, 9, 2, 9, 0, tzinfo=datetime.timezone.utc)
 _VERIFIED_AT = datetime.datetime(2026, 8, 30, 12, 0, tzinfo=datetime.timezone.utc)
 
@@ -109,20 +112,15 @@ def _package(**kwargs) -> bytes:
     return _zip(_members(**kwargs))
 
 
-def _named_arguments(mock, names: tuple) -> dict:
-    """One call's arguments by name, however they were passed."""
-    args, kwargs = mock.call_args
-    bound = dict(zip(names, args))
-    bound.update(kwargs)
-    return bound
+# A generic valid archive for tests that do not care about its contents.
+_ARCHIVE = _package()
 
 
-class _PackageServiceTestCase(unittest.IsolatedAsyncioTestCase):
+class _PackageServiceCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.session = AsyncMock()
         self.logger = MagicMock()
         self.course_repository = AsyncMock()
-        self.course_repository.get_course_by_id.return_value = None
         self.progress_repository = AsyncMock()
         self.progress_repository.clear_resume_state.return_value = 0
         self.storage = MagicMock()
@@ -137,6 +135,10 @@ class _PackageServiceTestCase(unittest.IsolatedAsyncioTestCase):
             training_course_package_repository=self.package_repository,
             training_storage=self.storage,
         )
+        # Nearly every test uploads to some existing course; the tests about
+        # a course that does not exist are the ones that opt out, by setting
+        # get_course_by_id back to None themselves.
+        self._course()
 
     def _course(self, **overrides) -> TrainingCourseEntity:
         fields = {
@@ -149,11 +151,9 @@ class _PackageServiceTestCase(unittest.IsolatedAsyncioTestCase):
         self.course_repository.get_course_by_id.return_value = course
         return course
 
-    def _live_package(self, **overrides) -> TrainingCoursePackageEntity:
-        """The row `get_by_state(..., LIVE)` returns for this course.
-
-        Used both as "the package an upload is about to replace" and as "the
-        package a read is asking about" -- the repository call is the same.
+    def _package(self, **overrides) -> TrainingCoursePackageEntity:
+        """A package row, on its own -- pair it with `_slots` to say which
+        state `get_by_state` should answer it for.
         """
         fields = {
             "course_id": _COURSE_ID,
@@ -164,9 +164,44 @@ class _PackageServiceTestCase(unittest.IsolatedAsyncioTestCase):
             "uploaded_at": _NOW,
         }
         fields.update(overrides)
-        package = TrainingCoursePackageEntity(**fields)
+        return TrainingCoursePackageEntity(**fields)
+
+    def _slots(self, *, live=None, pending=None) -> None:
+        """Makes `get_by_state` answer per state, the way the two real
+        partial unique indexes keep them: a live row and a pending row,
+        asked for and answered independently.
+        """
+
+        async def _get_by_state(session, course_id, state):
+            return live if state == TrainingPackageState.LIVE else pending
+
+        self.package_repository.get_by_state.side_effect = _get_by_state
+
+    def _package_in_either_slot(self, **overrides) -> TrainingCoursePackageEntity:
+        """A package row, answered for whichever state `get_by_state` is
+        asked about -- `return_value` rather than `_slots`, so it does not
+        care which state it was called with.
+
+        Used by upload tests and most `read_completion_config` tests that
+        just need some row to exist without caring which slot holds it; a
+        test that cares which slot was read uses `_slots` instead.
+        """
+        package = self._package(**overrides)
         self.package_repository.get_by_state.return_value = package
         return package
+
+    def _verified_pending(self, **overrides) -> TrainingCoursePackageEntity:
+        """A pending package that already carries its verification stamp --
+        the only kind `publish_package` will accept.
+        """
+        fields = {
+            "package_id": 2,
+            "state": TrainingPackageState.PENDING,
+            "storage_prefix": _PENDING_PREFIX,
+            "verified_completable_at": _VERIFIED_AT,
+        }
+        fields.update(overrides)
+        return self._package(**fields)
 
     def _put_keys(self) -> list:
         return [
@@ -181,7 +216,63 @@ class _PackageServiceTestCase(unittest.IsolatedAsyncioTestCase):
         ]
 
 
-class TestUploadPackage(_PackageServiceTestCase):
+class TestUploadStagesRatherThanPublishes(_PackageServiceCase):
+    """An upload writes PENDING; LIVE and its learners are untouched until
+    somebody presses Publish.
+    """
+
+    async def test_the_new_row_is_pending(self):
+        await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE)
+
+        added = self.package_repository.add.await_args.args[1]
+        self.assertIs(added.state, TrainingPackageState.PENDING)
+
+    async def test_the_live_package_is_left_alone(self):
+        live = self._package(package_id=1, state=TrainingPackageState.LIVE)
+        self._slots(live=live, pending=None)
+
+        await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE)
+
+        self.package_repository.delete.assert_not_awaited()
+        self.storage.delete_prefix.assert_not_called()
+
+    async def test_no_learner_is_reset(self):
+        self._slots(live=self._package(package_id=1), pending=None)
+
+        await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE)
+
+        self.progress_repository.clear_resume_state.assert_not_awaited()
+
+    async def test_a_second_upload_replaces_the_staged_one(self):
+        pending = self._package(
+            package_id=2,
+            state=TrainingPackageState.PENDING,
+            storage_prefix="training/9/old-pending/",
+        )
+        self._slots(live=None, pending=pending)
+
+        await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE)
+
+        self.package_repository.delete.assert_awaited_once_with(self.session, pending)
+        self.storage.delete_prefix.assert_called_once_with("training/9/old-pending/")
+
+    async def test_the_replaced_pending_prefix_goes_only_after_the_commit(self):
+        pending = self._package(
+            package_id=2,
+            state=TrainingPackageState.PENDING,
+            storage_prefix="training/9/old-pending/",
+        )
+        self._slots(live=None, pending=pending)
+        order = []
+        self.session.commit.side_effect = lambda: order.append("commit")
+        self.storage.delete_prefix.side_effect = lambda prefix: order.append("delete")
+
+        await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE)
+
+        self.assertEqual(order, ["commit", "delete"])
+
+
+class TestUploadPackage(_PackageServiceCase):
     async def test_a_first_upload_stores_every_file_under_a_fresh_prefix(self):
         self._course()
         members = _members()
@@ -221,24 +312,29 @@ class TestUploadPackage(_PackageServiceTestCase):
             ),
         )
 
-    async def test_an_overwrite_mints_a_prefix_the_live_one_does_not_share(self):
+    async def test_a_second_upload_mints_a_prefix_the_staged_one_does_not_share(self):
         """Nothing is ever written in place."""
         self._course()
-        self._live_package(storage_prefix=_LIVE_PREFIX)
+        self._slots(
+            pending=self._package(
+                package_id=2,
+                state=TrainingPackageState.PENDING,
+                storage_prefix=_PENDING_PREFIX,
+            )
+        )
 
         result = await self.service.upload_package(
             self.session, _COURSE_ID, _package(), now=_NOW
         )
 
-        self.assertNotEqual(result.storage_prefix, _LIVE_PREFIX)
+        self.assertNotEqual(result.storage_prefix, _PENDING_PREFIX)
         for key in self._put_keys():
-            self.assertFalse(key.startswith(_LIVE_PREFIX))
+            self.assertFalse(key.startswith(_PENDING_PREFIX))
 
     async def test_every_file_is_stored_before_the_package_row_moves(self):
-        """A half-finished upload has to leave the live package row intact."""
+        """A half-finished upload has to leave any existing package row intact."""
         events = []
         self._course()
-        self._live_package(verified_completable_at=_VERIFIED_AT)
         self.storage.put.side_effect = lambda key, *a, **k: events.append(("put", key))
         self.package_repository.add.side_effect = lambda *a, **k: events.append((
             "package.add",
@@ -255,9 +351,16 @@ class TestUploadPackage(_PackageServiceTestCase):
         last_put = max(index for index, name in enumerate(names) if name == "put")
         self.assertGreater(names.index("package.add"), last_put)
 
-    async def test_an_upload_that_dies_partway_leaves_the_live_package_alone(self):
+    async def test_an_upload_that_dies_partway_leaves_every_package_row_alone(self):
         self._course()
-        self._live_package()
+        self._slots(
+            live=self._package(package_id=1),
+            pending=self._package(
+                package_id=2,
+                state=TrainingPackageState.PENDING,
+                storage_prefix=_PENDING_PREFIX,
+            ),
+        )
         stored = []
 
         def _die_on_the_second_file(object_key, *args, **kwargs):
@@ -275,65 +378,30 @@ class TestUploadPackage(_PackageServiceTestCase):
 
         self.package_repository.delete.assert_not_awaited()
         self.package_repository.add.assert_not_awaited()
-        self.progress_repository.clear_resume_state.assert_not_awaited()
         self.storage.delete_prefix.assert_not_called()
 
-    async def test_an_overwrite_clears_resume_state_and_reports_the_count(self):
+    async def test_an_upload_never_touches_learner_progress(self):
+        """Clearing resume state belongs to Publish, not Upload."""
         self._course()
-        self._live_package()
-        self.progress_repository.clear_resume_state.return_value = 3
-
-        result = await self.service.upload_package(
-            self.session, _COURSE_ID, _package(), now=_NOW
+        self._slots(
+            pending=self._package(
+                package_id=2,
+                state=TrainingPackageState.PENDING,
+                storage_prefix=_PENDING_PREFIX,
+            )
         )
-
-        self.assertEqual(result.learners_reset, 3)
-
-    async def test_a_first_upload_resets_nobody(self):
-        self._course()
-
-        result = await self.service.upload_package(
-            self.session, _COURSE_ID, _package(), now=_NOW
-        )
-
-        self.assertEqual(result.learners_reset, 0)
-
-    async def test_the_clearing_is_asked_for_by_course(self):
-        """Whether DONE rows are spared is the repository's contract, tested there."""
-        self._course()
-        self._live_package()
-        self.progress_repository.clear_resume_state.return_value = 3
 
         await self.service.upload_package(
             self.session, _COURSE_ID, _package(), now=_NOW
         )
 
-        self.progress_repository.clear_resume_state.assert_awaited_once()
-        recorded = _named_arguments(
-            self.progress_repository.clear_resume_state, ("session", "course_id")
-        )
-        self.assertEqual(recorded["course_id"], _COURSE_ID)
-
-    async def test_the_service_never_clears_a_progress_row_itself(self):
-        """One statement over the course, not a row-by-row walk it can half-finish."""
-        self._course()
-        self._live_package()
-
-        await self.service.upload_package(
-            self.session, _COURSE_ID, _package(), now=_NOW
-        )
-
-        self.assertEqual(
-            [recorded[0] for recorded in self.progress_repository.mock_calls],
-            ["clear_resume_state"],
-        )
+        self.assertEqual(self.progress_repository.mock_calls, [])
         self.session.add.assert_not_called()
         self.session.execute.assert_not_called()
 
     async def test_a_scorm_2004_package_is_refused_and_nothing_is_written(self):
         """Refused at upload, not left to fail under a learner months later."""
         self._course()
-        self._live_package()
 
         with self.assertRaises(PackageRejected):
             await self.service.upload_package(
@@ -351,7 +419,6 @@ class TestUploadPackage(_PackageServiceTestCase):
 
     async def test_an_archive_that_climbs_out_of_its_prefix_is_refused(self):
         self._course()
-        self._live_package()
         archive = _package(extra_members={"../escape.txt": b"nope"})
 
         with self.assertRaises(PackageRejected):
@@ -427,17 +494,21 @@ class TestUploadPackage(_PackageServiceTestCase):
 
         self.assertEqual(result.missing_declared_files, ["assets/gone.png"])
 
-    async def test_an_overwrite_commits_once_after_every_write(self):
-        """The recorded writes commit last; the old prefix's deletion is checked
-        separately, since it happens after this commit rather than as part of it.
+    async def test_an_upload_commits_once_after_every_write(self):
+        """The recorded writes commit last; the staged prefix it replaces is
+        deleted separately, since that happens after this commit rather than
+        as part of it.
         """
         events = []
         self._course()
-        self._live_package(storage_prefix=_LIVE_PREFIX)
-        self.storage.put.side_effect = lambda key, *a, **k: events.append(("put", key))
-        self.progress_repository.clear_resume_state.side_effect = (
-            lambda *a, **k: events.append(("progress.clear", None)) or 0
+        self._slots(
+            pending=self._package(
+                package_id=2,
+                state=TrainingPackageState.PENDING,
+                storage_prefix=_PENDING_PREFIX,
+            )
         )
+        self.storage.put.side_effect = lambda key, *a, **k: events.append(("put", key))
         self.session.commit.side_effect = lambda: events.append(("commit", None))
 
         await self.service.upload_package(
@@ -460,7 +531,6 @@ class TestUploadPackage(_PackageServiceTestCase):
 
     async def test_a_rejected_scorm_2004_package_awaits_no_commit(self):
         self._course()
-        self._live_package()
 
         with self.assertRaises(PackageRejected):
             await self.service.upload_package(
@@ -474,7 +544,6 @@ class TestUploadPackage(_PackageServiceTestCase):
 
     async def test_an_archive_that_climbs_out_of_its_prefix_awaits_no_commit(self):
         self._course()
-        self._live_package()
         archive = _package(extra_members={"../escape.txt": b"nope"})
 
         with self.assertRaises(PackageRejected):
@@ -486,7 +555,6 @@ class TestUploadPackage(_PackageServiceTestCase):
 
     async def test_a_mid_upload_storage_failure_awaits_no_commit(self):
         self._course()
-        self._live_package()
         stored = []
 
         def _die_on_the_second_file(object_key, *args, **kwargs):
@@ -504,7 +572,7 @@ class TestUploadPackage(_PackageServiceTestCase):
 
         self.session.commit.assert_not_awaited()
 
-    async def test_upload_stores_the_package_as_a_row(self):
+    async def test_upload_stores_the_package_as_a_pending_row(self):
         self._course()
 
         result = await self.service.upload_package(
@@ -512,11 +580,11 @@ class TestUploadPackage(_PackageServiceTestCase):
         )
 
         self.package_repository.get_by_state.assert_awaited_once_with(
-            self.session, _COURSE_ID, TrainingPackageState.LIVE
+            self.session, _COURSE_ID, TrainingPackageState.PENDING
         )
         stored = self.package_repository.add.await_args.args[1]
         self.assertEqual(stored.course_id, _COURSE_ID)
-        self.assertEqual(stored.state, TrainingPackageState.LIVE)
+        self.assertEqual(stored.state, TrainingPackageState.PENDING)
         self.assertEqual(stored.storage_prefix, result.storage_prefix)
         self.assertEqual(stored.entry_path, _ENTRY_PATH)
         self.assertEqual(stored.scorm_version, ScormVersion.SCORM_12)
@@ -526,8 +594,8 @@ class TestUploadPackage(_PackageServiceTestCase):
         self.assertIsNone(stored.verified_completable_at)
         self.assertIsNone(stored.verified_by_user_id)
 
-    async def test_upload_drops_the_row_it_replaces(self):
-        # Two live rows for one course is refused by the database, so the
+    async def test_upload_drops_the_pending_row_it_replaces(self):
+        # Two pending rows for one course is refused by the database, so the
         # service has to free the slot before it fills it again.
         self._course()
         previous = MagicMock()
@@ -553,21 +621,29 @@ class TestUploadPackage(_PackageServiceTestCase):
         self.package_repository.add.assert_not_awaited()
 
 
-class TestReplacedPrefixDeletion(_PackageServiceTestCase):
-    """The prefix an overwrite replaces is deleted once, after the commit."""
+class TestReplacedPrefixDeletion(_PackageServiceCase):
+    """The staged prefix a re-upload replaces is deleted once, after the
+    commit -- the live prefix is never a party to this at all.
+    """
 
-    async def test_an_overwrite_deletes_the_previous_prefix(self):
+    async def test_a_second_upload_deletes_the_previously_staged_prefix(self):
         self._course()
-        self._live_package(storage_prefix=_LIVE_PREFIX)
+        self._slots(
+            pending=self._package(
+                package_id=2,
+                state=TrainingPackageState.PENDING,
+                storage_prefix=_PENDING_PREFIX,
+            )
+        )
 
         await self.service.upload_package(
             self.session, _COURSE_ID, _package(), now=_NOW
         )
 
-        self.assertEqual(self._deleted_prefixes(), [_LIVE_PREFIX])
+        self.assertEqual(self._deleted_prefixes(), [_PENDING_PREFIX])
 
     async def test_a_first_upload_deletes_nothing(self):
-        """There is no previous prefix to clean up."""
+        """There is no previously staged prefix to clean up."""
         self._course()
 
         await self.service.upload_package(
@@ -576,11 +652,17 @@ class TestReplacedPrefixDeletion(_PackageServiceTestCase):
 
         self.storage.delete_prefix.assert_not_called()
 
-    async def test_the_previous_prefix_is_deleted_only_after_the_commit(self):
+    async def test_the_previously_staged_prefix_is_deleted_only_after_the_commit(self):
         """Deleting ahead of the commit risks a rollback finding the files gone."""
         events = []
         self._course()
-        self._live_package(storage_prefix=_LIVE_PREFIX)
+        self._slots(
+            pending=self._package(
+                package_id=2,
+                state=TrainingPackageState.PENDING,
+                storage_prefix=_PENDING_PREFIX,
+            )
+        )
         self.session.commit.side_effect = lambda: events.append("commit")
         self.storage.delete_prefix.side_effect = (
             lambda prefix, *a, **k: events.append("delete") or 0
@@ -592,12 +674,18 @@ class TestReplacedPrefixDeletion(_PackageServiceTestCase):
 
         self.assertEqual(events, ["commit", "delete"])
 
-    async def test_a_failed_commit_never_deletes_the_previous_prefix(self):
+    async def test_a_failed_commit_never_deletes_the_previously_staged_prefix(self):
         """The delete is irreversible and the commit is not, so the delete must
         never run unless the commit that it depends on actually succeeded.
         """
         self._course()
-        self._live_package(storage_prefix=_LIVE_PREFIX)
+        self._slots(
+            pending=self._package(
+                package_id=2,
+                state=TrainingPackageState.PENDING,
+                storage_prefix=_PENDING_PREFIX,
+            )
+        )
         self.session.commit.side_effect = RuntimeError("connection lost")
 
         with self.assertRaises(RuntimeError):
@@ -607,12 +695,18 @@ class TestReplacedPrefixDeletion(_PackageServiceTestCase):
 
         self.storage.delete_prefix.assert_not_called()
 
-    async def test_a_failed_delete_of_the_previous_prefix_does_not_fail_the_upload(
+    async def test_a_failed_delete_of_the_previously_staged_prefix_does_not_fail_the_upload(
         self,
     ):
         """The upload already succeeded; a leftover prefix is the accepted cost."""
         self._course()
-        self._live_package(storage_prefix=_LIVE_PREFIX)
+        self._slots(
+            pending=self._package(
+                package_id=2,
+                state=TrainingPackageState.PENDING,
+                storage_prefix=_PENDING_PREFIX,
+            )
+        )
         self.storage.delete_prefix.side_effect = RuntimeError("bucket said no")
 
         result = await self.service.upload_package(
@@ -623,7 +717,7 @@ class TestReplacedPrefixDeletion(_PackageServiceTestCase):
         self.logger.exception.assert_called_once()
 
 
-class TestReadCompletionConfig(_PackageServiceTestCase):
+class TestReadCompletionConfig(_PackageServiceCase):
     """What the stored package says about finishing, re-read on demand.
 
     The three answers here are shown once in the upload dialog and then never
@@ -636,21 +730,42 @@ class TestReadCompletionConfig(_PackageServiceTestCase):
 
     async def test_it_reads_the_entry_page_under_the_packages_own_prefix(self):
         self._course()
-        self._live_package(storage_prefix=_LIVE_PREFIX, entry_path=_ENTRY_PATH)
+        self._package_in_either_slot(
+            storage_prefix=_LIVE_PREFIX, entry_path=_ENTRY_PATH
+        )
         self._stored()
 
         await self.service.read_completion_config(self.session, _COURSE_ID)
 
         self.package_repository.get_by_state.assert_awaited_once_with(
-            self.session, _COURSE_ID, TrainingPackageState.LIVE
+            self.session, _COURSE_ID, TrainingPackageState.PENDING
         )
         self.storage.get.assert_called_once()
         key = self.storage.get.call_args.args[0]
         self.assertEqual(key, f"{_LIVE_PREFIX}{_ENTRY_PATH}")
 
+    async def test_the_completion_config_describes_the_staged_package(self):
+        # The trial page reads this before running, and what it is about to
+        # run is the staged package.
+        self._slots(
+            live=self._package(package_id=1, storage_prefix="training/9/live/"),
+            pending=self._package(
+                package_id=2,
+                state=TrainingPackageState.PENDING,
+                storage_prefix="training/9/staged/",
+            ),
+        )
+        self._stored()
+
+        await self.service.read_completion_config(self.session, _COURSE_ID)
+
+        self.assertTrue(
+            self.storage.get.call_args.args[0].startswith("training/9/staged/")
+        )
+
     async def test_it_reports_what_the_package_requires_before_completion(self):
         self._course()
-        self._live_package()
+        self._package_in_either_slot()
         self._stored()
 
         result = await self.service.read_completion_config(self.session, _COURSE_ID)
@@ -662,7 +777,7 @@ class TestReadCompletionConfig(_PackageServiceTestCase):
     async def test_a_course_that_only_completes_via_storyline_says_so(self):
         """Finishing the surrounding lessons will not complete such a course."""
         self._course()
-        self._live_package()
+        self._package_in_either_slot()
         self._stored({**_DRIVER_CONFIG, "storylineId": "5xKq"})
 
         result = await self.service.read_completion_config(self.session, _COURSE_ID)
@@ -672,7 +787,7 @@ class TestReadCompletionConfig(_PackageServiceTestCase):
     async def test_a_package_we_cannot_read_says_so_rather_than_failing(self):
         """Silence here reads as "nothing wrong", which is the whole mistake."""
         self._course()
-        self._live_package()
+        self._package_in_either_slot()
         self._stored(None)
 
         result = await self.service.read_completion_config(self.session, _COURSE_ID)
@@ -689,7 +804,7 @@ class TestReadCompletionConfig(_PackageServiceTestCase):
         before anybody had finished it.
         """
         self._course()
-        self._live_package(verified_completable_at=_VERIFIED_AT)
+        self._package_in_either_slot(verified_completable_at=_VERIFIED_AT)
         self._stored()
 
         result = await self.service.read_completion_config(self.session, _COURSE_ID)
@@ -698,14 +813,14 @@ class TestReadCompletionConfig(_PackageServiceTestCase):
 
     async def test_a_course_awaiting_its_trial_run_is_not_verified(self):
         self._course()
-        self._live_package()
+        self._package_in_either_slot()
         self._stored()
 
         result = await self.service.read_completion_config(self.session, _COURSE_ID)
 
         self.assertFalse(result.verified)
 
-    async def test_a_course_with_no_live_package_is_refused(self):
+    async def test_a_course_with_nothing_staged_is_refused(self):
         self._course()
 
         with self.assertRaises(ValueError):
@@ -722,11 +837,126 @@ class TestReadCompletionConfig(_PackageServiceTestCase):
     async def test_an_entry_page_gone_from_storage_is_a_clean_not_found(self):
         """A missing object is a fault to fix, not a package we cannot read."""
         self._course()
-        self._live_package()
+        self._package_in_either_slot()
         self.storage.get.return_value = None
 
         with self.assertRaises(FileNotFoundError):
             await self.service.read_completion_config(self.session, _COURSE_ID)
+
+
+class TestPublish(_PackageServiceCase):
+    async def test_a_course_with_nothing_staged_cannot_publish(self):
+        self._slots(live=self._package(package_id=1), pending=None)
+
+        with self.assertRaises(ConflictError):
+            await self.service.publish_package(self.session, _COURSE_ID)
+
+    async def test_an_unverified_staged_package_cannot_publish(self):
+        pending = self._package(package_id=2, state=TrainingPackageState.PENDING)
+        pending.verified_completable_at = None
+        self._slots(live=None, pending=pending)
+
+        with self.assertRaises(ConflictError):
+            await self.service.publish_package(self.session, _COURSE_ID)
+
+        self.progress_repository.clear_resume_state.assert_not_awaited()
+
+    async def test_publishing_turns_the_staged_row_live(self):
+        pending = self._verified_pending()
+        self._slots(live=None, pending=pending)
+
+        await self.service.publish_package(self.session, _COURSE_ID)
+
+        self.assertIs(pending.state, TrainingPackageState.LIVE)
+
+    async def test_the_outgoing_row_is_deleted_before_the_incoming_one_turns_live(self):
+        # Both cannot hold the live slot at once: the partial unique index
+        # refuses it, and the flush order here is what keeps them apart.
+        live = self._package(package_id=1, state=TrainingPackageState.LIVE)
+        pending = self._verified_pending()
+        self._slots(live=live, pending=pending)
+        order = []
+        self.package_repository.delete.side_effect = (
+            lambda session, package: order.append(("delete", package.package_id))
+        )
+        self.session.flush.side_effect = lambda: order.append(("flush", pending.state))
+
+        await self.service.publish_package(self.session, _COURSE_ID)
+
+        self.assertEqual(order[0], ("delete", 1))
+
+    async def test_everyone_on_the_course_is_reset(self):
+        self._slots(live=self._package(package_id=1), pending=self._verified_pending())
+        self.progress_repository.clear_resume_state.return_value = 48
+
+        result = await self.service.publish_package(self.session, _COURSE_ID)
+
+        self.progress_repository.clear_resume_state.assert_awaited_once_with(
+            self.session, _COURSE_ID
+        )
+        self.assertEqual(result.learners_reset, 48)
+
+    async def test_the_outgoing_prefix_is_deleted_after_the_commit(self):
+        live = self._package(
+            package_id=1,
+            state=TrainingPackageState.LIVE,
+            storage_prefix="training/9/outgoing/",
+        )
+        self._slots(live=live, pending=self._verified_pending())
+        order = []
+        self.session.commit.side_effect = lambda: order.append("commit")
+        self.storage.delete_prefix.side_effect = lambda prefix: order.append(prefix)
+
+        await self.service.publish_package(self.session, _COURSE_ID)
+
+        self.assertEqual(order, ["commit", "training/9/outgoing/"])
+
+    async def test_a_failed_delete_does_not_fail_the_publish(self):
+        live = self._package(
+            package_id=1,
+            state=TrainingPackageState.LIVE,
+            storage_prefix="training/9/outgoing/",
+        )
+        self._slots(live=live, pending=self._verified_pending())
+        self.storage.delete_prefix.side_effect = RuntimeError("gcs is down")
+
+        result = await self.service.publish_package(self.session, _COURSE_ID)
+
+        self.assertEqual(result.package_id, 2)
+        self.logger.exception.assert_called()
+
+
+class TestDiscard(_PackageServiceCase):
+    async def test_discarding_removes_the_staged_row_and_its_files(self):
+        pending = self._package(
+            package_id=2,
+            state=TrainingPackageState.PENDING,
+            storage_prefix="training/9/staged/",
+        )
+        self._slots(live=self._package(package_id=1), pending=pending)
+
+        await self.service.discard_package(self.session, _COURSE_ID)
+
+        self.package_repository.delete.assert_awaited_once_with(self.session, pending)
+        self.storage.delete_prefix.assert_called_once_with("training/9/staged/")
+
+    async def test_the_live_package_survives_a_discard(self):
+        live = self._package(package_id=1, state=TrainingPackageState.LIVE)
+        self._slots(
+            live=live,
+            pending=self._package(package_id=2, state=TrainingPackageState.PENDING),
+        )
+
+        await self.service.discard_package(self.session, _COURSE_ID)
+
+        deleted = [c.args[1] for c in self.package_repository.delete.await_args_list]
+        self.assertNotIn(live, deleted)
+
+    async def test_nothing_staged_is_a_conflict(self):
+        self._slots(live=self._package(package_id=1), pending=None)
+
+        with self.assertRaises(ConflictError):
+            await self.service.discard_package(self.session, _COURSE_ID)
 
 
 if __name__ == "__main__":
