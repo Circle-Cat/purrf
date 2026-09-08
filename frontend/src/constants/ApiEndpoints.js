@@ -113,12 +113,16 @@ export const API_ENDPOINTS = {
   RECRUITING_NOTIFICATIONS: "/recruiting/notifications",
   RECRUITING_NOTIFICATION: (id) => `/recruiting/notifications/${id}`,
   TRAINING_SESSION: (trainingId) => `/training/${trainingId}/session`,
+  TRAINING_TRIAL_SESSION: (trainingId) =>
+    `/training/${trainingId}/trial-session`,
   TRAINING_PROGRESS: (trainingId) => `/training/${trainingId}/progress`,
   TRAINING_COURSES: "/training/courses",
   TRAINING_COURSE: (courseId) => `/training/courses/${courseId}`,
   TRAINING_COURSE_TRIAL: (courseId) => `/training/courses/${courseId}/trial`,
   TRAINING_COURSE_PACKAGE: (courseId) =>
     `/training/courses/${courseId}/package`,
+  TRAINING_COURSE_PUBLISH: (courseId) =>
+    `/training/courses/${courseId}/package/publish`,
   TRAINING_ASSIGNMENTS: "/training/assignments",
 };
 

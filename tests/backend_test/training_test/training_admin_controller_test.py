@@ -3,6 +3,7 @@
 import inspect
 import json
 import unittest
+from datetime import datetime, timezone
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -11,9 +12,11 @@ from fastapi.testclient import TestClient
 
 from backend.common.api_endpoints import (
     TRAINING_COURSE_PACKAGE_ENDPOINT,
+    TRAINING_COURSE_PUBLISH_ENDPOINT,
     TRAINING_COURSE_TRIAL_ENDPOINT,
     TRAINING_COURSES_ENDPOINT,
     TRAINING_SESSION_ENDPOINT,
+    TRAINING_TRIAL_SESSION_ENDPOINT,
 )
 from backend.common.mentorship_enums import ScormVersion, TrainingStatus
 from backend.common.permissions import Permission
@@ -24,7 +27,9 @@ from backend.dto.training_course_dto import (
     TrainingAssignmentResultDto,
     TrainingCourseCreateDto,
     TrainingCourseDto,
-    TrainingCourseState,
+    TrainingCourseLiveState,
+    StagedPackageDto,
+    TrainingPackagePublishResultDto,
     TrainingPackageUploadResultDto,
     TrainingProgressDto,
     TrainingSessionDto,
@@ -98,7 +103,7 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
                 course_id=7,
                 name="Safety Briefing",
                 is_active=True,
-                state=TrainingCourseState.NO_PACKAGE,
+                live_state=TrainingCourseLiveState.NO_PACKAGE,
             )
         )
         self.assignment_service = MagicMock()
@@ -184,6 +189,9 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
             ("/training/courses/{course_id}/package", "POST"),
             ("/training/assignments", "POST"),
             ("/training/courses/{course_id}/trial", "POST"),
+            ("/training/courses/{course_id}/package/publish", "POST"),
+            ("/training/courses/{course_id}/package", "DELETE"),
+            ("/training/{training_id}/trial-session", "POST"),
         ]:
             self.assertEqual(
                 by_method[(path, method)],
@@ -214,7 +222,9 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(response["status_code"], HTTPStatus.CREATED)
-        self.assertEqual(response["data"].state, TrainingCourseState.NO_PACKAGE)
+        self.assertEqual(
+            response["data"].live_state, TrainingCourseLiveState.NO_PACKAGE
+        )
 
     async def test_a_fresh_assignment_is_201(self):
         response = await self.controller.assign(
@@ -285,6 +295,26 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
             self.session, 7, b"zipbytes"
         )
 
+    async def test_publish_answers_the_new_live_package(self):
+        self.package_service.publish_package = AsyncMock(
+            return_value=TrainingPackagePublishResultDto(
+                course_id=9, package_id=2, package_version="RaOvlxxJ", learners_reset=3
+            )
+        )
+
+        response = await self.controller.publish_package(9)
+
+        self.package_service.publish_package.assert_awaited_once_with(self.session, 9)
+        self.assertEqual(response["data"].package_id, 2)
+
+    async def test_discard_answers_no_content_shaped_success(self):
+        self.package_service.discard_package = AsyncMock(return_value=None)
+
+        response = await self.controller.discard_package(9)
+
+        self.package_service.discard_package.assert_awaited_once_with(self.session, 9)
+        self.assertIsNone(response["data"])
+
     async def test_a_session_is_opened_for_the_caller_not_for_a_named_user(self):
         """The user id comes from the token, never from the request."""
         self.content_service.open_session = AsyncMock(return_value=_session_dto())
@@ -293,6 +323,17 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         await self.controller.open_session(42, current_user)
 
         self.content_service.open_session.assert_awaited_once_with(self.session, 42, 11)
+
+    async def test_a_trial_session_is_opened_for_the_caller_not_for_a_named_user(self):
+        """The user id comes from the token, never from the request."""
+        self.content_service.open_trial_session = AsyncMock(return_value=_session_dto())
+        current_user = MagicMock(user_id=11)
+
+        await self.controller.open_trial_session(42, current_user)
+
+        self.content_service.open_trial_session.assert_awaited_once_with(
+            self.session, 42, 11
+        )
 
     async def test_a_commit_is_saved_for_the_caller_not_for_a_named_user(self):
         """The user id comes from the token, never from the request."""
@@ -418,17 +459,27 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
 
 
 def _course_dto():
-    """One catalogue row, with a field of every kind the aliaser touches."""
+    """One catalogue row, with a field of every kind the aliaser touches.
+
+    ``staged`` is populated too so the snake-case sweep below also exercises
+    the nested block's own field names, not only the top-level ones.
+    """
     return TrainingCourseDto(
         course_id=7,
         name="Safety Briefing",
         is_active=True,
-        state=TrainingCourseState.VERIFIED,
+        live_state=TrainingCourseLiveState.LIVE,
         scorm_version=ScormVersion.SCORM_12,
         package_version="1.4",
         reporting_mode="passed-incomplete",
         verified_by_user_id=11,
         assigned_count=3,
+        staged=StagedPackageDto(
+            package_id=9,
+            package_version="1.5",
+            uploaded_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+            uploaded_by_user_id=12,
+        ),
     )
 
 
@@ -498,9 +549,16 @@ class TestTrainingResponsesOnTheWire(unittest.TestCase):
 
         self.package_service = MagicMock()
         self.package_service.upload_package = AsyncMock(return_value=_upload_dto())
+        self.package_service.publish_package = AsyncMock(
+            return_value=TrainingPackagePublishResultDto(
+                course_id=7, package_id=9, package_version="1.5", learners_reset=3
+            )
+        )
+        self.package_service.discard_package = AsyncMock(return_value=None)
 
         self.content_service = MagicMock()
         self.content_service.open_session = AsyncMock(return_value=_session_dto())
+        self.content_service.open_trial_session = AsyncMock(return_value=_session_dto())
 
         self.progress_service = MagicMock()
         self.progress_service.save = AsyncMock(
@@ -537,6 +595,15 @@ class TestTrainingResponsesOnTheWire(unittest.TestCase):
     def open_session(self):
         return self.client.post(TRAINING_SESSION_ENDPOINT.format(training_id=42))
 
+    def publish_package(self):
+        return self.client.post(TRAINING_COURSE_PUBLISH_ENDPOINT.format(course_id=7))
+
+    def discard_package(self):
+        return self.client.delete(TRAINING_COURSE_PACKAGE_ENDPOINT.format(course_id=7))
+
+    def open_trial_session(self):
+        return self.client.post(TRAINING_TRIAL_SESSION_ENDPOINT.format(training_id=42))
+
     def test_a_trial_run_answers_with_the_training_id_the_page_opens(self):
         """The page reads trainingId off this body and can do nothing without
         it: no trial run means no course can ever be verified, and an
@@ -548,6 +615,26 @@ class TestTrainingResponsesOnTheWire(unittest.TestCase):
             response.json()["data"],
             {"trainingId": 42, "userId": 11, "courseId": 3, "created": True},
         )
+
+    def test_a_publish_answers_with_the_new_live_package(self):
+        response = self.publish_package()
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(
+            response.json()["data"],
+            {
+                "courseId": 7,
+                "packageId": 9,
+                "packageVersion": "1.5",
+                "learnersReset": 3,
+            },
+        )
+
+    def test_a_discard_answers_with_no_data(self):
+        response = self.discard_package()
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertIsNone(response.json()["data"])
 
     def test_a_content_session_answers_with_the_keys_the_player_loads_from(self):
         response = self.open_session()
@@ -594,11 +681,14 @@ class TestTrainingResponsesOnTheWire(unittest.TestCase):
         row = response.json()["data"][0]
         self.assertEqual(row["courseId"], 7)
         self.assertIs(row["isActive"], True)
+        self.assertEqual(row["liveState"], "live")
         self.assertEqual(row["scormVersion"], "1.2")
         self.assertEqual(row["packageVersion"], "1.4")
         self.assertEqual(row["reportingMode"], "passed-incomplete")
         self.assertEqual(row["verifiedByUserId"], 11)
         self.assertEqual(row["assignedCount"], 3)
+        self.assertEqual(row["staged"]["packageId"], 9)
+        self.assertEqual(row["staged"]["uploadedByUserId"], 12)
 
     def test_an_upload_answers_with_camel_case(self):
         response = self.client.post(
@@ -631,6 +721,9 @@ class TestTrainingResponsesOnTheWire(unittest.TestCase):
             ),
             "start trial": self.start_trial,
             "open session": self.open_session,
+            "publish package": self.publish_package,
+            "discard package": self.discard_package,
+            "open trial session": self.open_trial_session,
             "save progress": lambda: self.client.post(
                 "/training/42/progress",
                 json={"cmi": {"cmi.core.lesson_status": "passed"}},

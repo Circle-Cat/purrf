@@ -14,6 +14,12 @@ import { MESSAGE_TYPES, isTrustedMessage } from "@/training/scormBridge";
  *
  * @param {string|number|undefined|null} trainingId Absent until known.
  * @param {{userId?: number, email?: string}} [user]
+ * @param {{open?: (trainingId: string|number) => Promise<{data: object}>}} [options]
+ *   `open` is which session endpoint to mint from. It defaults to the
+ *   learner's, which always resolves the live package; the trial page passes
+ *   `openTrialSession`, which resolves the staged one. Which package a run is
+ *   against is decided by the server at signing time -- this only chooses
+ *   which of the two endpoints to ask.
  * @returns {{
  *   session: object|null,
  *   loadError: string|null,
@@ -46,7 +52,11 @@ const partingBody = (cmi, sessionToken) => {
   return JSON.stringify({ cmi: rest, final: true, sessionToken });
 };
 
-export default function useTrainingRuntime(trainingId, user) {
+export default function useTrainingRuntime(
+  trainingId,
+  user,
+  { open = openSession } = {},
+) {
   const [session, setSession] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [saveFailed, setSaveFailed] = useState(false);
@@ -78,6 +88,16 @@ export default function useTrainingRuntime(trainingId, user) {
   // requests in flight together each decide the assignment's next status from
   // a server-side read the other has not written to yet.
   const saveChainRef = useRef(Promise.resolve());
+  // Which endpoint to mint from, held in a ref rather than depended on: a
+  // caller passing an inline arrow would otherwise re-open the session on
+  // every render. The effect below opens once per assignment and reads
+  // whatever `open` is by then, so a caller that swaps endpoints mid-run
+  // still gets the new one on the next assignment rather than a stale
+  // closure.
+  const openRef = useRef(open);
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
 
   useEffect(() => {
     if (!trainingId) return undefined;
@@ -87,7 +107,8 @@ export default function useTrainingRuntime(trainingId, user) {
     setWrites([]);
     setCourseVerified(false);
     setSessionStale(false);
-    openSession(trainingId)
+    const mint = openRef.current;
+    mint(trainingId)
       .then((response) => {
         if (!cancelled) setSession(response.data);
       })

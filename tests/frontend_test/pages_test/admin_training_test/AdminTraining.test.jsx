@@ -15,7 +15,7 @@ const course = {
   description: null,
   category: "mentorship_mentor_onboarding",
   isActive: true,
-  state: "verified",
+  liveState: "live",
   link: null,
   scormVersion: "1.2",
   packageVersion: "qPpo9zHD",

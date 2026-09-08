@@ -30,10 +30,13 @@ import PackageHealthBox from "@/pages/AdminTraining/components/PackageHealthBox"
  * closes the dialog.
  *
  * @param {Object} props
- * @param {{courseId: number, packageUploadedAt?: string|null, packageVersion?: string|null, assignedCount: number, unfinishedCount: number}} props.course
- *   `packageUploadedAt` is what makes this a replacement; `packageVersion` is
- *   only the name to call the outgoing package by, and plenty of packages do
- *   not tell us one.
+ * @param {{courseId: number, liveState?: string, packageVersion?: string|null, staged?: Object|null}} props.course
+ *   `liveState === "live"` is what makes this a replacement, not whether a
+ *   package was ever uploaded -- a course can already hold a staged,
+ *   unpublished package and still show "Upload", because nothing is being
+ *   served yet. `packageVersion` is only the name to call the outgoing
+ *   package by, and plenty of packages do not tell us one. `staged` is that
+ *   pending package, which this upload deletes.
  * @param {boolean} props.open
  * @param {(open: boolean) => void} [props.onOpenChange]
  * @param {(file: File, onProgress: (percent: number) => void) => Promise<Object>} [props.onConfirm]
@@ -68,12 +71,15 @@ export default function UploadPackageDialog({
     }
   }, [open]);
 
-  // Whether a package is there to be replaced, not whether we could read its
-  // version. An export we cannot read -- Captivate, iSpring, bare Storyline
-  // -- carries no version at all, and replacing that one costs its learners
-  // exactly what replacing any other does.
-  const isReplacing = Boolean(course.packageUploadedAt);
-  const completedCount = course.assignedCount - course.unfinishedCount;
+  // Whether learners are being served something right now -- not whether a
+  // package was ever uploaded. Uploading only stages a package; a course
+  // that already has one staged but unpublished still shows "Upload" here,
+  // because nothing about what learners see changes until a publish.
+  const isReplacing = course.liveState === "live";
+  // An upload takes the course's one PENDING slot, so it deletes whatever is
+  // staged there and that package's files with it. Nothing else in this
+  // dialog says so, and the admin loses a trial run they may have finished.
+  const hasStaged = Boolean(course.staged);
 
   const handleSubmit = async () => {
     if (!file) return;
@@ -114,8 +120,12 @@ export default function UploadPackageDialog({
           </DialogTitle>
           <DialogDescription>
             {isReplacing
-              ? "Replacing the package clears verification and resets in-progress learners."
-              : "Choose a SCORM 1.2 package (.zip) to upload for this course."}
+              ? `Uploading stages this package. Learners keep seeing ${
+                  course.packageVersion ?? "the current package"
+                } until you publish it.`
+              : "This course has no package yet. Nothing is served until you publish."}
+            {hasStaged &&
+              " The package you have staged is replaced and cannot be brought back."}
           </DialogDescription>
         </DialogHeader>
 
@@ -126,28 +136,6 @@ export default function UploadPackageDialog({
           </div>
         ) : (
           <div className="space-y-4">
-            {isReplacing && (
-              <div
-                className="space-y-1.5 rounded-md border p-3 text-sm"
-                style={{ borderColor: "var(--stage-tech)" }}
-              >
-                <p className="font-medium">
-                  {course.packageVersion
-                    ? `This replaces package ${course.packageVersion}`
-                    : "This replaces the current package"}
-                </p>
-                <p className="text-muted-foreground">
-                  Verification is cleared — the course must be run to completion
-                  again before anyone can be assigned.
-                </p>
-                <p className="text-muted-foreground">
-                  {course.unfinishedCount} learners in progress will restart
-                  from the beginning. {completedCount} completed records are
-                  untouched.
-                </p>
-              </div>
-            )}
-
             <div className="space-y-2">
               <Label htmlFor="package-file">SCORM package (.zip)</Label>
               <Input

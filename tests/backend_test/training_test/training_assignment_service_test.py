@@ -30,11 +30,12 @@ def _course(**overrides):
     return TrainingCourseEntity(**{**defaults, **overrides})
 
 
-class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
+class _AssignmentServiceCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.session = AsyncMock()
+        self.course = _course()
         self.courses = MagicMock()
-        self.courses.get_course_by_id = AsyncMock(return_value=_course())
+        self.courses.get_course_by_id = AsyncMock(return_value=self.course)
         self.trainings = MagicMock()
         self.trainings.get_training_by_user_id_and_course_id = AsyncMock(
             return_value=None
@@ -74,7 +75,20 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         for call in self.session.add.call_args_list:
             call.args[0].training_id = 42
 
-    async def test_assigns_a_verified_course(self):
+    def _slots(self, *, live=None, pending=None) -> None:
+        """Makes `get_by_state` answer per state, the way the two real
+        partial unique indexes keep them: a live row and a pending row,
+        asked for and answered independently.
+        """
+
+        async def _get_by_state(session, course_id, state):
+            return live if state == TrainingPackageState.LIVE else pending
+
+        self.package_repository.get_by_state.side_effect = _get_by_state
+
+
+class TestTrainingAssignmentService(_AssignmentServiceCase):
+    async def test_assigns_a_course_with_a_live_package(self):
         result = await self.service.assign(self.session, self.payload)
 
         self.assertTrue(result.created)
@@ -85,18 +99,6 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(added.course_id, 3)
         self.assertEqual([step[0] for step in self.calls], ["add", "flush", "commit"])
 
-    async def test_refuses_to_assign_a_course_whose_live_package_is_unverified(self):
-        """The refusal is the whole point of the gate."""
-        self.package_repository.get_by_state.return_value = MagicMock(
-            verified_completable_at=None
-        )
-
-        with self.assertRaises(ConflictError):
-            await self.service.assign(self.session, self.payload)
-
-        self.session.add.assert_not_called()
-        self.session.commit.assert_not_awaited()
-
     async def test_refuses_to_assign_a_course_with_no_live_package(self):
         self.package_repository.get_by_state.return_value = None
 
@@ -106,7 +108,7 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.session.add.assert_not_called()
         self.session.commit.assert_not_awaited()
 
-    async def test_assigns_when_the_live_package_carries_a_stamp(self):
+    async def test_assign_reads_the_live_slot(self):
         result = await self.service.assign(self.session, self.payload)
 
         self.assertTrue(result.created)
@@ -191,16 +193,15 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(self.session.add.call_args.args[0].category)
 
-    async def test_a_trial_opens_an_assignment_on_an_unverified_course(self):
-        """The gate that refuses assignment is exactly what the trial answers."""
+    async def test_a_trial_reads_the_pending_slot_not_the_live_one(self):
+        """A trial exists to verify a package before it is published, so it
+        must run the staged copy, never the one already serving learners."""
         self.course_repository.get_course_by_id.return_value = TrainingCourseEntity(
             course_id=_COURSE_ID,
             name="Mentor Onboarding",
             is_active=True,
         )
-        self.package_repository.get_by_state.return_value = MagicMock(
-            verified_completable_at=None
-        )
+        self._slots(live=None, pending=MagicMock(package_id=2))
 
         result = await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)
 
@@ -208,7 +209,7 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.course_id, _COURSE_ID)
         self.assertTrue(result.created)
         self.package_repository.get_by_state.assert_awaited_once_with(
-            self.session, _COURSE_ID, TrainingPackageState.LIVE
+            self.session, _COURSE_ID, TrainingPackageState.PENDING
         )
 
     async def test_a_second_trial_reuses_the_first_assignment(self):
@@ -331,6 +332,46 @@ class TestTrainingAssignmentService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.training_id, 77)
         self.assertEqual(by_category.course_id, _COURSE_ID)
         self.session.add.assert_not_called()
+
+
+class TestTheAssignmentGateReadsTheLiveSlot(_AssignmentServiceCase):
+    async def test_a_course_with_a_live_package_can_be_assigned(self):
+        # Only a verified package can be published, so a live row is proof
+        # enough on its own -- the stamp is an archival fact from here on.
+        live = MagicMock(package_id=1, verified_completable_at=None)
+        self._slots(live=live, pending=None)
+
+        result = await self.service.assign(self.session, self.payload)
+
+        self.assertTrue(result.created)
+
+    async def test_a_course_with_only_a_staged_package_cannot_be_assigned(self):
+        self._slots(live=None, pending=MagicMock(package_id=2))
+
+        with self.assertRaises(ConflictError):
+            await self.service.assign(self.session, self.payload)
+
+    async def test_a_deactivated_course_still_cannot_be_assigned(self):
+        self._slots(live=MagicMock(package_id=1), pending=None)
+        self.course.is_active = False
+
+        with self.assertRaises(ConflictError):
+            await self.service.assign(self.session, self.payload)
+
+
+class TestTrialRunsTheStagedPackage(_AssignmentServiceCase):
+    async def test_a_course_with_nothing_staged_has_nothing_to_trial(self):
+        self._slots(live=MagicMock(package_id=1), pending=None)
+
+        with self.assertRaises(ConflictError):
+            await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)
+
+    async def test_a_staged_package_can_be_trialled(self):
+        self._slots(live=None, pending=MagicMock(package_id=2))
+
+        result = await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)
+
+        self.assertTrue(result.created)
 
 
 if __name__ == "__main__":

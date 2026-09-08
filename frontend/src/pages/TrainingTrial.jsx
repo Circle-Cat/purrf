@@ -1,12 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
+import { toast } from "sonner";
 import { useAuth } from "@/context/auth";
-import { readCompletionConfig, startTrial } from "@/api/trainingApi";
+import {
+  listCourses,
+  openTrialSession,
+  publishPackage,
+  readCompletionConfig,
+  startTrial,
+} from "@/api/trainingApi";
 import useTrainingRuntime from "@/hooks/useTrainingRuntime";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatInTz, resolveViewerTimezone } from "@/utils/dateTime";
 import PackageHealthBox from "@/pages/AdminTraining/components/PackageHealthBox";
+import PublishDialog from "@/pages/AdminTraining/components/PublishDialog";
 
 const timeOf = (ms, tz) =>
   formatInTz(new Date(ms).toISOString(), tz, "HH:mm:ss");
@@ -26,18 +35,28 @@ const formatDuration = (ms) => {
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 };
 
+// There is no single-course GET; the admin catalogue itself only ever reads
+// every row and picks the one it wants, so this page does the same.
+const findCourseRow = (courses, courseId) =>
+  courses.find((c) => String(c.courseId) === String(courseId)) ?? null;
+
 /**
  * The page an administrator uses to prove a course package can be finished.
  *
  * It opens a trial assignment on the course under the admin's own identity,
- * then runs the ordinary learner flow against it via useTrainingRuntime --
- * the same iframe, the same message bridge, the same origin check. The
- * diagnostics below it are a second consumer of that same traffic, not
- * a second listener: it reads whatever the hook already received.
+ * then runs the ordinary learner flow against the course's *staged* package
+ * via useTrainingRuntime's `openTrialSession` option -- the same iframe, the
+ * same message bridge, the same origin check the learner path uses against
+ * the live one. The diagnostics below it are a second consumer of that same
+ * traffic, not a second listener: it reads whatever the hook already
+ * received.
  *
- * Reaching a finishing lesson_status stamps the course server-side on the
- * commit that carries it, so this page does not call anything extra to
- * unlock the course -- it only reflects what it observed.
+ * Reaching a finishing lesson_status stamps the staged package server-side
+ * on the commit that carries it, so this page does not call anything extra
+ * to verify it -- it only reflects what it observed. Verifying unlocks
+ * *publishing*, not assignment: publishing is the separate, deliberate act
+ * that makes the course assignable, offered here as a button into the same
+ * `PublishDialog` the admin table uses.
  *
  * @component
  */
@@ -54,6 +73,12 @@ export default function TrainingTrial() {
   // assigned yet" -- the assignment's own status cannot stand in for it,
   // because a verifier re-running a replaced package is already DONE.
   const [verified, setVerified] = useState(false);
+  // The row this trial is for -- read for its `staged`/`packageVersion`/
+  // `liveState`, the same three fields `PublishDialog` and the admin table
+  // already key their copy off of. There is no single-course GET, so this
+  // reads the whole catalogue like the admin page does and picks its row.
+  const [course, setCourse] = useState(null);
+  const [publishing, setPublishing] = useState(false);
 
   // Router keeps this page mounted when only the param changes, so every
   // answer about the previous course has to go before the new one arrives.
@@ -98,6 +123,22 @@ export default function TrainingTrial() {
     };
   }, [courseId]);
 
+  // Read the same way as the completion config above: one fetch on mount,
+  // failure left silent -- a course row that fails to load costs this page
+  // nothing but the two header lines below.
+  useEffect(() => {
+    let cancelled = false;
+    setCourse(null);
+    listCourses()
+      .then(({ data }) => {
+        if (!cancelled) setCourse(findCourseRow(data, courseId));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [courseId]);
+
   const {
     session,
     loadError,
@@ -107,7 +148,7 @@ export default function TrainingTrial() {
     playerSrc,
     writes,
     courseVerified,
-  } = useTrainingRuntime(trainingId, user);
+  } = useTrainingRuntime(trainingId, user, { open: openTrialSession });
 
   const tz = resolveViewerTimezone();
 
@@ -138,6 +179,20 @@ export default function TrainingTrial() {
   const commitWrites = writes.filter((w) => w.type === "commit");
   const lastCommit = commitWrites[commitWrites.length - 1];
 
+  // `PublishDialog`'s own `handleConfirm` is try/finally with no catch, so
+  // a rejection here would otherwise surface as an unhandled promise
+  // rejection rather than a message the admin sees.
+  const handleConfirmPublish = async () => {
+    try {
+      await publishPackage(courseId);
+      setPublishing(false);
+      const { data } = await listCourses();
+      setCourse(findCourseRow(data, courseId));
+    } catch (error) {
+      toast.error(error.message);
+    }
+  };
+
   if (trialError) {
     return <p className="p-6 text-muted-foreground">{trialError}</p>;
   }
@@ -147,8 +202,21 @@ export default function TrainingTrial() {
       <div>
         <h1 className="text-xl font-semibold">Trial run</h1>
         <p className="mt-0.5 font-mono text-sm text-muted-foreground">
-          Course #{courseId}
+          {`Course #${courseId}`}
+          {course?.staged &&
+            ` · running ${
+              course.staged.packageVersion
+                ? `staged package ${course.staged.packageVersion}`
+                : "the staged package"
+            }`}
         </p>
+        {course?.liveState === "live" && (
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {`Learners still see ${
+              course.packageVersion ?? "the current package"
+            }.`}
+          </p>
+        )}
       </div>
 
       {completionConfig && (
@@ -192,10 +260,10 @@ export default function TrainingTrial() {
         {isComplete ? (
           <>
             <p className="font-semibold text-emerald-700 dark:text-emerald-400">
-              ✓ Completed — this course can now be assigned
+              ✓ Completed — this package can now be published
             </p>
             <p className="mt-1 text-muted-foreground">
-              This course is now verified and unlocked for assignment.
+              This package is now verified and can be published.
               {finishingWrite &&
                 ` Verified by ${user?.email ?? "you"} on ${timeOf(
                   finishingWrite.receivedAt,
@@ -209,12 +277,21 @@ export default function TrainingTrial() {
                 )}`}
               .
             </p>
+            {course?.staged && (
+              <Button
+                size="sm"
+                className="mt-3"
+                onClick={() => setPublishing(true)}
+              >
+                Publish package
+              </Button>
+            )}
           </>
         ) : (
           <>
             <p className="font-semibold">○ Not complete yet</p>
             <p className="mt-1 text-muted-foreground">
-              This course unlocks for assignment the moment it reports{" "}
+              This package unlocks for publishing the moment it reports{" "}
               <code>completed</code> or <code>passed</code>.
             </p>
           </>
@@ -279,6 +356,15 @@ export default function TrainingTrial() {
           </div>
         </Card>
       </div>
+
+      {publishing && course && (
+        <PublishDialog
+          course={course}
+          open
+          onOpenChange={(open) => !open && setPublishing(false)}
+          onConfirm={handleConfirmPublish}
+        />
+      )}
     </div>
   );
 }

@@ -75,6 +75,7 @@ py_library(
         ":scorm_manifest",
         ":scorm_package",
         ":training_storage",
+        "//backend/common:exceptions",
         "//backend/common:mentorship_enums",
         "//backend/dto",
         "//backend/entity:entities",

@@ -54,21 +54,24 @@ class TrainingCoursePackageRepository:
         await session.delete(package)
         await session.flush()
 
-    async def live_packages_for(
+    async def packages_for(
         self, session: AsyncSession, course_ids: list[int]
-    ) -> dict[int, TrainingCoursePackageEntity]:
-        """Every one of these courses' live packages, keyed by course_id.
+    ) -> dict[int, dict[TrainingPackageState, TrainingCoursePackageEntity]]:
+        """Every slot these courses have filled, one query for the whole page.
 
-        For a caller that renders package fields -- not just whether one
-        exists -- so one batched query serves the whole page instead of a
-        lookup per row.
+        Keyed course_id -> state -> package. A course with neither slot
+        filled is absent rather than mapped to an empty dict, so a caller
+        reading it with ``.get(course_id, {})`` gets one shape to handle
+        instead of two.
         """
         if not course_ids:
             return {}
         result = await session.execute(
             select(TrainingCoursePackageEntity).where(
-                TrainingCoursePackageEntity.course_id.in_(course_ids),
-                TrainingCoursePackageEntity.state == TrainingPackageState.LIVE,
+                TrainingCoursePackageEntity.course_id.in_(course_ids)
             )
         )
-        return {package.course_id: package for package in result.scalars().all()}
+        slots: dict[int, dict[TrainingPackageState, TrainingCoursePackageEntity]] = {}
+        for package in result.scalars().all():
+            slots.setdefault(package.course_id, {})[package.state] = package
+        return slots
