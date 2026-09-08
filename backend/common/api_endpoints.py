@@ -77,6 +77,27 @@ ADMIN_AUDIT_PERMISSION_CHANGES_ENDPOINT = "/admin/audit/permission-changes"
 ADMIN_USER_GRANT_PERMISSIONS_ENDPOINT = "/admin/users/{user_id}/permissions/grant"
 ADMIN_USER_REVOKE_PERMISSIONS_ENDPOINT = "/admin/users/{user_id}/permissions/revoke"
 ADMIN_USER_SUPER_ADMIN_ENDPOINT = "/admin/users/{user_id}/super-admin"
+
+# The account console. Separate from the permission routes above on purpose:
+# the two pages coexist, and USER_ADMIN gates these without touching those.
+# The three writes are single-verb POSTs rather than noun POST/DELETE pairs --
+# they are one-way state transitions with no resource to create or destroy.
+ADMIN_ACCOUNTS_ENDPOINT = "/admin/accounts"
+ADMIN_ACCOUNT_SIGN_IN_METHODS_ENDPOINT = "/admin/accounts/{user_id}/sign-in-methods"
+ADMIN_ACCOUNT_DEACTIVATE_ENDPOINT = "/admin/accounts/{user_id}/deactivate"
+ADMIN_ACCOUNT_REACTIVATE_ENDPOINT = "/admin/accounts/{user_id}/reactivate"
+ADMIN_ACCOUNT_UNBLOCK_ENDPOINT = "/admin/accounts/{user_id}/unblock"
+ADMIN_ACCOUNT_BLOCK_ENDPOINT = "/admin/accounts/{user_id}/block"
+
+# Blocking as a request someone else decides. Not under /admin: the raiser is
+# standing on a domain page and holds no console permission at all.
+BLOCK_PREFLIGHT_ENDPOINT = "/block-preflight/{user_id}"
+BLOCK_REQUESTS_ENDPOINT = "/block-requests"
+BLOCK_REQUEST_REASSIGN_ENDPOINT = "/block-requests/{request_id}/reassign"
+BLOCK_REQUEST_DECIDE_ENDPOINT = "/block-requests/{request_id}/decide"
+# The reviewer picker for a raise. Named for its use, and outside /admin like
+# the rest of this group, because a raiser holds no console permission.
+BLOCK_REQUEST_REVIEWERS_ENDPOINT = "/block-request-reviewers"
 RECRUITING_JOBS_ENDPOINT = "/recruiting/jobs"
 RECRUITING_JOB_ENDPOINT = "/recruiting/jobs/{job_id}"
 RECRUITING_JOB_SUBMIT_ENDPOINT = "/recruiting/jobs/{job_id}/submit"
@@ -117,13 +138,6 @@ RECRUITING_APPLICATION_ROUND_ENDPOINT = (
 )
 RECRUITING_APPLICATION_INTERVIEW_ENDPOINT = (
     "/recruiting/applications/{application_id}/interview"
-)
-RECRUITING_BLACKLIST_ENDPOINT = "/recruiting/blacklist"
-RECRUITING_BLACKLIST_UNBLOCK_ENDPOINT = "/recruiting/blacklist/{user_id}"
-# Pre-flight read for the blacklist confirm dialog: the interviews the block
-# is about to cancel. Same permission as the block itself.
-RECRUITING_BLACKLIST_UPCOMING_INTERVIEWS_ENDPOINT = (
-    "/recruiting/blacklist/{user_id}/upcoming-interviews"
 )
 RECRUITING_APPLICATION_RESUME_ENDPOINT = (
     "/recruiting/applications/{application_id}/resume"

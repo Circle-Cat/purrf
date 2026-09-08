@@ -300,9 +300,7 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
         self.assertIn("Grace Hopper approved your submission", approved_body)
         self.assertEqual(rejected_subject, "Posting rejected: Backend Engineer")
 
-    async def test_blacklisted_carries_the_reason_and_points_at_the_blacklist_page(
-        self,
-    ):
+    async def test_blacklisted_carries_the_reason_and_names_no_page(self):
         actor, candidate = _make_user("Grace", "Hopper"), _make_user("Ada", "Lovelace")
         await self.insert_entities([actor, candidate])
         job = await self._make_job()
@@ -321,7 +319,9 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
             subject, "Application blacklisted: Ada Lovelace (Backend Engineer)"
         )
         self.assertIn("fabricated credentials", body)
-        self.assertIn("Blacklist", body)
+        # The Blacklist page this used to point at is being retired, and its
+        # replacement needs a permission these recipients do not hold.
+        self.assertNotIn("Blacklist page", body)
 
     async def test_rendered_emails_carry_the_automated_footer(self):
         """Each renderer appends the footer itself -- nothing downstream of

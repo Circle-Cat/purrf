@@ -27,7 +27,6 @@ class Permission(StrEnum):
     RECRUITING_INTERVIEW_EVALUATE = "recruiting.interview.evaluate"
     RECRUITING_APPLICATION_ADVANCE = "recruiting.application.advance"
     RECRUITING_APPLICATION_READ_ALL = "recruiting.application.read.all"
-    RECRUITING_BLACKLIST_WRITE = "recruiting.blacklist.write"
     RECRUITING_AUDIT_READ = "recruiting.audit.read"
     # Entering the company holiday calendar and adjusting balances by hand.
     # Reading the calendar needs no permission -- it is reference information
@@ -38,6 +37,13 @@ class Permission(StrEnum):
     # is the grant.
     TRAINING_ADMIN_READ = "training.admin.read"
     TRAINING_ADMIN_WRITE = "training.admin.write"
+    # The account console: who someone is, what state their account is in,
+    # how they sign in, plus deactivate / reactivate / unblock / block and
+    # deciding block requests. Deliberately separate from PERMISSION_MANAGE,
+    # which is effectively root: every action behind USER_ADMIN is reversible
+    # and its holder count grows with the user base, while PERMISSION_MANAGE
+    # must stay at one or two people forever.
+    USER_ADMIN = "user.admin"
     PERMISSION_MANAGE = "permission.manage"
     SUPER_ADMIN_REVOKE = "super_admin.revoke"
 

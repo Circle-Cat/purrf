@@ -9,7 +9,6 @@ from backend.dto.board_dto import (
     ApplicationActivityDto,
     ApplicationAggregateDto,
     ApplicationDetailDto,
-    BlacklistDto,
     BoardCardDto,
     BoardJobDto,
     CommentCreateDto,
@@ -21,7 +20,6 @@ from backend.dto.board_dto import (
     RoundChangeDto,
     StageChangeDto,
     SubStatusChangeDto,
-    UpcomingInterviewDto,
 )
 from backend.communication.email_templates import (
     render_all_templates,
@@ -160,10 +158,7 @@ class BoardService:
     Every read here is row-level owner-gated against a job's
     ``pipeline_config`` owner ids (see ``pipeline_owners.normalized_owner_ids``)
     rather than an enum permission — visibility is "did you configure
-    yourself as an owner of this posting", not a role. ``blacklist`` is the
-    one exception: it's an org-level sanction gated only by the
-    ``RECRUITING_BLACKLIST_WRITE`` permission at the route, not by job
-    ownership.
+    yourself as an owner of this posting", not a role.
     """
 
     def __init__(
@@ -1029,8 +1024,8 @@ class BoardService:
                 also passes — used by the read path (``get_application_detail``)
                 now that owners and assignees share one detail page.
                 Mutation paths (``change_stage``,
-                ``set_sub_status``, ``reassign``, ``blacklist``) leave this
-                False and stay owner-only.
+                ``set_sub_status``, ``reassign``) leave this False and stay
+                owner-only.
             allow_self (bool): When True, a caller who is the application's
                 own submitter also passes, regardless of job ownership or
                 assignment — used by ``get_resume`` so a candidate can read
@@ -2117,207 +2112,6 @@ class BoardService:
         return self.recruiting_mapper.to_application_dto(
             application, current_sub, editable=False
         )
-
-    async def blacklist(
-        self,
-        session: AsyncSession,
-        current_user: UserContextDto,
-        dto: BlacklistDto,
-    ) -> ApplicationDto:
-        """Block a user org-wide and close out the triggering application
-        and every other application of the user (including already-HIRED
-        ones; already-rejected ones keep their stage but get the tag).
-        The block also locks the user out of every Purrf page, not just
-        applications, until an admin unblocks them.
-
-        Deliberately NOT owner-gated: unlike every other write in this
-        service, this does not check whether ``current_user`` owns the
-        triggering application's job. It's an org-level sanction — whoever
-        holds ``Permission.RECRUITING_BLACKLIST_WRITE`` (checked at the
-        route) may blacklist any user off any application, regardless of
-        which posting surfaced the abuse (2026-06-26 decision).
-
-        Row-locks the application for the duration of the transaction, same
-        as ``change_stage``/``set_sub_status``, and freezes its current
-        submission version since the application is being closed out. Logs
-        a ``"blacklisted"`` activity entry (not ``"stage_changed"`` — this
-        doesn't go through ``change_stage`` and carries its own reason).
-
-        Also cancels every still-upcoming interview meeting on the
-        applications it sweeps — unconditionally, unlike ``change_stage``'s
-        opt-in flag. See the call to ``cancel_for_round`` below, and
-        ``list_upcoming_interviews_for_user`` for the pre-flight the confirm
-        dialog shows so this is never a surprise.
-
-        Args:
-            session (AsyncSession): Active database async session.
-            current_user (UserContextDto): The authenticated caller,
-                recorded as ``blocked_by``.
-            dto (BlacklistDto): The target user/application and the
-                (required, non-blank) reason.
-
-        Returns:
-            ApplicationDto: The now-REJECTED, blacklist-tagged application.
-
-        Raises:
-            ValueError: If the target user is missing, the application is
-                missing, or the application does not belong to
-                ``dto.user_id``.
-        """
-        user = await self.users_repository.get_user_by_user_id(session, dto.user_id)
-        if user is None:
-            raise ValueError(f"user {dto.user_id} not found")
-        user.is_blocked = True
-        user.blocked_by = current_user.user_id
-        user.blocked_at = datetime.now(timezone.utc)
-        user.blocked_reason = dto.reason
-
-        application = await self.application_repository.get_by_id(
-            session, dto.application_id, for_update=True
-        )
-        if application is None or application.user_id != dto.user_id:
-            raise ValueError(f"application {dto.application_id} not found")
-
-        from_stage = application.stage
-        application.stage = ApplicationStage.REJECTED
-        application.stage_entered_at = datetime.now(timezone.utc)
-        application.tags = {**(application.tags or {}), "blacklisted": True}
-        application.sub_status = None
-        application.current_round = 1
-
-        current_sub = await self._freeze_current_submission(session, dto.application_id)
-        application = await self.application_repository.update(session, application)
-        await record_event(
-            session,
-            subject_type="application",
-            subject_id=dto.application_id,
-            actor_id=current_user.user_id,
-            event_type=RecruitingEvent.BLACKLISTED,
-            details={"fromStage": from_stage.value, "reason": dto.reason},
-        )
-
-        # Close out EVERY other application of the same user, so a blacklisted
-        # person ends up rejected + tagged on all of them (2026-07-22 decision,
-        # superseding the 2026-07-15 one that spared HIRED/already-rejected
-        # rows). In-flight and already-HIRED rows get the full close-out;
-        # already-rejected rows keep their stage but have the ``blacklisted``
-        # tag backfilled. Rows already tagged blacklisted are left untouched so
-        # a re-run logs no duplicate activity. Each row is re-fetched FOR UPDATE
-        # so a concurrent stage decision on it can't interleave.
-        swept_application_ids = [dto.application_id]
-        rows = await self.application_repository.list_by_user(session, dto.user_id)
-        for other, _job in rows:
-            if other.application_id == dto.application_id:
-                continue
-            locked = await self.application_repository.get_by_id(
-                session, other.application_id, for_update=True
-            )
-            if locked is None or (locked.tags or {}).get("blacklisted"):
-                continue
-            other_from_stage = locked.stage
-            locked.tags = {**(locked.tags or {}), "blacklisted": True}
-            if locked.stage != ApplicationStage.REJECTED:
-                # In-flight or HIRED: fully close it out. Already-rejected rows
-                # keep their historical stage/round/sub_status and frozen
-                # submission — only the tag is backfilled.
-                locked.stage = ApplicationStage.REJECTED
-                locked.stage_entered_at = datetime.now(timezone.utc)
-                locked.sub_status = None
-                locked.current_round = 1
-                await self._freeze_current_submission(session, locked.application_id)
-            await self.application_repository.update(session, locked)
-            await record_event(
-                session,
-                subject_type="application",
-                subject_id=locked.application_id,
-                actor_id=current_user.user_id,
-                event_type=RecruitingEvent.BLACKLISTED,
-                details={"fromStage": other_from_stage.value, "reason": dto.reason},
-            )
-            swept_application_ids.append(locked.application_id)
-
-        # Every meeting still ahead of us on the applications just swept is
-        # cancelled outright, with no opt-out anywhere in the UI: the candidate
-        # is banned org-wide, so none of those interviews is going to happen,
-        # and each one left booked would sit live on the interviewer's and the
-        # candidate's calendars while being unreachable in Purrf. Rows whose
-        # meeting has already started are filtered out by `cancel_for_round`
-        # itself, and rows on applications the sweep skipped (already tagged by
-        # an earlier blacklist, so already handled then) never make the list.
-        interviews = (
-            await self.application_interview_repository.list_by_application_ids(
-                session, swept_application_ids
-            )
-        )
-        for interview in interviews:
-            await self.interview_scheduling_service.cancel_for_round(
-                session,
-                interview.application_id,
-                interview.stage,
-                interview.round,
-                current_user.user_id,
-                via="blacklisted",
-            )
-
-        await session.commit()
-        return self.recruiting_mapper.to_application_dto(
-            application, current_sub, editable=False
-        )
-
-    async def list_upcoming_interviews_for_user(
-        self, session: AsyncSession, user_id: int
-    ) -> list[UpcomingInterviewDto]:
-        """Every still-to-happen interview meeting a blacklist would cancel.
-
-        The pre-flight the blacklist confirm dialog shows, so the sanction
-        never silently deletes a meeting the recruiter didn't know about. It
-        mirrors ``blacklist``'s own sweep exactly: applications already tagged
-        ``blacklisted`` are excluded (that earlier block already cancelled
-        their meetings, and the sweep skips them), and meetings that have
-        already started are excluded (``cancel_for_round`` leaves those alone).
-        Promising anything else here would make the dialog lie.
-
-        Not owner-gated, like ``blacklist`` itself: the route's
-        ``RECRUITING_BLACKLIST_WRITE`` is the whole gate, and this returns no
-        more than the block it precedes is about to act on.
-
-        Args:
-            session (AsyncSession): Active database async session.
-            user_id (int): The candidate about to be blocked.
-
-        Returns:
-            list[UpcomingInterviewDto]: Soonest first; empty when the
-                candidate has nothing booked.
-        """
-        rows = await self.application_repository.list_by_user(session, user_id)
-        live = [
-            (application, job)
-            for application, job in rows
-            if not (application.tags or {}).get("blacklisted")
-        ]
-        job_titles = {
-            application.application_id: job.title for application, job in live
-        }
-        interviews = (
-            await self.application_interview_repository.list_by_application_ids(
-                session, [application.application_id for application, _job in live]
-            )
-        )
-        now = datetime.now(timezone.utc)
-        upcoming = sorted(
-            (interview for interview in interviews if interview.start_at > now),
-            key=lambda interview: interview.start_at,
-        )
-        return [
-            UpcomingInterviewDto(
-                application_id=interview.application_id,
-                job_title=job_titles.get(interview.application_id, ""),
-                stage=interview.stage,
-                round=interview.round,
-                start_at=interview.start_at,
-            )
-            for interview in upcoming
-        ]
 
     async def _mentionable_user_ids(
         self, session: AsyncSession, application: ApplicationEntity, job: JobEntity
