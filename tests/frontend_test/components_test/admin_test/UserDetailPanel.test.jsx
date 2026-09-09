@@ -73,11 +73,29 @@ describe("UserDetailPanel", () => {
     // The two admin pages were deliberately kept separate rather than merged,
     // and this per-person cross-link is the only thing left holding them
     // together. Without a test, deleting it keeps the suite green.
+    useAuth.mockReturnValue({
+      user: { userId: 99 },
+      isSuperAdmin: true,
+      permissions: ["permission.manage", "user.admin"],
+    });
     api.getUserPermissions.mockResolvedValue({ data: { permissions: [] } });
     renderPanel();
 
     const link = await screen.findByRole("link", { name: /Account state/ });
     expect(link).toHaveAttribute("href", "/admin/accounts?user_id=1");
+  });
+
+  it("drops the link for a viewer who cannot open the account console", async () => {
+    // permission.manage and user.admin are held by different people on
+    // purpose. Offering the crossing to someone who only has the first one
+    // spends a click to reach a full-page 403.
+    api.getUserPermissions.mockResolvedValue({ data: { permissions: [] } });
+    renderPanel();
+
+    await waitFor(() => expect(api.getUserPermissions).toHaveBeenCalled());
+    expect(
+      screen.queryByRole("link", { name: /Account state/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps a long history inside its own scroll box so the dialog does not grow", async () => {

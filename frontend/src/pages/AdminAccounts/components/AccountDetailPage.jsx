@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import { PERMISSIONS } from "@/constants/Permissions";
 import { legalName } from "@/utils/userName";
 import {
   formatDateTimeWithZone,
@@ -37,15 +38,19 @@ const Field = ({ label, value }) => (
 
 /**
  * One account, whole. The page is reached with `?user_id=` on the console
- * route and is already behind `user.admin` there, so nothing on it carries a
- * second permission gate.
+ * route and is already behind `user.admin` there, so no action on it carries a
+ * second permission gate. The crossing to the permission page is not an action
+ * of this page and is shown only to a viewer who may take it.
  *
  * @param {Object} props
  * @param {number} props.userId - The account being viewed.
  */
 const AccountDetailPage = ({ userId }) => {
   const [searchParams] = useSearchParams();
-  const { user } = useAuth();
+  const { user, permissions } = useAuth();
+  const canManagePermissions = permissions.includes(
+    PERMISSIONS.PERMISSION_MANAGE,
+  );
   const tz = resolveViewerTimezone();
   const [deactivateOpen, setDeactivateOpen] = useState(false);
   const [blockOpen, setBlockOpen] = useState(false);
@@ -325,17 +330,21 @@ const AccountDetailPage = ({ userId }) => {
         </div>
       </section>
 
-      <section className="flex flex-col gap-2">
-        <h2 className={SECTION_TITLE}>Permissions</h2>
-        {/* Shown to every user.admin holder. It is a link, not an action: the
-            permission page runs its own gate on arrival. */}
-        <Link
-          to={`${ROUTE_PATHS.ADMIN_USERS}?user_id=${account.userId}`}
-          className="text-sm font-medium text-sky-700 hover:text-sky-900"
-        >
-          Manage permissions →
-        </Link>
-      </section>
+      {/* The permission page runs its own gate, so the link was never a way
+          in -- but to a viewer without permission.manage it is an offer that
+          only leads to a full-page 403. The heading lives inside the check
+          because the link is all the section holds. */}
+      {canManagePermissions && (
+        <section className="flex flex-col gap-2">
+          <h2 className={SECTION_TITLE}>Permissions</h2>
+          <Link
+            to={`${ROUTE_PATHS.ADMIN_USERS}?user_id=${account.userId}`}
+            className="text-sm font-medium text-sky-700 hover:text-sky-900"
+          >
+            Manage permissions →
+          </Link>
+        </section>
+      )}
 
       <DeactivateDialog
         open={deactivateOpen}

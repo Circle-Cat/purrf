@@ -169,13 +169,27 @@ describe("AccountDetailPage — sign-in methods", () => {
 });
 
 describe("AccountDetailPage — the permission page next door", () => {
-  it("links to permissions for every USER_ADMIN holder, not just PERMISSION_MANAGE", async () => {
-    authState.permissions = ["user.admin"];
+  it("links to permissions when the viewer may manage them", async () => {
+    authState.permissions = ["user.admin", "permission.manage"];
     renderPage();
     await waitLoaded();
     expect(
       screen.getByRole("link", { name: /Manage permissions/ }),
     ).toHaveAttribute("href", expect.stringContaining("user_id=1203"));
+  });
+
+  it("drops the section entirely for a viewer who may not", async () => {
+    // The permission page keeps its own gate, so the link was safe -- but it
+    // led a user.admin holder to a full-page 403 that never says which
+    // permission is missing. The heading goes with the link, or the section
+    // is left standing empty.
+    authState.permissions = ["user.admin"];
+    renderPage();
+    await waitLoaded();
+    expect(
+      screen.queryByRole("link", { name: /Manage permissions/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Permissions")).not.toBeInTheDocument();
   });
 });
 
@@ -305,15 +319,15 @@ describe("AccountDetailPage — actions", () => {
     );
   });
 
-  it("gates nothing a second time: the route already carries user.admin", async () => {
+  it("gates its own actions no second time: the route already carries user.admin", async () => {
+    // Every action on this page is reachable on user.admin alone. The one
+    // thing that reads the viewer's other permissions is the cross-link to
+    // the permission page, which is not an action of this page.
     authState.permissions = [];
     renderPage();
     await waitLoaded();
     expect(screen.getByRole("button", { name: "Deactivate" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Block" })).toBeEnabled();
-    expect(
-      screen.getByRole("link", { name: /Manage permissions/ }),
-    ).toBeInTheDocument();
   });
 
   it("does not offer the two actions the backend refuses on yourself", async () => {
