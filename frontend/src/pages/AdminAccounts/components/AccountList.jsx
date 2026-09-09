@@ -27,7 +27,9 @@ const SELECT_CLASS =
  * @param {boolean} props.loading
  * @param {string} props.search - Draft search text (not yet submitted).
  * @param {(value: string) => void} props.onSearchChange
- * @param {() => void} props.onSearchSubmit - Commit the draft search text.
+ * @param {string} props.userId - Draft exact User ID search text (digits only).
+ * @param {(value: string) => void} props.onUserIdChange
+ * @param {() => void} props.onSearchSubmit - Commit both draft inputs.
  * @param {string} props.userType - "internal"|"external"|"" (all).
  * @param {(value: string) => void} props.onUserTypeChange
  * @param {string} props.status - "active"|"deactivated"|"blocked"|"" (all).
@@ -51,6 +53,8 @@ const AccountList = ({
   loading,
   search,
   onSearchChange,
+  userId,
+  onUserIdChange,
   onSearchSubmit,
   userType,
   onUserTypeChange,
@@ -78,6 +82,17 @@ const AccountList = ({
           value={search}
           disabled={filtersDisabled}
           onChange={(e) => onSearchChange(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && onSearchSubmit()}
+        />
+
+        <Input
+          className="w-40"
+          inputMode="numeric"
+          placeholder="User ID"
+          aria-label="Search by user id"
+          value={userId}
+          disabled={filtersDisabled}
+          onChange={(e) => onUserIdChange(e.target.value.replace(/\D/g, ""))}
           onKeyDown={(e) => e.key === "Enter" && onSearchSubmit()}
         />
 

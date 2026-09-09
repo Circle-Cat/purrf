@@ -22,11 +22,13 @@ const LIMIT = 20;
  * link, and coming back from one person's detail has to land on the same list
  * rather than a reset one.
  *
- * `user_id` opens the detail view; `focus` only rings the row the viewer came
- * back from, so returning never collapses the list to a single person.
+ * `user_id` opens the detail view; `id` is the exact-match search box, which
+ * stays on the list; `focus` only rings the row the viewer came back from, so
+ * returning never collapses the list to a single person.
  */
 export const PARAM = Object.freeze({
   SEARCH: "search",
+  ID: "id",
   USER_TYPE: "user_type",
   STATUS: "status",
   OFFSET: "offset",
@@ -53,6 +55,7 @@ export const useAccountAdmin = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const search = searchParams.get(PARAM.SEARCH) ?? "";
+  const userId = searchParams.get(PARAM.ID) ?? "";
   const userType = searchParams.get(PARAM.USER_TYPE) ?? "";
   const status = searchParams.get(PARAM.STATUS) ?? "";
   const offset = Math.max(0, readInt(searchParams, PARAM.OFFSET, 0));
@@ -61,9 +64,10 @@ export const useAccountAdmin = () => {
     ? readInt(searchParams, PARAM.FOCUS, null)
     : null;
 
-  // The search box is a draft until Enter or the Search button commits it to
-  // the URL; the two selects commit immediately.
+  // The two search boxes are drafts until Enter or the Search button commits
+  // them to the URL; the two selects commit immediately.
   const [searchDraft, setSearchDraft] = useState(search);
+  const [userIdDraft, setUserIdDraft] = useState(userId);
   const [accounts, setAccounts] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -129,6 +133,7 @@ export const useAccountAdmin = () => {
       }
       const { data } = await getAccounts({
         search: search || undefined,
+        userId: userId || undefined,
         status: status || undefined,
         userType: userType || undefined,
         limit: LIMIT,
@@ -147,6 +152,7 @@ export const useAccountAdmin = () => {
     }
   }, [
     search,
+    userId,
     status,
     userType,
     offset,
@@ -175,13 +181,20 @@ export const useAccountAdmin = () => {
     loadPendingRequests();
   }, [loadPendingRequests]);
 
-  // Keep the box in step when the URL changes underneath it (deep link, back
-  // button, or returning from a detail page).
+  // Keep the boxes in step when the URL changes underneath them (deep link,
+  // back button, or returning from a detail page).
   useEffect(() => {
     setSearchDraft(search);
   }, [search]);
 
-  const submitSearch = () => updateParams({ [PARAM.SEARCH]: searchDraft });
+  useEffect(() => {
+    setUserIdDraft(userId);
+  }, [userId]);
+
+  // One button commits both boxes, so a stale draft in the one an admin did
+  // not touch cannot survive the search they did run.
+  const submitSearch = () =>
+    updateParams({ [PARAM.SEARCH]: searchDraft, [PARAM.ID]: userIdDraft });
   const setUserType = (value) => updateParams({ [PARAM.USER_TYPE]: value });
   const setStatus = (value) => updateParams({ [PARAM.STATUS]: value });
   // The search and filters are kept, not cleared: pending-only ignores them
@@ -214,6 +227,8 @@ export const useAccountAdmin = () => {
     loading,
     search: searchDraft,
     setSearch: setSearchDraft,
+    userId: userIdDraft,
+    setUserId: setUserIdDraft,
     submitSearch,
     userType,
     setUserType,
