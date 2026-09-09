@@ -129,10 +129,16 @@ const UserList = ({
             : u.userType === "external"
               ? "External"
               : u.userType,
-        status: u.isActive ? (
-          "Active"
-        ) : (
-          <Badge variant="secondary">Deactivated</Badge>
+        // Three orthogonal facts rather than one winner-takes-all label: the
+        // same account can be blocked and deactivated at once, and blocking
+        // never writes is_active, so activity alone cannot report it. Same
+        // reading as the account console's chips.
+        status: (
+          <span className="inline-flex flex-wrap items-center gap-1">
+            {u.isBlocked && <Badge variant="destructive">Blocked</Badge>}
+            {!u.isActive && <Badge variant="secondary">Deactivated</Badge>}
+            {u.isActive && !u.isBlocked && "Active"}
+          </span>
         ),
         superAdmin: u.isSuperAdmin ? <Badge>Super-admin</Badge> : "—",
         actions: (

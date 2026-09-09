@@ -86,6 +86,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
                         first_name="A",
                         last_name="B",
                         is_active=True,
+                        is_blocked=False,
                         is_super_admin=False,
                     ),
                     False,  # is_internal
@@ -102,6 +103,37 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out.users[0].user_type, "external")
         self.assertIsNone(out.users[0].preferred_name)
 
+    async def test_list_users_carries_the_blocked_flag(self):
+        """A row has to say when its account is locked out, not only inactive.
+
+        Blocking leaves is_active True on purpose -- the two flags are
+        orthogonal -- so a row carrying only is_active reads as a perfectly
+        normal active account on every page that renders it.
+        """
+        self.users.list_users.return_value = (
+            [
+                (
+                    UsersEntity(
+                        user_id=3,
+                        first_name="C",
+                        last_name="D",
+                        is_active=True,
+                        is_blocked=True,
+                        is_super_admin=False,
+                    ),
+                    False,  # is_internal
+                )
+            ],
+            1,
+        )
+        self.user_emails.get_contact_emails_by_user_ids.return_value = {3: "c@x.com"}
+
+        out = await self.service.list_users(
+            self.session, search=None, limit=20, offset=0
+        )
+
+        self.assertTrue(out.users[0].is_blocked)
+
     async def test_list_users_internal_user_gets_internal_type(self):
         self.users.list_users.return_value = (
             [
@@ -111,6 +143,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
                         first_name="B",
                         last_name="C",
                         is_active=True,
+                        is_blocked=False,
                         is_super_admin=False,
                         preferred_name="Bee",
                     ),
@@ -240,6 +273,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
             first_name="S",
             last_name="A",
             is_active=True,
+            is_blocked=False,
             is_super_admin=False,
         )
         self.users.set_super_admin.return_value = 1
@@ -276,6 +310,7 @@ class TestPermissionAdminService(unittest.IsolatedAsyncioTestCase):
             first_name="S",
             last_name="A",
             is_active=True,
+            is_blocked=False,
             is_super_admin=True,
         )
         self.users.set_super_admin.return_value = 1

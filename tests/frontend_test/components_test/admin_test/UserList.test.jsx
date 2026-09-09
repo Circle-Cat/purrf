@@ -68,6 +68,24 @@ describe("UserList", () => {
     expect(screen.getByText("External")).toBeInTheDocument();
   });
 
+  it("shows a blocked account as blocked rather than active", () => {
+    // Blocking deliberately leaves is_active true, so a status read off that
+    // flag alone calls somebody who cannot sign in at all "Active".
+    render(
+      <UserList {...baseProps} users={[{ ...users[0], isBlocked: true }]} />,
+    );
+    expect(screen.getByText("Blocked")).toBeInTheDocument();
+    expect(screen.queryByText("Active")).not.toBeInTheDocument();
+  });
+
+  it("shows both states for an account that is blocked and deactivated", () => {
+    render(
+      <UserList {...baseProps} users={[{ ...users[1], isBlocked: true }]} />,
+    );
+    expect(screen.getByText("Blocked")).toBeInTheDocument();
+    expect(screen.getByText("Deactivated")).toBeInTheDocument();
+  });
+
   it("shows 'Active' badge and 'Deactivated' badge for status", () => {
     render(<UserList {...baseProps} />);
     expect(screen.getByText("Active")).toBeInTheDocument();

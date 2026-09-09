@@ -84,6 +84,7 @@ class TestPermissionAdminController(unittest.TestCase):
                 first_name="S",
                 last_name="A",
                 is_active=True,
+                is_blocked=False,
                 is_super_admin=True,
                 user_type="internal",
             )
@@ -95,6 +96,7 @@ class TestPermissionAdminController(unittest.TestCase):
                 first_name="S",
                 last_name="A",
                 is_active=True,
+                is_blocked=False,
                 is_super_admin=False,
                 user_type="external",
             )

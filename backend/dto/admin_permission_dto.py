@@ -9,6 +9,10 @@ class AdminUserDto(BaseDto):
     first_name: str
     last_name: str
     is_active: bool
+    # Travels beside is_active rather than folded into it: blocking never
+    # writes is_active, so a view holding only that flag shows somebody who is
+    # locked out of Purrf as a perfectly ordinary active account.
+    is_blocked: bool
     is_super_admin: bool
     preferred_name: str | None = None
     user_type: str
