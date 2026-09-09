@@ -15,6 +15,7 @@ from backend.entity.training_entity import TrainingEntity
 
 _MENTEE_COURSE_ID = 5
 _MENTOR_COURSE_ID = 6
+_CULTURE_COURSE_ID = 7
 
 
 def _job(kind=JobKind.ACTIVITY, mentorship_role=ParticipantRole.MENTEE):
@@ -24,17 +25,18 @@ def _job(kind=JobKind.ACTIVITY, mentorship_role=ParticipantRole.MENTEE):
     return job
 
 
-def _seed_course(category):
+def _seed_course(category, is_active=True):
     """The catalogue row the migration seeds for a category."""
     ids = {
         TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING: _MENTEE_COURSE_ID,
         TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING: _MENTOR_COURSE_ID,
+        TrainingCategory.CORPORATE_CULTURE_COURSE: _CULTURE_COURSE_ID,
     }
     return TrainingCourseEntity(
         course_id=ids[category],
         name=category.value,
         category=category,
-        is_active=True,
+        is_active=is_active,
     )
 
 
@@ -360,6 +362,99 @@ class TestOnboardingTrainingService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.course_id, 99)
+        self.mock_training_repo.upsert_training.assert_not_awaited()
+
+    async def test_requiring_a_live_package_creates_the_row_when_one_is_live(self):
+        self.mock_package_repo.get_by_state = AsyncMock(return_value=MagicMock())
+
+        created = await self.service.ensure_onboarding_training(
+            session=self.mock_session,
+            user_id=7,
+            category=TrainingCategory.CORPORATE_CULTURE_COURSE,
+            require_live_package=True,
+        )
+
+        self.assertIsNotNone(created)
+        entity = self.mock_training_repo.upsert_training.await_args.kwargs["entity"]
+        self.assertEqual(entity.category, TrainingCategory.CORPORATE_CULTURE_COURSE)
+        self.assertEqual(entity.course_id, _CULTURE_COURSE_ID)
+        self.assertIsNone(entity.deadline)
+        self.assertIsNone(entity.link)
+
+    async def test_requiring_a_live_package_builds_nothing_when_none_is_live(self):
+        """The same gate TrainingAssignmentService.assign applies. Without it
+        the automatic path would create rows the manual path refuses."""
+        self.mock_package_repo.get_by_state = AsyncMock(return_value=None)
+
+        created = await self.service.ensure_onboarding_training(
+            session=self.mock_session,
+            user_id=7,
+            category=TrainingCategory.CORPORATE_CULTURE_COURSE,
+            require_live_package=True,
+        )
+
+        self.assertIsNone(created)
+        self.mock_training_repo.upsert_training.assert_not_awaited()
+
+    async def test_requiring_a_live_package_builds_nothing_for_a_deactivated_course(
+        self,
+    ):
+        self.mock_package_repo.get_by_state = AsyncMock(return_value=MagicMock())
+        self.mock_course_repo.get_course_by_category = AsyncMock(
+            side_effect=lambda session, category: _seed_course(
+                category, is_active=False
+            )
+        )
+
+        created = await self.service.ensure_onboarding_training(
+            session=self.mock_session,
+            user_id=7,
+            category=TrainingCategory.CORPORATE_CULTURE_COURSE,
+            require_live_package=True,
+        )
+
+        self.assertIsNone(created)
+        self.mock_training_repo.upsert_training.assert_not_awaited()
+
+    async def test_requiring_a_live_package_builds_nothing_when_no_course_carries_it(
+        self,
+    ):
+        self.mock_package_repo.get_by_state = AsyncMock(return_value=MagicMock())
+        self.mock_course_repo.get_course_by_category = AsyncMock(return_value=None)
+
+        created = await self.service.ensure_onboarding_training(
+            session=self.mock_session,
+            user_id=7,
+            category=TrainingCategory.CORPORATE_CULTURE_COURSE,
+            require_live_package=True,
+        )
+
+        self.assertIsNone(created)
+        self.mock_training_repo.upsert_training.assert_not_awaited()
+
+    async def test_requiring_a_live_package_leaves_an_existing_row_alone(self):
+        """Idempotent like every other path: a row already held is returned."""
+        existing = TrainingEntity(
+            training_id=3,
+            user_id=7,
+            category=TrainingCategory.CORPORATE_CULTURE_COURSE,
+            status=TrainingStatus.TO_DO,
+            deadline=None,
+            course_id=_CULTURE_COURSE_ID,
+        )
+        self.mock_training_repo.get_training_by_user_id_and_category.return_value = (
+            existing
+        )
+        self.mock_package_repo.get_by_state = AsyncMock(return_value=MagicMock())
+
+        result = await self.service.ensure_onboarding_training(
+            session=self.mock_session,
+            user_id=7,
+            category=TrainingCategory.CORPORATE_CULTURE_COURSE,
+            require_live_package=True,
+        )
+
+        self.assertIs(result, existing)
         self.mock_training_repo.upsert_training.assert_not_awaited()
 
 

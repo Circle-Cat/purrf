@@ -97,12 +97,14 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         self.users = AsyncMock()
         self.users.exists_active_internal.return_value = False
         self.session = AsyncMock()
+        self.internal_onboarding = AsyncMock()
         self.service = EmailManagementService(
             self.auth0,
             self.user_emails,
             self.user_identities,
             self.user_permissions,
             self.users,
+            self.internal_onboarding,
             MagicMock(),
         )
 
@@ -346,6 +348,33 @@ class TestEmailManagementService(unittest.IsolatedAsyncioTestCase):
         # The row-less classification signal is set alongside the bundle grant.
         self.users.set_internal.assert_awaited_once_with(self.session, _USER_ID)
         self.session.commit.assert_awaited_once()
+
+    async def test_verify_company_email_assigns_the_onboarding_training(self):
+        """Joining a corp sign-in to an existing account is one of the ways
+        somebody becomes an employee, so it owes the same courses as a
+        first-login hire."""
+        corp_email = "bob@circlecat.org"
+        self.auth0.exchange_otp.return_value = {
+            "sub": _NEW_SUB,
+            "email": corp_email,
+            "email_verified": True,
+        }
+        self.user_emails.get_by_user_and_email.side_effect = [None, None]
+
+        await self.service.verify(
+            self.session, _USER_ID, _CURRENT_SUB, _state(email=corp_email), "123456"
+        )
+
+        self.internal_onboarding.ensure_for_internal.assert_awaited_once_with(
+            session=self.session, user_id=_USER_ID, email=corp_email
+        )
+
+    async def test_verify_personal_email_assigns_no_onboarding_training(self):
+        await self.service.verify(
+            self.session, _USER_ID, _CURRENT_SUB, _state(), "123456"
+        )
+
+        self.internal_onboarding.ensure_for_internal.assert_not_awaited()
 
     async def test_verify_company_email_skips_held_bundle_and_existing_primary(self):
         # Re-verifying is idempotent: bundle already held -> no new grant rows;
@@ -1292,7 +1321,13 @@ class TestSignState(unittest.TestCase):
     def setUp(self):
         os.environ["EMAIL_OTP_STATE_JWT_SECRET"] = _SECRET
         self.service = EmailManagementService(
-            MagicMock(), AsyncMock(), AsyncMock(), AsyncMock(), AsyncMock(), MagicMock()
+            MagicMock(),
+            AsyncMock(),
+            AsyncMock(),
+            AsyncMock(),
+            AsyncMock(),
+            AsyncMock(),
+            MagicMock(),
         )
 
     def test_sign_state_stamps_envelope_and_roundtrips(self):
@@ -1336,6 +1371,7 @@ class TestConsumeStepUpOtp(unittest.IsolatedAsyncioTestCase):
         self.service = EmailManagementService(
             self.auth0,
             self.user_emails,
+            AsyncMock(),
             AsyncMock(),
             AsyncMock(),
             AsyncMock(),

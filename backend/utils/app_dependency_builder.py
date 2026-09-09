@@ -221,6 +221,9 @@ from backend.profile.profile_mapper import ProfileMapper
 from backend.profile.profile_service import ProfileService
 from backend.common.database import Database
 from backend.profile.profile_controller import ProfileController
+from backend.user_identity.internal_onboarding_training import (
+    InternalOnboardingTrainingService,
+)
 from backend.user_identity.user_identity_service import UserIdentityService
 from backend.common.launchdarkly_client import LaunchDarklyClient
 from backend.service.launchdarkly_service import LaunchDarklyService
@@ -570,12 +573,23 @@ class AppDependencyBuilder:
             training_course_repository=self.training_course_repository,
             training_course_package_repository=self.training_course_package_repository,
         )
+        # Every route into "this person is now an employee" runs the shared
+        # absorb hook, so the courses employment owes are assigned there too.
+        self.internal_onboarding_training_service = InternalOnboardingTrainingService(
+            logger=self.logger,
+            redis_client=self.redis_client,
+            retry_utils=self.retry_utils,
+            onboarding_training_service=self.onboarding_training_service,
+        )
         self.user_identity_service = UserIdentityService(
             logger=self.logger,
             users_repository=self.users_repository,
             user_identities_repository=self.user_identities_repository,
             user_emails_repository=self.user_emails_repository,
             user_permissions_repository=self.user_permissions_repository,
+            internal_onboarding_training_service=(
+                self.internal_onboarding_training_service
+            ),
         )
         self.authentication_service = AuthenticationService(logger=self.logger)
         self.authentication_controller = AuthenticationController(
@@ -589,6 +603,9 @@ class AppDependencyBuilder:
             user_identities_repository=self.user_identities_repository,
             user_permissions_repository=self.user_permissions_repository,
             users_repository=self.users_repository,
+            internal_onboarding_training_service=(
+                self.internal_onboarding_training_service
+            ),
             logger=self.logger,
         )
         self.mentorship_round_repository = MentorshipRoundRepository()

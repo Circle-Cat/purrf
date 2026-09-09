@@ -25,3 +25,22 @@ py_test(
         "//tests/backend_test/repository_test:base_repository_test_lib",
     ],
 )
+
+py_test(
+    name = "internal_onboarding_training_test",
+    srcs = ["internal_onboarding_training_test.py"],
+    deps = [
+        "//backend/common:constants",
+        "//backend/common:mentorship_enums",
+        "//backend/user_identity:internal_onboarding_training",
+    ],
+)
+
+py_test(
+    name = "internal_lifecycle_test",
+    srcs = ["internal_lifecycle_test.py"],
+    deps = [
+        "//backend/common:permissions",
+        "//backend/user_identity:internal_lifecycle",
+    ],
+)

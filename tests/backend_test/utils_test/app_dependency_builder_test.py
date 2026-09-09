@@ -512,6 +512,19 @@ class TestAppDependencyBuilder(TestCase):
             user_identities_repository=mock_user_identities_repo_cls.return_value,
             user_emails_repository=mock_user_emails_repo_cls.return_value,
             user_permissions_repository=mock_user_permissions_repo_cls.return_value,
+            internal_onboarding_training_service=(
+                builder.internal_onboarding_training_service
+            ),
+        )
+        # Reads the Azure snapshot the daily cron leaves in Redis, and creates
+        # the rows through the same service every other onboarding path uses.
+        self.assertIs(
+            builder.internal_onboarding_training_service.redis_client,
+            mock_redis_client_cls.return_value.get_redis_client.return_value,
+        )
+        self.assertIs(
+            builder.internal_onboarding_training_service.onboarding_training_service,
+            builder.onboarding_training_service,
         )
         mock_profile_service_cls.assert_called_once_with(
             query_service=mock_profile_query_service_cls.return_value,

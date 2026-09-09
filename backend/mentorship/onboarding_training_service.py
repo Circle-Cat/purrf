@@ -86,7 +86,8 @@ class OnboardingTrainingService:
         user_id: int,
         category: TrainingCategory,
         deadline: datetime | None = None,
-    ) -> TrainingEntity:
+        require_live_package: bool = False,
+    ) -> TrainingEntity | None:
         """Make sure a user holds an onboarding task, recording a known deadline.
 
         One rule shared by both moments that can produce the task:
@@ -106,14 +107,24 @@ class OnboardingTrainingService:
         Does not commit. The caller owns the transaction, so the training row
         and the decision that caused it stand or fall together.
 
+        Callers that assign nobody a course they could not finish pass
+        `require_live_package`, applying the same gate as
+        `TrainingAssignmentService.assign` -- a live package and an active
+        course -- and getting None instead of a row when it fails. The check
+        costs nothing extra here: the live package is already read to decide
+        whether the row carries an external link.
+
         Args:
             session (AsyncSession): Active database async session.
             user_id (int): The user who owes the training.
             category (TrainingCategory): Which onboarding training.
             deadline (datetime | None): The due date, when one is known yet.
+            require_live_package (bool): Refuse to create the row unless the
+                category's course is active and has a live package.
 
         Returns:
-            TrainingEntity: The existing or newly created row.
+            TrainingEntity | None: The existing or newly created row, or None
+            when `require_live_package` refused to create one.
         """
         existing = await self.training_repo.get_training_by_user_id_and_category(
             session=session, user_id=user_id, category=category
@@ -133,6 +144,17 @@ class OnboardingTrainingService:
         link = None if has_live_package else (external_link_for(category))
 
         if existing is None:
+            if require_live_package and not (
+                has_live_package and course is not None and course.is_active
+            ):
+                self.logger.info(
+                    "[OnboardingTrainingService] not assigning %s to user %s: "
+                    "the course has nothing live to finish.",
+                    category.value,
+                    user_id,
+                )
+                return None
+
             created = await self.training_repo.upsert_training(
                 session=session,
                 entity=TrainingEntity(
