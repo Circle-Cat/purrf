@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { useUserAdmin } from "@/pages/AdminPermissions/hooks/useUserAdmin";
 import * as api from "@/api/adminPermissionsApi";
 
@@ -22,6 +23,15 @@ const userPage = (overrides = {}) => ({
   },
 });
 
+// The hook reads the query string, so it only runs under a Router -- as it
+// does in the app, where the page is mounted on a route.
+const renderUserAdmin = (entry = "/admin/users") =>
+  renderHook(() => useUserAdmin(), {
+    wrapper: ({ children }) => (
+      <MemoryRouter initialEntries={[entry]}>{children}</MemoryRouter>
+    ),
+  });
+
 describe("useUserAdmin", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -29,21 +39,21 @@ describe("useUserAdmin", () => {
   });
 
   it("does not fetch on mount and reports hasSearched=false", async () => {
-    const { result } = renderHook(() => useUserAdmin());
+    const { result } = renderUserAdmin();
     await act(async () => {});
     expect(api.getUsers).not.toHaveBeenCalled();
     expect(result.current.hasSearched).toBe(false);
   });
 
   it("does not fetch on a draft input change until submitSearch", async () => {
-    const { result } = renderHook(() => useUserAdmin());
+    const { result } = renderUserAdmin();
     act(() => result.current.setSearch("jo"));
     await act(async () => {});
     expect(api.getUsers).not.toHaveBeenCalled();
   });
 
   it("submitSearch fetches with the committed search term, limit 20, offset 0", async () => {
-    const { result } = renderHook(() => useUserAdmin());
+    const { result } = renderUserAdmin();
     act(() => result.current.setSearch("jo"));
     act(() => result.current.submitSearch());
     await waitFor(() => expect(result.current.total).toBe(1));
@@ -54,7 +64,7 @@ describe("useUserAdmin", () => {
   });
 
   it("submitSearch sends the userId param for exact-match search", async () => {
-    const { result } = renderHook(() => useUserAdmin());
+    const { result } = renderUserAdmin();
     act(() => result.current.setUserId("42"));
     act(() => result.current.submitSearch());
     await waitFor(() =>
@@ -66,7 +76,7 @@ describe("useUserAdmin", () => {
 
   it("nextPage advances offset by limit after a search", async () => {
     api.getUsers.mockResolvedValue(userPage({ total: 50 }));
-    const { result } = renderHook(() => useUserAdmin());
+    const { result } = renderUserAdmin();
     act(() => result.current.submitSearch());
     await waitFor(() => expect(result.current.total).toBe(50));
     act(() => result.current.nextPage());
@@ -78,7 +88,7 @@ describe("useUserAdmin", () => {
   });
 
   it("filters are draft: setIsSuperAdmin does not refetch until submitSearch", async () => {
-    const { result } = renderHook(() => useUserAdmin());
+    const { result } = renderUserAdmin();
     act(() => result.current.submitSearch());
     await waitFor(() => expect(api.getUsers).toHaveBeenCalledTimes(1));
     act(() => result.current.setIsSuperAdmin(true));
@@ -103,7 +113,7 @@ describe("useUserAdmin", () => {
         isSuperAdmin: true,
       },
     });
-    const { result } = renderHook(() => useUserAdmin());
+    const { result } = renderUserAdmin();
     act(() => result.current.selectUser({ userId: 1, isSuperAdmin: false }));
     await act(async () => {
       await result.current.makeSuperAdmin();
@@ -123,7 +133,7 @@ describe("useUserAdmin", () => {
         isSuperAdmin: false,
       },
     });
-    const { result } = renderHook(() => useUserAdmin());
+    const { result } = renderUserAdmin();
     act(() => result.current.selectUser({ userId: 1, isSuperAdmin: true }));
     await act(async () => {
       await result.current.revokeSuperAdminFor();
@@ -133,7 +143,7 @@ describe("useUserAdmin", () => {
   });
 
   it("toggleSort sets sortBy/order:asc and resets offset after a search", async () => {
-    const { result } = renderHook(() => useUserAdmin());
+    const { result } = renderUserAdmin();
     act(() => result.current.submitSearch());
     await waitFor(() => expect(api.getUsers).toHaveBeenCalledTimes(1));
     act(() => result.current.toggleSort("last_name"));
@@ -149,7 +159,7 @@ describe("useUserAdmin", () => {
   });
 
   it("toggleSort flips to desc on the second call for the same field", async () => {
-    const { result } = renderHook(() => useUserAdmin());
+    const { result } = renderUserAdmin();
     act(() => result.current.submitSearch());
     await waitFor(() => expect(api.getUsers).toHaveBeenCalledTimes(1));
     act(() => result.current.toggleSort("last_name"));
@@ -176,7 +186,7 @@ describe("useUserAdmin", () => {
         }),
     );
 
-    const { result } = renderHook(() => useUserAdmin());
+    const { result } = renderUserAdmin();
     act(() => result.current.submitSearch()); // fetch #1
     await waitFor(() => expect(resolvers).toHaveLength(1));
     act(() => result.current.toggleSort("last_name")); // fetch #2
@@ -196,7 +206,7 @@ describe("useUserAdmin", () => {
 
   it("submitSearch sends the permission filter when one is chosen", async () => {
     // PUR-626: holders-of is a filter on this list, not a separate endpoint.
-    const { result } = renderHook(() => useUserAdmin());
+    const { result } = renderUserAdmin();
     act(() => result.current.setPermissionName("permission.manage"));
     act(() => result.current.submitSearch());
     await act(async () => {});
@@ -206,7 +216,7 @@ describe("useUserAdmin", () => {
   });
 
   it("omits the permission filter when none is chosen", async () => {
-    const { result } = renderHook(() => useUserAdmin());
+    const { result } = renderUserAdmin();
     act(() => result.current.submitSearch());
     await act(async () => {});
     expect(api.getUsers).toHaveBeenCalledWith(
@@ -215,7 +225,7 @@ describe("useUserAdmin", () => {
   });
 
   it("a draft permission choice does not fetch until submitSearch", async () => {
-    const { result } = renderHook(() => useUserAdmin());
+    const { result } = renderUserAdmin();
     act(() => result.current.setPermissionName("permission.manage"));
     await act(async () => {});
     expect(api.getUsers).not.toHaveBeenCalled();

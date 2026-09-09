@@ -16,9 +16,9 @@ const catalog = [
 
 // The per-user dialog links across to the account console, so the tree
 // needs a Router even though the tab itself never navigates.
-const renderTab = () =>
+const renderTab = (entry = "/admin/users") =>
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[entry]}>
       <UsersTab catalog={catalog} />
     </MemoryRouter>,
   );
@@ -91,5 +91,24 @@ describe("UsersTab", () => {
     expect(
       screen.getByRole("button", { name: /make super-admin/i }),
     ).toBeInTheDocument();
+  });
+  it("opens the person a deep link names, without waiting for a search", async () => {
+    // The account console links here per person, and this tab fetches nothing
+    // on mount, so dropping the id leaves the arrival staring at an empty
+    // list with no clue that it was told who to show.
+    renderTab("/admin/users?user_id=1");
+
+    await waitFor(() =>
+      expect(api.getUsers).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "1" }),
+      ),
+    );
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("A One")).toBeInTheDocument();
+  });
+
+  it("fetches nothing on arrival without a user_id", () => {
+    renderTab();
+    expect(api.getUsers).not.toHaveBeenCalled();
   });
 });
