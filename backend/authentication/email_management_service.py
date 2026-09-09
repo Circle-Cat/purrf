@@ -72,6 +72,7 @@ class EmailManagementService:
         user_identities_repository,
         user_permissions_repository,
         users_repository,
+        internal_onboarding_training_service,
         logger,
     ):
         """
@@ -87,6 +88,9 @@ class EmailManagementService:
             users_repository (UsersRepository): Repository handling UsersEntity;
                 used to mirror the internal-employee lifecycle hook when a corp
                 sign-in joins an existing account.
+            internal_onboarding_training_service (InternalOnboardingTrainingService):
+                Assigns the onboarding training a new employee owes; passed
+                through to the shared internal-employee lifecycle hook.
             logger: Application logger.
         """
         self._auth0 = auth0_client
@@ -94,6 +98,7 @@ class EmailManagementService:
         self._user_identities = user_identities_repository
         self._user_permissions = user_permissions_repository
         self._users = users_repository
+        self._internal_onboarding_training = internal_onboarding_training_service
         self._state_secret = os.getenv(EMAIL_OTP_STATE_JWT_SECRET)
         self._logger = logger
 
@@ -529,6 +534,7 @@ class EmailManagementService:
             user_permissions_repository=self._user_permissions,
             user_emails_repository=self._user_emails,
             users_repository=self._users,
+            internal_onboarding_training_service=self._internal_onboarding_training,
             logger=self._logger,
         )
 

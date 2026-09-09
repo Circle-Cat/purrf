@@ -60,6 +60,7 @@ class UserIdentityService:
         user_identities_repository,
         user_emails_repository,
         user_permissions_repository,
+        internal_onboarding_training_service,
     ):
         """
         Initialize the UserIdentityService with its dependencies.
@@ -70,12 +71,16 @@ class UserIdentityService:
             user_identities_repository (UserIdentitiesRepository): Repository handling UserIdentitiesEntity.
             user_emails_repository (UserEmailsRepository): Repository handling UserEmailsEntity.
             user_permissions_repository (UserPermissionsRepository): Repository handling UserPermissionsEntity.
+            internal_onboarding_training_service (InternalOnboardingTrainingService):
+                Assigns the onboarding training a new employee owes; passed
+                through to the shared internal-employee lifecycle hook.
         """
         self.logger = logger
         self.users_repository = users_repository
         self.user_identities_repository = user_identities_repository
         self.user_emails_repository = user_emails_repository
         self.user_permissions_repository = user_permissions_repository
+        self.internal_onboarding_training_service = internal_onboarding_training_service
 
     async def find_user_by_sub(
         self,
@@ -214,6 +219,9 @@ class UserIdentityService:
                         user_permissions_repository=self.user_permissions_repository,
                         user_emails_repository=self.user_emails_repository,
                         users_repository=self.users_repository,
+                        internal_onboarding_training_service=(
+                            self.internal_onboarding_training_service
+                        ),
                         logger=self.logger,
                     )
                 # Passwordless is row-less: the email row IS the credential,
@@ -251,6 +259,9 @@ class UserIdentityService:
                     user_permissions_repository=self.user_permissions_repository,
                     user_emails_repository=self.user_emails_repository,
                     users_repository=self.users_repository,
+                    internal_onboarding_training_service=(
+                        self.internal_onboarding_training_service
+                    ),
                     logger=self.logger,
                 )
             user_info.user_id = user.user_id
@@ -318,6 +329,9 @@ class UserIdentityService:
                     user_permissions_repository=self.user_permissions_repository,
                     user_emails_repository=self.user_emails_repository,
                     users_repository=self.users_repository,
+                    internal_onboarding_training_service=(
+                        self.internal_onboarding_training_service
+                    ),
                     logger=self.logger,
                 )
             user_info.user_id = user.user_id
@@ -547,6 +561,9 @@ class UserIdentityService:
                 user_permissions_repository=self.user_permissions_repository,
                 user_emails_repository=self.user_emails_repository,
                 users_repository=self.users_repository,
+                internal_onboarding_training_service=(
+                    self.internal_onboarding_training_service
+                ),
                 logger=self.logger,
             )
 
