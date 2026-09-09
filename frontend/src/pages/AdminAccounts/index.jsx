@@ -19,6 +19,8 @@ const AccountsListView = () => {
     loading,
     search,
     setSearch,
+    userId,
+    setUserId,
     submitSearch,
     userType,
     setUserType,
@@ -69,6 +71,8 @@ const AccountsListView = () => {
         loading={loading}
         search={search}
         onSearchChange={setSearch}
+        userId={userId}
+        onUserIdChange={setUserId}
         onSearchSubmit={submitSearch}
         userType={userType}
         onUserTypeChange={setUserType}

@@ -144,7 +144,7 @@ class TestUsersRepository(BaseRepositoryTestLib):
 
         self.assertFalse(user.is_active)
 
-    def _make_user(self, *, first_name="T", last_name=None, email):
+    def _make_user(self, *, first_name="T", last_name=None, email, preferred_name=None):
         # last_name defaults to the email's local part so tests that isolate
         # their rows with a token-bearing email still match search=token via
         # the name leg: the email leg of the search reads user_emails, which
@@ -157,7 +157,29 @@ class TestUsersRepository(BaseRepositoryTestLib):
             communication_channel=CommunicationMethod.EMAIL,
             is_active=True,
             updated_timestamp=datetime.now(timezone.utc),
+            preferred_name=preferred_name,
         )
+
+    async def test_list_users_search_matches_the_preferred_name(self):
+        """The name a person chose is searchable, not just their legal one.
+
+        The list renders all three names, so searching only first_name and
+        last_name leaves a row visible but unfindable by the name it shows.
+        """
+        token = uuid.uuid4().hex[:10]
+        elsewhere = uuid.uuid4().hex[:10]
+        target = self._make_user(
+            first_name="Ann",
+            last_name=elsewhere,
+            email=f"{elsewhere}@example.com",
+            preferred_name=f"Pref{token}",
+        )
+        await self.insert_entities([target])
+
+        rows, total = await self.repo.list_users(self.session, search=token)
+
+        self.assertEqual(total, 1)
+        self.assertEqual(rows[0][0].user_id, target.user_id)
 
     async def test_list_users_search_matches_and_paginates(self):
         """A unique token isolates these rows from any pre-existing DB data.
