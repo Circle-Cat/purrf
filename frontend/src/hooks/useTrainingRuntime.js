@@ -72,7 +72,9 @@ export default function useTrainingRuntime(
   const [loadError, setLoadError] = useState(null);
   const [saveFailed, setSaveFailed] = useState(false);
   // The server refused a save because the run this page is holding is no
-  // longer one it serves -- the package was replaced under an open tab. Kept
+  // longer one it serves -- its package was replaced, or discarded, under an
+  // open tab. Which of the two it was decides what the page can advise, so
+  // the wording belongs to the caller rather than here. Kept
   // apart from saveFailed because the two need opposite advice: an ordinary
   // failure is retried by the next commit twenty seconds from now, and this
   // one never will be. Latched: nothing this page can do afterwards makes the
