@@ -56,7 +56,8 @@ def _job_id_of_application(application_id: int) -> ScalarSelect:
 def _current_assignee_ids_query(application_id: int) -> Select:
     """Statement aggregating who is responsible for an application right now.
 
-    Scoped to the application's current stage and round, and to active users.
+    Scoped to the application's current stage and round, and to users who can
+    still act -- active and not blocked.
     ``application_assignment`` keeps one row per (application, stage, round)
     and reassignment only overwrites within that key, so the rows accumulate
     as an application walks the pipeline -- unscoped, a round-1 screener stays
@@ -87,6 +88,10 @@ def _current_assignee_ids_query(application_id: int) -> Select:
             ApplicationAssignmentEntity.stage == ApplicationEntity.stage,
             ApplicationAssignmentEntity.round == ApplicationEntity.current_round,
             UsersEntity.is_active,
+            # Blocking leaves is_active alone on purpose, so activity does not
+            # cover it: a blocked assignee cannot open the application the mail
+            # is about.
+            UsersEntity.is_blocked.is_(False),
         )
     )
 
