@@ -396,6 +396,62 @@ describe("TrainingTrial", () => {
     expect(saveProgress).not.toHaveBeenCalled();
   });
 
+  it("repeats the server's reason when the trial cannot be started", async () => {
+    // The dead end this replaces: an admin who discarded the staged package
+    // and reloaded got "Could not start a trial run of this course." and no
+    // way to tell whether anything was wrong beyond there being nothing to
+    // run. The server already answers the rule that was broken.
+    startTrial.mockRejectedValueOnce(
+      Object.assign(new Error("refused"), {
+        response: {
+          status: 409,
+          data: {
+            message:
+              "There is no staged package on this course to run. Upload one first.",
+          },
+        },
+      }),
+    );
+    renderTrial();
+
+    expect(
+      await screen.findByText(/no staged package on this course to run/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/could not start a trial run/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("falls back to its own sentence when the failure carries no reason", async () => {
+    startTrial.mockRejectedValueOnce(new Error("nope"));
+    renderTrial();
+
+    expect(
+      await screen.findByText(/could not start a trial run/i),
+    ).toBeInTheDocument();
+  });
+
+  it("does not promise a replacement when a refused save ends the run", async () => {
+    // A trial's package can be gone for two reasons -- replaced by another
+    // upload, or discarded -- and after a discard there is no new package to
+    // reload onto. The learner page's "run the new one" is true there and
+    // false here.
+    saveProgress.mockRejectedValue(
+      Object.assign(new Error("refused"), { response: { status: 409 } }),
+    );
+    renderTrial();
+    await screen.findByTitle(/course/i);
+
+    postFromContent({
+      type: MESSAGE_TYPES.COMMIT,
+      cmi: { "cmi.core.lesson_status": "incomplete" },
+    });
+
+    const banner = await screen.findByText(/replaced or discarded/i);
+    expect(banner).toBeInTheDocument();
+    expect(banner.textContent).not.toMatch(/run the new one/i);
+  });
+
   it("does not carry one course's failure over to the next", async () => {
     // Router keeps the page mounted when only the param changes.
     startTrial.mockRejectedValueOnce(new Error("nope"));

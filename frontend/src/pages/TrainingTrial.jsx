@@ -36,6 +36,15 @@ const formatDuration = (ms) => {
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 };
 
+// Why a trial could not be opened, in the server's own words when it gave
+// any. Every refusal here is a rule the admin can act on -- nothing staged
+// to run, no such course -- and the one that reaches this page most often
+// follows their own Discard, where "could not" alone reads as a fault in
+// the page rather than the state they just chose.
+const reasonFor = (error) =>
+  error?.response?.data?.message ??
+  "Could not start a trial run of this course.";
+
 // There is no single-course GET; the admin catalogue itself only ever reads
 // every row and picks the one it wants, so this page does the same.
 const findCourseRow = (courses, courseId) =>
@@ -91,9 +100,9 @@ export default function TrainingTrial() {
       .then((response) => {
         if (!cancelled) setTrainingId(response.data.trainingId);
       })
-      .catch(() => {
+      .catch((error) => {
         if (!cancelled) {
-          setTrialError("Could not start a trial run of this course.");
+          setTrialError(reasonFor(error));
         }
       });
     return () => {
@@ -260,7 +269,7 @@ export default function TrainingTrial() {
             {saveFailed && (
               <div className="border-b bg-destructive/10 px-4 py-2 text-sm">
                 {sessionStale
-                  ? "This course's package was replaced while this page was open. Reload the page to run the new one; this page cannot save any more."
+                  ? "The package this trial was running was replaced or discarded while this page was open. This run can no longer verify anything. Reload to run whatever is staged now."
                   : "Your progress could not be saved. Keep this tab open; the course saves again automatically."}
               </div>
             )}
