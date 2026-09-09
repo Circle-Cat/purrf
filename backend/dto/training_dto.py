@@ -15,6 +15,11 @@ class TrainingDto(BaseDto):
     # nobody has uploaded to, which cannot be opened at all -- so the profile
     # page has to offer something other than a way in.
     is_hosted: bool = False
+    # Whether the course is still open. A deactivated course is closed to the
+    # people already assigned it, so the row stays -- with its status and its
+    # dates -- but cannot be started or resumed. True for a row with no course
+    # behind it: there is nothing there to have been turned off.
+    is_course_active: bool = True
     # None for a course outside the four seed categories.
     category: TrainingCategory | None = None
     completed_timestamp: datetime | None = None

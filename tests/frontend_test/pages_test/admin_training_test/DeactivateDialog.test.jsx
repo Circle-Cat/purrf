@@ -15,13 +15,25 @@ describe("DeactivateDialog", () => {
     );
 
     expect(
-      screen.getByText(/61 people already assigned keep their access/i),
+      screen.getByText(/61 people already assigned lose access/i),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/23 of them have not finished yet/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/nothing is deleted/i)).toBeInTheDocument();
     expect(screen.queryByText(/are you sure/i)).not.toBeInTheDocument();
+  });
+
+  it("does not promise the people mid-course that they can carry on", () => {
+    render(
+      <DeactivateDialog
+        course={{ courseId: 5, assignedCount: 61, unfinishedCount: 23 }}
+        open
+      />,
+    );
+
+    expect(screen.queryByText(/keep their access/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/progress is kept/i)).toBeInTheDocument();
   });
 
   it("says plainly that it can be turned back on", () => {

@@ -5,6 +5,7 @@ import pathlib
 import posixpath
 from dataclasses import dataclass
 
+from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import TrainingPackageState
 from backend.dto.training_course_dto import TrainingProgressDto, TrainingSessionDto
 from backend.training.byte_range import (
@@ -112,6 +113,7 @@ class TrainingContentService:
         signing_key,
         content_host,
         training_repository,
+        training_course_repository,
         training_course_package_repository,
         training_progress_repository,
         training_storage,
@@ -125,6 +127,9 @@ class TrainingContentService:
                 is issued against. Read when a session opens and never again:
                 a token names its package outright, so serving a file has no
                 assignment to look up.
+            training_course_repository (TrainingCourseRepository): The course
+                behind the assignment, read to answer one question: whether
+                it is still active. A learner's door closes with the course.
             training_course_package_repository (TrainingCoursePackageRepository):
                 Resolves the course's LIVE package when a session opens, and
                 the package a token names when a file is asked for.
@@ -136,6 +141,7 @@ class TrainingContentService:
         self.signing_key = signing_key
         self.content_host = content_host
         self.training_repository = training_repository
+        self.training_course_repository = training_course_repository
         self.training_course_package_repository = training_course_package_repository
         self.training_progress_repository = training_progress_repository
         self.training_storage = training_storage
@@ -209,6 +215,7 @@ class TrainingContentService:
             ValueError: Not configured, no such assignment, no course, or the
                 slot this session wanted is empty.
             PermissionError: The assignment belongs to somebody else.
+            ConflictError: The course is deactivated, on the learner's path.
         """
         self._require_configuration()
 
@@ -221,6 +228,24 @@ class TrainingContentService:
             raise PermissionError("This training belongs to somebody else.")
         if assignment.course_id is None:
             raise ValueError("This training has no course attached.")
+
+        # A deactivated course is closed to the people already on it, not
+        # only to new assignments -- somebody part-way through is locked out
+        # the moment it is turned off, and their progress row is kept for if
+        # it is turned back on. Only the learner's door: the staged slot is
+        # the trial's, and the repair sequence a trial exists for runs
+        # entirely on a course that is off.
+        if state is TrainingPackageState.LIVE:
+            course = await self.training_course_repository.get_course_by_id(
+                session, assignment.course_id
+            )
+            if course is None:
+                raise ValueError(f"No training course with id {assignment.course_id}.")
+            if not course.is_active:
+                raise ConflictError(
+                    "This course has been deactivated and can no longer be "
+                    "taken. Your progress is kept."
+                )
 
         package = await self.training_course_package_repository.get_by_state(
             session, assignment.course_id, state

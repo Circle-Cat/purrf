@@ -11,17 +11,24 @@ from backend.common.mentorship_enums import TrainingCategory, TrainingPackageSta
 class TrainingRepository:
     async def get_training_with_course_by_user_id(
         self, session: AsyncSession, user_id: int
-    ) -> list[tuple[TrainingEntity, str | None, bool]]:
-        """Fetch a user's training records, each with its course name and
-        whether that course has a live package.
+    ) -> list[tuple[TrainingEntity, str | None, bool, bool]]:
+        """Fetch a user's training records, each with its course name,
+        whether that course has a live package, and whether it is still
+        active.
 
         Outer joined: course_id is nullable, and a row without one is still
         the user's assignment and still has to be shown.
 
-        The boolean is what tells the caller a course we serve apart from one
-        nobody has uploaded to, or has only a package still pending
+        The first boolean is what tells the caller a course we serve apart
+        from one nobody has uploaded to, or has only a package still pending
         verification. Resolving an actual object key is the content route's
         job, per request.
+
+        The second is whether the course is still open. A deactivated course
+        is closed to the people already assigned it, not only to new
+        assignments, so the row has to carry the reason it can no longer be
+        started. A row with no course reads as active: there is no course to
+        have closed, and the legacy link rows are all of them.
         """
         has_live_package = (
             select(TrainingCoursePackageEntity.package_id)
@@ -36,6 +43,7 @@ class TrainingRepository:
                 TrainingEntity,
                 TrainingCourseEntity.name,
                 has_live_package,
+                TrainingCourseEntity.is_active,
             )
             .outerjoin(
                 TrainingCourseEntity,
@@ -43,7 +51,7 @@ class TrainingRepository:
             )
             .where(TrainingEntity.user_id == user_id)
         )
-        return [(row[0], row[1], row[2]) for row in result.all()]
+        return [(row[0], row[1], row[2], row[3] is not False) for row in result.all()]
 
     async def get_training_by_user_id_and_category(
         self, session: AsyncSession, user_id: int, category: TrainingCategory

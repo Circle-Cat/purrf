@@ -137,6 +137,7 @@ py_test(
     name = "training_content_service_test",
     srcs = ["training_content_service_test.py"],
     deps = [
+        "//backend/common:exceptions",
         "//backend/common:mentorship_enums",
         "//backend/entity:entities",
         "//backend/training:byte_range",

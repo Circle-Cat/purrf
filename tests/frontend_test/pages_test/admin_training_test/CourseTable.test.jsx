@@ -180,7 +180,7 @@ describe("CourseTable", () => {
     await userEvent.click(screen.getByRole("button", { name: /deactivate/i }));
 
     expect(
-      screen.getByText(/61 people already assigned keep their access/i),
+      screen.getByText(/61 people already assigned lose access/i),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/23 of them have not finished yet/i),

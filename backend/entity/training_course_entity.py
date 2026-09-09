@@ -38,8 +38,9 @@ class TrainingCourseEntity(Base):
         unique=True,
     )
 
-    # Stops new assignments. People already assigned keep their access and
-    # their progress; nothing deletes a course.
+    # Closes the course. No new assignments, and the people already on it
+    # cannot open it either -- their rows and their progress stay for if it
+    # is turned back on. Nothing deletes a course.
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     created_datetime: Mapped[datetime] = mapped_column(

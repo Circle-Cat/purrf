@@ -120,6 +120,14 @@ const TrainingSection = ({ list, timezone }) => {
                       >
                         View Link
                       </a>
+                    ) : training.isCourseActive === false ? (
+                      // Deactivating a course closes it to the people already
+                      // on it, part-way through included. The row keeps their
+                      // status and their dates, and their progress is still
+                      // stored for if it is turned back on.
+                      <span className="text-muted-foreground">
+                        No longer available
+                      </span>
                     ) : training.courseId && training.isHosted ? (
                       <Link to={ROUTE_PATHS.TRAINING_COURSE(training.id)}>
                         {actionLabel}

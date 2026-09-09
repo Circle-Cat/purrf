@@ -28,8 +28,8 @@ export const saveProgress = (trainingId, payload) =>
 export const listCourses = () => request.get(API_ENDPOINTS.TRAINING_COURSES);
 
 /**
- * Rename a course, or turn it on or off. Deactivating only stops new
- * assignments -- everyone already assigned keeps their access and progress.
+ * Rename a course, or turn it on or off. Deactivating closes the course to
+ * everyone, the people already assigned included; their progress is kept.
  * @param {string|number} courseId
  * @param {{isActive?: boolean, name?: string, description?: string}} payload
  * @returns {Promise<{data: Object}>} the updated `TrainingCourseDto`.

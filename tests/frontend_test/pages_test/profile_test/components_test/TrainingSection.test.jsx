@@ -351,6 +351,33 @@ describe("TrainingSection Component", () => {
     );
   });
 
+  it("offers no way into a course that has been turned off", () => {
+    renderInRouter(
+      <TrainingSection
+        list={[
+          {
+            id: 42,
+            courseId: 7,
+            isHosted: true,
+            isCourseActive: false,
+            name: "Mentor Onboarding",
+            category: null,
+            status: "in_progress",
+            link: null,
+            ...BASE_TIMESTAMPS,
+          },
+        ]}
+      />,
+    );
+
+    // The row itself stays -- its status and its dates are still the
+    // learner's record -- but there is nothing to click, and the cell says
+    // why rather than leaving the dash a learner has to guess at.
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.getByText(/no longer available/i)).toBeInTheDocument();
+    expect(screen.getByText("Mentor Onboarding")).toBeInTheDocument();
+  });
+
   it("keeps sending a seed row to its external link", () => {
     renderInRouter(
       <TrainingSection
