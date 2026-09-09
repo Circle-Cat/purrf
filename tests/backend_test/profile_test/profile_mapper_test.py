@@ -51,6 +51,7 @@ class TestProfileMapper(unittest.TestCase):
                 ),
                 "Corporate Culture",
                 True,
+                True,
             ),
             (
                 TrainingEntity(
@@ -64,6 +65,7 @@ class TestProfileMapper(unittest.TestCase):
                 ),
                 None,
                 False,
+                True,
             ),
         ]
 
@@ -129,8 +131,10 @@ class TestProfileMapper(unittest.TestCase):
 
     def test_map_training_entity_to_dto(self):
         """Test mapping of a single training record using _map_training."""
-        training, course_name, has_live_package = self.training_rows[0]
-        dto = self.mapper._map_training(training, course_name, has_live_package)
+        training, course_name, has_live_package, course_active = self.training_rows[0]
+        dto = self.mapper._map_training(
+            training, course_name, has_live_package, course_active
+        )
 
         self.assertIsInstance(dto, TrainingDto)
         self.assertEqual(dto.id, training.training_id)
@@ -139,18 +143,22 @@ class TestProfileMapper(unittest.TestCase):
 
     def test_a_training_row_carries_the_course_it_points_at(self):
         """The profile page needs both to name the course and to open it."""
-        training, course_name, has_live_package = self.training_rows[0]
+        training, course_name, has_live_package, course_active = self.training_rows[0]
 
-        dto = self.mapper._map_training(training, course_name, has_live_package)
+        dto = self.mapper._map_training(
+            training, course_name, has_live_package, course_active
+        )
 
         self.assertEqual(dto.course_id, 7)
         self.assertEqual(dto.name, "Corporate Culture")
 
     def test_a_training_row_with_no_course_maps_to_nulls(self):
         """Legacy rows have no course_id, and the column really is nullable."""
-        training, course_name, has_live_package = self.training_rows[1]
+        training, course_name, has_live_package, course_active = self.training_rows[1]
 
-        dto = self.mapper._map_training(training, course_name, has_live_package)
+        dto = self.mapper._map_training(
+            training, course_name, has_live_package, course_active
+        )
 
         self.assertIsNone(dto.course_id)
         self.assertIsNone(dto.name)
@@ -162,6 +170,18 @@ class TestProfileMapper(unittest.TestCase):
 
         self.assertIs(self.mapper._map_training(*hosted).is_hosted, True)
         self.assertIs(self.mapper._map_training(*unhosted).is_hosted, False)
+
+    def test_a_training_row_says_whether_the_course_is_still_open(self):
+        """Having a package and being open are different answers: a
+        deactivated course can still hold a perfectly good one."""
+        training, course_name, has_live_package, _ = self.training_rows[0]
+
+        closed = self.mapper._map_training(
+            training, course_name, has_live_package, False
+        )
+
+        self.assertIs(closed.is_hosted, True)
+        self.assertIs(closed.is_course_active, False)
 
     def test_the_course_name_reaches_the_wire_as_camel_case(self):
         profile_dto = self.mapper.map_to_profile_dto(

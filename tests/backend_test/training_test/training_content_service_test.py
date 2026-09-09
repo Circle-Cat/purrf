@@ -8,6 +8,7 @@ import unittest
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
+from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import TrainingPackageState, TrainingStatus
 from backend.entity.training_entity import TrainingEntity
 from backend.entity.training_progress_entity import TrainingProgressEntity
@@ -112,6 +113,12 @@ class _ContentServiceCase(unittest.IsolatedAsyncioTestCase):
             storage_prefix="training/9/staged-package/",
             entry_path="scormcontent/index.html",
         )
+        # Active unless a test says otherwise: the learner's door is the only
+        # one that reads this, so every other case wants it out of the way.
+        self.course = MagicMock(course_id=_COURSE_ID, is_active=True)
+        self.course_repository = MagicMock()
+        self.course_repository.get_course_by_id = AsyncMock(return_value=self.course)
+
         self.package_repository = MagicMock()
         # Opening a session resolves the course's live package; serving a file
         # resolves the package the token names, which is a different question
@@ -137,6 +144,7 @@ class _ContentServiceCase(unittest.IsolatedAsyncioTestCase):
             signing_key=_KEY,
             content_host=_CONTENT_HOST,
             training_repository=self.training_repository,
+            training_course_repository=self.course_repository,
             training_course_package_repository=self.package_repository,
             training_progress_repository=self.progress_repository,
             training_storage=self.storage,
@@ -190,6 +198,22 @@ class TestOpenSession(_ContentServiceCase):
 
         claims = verify_content_token(_KEY, self.token_from(result))
         self.assertEqual(_as_epoch(result.expires_at), claims.expires_at)
+
+    async def test_a_deactivated_course_is_closed_to_the_people_assigned_it(self):
+        # Deactivating used to stop new assignments only, so a course turned
+        # off went on serving everybody already on it.
+        self.course.is_active = False
+
+        with self.assertRaises(ConflictError) as caught:
+            await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+        self.assertIn("deactivated", str(caught.exception).lower())
+
+    async def test_a_course_that_has_gone_missing_cannot_be_opened(self):
+        self.course_repository.get_course_by_id = AsyncMock(return_value=None)
+
+        with self.assertRaises(ValueError):
+            await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
 
     async def test_somebody_elses_assignment_cannot_be_opened(self):
         self.training.user_id = _OTHER_USER_ID
@@ -282,6 +306,18 @@ class TestOpenTrialSession(_ContentServiceCase):
 
         claims = verify_content_token(_KEY, self.token_from(result))
         self.assertEqual(claims.package_id, _PENDING_PACKAGE_ID)
+
+    async def test_a_deactivated_course_can_still_be_trialled(self):
+        # The repair sequence the trial exists for: a broken course is
+        # deactivated, re-exported, re-uploaded, trialled, then turned back
+        # on. Gating the staged slot on `is_active` would strand it off.
+        self.course.is_active = False
+
+        result = await self.service.open_trial_session(
+            self.session, _TRAINING_ID, _USER_ID
+        )
+
+        self.assertTrue(result.content_base_url)
 
     async def test_a_trial_carries_no_progress_to_resume_from(self):
         """A trial is always ab initio, whatever the assignment's row holds.
@@ -471,6 +507,7 @@ class TestUnconfiguredContentHosting(_ContentServiceCase):
             signing_key=overrides.get("signing_key", _KEY),
             content_host=overrides.get("content_host", _CONTENT_HOST),
             training_repository=self.training_repository,
+            training_course_repository=self.course_repository,
             training_course_package_repository=self.package_repository,
             training_progress_repository=self.progress_repository,
             training_storage=self.storage,

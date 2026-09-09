@@ -87,7 +87,7 @@ class TestTrainingRepository(BaseRepositoryTestLib):
         )
 
         self.assertEqual(len(result), 2)
-        self.assertTrue(all(t.user_id == self.user1.user_id for t, _, _ in result))
+        self.assertTrue(all(t.user_id == self.user1.user_id for t, _, _, _ in result))
 
     async def test_get_training_with_course_by_user_id_non_existent(self):
         result = await self.repo.get_training_with_course_by_user_id(self.session, 9999)
@@ -108,9 +108,9 @@ class TestTrainingRepository(BaseRepositoryTestLib):
             self.session, self.user2.user_id
         )
 
-        names = {row.training_id: name for row, name, _ in result}
+        names = {row.training_id: name for row, name, _, _ in result}
         assigned = next(
-            row for row, _, _ in result if row.course_id == course.course_id
+            row for row, _, _, _ in result if row.course_id == course.course_id
         )
         self.assertEqual(names[assigned.training_id], "Mentor Onboarding")
 
@@ -162,7 +162,7 @@ class TestTrainingRepository(BaseRepositoryTestLib):
             self.session, self.user2.user_id
         )
 
-        has_live = {row.course_id: value for row, _, value in result}
+        has_live = {row.course_id: value for row, _, value, _ in result}
         self.assertIs(has_live[live.course_id], True)
         self.assertIs(has_live[pending_only.course_id], False)
         self.assertIs(has_live[none_at_all.course_id], False)
@@ -174,7 +174,41 @@ class TestTrainingRepository(BaseRepositoryTestLib):
         )
 
         self.assertEqual(len(result), 2)
-        self.assertTrue(all(name is None for _, name, _ in result))
+        self.assertTrue(all(name is None for _, name, _, _ in result))
+
+    async def test_a_row_says_whether_its_course_is_still_active(self):
+        retired = TrainingCourseEntity(name="Retired", is_active=False)
+        current = TrainingCourseEntity(name="Current", is_active=True)
+        await self.insert_entities([retired, current])
+        await self.insert_entities([
+            TrainingEntity(
+                user_id=self.user2.user_id,
+                status=TrainingStatus.TO_DO,
+                course_id=retired.course_id,
+            ),
+            TrainingEntity(
+                user_id=self.user2.user_id,
+                status=TrainingStatus.TO_DO,
+                course_id=current.course_id,
+            ),
+        ])
+
+        result = await self.repo.get_training_with_course_by_user_id(
+            self.session, self.user2.user_id
+        )
+
+        active = {row.course_id: value for row, _, _, value in result}
+        self.assertIs(active[retired.course_id], False)
+        self.assertIs(active[current.course_id], True)
+
+    async def test_a_row_with_no_course_is_not_reported_as_closed(self):
+        # The outer join leaves this null, and a row nobody can close must
+        # not read as closed -- the legacy link rows are all of them.
+        result = await self.repo.get_training_with_course_by_user_id(
+            self.session, self.user1.user_id
+        )
+
+        self.assertTrue(all(active is True for _, _, _, active in result))
 
     async def test_get_training_by_user_id_and_category_existing(self):
         result = await self.repo.get_training_by_user_id_and_category(
@@ -218,7 +252,7 @@ class TestTrainingRepository(BaseRepositoryTestLib):
         """Test updating an existing TrainingEntity."""
         existing = [
             row
-            for row, _, _ in await self.repo.get_training_with_course_by_user_id(
+            for row, _, _, _ in await self.repo.get_training_with_course_by_user_id(
                 self.session, self.user1.user_id
             )
         ]

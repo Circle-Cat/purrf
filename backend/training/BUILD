@@ -92,6 +92,7 @@ py_library(
         ":scorm_package",
         ":training_content_token",
         ":training_storage",
+        "//backend/common:exceptions",
         "//backend/common:mentorship_enums",
         "//backend/dto",
         "//backend/repository:repositories",
