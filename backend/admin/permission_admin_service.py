@@ -384,6 +384,7 @@ class PermissionAdminService:
             first_name=user.first_name,
             last_name=user.last_name,
             is_active=user.is_active,
+            is_blocked=user.is_blocked,
             is_super_admin=user.is_super_admin,
             preferred_name=user.preferred_name,
             user_type=user_type,
