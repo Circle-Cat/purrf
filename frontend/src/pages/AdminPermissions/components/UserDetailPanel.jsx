@@ -34,6 +34,7 @@ const UserDetailPanel = ({
   onRevokeSuperAdmin,
 }) => {
   const { user, isSuperAdmin, permissions } = useAuth();
+  const canOpenAccountConsole = permissions.includes(PERMISSIONS.USER_ADMIN);
   const [saving, setSaving] = useState(false);
   const [superBusy, setSuperBusy] = useState(false);
   const { active, history, loading, saveDiff } = useUserPermissions(
@@ -76,13 +77,17 @@ const UserDetailPanel = ({
         {subLine && <DialogDescription>{subLine}</DialogDescription>}
         {/* The account console holds the other half of this person: whether
             they can sign in at all. The two pages are deliberately separate,
-            so each one links to the other. */}
-        <Link
-          to={`${ROUTE_PATHS.ADMIN_ACCOUNTS}?user_id=${selectedUser.userId}`}
-          className="text-sm font-medium text-sky-700 hover:text-sky-900"
-        >
-          Account state →
-        </Link>
+            so each one links to the other -- and the two permissions are held
+            by different people, so the crossing is offered only to a viewer
+            who holds the far side too. */}
+        {canOpenAccountConsole && (
+          <Link
+            to={`${ROUTE_PATHS.ADMIN_ACCOUNTS}?user_id=${selectedUser.userId}`}
+            className="text-sm font-medium text-sky-700 hover:text-sky-900"
+          >
+            Account state →
+          </Link>
+        )}
       </DialogHeader>
 
       <div className="flex flex-col gap-5">
