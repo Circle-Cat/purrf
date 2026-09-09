@@ -150,7 +150,8 @@ class UsersRepository:
         Args:
             session (AsyncSession): The active async database session.
             search (str | None): Case-insensitive substring over first_name /
-                last_name / any user_emails address; None lists everyone.
+                last_name / preferred_name / any user_emails address; None
+                lists everyone.
             user_id (int | None): When not None, restricts results to the user
                 with this exact ``user_id``. Applied in addition to ``search``.
             limit (int): Max rows to return.
@@ -221,6 +222,7 @@ class UsersRepository:
             search_targets = [
                 func.lower(UsersEntity.first_name).like(pattern),
                 func.lower(UsersEntity.last_name).like(pattern),
+                func.lower(UsersEntity.preferred_name).like(pattern),
                 self._any_email_matches(pattern),
             ]
             if search_blocked_reason:

@@ -84,6 +84,8 @@ const renderList = (props = {}) =>
       loading={false}
       search=""
       onSearchChange={vi.fn()}
+      userId=""
+      onUserIdChange={vi.fn()}
       onSearchSubmit={vi.fn()}
       userType=""
       onUserTypeChange={vi.fn()}
@@ -138,12 +140,64 @@ describe("AccountList state chips", () => {
   });
 });
 
+describe("AccountList columns", () => {
+  const cellsIn = () => within(screen.getByTestId("account-row-1203"));
+
+  it("names the email column for the field it actually shows", () => {
+    // The row carries primary_email specifically -- a person can hold several
+    // addresses, and "Email" reads as though this were all of them.
+    renderList();
+    expect(
+      screen.getByRole("columnheader", { name: "Primary contact email" }),
+    ).toBeInTheDocument();
+  });
+
+  it("gives each of the three names its own column", () => {
+    // Same shape as the permission page's user list, which is the product rule
+    // for admin surfaces: the three names travel and render separately.
+    renderList();
+    for (const header of ["First Name", "Last Name", "Preferred Name"]) {
+      expect(
+        screen.getByRole("columnheader", { name: header }),
+      ).toBeInTheDocument();
+    }
+    expect(cellsIn().getByText("Sam")).toBeInTheDocument();
+    expect(cellsIn().getByText("Rivera")).toBeInTheDocument();
+  });
+
+  it("shows a dash when someone has no preferred name", () => {
+    renderList({ accounts: [row({ preferredName: null })] });
+    expect(cellsIn().getByText("\u2014")).toBeInTheDocument();
+  });
+
+  it("shows the preferred name on its own when there is one", () => {
+    renderList({ accounts: [row({ preferredName: "Sammy" })] });
+    expect(cellsIn().getByText("Sammy")).toBeInTheDocument();
+  });
+});
+
 describe("AccountList controls", () => {
   it("searches over more than a name, and says so", () => {
     renderList();
     expect(
       screen.getByPlaceholderText("Name, email, or block reason"),
     ).toBeInTheDocument();
+  });
+
+  it("gives the user id a box of its own", () => {
+    renderList();
+    expect(screen.getByPlaceholderText("User ID")).toBeInTheDocument();
+  });
+
+  it("keeps everything but digits out of the id box", () => {
+    const onUserIdChange = vi.fn();
+    renderList({ onUserIdChange });
+
+    fireEvent.change(screen.getByPlaceholderText("User ID"), {
+      target: { value: "12a3" },
+    });
+
+    expect(onUserIdChange).toHaveBeenCalledWith("123");
   });
 
   it("offers the Type and Status filters as labelled native selects", () => {
@@ -213,6 +267,36 @@ describe("AdminAccounts list page", () => {
         expect.objectContaining({ search: "ai-generated" }),
       ),
     );
+  });
+
+  it("commits the id box under its own key, not the one that opens a person", async () => {
+    const { router } = renderPage();
+    await screen.findByText("sam@example.com");
+
+    const box = screen.getByPlaceholderText("User ID");
+    fireEvent.change(box, { target: { value: "1203" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(router.state.location.search).toContain("id=1203"),
+    );
+    expect(router.state.location.search).not.toContain("user_id=1203");
+    await waitFor(() =>
+      expect(api.getAccounts).toHaveBeenLastCalledWith(
+        expect.objectContaining({ userId: "1203" }),
+      ),
+    );
+  });
+
+  it("deep-links ?id= back into the box and the query", async () => {
+    renderPage("?id=1203");
+
+    await waitFor(() =>
+      expect(api.getAccounts).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "1203" }),
+      ),
+    );
+    expect(screen.getByPlaceholderText("User ID")).toHaveValue("1203");
   });
 
   it("shows the pending banner with the caller's own count", async () => {
