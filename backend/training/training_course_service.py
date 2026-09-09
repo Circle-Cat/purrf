@@ -172,8 +172,10 @@ class TrainingCourseService:
     ) -> TrainingCourseDto:
         """Rename a course, or turn it on or off.
 
-        Deactivating only stops new assignments; everybody already assigned
-        keeps their access and their progress. There is no delete.
+        Deactivating closes the course: nobody new can be assigned it, and
+        the people already on it lose their way in, part-way through
+        included. Their rows and their stored progress stay for if it is
+        turned back on. There is no delete.
 
         Raises:
             ValueError: No such course.
