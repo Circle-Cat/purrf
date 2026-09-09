@@ -1,15 +1,16 @@
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { legalName } from "@/utils/userName";
 import StateChips from "@/pages/AdminAccounts/components/StateChips";
 
 // Deliberate near-duplicate of
 // frontend/src/pages/AdminPermissions/components/UserList.jsx. The two pages
 // answer different questions -- who may do what, versus who may sign in at
-// all -- and share no state, no columns and no row actions beyond a name and
-// an id. Keeping one component for both would couple two admin surfaces that
-// are expected to drift; this copy belongs to the account console alone.
+// all -- and share no state and no row actions. The person columns match that
+// page on purpose, because rendering the three names separately is one product
+// rule for every admin surface; keeping one component for both would still
+// couple two surfaces that are expected to drift, so this copy belongs to the
+// account console alone.
 
 const SELECT_CLASS =
   "rounded-md border border-slate-300 bg-white p-2 text-sm text-slate-900";
@@ -135,10 +136,16 @@ const AccountList = ({
                 User ID
               </th>
               <th className="border-b border-slate-200 px-4 py-3 text-left font-bold">
-                Name
+                First Name
               </th>
               <th className="border-b border-slate-200 px-4 py-3 text-left font-bold">
-                Email
+                Last Name
+              </th>
+              <th className="border-b border-slate-200 px-4 py-3 text-left font-bold">
+                Preferred Name
+              </th>
+              <th className="border-b border-slate-200 px-4 py-3 text-left font-bold">
+                Primary contact email
               </th>
               <th className="border-b border-slate-200 px-4 py-3 text-left font-bold">
                 Type
@@ -154,7 +161,7 @@ const AccountList = ({
           <tbody>
             {loading || accounts.length === 0 ? (
               <tr>
-                <td className="px-4 py-3 text-center" colSpan={6}>
+                <td className="px-4 py-3 text-center" colSpan={8}>
                   {loading ? "Loading accounts…" : "No accounts match."}
                 </td>
               </tr>
@@ -174,13 +181,13 @@ const AccountList = ({
                     {a.userId}
                   </td>
                   <td className="border-b border-slate-200 px-4 py-3">
-                    {legalName(a)}
-                    {a.preferredName ? (
-                      <span className="text-muted-foreground">
-                        {" "}
-                        &quot;{a.preferredName}&quot;
-                      </span>
-                    ) : null}
+                    {a.firstName}
+                  </td>
+                  <td className="border-b border-slate-200 px-4 py-3">
+                    {a.lastName}
+                  </td>
+                  <td className="border-b border-slate-200 px-4 py-3">
+                    {a.preferredName ?? "\u2014"}
                   </td>
                   <td className="border-b border-slate-200 px-4 py-3">
                     {a.primaryEmail}

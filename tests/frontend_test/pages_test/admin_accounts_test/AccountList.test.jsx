@@ -138,6 +138,42 @@ describe("AccountList state chips", () => {
   });
 });
 
+describe("AccountList columns", () => {
+  const cellsIn = () => within(screen.getByTestId("account-row-1203"));
+
+  it("names the email column for the field it actually shows", () => {
+    // The row carries primary_email specifically -- a person can hold several
+    // addresses, and "Email" reads as though this were all of them.
+    renderList();
+    expect(
+      screen.getByRole("columnheader", { name: "Primary contact email" }),
+    ).toBeInTheDocument();
+  });
+
+  it("gives each of the three names its own column", () => {
+    // Same shape as the permission page's user list, which is the product rule
+    // for admin surfaces: the three names travel and render separately.
+    renderList();
+    for (const header of ["First Name", "Last Name", "Preferred Name"]) {
+      expect(
+        screen.getByRole("columnheader", { name: header }),
+      ).toBeInTheDocument();
+    }
+    expect(cellsIn().getByText("Sam")).toBeInTheDocument();
+    expect(cellsIn().getByText("Rivera")).toBeInTheDocument();
+  });
+
+  it("shows a dash when someone has no preferred name", () => {
+    renderList({ accounts: [row({ preferredName: null })] });
+    expect(cellsIn().getByText("\u2014")).toBeInTheDocument();
+  });
+
+  it("shows the preferred name on its own when there is one", () => {
+    renderList({ accounts: [row({ preferredName: "Sammy" })] });
+    expect(cellsIn().getByText("Sammy")).toBeInTheDocument();
+  });
+});
+
 describe("AccountList controls", () => {
   it("searches over more than a name, and says so", () => {
     renderList();
