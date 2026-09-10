@@ -7,6 +7,9 @@ import uuid
 import zipfile
 from datetime import datetime, timezone
 
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm.exc import StaleDataError
+
 from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import TrainingPackageState
 from backend.dto.training_course_dto import (
@@ -18,7 +21,11 @@ from backend.entity.training_course_package_entity import (
     TrainingCoursePackageEntity,
 )
 from backend.training.scorm_manifest import ManifestRejected, parse_driver_config
-from backend.training.scorm_package import PackageRejected, read_package
+from backend.training.scorm_package import (
+    PackageRejected,
+    member_bytes,
+    read_package,
+)
 from backend.training.training_storage import content_type_for
 
 
@@ -124,27 +131,41 @@ class TrainingPackageService:
         # not read, not deleted and not cleared against: an upload is not a
         # publication, and nobody on this course sees anything change until
         # somebody presses Publish.
-        replaced = await self.training_course_package_repository.get_by_state(
-            session, course_id, TrainingPackageState.PENDING
-        )
-        replaced_prefix = replaced.storage_prefix if replaced is not None else None
-        if replaced is not None:
-            await self.training_course_package_repository.delete(session, replaced)
+        try:
+            replaced = await self.training_course_package_repository.get_by_state(
+                session, course_id, TrainingPackageState.PENDING
+            )
+            replaced_prefix = replaced.storage_prefix if replaced is not None else None
+            if replaced is not None:
+                await self.training_course_package_repository.delete(session, replaced)
 
-        await self.training_course_package_repository.add(
-            session,
-            TrainingCoursePackageEntity(
-                course_id=course_id,
-                state=TrainingPackageState.PENDING,
-                storage_prefix=new_prefix,
-                entry_path=contents.manifest.entry_path,
-                scorm_version=contents.manifest.scorm_version,
-                package_version=package_version,
-                reporting_mode=reporting_mode,
-                uploaded_at=moment,
-            ),
-        )
-        await session.commit()
+            await self.training_course_package_repository.add(
+                session,
+                TrainingCoursePackageEntity(
+                    course_id=course_id,
+                    state=TrainingPackageState.PENDING,
+                    storage_prefix=new_prefix,
+                    entry_path=contents.manifest.entry_path,
+                    scorm_version=contents.manifest.scorm_version,
+                    package_version=package_version,
+                    reporting_mode=reporting_mode,
+                    uploaded_at=moment,
+                ),
+            )
+            await session.commit()
+        except (IntegrityError, StaleDataError) as error:
+            # Two uploads to one course read the empty pending slot, both
+            # stored their whole archive, and only one row can land: the
+            # index refuses the second insert, or the loser tries to delete
+            # the row the winner already removed. That is what two tabs
+            # looks like, not an internal error -- and the loser's files are
+            # dropped here because no row will ever name them.
+            await session.rollback()
+            await self._delete_prefix_quietly(new_prefix, course_id)
+            raise ConflictError(
+                "Another upload to this course landed first, so this one was "
+                "discarded. Reload the page to see what is staged now."
+            ) from error
 
         self.logger.info(
             "[TrainingPackageService] course %s staged %s (%s files)",
@@ -195,20 +216,47 @@ class TrainingPackageService:
 
         Raises:
             zipfile.BadZipFile: The container could not be read.
-            ManifestRejected, PackageRejected: See `read_package`.
+            ManifestRejected, PackageRejected: See `read_package`, plus a
+                member of a readable archive that is damaged.
         """
         with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
             contents = read_package(archive)
             new_prefix = f"training/{course_id}/{uuid.uuid4().hex}/"
-            for name in contents.file_names:
-                self.training_storage.put(
-                    posixpath.join(new_prefix, name),
-                    # Served under the normalised name, read back under the
-                    # one the zip actually stores.
-                    archive.read(contents.archive_names[name]),
-                    content_type_for(name),
-                )
+            try:
+                for name in contents.file_names:
+                    self.training_storage.put(
+                        posixpath.join(new_prefix, name),
+                        # Served under the normalised name, read back under
+                        # the one the zip actually stores.
+                        member_bytes(archive, contents.archive_names[name], name),
+                        content_type_for(name),
+                    )
+            except Exception:
+                # Nothing names these files yet, and nothing ever will: the
+                # row is written after this returns. Whatever went wrong --
+                # a damaged member, the bucket refusing a write -- the
+                # objects already written are unreachable the moment this
+                # raises, and there is no sweep that would find them later.
+                self._drop_prefix_quietly(new_prefix, course_id)
+                raise
         return contents, new_prefix
+
+    def _drop_prefix_quietly(self, prefix: str, course_id: int) -> None:
+        """Delete a prefix from inside the storage thread, swallowing failures.
+
+        The coroutine-side twin of `_delete_prefix_quietly`, for the one
+        caller that is already off the loop. A failure to clean up must not
+        replace the error that caused the cleanup.
+        """
+        try:
+            self.training_storage.delete_prefix(prefix)
+        except Exception:
+            self.logger.exception(
+                "[TrainingPackageService] could not clean up the partial "
+                "upload at %s for course %s",
+                prefix,
+                course_id,
+            )
 
     async def publish_package(
         self, session, course_id: int
