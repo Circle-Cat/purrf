@@ -1,11 +1,11 @@
-"""Assigning a course to a person, by hand.
+"""Assigning a course to people, by hand.
 
-Automatic dispatch is a later piece of work. The existing mentorship dispatch
-(``OnboardingTrainingService.ensure_for_admitted``) keeps working untouched and
-attaches the seed course its category stands for, so both paths write the same
-shape of row.
+Two entry points: a whole cohort at once, from the admin card, and a trial run
+a verifier opens on themselves. The automatic dispatch
+(``OnboardingTrainingService.ensure_for_admitted``) writes the same shape of
+row from its own path.
 
-The two paths can reach the same person for the same seed course, and only one
+Any of them can reach the same person for the same seed course, and only one
 row may exist for a category: ``TrainingRepository.get_training_by_user_id_and_category``
 reads it with ``one_or_none()``, so a second row would raise for that user for
 good. Assignment therefore adopts a category row it finds rather than inserting
@@ -17,7 +17,6 @@ from sqlalchemy.exc import IntegrityError
 from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import TrainingPackageState, TrainingStatus
 from backend.dto.training_course_dto import (
-    TrainingAssignmentRequestDto,
     TrainingAssignmentResultDto,
     TrainingBulkAssignmentRequestDto,
     TrainingBulkAssignmentResultDto,
@@ -124,58 +123,6 @@ class TrainingAssignmentService:
             link=None,
         )
 
-    async def _assign_one(
-        self, session, course, user_id: int, deadline
-    ) -> tuple[TrainingAssignmentResultDto, bool]:
-        """One person's row for an already-gated course, without committing.
-
-        The transaction belongs to the caller: one person commits right after,
-        a batch commits once at the end, so a batch that fails partway writes
-        nothing at all.
-
-        Args:
-            session: The active async database session.
-            course (TrainingCourseEntity): The gated course.
-            user_id (int): Who is being assigned.
-            deadline (datetime | None): The deadline to stamp on a new row.
-
-        Returns:
-            tuple[TrainingAssignmentResultDto, bool]: The assignment, and
-            whether this call changed anything -- a fresh row, or a category
-            row adopted. False means the person already held the course and
-            nothing was touched.
-        """
-        existing, adopted = await self._existing_assignment(session, user_id, course)
-        if existing is not None:
-            return (
-                TrainingAssignmentResultDto(
-                    training_id=existing.training_id,
-                    user_id=existing.user_id,
-                    course_id=course.course_id,
-                    created=False,
-                ),
-                adopted,
-            )
-
-        assignment = self._new_row(course, user_id, deadline)
-        session.add(assignment)
-        await session.flush()
-
-        self.logger.info(
-            "[TrainingAssignmentService] assigned course %s to user %s",
-            course.course_id,
-            user_id,
-        )
-        return (
-            TrainingAssignmentResultDto(
-                training_id=assignment.training_id,
-                user_id=assignment.user_id,
-                course_id=course.course_id,
-                created=True,
-            ),
-            True,
-        )
-
     async def assign_bulk(
         self, session, payload: TrainingBulkAssignmentRequestDto
     ) -> TrainingBulkAssignmentResultDto:
@@ -277,46 +224,6 @@ class TrainingAssignmentService:
             attached_count=attached_count,
             already_assigned_count=already_assigned_count,
         )
-
-    async def assign(
-        self, session, payload: TrainingAssignmentRequestDto
-    ) -> TrainingAssignmentResultDto:
-        """Give one person one course.
-
-        The gate is a live package plus `is_active`. A live package is proof
-        enough on its own: `publish_package` only promotes a pending package
-        that already carries a verification stamp, so an unverified course
-        can no longer reach this point at all. That is what the gate is for
-        -- an unfinishable course holds everyone assigned to it at the
-        mentorship matching gate, silently, and looks like our bug. A course
-        with nothing live yet is refused for that same reason. Neither can a
-        deactivated one.
-
-        Assigning twice is a no-op rather than an error, and never rewrites the
-        existing row -- in particular a deadline already stamped by
-        registration stays put.
-
-        Args:
-            session: The active async database session.
-            payload (TrainingAssignmentRequestDto): Who, which course, and an
-                optional deadline.
-
-        Returns:
-            TrainingAssignmentResultDto: The assignment, and whether this call
-            is what created it.
-
-        Raises:
-            ValueError: No such course.
-            ConflictError: The course has no live package, or is deactivated.
-                Surfaces as 409.
-        """
-        course = await self._assignable_course(session, payload.course_id)
-        result, changed = await self._assign_one(
-            session, course, payload.user_id, payload.deadline
-        )
-        if changed:
-            await session.commit()
-        return result
 
     async def start_trial(
         self, session, course_id: int, user_id: int
