@@ -96,14 +96,6 @@ class TrainingCourseUpdateDto(BaseRequestDto):
     is_active: bool | None = None
 
 
-class TrainingAssignmentRequestDto(BaseRequestDto):
-    """Assigning one course to one person."""
-
-    user_id: int
-    course_id: int
-    deadline: datetime | None = None
-
-
 class TrainingBulkAssignmentRequestDto(BaseRequestDto):
     """Assigning one course to a whole cohort.
 

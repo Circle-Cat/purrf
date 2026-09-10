@@ -64,18 +64,6 @@ export const readCompletionConfig = (courseId) =>
  * @returns {Promise<{data: Object}>} `TrainingPackageUploadResultDto`.
  */
 /**
- * Assign a verified course to one person. Repeating an assignment for the
- * same (user, course) pair is a no-op on the backend, not an error --
- * `created` in the result says whether this call was the one that did it.
- * @param {{userId: number, courseId: number, deadline?: string}} payload
- *   `deadline` must be left out entirely when there is none: the request
- *   DTO forbids unknown fields and rejects an empty string for this one.
- * @returns {Promise<{data: {trainingId: number, userId: number, courseId: number, created: boolean}}>}
- */
-export const assignCourse = (payload) =>
-  request.post(API_ENDPOINTS.TRAINING_ASSIGNMENTS, payload);
-
-/**
  * One page of the people a course may be assigned to. Only active, unblocked
  * accounts are ever returned -- that is a precondition of the search, not a
  * filter, since every row shown can be ticked and assigned.
@@ -146,9 +134,8 @@ export const listAudienceIds = ({
  * lands or none does. Anybody who already holds the course is counted, not
  * rewritten, so re-running a batch is safe.
  * @param {{courseId: number, userIds: Array<number>, deadline?: string}} payload
- *   `deadline` must be left out entirely when there is none, the way
- *   `assignCourse` requires -- the request DTO forbids unknown fields and
- *   rejects an empty string.
+ *   `deadline` must be left out entirely when there is none: the request
+ *   DTO forbids unknown fields and rejects an empty string for this one.
  * @returns {Promise<{data: {courseId: number, createdCount: number,
  *   alreadyAssignedCount: number}}>}
  */
