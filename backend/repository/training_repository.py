@@ -67,6 +67,38 @@ class TrainingRepository:
         )
         return result.scalars().one_or_none()
 
+    async def get_training_by_user_ids_and_course_id(
+        self,
+        session: AsyncSession,
+        user_ids: list[int],
+        course_id: int,
+    ) -> dict[int, TrainingEntity]:
+        """
+        Batch-fetch the rows several people hold for one course.
+
+        One query for a whole cohort: a bulk assignment has to know who
+        already holds the course, and asking per person would be a thousand
+        sequential round trips inside one open write transaction.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_ids (list[int]): The people to look up.
+            course_id (int): The course they may hold.
+
+        Returns:
+            dict[int, TrainingEntity]: {user_id: row} for the people who hold
+            it. Anybody without a row is simply absent. Empty for no users.
+        """
+        if not user_ids:
+            return {}
+        result = await session.execute(
+            select(TrainingEntity).where(
+                TrainingEntity.user_id.in_(user_ids),
+                TrainingEntity.course_id == course_id,
+            )
+        )
+        return {row.user_id: row for row in result.scalars().all()}
+
     async def get_training_by_user_ids_and_categories(
         self,
         session: AsyncSession,

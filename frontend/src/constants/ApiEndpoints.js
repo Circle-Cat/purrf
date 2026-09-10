@@ -135,6 +135,11 @@ export const API_ENDPOINTS = {
   TRAINING_COURSE_PREVIEW_SESSION: (courseId) =>
     `/training/courses/${courseId}/preview-session`,
   TRAINING_ASSIGNMENTS: "/training/assignments",
+  TRAINING_ASSIGNMENTS_BULK: "/training/assignments/bulk",
+  TRAINING_ASSIGNMENTS_AUDIENCE: "/training/assignments/audience",
+  TRAINING_ASSIGNMENTS_AUDIENCE_IDS: "/training/assignments/audience/ids",
+  TRAINING_USER_ASSIGNMENTS: (userId) =>
+    `/training/users/${userId}/assignments`,
 };
 
 /**

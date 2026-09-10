@@ -5,9 +5,17 @@ import { toast } from "sonner";
 
 import AdminTraining from "@/pages/AdminTraining";
 import * as api from "@/api/trainingApi";
+import { PERMISSIONS } from "@/constants/Permissions";
 
 vi.mock("@/api/trainingApi");
 vi.spyOn(toast, "error").mockImplementation(() => {});
+
+// The page reads the caller's grants to decide whether the assignment card
+// is theirs to see; the route itself only gates on the read grant.
+const auth = vi.hoisted(() => ({ permissions: [] }));
+vi.mock("@/context/auth/AuthContext", () => ({
+  useAuth: () => ({ permissions: auth.permissions }),
+}));
 
 const course = {
   courseId: 1,
@@ -31,6 +39,7 @@ const renderPage = () => render(<AdminTraining />, { wrapper: MemoryRouter });
 
 beforeEach(() => {
   vi.clearAllMocks();
+  auth.permissions = [PERMISSIONS.TRAINING_ADMIN_READ];
 });
 
 describe("AdminTraining page", () => {
@@ -69,5 +78,26 @@ describe("AdminTraining page", () => {
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("network error"),
     );
+  });
+  it("keeps the assignment card away from a read-only caller", async () => {
+    api.listCourses.mockResolvedValue({ data: [course] });
+
+    renderPage();
+
+    expect(await screen.findByText("Mentor Onboarding")).toBeInTheDocument();
+    expect(screen.queryByText("Assign training")).not.toBeInTheDocument();
+  });
+
+  it("shows the assignment card to a caller who may assign", async () => {
+    auth.permissions = [
+      PERMISSIONS.TRAINING_ADMIN_READ,
+      PERMISSIONS.TRAINING_ADMIN_WRITE,
+    ];
+    api.listCourses.mockResolvedValue({ data: [course] });
+    api.searchAudience.mockResolvedValue({ data: { rows: [], total: 0 } });
+
+    renderPage();
+
+    expect(await screen.findByText("Assign training")).toBeInTheDocument();
   });
 });

@@ -22,6 +22,33 @@ class TrainingProgressRepository:
         )
         return result.scalars().one_or_none()
 
+    async def get_by_training_ids(
+        self, session: AsyncSession, training_ids: list[int]
+    ) -> dict[int, TrainingProgressEntity]:
+        """Fetch the progress rows for several assignments at once.
+
+        One query for a whole list, so a page that shows runtime state beside
+        every assignment does not fan out into one read per row. An assignment
+        nobody has opened has no row and is simply absent from the map -- that
+        absence is what "never started" looks like.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            training_ids (list[int]): The assignments whose progress to fetch.
+
+        Returns:
+            dict[int, TrainingProgressEntity]: {training_id: progress row} for
+            the assignments that have one.
+        """
+        if not training_ids:
+            return {}
+        result = await session.execute(
+            select(TrainingProgressEntity).where(
+                TrainingProgressEntity.training_id.in_(training_ids)
+            )
+        )
+        return {row.training_id: row for row in result.scalars().all()}
+
     async def upsert(
         self, session: AsyncSession, training_id: int, **columns
     ) -> TrainingProgressEntity:

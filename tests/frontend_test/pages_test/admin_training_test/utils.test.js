@@ -5,6 +5,7 @@ import {
   canAssign,
   liveStateLabel,
   publishBlockedReason,
+  timeSpentLabel,
 } from "@/pages/AdminTraining/utils";
 
 const live = { liveState: "live", isActive: true };
@@ -79,5 +80,28 @@ describe("publishBlockedReason", () => {
     };
 
     expect(publishBlockedReason(course)).toBeNull();
+  });
+});
+
+describe("timeSpentLabel", () => {
+  it("reads an em dash for an assignment nobody opened", () => {
+    expect(timeSpentLabel(null)).toBe("—");
+    expect(timeSpentLabel(undefined)).toBe("—");
+  });
+
+  it("reads seconds under a minute", () => {
+    expect(timeSpentLabel(45)).toBe("45s");
+  });
+
+  it("reads minutes and seconds under an hour", () => {
+    expect(timeSpentLabel(940)).toBe("15m 40s");
+  });
+
+  it("reads hours and minutes above one", () => {
+    expect(timeSpentLabel(7325)).toBe("2h 2m");
+  });
+
+  it("reads zero as zero rather than as never opened", () => {
+    expect(timeSpentLabel(0)).toBe("0s");
   });
 });

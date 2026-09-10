@@ -366,6 +366,52 @@ class TestTrainingRepository(BaseRepositoryTestLib):
 
         self.assertEqual(result.training_id, expected.training_id)
 
+    async def test_get_training_by_user_ids_and_course_id_maps_each_holder(self):
+        course = TrainingCourseEntity(name="Culture", is_active=True)
+        await self.insert_entities([course])
+        held = TrainingEntity(
+            user_id=self.user1.user_id,
+            course_id=course.course_id,
+            status=TrainingStatus.TO_DO,
+        )
+        await self.insert_entities([held])
+
+        found = await self.repo.get_training_by_user_ids_and_course_id(
+            self.session,
+            [self.user1.user_id, self.user2.user_id],
+            course.course_id,
+        )
+
+        self.assertEqual(list(found), [self.user1.user_id])
+        self.assertEqual(found[self.user1.user_id].training_id, held.training_id)
+
+    async def test_get_training_by_user_ids_and_course_id_ignores_another_course(self):
+        course = TrainingCourseEntity(name="Culture", is_active=True)
+        other = TrainingCourseEntity(name="Residency", is_active=True)
+        await self.insert_entities([course, other])
+        await self.insert_entities([
+            TrainingEntity(
+                user_id=self.user1.user_id,
+                course_id=other.course_id,
+                status=TrainingStatus.TO_DO,
+            )
+        ])
+
+        found = await self.repo.get_training_by_user_ids_and_course_id(
+            self.session, [self.user1.user_id], course.course_id
+        )
+
+        self.assertEqual(found, {})
+
+    async def test_get_training_by_user_ids_and_course_id_asks_nothing_of_no_users(
+        self,
+    ):
+        found = await self.repo.get_training_by_user_ids_and_course_id(
+            self.session, [], 1
+        )
+
+        self.assertEqual(found, {})
+
 
 if __name__ == "__main__":
     unittest.main()

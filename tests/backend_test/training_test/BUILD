@@ -12,6 +12,18 @@ py_test(
 )
 
 py_test(
+    name = "training_audience_service_test",
+    srcs = ["training_audience_service_test.py"],
+    deps = [
+        "//backend/common:constants",
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/dto",
+        "//backend/training:training_audience_service",
+    ],
+)
+
+py_test(
     name = "training_assignment_service_test",
     srcs = ["training_assignment_service_test.py"],
     deps = [
@@ -61,6 +73,20 @@ py_test(
         "//backend/training:training_content_token",
         "//backend/training:training_course_service",
         "//backend/training:training_progress_service",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "training_bulk_assign_integration_test",
+    srcs = ["training_bulk_assign_integration_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/dto",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+        "//backend/training:training_assignment_service",
         "//tests/backend_test/repository_test:base_repository_test_lib",
     ],
 )
