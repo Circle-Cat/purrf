@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, Request, UploadFile
 
 from backend.common.api_endpoints import (
     TRAINING_ASSIGNMENTS_AUDIENCE_ENDPOINT,
+    TRAINING_ASSIGNMENTS_BULK_ENDPOINT,
     TRAINING_ASSIGNMENTS_AUDIENCE_IDS_ENDPOINT,
     TRAINING_ASSIGNMENTS_ENDPOINT,
     TRAINING_COURSE_ENDPOINT,
@@ -25,6 +26,7 @@ from backend.common.permissions import Permission
 from backend.dto.training_audience_dto import TrainingAudienceFilterDto
 from backend.dto.training_course_dto import (
     TrainingAssignmentRequestDto,
+    TrainingBulkAssignmentRequestDto,
     TrainingCourseCreateDto,
     TrainingCourseUpdateDto,
 )
@@ -222,6 +224,14 @@ class TrainingAdminController:
             response_model=None,
         )
         self.router.add_api_route(
+            TRAINING_ASSIGNMENTS_BULK_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_WRITE])(
+                self.assign_bulk
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
             TRAINING_ASSIGNMENTS_AUDIENCE_ENDPOINT,
             endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_WRITE])(
                 self.search_audience
@@ -269,6 +279,34 @@ class TrainingAdminController:
         return api_response(
             message="Training course updated.",
             data=course,
+        )
+
+    async def assign_bulk(self, payload: TrainingBulkAssignmentRequestDto):
+        """Assign one course to a whole cohort.
+
+        All or nothing: the course is gated once, and either every row lands
+        or none does. Anybody who already holds the course is reported rather
+        than rewritten, so re-running a batch is safe.
+
+        Args:
+            payload (TrainingBulkAssignmentRequestDto): The course, the ids,
+                and an optional deadline.
+        """
+        async with self.database.session() as session:
+            result = await self.training_assignment_service.assign_bulk(
+                session, payload
+            )
+        attached = (
+            f" {result.attached_count} existing records were attached to it."
+            if result.attached_count
+            else ""
+        )
+        return api_response(
+            message=(
+                f"Assigned to {result.created_count} people. "
+                f"{result.already_assigned_count} already had this course.{attached}"
+            ),
+            data=result,
         )
 
     async def search_audience(

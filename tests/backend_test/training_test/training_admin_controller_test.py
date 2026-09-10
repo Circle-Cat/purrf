@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from backend.common.api_endpoints import (
     TRAINING_ASSIGNMENTS_AUDIENCE_ENDPOINT,
+    TRAINING_ASSIGNMENTS_BULK_ENDPOINT,
     TRAINING_ASSIGNMENTS_AUDIENCE_IDS_ENDPOINT,
     TRAINING_COURSE_PACKAGE_ENDPOINT,
     TRAINING_COURSE_PREVIEW_SESSION_ENDPOINT,
@@ -28,6 +29,8 @@ from backend.dto.training_course_dto import (
     TrainingProgressSaveDto,
     TrainingAssignmentRequestDto,
     TrainingAssignmentResultDto,
+    TrainingBulkAssignmentRequestDto,
+    TrainingBulkAssignmentResultDto,
     TrainingCourseCreateDto,
     TrainingCourseDto,
     TrainingCourseLiveState,
@@ -841,6 +844,40 @@ class TestTrainingAudienceRoutes(TestTrainingAdminController):
             self.session, filters, group=None
         )
         self.assertEqual(response["data"].user_ids, [11, 12])
+
+
+class TestBulkAssignmentRoute(TestTrainingAdminController):
+    """Assigning one course to a whole cohort."""
+
+    def test_the_bulk_route_is_gated_on_the_write_grant(self):
+        by_method = {
+            (route.path, method): _route_permissions(route)
+            for route in self.controller.router.routes
+            for method in route.methods
+        }
+
+        self.assertEqual(
+            by_method[(TRAINING_ASSIGNMENTS_BULK_ENDPOINT, "POST")],
+            [Permission.TRAINING_ADMIN_WRITE],
+        )
+
+    async def test_a_batch_reports_what_it_created_and_what_it_skipped(self):
+        self.assignment_service.assign_bulk = AsyncMock(
+            return_value=TrainingBulkAssignmentResultDto(
+                course_id=3, created_count=2, already_assigned_count=1
+            )
+        )
+        payload = TrainingBulkAssignmentRequestDto(course_id=3, user_ids=[11, 12, 13])
+
+        response = await self.controller.assign_bulk(payload)
+
+        self.assignment_service.assign_bulk.assert_awaited_once_with(
+            self.session, payload
+        )
+        self.assertEqual(response["data"].created_count, 2)
+        self.assertEqual(response["data"].already_assigned_count, 1)
+        self.assertIn("2", response["message"])
+        self.assertIn("1", response["message"])
 
 
 if __name__ == "__main__":

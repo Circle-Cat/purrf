@@ -78,6 +78,20 @@ py_test(
 )
 
 py_test(
+    name = "training_bulk_assign_integration_test",
+    srcs = ["training_bulk_assign_integration_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/dto",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+        "//backend/training:training_assignment_service",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)
+
+py_test(
     name = "training_publish_integration_test",
     srcs = ["training_publish_integration_test.py"],
     env_inherit = ["DATABASE_URL"],
