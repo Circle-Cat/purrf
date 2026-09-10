@@ -76,6 +76,86 @@ export const assignCourse = (payload) =>
   request.post(API_ENDPOINTS.TRAINING_ASSIGNMENTS, payload);
 
 /**
+ * One page of the people a course may be assigned to. Only active, unblocked
+ * accounts are ever returned -- that is a precondition of the search, not a
+ * filter, since every row shown can be ticked and assigned.
+ * @param {{search?: string, userId?: string|number, userType?: string,
+ *   group?: string, mentorshipRole?: string, courseId?: string|number,
+ *   courseStatus?: string, limit?: number, offset?: number}} params
+ *   `group` only means something alongside `userType: "internal"`; the API
+ *   answers 400 otherwise. `courseStatus` needs a `courseId` to be about.
+ * @returns {Promise<{data: {rows: Array<Object>, total: number}}>}
+ *   `TrainingAudienceRowDto` rows. `courseStatus` on a row is filled only
+ *   when a course was named, and the two counts only when none was.
+ */
+export const searchAudience = ({
+  search,
+  userId,
+  userType,
+  group,
+  mentorshipRole,
+  courseId,
+  courseStatus,
+  limit,
+  offset,
+} = {}) =>
+  request.get(API_ENDPOINTS.TRAINING_ASSIGNMENTS_AUDIENCE, {
+    params: {
+      search,
+      userId,
+      userType,
+      group,
+      mentorshipRole,
+      courseId,
+      courseStatus,
+      limit,
+      offset,
+    },
+  });
+
+/**
+ * Every id the same search matches, for ticking a whole result set at once.
+ * Refused with a 409 above 1000 rather than trimmed: assigning a silently
+ * truncated cohort cannot be undone.
+ * @param {Object} params same facets as `searchAudience`, without paging.
+ * @returns {Promise<{data: {userIds: Array<number>, total: number}}>}
+ */
+export const listAudienceIds = ({
+  search,
+  userId,
+  userType,
+  group,
+  mentorshipRole,
+  courseId,
+  courseStatus,
+} = {}) =>
+  request.get(API_ENDPOINTS.TRAINING_ASSIGNMENTS_AUDIENCE_IDS, {
+    params: {
+      search,
+      userId,
+      userType,
+      group,
+      mentorshipRole,
+      courseId,
+      courseStatus,
+    },
+  });
+
+/**
+ * Assign one course to a whole cohort, in one transaction: either every row
+ * lands or none does. Anybody who already holds the course is counted, not
+ * rewritten, so re-running a batch is safe.
+ * @param {{courseId: number, userIds: Array<number>, deadline?: string}} payload
+ *   `deadline` must be left out entirely when there is none, the way
+ *   `assignCourse` requires -- the request DTO forbids unknown fields and
+ *   rejects an empty string.
+ * @returns {Promise<{data: {courseId: number, createdCount: number,
+ *   alreadyAssignedCount: number}}>}
+ */
+export const assignCourseBulk = (payload) =>
+  request.post(API_ENDPOINTS.TRAINING_ASSIGNMENTS_BULK, payload);
+
+/**
  * Publish a course's staged package, moving it into the live slot that
  * learners actually see.
  * @param {string|number} courseId

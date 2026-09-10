@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { listCourses } from "@/api/trainingApi";
+import { useAuth } from "@/context/auth/AuthContext";
+import { PERMISSIONS } from "@/constants/Permissions";
+import AssignTrainingCard from "@/pages/AdminTraining/components/AssignTrainingCard";
 import CourseTable from "@/pages/AdminTraining/components/CourseTable";
 
 /**
@@ -11,6 +14,10 @@ import CourseTable from "@/pages/AdminTraining/components/CourseTable";
  */
 export default function AdminTraining() {
   const [courses, setCourses] = useState(null);
+  // The route is gated on the read grant, so a reader reaches this page and
+  // must not be shown a card whose every action the API would refuse.
+  const { permissions } = useAuth();
+  const canAssign = permissions.includes(PERMISSIONS.TRAINING_ADMIN_WRITE);
 
   // The single source of truth for the list. Row actions in CourseTable
   // never patch `courses` themselves -- they call this again once their
@@ -49,6 +56,10 @@ export default function AdminTraining() {
           )}
         </CardContent>
       </Card>
+
+      {canAssign && courses !== null && (
+        <AssignTrainingCard courses={courses} />
+      )}
     </div>
   );
 }

@@ -49,3 +49,61 @@ export const publishBlockedReason = (course) => {
   }
   return null;
 };
+
+/** The Target course value that means "do not scope the search to a course". */
+export const ALL_COURSES = "";
+
+const COURSE_STATUS_LABELS = {
+  to_do: "To do",
+  in_progress: "In progress",
+  done: "Done",
+};
+
+/**
+ * A person's status on the course in scope. A row with no training row for
+ * that course reads "Not assigned" -- the absence is the answer.
+ * @param {?string} status a `TrainingStatus` value, or null.
+ * @returns {string}
+ */
+export const courseStatusLabel = (status) =>
+  status ? (COURSE_STATUS_LABELS[status] ?? status) : "Not assigned";
+
+/**
+ * What a person holds overall, for the column that replaces the course
+ * status when no course is in scope. Only rows that exist are counted; the
+ * catalogue is never padded with courses nobody assigned.
+ * @param {{assignedCourseCount: ?number, doneCourseCount: ?number}} row
+ * @returns {string}
+ */
+export const coursesHeldLabel = ({ assignedCourseCount, doneCourseCount }) => {
+  const held = assignedCourseCount ?? 0;
+  if (held === 0) return "No courses";
+  const noun = held === 1 ? "course" : "courses";
+  return `${held} ${noun} \u00b7 ${doneCourseCount ?? 0} done`;
+};
+
+/**
+ * Which people the course-status facet should start on once a course is
+ * picked. Topping up is the main use of an assignable course, so it starts on
+ * the people missing it; a course that cannot be assigned is only ever being
+ * inspected, so it starts on the people already on it. Defaulting always to
+ * "not assigned" would walk the operator into a full result set behind a
+ * greyed-out button.
+ * @param {?{liveState: string, isActive: boolean}} course
+ * @returns {string} a `courseStatus` facet value.
+ */
+export const defaultCourseStatusFor = (course) => {
+  if (!course) return "";
+  return canAssign(course) ? "not_assigned" : "assigned";
+};
+
+/**
+ * Why the bulk Assign button cannot be clicked, or null when it can. Not
+ * having named a course is the first reason: the card searches without one.
+ * @param {?{liveState: string, isActive: boolean}} course
+ * @returns {string|null}
+ */
+export const bulkAssignBlockedReason = (course) => {
+  if (!course) return "Pick a course to assign";
+  return assignBlockedReason(course);
+};
