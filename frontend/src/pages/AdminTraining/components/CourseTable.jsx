@@ -183,14 +183,23 @@ function StagedRow({ course, onDiscard, onPublish, discarding }) {
                 Trial run
               </Link>
             </Button>
-            <Button
-              size="sm"
-              disabled={!verified}
-              title={publishBlockedReason(course)}
-              onClick={() => onPublish(course)}
+            {/* The reason hangs on the wrapper, not on the button: a
+                browser fires no pointer events on a disabled control, so a
+                title there is never shown -- and this is the only place the
+                "run it first" rule is stated. Same shape as the Assign
+                button's reasons on the assignment card. */}
+            <span
+              className="inline-flex"
+              title={publishBlockedReason(course) ?? undefined}
             >
-              Publish
-            </Button>
+              <Button
+                size="sm"
+                disabled={!verified}
+                onClick={() => onPublish(course)}
+              >
+                Publish
+              </Button>
+            </span>
             <Button
               size="sm"
               variant="ghost"
