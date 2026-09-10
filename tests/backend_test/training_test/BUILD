@@ -12,6 +12,18 @@ py_test(
 )
 
 py_test(
+    name = "training_audience_service_test",
+    srcs = ["training_audience_service_test.py"],
+    deps = [
+        "//backend/common:constants",
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/dto",
+        "//backend/training:training_audience_service",
+    ],
+)
+
+py_test(
     name = "training_assignment_service_test",
     srcs = ["training_assignment_service_test.py"],
     deps = [

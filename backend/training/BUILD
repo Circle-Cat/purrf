@@ -15,6 +15,18 @@ py_library(
 )
 
 py_library(
+    name = "training_audience_service",
+    srcs = ["training_audience_service.py"],
+    deps = [
+        "//backend/common:constants",
+        "//backend/common:exceptions",
+        "//backend/dto",
+        "//backend/internal_activity_service:ldap_service",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_library(
     name = "training_assignment_service",
     srcs = ["training_assignment_service.py"],
     deps = [
@@ -136,11 +148,13 @@ py_library(
     srcs = ["training_admin_controller.py"],
     deps = [
         ":training_assignment_service",
+        ":training_audience_service",
         ":training_content_service",
         ":training_course_service",
         ":training_package_service",
         ":training_progress_service",
         "//backend/common:api_endpoints",
+        "//backend/common:constants",
         "//backend/common:fast_api_response_wrapper",
         "//backend/common:permissions",
         "//backend/dto",

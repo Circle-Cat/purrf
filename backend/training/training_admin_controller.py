@@ -3,9 +3,11 @@
 import json
 from http import HTTPStatus
 
-from fastapi import APIRouter, File, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Request, UploadFile
 
 from backend.common.api_endpoints import (
+    TRAINING_ASSIGNMENTS_AUDIENCE_ENDPOINT,
+    TRAINING_ASSIGNMENTS_AUDIENCE_IDS_ENDPOINT,
     TRAINING_ASSIGNMENTS_ENDPOINT,
     TRAINING_COURSE_ENDPOINT,
     TRAINING_COURSE_PACKAGE_ENDPOINT,
@@ -17,8 +19,10 @@ from backend.common.api_endpoints import (
     TRAINING_SESSION_ENDPOINT,
     TRAINING_TRIAL_SESSION_ENDPOINT,
 )
+from backend.common.constants import MicrosoftGroups
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.permissions import Permission
+from backend.dto.training_audience_dto import TrainingAudienceFilterDto
 from backend.dto.training_course_dto import (
     TrainingAssignmentRequestDto,
     TrainingCourseCreateDto,
@@ -76,6 +80,7 @@ class TrainingAdminController:
         training_package_service,
         training_content_service,
         training_progress_service,
+        training_audience_service,
         database,
     ):
         """
@@ -91,6 +96,8 @@ class TrainingAdminController:
                 content URL a learner's page loads the course from.
             training_progress_service (TrainingProgressService): Stores what
                 the course commits back.
+            training_audience_service (TrainingAudienceService): The search
+                behind bulk assignment.
             database: Async session provider.
         """
         self.training_course_service = training_course_service
@@ -98,6 +105,7 @@ class TrainingAdminController:
         self.training_package_service = training_package_service
         self.training_content_service = training_content_service
         self.training_progress_service = training_progress_service
+        self.training_audience_service = training_audience_service
         self.database = database
         self.router = APIRouter(tags=["training-admin"])
 
@@ -213,6 +221,22 @@ class TrainingAdminController:
             methods=["POST"],
             response_model=None,
         )
+        self.router.add_api_route(
+            TRAINING_ASSIGNMENTS_AUDIENCE_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_WRITE])(
+                self.search_audience
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            TRAINING_ASSIGNMENTS_AUDIENCE_IDS_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_WRITE])(
+                self.list_audience_ids
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
 
     async def list_courses(self):
         """Every course, with its state and how many people hold it.
@@ -245,6 +269,57 @@ class TrainingAdminController:
         return api_response(
             message="Training course updated.",
             data=course,
+        )
+
+    async def search_audience(
+        self,
+        filters: TrainingAudienceFilterDto = Depends(),
+        group: MicrosoftGroups | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ):
+        """One page of the people a course may be assigned to.
+
+        Gated on the write grant even though it only reads: the whole card is
+        one authorization, and the search lists the company directory.
+
+        Args:
+            filters (TrainingAudienceFilterDto): The requested filters.
+            group (MicrosoftGroups | None): LDAP group to narrow to; only
+                meaningful for the internal type.
+            limit (int): Max rows to return.
+            offset (int): Rows to skip.
+        """
+        async with self.database.session() as session:
+            result = await self.training_audience_service.search_audience(
+                session, filters, group=group, limit=limit, offset=offset
+            )
+        return api_response(
+            message="Training audience retrieved.",
+            data=result,
+        )
+
+    async def list_audience_ids(
+        self,
+        filters: TrainingAudienceFilterDto = Depends(),
+        group: MicrosoftGroups | None = None,
+    ):
+        """Every id a search matches, for selecting a whole result set.
+
+        Answers 409 rather than a trimmed list when the search is too broad:
+        assigning a silently truncated cohort cannot be undone.
+
+        Args:
+            filters (TrainingAudienceFilterDto): The requested filters.
+            group (MicrosoftGroups | None): LDAP group to narrow to.
+        """
+        async with self.database.session() as session:
+            result = await self.training_audience_service.list_audience_ids(
+                session, filters, group=group
+            )
+        return api_response(
+            message="Training audience ids retrieved.",
+            data=result,
         )
 
     async def assign(self, payload: TrainingAssignmentRequestDto):
