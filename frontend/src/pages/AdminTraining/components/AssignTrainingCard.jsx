@@ -6,6 +6,9 @@ import AudienceTable from "@/pages/AdminTraining/components/AudienceTable";
 import { useAudienceSearch } from "@/pages/AdminTraining/hooks/useAudienceSearch";
 import { bulkAssignBlockedReason } from "@/pages/AdminTraining/utils";
 
+// A browser fires no pointer events on a disabled control, so a title on a
+// disabled button or select is never shown. Every "why is this greyed out"
+// string therefore hangs on an enabled wrapper around it.
 const SELECT_CLASS =
   "rounded-md border border-slate-300 bg-white p-2 text-sm text-slate-900 disabled:cursor-not-allowed disabled:opacity-50";
 
@@ -100,18 +103,20 @@ export default function AssignTrainingCard({ courses }) {
             </select>
           </div>
 
-          <div className="flex flex-col gap-1">
+          <div
+            className="flex flex-col gap-1"
+            title={
+              audience.groupDisabled
+                ? "A group only exists for an internal account"
+                : undefined
+            }
+          >
             <Label htmlFor="audience-group">Group</Label>
             <select
               id="audience-group"
               className={SELECT_CLASS}
               value={audience.group}
               disabled={audience.groupDisabled}
-              title={
-                audience.groupDisabled
-                  ? "A group only exists for an internal account"
-                  : undefined
-              }
               onChange={(event) => audience.setGroup(event.target.value)}
             >
               <option value="">All groups</option>
@@ -137,18 +142,20 @@ export default function AssignTrainingCard({ courses }) {
             </select>
           </div>
 
-          <div className="flex flex-col gap-1">
+          <div
+            className="flex flex-col gap-1"
+            title={
+              audience.courseStatusDisabled
+                ? "Pick a course to filter by"
+                : undefined
+            }
+          >
             <Label htmlFor="audience-course-status">On this course</Label>
             <select
               id="audience-course-status"
               className={SELECT_CLASS}
               value={audience.courseStatus}
               disabled={audience.courseStatusDisabled}
-              title={
-                audience.courseStatusDisabled
-                  ? "Pick a course to filter by"
-                  : undefined
-              }
               onChange={(event) => audience.setCourseStatus(event.target.value)}
             >
               <option value="">All statuses</option>
@@ -164,20 +171,24 @@ export default function AssignTrainingCard({ courses }) {
 
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={audience.total === 0 || audience.facetsEdited}
+            <span
+              className="inline-flex"
               title={
                 audience.facetsEdited
                   ? "Search again before selecting everyone"
                   : undefined
               }
-              onClick={audience.selectAllMatching}
             >
-              {`Select all ${audience.total} matching`}
-            </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={audience.total === 0 || audience.facetsEdited}
+                onClick={audience.selectAllMatching}
+              >
+                {`Select all ${audience.total} matching`}
+              </Button>
+            </span>
             <span>{`${selectedCount} selected`}</span>
             {selectedCount > 0 && (
               <Button
@@ -202,18 +213,19 @@ export default function AssignTrainingCard({ courses }) {
                 onChange={(event) => audience.setDeadline(event.target.value)}
               />
             </div>
-            <Button
-              type="button"
-              title={blockedReason ?? undefined}
-              disabled={
-                blockedReason !== null ||
-                selectedCount === 0 ||
-                audience.assigning
-              }
-              onClick={audience.assign}
-            >
-              Assign
-            </Button>
+            <span className="inline-flex" title={blockedReason ?? undefined}>
+              <Button
+                type="button"
+                disabled={
+                  blockedReason !== null ||
+                  selectedCount === 0 ||
+                  audience.assigning
+                }
+                onClick={audience.assign}
+              >
+                Assign
+              </Button>
+            </span>
           </div>
         </div>
 

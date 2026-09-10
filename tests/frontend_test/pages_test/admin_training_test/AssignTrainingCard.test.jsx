@@ -105,9 +105,14 @@ describe("AssignTrainingCard", () => {
   it("cannot assign before a course is named", async () => {
     renderCard();
 
-    const assign = screen.getByRole("button", { name: "Assign" });
-    expect(assign).toBeDisabled();
-    expect(assign).toHaveAttribute("title", "Pick a course to assign");
+    expect(screen.getByRole("button", { name: "Assign" })).toBeDisabled();
+    // A browser shows no tooltip for a disabled control, so the reason has to
+    // hang on something that is not disabled.
+    const reason = screen.getByTitle("Pick a course to assign");
+    expect(reason).not.toBeDisabled();
+    expect(
+      within(reason).getByRole("button", { name: "Assign" }),
+    ).toBeDisabled();
   });
 
   it("cannot assign a course with nothing published", async () => {
@@ -116,10 +121,11 @@ describe("AssignTrainingCard", () => {
 
     await pickCourse(user, "Residency Onboarding");
 
-    expect(screen.getByRole("button", { name: "Assign" })).toHaveAttribute(
-      "title",
-      "Publish a package to this course first",
-    );
+    const reason = screen.getByTitle("Publish a package to this course first");
+    expect(reason).not.toBeDisabled();
+    expect(
+      within(reason).getByRole("button", { name: "Assign" }),
+    ).toBeDisabled();
   });
 
   it("cannot assign a deactivated course", async () => {
@@ -128,10 +134,13 @@ describe("AssignTrainingCard", () => {
 
     await pickCourse(user, "Old Safety Briefing");
 
-    expect(screen.getByRole("button", { name: "Assign" })).toHaveAttribute(
-      "title",
+    const reason = screen.getByTitle(
       "This course is deactivated. Turn it back on to assign it.",
     );
+    expect(reason).not.toBeDisabled();
+    expect(
+      within(reason).getByRole("button", { name: "Assign" }),
+    ).toBeDisabled();
   });
 
   it("assigns the ticked people once a live course is named", async () => {
@@ -393,5 +402,37 @@ describe("AssignTrainingCard", () => {
       screen.getByRole("button", { name: "Select all 40 matching" }),
     ).toBeDisabled();
     expect(listAudienceIds).not.toHaveBeenCalled();
+  });
+  it("explains a disabled facet on something that can be hovered", async () => {
+    renderCard();
+
+    // Same rule as the Assign button: the select itself is disabled, so it
+    // would never show the tooltip.
+    const groupReason = screen.getByTitle(
+      "A group only exists for an internal account",
+    );
+    expect(groupReason).not.toBeDisabled();
+    expect(within(groupReason).getByLabelText("Group")).toBeDisabled();
+
+    const statusReason = screen.getByTitle("Pick a course to filter by");
+    expect(
+      within(statusReason).getByLabelText("On this course"),
+    ).toBeDisabled();
+  });
+
+  it("explains why select-all is unavailable after a facet edit", async () => {
+    const user = userEvent.setup();
+    searchAudience.mockResolvedValue(page([row()], 40));
+    renderCard();
+    await submitSearch(user);
+    await screen.findByRole("button", { name: "Select all 40 matching" });
+
+    await user.selectOptions(screen.getByLabelText("Type"), "External");
+
+    const reason = screen.getByTitle("Search again before selecting everyone");
+    expect(reason).not.toBeDisabled();
+    expect(
+      within(reason).getByRole("button", { name: "Select all 40 matching" }),
+    ).toBeDisabled();
   });
 });
