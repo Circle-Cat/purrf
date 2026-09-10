@@ -107,3 +107,22 @@ export const bulkAssignBlockedReason = (course) => {
   if (!course) return "Pick a course to assign";
   return assignBlockedReason(course);
 };
+
+/**
+ * Time spent in a course, from the seconds the runtime reported.
+ *
+ * An em dash for an assignment nobody has opened -- there is no progress row
+ * to have a number in. Zero is not that: it is a course that was opened and
+ * closed, and reads as 0s.
+ * @param {?number} seconds
+ * @returns {string}
+ */
+export const timeSpentLabel = (seconds) => {
+  if (seconds === null || seconds === undefined) return "\u2014";
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) {
+    return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  }
+  const hours = Math.floor(seconds / 3600);
+  return `${hours}h ${Math.floor((seconds % 3600) / 60)}m`;
+};

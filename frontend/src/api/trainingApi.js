@@ -156,6 +156,19 @@ export const assignCourseBulk = (payload) =>
   request.post(API_ENDPOINTS.TRAINING_ASSIGNMENTS_BULK, payload);
 
 /**
+ * Every course one person holds, read-only. Independent of whichever course
+ * the card has in scope, and only rows that exist: the catalogue is never
+ * padded with courses nobody assigned them, and the data carries no
+ * percentage to report.
+ * @param {number} userId
+ * @returns {Promise<{data: {userId: number, rows: Array<Object>}}>}
+ *   `TrainingUserAssignmentDto` rows. The runtime fields are null for an
+ *   assignment nobody has opened.
+ */
+export const listUserAssignments = (userId) =>
+  request.get(API_ENDPOINTS.TRAINING_USER_ASSIGNMENTS(userId));
+
+/**
  * Publish a course's staged package, moving it into the live slot that
  * learners actually see.
  * @param {string|number} courseId

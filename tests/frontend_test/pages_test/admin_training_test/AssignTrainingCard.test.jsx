@@ -7,12 +7,14 @@ import {
   searchAudience,
   listAudienceIds,
   assignCourseBulk,
+  listUserAssignments,
 } from "@/api/trainingApi";
 
 vi.mock("@/api/trainingApi", () => ({
   searchAudience: vi.fn(),
   listAudienceIds: vi.fn(),
   assignCourseBulk: vi.fn(),
+  listUserAssignments: vi.fn(),
 }));
 
 const LIVE = {
@@ -68,6 +70,9 @@ describe("AssignTrainingCard", () => {
     assignCourseBulk.mockResolvedValue({
       message: "Assigned to 1 people. 0 already had this course.",
       data: { courseId: 1, createdCount: 1, alreadyAssignedCount: 0 },
+    });
+    listUserAssignments.mockResolvedValue({
+      data: { userId: 11, rows: [] },
     });
     vi.spyOn(toast, "error").mockImplementation(() => {});
     vi.spyOn(toast, "success").mockImplementation(() => {});
@@ -264,7 +269,96 @@ describe("AssignTrainingCard", () => {
       await screen.findByText("Nobody matches this search."),
     ).toBeInTheDocument();
   });
+  it("lists what a person holds when their row is expanded", async () => {
+    const user = userEvent.setup();
+    listUserAssignments.mockResolvedValue({
+      data: {
+        userId: 11,
+        rows: [
+          {
+            trainingId: 900,
+            courseId: 1,
+            courseName: "Corporate Culture",
+            category: "corporate_culture_course",
+            status: "in_progress",
+            deadline: "2026-10-01T00:00:00Z",
+            completedTimestamp: null,
+            lessonStatus: "incomplete",
+            scoreRaw: "82.50",
+            scoreMax: "100.00",
+            sessionTimeSeconds: 940,
+            lastAccessedAt: "2026-09-01T10:00:00Z",
+          },
+        ],
+      },
+    });
+    renderCard();
+    await submitSearch(user);
 
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Show courses for Ada Internal",
+      }),
+    );
+
+    // Scoped to the sub-row: the course names are also dropdown options.
+    const held = within(await screen.findByTestId("user-assignments-11"));
+    expect(held.getByText("Corporate Culture")).toBeInTheDocument();
+    expect(held.getByText("82.50")).toBeInTheDocument();
+    expect(held.getByText("15m 40s")).toBeInTheDocument();
+    expect(listUserAssignments).toHaveBeenCalledWith(11);
+  });
+
+  it("says so for a person holding nothing at all", async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await submitSearch(user);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Show courses for Ada Internal",
+      }),
+    );
+
+    expect(await screen.findByText("No courses assigned.")).toBeInTheDocument();
+  });
+
+  it("reads a person's courses once, not on every expand", async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await submitSearch(user);
+    const toggle = await screen.findByRole("button", {
+      name: "Show courses for Ada Internal",
+    });
+
+    await user.click(toggle);
+    await screen.findByText("No courses assigned.");
+    await user.click(
+      screen.getByRole("button", { name: "Hide courses for Ada Internal" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Show courses for Ada Internal" }),
+    );
+
+    expect(listUserAssignments).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a failed read of a person's courses", async () => {
+    const user = userEvent.setup();
+    listUserAssignments.mockRejectedValue(new Error("could not read the list"));
+    renderCard();
+    await submitSearch(user);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Show courses for Ada Internal",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("could not read the list"),
+    );
+  });
   it("does not claim a course status for rows fetched without a course", async () => {
     const user = userEvent.setup();
     searchAudience.mockResolvedValue(

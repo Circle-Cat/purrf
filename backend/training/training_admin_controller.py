@@ -19,6 +19,7 @@ from backend.common.api_endpoints import (
     TRAINING_PROGRESS_ENDPOINT,
     TRAINING_SESSION_ENDPOINT,
     TRAINING_TRIAL_SESSION_ENDPOINT,
+    TRAINING_USER_ASSIGNMENTS_ENDPOINT,
 )
 from backend.common.constants import MicrosoftGroups
 from backend.common.fast_api_response_wrapper import api_response
@@ -247,6 +248,14 @@ class TrainingAdminController:
             methods=["GET"],
             response_model=None,
         )
+        self.router.add_api_route(
+            TRAINING_USER_ASSIGNMENTS_ENDPOINT,
+            endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_WRITE])(
+                self.list_user_assignments
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
 
     async def list_courses(self):
         """Every course, with its state and how many people hold it.
@@ -357,6 +366,26 @@ class TrainingAdminController:
             )
         return api_response(
             message="Training audience ids retrieved.",
+            data=result,
+        )
+
+    async def list_user_assignments(self, user_id: int):
+        """Every course one person holds.
+
+        Read-only, and independent of whichever course the assignment card
+        has in scope: the question is what this person holds. Only rows that
+        exist are listed -- the catalogue is never padded with courses nobody
+        assigned them.
+
+        Args:
+            user_id (int): Whose assignments to read.
+        """
+        async with self.database.session() as session:
+            result = await self.training_audience_service.list_user_assignments(
+                session, user_id
+            )
+        return api_response(
+            message="Training assignments retrieved.",
             data=result,
         )
 

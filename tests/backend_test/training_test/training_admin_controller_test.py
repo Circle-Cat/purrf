@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from backend.common.api_endpoints import (
     TRAINING_ASSIGNMENTS_AUDIENCE_ENDPOINT,
     TRAINING_ASSIGNMENTS_BULK_ENDPOINT,
+    TRAINING_USER_ASSIGNMENTS_ENDPOINT,
     TRAINING_ASSIGNMENTS_AUDIENCE_IDS_ENDPOINT,
     TRAINING_COURSE_PACKAGE_ENDPOINT,
     TRAINING_COURSE_PREVIEW_SESSION_ENDPOINT,
@@ -45,6 +46,7 @@ from backend.dto.training_audience_dto import (
     TrainingAudienceIdsDto,
     TrainingAudienceRowDto,
     TrainingAudienceSearchDto,
+    TrainingUserAssignmentsDto,
 )
 from backend.dto.user_context_dto import UserContextDto
 from backend.training.training_admin_controller import (
@@ -878,6 +880,34 @@ class TestBulkAssignmentRoute(TestTrainingAdminController):
         self.assertEqual(response["data"].already_assigned_count, 1)
         self.assertIn("2", response["message"])
         self.assertIn("1", response["message"])
+
+
+class TestOnePersonsAssignmentsRoute(TestTrainingAdminController):
+    """The read-only list behind an expanded row."""
+
+    def test_the_route_is_gated_on_the_write_grant(self):
+        by_method = {
+            (route.path, method): _route_permissions(route)
+            for route in self.controller.router.routes
+            for method in route.methods
+        }
+
+        self.assertEqual(
+            by_method[(TRAINING_USER_ASSIGNMENTS_ENDPOINT, "GET")],
+            [Permission.TRAINING_ADMIN_WRITE],
+        )
+
+    async def test_it_hands_back_what_that_person_holds(self):
+        self.audience_service.list_user_assignments = AsyncMock(
+            return_value=TrainingUserAssignmentsDto(user_id=11, rows=[])
+        )
+
+        response = await self.controller.list_user_assignments(user_id=11)
+
+        self.audience_service.list_user_assignments.assert_awaited_once_with(
+            self.session, 11
+        )
+        self.assertEqual(response["data"].user_id, 11)
 
 
 if __name__ == "__main__":

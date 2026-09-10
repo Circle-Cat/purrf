@@ -1,10 +1,11 @@
 import unittest
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from backend.common.constants import MicrosoftAccountStatus, MicrosoftGroups
 from backend.common.exceptions import ConflictError
-from backend.common.mentorship_enums import TrainingStatus
+from backend.common.mentorship_enums import TrainingCategory, TrainingStatus
 from backend.dto.training_audience_dto import TrainingAudienceFilterDto
 from backend.training.training_audience_service import TrainingAudienceService
 
@@ -45,11 +46,20 @@ class TestTrainingAudienceService(unittest.IsolatedAsyncioTestCase):
         self.ldap_service = MagicMock()
         self.ldap_service.get_ldaps_by_status_and_group = MagicMock(return_value={})
 
+        self.training_repository = MagicMock()
+        self.training_repository.get_training_with_course_by_user_id = AsyncMock(
+            return_value=[]
+        )
+        self.progress_repository = MagicMock()
+        self.progress_repository.get_by_training_ids = AsyncMock(return_value={})
+
         self.service = TrainingAudienceService(
             logger=MagicMock(),
             training_audience_repository=self.audience_repository,
             user_emails_repository=self.user_emails_repository,
             ldap_service=self.ldap_service,
+            training_repository=self.training_repository,
+            training_progress_repository=self.progress_repository,
         )
 
     def _restriction_passed(self):
@@ -216,6 +226,133 @@ class TestTrainingAudienceService(unittest.IsolatedAsyncioTestCase):
             )
 
         self.audience_repository.list_audience_ids.assert_not_awaited()
+
+
+def _assignment(training_id, **overrides):
+    """One training row as the repository hands it over, with its course."""
+    fields = {
+        "training_id": training_id,
+        "course_id": 5,
+        "category": TrainingCategory.CORPORATE_CULTURE_COURSE,
+        "status": TrainingStatus.TO_DO,
+        "deadline": None,
+        "completed_timestamp": None,
+    }
+    fields.update(overrides)
+    return (SimpleNamespace(**fields), "Corporate Culture", True, True)
+
+
+def _progress(training_id, **overrides):
+    fields = {
+        "training_id": training_id,
+        "lesson_status": "incomplete",
+        "score_raw": None,
+        "score_max": None,
+        "session_time_seconds": 940,
+        "last_accessed_at": "2026-09-01T10:00:00+00:00",
+    }
+    fields.update(overrides)
+    return SimpleNamespace(**fields)
+
+
+class TestOnePersonsAssignments(unittest.IsolatedAsyncioTestCase):
+    """The read behind expanding a row: what one person holds.
+
+    The only place in the repo an administrator can see somebody else's whole
+    training list, so it is read-only and independent of the target course.
+    """
+
+    def setUp(self):
+        self.session = AsyncMock()
+        self.training_repository = MagicMock()
+        self.training_repository.get_training_with_course_by_user_id = AsyncMock(
+            return_value=[]
+        )
+        self.progress_repository = MagicMock()
+        self.progress_repository.get_by_training_ids = AsyncMock(return_value={})
+        self.service = TrainingAudienceService(
+            logger=MagicMock(),
+            training_audience_repository=MagicMock(),
+            user_emails_repository=MagicMock(),
+            ldap_service=MagicMock(),
+            training_repository=self.training_repository,
+            training_progress_repository=self.progress_repository,
+        )
+
+    async def test_somebody_holding_nothing_has_an_empty_list(self):
+        result = await self.service.list_user_assignments(self.session, 11)
+
+        self.assertEqual(result.rows, [])
+        self.progress_repository.get_by_training_ids.assert_not_awaited()
+
+    async def test_a_row_carries_the_course_name_and_the_status(self):
+        self.training_repository.get_training_with_course_by_user_id.return_value = [
+            _assignment(42, status=TrainingStatus.DONE)
+        ]
+
+        result = await self.service.list_user_assignments(self.session, 11)
+
+        self.assertEqual(result.rows[0].training_id, 42)
+        self.assertEqual(result.rows[0].course_name, "Corporate Culture")
+        self.assertEqual(result.rows[0].status, TrainingStatus.DONE)
+
+    async def test_runtime_state_comes_from_the_progress_row(self):
+        self.training_repository.get_training_with_course_by_user_id.return_value = [
+            _assignment(42)
+        ]
+        self.progress_repository.get_by_training_ids.return_value = {
+            42: _progress(42, score_raw=Decimal("82.50"))
+        }
+
+        result = await self.service.list_user_assignments(self.session, 11)
+
+        row = result.rows[0]
+        self.assertEqual(row.score_raw, "82.50")
+        self.assertEqual(row.session_time_seconds, 940)
+        self.assertEqual(row.lesson_status, "incomplete")
+
+    async def test_an_assignment_nobody_opened_reports_no_runtime_state(self):
+        self.training_repository.get_training_with_course_by_user_id.return_value = [
+            _assignment(42)
+        ]
+
+        result = await self.service.list_user_assignments(self.session, 11)
+
+        row = result.rows[0]
+        self.assertIsNone(row.score_raw)
+        self.assertIsNone(row.session_time_seconds)
+        self.assertIsNone(row.last_accessed_at)
+        self.assertIsNone(row.lesson_status)
+
+    async def test_every_progress_row_is_read_in_one_go(self):
+        self.training_repository.get_training_with_course_by_user_id.return_value = [
+            _assignment(42),
+            _assignment(43, course_id=6),
+        ]
+
+        await self.service.list_user_assignments(self.session, 11)
+
+        self.progress_repository.get_by_training_ids.assert_awaited_once_with(
+            self.session, [42, 43]
+        )
+
+    async def test_a_row_whose_course_the_catalogue_lost_still_appears(self):
+        training = SimpleNamespace(
+            training_id=42,
+            course_id=None,
+            category=TrainingCategory.CORPORATE_CULTURE_COURSE,
+            status=TrainingStatus.TO_DO,
+            deadline=None,
+            completed_timestamp=None,
+        )
+        self.training_repository.get_training_with_course_by_user_id.return_value = [
+            (training, None, False, True)
+        ]
+
+        result = await self.service.list_user_assignments(self.session, 11)
+
+        self.assertIsNone(result.rows[0].course_name)
+        self.assertIsNone(result.rows[0].course_id)
 
 
 if __name__ == "__main__":

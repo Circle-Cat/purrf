@@ -1051,6 +1051,8 @@ class AppDependencyBuilder:
             training_audience_repository=self.training_audience_repository,
             user_emails_repository=self.user_emails_repository,
             ldap_service=self.ldap_service,
+            training_repository=self.training_repository,
+            training_progress_repository=self.training_progress_repository,
         )
         self.training_admin_controller = TrainingAdminController(
             self.training_course_service,

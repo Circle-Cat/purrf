@@ -2,7 +2,13 @@
 
 from typing import Literal
 
-from backend.common.mentorship_enums import ParticipantRole, TrainingStatus
+from datetime import datetime
+
+from backend.common.mentorship_enums import (
+    ParticipantRole,
+    TrainingCategory,
+    TrainingStatus,
+)
 from backend.dto.base_dto import BaseDto
 from backend.dto.base_request_dto import BaseRequestDto
 
@@ -55,3 +61,36 @@ class TrainingAudienceIdsDto(BaseDto):
 
     user_ids: list[int]
     total: int
+
+
+class TrainingUserAssignmentDto(BaseDto):
+    """One course a person holds, with whatever the runtime has reported.
+
+    Only rows that exist in ``training`` are ever built into this: the
+    catalogue is never padded with courses nobody assigned, which would grow
+    with every new course and bury the two or three that matter.
+
+    There is no percentage anywhere in the data, so there is none here. What
+    exists is the status, the dates, and the SCORM values verbatim -- absent
+    for an assignment nobody has opened.
+    """
+
+    training_id: int
+    course_id: int | None
+    course_name: str | None
+    category: TrainingCategory | None
+    status: TrainingStatus
+    deadline: datetime | None
+    completed_timestamp: datetime | None
+    lesson_status: str | None
+    score_raw: str | None
+    score_max: str | None
+    session_time_seconds: int | None
+    last_accessed_at: datetime | None
+
+
+class TrainingUserAssignmentsDto(BaseDto):
+    """Everything one person holds, for the expanded row."""
+
+    user_id: int
+    rows: list[TrainingUserAssignmentDto]

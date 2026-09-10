@@ -138,6 +138,8 @@ export const API_ENDPOINTS = {
   TRAINING_ASSIGNMENTS_BULK: "/training/assignments/bulk",
   TRAINING_ASSIGNMENTS_AUDIENCE: "/training/assignments/audience",
   TRAINING_ASSIGNMENTS_AUDIENCE_IDS: "/training/assignments/audience/ids",
+  TRAINING_USER_ASSIGNMENTS: (userId) =>
+    `/training/users/${userId}/assignments`,
 };
 
 /**

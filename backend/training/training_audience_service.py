@@ -14,7 +14,25 @@ from backend.dto.training_audience_dto import (
     TrainingAudienceIdsDto,
     TrainingAudienceRowDto,
     TrainingAudienceSearchDto,
+    TrainingUserAssignmentDto,
+    TrainingUserAssignmentsDto,
 )
+
+
+def _score(value) -> str | None:
+    """A stored score column as a string, or None if there is no score.
+
+    Never a float: the jsonable_encoder turns a Decimal into one, and a score
+    of 82.50 would come back as 82.5 or worse. Same fix as the content
+    service's own reader.
+
+    Args:
+        value: The stored Numeric column, or None.
+
+    Returns:
+        str | None: The score, two decimal places.
+    """
+    return None if value is None else f"{value:.2f}"
 
 
 class TrainingAudienceService:
@@ -36,6 +54,8 @@ class TrainingAudienceService:
         training_audience_repository,
         user_emails_repository,
         ldap_service,
+        training_repository,
+        training_progress_repository,
     ):
         """
         Args:
@@ -45,11 +65,17 @@ class TrainingAudienceService:
             user_emails_repository (UserEmailsRepository): Address lookups,
                 both for resolving ldaps and for the contact column.
             ldap_service (LdapService): The Azure group snapshot in Redis.
+            training_repository (TrainingRepository): One person's assignments,
+                for the expanded row.
+            training_progress_repository (TrainingProgressRepository): The
+                SCORM state behind those assignments.
         """
         self.logger = logger
         self.training_audience_repository = training_audience_repository
         self.user_emails_repository = user_emails_repository
         self.ldap_service = ldap_service
+        self.training_repository = training_repository
+        self.training_progress_repository = training_progress_repository
 
     async def _restrict_to_group(
         self,
@@ -197,3 +223,58 @@ class TrainingAudienceService:
             session, filters, restrict_user_ids=restrict_user_ids
         )
         return TrainingAudienceIdsDto(user_ids=user_ids, total=total)
+
+    async def list_user_assignments(
+        self, session: AsyncSession, user_id: int
+    ) -> TrainingUserAssignmentsDto:
+        """Every course one person holds, read-only.
+
+        Independent of whichever course the card has in scope: the question
+        the expanded row answers is what this person holds, not how they
+        stand on the course being assigned. This is the only place an
+        administrator can see somebody else's training list.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_id (int): Whose assignments to read.
+
+        Returns:
+            TrainingUserAssignmentsDto: The rows that exist, newest state
+            included; empty when the person holds nothing.
+        """
+        assignments = (
+            await self.training_repository.get_training_with_course_by_user_id(
+                session, user_id
+            )
+        )
+        if not assignments:
+            return TrainingUserAssignmentsDto(user_id=user_id, rows=[])
+
+        progress_by_training_id = (
+            await self.training_progress_repository.get_by_training_ids(
+                session, [training.training_id for training, *_ in assignments]
+            )
+        )
+
+        rows = []
+        for training, course_name, _has_live_package, _is_course_active in assignments:
+            progress = progress_by_training_id.get(training.training_id)
+            rows.append(
+                TrainingUserAssignmentDto(
+                    training_id=training.training_id,
+                    course_id=training.course_id,
+                    course_name=course_name,
+                    category=training.category,
+                    status=training.status,
+                    deadline=training.deadline,
+                    completed_timestamp=training.completed_timestamp,
+                    lesson_status=progress.lesson_status if progress else None,
+                    score_raw=_score(progress.score_raw) if progress else None,
+                    score_max=_score(progress.score_max) if progress else None,
+                    session_time_seconds=(
+                        progress.session_time_seconds if progress else None
+                    ),
+                    last_accessed_at=progress.last_accessed_at if progress else None,
+                )
+            )
+        return TrainingUserAssignmentsDto(user_id=user_id, rows=rows)
