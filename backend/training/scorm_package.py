@@ -8,6 +8,7 @@ person who can fix it, so the message has to be forwardable.
 
 import posixpath
 import zipfile
+import zlib
 from dataclasses import dataclass
 from urllib.parse import unquote
 
@@ -47,6 +48,47 @@ class PackageRejected(ValueError):
     A ValueError so the API answers 400; the message names the rule and, where
     there is one, the fix.
     """
+
+
+# A container that opens whose members do not read is a different rejection
+# from a file that is not a zip, and the two do not even raise the same
+# exception: a stream zlib cannot inflate surfaces as zlib.error, one whose
+# stored checksum disagrees as BadZipFile.
+_DAMAGE = (zipfile.BadZipFile, zlib.error)
+
+
+def member_bytes(
+    archive: zipfile.ZipFile, archive_name: str, served_name: str
+) -> bytes:
+    """One member's bytes, or a rejection naming it.
+
+    Every read of an uploaded archive goes through here, so a damaged member
+    is refused the same way wherever it is met -- while reading the manifest,
+    or while storing the four hundredth file. Untranslated, the two shapes of
+    damage came out as an unhandled zlib.error (a 500) and as
+    "the file is not a readable zip archive" (which sends whoever exported
+    the course off to re-export a zip that opens perfectly well).
+
+    Args:
+        archive (zipfile.ZipFile): The open container.
+        archive_name (str): The entry's name inside the zip.
+        served_name (str): The name the package is served under -- the one
+            the person who exported the course will recognise.
+
+    Returns:
+        bytes: The member's contents.
+
+    Raises:
+        PackageRejected: The member is damaged.
+    """
+    try:
+        return archive.read(archive_name)
+    except _DAMAGE as error:
+        raise PackageRejected(
+            f"Rejected: {served_name!r} inside the archive is damaged and "
+            "could not be read. The zip itself opens, so the export or the "
+            "upload truncated it -- re-export the package and upload it again."
+        ) from error
 
 
 @dataclass(frozen=True)
@@ -224,7 +266,9 @@ def read_package(archive: zipfile.ZipFile) -> PackageContents:
             "published folder rather than the folder itself."
         )
 
-    manifest = parse_manifest(archive.read(archive_names[MANIFEST_NAME]))
+    manifest = parse_manifest(
+        member_bytes(archive, archive_names[MANIFEST_NAME], MANIFEST_NAME)
+    )
 
     if manifest.scorm_version is ScormVersion.SCORM_2004:
         raise PackageRejected(
@@ -240,7 +284,7 @@ def read_package(archive: zipfile.ZipFile) -> PackageContents:
         )
 
     driver_config = parse_driver_config(
-        archive.read(archive_names[manifest.entry_path])
+        member_bytes(archive, archive_names[manifest.entry_path], manifest.entry_path)
     )
 
     return PackageContents(

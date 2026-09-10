@@ -4,10 +4,13 @@ is live."""
 import datetime
 import io
 import json
+import struct
 import threading
 import unittest
 import zipfile
 from unittest.mock import AsyncMock, MagicMock
+
+from sqlalchemy.exc import IntegrityError
 
 from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import ScormVersion, TrainingPackageState
@@ -22,6 +25,7 @@ _COURSE_ID = 7
 _ENTRY_PATH = "index.html"
 _LIVE_PREFIX = "training/7/9cf1e0d2/"
 _PENDING_PREFIX = "training/7/1a2b3c4d/"
+_ASSET_PATH = "assets/app.js"
 _NOW = datetime.datetime(2026, 9, 2, 9, 0, tzinfo=datetime.timezone.utc)
 _VERIFIED_AT = datetime.datetime(2026, 8, 30, 12, 0, tzinfo=datetime.timezone.utc)
 
@@ -111,6 +115,48 @@ def _zip(members: dict) -> bytes:
 
 def _package(**kwargs) -> bytes:
     return _zip(_members(**kwargs))
+
+
+def _member_data_offset(raw: bytes, name: str) -> int:
+    """Where ``name``'s compressed bytes start inside the zip."""
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        header_offset = archive.getinfo(name).header_offset
+    name_length, extra_length = struct.unpack(
+        "<HH", raw[header_offset + 26 : header_offset + 30]
+    )
+    return header_offset + 30 + name_length + extra_length
+
+
+def _with_a_mangled_member(raw: bytes, name: str) -> bytes:
+    """Damage one member's compressed stream, leaving the container intact.
+
+    Reading it raises zlib.error rather than BadZipFile, which is why this
+    fixture exists: the two shapes of damage do not arrive as the same
+    exception.
+    """
+    mangled = bytearray(raw)
+    mangled[_member_data_offset(raw, name) + 5] ^= 0xFF
+    return bytes(mangled)
+
+
+def _with_a_bad_checksum(raw: bytes, name: str) -> bytes:
+    """Leave one member's data alone and corrupt the CRC recorded for it, in
+    both the local header and the central directory. Reading it inflates
+    fine and then raises BadZipFile at the end."""
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        info = archive.getinfo(name)
+    wrong = struct.pack("<I", (info.CRC + 1) & 0xFFFFFFFF)
+    patched = bytearray(raw)
+    patched[info.header_offset + 14 : info.header_offset + 18] = wrong
+
+    entry = patched.find(b"PK\x01\x02")
+    while entry != -1:
+        name_length = struct.unpack("<H", patched[entry + 28 : entry + 30])[0]
+        if patched[entry + 46 : entry + 46 + name_length].decode() == name:
+            patched[entry + 16 : entry + 20] = wrong
+            break
+        entry = patched.find(b"PK\x01\x02", entry + 1)
+    return bytes(patched)
 
 
 # A generic valid archive for tests that do not care about its contents.
@@ -379,7 +425,10 @@ class TestUploadPackage(_PackageServiceCase):
 
         self.package_repository.delete.assert_not_awaited()
         self.package_repository.add.assert_not_awaited()
-        self.storage.delete_prefix.assert_not_called()
+        # The dead upload drops its own prefix, but the package that was
+        # already staged still has a row, so its files have to survive.
+        dropped = [c.args[0] for c in self.storage.delete_prefix.call_args_list]
+        self.assertNotIn(_PENDING_PREFIX, dropped)
 
     async def test_an_upload_never_touches_learner_progress(self):
         """Clearing resume state belongs to Publish, not Upload."""
@@ -843,6 +892,120 @@ class TestReadCompletionConfig(_PackageServiceCase):
 
         with self.assertRaises(FileNotFoundError):
             await self.service.read_completion_config(self.session, _COURSE_ID)
+
+
+class TestADamagedMemberNamesItself(_PackageServiceCase):
+    """A zip that opens and holds one bad member is not an unreadable zip.
+
+    The rejection message is forwarded verbatim to whoever exported the
+    course, so telling them the archive is unreadable sends them to
+    re-export a zip that opens perfectly well. Both shapes of damage are
+    covered because they do not raise the same exception: a mangled stream
+    is a zlib error, a wrong checksum is a BadZipFile.
+    """
+
+    async def test_a_damaged_entry_page_is_rejected_by_name(self):
+        """Met while the manifest and entry page are read, before any file is
+        stored."""
+        broken = _with_a_mangled_member(_ARCHIVE, _ENTRY_PATH)
+
+        with self.assertRaises(PackageRejected) as caught:
+            await self.service.upload_package(self.session, _COURSE_ID, broken)
+
+        self.assertIn(_ENTRY_PATH, str(caught.exception))
+
+    async def test_a_damaged_asset_is_rejected_by_name(self):
+        """Met in the store loop instead, the other half of the same rule."""
+        with_asset = _package(extra_members={_ASSET_PATH: b"y" * 4000})
+        broken = _with_a_mangled_member(with_asset, _ASSET_PATH)
+
+        with self.assertRaises(PackageRejected) as caught:
+            await self.service.upload_package(self.session, _COURSE_ID, broken)
+
+        self.assertIn(_ASSET_PATH, str(caught.exception))
+
+    async def test_a_member_whose_checksum_disagrees_is_rejected_by_name(self):
+        """The other shape of damage: it inflates, and then the stored
+        checksum disagrees with what came out."""
+        broken = _with_a_bad_checksum(_ARCHIVE, _ENTRY_PATH)
+
+        with self.assertRaises(PackageRejected) as caught:
+            await self.service.upload_package(self.session, _COURSE_ID, broken)
+
+        self.assertIn(_ENTRY_PATH, str(caught.exception))
+
+    async def test_a_container_that_is_not_a_zip_at_all_still_says_so(self):
+        """The message that was wrong above is right here, and has to stay."""
+        with self.assertRaises(PackageRejected) as caught:
+            await self.service.upload_package(
+                self.session, _COURSE_ID, b"this is not a zip"
+            )
+
+        self.assertIn("not a readable zip archive", str(caught.exception))
+
+
+class TestAFailedUploadCleansUpAfterItself(_PackageServiceCase):
+    """Files land under a fresh prefix before any row names them.
+
+    So every way this can fail after the first file has landed leaves
+    objects nothing points at, and nothing sweeps them: delete_prefix is
+    only ever called with a prefix read off a row.
+    """
+
+    async def test_a_storage_failure_partway_takes_the_written_files_with_it(self):
+        self.storage.put.side_effect = [None, RuntimeError("bucket said no")]
+
+        with self.assertRaises(RuntimeError):
+            await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE)
+
+        self.storage.delete_prefix.assert_called_once()
+        self.assertTrue(
+            self.storage.delete_prefix.call_args.args[0].startswith(
+                f"training/{_COURSE_ID}/"
+            )
+        )
+
+    async def test_a_damaged_asset_takes_the_written_files_with_it(self):
+        """A damaged manifest or entry page is met before anything is stored;
+        this is the case where files are already in the bucket."""
+        with_asset = _package(extra_members={_ASSET_PATH: b"y" * 4000})
+
+        with self.assertRaises(PackageRejected):
+            await self.service.upload_package(
+                self.session,
+                _COURSE_ID,
+                _with_a_mangled_member(with_asset, _ASSET_PATH),
+            )
+
+        self.storage.delete_prefix.assert_called_once()
+
+
+class TestTwoUploadsRacingForThePendingSlot(_PackageServiceCase):
+    """One pending package per course is a partial unique index, and this
+    path reads the slot, uploads, then writes. Losing that race is an
+    ordinary outcome of two tabs, not an internal error -- assign_bulk
+    already answers a lost race with a conflict, and this is the same shape.
+    """
+
+    def _lose_the_race(self):
+        self.session.commit.side_effect = IntegrityError(
+            "INSERT INTO training_course_package", {}, Exception("duplicate key")
+        )
+
+    async def test_losing_the_race_is_a_conflict_not_a_crash(self):
+        self._lose_the_race()
+
+        with self.assertRaises(ConflictError):
+            await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE)
+
+    async def test_losing_the_race_rolls_back_and_drops_its_own_files(self):
+        self._lose_the_race()
+
+        with self.assertRaises(ConflictError):
+            await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE)
+
+        self.session.rollback.assert_awaited()
+        self.storage.delete_prefix.assert_called_once()
 
 
 class TestStorageStaysOffTheEventLoop(_PackageServiceCase):
