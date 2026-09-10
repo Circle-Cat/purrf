@@ -20,10 +20,18 @@ _SIGNING_KEY = "test-signing-key"
 _PACKAGE_ID = 7
 
 
-def _session_token(package_id: int = _PACKAGE_ID) -> str:
-    """The token a page was handed when it opened a run of ``package_id``."""
+def _session_token(
+    package_id: int = _PACKAGE_ID,
+    training_id: int = _TRAINING_ID,
+    user_id: int = _USER_ID,
+) -> str:
+    """The token a page was handed when it opened a run of ``package_id``.
+
+    ``training_id`` and ``user_id`` are overridable so a test can hand over a
+    token that is authentic but belongs to some other run.
+    """
     token, _ = issue_content_token(
-        _SIGNING_KEY, _TRAINING_ID, _USER_ID, package_id=package_id
+        _SIGNING_KEY, training_id, user_id, package_id=package_id
     )
     return token
 
@@ -1216,6 +1224,53 @@ class TestAPreviewCannotSaveAnything(_ProgressServiceCase):
         # and must win over a preview's refusal.
         self.package_repository.get_by_id.assert_not_awaited()
         self.progress_repository.upsert.assert_not_awaited()
+
+
+class TestTheTokenMustNameThisRun(_ProgressServiceCase):
+    """A commit may only store into the run its own token names.
+
+    The token already carries the assignment and the person it was minted
+    for; both were signed. Reading only "is this a preview" out of it left
+    the rest of the claim unchecked, which is how one course's bookmark could
+    be stored on another course's row -- the same breakage a replaced package
+    causes, and the one the token exists to make impossible.
+    """
+
+    async def test_a_token_for_another_assignment_is_refused(self):
+        with self.assertRaises(PermissionError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                _COMMIT,
+                session_token=_session_token(training_id=_TRAINING_ID + 1),
+            )
+
+        self.progress_repository.upsert.assert_not_called()
+
+    async def test_a_token_for_another_person_is_refused(self):
+        with self.assertRaises(PermissionError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                _COMMIT,
+                session_token=_session_token(user_id=_USER_ID + 1),
+            )
+
+        self.progress_repository.upsert.assert_not_called()
+
+    async def test_the_run_its_own_token_names_still_stores(self):
+        """The guard must not cost the ordinary commit anything."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            _COMMIT,
+            session_token=_session_token(),
+        )
+
+        self.progress_repository.upsert.assert_called_once()
 
 
 class TestARunAgainstAReplacedPackage(_ProgressServiceCase):
