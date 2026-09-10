@@ -50,10 +50,10 @@ class InternalOnboardingTrainingService:
         """Assign what this employee owes, if the courses can be finished.
 
         Both rows are gated on the course having a live package and being
-        active -- the same gate `TrainingAssignmentService.assign` applies --
-        so the automatic path never creates a row the manual path would
-        refuse. Both are created without a deadline: nothing computes one for
-        these two courses.
+        active -- the same gate `TrainingAssignmentService._assignable_course`
+        applies -- so the automatic path never creates a row the manual path
+        would refuse. Both are created without a deadline: nothing computes
+        one for these two courses.
 
         Does not commit. The caller owns the transaction, so the training
         rows and the `is_internal` flag stand or fall together.

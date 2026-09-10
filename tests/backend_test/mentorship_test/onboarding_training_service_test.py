@@ -382,7 +382,8 @@ class TestOnboardingTrainingService(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(entity.link)
 
     async def test_requiring_a_live_package_builds_nothing_when_none_is_live(self):
-        """The same gate TrainingAssignmentService.assign applies. Without it
+        """The same gate TrainingAssignmentService._assignable_course
+        applies. Without it
         the automatic path would create rows the manual path refuses."""
         self.mock_package_repo.get_by_state = AsyncMock(return_value=None)
 

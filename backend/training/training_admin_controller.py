@@ -488,8 +488,8 @@ class TrainingAdminController:
         """Mint the content URL for the caller's own trial assignment.
 
         Names the course's pending package, not its live one -- the run this
-        route opens is how a verifier earns the stamp `publish_package` and
-        `assign` both require.
+        route opens is how a verifier earns the stamp `publish_package`
+        requires, and so the live package a batch assignment requires.
 
         Args:
             training_id (int): The trial assignment being opened.
