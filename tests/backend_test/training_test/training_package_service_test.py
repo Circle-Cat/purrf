@@ -4,6 +4,7 @@ is live."""
 import datetime
 import io
 import json
+import threading
 import unittest
 import zipfile
 from unittest.mock import AsyncMock, MagicMock
@@ -842,6 +843,77 @@ class TestReadCompletionConfig(_PackageServiceCase):
 
         with self.assertRaises(FileNotFoundError):
             await self.service.read_completion_config(self.session, _COURSE_ID)
+
+
+class TestStorageStaysOffTheEventLoop(_PackageServiceCase):
+    """Where the storage calls run, not what they store.
+
+    TrainingStorage is the synchronous google-cloud-storage client: one
+    blocking HTTPS round trip per object. Called from a coroutine it stops
+    the loop, and the loop is shared with every learner fetching course
+    assets -- which is how every asset went 502 once already. The content
+    service was fixed then; these paths were not.
+
+    Each test records the thread the storage call actually ran on and
+    demands it was not the loop's own. That is the property, and a mock
+    cannot fake it: the call really does have to be handed to a thread.
+    """
+
+    def _record(self, mock, result=None):
+        """Point a storage method at a recorder, and return the thread list."""
+        seen = []
+
+        def record(*args, **kwargs):
+            seen.append(threading.get_ident())
+            return result
+
+        mock.side_effect = record
+        return seen
+
+    async def test_storing_a_packages_files_runs_off_the_loop(self):
+        """The worst of the four: one put per file, 200-600 files in a real
+        Rise export."""
+        seen = self._record(self.storage.put)
+
+        await self.service.upload_package(self.session, _COURSE_ID, _ARCHIVE)
+
+        self.assertTrue(seen, "no file was stored, so the test proves nothing")
+        self.assertNotIn(threading.get_ident(), seen)
+
+    async def test_deleting_the_outgoing_package_runs_off_the_loop(self):
+        seen = self._record(self.storage.delete_prefix, result=0)
+        live = self._package(package_id=1, state=TrainingPackageState.LIVE)
+        self._slots(live=live, pending=self._verified_pending())
+
+        await self.service.publish_package(self.session, _COURSE_ID)
+
+        self.assertTrue(seen, "nothing was deleted, so the test proves nothing")
+        self.assertNotIn(threading.get_ident(), seen)
+
+    async def test_discarding_a_staged_package_runs_off_the_loop(self):
+        seen = self._record(self.storage.delete_prefix, result=0)
+        self._slots(
+            live=None,
+            pending=self._package(package_id=2, state=TrainingPackageState.PENDING),
+        )
+
+        await self.service.discard_package(self.session, _COURSE_ID)
+
+        self.assertTrue(seen, "nothing was deleted, so the test proves nothing")
+        self.assertNotIn(threading.get_ident(), seen)
+
+    async def test_reading_the_stored_entry_page_runs_off_the_loop(self):
+        seen = self._record(
+            self.storage.get, result=(_entry_page(_DRIVER_CONFIG), "text/html")
+        )
+        self._package_in_either_slot(
+            storage_prefix=_LIVE_PREFIX, entry_path=_ENTRY_PATH
+        )
+
+        await self.service.read_completion_config(self.session, _COURSE_ID)
+
+        self.assertTrue(seen, "nothing was read, so the test proves nothing")
+        self.assertNotIn(threading.get_ident(), seen)
 
 
 class TestPublish(_PackageServiceCase):

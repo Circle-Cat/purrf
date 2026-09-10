@@ -109,10 +109,10 @@ class OnboardingTrainingService:
 
         Callers that assign nobody a course they could not finish pass
         `require_live_package`, applying the same gate as
-        `TrainingAssignmentService.assign` -- a live package and an active
-        course -- and getting None instead of a row when it fails. The check
-        costs nothing extra here: the live package is already read to decide
-        whether the row carries an external link.
+        `TrainingAssignmentService._assignable_course` -- a live package and
+        an active course -- and getting None instead of a row when it fails.
+        The check costs nothing extra here: the live package is already read
+        to decide whether the row carries an external link.
 
         Args:
             session (AsyncSession): Active database async session.

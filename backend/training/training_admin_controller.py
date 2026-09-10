@@ -3,7 +3,7 @@
 import json
 from http import HTTPStatus
 
-from fastapi import APIRouter, Depends, File, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 
 from backend.common.api_endpoints import (
     TRAINING_ASSIGNMENTS_AUDIENCE_ENDPOINT,
@@ -36,6 +36,11 @@ from backend.utils.permission_decorators import authenticate
 # first, because a length check that runs after the JSON is decoded has already
 # spent the memory it exists to bound.
 _MAX_PROGRESS_BODY_BYTES = 256 * 1024
+
+# The audience table asks for twenty rows at a time. The ceiling is here to
+# refuse a caller asking for the whole directory in one page, not to serve a
+# larger one: whole-result-set selection is a separate route with its own cap.
+_MAX_AUDIENCE_PAGE = 100
 
 
 async def _read_progress_body(request: Request) -> dict:
@@ -312,19 +317,25 @@ class TrainingAdminController:
         self,
         filters: TrainingAudienceFilterDto = Depends(),
         group: MicrosoftGroups | None = None,
-        limit: int = 20,
-        offset: int = 0,
+        limit: int = Query(default=20, ge=1, le=_MAX_AUDIENCE_PAGE),
+        offset: int = Query(default=0, ge=0),
     ):
         """One page of the people a course may be assigned to.
 
         Gated on the write grant even though it only reads: the whole card is
         one authorization, and the search lists the company directory.
 
+        The window is bounded here rather than left to the database. A
+        negative limit reaches Postgres, which refuses it -- so an operator
+        who mistyped a URL was answered with a 500 telling them to contact
+        support. Selecting a whole result set has its own path with its own
+        cap; this one only ever fills a table.
+
         Args:
             filters (TrainingAudienceFilterDto): The requested filters.
             group (MicrosoftGroups | None): LDAP group to narrow to; only
                 meaningful for the internal type.
-            limit (int): Max rows to return.
+            limit (int): Max rows to return, 1 to 100. The card asks for 20.
             offset (int): Rows to skip.
         """
         async with self.database.session() as session:
@@ -477,8 +488,8 @@ class TrainingAdminController:
         """Mint the content URL for the caller's own trial assignment.
 
         Names the course's pending package, not its live one -- the run this
-        route opens is how a verifier earns the stamp `publish_package` and
-        `assign` both require.
+        route opens is how a verifier earns the stamp `publish_package`
+        requires, and so the live package a batch assignment requires.
 
         Args:
             training_id (int): The trial assignment being opened.

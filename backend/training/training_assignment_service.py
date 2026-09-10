@@ -230,12 +230,12 @@ class TrainingAssignmentService:
     ) -> TrainingAssignmentResultDto:
         """Open the caller's own assignment so they can verify a package.
 
-        Reads the PENDING slot, not the LIVE one `assign` reads: a trial run
-        exists to verify a package before it can be published, and a staged
-        package is exactly what a trial is for -- requiring it to already be
-        live would be circular. This is also why `start_trial` can skip
-        `assign`'s `is_active` check: stamping a deactivated course still
-        leaves it deactivated, since `assign` checks `is_active` on its own,
+        Reads the PENDING slot, not the LIVE one `_assignable_course` reads:
+        a trial run exists to verify a package before it can be published,
+        and a staged package is exactly what a trial is for -- requiring it
+        to already be live would be circular. This is also why `start_trial`
+        can skip that gate's `is_active` check: stamping a deactivated course
+        still leaves it deactivated, since `assign_bulk` gates on it anyway,
         so skipping it here buys no safety back -- and it supports a real
         sequence, a broken course gets deactivated, re-exported, re-uploaded,
         trialled, then reactivated. Beyond that it is an ordinary assignment,

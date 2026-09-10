@@ -749,6 +749,64 @@ class TestTrainingResponsesOnTheWire(unittest.TestCase):
                 self.assertEqual(_snake_case_keys(body["data"], name), [])
 
 
+class TestAudiencePagingBounds(unittest.TestCase):
+    """The page window is a contract, not a suggestion.
+
+    Asserted through the router: these values have to be refused before the
+    handler runs, which is the half a direct call cannot show. Unbounded,
+    limit=-1 reaches Postgres, which refuses a negative LIMIT -- so a mistyped
+    URL came back as a 500 asking the operator to contact support.
+    """
+
+    def setUp(self):
+        database = MagicMock()
+        database.session = lambda: _FakeSession()
+        self.audience_service = MagicMock()
+        controller = TrainingAdminController(
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            self.audience_service,
+            database,
+        )
+
+        app = FastAPI()
+        current_user = _user(Permission.TRAINING_ADMIN_WRITE)
+
+        @app.middleware("http")
+        async def _sign_in(request: Request, call_next):
+            request.state.user = current_user
+            return await call_next(request)
+
+        app.include_router(controller.router)
+        self.client = TestClient(app)
+
+    def _search(self, **params):
+        return self.client.get(TRAINING_ASSIGNMENTS_AUDIENCE_ENDPOINT, params=params)
+
+    def test_a_negative_page_size_is_refused(self):
+        response = self._search(limit=-1)
+
+        self.assertEqual(response.status_code, HTTPStatus.UNPROCESSABLE_ENTITY)
+        self.audience_service.search_audience.assert_not_called()
+
+    def test_a_page_size_over_the_cap_is_refused_rather_than_trimmed(self):
+        """The card asks for twenty. A request for the whole directory in one
+        page is a caller bug, and answering a trimmed page would hide it."""
+        response = self._search(limit=5000)
+
+        self.assertEqual(response.status_code, HTTPStatus.UNPROCESSABLE_ENTITY)
+        self.audience_service.search_audience.assert_not_called()
+
+    def test_a_negative_offset_is_refused(self):
+        response = self._search(offset=-1)
+
+        self.assertEqual(response.status_code, HTTPStatus.UNPROCESSABLE_ENTITY)
+        self.audience_service.search_audience.assert_not_called()
+
+
 class TestTrainingAudienceRoutes(TestTrainingAdminController):
     """The two reads behind the bulk assignment card."""
 
