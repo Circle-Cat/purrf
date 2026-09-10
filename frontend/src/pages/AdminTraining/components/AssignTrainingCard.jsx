@@ -169,64 +169,65 @@ export default function AssignTrainingCard({ courses }) {
           </Button>
         </div>
 
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-            <span
-              className="inline-flex"
-              title={
-                audience.facetsEdited
-                  ? "Search again before selecting everyone"
-                  : undefined
-              }
+        {/* Choosing who, choosing a deadline and assigning are one motion,
+            so they are one right-aligned cluster rather than two ends of a
+            bar. Wrapping keeps that reading on a narrow screen. */}
+        <div className="flex flex-wrap items-end justify-end gap-3">
+          <span
+            className="inline-flex"
+            title={
+              audience.facetsEdited
+                ? "Search again before selecting everyone"
+                : undefined
+            }
+          >
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={audience.total === 0 || audience.facetsEdited}
+              onClick={audience.selectAllMatching}
             >
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={audience.total === 0 || audience.facetsEdited}
-                onClick={audience.selectAllMatching}
-              >
-                {`Select all ${audience.total} matching`}
-              </Button>
-            </span>
-            <span>{`${selectedCount} selected`}</span>
-            {selectedCount > 0 && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={audience.clearSelection}
-              >
-                Clear
-              </Button>
-            )}
-          </div>
+              {`Select all ${audience.total} matching`}
+            </Button>
+          </span>
+          <span className="text-sm text-muted-foreground">
+            {`${selectedCount} selected`}
+          </span>
+          {selectedCount > 0 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={audience.clearSelection}
+            >
+              Clear
+            </Button>
+          )}
 
-          <div className="flex items-end gap-3">
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="audience-deadline">Deadline (optional)</Label>
-              <Input
-                id="audience-deadline"
-                type="date"
-                className="w-44"
-                value={audience.deadline}
-                onChange={(event) => audience.setDeadline(event.target.value)}
-              />
-            </div>
-            <span className="inline-flex" title={blockedReason ?? undefined}>
-              <Button
-                type="button"
-                disabled={
-                  blockedReason !== null ||
-                  selectedCount === 0 ||
-                  audience.assigning
-                }
-                onClick={audience.assign}
-              >
-                Assign
-              </Button>
-            </span>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="audience-deadline">Deadline (optional)</Label>
+            <Input
+              id="audience-deadline"
+              type="date"
+              className="w-44"
+              value={audience.deadline}
+              onChange={(event) => audience.setDeadline(event.target.value)}
+            />
           </div>
+          <span className="inline-flex" title={blockedReason ?? undefined}>
+            <Button
+              type="button"
+              disabled={
+                blockedReason !== null ||
+                selectedCount === 0 ||
+                audience.assigning
+              }
+              onClick={audience.assign}
+            >
+              Assign
+            </Button>
+          </span>
         </div>
 
         {!audience.hasSearched ? (

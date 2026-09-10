@@ -11,9 +11,19 @@ const LIVE_STATE_LABELS = {
   external_link: "External link",
 };
 
-/** The Status column's label for a `TrainingCourseLiveState` value. */
-export const liveStateLabel = (liveState) =>
-  LIVE_STATE_LABELS[liveState] ?? liveState;
+/**
+ * The Status column's label for a course.
+ *
+ * A deactivated course never wears its package's label: turning it off shuts
+ * it to everybody already on it, part-way through included, so "Live" on one
+ * is not a confusing label but a false one. Derived here beside
+ * `assignBlockedReason` because both read `isActive` -- the badge a course
+ * wears and the rule that greys out its buttons cannot be allowed to disagree.
+ * @param {{liveState: string, isActive: boolean}} course
+ * @returns {string}
+ */
+export const courseStateLabel = ({ liveState, isActive }) =>
+  isActive ? (LIVE_STATE_LABELS[liveState] ?? liveState) : "Off";
 
 /**
  * Why Assign cannot be clicked, or null when it can.

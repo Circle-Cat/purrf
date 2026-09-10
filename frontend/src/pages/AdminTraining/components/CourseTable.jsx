@@ -12,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  liveStateLabel,
+  courseStateLabel,
   publishBlockedReason,
 } from "@/pages/AdminTraining/utils";
 import {
@@ -37,18 +37,33 @@ const LIVE_STATE_DOT_COLOR = {
   no_package: "var(--stage-rejected)",
 };
 
-function StatusBadge({ liveState }) {
-  const dotColor = LIVE_STATE_DOT_COLOR[liveState];
+// A ring rather than a fill for a course that is off. No package is already
+// a filled slate dot, and the two states must not read alike at a glance.
+function StatusDot({ course }) {
+  if (!course.isActive) {
+    return (
+      <span
+        aria-hidden="true"
+        className="size-1.5 rounded-full border border-current"
+      />
+    );
+  }
+  const dotColor = LIVE_STATE_DOT_COLOR[course.liveState];
+  if (!dotColor) return null;
+  return (
+    <span
+      aria-hidden="true"
+      className="size-1.5 rounded-full"
+      style={{ backgroundColor: dotColor }}
+    />
+  );
+}
+
+function StatusBadge({ course }) {
   return (
     <Badge variant="outline" className="gap-1.5">
-      {dotColor && (
-        <span
-          aria-hidden="true"
-          className="size-1.5 rounded-full"
-          style={{ backgroundColor: dotColor }}
-        />
-      )}
-      {liveStateLabel(liveState)}
+      <StatusDot course={course} />
+      {courseStateLabel(course)}
     </Badge>
   );
 }
@@ -316,7 +331,13 @@ export default function CourseTable({ courses, onCoursesChanged }) {
         <TableBody>
           {courses.map((course) => (
             <Fragment key={course.courseId}>
-              <TableRow>
+              {/* Everything in a deactivated row is dimmed, not just its
+                  badge: the row describes a course nobody can open. */}
+              <TableRow
+                className={
+                  course.isActive ? undefined : "text-muted-foreground"
+                }
+              >
                 <TableCell>
                   <div className="font-medium">{course.name}</div>
                   {course.description && (
@@ -329,7 +350,7 @@ export default function CourseTable({ courses, onCoursesChanged }) {
                   <PackageCell course={course} />
                 </TableCell>
                 <TableCell>
-                  <StatusBadge liveState={course.liveState} />
+                  <StatusBadge course={course} />
                 </TableCell>
                 <TableCell className="text-right">
                   {course.assignedCount}

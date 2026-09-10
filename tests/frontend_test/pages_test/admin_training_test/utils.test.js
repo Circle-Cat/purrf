@@ -3,18 +3,32 @@ import { describe, it, expect } from "vitest";
 import {
   assignBlockedReason,
   canAssign,
-  liveStateLabel,
+  courseStateLabel,
   publishBlockedReason,
   timeSpentLabel,
 } from "@/pages/AdminTraining/utils";
 
 const live = { liveState: "live", isActive: true };
 
-describe("liveStateLabel", () => {
+describe("courseStateLabel", () => {
   it("labels every live state the backend derives", () => {
-    expect(liveStateLabel("live")).toBe("Live");
-    expect(liveStateLabel("no_package")).toBe("No package");
-    expect(liveStateLabel("external_link")).toBe("External link");
+    expect(courseStateLabel(live)).toBe("Live");
+    expect(courseStateLabel({ liveState: "no_package", isActive: true })).toBe(
+      "No package",
+    );
+    expect(
+      courseStateLabel({ liveState: "external_link", isActive: true }),
+    ).toBe("External link");
+  });
+
+  it("reads Off for a deactivated course whatever its package says", () => {
+    // Turning a course off closes it to everybody already on it, part-way
+    // through included, so "Live" on a deactivated course is not a confusing
+    // label -- it is a false one.
+    expect(courseStateLabel({ ...live, isActive: false })).toBe("Off");
+    expect(
+      courseStateLabel({ liveState: "external_link", isActive: false }),
+    ).toBe("Off");
   });
 });
 

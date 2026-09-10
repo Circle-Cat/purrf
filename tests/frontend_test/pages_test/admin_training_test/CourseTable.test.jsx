@@ -98,6 +98,16 @@ describe("CourseTable", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("reads Off rather than Live once a course is turned off", () => {
+    // The row's own button says "Activate", but that is the action, not the
+    // state. Status is where the state is read, and a course that is off is
+    // shut to everybody on it -- so it cannot go on claiming to be live.
+    renderTable([{ ...verified, isActive: false }]);
+
+    expect(screen.getByText("Off")).toBeInTheDocument();
+    expect(screen.queryByText("Live")).not.toBeInTheDocument();
+  });
+
   it("shows the total assigned count", () => {
     renderTable([verified]);
 
