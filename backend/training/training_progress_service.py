@@ -237,7 +237,9 @@ class TrainingProgressService:
         if assignment.user_id != user_id:
             raise PermissionError("This training belongs to somebody else.")
 
-        package = await self._package_behind(session, session_token, training_id)
+        package = await self._package_behind(
+            session, session_token, training_id, user_id
+        )
 
         # A trial runs the staged package, and opening one is never seeded
         # with stored progress, so what a trial writes it can never read
@@ -384,7 +386,9 @@ class TrainingProgressService:
             status=assignment.status, course_verified=course_verified
         )
 
-    async def _package_behind(self, session, session_token, training_id: int):
+    async def _package_behind(
+        self, session, session_token, training_id: int, user_id: int
+    ):
         """The package the run this commit came from is running.
 
         The token is signed, so a commit cannot claim to be running a package
@@ -402,7 +406,8 @@ class TrainingProgressService:
 
         Raises:
             PermissionError: The token names a preview -- one opened with no
-                assignment behind it, which has nothing to save into.
+                assignment behind it, which has nothing to save into -- or it
+                names a different assignment or a different person.
             ConflictError: The token names no readable package, or names one
                 that is no longer served.
         """
@@ -426,6 +431,25 @@ class TrainingProgressService:
                 training_id,
             )
             raise PermissionError("A preview does not record progress.")
+
+        # The rest of the claim, which the preview check above only reads half
+        # of. The token names the assignment and the person it was minted for,
+        # both signed, so a commit that names a different one is not the run
+        # it claims to be -- and storing it would put this course's bookmark
+        # on another course's row, which is the same breakage a replaced
+        # package causes and the thing the token exists to make impossible.
+        if run is not None and (
+            run.training_id != training_id or run.user_id != user_id
+        ):
+            self.logger.warning(
+                "[TrainingProgressService] refused a commit to training %s "
+                "from user %s: its run is training %s for user %s",
+                training_id,
+                user_id,
+                run.training_id,
+                run.user_id,
+            )
+            raise PermissionError("This run does not belong to this training.")
 
         package_id = None if run is None else run.package_id
 

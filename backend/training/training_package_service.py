@@ -1,5 +1,6 @@
 """Uploading a course package as a staged, pending replacement."""
 
+import asyncio
 import io
 import posixpath
 import uuid
@@ -95,17 +96,9 @@ class TrainingPackageService:
             raise ValueError(f"No training course with id {course_id}.")
 
         try:
-            with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
-                contents = read_package(archive)
-                new_prefix = f"training/{course_id}/{uuid.uuid4().hex}/"
-                for name in contents.file_names:
-                    self.training_storage.put(
-                        posixpath.join(new_prefix, name),
-                        # Served under the normalised name, read back under the
-                        # one the zip actually stores.
-                        archive.read(contents.archive_names[name]),
-                        content_type_for(name),
-                    )
+            contents, new_prefix = await asyncio.to_thread(
+                self._read_and_store, course_id, archive_bytes
+            )
         except zipfile.BadZipFile as error:
             raise PackageRejected(
                 "Rejected: the file is not a readable zip archive."
@@ -163,7 +156,7 @@ class TrainingPackageService:
         if replaced_prefix:
             # After the commit, for the same reason publish deletes late: until
             # it lands, the row still names these files.
-            self._delete_prefix_quietly(replaced_prefix, course_id)
+            await self._delete_prefix_quietly(replaced_prefix, course_id)
 
         config = contents.driver_config
         return TrainingPackageUploadResultDto(
@@ -180,6 +173,42 @@ class TrainingPackageService:
             completion_config_readable=config is not None,
             missing_declared_files=contents.missing_declared_files,
         )
+
+    def _read_and_store(self, course_id: int, archive_bytes: bytes):
+        """Unzip the archive and write every file, under a fresh prefix.
+
+        Synchronous on purpose, and never called from a coroutine directly:
+        `upload_package` hands the whole of it to a thread. Both halves have
+        to go together -- the storage client blocks on one HTTPS round trip
+        per object, and the zlib work between those calls blocks too, so
+        offloading only the writes would leave a real package's decompression
+        on the loop. A fresh prefix means a dead upload leaks files, never
+        overwrites the ones a live package is serving.
+
+        Args:
+            course_id (int): The course the prefix is named after.
+            archive_bytes (bytes): The whole uploaded zip.
+
+        Returns:
+            tuple[PackageContents, str]: What the archive declared, and the
+            prefix its files now live under.
+
+        Raises:
+            zipfile.BadZipFile: The container could not be read.
+            ManifestRejected, PackageRejected: See `read_package`.
+        """
+        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+            contents = read_package(archive)
+            new_prefix = f"training/{course_id}/{uuid.uuid4().hex}/"
+            for name in contents.file_names:
+                self.training_storage.put(
+                    posixpath.join(new_prefix, name),
+                    # Served under the normalised name, read back under the
+                    # one the zip actually stores.
+                    archive.read(contents.archive_names[name]),
+                    content_type_for(name),
+                )
+        return contents, new_prefix
 
     async def publish_package(
         self, session, course_id: int
@@ -254,7 +283,7 @@ class TrainingPackageService:
         )
 
         if outgoing_prefix:
-            self._delete_prefix_quietly(outgoing_prefix, course_id)
+            await self._delete_prefix_quietly(outgoing_prefix, course_id)
 
         return TrainingPackagePublishResultDto(
             course_id=course_id,
@@ -263,15 +292,18 @@ class TrainingPackageService:
             learners_reset=cleared,
         )
 
-    def _delete_prefix_quietly(self, prefix: str, course_id: int) -> None:
+    async def _delete_prefix_quietly(self, prefix: str, course_id: int) -> None:
         """Drop a prefix nothing points at any more.
 
         A failure is logged, never raised: the transaction that stopped
         anything pointing here has already committed, and the only cost of a
         failed delete is storage left behind.
+
+        Handed to a thread: deleting a prefix is a listing plus one blocking
+        request per object, and a replaced course package is hundreds of them.
         """
         try:
-            self.training_storage.delete_prefix(prefix)
+            await asyncio.to_thread(self.training_storage.delete_prefix, prefix)
         except Exception:
             self.logger.exception(
                 "[TrainingPackageService] could not delete prefix %s for course %s",
@@ -303,7 +335,7 @@ class TrainingPackageService:
             course_id,
             pending.package_id,
         )
-        self._delete_prefix_quietly(prefix, course_id)
+        await self._delete_prefix_quietly(prefix, course_id)
 
     async def read_completion_config(
         self, session, course_id: int
@@ -343,7 +375,7 @@ class TrainingPackageService:
             raise ValueError("This course has no staged package to read.")
 
         object_key = f"{package.storage_prefix}{package.entry_path}"
-        stored = self.training_storage.get(object_key)
+        stored = await asyncio.to_thread(self.training_storage.get, object_key)
         if stored is None:
             self.logger.error(
                 "[TrainingPackageService] course %s points at %s, which is gone",
