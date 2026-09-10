@@ -11,6 +11,10 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 from backend.common.api_endpoints import (
+    TRAINING_ASSIGNMENTS_AUDIENCE_ENDPOINT,
+    TRAINING_ASSIGNMENTS_BULK_ENDPOINT,
+    TRAINING_USER_ASSIGNMENTS_ENDPOINT,
+    TRAINING_ASSIGNMENTS_AUDIENCE_IDS_ENDPOINT,
     TRAINING_COURSE_PACKAGE_ENDPOINT,
     TRAINING_COURSE_PREVIEW_SESSION_ENDPOINT,
     TRAINING_COURSE_PUBLISH_ENDPOINT,
@@ -26,6 +30,8 @@ from backend.dto.training_course_dto import (
     TrainingProgressSaveDto,
     TrainingAssignmentRequestDto,
     TrainingAssignmentResultDto,
+    TrainingBulkAssignmentRequestDto,
+    TrainingBulkAssignmentResultDto,
     TrainingCourseCreateDto,
     TrainingCourseDto,
     TrainingCourseLiveState,
@@ -34,6 +40,13 @@ from backend.dto.training_course_dto import (
     TrainingPackageUploadResultDto,
     TrainingProgressDto,
     TrainingSessionDto,
+)
+from backend.dto.training_audience_dto import (
+    TrainingAudienceFilterDto,
+    TrainingAudienceIdsDto,
+    TrainingAudienceRowDto,
+    TrainingAudienceSearchDto,
+    TrainingUserAssignmentsDto,
 )
 from backend.dto.user_context_dto import UserContextDto
 from backend.training.training_admin_controller import (
@@ -124,12 +137,20 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         self.progress_service.save = AsyncMock(
             return_value=TrainingProgressSaveDto(status=TrainingStatus.IN_PROGRESS)
         )
+        self.audience_service = MagicMock()
+        self.audience_service.search_audience = AsyncMock(
+            return_value=TrainingAudienceSearchDto(rows=[], total=0)
+        )
+        self.audience_service.list_audience_ids = AsyncMock(
+            return_value=TrainingAudienceIdsDto(user_ids=[], total=0)
+        )
         self.controller = TrainingAdminController(
             self.course_service,
             self.assignment_service,
             self.package_service,
             self.content_service,
             self.progress_service,
+            self.audience_service,
             self.database,
         )
 
@@ -599,6 +620,7 @@ class TestTrainingResponsesOnTheWire(unittest.TestCase):
             self.package_service,
             self.content_service,
             self.progress_service,
+            MagicMock(),
             database,
         )
 
@@ -761,6 +783,131 @@ class TestTrainingResponsesOnTheWire(unittest.TestCase):
                 body = send().json()
                 self.assertTrue(body["success"], msg=body)
                 self.assertEqual(_snake_case_keys(body["data"], name), [])
+
+
+class TestTrainingAudienceRoutes(TestTrainingAdminController):
+    """The two reads behind the bulk assignment card."""
+
+    def test_the_audience_routes_are_gated_on_the_write_grant(self):
+        by_method = {
+            (route.path, method): _route_permissions(route)
+            for route in self.controller.router.routes
+            for method in route.methods
+        }
+
+        for path in [
+            TRAINING_ASSIGNMENTS_AUDIENCE_ENDPOINT,
+            TRAINING_ASSIGNMENTS_AUDIENCE_IDS_ENDPOINT,
+        ]:
+            self.assertEqual(
+                by_method[(path, "GET")],
+                [Permission.TRAINING_ADMIN_WRITE],
+                msg=f"GET {path}",
+            )
+
+    async def test_searching_the_audience_hands_over_the_filters_and_the_page(self):
+        filters = TrainingAudienceFilterDto(search="ada", user_type="internal")
+        self.audience_service.search_audience.return_value = TrainingAudienceSearchDto(
+            rows=[
+                TrainingAudienceRowDto(
+                    user_id=11,
+                    first_name="Ada",
+                    last_name="Internal",
+                    preferred_name=None,
+                    contact_email="ada@circlecat.org",
+                    is_internal=True,
+                    course_status=None,
+                    assigned_course_count=2,
+                    done_course_count=1,
+                )
+            ],
+            total=1,
+        )
+
+        response = await self.controller.search_audience(
+            filters=filters, group=None, limit=5, offset=10
+        )
+
+        self.audience_service.search_audience.assert_awaited_once_with(
+            self.session, filters, group=None, limit=5, offset=10
+        )
+        self.assertEqual(response["data"].total, 1)
+        self.assertEqual(response["data"].rows[0].user_id, 11)
+
+    async def test_selecting_everyone_hands_back_the_ids(self):
+        filters = TrainingAudienceFilterDto()
+        self.audience_service.list_audience_ids.return_value = TrainingAudienceIdsDto(
+            user_ids=[11, 12], total=2
+        )
+
+        response = await self.controller.list_audience_ids(filters=filters, group=None)
+
+        self.audience_service.list_audience_ids.assert_awaited_once_with(
+            self.session, filters, group=None
+        )
+        self.assertEqual(response["data"].user_ids, [11, 12])
+
+
+class TestBulkAssignmentRoute(TestTrainingAdminController):
+    """Assigning one course to a whole cohort."""
+
+    def test_the_bulk_route_is_gated_on_the_write_grant(self):
+        by_method = {
+            (route.path, method): _route_permissions(route)
+            for route in self.controller.router.routes
+            for method in route.methods
+        }
+
+        self.assertEqual(
+            by_method[(TRAINING_ASSIGNMENTS_BULK_ENDPOINT, "POST")],
+            [Permission.TRAINING_ADMIN_WRITE],
+        )
+
+    async def test_a_batch_reports_what_it_created_and_what_it_skipped(self):
+        self.assignment_service.assign_bulk = AsyncMock(
+            return_value=TrainingBulkAssignmentResultDto(
+                course_id=3, created_count=2, already_assigned_count=1
+            )
+        )
+        payload = TrainingBulkAssignmentRequestDto(course_id=3, user_ids=[11, 12, 13])
+
+        response = await self.controller.assign_bulk(payload)
+
+        self.assignment_service.assign_bulk.assert_awaited_once_with(
+            self.session, payload
+        )
+        self.assertEqual(response["data"].created_count, 2)
+        self.assertEqual(response["data"].already_assigned_count, 1)
+        self.assertIn("2", response["message"])
+        self.assertIn("1", response["message"])
+
+
+class TestOnePersonsAssignmentsRoute(TestTrainingAdminController):
+    """The read-only list behind an expanded row."""
+
+    def test_the_route_is_gated_on_the_write_grant(self):
+        by_method = {
+            (route.path, method): _route_permissions(route)
+            for route in self.controller.router.routes
+            for method in route.methods
+        }
+
+        self.assertEqual(
+            by_method[(TRAINING_USER_ASSIGNMENTS_ENDPOINT, "GET")],
+            [Permission.TRAINING_ADMIN_WRITE],
+        )
+
+    async def test_it_hands_back_what_that_person_holds(self):
+        self.audience_service.list_user_assignments = AsyncMock(
+            return_value=TrainingUserAssignmentsDto(user_id=11, rows=[])
+        )
+
+        response = await self.controller.list_user_assignments(user_id=11)
+
+        self.audience_service.list_user_assignments.assert_awaited_once_with(
+            self.session, 11
+        )
+        self.assertEqual(response["data"].user_id, 11)
 
 
 if __name__ == "__main__":

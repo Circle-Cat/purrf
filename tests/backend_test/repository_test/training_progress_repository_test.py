@@ -371,6 +371,48 @@ class TestTrainingProgressRepository(BaseRepositoryTestLib):
         self.assertIs(returned, held)
         self.assertEqual(held.lesson_location, "Summary")
 
+    async def test_get_by_training_ids_maps_each_assignment_to_its_progress(self):
+        first = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.IN_PROGRESS
+        )
+        second = await self._assign(
+            self.user_ids[0], self.other_course_id, TrainingStatus.IN_PROGRESS
+        )
+        await self._start(first, lesson_status="incomplete")
+        await self._start(second, lesson_status="completed")
+
+        found = await self.repo.get_by_training_ids(
+            self.session, [first.training_id, second.training_id]
+        )
+
+        self.assertEqual(
+            {training_id: row.lesson_status for training_id, row in found.items()},
+            {
+                first.training_id: "incomplete",
+                second.training_id: "completed",
+            },
+        )
+
+    async def test_get_by_training_ids_omits_an_assignment_never_opened(self):
+        opened = await self._assign(
+            self.user_ids[0], self.course_id, TrainingStatus.IN_PROGRESS
+        )
+        untouched = await self._assign(
+            self.user_ids[1], self.other_course_id, TrainingStatus.TO_DO
+        )
+        await self._start(opened)
+
+        found = await self.repo.get_by_training_ids(
+            self.session, [opened.training_id, untouched.training_id]
+        )
+
+        self.assertEqual(list(found), [opened.training_id])
+
+    async def test_get_by_training_ids_asks_nothing_of_an_empty_list(self):
+        found = await self.repo.get_by_training_ids(self.session, [])
+
+        self.assertEqual(found, {})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -44,6 +44,15 @@ py_test(
 )
 
 py_test(
+    name = "training_audience_repository_test",
+    srcs = ["training_audience_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+    ],
+)
+
+py_test(
     name = "training_repository_test",
     srcs = ["training_repository_test.py"],
     env_inherit = ["DATABASE_URL"],

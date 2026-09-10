@@ -104,6 +104,36 @@ class TrainingAssignmentRequestDto(BaseRequestDto):
     deadline: datetime | None = None
 
 
+class TrainingBulkAssignmentRequestDto(BaseRequestDto):
+    """Assigning one course to a whole cohort.
+
+    The ids are the payload rather than the search that found them, so the
+    number the operator saw on screen is the number that gets assigned. The
+    cap matches the one on selecting a whole result set: past it the request
+    is refused, never trimmed, since there is no undo for the part that landed.
+    """
+
+    course_id: int
+    user_ids: list[int] = Field(min_length=1, max_length=1000)
+    deadline: datetime | None = None
+
+
+class TrainingBulkAssignmentResultDto(BaseDto):
+    """What a batch did, in three outcomes rather than two.
+
+    ``already_assigned_count`` is people whose row was left untouched: repeat
+    assignment is a no-op. ``attached_count`` is people who held a legacy row
+    for the course's category with no course on it, which the batch pointed at
+    the course -- a real write, so counting it as "already had this course"
+    would report a batch that changed fifty rows as having done nothing.
+    """
+
+    course_id: int
+    created_count: int
+    attached_count: int = 0
+    already_assigned_count: int
+
+
 class TrainingAssignmentResultDto(BaseDto):
     """What an assignment call did.
 

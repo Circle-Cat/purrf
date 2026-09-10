@@ -4,13 +4,18 @@ import datetime
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 
+from sqlalchemy.exc import IntegrityError
+
 from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import (
     TrainingCategory,
     TrainingPackageState,
     TrainingStatus,
 )
-from backend.dto.training_course_dto import TrainingAssignmentRequestDto
+from backend.dto.training_course_dto import (
+    TrainingAssignmentRequestDto,
+    TrainingBulkAssignmentRequestDto,
+)
 from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.training_entity import TrainingEntity
 from backend.training.training_assignment_service import TrainingAssignmentService
@@ -43,6 +48,12 @@ class _AssignmentServiceCase(unittest.IsolatedAsyncioTestCase):
         self.trainings.get_training_by_user_id_and_category = AsyncMock(
             return_value=None
         )
+        self.trainings.get_training_by_user_ids_and_course_id = AsyncMock(
+            return_value={}
+        )
+        self.trainings.get_training_by_user_ids_and_categories = AsyncMock(
+            return_value=[]
+        )
         self.package_repository = MagicMock()
         self.package_repository.get_by_state = AsyncMock(
             return_value=MagicMock(verified_completable_at=_VERIFIED_AT)
@@ -63,6 +74,13 @@ class _AssignmentServiceCase(unittest.IsolatedAsyncioTestCase):
         self.calls = []
         self.session.add = MagicMock(
             side_effect=lambda entity: self.calls.append(("add", entity))
+        )
+        # The batch path writes the whole cohort through add_all, so record it
+        # the same way -- otherwise a batch looks like it wrote nothing.
+        self.session.add_all = MagicMock(
+            side_effect=lambda entities: self.calls.extend(
+                ("add", entity) for entity in entities
+            )
         )
         self.session.flush = AsyncMock(side_effect=self._stamp_training_id)
         self.session.commit = AsyncMock(
@@ -333,6 +351,24 @@ class TestTrainingAssignmentService(_AssignmentServiceCase):
         self.assertEqual(by_category.course_id, _COURSE_ID)
         self.session.add.assert_not_called()
 
+    async def test_adopting_a_category_row_on_a_trial_is_persisted(self):
+        """The attachment is a write, so the trial path has to commit it too.
+
+        Nothing else does: the adopt branch returns before the insert, and the
+        session rolls back at the end of the request otherwise.
+        """
+        by_category = TrainingEntity(
+            training_id=77,
+            user_id=_USER_ID,
+            category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+            course_id=None,
+        )
+        self.trainings.get_training_by_user_id_and_category.return_value = by_category
+
+        await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)
+
+        self.session.commit.assert_awaited_once()
+
 
 class TestTheAssignmentGateReadsTheLiveSlot(_AssignmentServiceCase):
     async def test_a_course_with_a_live_package_can_be_assigned(self):
@@ -372,6 +408,249 @@ class TestTrialRunsTheStagedPackage(_AssignmentServiceCase):
         result = await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)
 
         self.assertTrue(result.created)
+
+
+class TestBulkAssignment(_AssignmentServiceCase):
+    """Assigning one course to a whole cohort, in one transaction."""
+
+    def _held_by(self, *user_ids):
+        """Makes the per-course lookup answer only for these people."""
+        held = {
+            user_id: TrainingEntity(
+                training_id=900 + user_id,
+                user_id=user_id,
+                course_id=_COURSE_ID,
+                category=self.course.category,
+                status=TrainingStatus.IN_PROGRESS,
+                deadline=_VERIFIED_AT,
+            )
+            for user_id in user_ids
+        }
+        self.trainings.get_training_by_user_ids_and_course_id = AsyncMock(
+            return_value=held
+        )
+        return held
+
+    def _payload(self, *user_ids, deadline=None):
+        return TrainingBulkAssignmentRequestDto(
+            course_id=_COURSE_ID, user_ids=list(user_ids), deadline=deadline
+        )
+
+    def _added(self):
+        # calls holds ("add", entity) but also bare ("flush",) / ("commit",).
+        return [call[1] for call in self.calls if call[0] == "add"]
+
+    async def test_a_course_with_nothing_live_refuses_the_whole_batch(self):
+        self._slots(live=None)
+
+        with self.assertRaises(ConflictError):
+            await self.service.assign_bulk(self.session, self._payload(11, 12))
+
+        self.assertEqual(self._added(), [])
+        self.session.commit.assert_not_awaited()
+
+    async def test_a_deactivated_course_refuses_the_whole_batch(self):
+        self.courses.get_course_by_id = AsyncMock(return_value=_course(is_active=False))
+
+        with self.assertRaises(ConflictError):
+            await self.service.assign_bulk(self.session, self._payload(11, 12))
+
+        self.assertEqual(self._added(), [])
+        self.session.commit.assert_not_awaited()
+
+    async def test_a_course_that_does_not_exist_refuses_the_whole_batch(self):
+        self.courses.get_course_by_id = AsyncMock(return_value=None)
+
+        with self.assertRaises(ValueError):
+            await self.service.assign_bulk(self.session, self._payload(11, 12))
+
+        self.assertEqual(self._added(), [])
+
+    async def test_each_person_gets_the_row_the_dispatch_writes(self):
+        deadline = _VERIFIED_AT
+
+        await self.service.assign_bulk(
+            self.session, self._payload(11, 12, deadline=deadline)
+        )
+
+        added = self._added()
+        self.assertEqual([row.user_id for row in added], [11, 12])
+        for row in added:
+            self.assertEqual(row.course_id, _COURSE_ID)
+            self.assertEqual(row.category, self.course.category)
+            self.assertEqual(row.status, TrainingStatus.TO_DO)
+            self.assertEqual(row.deadline, deadline)
+            self.assertIsNone(row.link)
+
+    async def test_an_empty_deadline_stays_empty(self):
+        await self.service.assign_bulk(self.session, self._payload(11))
+
+        self.assertIsNone(self._added()[0].deadline)
+
+    async def test_somebody_who_already_holds_the_course_is_left_alone(self):
+        held = self._held_by(11)
+
+        await self.service.assign_bulk(self.session, self._payload(11, 12))
+
+        self.assertEqual([row.user_id for row in self._added()], [12])
+        self.assertEqual(held[11].deadline, _VERIFIED_AT)
+        self.assertEqual(held[11].status, TrainingStatus.IN_PROGRESS)
+
+    async def test_the_batch_reports_what_it_created_and_what_it_skipped(self):
+        self._held_by(11)
+
+        result = await self.service.assign_bulk(self.session, self._payload(11, 12, 13))
+
+        self.assertEqual(result.course_id, _COURSE_ID)
+        self.assertEqual(result.created_count, 2)
+        self.assertEqual(result.already_assigned_count, 1)
+
+    async def test_the_whole_batch_is_one_commit(self):
+        await self.service.assign_bulk(self.session, self._payload(11, 12, 13))
+
+        self.assertEqual([call[0] for call in self.calls].count("commit"), 1)
+        self.assertEqual(self.calls[-1], ("commit",))
+
+    async def test_a_failing_write_commits_nothing(self):
+        self.session.flush = AsyncMock(
+            side_effect=RuntimeError("the database went away")
+        )
+
+        with self.assertRaises(RuntimeError):
+            await self.service.assign_bulk(self.session, self._payload(11, 12, 13))
+
+        self.session.commit.assert_not_awaited()
+
+    async def test_a_repeated_id_is_assigned_once(self):
+        result = await self.service.assign_bulk(self.session, self._payload(11, 11))
+
+        self.assertEqual([row.user_id for row in self._added()], [11])
+        self.assertEqual(result.created_count, 1)
+        self.assertEqual(result.already_assigned_count, 0)
+
+    async def test_the_course_is_gated_once_however_many_people(self):
+        await self.service.assign_bulk(self.session, self._payload(11, 12, 13))
+
+        self.courses.get_course_by_id.assert_awaited_once()
+        self.package_repository.get_by_state.assert_awaited_once()
+
+
+class TestBulkAssignmentReadsInBatches(_AssignmentServiceCase):
+    """One batch is a handful of queries, not a handful per person.
+
+    The cap on one batch is a thousand people. Looking each of them up on
+    their own would be thousands of sequential round trips inside one open
+    write transaction, and a gateway timeout would discard the lot.
+    """
+
+    def _payload(self, *user_ids, deadline=None):
+        return TrainingBulkAssignmentRequestDto(
+            course_id=_COURSE_ID, user_ids=list(user_ids), deadline=deadline
+        )
+
+    async def test_holders_are_looked_up_in_one_query_for_the_whole_batch(self):
+        await self.service.assign_bulk(self.session, self._payload(11, 12, 13))
+
+        self.trainings.get_training_by_user_ids_and_course_id.assert_awaited_once_with(
+            self.session, [11, 12, 13], _COURSE_ID
+        )
+        self.trainings.get_training_by_user_id_and_course_id.assert_not_awaited()
+
+    async def test_legacy_category_rows_are_looked_up_in_one_query(self):
+        await self.service.assign_bulk(self.session, self._payload(11, 12))
+
+        self.trainings.get_training_by_user_ids_and_categories.assert_awaited_once_with(
+            self.session, [11, 12], [self.course.category]
+        )
+        self.trainings.get_training_by_user_id_and_category.assert_not_awaited()
+
+    async def test_a_course_with_no_category_asks_no_category_question(self):
+        self.courses.get_course_by_id = AsyncMock(return_value=_course(category=None))
+
+        await self.service.assign_bulk(self.session, self._payload(11, 12))
+
+        self.trainings.get_training_by_user_ids_and_categories.assert_not_awaited()
+
+    async def test_the_whole_batch_is_written_in_one_flush(self):
+        await self.service.assign_bulk(self.session, self._payload(11, 12, 13))
+
+        self.assertEqual(
+            [call[0] for call in self.calls],
+            ["add", "add", "add", "flush", "commit"],
+        )
+
+    async def test_a_person_who_already_holds_the_course_is_skipped(self):
+        held = TrainingEntity(
+            training_id=99, user_id=11, course_id=_COURSE_ID, deadline=_VERIFIED_AT
+        )
+        self.trainings.get_training_by_user_ids_and_course_id.return_value = {11: held}
+
+        result = await self.service.assign_bulk(self.session, self._payload(11, 12))
+
+        added = [call[1] for call in self.calls if call[0] == "add"]
+        self.assertEqual([row.user_id for row in added], [12])
+        self.assertEqual(result.created_count, 1)
+        self.assertEqual(result.already_assigned_count, 1)
+        self.assertEqual(held.deadline, _VERIFIED_AT)
+
+    async def test_a_legacy_row_is_adopted_rather_than_doubled(self):
+        legacy = TrainingEntity(
+            training_id=77,
+            user_id=11,
+            category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+            course_id=None,
+        )
+        self.trainings.get_training_by_user_ids_and_categories.return_value = [legacy]
+
+        result = await self.service.assign_bulk(self.session, self._payload(11))
+
+        self.assertEqual(legacy.course_id, _COURSE_ID)
+        self.assertEqual([call[0] for call in self.calls], ["flush", "commit"])
+        self.assertEqual(result.attached_count, 1)
+
+    async def test_an_adopted_row_is_reported_as_attached_not_as_already_held(self):
+        """Repointing 50 legacy rows must not report "0 assigned, 50 already
+        had this course" -- the operator would read that as nothing happened."""
+        legacy = TrainingEntity(
+            training_id=77,
+            user_id=11,
+            category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+            course_id=None,
+        )
+        self.trainings.get_training_by_user_ids_and_categories.return_value = [legacy]
+
+        result = await self.service.assign_bulk(self.session, self._payload(11))
+
+        self.assertEqual(result.already_assigned_count, 0)
+        self.assertEqual(result.created_count, 0)
+        self.assertEqual(result.attached_count, 1)
+
+    async def test_a_legacy_row_that_already_points_somewhere_is_left_alone(self):
+        legacy = TrainingEntity(
+            training_id=77,
+            user_id=11,
+            category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+            course_id=999,
+        )
+        self.trainings.get_training_by_user_ids_and_categories.return_value = [legacy]
+
+        result = await self.service.assign_bulk(self.session, self._payload(11))
+
+        self.assertEqual(legacy.course_id, 999)
+        self.assertEqual(result.created_count, 1)
+        self.assertEqual(result.attached_count, 0)
+
+    async def test_somebody_who_no_longer_exists_is_a_conflict_not_a_crash(self):
+        """A person offboarded between the search and the click. The batch is
+        lost either way, but a 409 says why and a 500 does not."""
+        self.session.flush = AsyncMock(
+            side_effect=IntegrityError("insert", {}, Exception("fk violation"))
+        )
+
+        with self.assertRaises(ConflictError):
+            await self.service.assign_bulk(self.session, self._payload(11, 12))
+
+        self.session.commit.assert_not_awaited()
 
 
 if __name__ == "__main__":

@@ -12,11 +12,15 @@ good. Assignment therefore adopts a category row it finds rather than inserting
 beside it.
 """
 
+from sqlalchemy.exc import IntegrityError
+
 from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import TrainingPackageState, TrainingStatus
 from backend.dto.training_course_dto import (
     TrainingAssignmentRequestDto,
     TrainingAssignmentResultDto,
+    TrainingBulkAssignmentRequestDto,
+    TrainingBulkAssignmentResultDto,
 )
 from backend.entity.training_entity import TrainingEntity
 
@@ -47,6 +51,232 @@ class TrainingAssignmentService:
         self.training_course_repository = training_course_repository
         self.training_repository = training_repository
         self.training_course_package_repository = training_course_package_repository
+
+    async def _assignable_course(self, session, course_id: int):
+        """The course, checked once for whether it may be assigned at all.
+
+        A live package plus `is_active`, and a live package is proof enough on
+        its own: `publish_package` only promotes a pending package that
+        already carries a verification stamp, so an unverified course can no
+        longer reach this point. That is what the gate is for -- an
+        unfinishable course holds everyone assigned to it at the mentorship
+        matching gate, silently, and looks like our bug.
+
+        Assignability is a property of the course, not of the person, so a
+        batch checks it once and either writes for everybody or nobody.
+
+        Args:
+            session: The active async database session.
+            course_id (int): The course being assigned.
+
+        Returns:
+            TrainingCourseEntity: The course, safe to assign.
+
+        Raises:
+            ValueError: No such course.
+            ConflictError: Nothing published yet, or deactivated. Surfaces
+                as 409.
+        """
+        course = await self.training_course_repository.get_course_by_id(
+            session, course_id
+        )
+        if course is None:
+            raise ValueError(f"No training course with id {course_id}.")
+
+        package = await self.training_course_package_repository.get_by_state(
+            session, course.course_id, TrainingPackageState.LIVE
+        )
+        if package is None:
+            raise ConflictError(
+                "This course has nothing published yet, so it cannot be "
+                "assigned. Upload a package, run it to completion, and "
+                "publish it first."
+            )
+
+        if not course.is_active:
+            raise ConflictError(
+                "This course is deactivated and cannot be assigned to anybody new."
+            )
+        return course
+
+    @staticmethod
+    def _new_row(course, user_id: int, deadline) -> TrainingEntity:
+        """The row both paths write, so neither can drift from the other.
+
+        Identical to what automatic dispatch writes: the category follows the
+        course so registration and the mentorship matching gate keep reading
+        as they expect, and there is no link -- the course is served in app.
+
+        Args:
+            course (TrainingCourseEntity): The gated course.
+            user_id (int): Who is being assigned.
+            deadline (datetime | None): The deadline to stamp, or None.
+
+        Returns:
+            TrainingEntity: The unsaved row.
+        """
+        return TrainingEntity(
+            user_id=user_id,
+            course_id=course.course_id,
+            category=course.category,
+            status=TrainingStatus.TO_DO,
+            deadline=deadline,
+            link=None,
+        )
+
+    async def _assign_one(
+        self, session, course, user_id: int, deadline
+    ) -> tuple[TrainingAssignmentResultDto, bool]:
+        """One person's row for an already-gated course, without committing.
+
+        The transaction belongs to the caller: one person commits right after,
+        a batch commits once at the end, so a batch that fails partway writes
+        nothing at all.
+
+        Args:
+            session: The active async database session.
+            course (TrainingCourseEntity): The gated course.
+            user_id (int): Who is being assigned.
+            deadline (datetime | None): The deadline to stamp on a new row.
+
+        Returns:
+            tuple[TrainingAssignmentResultDto, bool]: The assignment, and
+            whether this call changed anything -- a fresh row, or a category
+            row adopted. False means the person already held the course and
+            nothing was touched.
+        """
+        existing, adopted = await self._existing_assignment(session, user_id, course)
+        if existing is not None:
+            return (
+                TrainingAssignmentResultDto(
+                    training_id=existing.training_id,
+                    user_id=existing.user_id,
+                    course_id=course.course_id,
+                    created=False,
+                ),
+                adopted,
+            )
+
+        assignment = self._new_row(course, user_id, deadline)
+        session.add(assignment)
+        await session.flush()
+
+        self.logger.info(
+            "[TrainingAssignmentService] assigned course %s to user %s",
+            course.course_id,
+            user_id,
+        )
+        return (
+            TrainingAssignmentResultDto(
+                training_id=assignment.training_id,
+                user_id=assignment.user_id,
+                course_id=course.course_id,
+                created=True,
+            ),
+            True,
+        )
+
+    async def assign_bulk(
+        self, session, payload: TrainingBulkAssignmentRequestDto
+    ) -> TrainingBulkAssignmentResultDto:
+        """Give one course to a whole cohort, in one transaction.
+
+        The course is gated once; anybody who already holds it is skipped and
+        their row is left exactly as it stands, a deadline stamped by
+        registration above all. Nothing is written unless everything is, so a
+        failure partway leaves no half-assigned cohort -- and retrying is safe,
+        because per-person assignment is idempotent.
+
+        Args:
+            session: The active async database session.
+            payload (TrainingBulkAssignmentRequestDto): The course, the ids,
+                and an optional deadline for the new rows.
+
+        Returns:
+            TrainingBulkAssignmentResultDto: How many rows were created, how
+            many legacy category rows were pointed at the course, and how many
+            people already held it.
+
+        Raises:
+            ValueError: No such course.
+            ConflictError: The course has no live package, is deactivated, or
+                one of the submitted people no longer exists.
+        """
+        course = await self._assignable_course(session, payload.course_id)
+
+        # An id repeated in one request is one person: assigning them twice
+        # would report a phantom row that was never written.
+        user_ids = list(dict.fromkeys(payload.user_ids))
+
+        # Two reads for the whole cohort rather than two per person. A batch
+        # runs to a thousand people, and per-person lookups would be thousands
+        # of sequential round trips with a write transaction held open.
+        held_by_user_id = (
+            await self.training_repository.get_training_by_user_ids_and_course_id(
+                session, user_ids, course.course_id
+            )
+        )
+        adoptable_by_user_id = {}
+        if course.category is not None:
+            category_rows = (
+                await self.training_repository.get_training_by_user_ids_and_categories(
+                    session, user_ids, [course.category]
+                )
+            )
+            # Only a row with no course of its own is this assignment; one
+            # already pointing elsewhere belongs to another course.
+            adoptable_by_user_id = {
+                row.user_id: row for row in category_rows if row.course_id is None
+            }
+
+        created_count = 0
+        attached_count = 0
+        already_assigned_count = 0
+        new_rows = []
+        for user_id in user_ids:
+            if user_id in held_by_user_id:
+                already_assigned_count += 1
+                continue
+            adoptable = adoptable_by_user_id.get(user_id)
+            if adoptable is not None:
+                # Given the course_id it was missing, and nothing else: a
+                # deadline registration stamped stays as it is.
+                adoptable.course_id = course.course_id
+                attached_count += 1
+                continue
+            new_rows.append(self._new_row(course, user_id, payload.deadline))
+            created_count += 1
+
+        if new_rows:
+            session.add_all(new_rows)
+
+        if new_rows or attached_count:
+            try:
+                await session.flush()
+            except IntegrityError as error:
+                # The one referential thing a submitted id can break: somebody
+                # offboarded between the search and the click. The batch is
+                # lost either way, but a 409 says why where a 500 does not.
+                raise ConflictError(
+                    "One of the selected people no longer exists. "
+                    "Search again and reassign."
+                ) from error
+            await session.commit()
+
+        self.logger.info(
+            "[TrainingAssignmentService] bulk assigned course %s: "
+            "created %s, attached %s, already assigned %s",
+            payload.course_id,
+            created_count,
+            attached_count,
+            already_assigned_count,
+        )
+        return TrainingBulkAssignmentResultDto(
+            course_id=payload.course_id,
+            created_count=created_count,
+            attached_count=attached_count,
+            already_assigned_count=already_assigned_count,
+        )
 
     async def assign(
         self, session, payload: TrainingAssignmentRequestDto
@@ -80,61 +310,13 @@ class TrainingAssignmentService:
             ConflictError: The course has no live package, or is deactivated.
                 Surfaces as 409.
         """
-        course = await self.training_course_repository.get_course_by_id(
-            session, payload.course_id
+        course = await self._assignable_course(session, payload.course_id)
+        result, changed = await self._assign_one(
+            session, course, payload.user_id, payload.deadline
         )
-        if course is None:
-            raise ValueError(f"No training course with id {payload.course_id}.")
-
-        package = await self.training_course_package_repository.get_by_state(
-            session, course.course_id, TrainingPackageState.LIVE
-        )
-        if package is None:
-            raise ConflictError(
-                "This course has nothing published yet, so it cannot be "
-                "assigned. Upload a package, run it to completion, and "
-                "publish it first."
-            )
-
-        if not course.is_active:
-            raise ConflictError(
-                "This course is deactivated and cannot be assigned to anybody new."
-            )
-
-        existing = await self._existing_assignment(session, payload.user_id, course)
-        if existing is not None:
-            return TrainingAssignmentResultDto(
-                training_id=existing.training_id,
-                user_id=existing.user_id,
-                course_id=payload.course_id,
-                created=False,
-            )
-
-        assignment = TrainingEntity(
-            user_id=payload.user_id,
-            course_id=payload.course_id,
-            # Kept in step with the course so registration and the matching
-            # gate keep reading as they expect.
-            category=course.category,
-            status=TrainingStatus.TO_DO,
-            deadline=payload.deadline,
-            link=None,
-        )
-        session.add(assignment)
-        await session.flush()
-        await session.commit()
-
-        self.logger.info(
-            "[TrainingAssignmentService] assigned course %s to user %s",
-            payload.course_id,
-            payload.user_id,
-        )
-        return TrainingAssignmentResultDto(
-            training_id=assignment.training_id,
-            user_id=assignment.user_id,
-            course_id=payload.course_id,
-            created=True,
-        )
+        if changed:
+            await session.commit()
+        return result
 
     async def start_trial(
         self, session, course_id: int, user_id: int
@@ -179,8 +361,12 @@ class TrainingAssignmentService:
                 "There is no staged package on this course to run. Upload one first."
             )
 
-        existing = await self._existing_assignment(session, user_id, course)
+        existing, adopted = await self._existing_assignment(session, user_id, course)
         if existing is not None:
+            # Adopting attaches the course_id to a row that was missing it,
+            # which is a write on a path that is otherwise a read.
+            if adopted:
+                await session.commit()
             return TrainingAssignmentResultDto(
                 training_id=existing.training_id,
                 user_id=existing.user_id,
@@ -234,16 +420,18 @@ class TrainingAssignmentService:
             course (TrainingCourseEntity): The course being assigned.
 
         Returns:
-            TrainingEntity | None: The row already standing, or None.
+            tuple[TrainingEntity | None, bool]: The row already standing, or
+            None, and whether adopting it wrote to it. The write is left
+            uncommitted: the caller owns the transaction.
         """
         existing = await self.training_repository.get_training_by_user_id_and_course_id(
             session, user_id, course.course_id
         )
         if existing is not None:
-            return existing
+            return existing, False
 
         if course.category is None:
-            return None
+            return None, False
 
         by_category = (
             await self.training_repository.get_training_by_user_id_and_category(
@@ -251,10 +439,9 @@ class TrainingAssignmentService:
             )
         )
         if by_category is None or by_category.course_id is not None:
-            return by_category
+            return by_category, False
 
         by_category.course_id = course.course_id
-        await session.commit()
         self.logger.info(
             "[TrainingAssignmentService] attached course %s to user %s's "
             "existing %s row",
@@ -262,4 +449,4 @@ class TrainingAssignmentService:
             user_id,
             course.category.value,
         )
-        return by_category
+        return by_category, True

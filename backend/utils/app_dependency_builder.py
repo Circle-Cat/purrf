@@ -141,6 +141,7 @@ from backend.leave.leave_admin_controller import LeaveAdminController
 from backend.training.content_host import resolve_content_host
 from backend.training.training_admin_controller import TrainingAdminController
 from backend.training.training_assignment_service import TrainingAssignmentService
+from backend.training.training_audience_service import TrainingAudienceService
 from backend.training.training_content_controller import TrainingContentController
 from backend.training.training_content_service import TrainingContentService
 from backend.training.training_course_service import TrainingCourseService
@@ -191,6 +192,9 @@ from backend.repository.training_progress_repository import (
 )
 from backend.repository.training_course_package_repository import (
     TrainingCoursePackageRepository,
+)
+from backend.repository.training_audience_repository import (
+    TrainingAudienceRepository,
 )
 from backend.repository.training_repository import TrainingRepository
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
@@ -565,6 +569,7 @@ class AppDependencyBuilder:
         self.training_repository = TrainingRepository()
         self.training_course_repository = TrainingCourseRepository()
         self.training_course_package_repository = TrainingCoursePackageRepository()
+        self.training_audience_repository = TrainingAudienceRepository()
         # Built here, next to its repositories, because both ApplicationService
         # and BoardService take it and are constructed further down.
         self.onboarding_training_service = OnboardingTrainingService(
@@ -1041,12 +1046,21 @@ class AppDependencyBuilder:
             training_progress_repository=self.training_progress_repository,
             training_course_package_repository=self.training_course_package_repository,
         )
+        self.training_audience_service = TrainingAudienceService(
+            logger=self.logger,
+            training_audience_repository=self.training_audience_repository,
+            user_emails_repository=self.user_emails_repository,
+            ldap_service=self.ldap_service,
+            training_repository=self.training_repository,
+            training_progress_repository=self.training_progress_repository,
+        )
         self.training_admin_controller = TrainingAdminController(
             self.training_course_service,
             self.training_assignment_service,
             self.training_package_service,
             self.training_content_service,
             self.training_progress_service,
+            self.training_audience_service,
             self.database,
         )
         self.training_content_controller = TrainingContentController(
