@@ -12,10 +12,7 @@ from backend.common.mentorship_enums import (
     TrainingPackageState,
     TrainingStatus,
 )
-from backend.dto.training_course_dto import (
-    TrainingAssignmentRequestDto,
-    TrainingBulkAssignmentRequestDto,
-)
+from backend.dto.training_course_dto import TrainingBulkAssignmentRequestDto
 from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.training_entity import TrainingEntity
 from backend.training.training_assignment_service import TrainingAssignmentService
@@ -64,7 +61,6 @@ class _AssignmentServiceCase(unittest.IsolatedAsyncioTestCase):
             training_repository=self.trainings,
             training_course_package_repository=self.package_repository,
         )
-        self.payload = TrainingAssignmentRequestDto(user_id=11, course_id=3)
         # Aliases matching the repositories' role in start_trial's tests.
         self.course_repository = self.courses
         self.training_repository = self.trainings
@@ -106,110 +102,16 @@ class _AssignmentServiceCase(unittest.IsolatedAsyncioTestCase):
 
 
 class TestTrainingAssignmentService(_AssignmentServiceCase):
-    async def test_assigns_a_course_with_a_live_package(self):
-        result = await self.service.assign(self.session, self.payload)
-
-        self.assertTrue(result.created)
-        self.assertEqual(result.user_id, 11)
-        self.assertEqual(result.course_id, 3)
-        added = self.session.add.call_args.args[0]
-        self.assertEqual(added.status, TrainingStatus.TO_DO)
-        self.assertEqual(added.course_id, 3)
-        self.assertEqual([step[0] for step in self.calls], ["add", "flush", "commit"])
-
-    async def test_refuses_to_assign_a_course_with_no_live_package(self):
-        self.package_repository.get_by_state.return_value = None
-
-        with self.assertRaises(ConflictError):
-            await self.service.assign(self.session, self.payload)
-
-        self.session.add.assert_not_called()
-        self.session.commit.assert_not_awaited()
-
-    async def test_assign_reads_the_live_slot(self):
-        result = await self.service.assign(self.session, self.payload)
-
-        self.assertTrue(result.created)
-        self.package_repository.get_by_state.assert_awaited_once_with(
-            self.session, 3, TrainingPackageState.LIVE
-        )
-
-    async def test_deactivated_course_is_refused(self):
-        self.courses.get_course_by_id.return_value = _course(is_active=False)
-
-        with self.assertRaisesRegex(ConflictError, "deactivated"):
-            await self.service.assign(self.session, self.payload)
-
-        self.session.add.assert_not_called()
-        self.session.commit.assert_not_awaited()
-
-    async def test_missing_course_is_a_value_error(self):
-        self.courses.get_course_by_id.return_value = None
-
-        with self.assertRaises(ValueError):
-            await self.service.assign(self.session, self.payload)
-
-        self.session.commit.assert_not_awaited()
-
-    async def test_assigning_twice_is_a_no_op(self):
-        """Not an error: (user_id, course_id) is uniquely indexed."""
-        self.trainings.get_training_by_user_id_and_course_id.return_value = (
-            TrainingEntity(training_id=99, user_id=11, course_id=3)
-        )
-
-        result = await self.service.assign(self.session, self.payload)
-
-        self.assertFalse(result.created)
-        self.assertEqual(result.training_id, 99)
-        self.session.add.assert_not_called()
-        self.session.commit.assert_not_awaited()
-
-    async def test_repeat_assignment_never_overwrites_an_existing_deadline(self):
-        """Registration stamps a deadline once; this must not be a second way
-        to move it."""
-        existing = TrainingEntity(
-            training_id=99,
-            user_id=11,
-            course_id=3,
-            deadline=datetime.datetime(2026, 10, 1, tzinfo=datetime.timezone.utc),
-        )
-        self.trainings.get_training_by_user_id_and_course_id.return_value = existing
-
-        await self.service.assign(
-            self.session,
-            TrainingAssignmentRequestDto(
-                user_id=11,
-                course_id=3,
-                deadline=datetime.datetime(2027, 1, 1, tzinfo=datetime.timezone.utc),
-            ),
-        )
-
-        self.assertEqual(
-            existing.deadline,
-            datetime.datetime(2026, 10, 1, tzinfo=datetime.timezone.utc),
-        )
-
-    async def test_an_empty_deadline_is_allowed(self):
-        """ensure_for_admitted already creates rows without one."""
-        await self.service.assign(self.session, self.payload)
-
-        self.assertIsNone(self.session.add.call_args.args[0].deadline)
-
-    async def test_category_is_copied_from_the_course(self):
-        """So registration and the matching gate read as they always did."""
-        await self.service.assign(self.session, self.payload)
-
-        self.assertEqual(
-            self.session.add.call_args.args[0].category,
-            TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
-        )
-
     async def test_a_course_without_a_category_assigns_with_none(self):
         self.courses.get_course_by_id.return_value = _course(category=None)
 
-        await self.service.assign(self.session, self.payload)
+        await self.service.assign_bulk(
+            self.session,
+            TrainingBulkAssignmentRequestDto(course_id=_COURSE_ID, user_ids=[11]),
+        )
 
-        self.assertIsNone(self.session.add.call_args.args[0].category)
+        added = [call[1] for call in self.calls if call[0] == "add"]
+        self.assertIsNone(added[0].category)
 
     async def test_a_trial_reads_the_pending_slot_not_the_live_one(self):
         """A trial exists to verify a package before it is published, so it
@@ -279,26 +181,6 @@ class TestTrainingAssignmentService(_AssignmentServiceCase):
 
         self.assertTrue(result.created)
 
-    async def test_a_row_held_by_category_is_adopted_rather_than_doubled(self):
-        """The onboarding dispatch owns the same pairing under a category. A
-        second row for one category makes every later read of it raise, and
-        the partial unique index does not stop the insert."""
-        by_category = TrainingEntity(
-            training_id=77,
-            user_id=11,
-            category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
-            course_id=None,
-        )
-        self.trainings.get_training_by_user_id_and_category.return_value = by_category
-
-        result = await self.service.assign(self.session, self.payload)
-
-        self.assertFalse(result.created)
-        self.assertEqual(result.training_id, 77)
-        self.assertEqual(by_category.course_id, 3)
-        self.session.add.assert_not_called()
-        self.session.commit.assert_awaited_once()
-
     async def test_adopting_a_category_row_leaves_the_rest_of_it_alone(self):
         stamped = datetime.datetime(2026, 10, 1, tzinfo=datetime.timezone.utc)
         by_category = TrainingEntity(
@@ -310,28 +192,23 @@ class TestTrainingAssignmentService(_AssignmentServiceCase):
             deadline=stamped,
             link="https://mentee",
         )
-        self.trainings.get_training_by_user_id_and_category.return_value = by_category
+        self.trainings.get_training_by_user_ids_and_categories = AsyncMock(
+            return_value=[by_category]
+        )
 
-        await self.service.assign(
+        await self.service.assign_bulk(
             self.session,
-            TrainingAssignmentRequestDto(
-                user_id=11,
-                course_id=3,
-                deadline=datetime.datetime(2027, 1, 1, tzinfo=datetime.timezone.utc),
+            TrainingBulkAssignmentRequestDto(
+                course_id=_COURSE_ID,
+                user_ids=[11],
+                deadline=datetime.datetime(2026, 12, 1, tzinfo=datetime.timezone.utc),
             ),
         )
 
+        self.assertEqual(by_category.course_id, _COURSE_ID)
         self.assertEqual(by_category.deadline, stamped)
         self.assertEqual(by_category.status, TrainingStatus.IN_PROGRESS)
         self.assertEqual(by_category.link, "https://mentee")
-
-    async def test_a_course_without_a_category_is_not_looked_up_by_one(self):
-        self.courses.get_course_by_id.return_value = _course(category=None)
-
-        await self.service.assign(self.session, self.payload)
-
-        self.trainings.get_training_by_user_id_and_category.assert_not_awaited()
-        self.session.add.assert_called_once()
 
     async def test_a_trial_adopts_a_category_row_too(self):
         """A verifier who already holds the seed course by category must not
@@ -377,22 +254,31 @@ class TestTheAssignmentGateReadsTheLiveSlot(_AssignmentServiceCase):
         live = MagicMock(package_id=1, verified_completable_at=None)
         self._slots(live=live, pending=None)
 
-        result = await self.service.assign(self.session, self.payload)
+        result = await self.service.assign_bulk(
+            self.session,
+            TrainingBulkAssignmentRequestDto(course_id=_COURSE_ID, user_ids=[11]),
+        )
 
-        self.assertTrue(result.created)
+        self.assertEqual(result.created_count, 1)
 
     async def test_a_course_with_only_a_staged_package_cannot_be_assigned(self):
         self._slots(live=None, pending=MagicMock(package_id=2))
 
         with self.assertRaises(ConflictError):
-            await self.service.assign(self.session, self.payload)
+            await self.service.assign_bulk(
+                self.session,
+                TrainingBulkAssignmentRequestDto(course_id=_COURSE_ID, user_ids=[11]),
+            )
 
     async def test_a_deactivated_course_still_cannot_be_assigned(self):
         self._slots(live=MagicMock(package_id=1), pending=None)
         self.course.is_active = False
 
         with self.assertRaises(ConflictError):
-            await self.service.assign(self.session, self.payload)
+            await self.service.assign_bulk(
+                self.session,
+                TrainingBulkAssignmentRequestDto(course_id=_COURSE_ID, user_ids=[11]),
+            )
 
 
 class TestTrialRunsTheStagedPackage(_AssignmentServiceCase):

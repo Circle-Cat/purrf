@@ -19,10 +19,7 @@ vi.mock("@/utils/dateTime", async (importOriginal) => {
 });
 
 // One fixture per `TrainingCourseLiveState`, shaped like the wire DTO
-// (backend/dto/training_course_dto.py -> TrainingCourseDto). `verified` and
-// `needsTrialRun` are both live packages now -- a staged package's own
-// verification (task 9's sub-row) is what used to separate them, and no
-// longer gates assigning a package that is already live.
+// (backend/dto/training_course_dto.py -> TrainingCourseDto).
 const verified = {
   courseId: 1,
   name: "Mentor Onboarding",
@@ -39,24 +36,6 @@ const verified = {
   verifiedByUserId: 42,
   assignedCount: 124,
   unfinishedCount: 3,
-};
-
-const needsTrialRun = {
-  courseId: 2,
-  name: "Mentee Onboarding",
-  description: null,
-  category: "mentorship_mentee_onboarding",
-  isActive: true,
-  liveState: "live",
-  link: null,
-  scormVersion: "1.2",
-  packageVersion: "cm171zxgx006v",
-  reportingMode: "passed-incomplete",
-  packageUploadedAt: "2026-09-01T00:00:00Z",
-  verifiedCompletableAt: null,
-  verifiedByUserId: null,
-  assignedCount: 0,
-  unfinishedCount: 0,
 };
 
 const noPackage = {
@@ -106,47 +85,23 @@ beforeEach(() => {
 });
 
 describe("CourseTable", () => {
-  it("shows a live course as assignable", () => {
+  it("offers to replace the package on a live course, and nothing else", () => {
     renderTable([verified]);
 
     expect(screen.getByText("Live")).toBeInTheDocument();
-    const assign = screen.getByRole("button", { name: /assign/i });
-    expect(assign).not.toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /replace package/i }),
+    ).toBeInTheDocument();
+    // Assigning is the bulk card's job now; this table only manages packages.
+    expect(
+      screen.queryByRole("button", { name: /^assign$/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the total assigned count", () => {
     renderTable([verified]);
 
     expect(screen.getByText("124")).toBeInTheDocument();
-  });
-
-  it("keeps Assign enabled on a live course even without its own verification stamp", () => {
-    // The verification stamp only gates publishing a staged package now --
-    // once a package is live, assigning it no longer re-checks that stamp.
-    renderTable([needsTrialRun]);
-
-    const assign = screen.getByRole("button", { name: /^assign$/i });
-    expect(assign).not.toBeDisabled();
-  });
-
-  it("keeps Assign disabled on a deactivated course, which the API answers 409 for", () => {
-    // The backend gate is verified AND active. A still-clickable Assign sends
-    // the admin through the whole form to reach a rejection.
-    renderTable([{ ...verified, isActive: false }]);
-
-    expect(screen.getByRole("button", { name: /^assign$/i })).toBeDisabled();
-  });
-
-  it("names deactivation as the reason, not the publish rule", () => {
-    // Two rules, two sentences: one is answered by publishing a package, the
-    // other by turning the course back on.
-    renderTable([{ ...verified, isActive: false }]);
-
-    const assign = screen.getByRole("button", { name: /^assign$/i });
-    expect(assign).toHaveAccessibleDescription(
-      /deactivated\. turn it back on to assign it/i,
-    );
-    expect(assign).not.toHaveAccessibleDescription(/publish a package/i);
   });
 
   it("offers to upload a package for a course that has never had one", () => {
@@ -274,31 +229,6 @@ describe("CourseTable", () => {
     expect(onCoursesChanged).toHaveBeenCalledTimes(1);
   });
 
-  it("opens the assign dialog for a verified course, assigns, and refetches on success", async () => {
-    api.assignCourse.mockResolvedValue({
-      data: {
-        trainingId: 9,
-        userId: 11,
-        courseId: verified.courseId,
-        created: true,
-      },
-    });
-    const onCoursesChanged = vi.fn();
-    renderTable([verified], onCoursesChanged);
-
-    await userEvent.click(screen.getByRole("button", { name: /^assign$/i }));
-    await userEvent.type(screen.getByLabelText(/person/i), "11");
-    await userEvent.click(screen.getByRole("button", { name: /^assign$/i }));
-
-    await waitFor(() =>
-      expect(api.assignCourse).toHaveBeenCalledWith({
-        userId: 11,
-        courseId: verified.courseId,
-      }),
-    );
-    expect(onCoursesChanged).toHaveBeenCalledTimes(1);
-  });
-
   it("labels the action Replace package for a course that already has one, and says the upload only stages it", async () => {
     renderTable([verified]);
 
@@ -344,7 +274,7 @@ describe("CourseTable", () => {
 
 // One staged sub-row per course whose `staged` is non-null (spec §8). Kept
 // separate from the `describe` above because these fixtures shape `staged`
-// directly rather than reusing `verified`/`needsTrialRun`/etc.
+// directly rather than reusing `verified`/`noPackage`/etc.
 describe("CourseTable staged sub-row", () => {
   const staged = (over) => ({
     courseId: 9,

@@ -28,7 +28,6 @@ from backend.common.permissions import Permission
 from backend.dto.training_course_dto import (
     TrainingCompletionConfigDto,
     TrainingProgressSaveDto,
-    TrainingAssignmentRequestDto,
     TrainingAssignmentResultDto,
     TrainingBulkAssignmentRequestDto,
     TrainingBulkAssignmentResultDto,
@@ -121,11 +120,6 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.assignment_service = MagicMock()
-        self.assignment_service.assign = AsyncMock(
-            return_value=TrainingAssignmentResultDto(
-                training_id=42, user_id=11, course_id=3, created=True
-            )
-        )
         self.assignment_service.start_trial = AsyncMock(
             return_value=TrainingAssignmentResultDto(
                 training_id=42, user_id=11, course_id=3, created=True
@@ -209,7 +203,6 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
             ("/training/courses", "POST"),
             ("/training/courses/{course_id}", "PATCH"),
             ("/training/courses/{course_id}/package", "POST"),
-            ("/training/assignments", "POST"),
             ("/training/courses/{course_id}/trial", "POST"),
             ("/training/courses/{course_id}/package/publish", "POST"),
             ("/training/courses/{course_id}/package", "DELETE"),
@@ -247,27 +240,6 @@ class TestTrainingAdminController(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             response["data"].live_state, TrainingCourseLiveState.NO_PACKAGE
         )
-
-    async def test_a_fresh_assignment_is_201(self):
-        response = await self.controller.assign(
-            TrainingAssignmentRequestDto(user_id=11, course_id=3)
-        )
-
-        self.assertEqual(response["status_code"], HTTPStatus.CREATED)
-        self.assertTrue(response["data"].created)
-
-    async def test_a_repeat_assignment_is_200_and_says_so(self):
-        """A no-op, not a failure -- so neither 201 nor an error."""
-        self.assignment_service.assign.return_value = TrainingAssignmentResultDto(
-            training_id=42, user_id=11, course_id=3, created=False
-        )
-
-        response = await self.controller.assign(
-            TrainingAssignmentRequestDto(user_id=11, course_id=3)
-        )
-
-        self.assertEqual(response["status_code"], HTTPStatus.OK)
-        self.assertFalse(response["data"].created)
 
     async def test_a_trial_is_opened_for_the_caller_not_for_a_named_user(self):
         """The user id comes from the token, never from the request."""
@@ -583,11 +555,6 @@ class TestTrainingResponsesOnTheWire(unittest.TestCase):
         self.course_service.update_course = AsyncMock(return_value=_course_dto())
 
         self.assignment_service = MagicMock()
-        self.assignment_service.assign = AsyncMock(
-            return_value=TrainingAssignmentResultDto(
-                training_id=42, user_id=11, course_id=3, created=True
-            )
-        )
         self.assignment_service.start_trial = AsyncMock(
             return_value=TrainingAssignmentResultDto(
                 training_id=42, user_id=11, course_id=3, created=True
@@ -763,9 +730,6 @@ class TestTrainingResponsesOnTheWire(unittest.TestCase):
             "upload package": lambda: self.client.post(
                 TRAINING_COURSE_PACKAGE_ENDPOINT.format(course_id=7),
                 files={"file": ("package.zip", b"zipbytes", "application/zip")},
-            ),
-            "assign": lambda: self.client.post(
-                "/training/assignments", json={"userId": 11, "courseId": 3}
             ),
             "start trial": self.start_trial,
             "open session": self.open_session,

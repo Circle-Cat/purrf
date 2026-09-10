@@ -3,7 +3,7 @@ import unittest
 import pydantic
 
 from backend.dto.training_course_dto import (
-    TrainingAssignmentRequestDto,
+    TrainingBulkAssignmentRequestDto,
     TrainingCourseCreateDto,
     TrainingCourseUpdateDto,
     TrainingProgressDto,
@@ -42,21 +42,42 @@ class TestTrainingCourseUpdateDto(unittest.TestCase):
             })
 
 
-class TestTrainingAssignmentRequestDto(unittest.TestCase):
+class TestTrainingBulkAssignmentRequestDto(unittest.TestCase):
     def test_an_unknown_key_is_refused(self):
         """A body naming its own training_id must not be silently ignored."""
         with self.assertRaises(pydantic.ValidationError):
-            TrainingAssignmentRequestDto.model_validate({
-                "userId": 1,
+            TrainingBulkAssignmentRequestDto.model_validate({
                 "courseId": 2,
+                "userIds": [1],
                 "trainingId": 9,
             })
 
     def test_the_camel_case_body_the_page_sends_is_accepted(self):
-        dto = TrainingAssignmentRequestDto.model_validate({"userId": 1, "courseId": 2})
+        dto = TrainingBulkAssignmentRequestDto.model_validate({
+            "courseId": 2,
+            "userIds": [1, 3],
+        })
 
-        self.assertEqual(dto.user_id, 1)
         self.assertEqual(dto.course_id, 2)
+        self.assertEqual(dto.user_ids, [1, 3])
+        self.assertIsNone(dto.deadline)
+
+    def test_a_batch_with_nobody_in_it_is_refused(self):
+        """The page submits the ticked ids, so an empty list is a bug in it."""
+        with self.assertRaises(pydantic.ValidationError):
+            TrainingBulkAssignmentRequestDto.model_validate({
+                "courseId": 2,
+                "userIds": [],
+            })
+
+    def test_a_batch_over_the_cap_is_refused_rather_than_trimmed(self):
+        """Same cap as selecting a whole result set. Trimming would assign a
+        subset silently, and there is no undo."""
+        with self.assertRaises(pydantic.ValidationError):
+            TrainingBulkAssignmentRequestDto.model_validate({
+                "courseId": 2,
+                "userIds": list(range(1001)),
+            })
 
 
 class TestTrainingProgressDto(unittest.TestCase):

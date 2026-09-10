@@ -12,13 +12,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  assignBlockedReason,
-  canAssign,
   liveStateLabel,
   publishBlockedReason,
 } from "@/pages/AdminTraining/utils";
 import {
-  assignCourse,
   discardPackage,
   publishPackage,
   updateCourse,
@@ -29,7 +26,6 @@ import {
   formatDateTimeWithZone,
   resolveViewerTimezone,
 } from "@/utils/dateTime";
-import AssignDialog from "@/pages/AdminTraining/components/AssignDialog";
 import DeactivateDialog from "@/pages/AdminTraining/components/DeactivateDialog";
 import PublishDialog from "@/pages/AdminTraining/components/PublishDialog";
 import UploadPackageDialog from "@/pages/AdminTraining/components/UploadPackageDialog";
@@ -78,7 +74,7 @@ function ToggleActiveButton({ course, onDeactivate, onActivate }) {
 // clicked yet -- hiding it would hide the rule (spec §4.1); the hover title
 // is the only place that rule is taught, so it isn't optional here, and it
 // names which of the two rules is unmet rather than the commoner one.
-function RowActions({ course, onDeactivate, onActivate, onUpload, onAssign }) {
+function RowActions({ course, onDeactivate, onActivate, onUpload }) {
   const toggle = (
     <ToggleActiveButton
       course={course}
@@ -101,18 +97,8 @@ function RowActions({ course, onDeactivate, onActivate, onUpload, onAssign }) {
     );
   }
 
-  const assignable = canAssign(course);
   return (
     <div className="flex justify-end gap-2">
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={!assignable}
-        title={assignable ? undefined : assignBlockedReason(course)}
-        onClick={() => onAssign(course)}
-      >
-        Assign
-      </Button>
       <Button size="sm" variant="ghost" onClick={() => onUpload(course)}>
         Replace package
       </Button>
@@ -244,7 +230,6 @@ function StagedRow({ course, onDiscard, onPublish, discarding }) {
 export default function CourseTable({ courses, onCoursesChanged }) {
   const [deactivating, setDeactivating] = useState(null);
   const [uploading, setUploading] = useState(null);
-  const [assigning, setAssigning] = useState(null);
   const [publishing, setPublishing] = useState(null);
   // Which course's Discard is waiting on its DELETE. Discard has no dialog to
   // hold a busy flag for it, so the row holds one: a second click while the
@@ -278,15 +263,6 @@ export default function CourseTable({ courses, onCoursesChanged }) {
     const { data } = await uploadPackage(uploading.courseId, file, onProgress);
     await onCoursesChanged?.();
     return data;
-  };
-
-  // Called by the dialog's onConfirm; closes the row and refetches once the
-  // assignment lands.
-  const handleConfirmAssign = async (payload) => {
-    const result = await assignCourse(payload);
-    setAssigning(null);
-    await onCoursesChanged?.();
-    return result;
   };
 
   // Drops the staged package without publishing it; the live package, if
@@ -355,7 +331,6 @@ export default function CourseTable({ courses, onCoursesChanged }) {
                     onDeactivate={setDeactivating}
                     onActivate={handleActivate}
                     onUpload={setUploading}
-                    onAssign={setAssigning}
                   />
                 </TableCell>
               </TableRow>
@@ -385,14 +360,6 @@ export default function CourseTable({ courses, onCoursesChanged }) {
           open
           onOpenChange={(open) => !open && setUploading(null)}
           onConfirm={handleConfirmUpload}
-        />
-      )}
-      {assigning && (
-        <AssignDialog
-          course={assigning}
-          open
-          onOpenChange={(open) => !open && setAssigning(null)}
-          onConfirm={handleConfirmAssign}
         />
       )}
       {publishing && (

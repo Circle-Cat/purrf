@@ -9,7 +9,6 @@ from backend.common.api_endpoints import (
     TRAINING_ASSIGNMENTS_AUDIENCE_ENDPOINT,
     TRAINING_ASSIGNMENTS_BULK_ENDPOINT,
     TRAINING_ASSIGNMENTS_AUDIENCE_IDS_ENDPOINT,
-    TRAINING_ASSIGNMENTS_ENDPOINT,
     TRAINING_COURSE_ENDPOINT,
     TRAINING_COURSE_PACKAGE_ENDPOINT,
     TRAINING_COURSE_PREVIEW_SESSION_ENDPOINT,
@@ -26,7 +25,6 @@ from backend.common.fast_api_response_wrapper import api_response
 from backend.common.permissions import Permission
 from backend.dto.training_audience_dto import TrainingAudienceFilterDto
 from backend.dto.training_course_dto import (
-    TrainingAssignmentRequestDto,
     TrainingBulkAssignmentRequestDto,
     TrainingCourseCreateDto,
     TrainingCourseUpdateDto,
@@ -209,14 +207,6 @@ class TrainingAdminController:
             response_model=None,
         )
         self.router.add_api_route(
-            TRAINING_ASSIGNMENTS_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_WRITE])(
-                self.assign
-            ),
-            methods=["POST"],
-            response_model=None,
-        )
-        self.router.add_api_route(
             TRAINING_COURSE_TRIAL_ENDPOINT,
             endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_WRITE])(
                 self.start_trial
@@ -387,27 +377,6 @@ class TrainingAdminController:
         return api_response(
             message="Training assignments retrieved.",
             data=result,
-        )
-
-    async def assign(self, payload: TrainingAssignmentRequestDto):
-        """Assign one course to one person.
-
-        Answers 409 for a course with nothing published yet, whatever the
-        admin page shows -- the disabled button there explains the rule, it
-        is not the rule. A live package is proof enough that it was verified:
-        publish only ever promotes a staged package that already carried a
-        verification stamp.
-        """
-        async with self.database.session() as session:
-            result = await self.training_assignment_service.assign(session, payload)
-        return api_response(
-            message=(
-                "Training assigned."
-                if result.created
-                else "This person already has this course."
-            ),
-            data=result,
-            status_code=HTTPStatus.CREATED if result.created else HTTPStatus.OK,
         )
 
     async def start_trial(self, course_id: int, current_user):
