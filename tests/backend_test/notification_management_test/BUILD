@@ -110,6 +110,7 @@ py_test(
         "//backend/common:recruiting_enums",
         "//backend/entity:entities",
         "//backend/notification_management:delivery_service",
+        "//backend/repository:repositories",
         "//tests/backend_test/repository_test:base_repository_test_lib",
     ],
 )

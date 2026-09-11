@@ -1,11 +1,12 @@
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from backend.common.mentorship_enums import CommunicationMethod
 from backend.common.recruiting_enums import (
     ApplicationStage,
     JobKind,
     JobStatus,
+    NotificationStatus,
 )
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.event_entity import EventEntity
@@ -193,6 +194,209 @@ class TestNotificationRepository(BaseRepositoryTestLib):
         for row in rows:
             await self.session.refresh(row)
             self.assertIsNotNone(row.dismissed_at)
+
+    async def _notification(
+        self, recipient, *, status=None, claimed_at=None, created_at=None
+    ):
+        """One notification for ``recipient``, PENDING and created now unless overridden.
+
+        Written field by field rather than through ``create`` because the
+        delivery columns are the subject here, and ``create`` cannot set them.
+        """
+        kwargs = {"user_id": recipient.user_id, "event_id": self.event.event_id}
+        if status is not None:
+            kwargs["status"] = status
+        if claimed_at is not None:
+            kwargs["claimed_at"] = claimed_at
+        if created_at is not None:
+            kwargs["created_at"] = created_at
+        row = NotificationEntity(**kwargs)
+        await self.insert_entities([row])
+        return row
+
+    async def test_get_by_id_returns_the_row(self):
+        _app, recipient = await self._seed()
+        repo = NotificationRepository()
+        created = await self._notification(recipient)
+
+        found = await repo.get_by_id(self.session, created.notification_id)
+
+        self.assertIsNotNone(found)
+        self.assertEqual(found.notification_id, created.notification_id)
+
+    async def test_get_by_id_returns_none_for_an_id_that_is_not_there(self):
+        await self._seed()
+        repo = NotificationRepository()
+
+        self.assertIsNone(await repo.get_by_id(self.session, 999_999))
+
+    async def test_claim_for_sending_takes_a_pending_row(self):
+        _app, recipient = await self._seed()
+        repo = NotificationRepository()
+        row = await self._notification(recipient)
+        now = datetime.now(timezone.utc)
+
+        claimed = await repo.claim_for_sending(
+            self.session,
+            row.notification_id,
+            now=now,
+            stale_before=now - timedelta(minutes=10),
+        )
+
+        self.assertTrue(claimed)
+        await self.session.refresh(row)
+        self.assertEqual(row.status, NotificationStatus.SENDING)
+        self.assertEqual(row.claimed_at, now)
+
+    async def test_claim_for_sending_refuses_a_claim_somebody_still_holds(self):
+        """A second sender must not take a row whose claim has not aged out."""
+        _app, recipient = await self._seed()
+        repo = NotificationRepository()
+        now = datetime.now(timezone.utc)
+        held_since = now - timedelta(minutes=1)
+        row = await self._notification(
+            recipient, status=NotificationStatus.SENDING, claimed_at=held_since
+        )
+
+        claimed = await repo.claim_for_sending(
+            self.session,
+            row.notification_id,
+            now=now,
+            stale_before=now - timedelta(minutes=10),
+        )
+
+        self.assertFalse(claimed)
+        await self.session.refresh(row)
+        self.assertEqual(row.claimed_at, held_since)
+
+    async def test_claim_for_sending_retakes_a_claim_older_than_the_cutoff(self):
+        """A sender that died mid-send would otherwise strand the row forever."""
+        _app, recipient = await self._seed()
+        repo = NotificationRepository()
+        now = datetime.now(timezone.utc)
+        row = await self._notification(
+            recipient,
+            status=NotificationStatus.SENDING,
+            claimed_at=now - timedelta(hours=1),
+        )
+
+        claimed = await repo.claim_for_sending(
+            self.session,
+            row.notification_id,
+            now=now,
+            stale_before=now - timedelta(minutes=10),
+        )
+
+        self.assertTrue(claimed)
+        await self.session.refresh(row)
+        self.assertEqual(row.claimed_at, now)
+
+    async def test_claim_for_sending_refuses_a_row_that_is_already_settled(self):
+        """SENT is terminal; a redelivered message must not send a second copy."""
+        _app, recipient = await self._seed()
+        repo = NotificationRepository()
+        now = datetime.now(timezone.utc)
+        row = await self._notification(recipient, status=NotificationStatus.SENT)
+
+        claimed = await repo.claim_for_sending(
+            self.session,
+            row.notification_id,
+            now=now,
+            stale_before=now - timedelta(minutes=10),
+        )
+
+        self.assertFalse(claimed)
+        await self.session.refresh(row)
+        self.assertEqual(row.status, NotificationStatus.SENT)
+
+    async def test_set_status_writes_the_status_and_drops_the_claim(self):
+        """Releasing a row back to PENDING has to clear the claim with it.
+
+        A PENDING row still carrying a claimed_at would look to the sweep
+        like a live claim and never be retried.
+        """
+        _app, recipient = await self._seed()
+        repo = NotificationRepository()
+        row = await self._notification(
+            recipient,
+            status=NotificationStatus.SENDING,
+            claimed_at=datetime.now(timezone.utc),
+        )
+
+        await repo.set_status(
+            self.session, row.notification_id, NotificationStatus.SENT
+        )
+
+        await self.session.refresh(row)
+        self.assertEqual(row.status, NotificationStatus.SENT)
+        self.assertIsNone(row.claimed_at)
+
+    async def test_list_pending_ids_created_before_returns_oldest_first(self):
+        """The oldest straggler has waited longest, so it is republished first."""
+        _app, recipient = await self._seed()
+        repo = NotificationRepository()
+        now = datetime.now(timezone.utc)
+        newer = await self._notification(recipient, created_at=now - timedelta(hours=1))
+        older = await self._notification(recipient, created_at=now - timedelta(hours=2))
+
+        ids = await repo.list_pending_ids_created_before(
+            self.session, cutoff=now - timedelta(minutes=10), limit=20
+        )
+
+        mine = [i for i in ids if i in {newer.notification_id, older.notification_id}]
+        self.assertEqual(mine, [older.notification_id, newer.notification_id])
+
+    async def test_list_pending_ids_created_before_skips_rows_that_are_not_pending(
+        self,
+    ):
+        _app, recipient = await self._seed()
+        repo = NotificationRepository()
+        now = datetime.now(timezone.utc)
+        sending = await self._notification(
+            recipient,
+            status=NotificationStatus.SENDING,
+            created_at=now - timedelta(hours=1),
+        )
+        sent = await self._notification(
+            recipient,
+            status=NotificationStatus.SENT,
+            created_at=now - timedelta(hours=1),
+        )
+
+        ids = await repo.list_pending_ids_created_before(
+            self.session, cutoff=now - timedelta(minutes=10), limit=20
+        )
+
+        self.assertNotIn(sending.notification_id, ids)
+        self.assertNotIn(sent.notification_id, ids)
+
+    async def test_list_pending_ids_created_before_skips_rows_newer_than_the_cutoff(
+        self,
+    ):
+        """A row published seconds ago is still in flight, not a straggler."""
+        _app, recipient = await self._seed()
+        repo = NotificationRepository()
+        now = datetime.now(timezone.utc)
+        fresh = await self._notification(recipient, created_at=now)
+
+        ids = await repo.list_pending_ids_created_before(
+            self.session, cutoff=now - timedelta(minutes=10), limit=20
+        )
+
+        self.assertNotIn(fresh.notification_id, ids)
+
+    async def test_list_pending_ids_created_before_respects_the_limit(self):
+        _app, recipient = await self._seed()
+        repo = NotificationRepository()
+        now = datetime.now(timezone.utc)
+        for hours in (1, 2, 3):
+            await self._notification(recipient, created_at=now - timedelta(hours=hours))
+
+        ids = await repo.list_pending_ids_created_before(
+            self.session, cutoff=now - timedelta(minutes=10), limit=1
+        )
+
+        self.assertEqual(len(ids), 1)
 
 
 if __name__ == "__main__":
