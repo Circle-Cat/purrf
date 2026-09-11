@@ -112,8 +112,6 @@ export const SKILLSET_CONFIG = [
   { id: "softSkills", name: "Soft Skills Enhancement" },
   { id: "networking", name: "Networking" },
   { id: "projectManagement", name: "Project Management" },
-  { id: "leadership", name: "Leadership" },
-  { id: "communicationSkills", name: "Communication Skills" },
 ];
 
 /**

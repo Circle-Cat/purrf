@@ -86,7 +86,7 @@ describe("mentorshipRegistration utils", () => {
     it("maps form state back to API format correctly", () => {
       const formData = {
         industries: [{ id: "ds" }],
-        skillsets: [{ id: "leadership" }, { id: "communicationSkills" }],
+        skillsets: [{ id: "networking" }, { id: "projectManagement" }],
         partnerCapacity: 3,
         goal: "Become a better mentor",
         selectedPartners: [{ id: "10" }, { id: "11" }],
@@ -112,16 +112,21 @@ describe("mentorshipRegistration utils", () => {
         ),
       );
 
-      // Skillset boolean map
-      expect(result.globalPreferences.skillsets).toEqual(
-        SKILLSET_CONFIG.reduce(
-          (acc, c) => ({
-            ...acc,
-            [c.id]: ["leadership", "communicationSkills"].includes(c.id),
-          }),
-          {},
-        ),
-      );
+      // Skillset boolean map. Spelled out rather than derived from
+      // SKILLSET_CONFIG: the payload keys are the contract with SkillsetsDto,
+      // which has no field for anything outside this set, so an option added
+      // to the form without a matching backend field must fail here rather
+      // than be silently dropped on the wire.
+      expect(result.globalPreferences.skillsets).toEqual({
+        resumeGuidance: false,
+        careerPathGuidance: false,
+        experienceSharing: false,
+        industryTrends: false,
+        technicalSkills: false,
+        softSkills: false,
+        networking: true,
+        projectManagement: true,
+      });
 
       expect(result.roundPreferences.maxPartners).toBe(3);
       expect(result.roundPreferences.goal).toBe("Become a better mentor");
