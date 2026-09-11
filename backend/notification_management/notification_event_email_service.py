@@ -1,6 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.entity.event_entity import EventEntity
 from backend.entity.notification_entity import NotificationEntity
 from backend.notification_management import render_registry
 
@@ -18,7 +17,11 @@ class NotificationEventEmailService:
     """
 
     def __init__(
-        self, user_emails_repository, email_service, render=render_registry.render
+        self,
+        user_emails_repository,
+        email_service,
+        event_repository,
+        render=render_registry.render,
     ):
         """
         Args:
@@ -28,12 +31,15 @@ class NotificationEventEmailService:
                 Its own ``send()`` swallows failures and returns ``bool``;
                 this class re-raises so ``DeliveryService`` can tell
                 "never" from "not right now" apart.
+            event_repository (EventRepository): Reads the event the
+                notification points at, which is what gets rendered.
             render: async ``(session, event) -> (subject, body)``. Defaults
                 to :func:`render_registry.render`; overridable in tests so
                 they don't need the full recruiting renderer registry.
         """
         self.user_emails_repository = user_emails_repository
         self.email_service = email_service
+        self.event_repository = event_repository
         self.render = render
 
     async def send(
@@ -54,7 +60,7 @@ class NotificationEventEmailService:
         """
         # event_id is NOT NULL and FK'd with ON DELETE CASCADE, so the row
         # cannot outlive the event it points at.
-        event = await session.get(EventEntity, notification.event_id)
+        event = await self.event_repository.get_by_id(session, notification.event_id)
         subject, body = await self.render(session, event)
 
         address = await self.user_emails_repository.get_contact_email(
