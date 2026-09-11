@@ -1,6 +1,9 @@
 import unittest
 from datetime import datetime, timezone
 
+from sqlalchemy import event
+from sqlalchemy.dialects import postgresql
+
 from backend.repository.job_review_repository import JobReviewRepository
 from backend.entity.job_review_entity import JobReviewEntity
 from backend.entity.job_entity import JobEntity
@@ -51,6 +54,53 @@ class TestJobReviewRepository(BaseRepositoryTestLib):
             kind=JobKind.ACTIVITY, title="Mentor", status=JobStatus.DRAFT
         )
         await self.insert_entities([self.job])
+
+    async def _sql_of_get_open_for_job(self, **kwargs):
+        """The SQL ``get_open_for_job`` actually issues, for lock assertions.
+
+        Mirrors ``training_repository_test``'s capture: the flag is only worth
+        anything if it reaches the statement, and a silently ignored one reads
+        the same as a working one from the return value alone.
+        """
+        captured = []
+
+        def capture(conn, clauseelement, multiparams, params, execution_options):
+            captured.append(clauseelement)
+
+        event.listen(self.connection.sync_connection, "before_execute", capture)
+        try:
+            await self.repo.get_open_for_job(self.session, self.job.job_id, **kwargs)
+        finally:
+            event.remove(self.connection.sync_connection, "before_execute", capture)
+
+        return [
+            str(statement.compile(dialect=postgresql.dialect()))
+            for statement in captured
+            if hasattr(statement, "compile")
+        ]
+
+    async def test_the_read_a_reassignment_makes_locks_the_row(self):
+        """Reassigning reads the open review, then overwrites its reviewer.
+
+        Without the lock an approve can commit in between, leaving a decided
+        review whose reviewer_id names somebody who never saw it.
+        """
+        sqls = await self._sql_of_get_open_for_job(for_update=True)
+
+        self.assertTrue(
+            any("FOR UPDATE" in sql for sql in sqls),
+            f"Expected FOR UPDATE when for_update=True. Got: {sqls}",
+        )
+
+    async def test_a_plain_open_review_read_takes_no_lock(self):
+        """get_job reads the open review on every page view; locking there
+        would make every viewer wait behind whoever is deciding it."""
+        sqls = await self._sql_of_get_open_for_job()
+
+        self.assertFalse(
+            any("FOR UPDATE" in sql for sql in sqls),
+            f"Expected no lock by default. Got: {sqls}",
+        )
 
     async def test_create_and_get_open_review(self):
         """create persists a review; get_open_for_job returns the pending one."""

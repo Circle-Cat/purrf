@@ -262,6 +262,31 @@ async def _review_opened(session: AsyncSession, event: EventEntity) -> set[int]:
     return await _review_participant(session, event, JobReviewEntity.reviewer_id)
 
 
+@register_recipients(RecruitingEvent.REVIEW_REASSIGNED, subject_type="job")
+async def _review_reassigned(session: AsyncSession, event: EventEntity) -> set[int]:
+    """Whoever the review now waits on, read off the row it was just moved on.
+
+    The same column ``_review_opened`` reads, because the question is the
+    same: who has to decide this. The previous reviewer is not told -- the
+    reassignment exists for the case where they can no longer sign in, and
+    this is the submitter redirecting their own question rather than anybody
+    being relieved of a duty. ``details["previousReviewerId"]`` is there for
+    the timeline, not for the fan-out.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        event (EventEntity): The event being recorded; ``subject_id`` is a job
+            id and ``details["reviewId"]`` names the review.
+
+    Returns:
+        set[int]: The new reviewer's user id.
+
+    Raises:
+        ValueError: If the event carries no review id, or names no review.
+    """
+    return await _review_participant(session, event, JobReviewEntity.reviewer_id)
+
+
 @register_recipients(RecruitingEvent.REVIEW_DECIDED, subject_type="job")
 async def _review_decided(session: AsyncSession, event: EventEntity) -> set[int]:
     """Whoever submitted the review and is waiting on the verdict.

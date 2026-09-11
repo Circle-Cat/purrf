@@ -44,6 +44,15 @@ export const listApprovers = () =>
 export const submitForReview = (jobId, body) =>
   request.post(API_ENDPOINTS.RECRUITING_JOB_SUBMIT(jobId), body);
 
+/**
+ * Move a posting's open review to a different approver. body: {reviewerId}.
+ *
+ * Addressed by posting, not by review id: only the assigned reviewer ever
+ * learns a review's id, and they are the person this routes around.
+ */
+export const reassignReviewer = (jobId, body) =>
+  request.patch(API_ENDPOINTS.RECRUITING_JOB_REVIEW_REVIEWER(jobId), body);
+
 /** List the current reviewer's pending reviews. */
 export const listMyReviews = () =>
   request.get(API_ENDPOINTS.RECRUITING_REVIEWS);

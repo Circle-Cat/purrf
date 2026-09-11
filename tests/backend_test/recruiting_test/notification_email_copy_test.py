@@ -219,10 +219,11 @@ class TestCandidateLine(unittest.TestCase):
     address is the handle they can paste into the board's search.
     """
 
-    # The three job-scoped templates: a posting under review has no
+    # The four job-scoped templates: a posting under review has no
     # candidate, so there is no address to print.
     _NO_CANDIDATE = {
         "_job_review_requested",
+        "_job_review_reassigned",
         "_job_review_approved",
         "_job_review_rejected",
     }
