@@ -21,6 +21,7 @@ import {
   listInterviewPool,
   listJobActivity,
   listMyReviews,
+  reassignReviewer,
   submitForReview,
   requestClose,
   requestReopen,
@@ -29,6 +30,7 @@ import {
   decideReview,
 } from "@/api/recruitingApi";
 import SubmitReviewDialog from "@/pages/Recruiting/components/SubmitReviewDialog";
+import ReassignReviewerDialog from "@/pages/Recruiting/components/ReassignReviewerDialog";
 import PostingStatusBadges from "@/pages/Recruiting/components/PostingStatusBadges";
 import PostingConfigSummary from "@/pages/Recruiting/components/PostingConfigSummary";
 import PostingApplicantView from "@/pages/Recruiting/components/PostingApplicantView";
@@ -108,6 +110,8 @@ const PostingDetailPage = () => {
   const [deleting, setDeleting] = useState(false);
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const [discarding, setDiscarding] = useState(false);
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [reassigning, setReassigning] = useState(false);
   const [rejectComment, setRejectComment] = useState("");
   const [deciding, setDeciding] = useState(false);
 
@@ -193,6 +197,11 @@ const PostingDetailPage = () => {
   const reviewerName = job.reviewerId
     ? (approversById[job.reviewerId] ?? `Reviewer #${job.reviewerId}`)
     : null;
+  // Only the submitter may move their own open review, so only they are
+  // offered the action. submittedBy is null unless a review is open, which
+  // makes this false everywhere else without a status check of its own.
+  const canReassignReviewer =
+    job.submittedBy != null && job.submittedBy === user?.userId;
   const ownerIds = job.pipelineConfig?.ownerIds ?? [];
   /** The staged edit merged onto the live job, or null when nothing is staged. */
   const proposedJob = job.pendingPayload
@@ -267,6 +276,22 @@ const PostingDetailPage = () => {
     }
   };
 
+  // Fetched on open, the same as openReview does, rather than read from the
+  // page load: the pool excludes deactivated and blocked accounts, and an
+  // account being turned off is the whole reason this action exists, so a
+  // list read at page load is exactly the one that can be stale. Without the
+  // fetch the dialog opens on an empty pool and reports that there is nobody
+  // to move the review to.
+  const openReassign = async () => {
+    try {
+      const { data } = await listApprovers();
+      setApprovers(data ?? []);
+      setReassignOpen(true);
+    } catch (e) {
+      toast.error(e.message);
+    }
+  };
+
   const handleReviewSubmit = async (body) => {
     if (submitting || !reviewAction) return;
     const action = REVIEW_ACTION[reviewAction];
@@ -278,6 +303,21 @@ const PostingDetailPage = () => {
     } catch (e) {
       toast.error(e.message);
       setSubmitting(false);
+    }
+  };
+
+  const handleReassign = async (reviewerId) => {
+    if (reassigning) return;
+    setReassigning(true);
+    try {
+      await reassignReviewer(id, { reviewerId });
+      toast.success("Reviewer changed.");
+      setReassignOpen(false);
+      load();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setReassigning(false);
     }
   };
 
@@ -370,6 +410,15 @@ const PostingDetailPage = () => {
         {reviewerName && (
           <p className="text-sm text-slate-500">
             Assigned reviewer: {reviewerName}
+            {canReassignReviewer && (
+              <Button
+                variant="link"
+                className="h-auto p-0 pl-2 text-sm"
+                onClick={openReassign}
+              >
+                Change reviewer
+              </Button>
+            )}
           </p>
         )}
       </div>
@@ -636,6 +685,16 @@ const PostingDetailPage = () => {
           )}
         </TabsContent>
       </Tabs>
+
+      <ReassignReviewerDialog
+        open={reassignOpen}
+        approvers={approvers}
+        currentUserId={user?.userId}
+        currentReviewerId={job.reviewerId}
+        submitting={reassigning}
+        onSubmit={handleReassign}
+        onOpenChange={setReassignOpen}
+      />
 
       <SubmitReviewDialog
         open={submitOpen}

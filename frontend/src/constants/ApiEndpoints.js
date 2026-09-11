@@ -73,6 +73,8 @@ export const API_ENDPOINTS = {
   RECRUITING_JOB_DISCARD_PENDING_EDIT: (jobId) =>
     `/recruiting/jobs/${jobId}/discard-pending-edit`,
   RECRUITING_APPROVERS: "/recruiting/approvers",
+  RECRUITING_JOB_REVIEW_REVIEWER: (jobId) =>
+    `/recruiting/jobs/${jobId}/review/reviewer`,
   RECRUITING_REVIEWS: "/recruiting/reviews",
   RECRUITING_REVIEW: (reviewId) => `/recruiting/reviews/${reviewId}`,
   RECRUITING_INTERVIEW_POOL: "/recruiting/interview-pool",

@@ -122,6 +122,10 @@ class JobDto(BaseDto):
     was_published: bool = False
     cooldown_days: int | None = None
     reviewer_id: int | None = None
+    # Who sent the open review up. The page reads it to decide whether
+    # the viewer may reassign it; the review's own id stays scoped to
+    # the assigned reviewer, who is who reassignment routes around.
+    submitted_by: int | None = None
     submit_message: str | None = None
     submit_blockers: list[str] = []
 

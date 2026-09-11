@@ -51,17 +51,23 @@ class JobReviewRepository:
         return list(result.scalars().all())
 
     async def get_open_for_job(
-        self, session: AsyncSession, job_id: int
+        self, session: AsyncSession, job_id: int, *, for_update: bool = False
     ) -> JobReviewEntity | None:
-        """Return the job's pending review, or None if there is none open."""
+        """Return the job's pending review, or None if there is none open.
+
+        When ``for_update`` is True the row is selected ``FOR UPDATE``, the
+        same serialisation ``get`` offers: a reassignment and a decision on
+        one review must not interleave.
+        """
         if not job_id:
             return None
-        result = await session.execute(
-            select(JobReviewEntity).where(
-                JobReviewEntity.job_id == job_id,
-                JobReviewEntity.status == JobReviewStatus.PENDING,
-            )
+        stmt = select(JobReviewEntity).where(
+            JobReviewEntity.job_id == job_id,
+            JobReviewEntity.status == JobReviewStatus.PENDING,
         )
+        if for_update:
+            stmt = stmt.with_for_update()
+        result = await session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_latest_reviews(
