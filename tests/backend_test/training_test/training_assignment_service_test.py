@@ -65,29 +65,27 @@ class _AssignmentServiceCase(unittest.IsolatedAsyncioTestCase):
         self.course_repository = self.courses
         self.training_repository = self.trainings
 
-        # Records the order the write, the flush and the commit happen in.
-        # add() is synchronous in SQLAlchemy, unlike the session itself.
+        # Records the order the write and the commit happen in. Both paths
+        # write through add_trainings, one call for a whole cohort, so it is
+        # recorded per row -- otherwise a batch looks like it wrote nothing.
         self.calls = []
-        self.session.add = MagicMock(
-            side_effect=lambda entity: self.calls.append(("add", entity))
-        )
-        # The batch path writes the whole cohort through add_all, so record it
-        # the same way -- otherwise a batch looks like it wrote nothing.
-        self.session.add_all = MagicMock(
-            side_effect=lambda entities: self.calls.extend(
-                ("add", entity) for entity in entities
-            )
-        )
-        self.session.flush = AsyncMock(side_effect=self._stamp_training_id)
+        self.trainings.add_trainings = AsyncMock(side_effect=self._record_write)
         self.session.commit = AsyncMock(
             side_effect=lambda: self.calls.append(("commit",))
         )
 
-    async def _stamp_training_id(self):
-        # flush() is what gives the new row its training_id.
+    async def _record_write(self, session, entities):
+        """Stands in for what add_trainings is: add_all, then flush.
+
+        The trailing ("flush",) is recorded even for an empty list, because
+        the real method flushes either way -- that is what writes the rows a
+        batch adopted rather than created. Stamping training_id mirrors the
+        flush too: it is what gives a new row its id.
+        """
+        self.calls.extend(("add", entity) for entity in entities)
         self.calls.append(("flush",))
-        for call in self.session.add.call_args_list:
-            call.args[0].training_id = 42
+        for entity in entities:
+            entity.training_id = 42
 
     def _slots(self, *, live=None, pending=None) -> None:
         """Makes `get_by_state` answer per state, the way the two real
@@ -165,7 +163,7 @@ class TestTrainingAssignmentService(_AssignmentServiceCase):
 
         await self.service.start_trial(self.session, _COURSE_ID, _USER_ID)
 
-        added = self.session.add.call_args.args[0]
+        added = [call[1] for call in self.calls if call[0] == "add"][0]
         self.assertEqual(added.category, TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
 
     async def test_a_deactivated_course_can_still_be_trialled(self):
@@ -226,7 +224,7 @@ class TestTrainingAssignmentService(_AssignmentServiceCase):
         self.assertFalse(result.created)
         self.assertEqual(result.training_id, 77)
         self.assertEqual(by_category.course_id, _COURSE_ID)
-        self.session.add.assert_not_called()
+        self.trainings.add_trainings.assert_not_awaited()
 
     async def test_adopting_a_category_row_on_a_trial_is_persisted(self):
         """The attachment is a write, so the trial path has to commit it too.
@@ -398,7 +396,7 @@ class TestBulkAssignment(_AssignmentServiceCase):
         self.assertEqual(self.calls[-1], ("commit",))
 
     async def test_a_failing_write_commits_nothing(self):
-        self.session.flush = AsyncMock(
+        self.trainings.add_trainings = AsyncMock(
             side_effect=RuntimeError("the database went away")
         )
 
@@ -529,7 +527,7 @@ class TestBulkAssignmentReadsInBatches(_AssignmentServiceCase):
     async def test_somebody_who_no_longer_exists_is_a_conflict_not_a_crash(self):
         """A person offboarded between the search and the click. The batch is
         lost either way, but a 409 says why and a 500 does not."""
-        self.session.flush = AsyncMock(
+        self.trainings.add_trainings = AsyncMock(
             side_effect=IntegrityError("insert", {}, Exception("fk violation"))
         )
 

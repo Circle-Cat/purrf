@@ -412,6 +412,58 @@ class TestTrainingRepository(BaseRepositoryTestLib):
 
         self.assertEqual(found, {})
 
+    async def test_add_trainings_inserts_every_row_and_gives_each_an_id(self):
+        rows = [
+            TrainingEntity(
+                user_id=self.user1.user_id,
+                category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+                status=TrainingStatus.TO_DO,
+                deadline=self.now + timedelta(days=3),
+                link=None,
+            ),
+            TrainingEntity(
+                user_id=self.user2.user_id,
+                category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+                status=TrainingStatus.TO_DO,
+                deadline=self.now + timedelta(days=3),
+                link=None,
+            ),
+        ]
+
+        await self.repo.add_trainings(self.session, rows)
+
+        self.assertTrue(all(row.training_id is not None for row in rows))
+        for row in rows:
+            found = await self.repo.get_training_by_id(self.session, row.training_id)
+            self.assertIsNotNone(found)
+            self.assertEqual(found.user_id, row.user_id)
+
+    async def test_add_trainings_writes_changes_already_pending_when_given_no_rows(
+        self,
+    ):
+        """A bulk assign that only adopts existing rows adds nothing new.
+
+        Its single flush still has to write those adoptions, so passing an
+        empty list has to reach the database rather than return early.
+        """
+        from sqlalchemy import select
+
+        existing = (
+            await self.repo.get_training_with_course_by_user_id(
+                self.session, self.user1.user_id
+            )
+        )[0][0]
+        existing.status = TrainingStatus.DONE
+
+        await self.repo.add_trainings(self.session, [])
+
+        stored = await self.session.execute(
+            select(TrainingEntity.status).where(
+                TrainingEntity.training_id == existing.training_id
+            )
+        )
+        self.assertEqual(stored.scalar_one(), TrainingStatus.DONE)
+
 
 if __name__ == "__main__":
     unittest.main()

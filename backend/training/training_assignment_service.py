@@ -194,12 +194,13 @@ class TrainingAssignmentService:
             new_rows.append(self._new_row(course, user_id, payload.deadline))
             created_count += 1
 
-        if new_rows:
-            session.add_all(new_rows)
-
         if new_rows or attached_count:
             try:
-                await session.flush()
+                # One write for both kinds: the rows built above, and the
+                # rows adopted above, which are dirty objects this session
+                # already holds. An empty new_rows still has to reach the
+                # database for the sake of the second kind.
+                await self.training_repository.add_trainings(session, new_rows)
             except IntegrityError as error:
                 # The one referential thing a submitted id can break: somebody
                 # offboarded between the search and the click. The batch is
@@ -291,8 +292,7 @@ class TrainingAssignmentService:
             deadline=None,
             link=None,
         )
-        session.add(assignment)
-        await session.flush()
+        await self.training_repository.add_trainings(session, [assignment])
         await session.commit()
 
         self.logger.info(
