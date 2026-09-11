@@ -127,6 +127,24 @@ class TrainingRepository:
         )
         return result.scalars().all()
 
+    async def add_trainings(
+        self, session: AsyncSession, entities: list[TrainingEntity]
+    ) -> None:
+        """Appends training rows, giving each its training_id.
+
+        For rows that are new: an insert, not the SELECT-then-merge
+        ``upsert_training`` does. Passing an empty list is meaningful, not a
+        no-op -- the flush still writes whatever else the caller has made
+        dirty in this session, which is how a bulk assign that only adopts
+        existing rows gets those adoptions written.
+
+        Args:
+            session (AsyncSession): Active async session. Not committed.
+            entities (list[TrainingEntity]): Rows to append, possibly empty.
+        """
+        session.add_all(entities)
+        await session.flush()
+
     async def upsert_training(
         self, session: AsyncSession, entity: TrainingEntity
     ) -> TrainingEntity:
