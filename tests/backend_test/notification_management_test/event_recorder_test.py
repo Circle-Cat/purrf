@@ -22,15 +22,23 @@ from tests.backend_test.repository_test.base_repository_test_lib import (
 )
 
 
-def _make_user() -> UsersEntity:
-    """Build a minimal, unsaved user row for use as an actor or recipient."""
+def _make_user(*, is_active: bool = True, is_blocked: bool = False) -> UsersEntity:
+    """Build a minimal, unsaved user row for use as an actor or recipient.
+
+    Args:
+        is_active (bool): The account's active flag. False models a
+            deactivated account.
+        is_blocked (bool): The account's block flag. Independent of
+            ``is_active``: blocking never writes it.
+    """
     return UsersEntity(
         first_name="U",
         last_name="Ser",
         timezone="America/Los_Angeles",
         timezone_updated_at=datetime.now(timezone.utc),
         communication_channel=CommunicationMethod.EMAIL,
-        is_active=True,
+        is_active=is_active,
+        is_blocked=is_blocked,
         updated_timestamp=datetime.now(timezone.utc),
     )
 
@@ -145,6 +153,88 @@ class EventRecorderTest(BaseRepositoryTestLib):
         )
         self.assertIsNotNone(event.event_id)
         self.assertEqual(notifications, [])
+
+    async def test_a_deactivated_recipient_is_not_notified(self):
+        """A resolver may name someone who can no longer sign in.
+
+        Resolvers derive recipients from stored rows -- a job's owner ids, a
+        review's reviewer -- and those rows are not rewritten when an account
+        is turned off. Notifying them writes a bell nobody can read and sends
+        mail to somebody locked out of the page it links to.
+        """
+        actor = _make_user()
+        reachable = _make_user()
+        deactivated = _make_user(is_active=False)
+        await self.insert_entities([actor, reachable, deactivated])
+
+        @recipient_registry.register_recipients(
+            "demo.deactivated", subject_type="application"
+        )
+        async def resolver(session, event):
+            return [reachable.user_id, deactivated.user_id]
+
+        _, notifications = await record_event(
+            self.session,
+            subject_type="application",
+            subject_id=7,
+            actor_id=actor.user_id,
+            event_type="demo.deactivated",
+        )
+
+        self.assertEqual({n.user_id for n in notifications}, {reachable.user_id})
+
+    async def test_a_blocked_recipient_is_not_notified(self):
+        """Blocking leaves ``is_active`` alone, so activity cannot cover it."""
+        actor = _make_user()
+        reachable = _make_user()
+        blocked = _make_user(is_blocked=True)
+        await self.insert_entities([actor, reachable, blocked])
+
+        @recipient_registry.register_recipients(
+            "demo.blocked", subject_type="application"
+        )
+        async def resolver(session, event):
+            return [reachable.user_id, blocked.user_id]
+
+        _, notifications = await record_event(
+            self.session,
+            subject_type="application",
+            subject_id=7,
+            actor_id=actor.user_id,
+            event_type="demo.blocked",
+        )
+
+        self.assertEqual({n.user_id for n in notifications}, {reachable.user_id})
+
+    async def test_queues_nothing_when_every_recipient_is_unreachable(self):
+        """The event still lands on the timeline, but nothing is published.
+
+        ``publish_on_commit`` drains ``pending_notification_ids`` after the
+        commit. Leaving an id there for a row that was never written would
+        publish a message the delivery side can only ack away.
+        """
+        actor = _make_user()
+        deactivated = _make_user(is_active=False)
+        blocked = _make_user(is_blocked=True)
+        await self.insert_entities([actor, deactivated, blocked])
+
+        @recipient_registry.register_recipients(
+            "demo.all_unreachable", subject_type="application"
+        )
+        async def resolver(session, event):
+            return [deactivated.user_id, blocked.user_id]
+
+        event, notifications = await record_event(
+            self.session,
+            subject_type="application",
+            subject_id=7,
+            actor_id=actor.user_id,
+            event_type="demo.all_unreachable",
+        )
+
+        self.assertIsNotNone(event.event_id)
+        self.assertEqual(notifications, [])
+        self.assertNotIn("pending_notification_ids", self.session.info)
 
     async def test_details_defaults_to_an_empty_dict_not_none(self):
         actor = _make_user()

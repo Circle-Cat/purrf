@@ -65,6 +65,11 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.sub_repo = MagicMock()
         self.users_repo = MagicMock()
         self.users_repo.get_all_by_ids = AsyncMock(return_value=[])
+        # Nobody in these fixtures is deactivated or blocked, so the default
+        # is the identity. The tests that care override it.
+        self.users_repo.filter_reachable_ids = AsyncMock(
+            side_effect=lambda session, user_ids: set(user_ids)
+        )
         self.resume_storage = MagicMock()
         # autospec (not a bare MagicMock) so a caller/repo signature drift
         # (e.g. a new required param) fails the test instead of silently
@@ -4735,6 +4740,43 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.comment_mention_repo.create_mentions.assert_not_awaited()
         self.assertEqual(result.mentions, [])
 
+    async def test_add_comment_mention_of_a_deactivated_user_is_stripped(self):
+        """The same treatment an unauthorized id gets, for the same reason.
+
+        Both paths read ``_mentionable_user_ids``, so filtering it covers the
+        picker and the submitted token together -- a hand-written token cannot
+        reach somebody the dropdown refuses to offer. The comment still posts,
+        visibly without the mention, rather than silently accepting an @ that
+        would reach nobody.
+        """
+        job = self._job(job_id=1, owner_ids=(2, 3))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = None
+        self.users_repo.filter_reachable_ids = AsyncMock(return_value={2})
+        created_row = SimpleNamespace(
+            comment_id=5,
+            application_id=10,
+            author_id=2,
+            body="ping ",
+            created_at=datetime(2026, 7, 7, 12, 0, 0),
+        )
+        self.comment_repo.create = AsyncMock(return_value=created_row)
+        self.users_repo.get_user_by_user_id = AsyncMock(
+            return_value=self._user(user_id=2, first="Owen", last="Owner")
+        )
+
+        dto = CommentCreateDto(body="ping @[3]")
+        result = await self.service.add_comment(
+            self.session, self._ctx(user_id=2), 10, dto
+        )
+
+        self.comment_repo.create.assert_awaited_once_with(self.session, 10, 2, "ping ")
+        self.comment_mention_repo.create_mentions.assert_not_awaited()
+        self.assertEqual(result.mentions, [])
+        self.record_event.assert_not_awaited()
+
     async def test_add_comment_body_that_is_only_an_invalid_mention_is_rejected(self):
         job = self._job(job_id=1, owner_ids=(2,))
         application = self._application(application_id=10, job_id=1)
@@ -4960,6 +5002,31 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual({u.user_id for u in result}, {2})
+
+    async def test_list_mentionable_users_excludes_deactivated_and_blocked(self):
+        """An owner who can no longer sign in is not offered as a mention.
+
+        Ownership lives in the job's pipeline_config and is not rewritten when
+        an account is turned off, so the raw candidate set still names them.
+        Offering the pick would let somebody @ a person who can neither read
+        the comment nor be notified about it.
+        """
+        job = self._job(job_id=1, owner_ids=(2, 3))
+        application = self._application(application_id=10, job_id=1)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.assignment_repo.get.return_value = MagicMock(assignee_id=7)
+        self.users_repo.filter_reachable_ids = AsyncMock(return_value={2})
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=2, first="Owen", last="Owner")]
+        )
+
+        result = await self.service.list_mentionable_users(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertEqual({u.user_id for u in result}, {2})
+        self.users_repo.get_all_by_ids.assert_awaited_once_with(self.session, [2])
 
     async def test_list_mentionable_users_non_owner_non_assignee_gets_collapsed_not_found_message(
         self,
