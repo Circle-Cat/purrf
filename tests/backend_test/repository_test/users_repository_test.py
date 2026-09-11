@@ -1042,6 +1042,50 @@ class TestUsersRepository(BaseRepositoryTestLib):
     async def test_reactivate_missing_user_is_a_noop_success(self):
         await self.repo.reactivate(self.session, 9_999_999)  # must not raise
 
+    async def test_filter_reachable_ids_keeps_only_active_unblocked_users(self):
+        """Both flags are read, and they are read independently.
+
+        Blocking never writes ``is_active``, so a blocked account is still
+        active and a filter on activity alone would let it through.
+        """
+        token = uuid.uuid4().hex[:10]
+        reachable = self._make_user(email=f"reachable-{token}@example.com")
+        deactivated = self._make_user(email=f"off-{token}@example.com")
+        deactivated.is_active = False
+        blocked = self._make_user(email=f"blocked-{token}@example.com")
+        blocked.is_blocked = True
+        both = self._make_user(email=f"both-{token}@example.com")
+        both.is_active = False
+        both.is_blocked = True
+        await self.insert_entities([reachable, deactivated, blocked, both])
+
+        result = await self.repo.filter_reachable_ids(
+            self.session,
+            [
+                reachable.user_id,
+                deactivated.user_id,
+                blocked.user_id,
+                both.user_id,
+            ],
+        )
+
+        self.assertEqual(result, {reachable.user_id})
+
+    async def test_filter_reachable_ids_drops_an_id_with_no_user_row(self):
+        """A stored id can outlive the account it names."""
+        token = uuid.uuid4().hex[:10]
+        user = self._make_user(email=f"present-{token}@example.com")
+        await self.insert_entities([user])
+
+        result = await self.repo.filter_reachable_ids(
+            self.session, [user.user_id, 9_999_999]
+        )
+
+        self.assertEqual(result, {user.user_id})
+
+    async def test_filter_reachable_ids_returns_empty_for_no_ids(self):
+        self.assertEqual(await self.repo.filter_reachable_ids(self.session, []), set())
+
 
 if __name__ == "__main__":
     unittest.main()

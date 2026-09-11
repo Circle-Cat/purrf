@@ -5,6 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.entity.event_entity import EventEntity
 from backend.entity.notification_entity import NotificationEntity
 from backend.notification_management.recipient_registry import resolve_recipients
+from backend.repository.users_repository import UsersRepository
+
+# Module level because ``record_event`` is a free function called from a dozen
+# services, none of which owns this dependency; repositories hold no state of
+# their own, so one instance is the same as any other.
+_users_repository = UsersRepository()
 
 
 async def record_event(
@@ -23,6 +29,22 @@ async def record_event(
     all inside the caller's transaction, so the in-app bell is delivered
     atomically with the business change. Email is published separately,
     after commit, by the listener in ``publish_on_commit``.
+
+    Two recipients are always subtracted from whatever the resolver returns:
+    the actor, and anyone deactivated or blocked. Both states are refused at
+    the door by ``AuthMiddleware``, so notifying one writes a bell nobody can
+    read and mails a link its recipient cannot open. The event row itself is
+    written either way -- the timeline records what happened regardless of
+    who could be told about it.
+
+    That filter lives here rather than inside each resolver for three
+    reasons: this is the only caller of ``resolve_recipients``, so there is
+    one place to be wrong instead of one per domain; a resolver's own
+    emptiness stays meaningful (``recruiting._mentioned`` treats resolving to
+    nobody as a write-site bug and raises, which a deactivated mentionee must
+    not trigger); and "who is connected to this event" and "who can still
+    receive anything" are different questions, the second belonging beside
+    the existing actor subtraction.
 
     **Call this after the business change is written, never before.** The
     resolver queries the database through this same session, so it sees the
@@ -63,6 +85,7 @@ async def record_event(
 
     recipients = await resolve_recipients(session, event)
     recipients.discard(actor_id)
+    recipients = await _users_repository.filter_reachable_ids(session, recipients)
 
     notifications = [
         NotificationEntity(user_id=user_id, event_id=event.event_id)

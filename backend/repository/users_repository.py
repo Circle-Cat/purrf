@@ -1,3 +1,5 @@
+from collections.abc import Collection
+
 from backend.entity.users_entity import UsersEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.user_permissions_entity import UserPermissionsEntity
@@ -330,6 +332,43 @@ class UsersRepository:
                 )
             )
         )
+
+    async def filter_reachable_ids(
+        self, session: AsyncSession, user_ids: Collection[int]
+    ) -> set[int]:
+        """Narrow a set of stored user ids to the accounts that can still act.
+
+        For surfaces that read people out of stored rows rather than out of a
+        picker -- a job's ``pipeline_config`` owners, an assignment row, a
+        comment's mention rows -- and so keep naming somebody long after their
+        account was turned off. ``AuthMiddleware`` refuses both states at the
+        door, so such an account can neither act on what it is offered nor
+        open the page a notification links to.
+
+        An id with no users row is dropped the same way: a stored id can
+        outlive the account it names.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_ids (Collection[int]): Candidate ids, in any order,
+                duplicates ok.
+
+        Returns:
+            set[int]: Those ids whose user is active and not blocked. Empty
+            for an empty input, without querying.
+        """
+        if not user_ids:
+            return set()
+        result = await session.execute(
+            select(UsersEntity.user_id).where(
+                UsersEntity.user_id.in_(user_ids),
+                UsersEntity.is_active.is_(True),
+                # Read separately because blocking deliberately leaves
+                # is_active alone -- the two flags stay orthogonal (PUR-632).
+                UsersEntity.is_blocked.is_(False),
+            )
+        )
+        return set(result.scalars().all())
 
     async def set_super_admin(
         self, session: AsyncSession, user_id: int, is_super_admin: bool

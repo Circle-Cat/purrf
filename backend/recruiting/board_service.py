@@ -2116,12 +2116,18 @@ class BoardService:
     async def _mentionable_user_ids(
         self, session: AsyncSession, application: ApplicationEntity, job: JobEntity
     ) -> set[int]:
-        """Owner(s) plus the current-stage assignee, if any.
+        """Owner(s) plus the current-stage assignee, if any, minus whoever
+        can no longer sign in.
 
         The exact same population _load_owned_application's allow_assignee
         gate already authorizes to see this application's comments -- used
         both to answer "who can I @mention" and to validate mention tokens
-        on submit.
+        on submit. Filtering here therefore covers both at once: a
+        deactivated or blocked owner is neither offered in the picker nor
+        accepted as a hand-written token.
+
+        Owners come from the job's pipeline_config, which nothing rewrites
+        when an account is turned off, so the raw set keeps naming them.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -2141,7 +2147,7 @@ class BoardService:
         )
         if assignment is not None:
             ids.add(assignment.assignee_id)
-        return ids
+        return await self.users_repository.filter_reachable_ids(session, ids)
 
     def _resolve_mentions(
         self, body: str, mentionable_ids: set[int]
