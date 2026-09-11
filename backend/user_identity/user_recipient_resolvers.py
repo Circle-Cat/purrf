@@ -20,13 +20,15 @@ Importing this module registers every resolver. ``fast_app_factory`` imports it
 once at startup for that side effect.
 """
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.user_enums import USER_SUBJECT_TYPE, UserEvent
-from backend.entity.block_request_entity import BlockRequestEntity
 from backend.entity.event_entity import EventEntity
 from backend.notification_management.recipient_registry import register_recipients
+from backend.repository.block_request_repository import BlockRequestRepository
+
+# Stateless, so one module-level instance serves every resolver.
+_block_request_repository = BlockRequestRepository()
 
 
 async def _request_of(session: AsyncSession, event: EventEntity):
@@ -49,10 +51,7 @@ async def _request_of(session: AsyncSession, event: EventEntity):
     request_id = event.details.get("requestId")
     if request_id is None:
         raise ValueError(f"{event.event_type!r} requires details['requestId']")
-    result = await session.execute(
-        select(BlockRequestEntity).where(BlockRequestEntity.request_id == request_id)
-    )
-    row = result.scalars().one_or_none()
+    row = await _block_request_repository.get(session, request_id)
     if row is None:
         raise ValueError(f"{event.event_type!r} names unknown request {request_id}")
     return row

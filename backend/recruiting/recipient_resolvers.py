@@ -22,19 +22,23 @@ from backend.common.recruiting_enums import RecruitingEvent
 from backend.entity.application_assignment_entity import (
     ApplicationAssignmentEntity,
 )
-from backend.entity.application_comment_mention_entity import (
-    ApplicationCommentMentionEntity,
-)
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.event_entity import EventEntity
 from backend.entity.job_entity import JobEntity
-from backend.entity.job_review_entity import JobReviewEntity
 from backend.entity.users_entity import UsersEntity
 from backend.notification_management.recipient_registry import (
     Resolver,
     register_recipients,
 )
 from backend.recruiting.pipeline_owners import normalized_owner_ids
+from backend.repository.application_comment_mention_repository import (
+    ApplicationCommentMentionRepository,
+)
+from backend.repository.job_review_repository import JobReviewRepository
+
+# Stateless, so one module-level instance serves every resolver.
+_job_review_repository = JobReviewRepository()
+_mention_repository = ApplicationCommentMentionRepository()
 
 
 def _job_id_of_application(application_id: int) -> ScalarSelect:
@@ -120,7 +124,7 @@ def _required_id(event: EventEntity, key: str) -> int:
 
 
 async def _review_participant(
-    session: AsyncSession, event: EventEntity, column
+    session: AsyncSession, event: EventEntity, field: str
 ) -> set[int]:
     """Resolve one participant of the review the event names.
 
@@ -131,23 +135,21 @@ async def _review_participant(
         session (AsyncSession): Session inside the caller's open transaction.
         event (EventEntity): The event being recorded; ``details["reviewId"]``
             names the review.
-        column: The ``JobReviewEntity`` column holding the user id wanted.
+        field (str): The ``JobReviewEntity`` attribute holding the user id
+            wanted -- ``"reviewer_id"`` or ``"submitted_by"``.
 
     Returns:
-        set[int]: The single user id in that column.
+        set[int]: The single user id in that field.
 
     Raises:
         ValueError: If the event carries no review id, or names a review that
             does not exist.
     """
     review_id = _required_id(event, "reviewId")
-    result = await session.execute(
-        select(column).where(JobReviewEntity.review_id == review_id)
-    )
-    user_id = result.scalar_one_or_none()
-    if user_id is None:
+    review = await _job_review_repository.get(session, review_id)
+    if review is None:
         raise ValueError(f"{event.event_type!r} names unknown review {review_id}")
-    return {user_id}
+    return {getattr(review, field)}
 
 
 async def _job_owners(
@@ -259,7 +261,7 @@ async def _review_opened(session: AsyncSession, event: EventEntity) -> set[int]:
     Raises:
         ValueError: If the event carries no review id, or names no review.
     """
-    return await _review_participant(session, event, JobReviewEntity.reviewer_id)
+    return await _review_participant(session, event, "reviewer_id")
 
 
 @register_recipients(RecruitingEvent.REVIEW_REASSIGNED, subject_type="job")
@@ -284,7 +286,7 @@ async def _review_reassigned(session: AsyncSession, event: EventEntity) -> set[i
     Raises:
         ValueError: If the event carries no review id, or names no review.
     """
-    return await _review_participant(session, event, JobReviewEntity.reviewer_id)
+    return await _review_participant(session, event, "reviewer_id")
 
 
 @register_recipients(RecruitingEvent.REVIEW_DECIDED, subject_type="job")
@@ -306,7 +308,7 @@ async def _review_decided(session: AsyncSession, event: EventEntity) -> set[int]
     Raises:
         ValueError: If the event carries no review id, or names no review.
     """
-    return await _review_participant(session, event, JobReviewEntity.submitted_by)
+    return await _review_participant(session, event, "submitted_by")
 
 
 @register_recipients(RecruitingEvent.MENTIONED, subject_type="application")
@@ -332,12 +334,8 @@ async def _mentioned(session: AsyncSession, event: EventEntity) -> set[int]:
             site bug, not a state worth recording silently.
     """
     comment_id = _required_id(event, "commentId")
-    result = await session.execute(
-        select(ApplicationCommentMentionEntity.mentioned_user_id).where(
-            ApplicationCommentMentionEntity.comment_id == comment_id
-        )
-    )
-    mentioned = set(result.scalars().all())
+    rows = await _mention_repository.get_by_comment_ids(session, [comment_id])
+    mentioned = {row.mentioned_user_id for row in rows}
     if not mentioned:
         raise ValueError(
             f"{event.event_type!r} names comment {comment_id}, which mentions nobody"

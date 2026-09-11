@@ -38,6 +38,7 @@ py_library(
         "//backend/common:user_enums",
         "//backend/entity:entities",
         "//backend/notification_management:recipient_registry",
+        "//backend/repository:repositories",
         "@pypi//sqlalchemy",
     ],
 )
@@ -50,6 +51,7 @@ py_library(
         "//backend/common:user_enums",
         "//backend/entity:entities",
         "//backend/notification_management:render_registry",
+        "//backend/repository:repositories",
         "@pypi//sqlalchemy",
     ],
 )

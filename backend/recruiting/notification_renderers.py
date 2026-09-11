@@ -28,21 +28,23 @@ from datetime import datetime
 
 from types import SimpleNamespace
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.common.name_utils import user_display_name
+from backend.common.name_utils import display_name_of
 from backend.common.recruiting_enums import ApplicationStage
-from backend.entity.application_entity import ApplicationEntity
 from backend.entity.event_entity import EventEntity
-from backend.entity.job_entity import JobEntity
-from backend.entity.users_entity import UsersEntity
 from backend.notification_management.render_registry import register_render
 from backend.recruiting import notification_email_copy as copy
+from backend.repository.application_repository import ApplicationRepository
+from backend.repository.job_repository import JobRepository
 from backend.repository.user_emails_repository import UserEmailsRepository
+from backend.repository.users_repository import UsersRepository
 
 # Stateless, so one module-level instance serves every render.
 _user_emails_repository = UserEmailsRepository()
+_users_repository = UsersRepository()
+_application_repository = ApplicationRepository()
+_job_repository = JobRepository()
 
 
 async def _candidate_name(session: AsyncSession, user_id: int) -> str:
@@ -58,13 +60,8 @@ async def _candidate_name(session: AsyncSession, user_id: int) -> str:
     Returns:
         str: "First Last" (whitespace-trimmed), or "" if no such user.
     """
-    result = await session.execute(
-        select(UsersEntity.first_name, UsersEntity.last_name).where(
-            UsersEntity.user_id == user_id
-        )
-    )
-    row = result.first()
-    return f"{row[0]} {row[1]}".strip() if row is not None else ""
+    user = await _users_repository.get_user_by_user_id(session, user_id)
+    return f"{user.first_name} {user.last_name}".strip() if user is not None else ""
 
 
 async def _actor_name(session: AsyncSession, user_id: int) -> str:
@@ -80,17 +77,8 @@ async def _actor_name(session: AsyncSession, user_id: int) -> str:
     Returns:
         str: The resolved display name, or "" if no such user.
     """
-    result = await session.execute(
-        select(
-            UsersEntity.first_name,
-            UsersEntity.last_name,
-            UsersEntity.preferred_name,
-        ).where(UsersEntity.user_id == user_id)
-    )
-    row = result.first()
-    if row is None:
-        return ""
-    return user_display_name(first_name=row[0], last_name=row[1], preferred_name=row[2])
+    user = await _users_repository.get_user_by_user_id(session, user_id)
+    return display_name_of(user) if user is not None else ""
 
 
 async def _application_context(session: AsyncSession, application_id: int):
@@ -106,30 +94,22 @@ async def _application_context(session: AsyncSession, application_id: int):
     with the board and the blacklist page, and a second copy of it would
     drift.
     """
-    result = await session.execute(
-        select(JobEntity.title, JobEntity.kind, ApplicationEntity.user_id)
-        .join(ApplicationEntity, ApplicationEntity.job_id == JobEntity.job_id)
-        .where(ApplicationEntity.application_id == application_id)
-    )
-    row = result.first()
-    if row is None:
+    pair = await _application_repository.get_with_job(session, application_id)
+    if pair is None:
         return "", None, "", None
-    job_title, job_kind, candidate_id = row
+    application, job = pair
     return (
-        job_title,
-        job_kind,
-        await _candidate_name(session, candidate_id),
-        await _user_emails_repository.get_contact_email(session, candidate_id),
+        job.title,
+        job.kind,
+        await _candidate_name(session, application.user_id),
+        await _user_emails_repository.get_contact_email(session, application.user_id),
     )
 
 
 async def _job_context(session: AsyncSession, job_id: int):
     """job_title/job_kind for a job-scoped event. ("", None) if the job is gone."""
-    result = await session.execute(
-        select(JobEntity.title, JobEntity.kind).where(JobEntity.job_id == job_id)
-    )
-    row = result.first()
-    return row if row is not None else ("", None)
+    job = await _job_repository.get_by_job_id(session, job_id)
+    return (job.title, job.kind) if job is not None else ("", None)
 
 
 async def _base_dto(session: AsyncSession, event: EventEntity) -> SimpleNamespace:

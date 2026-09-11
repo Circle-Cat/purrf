@@ -1,5 +1,6 @@
 from collections.abc import Collection
 
+from backend.entity.application_entity import ApplicationEntity
 from backend.entity.users_entity import UsersEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.user_permissions_entity import UserPermissionsEntity
@@ -48,6 +49,29 @@ class UsersRepository:
             select(UsersEntity).where(UsersEntity.user_id == user_id)
         )
 
+        return result.scalars().one_or_none()
+
+    async def get_by_application_id(
+        self, session: AsyncSession, application_id: int
+    ) -> UsersEntity | None:
+        """The person behind an application, in one read.
+
+        For callers that hold an application id and want the applicant --
+        going through the application row first would be two round trips.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            application_id (int): The application whose applicant is wanted.
+
+        Returns:
+            UsersEntity | None: The applicant, or None when there is no such
+                application.
+        """
+        result = await session.execute(
+            select(UsersEntity)
+            .join(ApplicationEntity, ApplicationEntity.user_id == UsersEntity.user_id)
+            .where(ApplicationEntity.application_id == application_id)
+        )
         return result.scalars().one_or_none()
 
     async def get_all_by_ids(self, session: AsyncSession, user_ids: list[int]):

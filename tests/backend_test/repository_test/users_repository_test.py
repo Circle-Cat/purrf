@@ -4,12 +4,15 @@ from datetime import datetime, timezone
 
 
 from backend.repository.users_repository import UsersRepository
+from backend.entity.application_entity import ApplicationEntity
+from backend.entity.job_entity import JobEntity
 from backend.entity.users_entity import UsersEntity
 from backend.entity.experience_entity import ExperienceEntity
 from backend.entity.user_identities_entity import UserIdentitiesEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.user_permissions_entity import UserPermissionsEntity
 from backend.common.mentorship_enums import CommunicationMethod
+from backend.common.recruiting_enums import ApplicationStage, JobKind, JobStatus
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
@@ -1085,6 +1088,39 @@ class TestUsersRepository(BaseRepositoryTestLib):
 
     async def test_filter_reachable_ids_returns_empty_for_no_ids(self):
         self.assertEqual(await self.repo.filter_reachable_ids(self.session, []), set())
+
+    async def _application_of(self, user: UsersEntity) -> ApplicationEntity:
+        """One application belonging to ``user``, with the job it needs."""
+        job = JobEntity(kind=JobKind.ACTIVITY, title="T", status=JobStatus.PUBLISHED)
+        await self.insert_entities([job])
+        application = ApplicationEntity(
+            job_id=job.job_id, user_id=user.user_id, stage=ApplicationStage.APPLIED
+        )
+        await self.insert_entities([application])
+        return application
+
+    async def test_get_by_application_id_returns_the_applicant(self):
+        """The mentorship copy greets the applicant, who is reached only
+        through the application the event names."""
+        user = self._make_user(
+            first_name="Ada", email=f"{uuid.uuid4().hex[:10]}@example.com"
+        )
+        await self.insert_entities([user])
+        application = await self._application_of(user)
+
+        found = await self.repo.get_by_application_id(
+            self.session, application.application_id
+        )
+
+        self.assertIsNotNone(found)
+        self.assertEqual(found.user_id, user.user_id)
+        self.assertEqual(found.first_name, "Ada")
+
+    async def test_get_by_application_id_returns_none_when_there_is_no_application(
+        self,
+    ):
+        """The copy greets without a name rather than failing the send."""
+        self.assertIsNone(await self.repo.get_by_application_id(self.session, 999_999))
 
 
 if __name__ == "__main__":

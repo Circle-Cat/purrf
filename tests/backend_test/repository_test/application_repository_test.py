@@ -1298,6 +1298,31 @@ class TestApplicationRepository(BaseRepositoryTestLib):
 
         self.assertEqual(len(rows), 2)
 
+    async def test_get_with_job_returns_the_application_and_its_job(self):
+        """One statement: the notification renderers read both together."""
+        job, user = await self._seed_job_and_user()
+        job.title = "Backend Engineer"
+        application = ApplicationEntity(
+            job_id=job.job_id,
+            user_id=user.user_id,
+            stage=ApplicationStage.APPLIED,
+        )
+        await self.insert_entities([application])
+
+        found = await self.repo.get_with_job(self.session, application.application_id)
+
+        self.assertIsNotNone(found)
+        got_application, got_job = found
+        self.assertEqual(got_application.application_id, application.application_id)
+        self.assertEqual(got_application.user_id, user.user_id)
+        self.assertEqual(got_job.job_id, job.job_id)
+        self.assertEqual(got_job.title, "Backend Engineer")
+        self.assertEqual(got_job.kind, JobKind.ACTIVITY)
+
+    async def test_get_with_job_returns_none_for_an_application_that_is_gone(self):
+        """The renderers fall back to empty display fields on this."""
+        self.assertIsNone(await self.repo.get_with_job(self.session, 999_999))
+
 
 if __name__ == "__main__":
     unittest.main()
