@@ -93,7 +93,7 @@ py_library(
     ],
     deps = [
         "//backend/common:recruiting_enums",
-        "//backend/entity:entities",
+        "//backend/repository:repositories",
         "@pypi//sqlalchemy",
     ],
 )

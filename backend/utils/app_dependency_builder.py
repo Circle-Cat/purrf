@@ -794,6 +794,7 @@ class AppDependencyBuilder:
         self.delivery_service = DeliveryService(
             logger=self.logger,
             email_service=self.notification_event_email_service,
+            notification_repository=self.notification_repository,
         )
         self.notification_delivery_controller = NotificationDeliveryController(
             logger=self.logger,
