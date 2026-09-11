@@ -55,6 +55,7 @@ class FastAppFactory:
         leave_job_controller,
         leave_request_controller,
         leave_calendar_controller,
+        leave_balance_controller,#为什么这里需要给默认值none，给了下面就标红了
         notification_delivery_controller,
         notification_publisher,
         notification_topic_path,
@@ -127,6 +128,7 @@ class FastAppFactory:
         self.leave_job_controller = leave_job_controller
         self.leave_request_controller = leave_request_controller
         self.leave_calendar_controller = leave_calendar_controller
+        self.leave_balance_controller = leave_balance_controller
         self.notification_delivery_controller = notification_delivery_controller
         self.notification_publisher = notification_publisher
         self.notification_topic_path = notification_topic_path
@@ -233,6 +235,7 @@ class FastAppFactory:
         app.include_router(self.training_content_controller.router)
         app.include_router(self.leave_job_controller.router, prefix="/api")
         app.include_router(self.leave_request_controller.router, prefix="/api")
+        app.include_router(self.leave_balance_controller.router, prefix="/api")
         # Deliberately NOT authenticate()-gated -- this route has no Auth0
         # session. Its guard is the Cloudflare Worker + Access Service Auth
         # policy in front of it, the same trust boundary every other route
