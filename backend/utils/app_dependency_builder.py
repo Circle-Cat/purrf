@@ -149,6 +149,8 @@ from backend.leave.leave_engine_service import LeaveEngineService
 from backend.leave.leave_job_controller import LeaveJobController
 from backend.leave.leave_request_service import LeaveRequestService
 from backend.leave.leave_request_controller import LeaveRequestController
+from backend.leave.leave_balance_service import LeaveBalanceService
+from backend.leave.leave_balance_controller import LeaveBalanceController
 from backend.repository.leave_request_repository import LeaveRequestRepository
 from backend.leave.leave_participants import LeaveParticipantResolver
 from backend.repository.leave_ledger_repository import LeaveLedgerRepository
@@ -218,6 +220,7 @@ from backend.profile.profile_controller import ProfileController
 from backend.user_identity.user_identity_service import UserIdentityService
 from backend.common.launchdarkly_client import LaunchDarklyClient
 from backend.service.launchdarkly_service import LaunchDarklyService
+
 
 
 class AppDependencyBuilder:
@@ -1022,6 +1025,15 @@ class AppDependencyBuilder:
         self.leave_request_controller = LeaveRequestController(
             self.leave_request_service,
             self.database,
+        )
+        self.leave_balance_service = LeaveBalanceService(
+            logger=self.logger,
+            database=self.database,
+            leave_ledger_repository=self.leave_ledger_repository,
+        )
+        self.leave_balance_controller = LeaveBalanceController(
+            logger=self.logger,
+            leave_balance_service=self.leave_balance_service,
         )
         self.fast_app_factory = FastAppFactory(
             authentication_controller=self.authentication_controller,
