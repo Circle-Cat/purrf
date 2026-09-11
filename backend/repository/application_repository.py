@@ -428,6 +428,32 @@ class ApplicationRepository:
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_with_job(
+        self, session: AsyncSession, application_id: int
+    ) -> tuple[ApplicationEntity, JobEntity] | None:
+        """One application together with the job it was made to, in one read.
+
+        Both halves are wanted together often enough -- who applied, and what
+        they applied to -- that fetching them separately would be two round
+        trips for one question.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            application_id (int): The application wanted.
+
+        Returns:
+            tuple[ApplicationEntity, JobEntity] | None: The pair, or None when
+                there is no such application. An application cannot outlive
+                its job, so a missing pair means the application is gone.
+        """
+        result = await session.execute(
+            select(ApplicationEntity, JobEntity)
+            .join(JobEntity, JobEntity.job_id == ApplicationEntity.job_id)
+            .where(ApplicationEntity.application_id == application_id)
+        )
+        row = result.first()
+        return (row[0], row[1]) if row is not None else None
+
     async def create(
         self, session: AsyncSession, entity: ApplicationEntity
     ) -> ApplicationEntity:

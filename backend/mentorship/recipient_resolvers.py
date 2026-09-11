@@ -8,13 +8,15 @@ Importing this module registers every resolver. ``fast_app_factory`` imports
 it once at startup for that side effect.
 """
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.mentorship_enums import MentorshipEvent
-from backend.entity.application_entity import ApplicationEntity
 from backend.entity.event_entity import EventEntity
 from backend.notification_management.recipient_registry import register_recipients
+from backend.repository.application_repository import ApplicationRepository
+
+# Stateless, so one module-level instance serves every resolver.
+_application_repository = ApplicationRepository()
 
 
 @register_recipients(MentorshipEvent.MENTOR_ADMITTED, subject_type="application")
@@ -39,10 +41,5 @@ async def _admitted_applicant(session: AsyncSession, event: EventEntity) -> set[
     Returns:
         set[int]: The applicant's user id, or empty if the application is gone.
     """
-    result = await session.execute(
-        select(ApplicationEntity.user_id).where(
-            ApplicationEntity.application_id == event.subject_id
-        )
-    )
-    user_id = result.scalar_one_or_none()
-    return set() if user_id is None else {user_id}
+    application = await _application_repository.get_by_id(session, event.subject_id)
+    return set() if application is None else {application.user_id}
