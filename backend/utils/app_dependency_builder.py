@@ -774,6 +774,7 @@ class AppDependencyBuilder:
             self.application_repository,
             self.job_repository,
             self.users_repository,
+            self.event_repository,
         )
         self.notification_email_service = NotificationEmailService(
             gmail_client=self.gmail_client,
@@ -790,6 +791,7 @@ class AppDependencyBuilder:
         self.notification_event_email_service = NotificationEventEmailService(
             user_emails_repository=self.user_emails_repository,
             email_service=self.notification_email_service,
+            event_repository=self.event_repository,
         )
         self.delivery_service = DeliveryService(
             logger=self.logger,

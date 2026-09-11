@@ -97,6 +97,7 @@ py_test(
         "//backend/common:mentorship_enums",
         "//backend/entity:entities",
         "//backend/notification_management:notification_event_email_service",
+        "//backend/repository:repositories",
         "//tests/backend_test/repository_test:base_repository_test_lib",
     ],
 )

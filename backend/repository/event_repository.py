@@ -12,6 +12,26 @@ class EventRepository:
     happened while telling nobody.
     """
 
+    async def get_by_id(
+        self, session: AsyncSession, event_id: int
+    ) -> EventEntity | None:
+        """One event by its primary key.
+
+        Answers with None rather than raising, because the two callers
+        disagree about whether a missing event is possible: the email side
+        leans on ``notification.event_id`` being NOT NULL and cascading, the
+        bell side renders empty display fields instead of failing a whole
+        list for one row.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            event_id (int): The event wanted.
+
+        Returns:
+            EventEntity | None: The event, or None if there is no such id.
+        """
+        return await session.get(EventEntity, event_id)
+
     async def list_by_subject(
         self, session: AsyncSession, subject_type: str, subject_id: int
     ) -> list[EventEntity]:

@@ -14,6 +14,7 @@ from backend.entity.notification_entity import NotificationEntity
 from backend.entity.users_entity import UsersEntity
 from backend.recruiting.notification_service import RecruitingNotificationService
 from backend.repository.application_repository import ApplicationRepository
+from backend.repository.event_repository import EventRepository
 from backend.repository.job_repository import JobRepository
 from backend.repository.notification_repository import NotificationRepository
 from backend.repository.users_repository import UsersRepository
@@ -25,9 +26,14 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         self.app_repo = create_autospec(ApplicationRepository, instance=True)
         self.job_repo = create_autospec(JobRepository, instance=True)
         self.users_repo = create_autospec(UsersRepository, instance=True)
+        self.event_repo = create_autospec(EventRepository, instance=True)
         self.session = AsyncMock()
         self.service = RecruitingNotificationService(
-            self.notification_repo, self.app_repo, self.job_repo, self.users_repo
+            self.notification_repo,
+            self.app_repo,
+            self.job_repo,
+            self.users_repo,
+            self.event_repo,
         )
 
     def _notification(self, event=None, **overrides):
@@ -63,7 +69,7 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         return event
 
     def _stub_event(self, event):
-        self.session.get = AsyncMock(return_value=event)
+        self.event_repo.get_by_id = AsyncMock(return_value=event)
 
     async def test_list_for_user_resolves_application_scoped_display_fields(self):
         row = self._notification()
