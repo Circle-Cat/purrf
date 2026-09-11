@@ -1,11 +1,9 @@
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 
-from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.recruiting_enums import NotificationStatus
-from backend.entity.notification_entity import NotificationEntity
 
 EXPIRY = timedelta(hours=24)
 CLAIM_TIMEOUT = timedelta(minutes=10)
@@ -27,15 +25,18 @@ class DeliveryOutcome(Enum):
 class DeliveryService:
     """Turns one notification row into one email, exactly once."""
 
-    def __init__(self, logger, email_service):
+    def __init__(self, logger, email_service, notification_repository):
         """
         Args:
             logger: Logger instance.
             email_service: Object with ``async send(session, notification)``,
                 raising LookupError when the recipient can never be emailed.
+            notification_repository (NotificationRepository): Owns every read
+                and write of the notification row, the claim included.
         """
         self.logger = logger
         self.email_service = email_service
+        self.notification_repository = notification_repository
 
     async def deliver(
         self, session: AsyncSession, notification_id: int
@@ -50,7 +51,9 @@ class DeliveryService:
             DeliveryOutcome: ACKED when Pub/Sub should stop, RETRY when it
                 should back off and try again.
         """
-        notification = await session.get(NotificationEntity, notification_id)
+        notification = await self.notification_repository.get_by_id(
+            session, notification_id
+        )
         if notification is None:
             self.logger.info("[Delivery] %s does not exist; acking", notification_id)
             return DeliveryOutcome.ACKED
@@ -82,36 +85,35 @@ class DeliveryService:
     async def _claim(
         self, session: AsyncSession, notification_id: int, now: datetime
     ) -> bool:
-        """Take the row from PENDING, or from a SENDING claim older than the timeout.
+        """Take the row and commit the claim, so other senders can see it.
+
+        How long a claim may go unfinished before another sender may retake
+        it is this service's decision, not the repository's -- CLAIM_TIMEOUT
+        is the ack deadline of the subscription that drives delivery.
 
         Returns:
             bool: True when this caller owns the send. False means somebody
                 else already sent it, is sending it, or settled it.
         """
-        result = await session.execute(
-            update(NotificationEntity)
-            .where(
-                NotificationEntity.notification_id == notification_id,
-                or_(
-                    NotificationEntity.status == NotificationStatus.PENDING,
-                    (NotificationEntity.status == NotificationStatus.SENDING)
-                    & (NotificationEntity.claimed_at < now - CLAIM_TIMEOUT),
-                ),
-            )
-            .values(status=NotificationStatus.SENDING, claimed_at=now)
+        claimed = await self.notification_repository.claim_for_sending(
+            session,
+            notification_id,
+            now=now,
+            stale_before=now - CLAIM_TIMEOUT,
         )
         await session.commit()
-        return result.rowcount == 1
+        return claimed
 
     async def _settle(
         self, session: AsyncSession, notification_id: int, status: NotificationStatus
     ) -> None:
-        """Write the terminal (or released) status and commit it."""
-        await session.execute(
-            update(NotificationEntity)
-            .where(NotificationEntity.notification_id == notification_id)
-            .values(status=status, claimed_at=None)
-        )
+        """Write the terminal (or released) status and commit it.
+
+        The commit belongs here rather than in the repository: delivery is
+        driven by a Pub/Sub push and owns its transaction, while every other
+        caller of that repository runs inside somebody else's.
+        """
+        await self.notification_repository.set_status(session, notification_id, status)
         await session.commit()
 
     async def sweep_stragglers(
@@ -131,13 +133,6 @@ class DeliveryService:
             list[int]: Notification ids to republish, oldest first.
         """
         cutoff = datetime.now(timezone.utc) - CLAIM_TIMEOUT
-        result = await session.execute(
-            select(NotificationEntity.notification_id)
-            .where(
-                NotificationEntity.status == NotificationStatus.PENDING,
-                NotificationEntity.created_at < cutoff,
-            )
-            .order_by(NotificationEntity.created_at.asc())
-            .limit(limit)
+        return await self.notification_repository.list_pending_ids_created_before(
+            session, cutoff=cutoff, limit=limit
         )
-        return list(result.scalars().all())

@@ -6,6 +6,7 @@ from backend.common.recruiting_enums import NotificationStatus
 from backend.entity.event_entity import EventEntity
 from backend.entity.notification_entity import NotificationEntity
 from backend.entity.users_entity import UsersEntity
+from backend.repository.notification_repository import NotificationRepository
 from backend.notification_management.delivery_service import (
     DeliveryOutcome,
     DeliveryService,
@@ -46,7 +47,11 @@ class DeliveryServiceTest(BaseRepositoryTestLib):
         await super().asyncSetUp()
         self.email = AsyncMock()
         self.logger = MagicMock()
-        self.service = DeliveryService(logger=self.logger, email_service=self.email)
+        self.service = DeliveryService(
+            logger=self.logger,
+            email_service=self.email,
+            notification_repository=NotificationRepository(),
+        )
 
     async def _make_notification(
         self, *, status=None, claimed_at=None, created_at=None
