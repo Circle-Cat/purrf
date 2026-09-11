@@ -47,6 +47,7 @@ py_library(
     deps = [
         ":recipient_registry",
         "//backend/entity:entities",
+        "//backend/repository:repositories",
         "@pypi//sqlalchemy",
     ],
 )
