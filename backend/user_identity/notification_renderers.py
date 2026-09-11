@@ -21,15 +21,18 @@ once at startup for that side effect, alongside ``user_recipient_resolvers``.
 
 import html
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.common.name_utils import user_display_name
+from backend.common.name_utils import display_name_of
 from backend.common.user_enums import UserEvent
-from backend.entity.block_request_entity import BlockRequestEntity
 from backend.entity.event_entity import EventEntity
-from backend.entity.users_entity import UsersEntity
 from backend.notification_management.render_registry import register_render
+from backend.repository.block_request_repository import BlockRequestRepository
+from backend.repository.users_repository import UsersRepository
+
+# Stateless, so one module-level instance serves every render.
+_users_repository = UsersRepository()
+_block_request_repository = BlockRequestRepository()
 
 _FOOTER = (
     "<p>This is an automated message from Purrf. Please do not reply "
@@ -50,20 +53,8 @@ async def _name_of(session: AsyncSession, user_id: int | None) -> str:
     """
     if user_id is None:
         return ""
-    result = await session.execute(
-        select(
-            UsersEntity.first_name,
-            UsersEntity.last_name,
-            UsersEntity.preferred_name,
-        ).where(UsersEntity.user_id == user_id)
-    )
-    row = result.one_or_none()
-    if row is None:
-        return ""
-    first_name, last_name, preferred_name = row
-    return user_display_name(
-        first_name=first_name, last_name=last_name, preferred_name=preferred_name
-    )
+    user = await _users_repository.get_user_by_user_id(session, user_id)
+    return display_name_of(user) if user is not None else ""
 
 
 async def _request_of(session: AsyncSession, event: EventEntity):
@@ -79,10 +70,7 @@ async def _request_of(session: AsyncSession, event: EventEntity):
     request_id = event.details.get("requestId")
     if request_id is None:
         return None
-    result = await session.execute(
-        select(BlockRequestEntity).where(BlockRequestEntity.request_id == request_id)
-    )
-    return result.scalars().one_or_none()
+    return await _block_request_repository.get(session, request_id)
 
 
 def _person(name: str, fallback: str) -> str:

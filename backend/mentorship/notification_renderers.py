@@ -17,15 +17,16 @@ once at startup for that side effect, alongside ``recipient_resolvers``.
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.mentorship_enums import MentorshipEvent
-from backend.entity.application_entity import ApplicationEntity
 from backend.entity.event_entity import EventEntity
-from backend.entity.users_entity import UsersEntity
 from backend.mentorship import notification_email_copy as copy
 from backend.notification_management.render_registry import register_render
+from backend.repository.users_repository import UsersRepository
+
+# Stateless, so one module-level instance serves every render.
+_users_repository = UsersRepository()
 
 # Where a recipient with no usable timezone on file is assumed to be. Most
 # mentors are in North America, and ``users.timezone`` is a free-form string
@@ -125,22 +126,12 @@ async def _recipient(session: AsyncSession, application_id: int):
         tuple[str, str | None]: Greeting name ("" when nothing resolves, which
             greets without a name) and the raw ``users.timezone``.
     """
-    result = await session.execute(
-        select(
-            UsersEntity.first_name,
-            UsersEntity.preferred_name,
-            UsersEntity.timezone,
-        )
-        .join(ApplicationEntity, ApplicationEntity.user_id == UsersEntity.user_id)
-        .where(ApplicationEntity.application_id == application_id)
-    )
-    row = result.first()
-    if row is None:
+    user = await _users_repository.get_by_application_id(session, application_id)
+    if user is None:
         return "", None
-    first_name, preferred_name, timezone_name = row
-    if preferred_name and preferred_name.strip():
-        return preferred_name.strip(), timezone_name
-    return (first_name or "").strip(), timezone_name
+    if user.preferred_name and user.preferred_name.strip():
+        return user.preferred_name.strip(), user.timezone
+    return (user.first_name or "").strip(), user.timezone
 
 
 @register_render(MentorshipEvent.MENTOR_ADMITTED)
