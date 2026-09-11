@@ -1,7 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.name_utils import display_name_of
-from backend.entity.event_entity import EventEntity
 from backend.dto.notification_dto import (
     NotificationDto,
     NotificationListDto,
@@ -28,6 +27,7 @@ class RecruitingNotificationService:
         application_repository,
         job_repository,
         users_repository,
+        event_repository,
     ):
         """
         Args:
@@ -38,11 +38,14 @@ class RecruitingNotificationService:
                 application-scoped and job-review-scoped notifications.
             users_repository (UsersRepository): Resolves applicant/actor
                 display names.
+            event_repository (EventRepository): Reads the event each
+                notification points at, which is what says what happened.
         """
         self.notification_repository = notification_repository
         self.application_repository = application_repository
         self.job_repository = job_repository
         self.users_repository = users_repository
+        self.event_repository = event_repository
 
     async def _candidate_name(self, session: AsyncSession, user_id: int | None) -> str:
         """Resolve a candidate id to their legal "First Last", or "".
@@ -82,7 +85,7 @@ class RecruitingNotificationService:
             NotificationDto: Empty display fields where the referenced rows
                 are gone, and a null actor_name where nobody acted.
         """
-        event = await session.get(EventEntity, row.event_id)
+        event = await self.event_repository.get_by_id(session, row.event_id)
         job_title = ""
         job_kind = None
         applicant_name = ""
