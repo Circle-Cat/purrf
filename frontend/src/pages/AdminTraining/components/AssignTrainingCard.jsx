@@ -20,11 +20,15 @@ const SELECT_CLASS =
  *
  * Nothing here is scoped to a course by default: the same search answers
  * "who is missing this course" and "what does this person hold", and only
- * the first of those needs a course named. Assign stays disabled until one is.
+ * the first of those needs a course named.
  *
  * The table stays empty until the search is submitted. An unnarrowed search
  * is allowed, but it is the whole company, so it is asked for rather than
  * run on arrival.
+ *
+ * Assigning is the narrower of those two uses, so its controls -- ticks
+ * included -- appear only once both halves of it are in hand: an assignable
+ * course, and people to give it to.
  *
  * @param {Object} props
  * @param {Array<Object>} props.courses every course in the catalogue,
@@ -35,6 +39,15 @@ export default function AssignTrainingCard({ courses }) {
   const audience = useAudienceSearch({ courses });
   const blockedReason = bulkAssignBlockedReason(audience.selectedCourse);
   const selectedCount = audience.selectedIds.length;
+  // Every facet edit drops the ticks, naming a course included, so a tick
+  // taken before there is an assignable course could never be submitted.
+  // The controls that take one, and the column they are taken in, are
+  // withheld rather than shown dead.
+  const canAssign = blockedReason === null;
+  const showControls = canAssign && audience.rows.length > 0;
+  // Why a named course cannot be assigned. Naming none is not a fault to
+  // report -- the card answers "what does this person hold" that way.
+  const courseBlockedReason = audience.selectedCourse ? blockedReason : null;
 
   return (
     <Card>
@@ -169,66 +182,68 @@ export default function AssignTrainingCard({ courses }) {
           </Button>
         </div>
 
+        {courseBlockedReason !== null && (
+          <p className="text-right text-sm text-muted-foreground">
+            {courseBlockedReason}
+          </p>
+        )}
+
         {/* Choosing who, choosing a deadline and assigning are one motion,
             so they are one right-aligned cluster rather than two ends of a
             bar. Wrapping keeps that reading on a narrow screen. */}
-        <div className="flex flex-wrap items-end justify-end gap-3">
-          <span
-            className="inline-flex"
-            title={
-              audience.facetsEdited
-                ? "Search again before selecting everyone"
-                : undefined
-            }
-          >
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={audience.total === 0 || audience.facetsEdited}
-              onClick={audience.selectAllMatching}
-            >
-              {`Select all ${audience.total} matching`}
-            </Button>
-          </span>
-          <span className="text-sm text-muted-foreground">
-            {`${selectedCount} selected`}
-          </span>
-          {selectedCount > 0 && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={audience.clearSelection}
-            >
-              Clear
-            </Button>
-          )}
-
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="audience-deadline">Deadline (optional)</Label>
-            <Input
-              id="audience-deadline"
-              type="date"
-              className="w-44"
-              value={audience.deadline}
-              onChange={(event) => audience.setDeadline(event.target.value)}
-            />
-          </div>
-          <span className="inline-flex" title={blockedReason ?? undefined}>
-            <Button
-              type="button"
-              disabled={
-                blockedReason !== null ||
-                selectedCount === 0 ||
-                audience.assigning
+        {showControls && (
+          <div className="flex flex-wrap items-end justify-end gap-3">
+            <span
+              className="inline-flex"
+              title={
+                audience.facetsEdited
+                  ? "Search again before selecting everyone"
+                  : undefined
               }
+            >
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={audience.total === 0 || audience.facetsEdited}
+                onClick={audience.selectAllMatching}
+              >
+                {`Select all ${audience.total} matching`}
+              </Button>
+            </span>
+            <span className="text-sm text-muted-foreground">
+              {`${selectedCount} selected`}
+            </span>
+            {selectedCount > 0 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={audience.clearSelection}
+              >
+                Clear
+              </Button>
+            )}
+
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="audience-deadline">Deadline (optional)</Label>
+              <Input
+                id="audience-deadline"
+                type="date"
+                className="w-44"
+                value={audience.deadline}
+                onChange={(event) => audience.setDeadline(event.target.value)}
+              />
+            </div>
+            <Button
+              type="button"
+              disabled={selectedCount === 0 || audience.assigning}
               onClick={audience.assign}
             >
               Assign
             </Button>
-          </span>
-        </div>
+          </div>
+        )}
 
         {!audience.hasSearched ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
@@ -244,6 +259,7 @@ export default function AssignTrainingCard({ courses }) {
           <AudienceTable
             rows={audience.rows}
             courseScoped={audience.resultsCourseId !== ""}
+            selectable={canAssign}
             selectedIds={audience.selectedIds}
             onToggle={audience.toggleSelected}
             onTogglePage={audience.togglePage}

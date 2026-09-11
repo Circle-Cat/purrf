@@ -9,7 +9,8 @@ import {
   coursesHeldLabel,
 } from "@/pages/AdminTraining/utils";
 
-const COLUMN_COUNT = 7;
+/** Columns in a row, which the tick column is only sometimes one of. */
+const columnCountFor = (selectable) => (selectable ? 7 : 6);
 
 /** What to call somebody in the table and in a checkbox's label. */
 const personName = ({ preferredName, firstName, lastName }) =>
@@ -29,6 +30,10 @@ const personName = ({ preferredName, firstName, lastName }) =>
  * @param {Array<Object>} props.rows `TrainingAudienceRowDto` rows.
  * @param {boolean} props.courseScoped whether a course is in scope, which
  *   decides what the last column can answer.
+ * @param {boolean} props.selectable whether these people can be assigned
+ *   anything. A tick is dropped by the next facet edit, naming a course
+ *   included, so without an assignable course there is nothing a tick could
+ *   go on to do and no column to take one in.
  * @param {Array<number>} props.selectedIds ticked ids, across pages.
  * @param {(userId: number, checked: boolean) => void} props.onToggle
  * @param {(checked: boolean) => void} props.onTogglePage ticks or unticks
@@ -42,6 +47,7 @@ const personName = ({ preferredName, firstName, lastName }) =>
 export default function AudienceTable({
   rows,
   courseScoped,
+  selectable,
   selectedIds,
   onToggle,
   onTogglePage,
@@ -63,13 +69,17 @@ export default function AudienceTable({
         <table className="w-full min-w-fit border-collapse text-sm leading-normal">
           <thead>
             <tr>
-              <th className="border-b border-slate-200 px-4 py-3 text-left font-bold">
-                <Checkbox
-                  checked={pageAllTicked}
-                  onCheckedChange={(checked) => onTogglePage(checked === true)}
-                  aria-label="Select everyone on this page"
-                />
-              </th>
+              {selectable && (
+                <th className="border-b border-slate-200 px-4 py-3 text-left font-bold">
+                  <Checkbox
+                    checked={pageAllTicked}
+                    onCheckedChange={(checked) =>
+                      onTogglePage(checked === true)
+                    }
+                    aria-label="Select everyone on this page"
+                  />
+                </th>
+              )}
               <th className="border-b border-slate-200 px-4 py-3 text-left font-bold">
                 Name
               </th>
@@ -96,15 +106,17 @@ export default function AudienceTable({
               return (
                 <Fragment key={row.userId}>
                   <tr data-testid={`audience-row-${row.userId}`}>
-                    <td className="border-b border-slate-200 px-4 py-3">
-                      <Checkbox
-                        checked={selected.has(row.userId)}
-                        onCheckedChange={(checked) =>
-                          onToggle(row.userId, checked === true)
-                        }
-                        aria-label={`Select ${personName(row)}`}
-                      />
-                    </td>
+                    {selectable && (
+                      <td className="border-b border-slate-200 px-4 py-3">
+                        <Checkbox
+                          checked={selected.has(row.userId)}
+                          onCheckedChange={(checked) =>
+                            onToggle(row.userId, checked === true)
+                          }
+                          aria-label={`Select ${personName(row)}`}
+                        />
+                      </td>
+                    )}
                     <td className="border-b border-slate-200 px-4 py-3">
                       {personName(row)}
                     </td>
@@ -142,7 +154,7 @@ export default function AudienceTable({
                   {expanded && (
                     <UserAssignmentsRow
                       userId={row.userId}
-                      columnCount={COLUMN_COUNT}
+                      columnCount={columnCountFor(selectable)}
                       loading={loadingUserId === row.userId}
                       rows={rowsByUserId[row.userId]}
                     />

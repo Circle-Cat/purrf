@@ -102,45 +102,118 @@ describe("AssignTrainingCard", () => {
     ]);
   });
 
-  it("cannot assign before a course is named", async () => {
+  it("offers nothing to assign with before a course is named", async () => {
     renderCard();
 
-    expect(screen.getByRole("button", { name: "Assign" })).toBeDisabled();
-    // A browser shows no tooltip for a disabled control, so the reason has to
-    // hang on something that is not disabled.
-    const reason = screen.getByTitle("Pick a course to assign");
-    expect(reason).not.toBeDisabled();
     expect(
-      within(reason).getByRole("button", { name: "Assign" }),
-    ).toBeDisabled();
+      screen.queryByRole("button", { name: "Assign" }),
+    ).not.toBeInTheDocument();
+    // Naming no course is an ordinary way to use the card -- it also answers
+    // "what does this person hold" -- so it is not called out as a problem.
+    expect(
+      screen.queryByText("Pick a course to assign"),
+    ).not.toBeInTheDocument();
   });
 
-  it("cannot assign a course with nothing published", async () => {
+  it("says why a course with nothing published cannot be assigned", async () => {
     const user = userEvent.setup();
     renderCard();
 
     await pickCourse(user, "Residency Onboarding");
 
-    const reason = screen.getByTitle("Publish a package to this course first");
-    expect(reason).not.toBeDisabled();
     expect(
-      within(reason).getByRole("button", { name: "Assign" }),
-    ).toBeDisabled();
+      screen.getByText("Publish a package to this course first"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Assign" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("cannot assign a deactivated course", async () => {
+  it("says why a deactivated course cannot be assigned", async () => {
     const user = userEvent.setup();
     renderCard();
 
     await pickCourse(user, "Old Safety Briefing");
 
-    const reason = screen.getByTitle(
-      "This course is deactivated. Turn it back on to assign it.",
-    );
-    expect(reason).not.toBeDisabled();
     expect(
-      within(reason).getByRole("button", { name: "Assign" }),
-    ).toBeDisabled();
+      screen.getByText(
+        "This course is deactivated. Turn it back on to assign it.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Assign" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("holds the assignment controls back until somebody has been found", async () => {
+    const user = userEvent.setup();
+    renderCard();
+
+    await pickCourse(user, "Corporate Culture");
+
+    expect(
+      screen.queryByRole("button", { name: "Assign" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Deadline (optional)"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Select all/ }),
+    ).not.toBeInTheDocument();
+
+    await submitSearch(user);
+    await screen.findByTestId("audience-row-11");
+
+    expect(screen.getByRole("button", { name: "Assign" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Deadline (optional)")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Select all 1 matching" }),
+    ).toBeInTheDocument();
+  });
+
+  it("holds them back while the results are not scoped to a course", async () => {
+    const user = userEvent.setup();
+    renderCard();
+
+    await submitSearch(user);
+    await screen.findByTestId("audience-row-11");
+
+    expect(
+      screen.queryByRole("button", { name: "Assign" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Deadline (optional)"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Select all/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers no ticks while nothing can be assigned to the people found", async () => {
+    const user = userEvent.setup();
+    renderCard();
+
+    await submitSearch(user);
+    await screen.findByTestId("audience-row-11");
+
+    // A tick taken here would be dropped the moment a course was named, so
+    // there is no column to take one in.
+    expect(
+      screen.queryByLabelText("Select Ada Internal"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Select everyone on this page"),
+    ).not.toBeInTheDocument();
+
+    await pickCourse(user, "Corporate Culture");
+    await submitSearch(user);
+
+    expect(
+      await screen.findByLabelText("Select Ada Internal"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Select everyone on this page"),
+    ).toBeInTheDocument();
   });
 
   it("assigns the ticked people once a live course is named", async () => {
@@ -227,6 +300,7 @@ describe("AssignTrainingCard", () => {
       data: { userIds: [11, 12, 13], total: 3 },
     });
     renderCard();
+    await pickCourse(user, "Corporate Culture");
     await submitSearch(user);
 
     // Waiting on the label, not the call: the button only names the total
@@ -242,6 +316,7 @@ describe("AssignTrainingCard", () => {
   it("drops the ticks when a facet changes", async () => {
     const user = userEvent.setup();
     renderCard();
+    await pickCourse(user, "Corporate Culture");
     await submitSearch(user);
     await user.click(await screen.findByLabelText("Select Ada Internal"));
     expect(screen.getByText("1 selected")).toBeInTheDocument();
@@ -390,6 +465,7 @@ describe("AssignTrainingCard", () => {
     const user = userEvent.setup();
     searchAudience.mockResolvedValue(page([row()], 40));
     renderCard();
+    await pickCourse(user, "Corporate Culture");
     await submitSearch(user);
     const selectAll = await screen.findByRole("button", {
       name: "Select all 40 matching",
@@ -424,6 +500,7 @@ describe("AssignTrainingCard", () => {
     const user = userEvent.setup();
     searchAudience.mockResolvedValue(page([row()], 40));
     renderCard();
+    await pickCourse(user, "Corporate Culture");
     await submitSearch(user);
     await screen.findByRole("button", { name: "Select all 40 matching" });
 
