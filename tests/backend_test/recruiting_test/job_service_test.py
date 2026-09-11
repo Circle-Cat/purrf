@@ -188,6 +188,38 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.reviewer_id, 4)
 
+    async def test_get_job_includes_submitted_by_from_open_review(self):
+        """Who sent it up, so the page can tell whether the viewer may reassign.
+
+        Reassignment is the submitter's alone, and nothing else on the posting
+        says who that is -- the review id itself stays scoped to the assigned
+        reviewer, who is the one person this action routes around.
+        """
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        open_review = JobReviewEntity(
+            review_id=5,
+            job_id=job.job_id,
+            submitted_by=1,
+            reviewer_id=4,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+        self.review_repo.get_open_for_job = AsyncMock(return_value=open_review)
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertEqual(result.submitted_by, 1)
+
+    async def test_get_job_submitted_by_none_without_open_review(self):
+        """Nothing is waiting, so there is nobody whose request it is."""
+        job = self._job(status=JobStatus.DRAFT)
+        self.repo.get_by_job_id.return_value = job
+
+        result = await self.service.get_job(self.session, job.job_id)
+
+        self.assertIsNone(result.submitted_by)
+
     async def test_get_job_reviewer_id_none_without_open_review(self):
         """get_job leaves reviewer_id None when there is no open review."""
         job = self._job(status=JobStatus.DRAFT)
@@ -1040,6 +1072,158 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             await self.service.approve(self.session, review.review_id, acting_user_id=3)
         # The posting must not have advanced.
         self.assertEqual(review.status, JobReviewStatus.PENDING)
+
+    def _pending_review(self, *, review_id=50, submitted_by=1, reviewer_id=2):
+        """A PENDING review of the default job, for the reassign tests."""
+        return JobReviewEntity(
+            review_id=review_id,
+            job_id=1,
+            submitted_by=submitted_by,
+            reviewer_id=reviewer_id,
+            status=JobReviewStatus.PENDING,
+            kind=JobReviewKind.INITIAL,
+        )
+
+    async def test_reassign_review_moves_it_to_the_new_reviewer(self):
+        """The submitter redirects a review nobody can decide any more.
+
+        The posting's own status is untouched: it is still in the same gate,
+        waiting on a different person.
+        """
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        review = self._pending_review()
+        self.review_repo.get_open_for_job.return_value = review
+        self._two_approvers()
+
+        await self.service.reassign_review(
+            self.session, review.job_id, acting_user_id=1, reviewer_id=3
+        )
+
+        self.assertEqual(review.reviewer_id, 3)
+        self.assertEqual(review.status, JobReviewStatus.PENDING)
+        self.assertEqual(job.status, JobStatus.PENDING_REVIEW)
+
+    async def test_reassign_review_records_who_it_came_from(self):
+        """The event carries the previous reviewer, which the row no longer does.
+
+        Without it the timeline can say a reassignment happened but not what
+        it undid, and the row has already been overwritten by then.
+        """
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        review = self._pending_review()
+        self.review_repo.get_open_for_job.return_value = review
+        self._two_approvers()
+
+        await self.service.reassign_review(
+            self.session, review.job_id, acting_user_id=1, reviewer_id=3
+        )
+
+        self.record_event.assert_awaited_once()
+        kwargs = self.record_event.await_args.kwargs
+        self.assertEqual(kwargs["subject_type"], "job")
+        self.assertEqual(kwargs["subject_id"], 1)
+        self.assertEqual(kwargs["actor_id"], 1)
+        self.assertEqual(kwargs["event_type"], RecruitingEvent.REVIEW_REASSIGNED)
+        self.assertEqual(kwargs["details"]["reviewId"], review.review_id)
+        self.assertEqual(kwargs["details"]["previousReviewerId"], 2)
+        # The event must be written before the commit, or a rollback would
+        # drop the notification while the reassignment survived.
+        self.assertEqual(self.call_order, ["record", "commit"])
+
+    async def test_reassign_review_rejects_a_caller_who_is_not_the_submitter(self):
+        """Redirecting a question you asked, not taking over someone's duty.
+
+        Nobody may pull a review off its reviewer -- not the current reviewer,
+        not another approver. Same rule block requests already use.
+        """
+        review = self._pending_review()
+        self.review_repo.get_open_for_job.return_value = review
+        self._two_approvers()
+
+        with self.assertRaises(PermissionError):
+            await self.service.reassign_review(
+                self.session, review.job_id, acting_user_id=2, reviewer_id=3
+            )
+        self.assertEqual(review.reviewer_id, 2)
+
+    async def test_reassign_review_rejects_a_job_with_no_open_review(self):
+        """A decided review is not open, so there is nothing to redirect."""
+        self.review_repo.get_open_for_job.return_value = None
+        self._two_approvers()
+
+        with self.assertRaisesRegex(ValueError, "no open review"):
+            await self.service.reassign_review(
+                self.session, 999, acting_user_id=1, reviewer_id=3
+            )
+
+    async def test_reassign_review_locks_the_review_row(self):
+        """Serialised against a decision landing on the reviewer being replaced.
+
+        Without the lock an approve could commit between the read here and
+        the write below, leaving a decided review whose reviewer_id names
+        somebody who never saw it.
+        """
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        review = self._pending_review()
+        self.review_repo.get_open_for_job.return_value = review
+        self._two_approvers()
+
+        await self.service.reassign_review(
+            self.session, review.job_id, acting_user_id=1, reviewer_id=3
+        )
+
+        self.review_repo.get_open_for_job.assert_awaited_once_with(
+            self.session, review.job_id, for_update=True
+        )
+
+    async def test_reassign_review_rejects_the_reviewer_it_already_has(self):
+        review = self._pending_review()
+        self.review_repo.get_open_for_job.return_value = review
+        self._two_approvers()
+
+        with self.assertRaisesRegex(ValueError, "already"):
+            await self.service.reassign_review(
+                self.session, review.job_id, acting_user_id=1, reviewer_id=2
+            )
+
+    async def test_reassign_review_rejects_the_submitter_as_the_new_reviewer(self):
+        """Reassignment must not become a way round the no-self-review rule.
+
+        ``_open_review`` refuses a submitter who picks themselves; without the
+        same check here they could pick anyone, then reassign to themselves.
+        """
+        review = self._pending_review()
+        self.review_repo.get_open_for_job.return_value = review
+        self.perms.get_active_users_with_permission.return_value = [
+            self._approver(1),
+            self._approver(2),
+        ]
+
+        with self.assertRaisesRegex(ValueError, "self-review"):
+            await self.service.reassign_review(
+                self.session, review.job_id, acting_user_id=1, reviewer_id=1
+            )
+        self.assertEqual(review.reviewer_id, 2)
+
+    async def test_reassign_review_rejects_someone_who_is_not_an_active_approver(self):
+        """The pool already excludes deactivated and blocked accounts.
+
+        ``get_active_users_with_permission`` filters both flags, so a
+        reassignment cannot hand the review to another account that cannot
+        sign in -- which is the whole point of the action.
+        """
+        review = self._pending_review()
+        self.review_repo.get_open_for_job.return_value = review
+        self._two_approvers()
+
+        with self.assertRaisesRegex(ValueError, "active approver"):
+            await self.service.reassign_review(
+                self.session, review.job_id, acting_user_id=1, reviewer_id=9
+            )
+        self.assertEqual(review.reviewer_id, 2)
 
     async def test_approve_rejects_submitter_self_decision(self):
         """The submitter cannot approve their own posting even if they act."""

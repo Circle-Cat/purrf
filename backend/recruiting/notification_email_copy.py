@@ -241,6 +241,22 @@ def _job_review_requested(dto, stage):
 
 
 @_html_body
+def _job_review_reassigned(dto, stage):
+    # Not _job_review_requested's line: the recipient never saw the original
+    # request, so "submitted the posting for your review" would be their first
+    # news of something that has been waiting on somebody else. The copy has
+    # to say a handover happened. It does not say why -- the usual reason is
+    # that the previous reviewer's account was turned off, which is not this
+    # recipient's to know.
+    return (
+        f"Posting review reassigned: {dto.plain.job_title}",
+        f'<p>{dto.actor} moved the review of the posting "{dto.job_title}" '
+        "to you. It is waiting on your decision.</p>"
+        "<p>Open My Posting Reviews in Purrf to approve or reject it.</p>",
+    )
+
+
+@_html_body
 def _job_review_approved(dto, stage):
     return (
         f"Posting approved: {dto.plain.job_title}",

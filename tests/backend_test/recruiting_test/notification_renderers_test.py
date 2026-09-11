@@ -300,6 +300,30 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
         self.assertIn("Grace Hopper approved your submission", approved_body)
         self.assertEqual(rejected_subject, "Posting rejected: Backend Engineer")
 
+    async def test_review_reassigned_tells_the_new_reviewer_it_is_theirs_now(self):
+        """Its own copy, not review_opened's.
+
+        The recipient did not receive the original request, so "submitted the
+        posting for your review" would be their first news of a posting that
+        has been waiting elsewhere. The line has to say a handover happened.
+        """
+        actor = _make_user("Grace", "Hopper")
+        await self.insert_entities([actor])
+        job = await self._make_job()
+        event = await self._make_event(
+            "recruiting.review_reassigned",
+            "job",
+            job.job_id,
+            actor,
+            details={"kind": "initial", "reviewId": 1, "previousReviewerId": 9},
+        )
+
+        subject, body = await render_registry.render(self.session, event)
+
+        self.assertEqual(subject, "Posting review reassigned: Backend Engineer")
+        self.assertIn("Grace Hopper", body)
+        self.assertIn("Backend Engineer", body)
+
     async def test_blacklisted_carries_the_reason_and_names_no_page(self):
         actor, candidate = _make_user("Grace", "Hopper"), _make_user("Ada", "Lovelace")
         await self.insert_entities([actor, candidate])

@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import JobKind
 from backend.dto.job_dto import JobCreateDto
-from backend.dto.job_review_dto import JobReviewDecisionDto, JobSubmitDto
+from backend.dto.job_review_dto import (
+    JobReviewDecisionDto,
+    JobReviewReassignDto,
+    JobSubmitDto,
+)
 from backend.dto.user_context_dto import UserContextDto
 from backend.recruiting.recruiting_controller import RecruitingController
 
@@ -17,6 +21,7 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         self.service.submit_for_review = AsyncMock(return_value="submitted")
         self.service.approve = AsyncMock(return_value="approved")
         self.service.reject = AsyncMock(return_value="rejected")
+        self.service.reassign_review = AsyncMock(return_value="reassigned")
         self.service.list_active_approvers = AsyncMock(return_value=[])
         self.service.list_reviews_for_reviewer = AsyncMock(return_value=[])
         self.service.request_close = AsyncMock(return_value="close-requested")
@@ -90,6 +95,20 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         )
         self.service.reject.assert_awaited_once_with(self.session, 5, "fix it", 42)
         self.service.approve.assert_not_awaited()
+
+    async def test_reassign_review_passes_current_user_as_the_actor(self):
+        """The caller is the claimed submitter; the service decides if they are.
+
+        Passing it from the token rather than the body is what makes the
+        submitter-only rule enforceable at all.
+        """
+        body = JobReviewReassignDto(reviewer_id=7)
+        await self.controller.reassign_review(
+            current_user=self.user, job_id=3, reassign_data=body
+        )
+        self.service.reassign_review.assert_awaited_once_with(
+            self.session, 3, acting_user_id=42, reviewer_id=7
+        )
 
     async def test_my_reviews_uses_current_user(self):
         await self.controller.list_my_reviews(current_user=self.user)

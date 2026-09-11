@@ -22,6 +22,7 @@ from backend.entity.job_entity import JobEntity
 from backend.entity.job_review_entity import JobReviewEntity
 from backend.entity.users_entity import UsersEntity
 from backend.notification_management import recipient_registry
+from backend.notification_management.event_recorder import record_event
 from backend.notification_management.recipient_registry import resolve_recipients
 from backend.recruiting import recipient_resolvers  # noqa: F401  (registers)
 from tests.backend_test.repository_test.base_repository_test_lib import (
@@ -369,6 +370,69 @@ class RecipientResolversTest(BaseRepositoryTestLib):
         self.assertEqual(
             await resolve_recipients(self.session, event), {reviewer.user_id}
         )
+
+    async def test_review_reassigned_reaches_the_new_reviewer_only(self):
+        """Read off the row, which the service overwrote before recording.
+
+        The previous reviewer is deliberately left out: reassignment exists
+        for the case where they can no longer sign in, and even when it does
+        not, this is the submitter redirecting their own question rather than
+        anybody being relieved of a duty.
+        """
+        submitter, previous, reviewer = _make_user(), _make_user(), _make_user()
+        await self.insert_entities([submitter, previous, reviewer])
+        job = await self._make_job([])
+        review = await self._make_review(job.job_id, submitter, reviewer)
+        event = _event(
+            "recruiting.review_reassigned",
+            "job",
+            job.job_id,
+            details={
+                "reviewId": review.review_id,
+                "previousReviewerId": previous.user_id,
+            },
+        )
+
+        self.assertEqual(
+            await resolve_recipients(self.session, event), {reviewer.user_id}
+        )
+
+    async def test_review_reassigned_survives_the_unflushed_reviewer_write(self):
+        """The whole point of the action must not be undone by flush order.
+
+        ``reassign_review`` sets ``review.reviewer_id`` as an ORM attribute and
+        does not flush; sessions run ``autoflush=False`` (see
+        ``common/database.py``), so nothing carries that change to the database
+        except ``record_event``\'s own flush, which happens before it resolves.
+        If that ever stopped being true the resolver\'s SELECT would read the
+        previous reviewer and mail the handover notice to the very account the
+        reassignment exists to route around -- silently, since a notification
+        addressed to somebody is never obviously the wrong somebody.
+
+        Written against the real ``record_event`` rather than the resolver
+        alone, because the ordering is the thing under test.
+        """
+        submitter, previous, reviewer = _make_user(), _make_user(), _make_user()
+        await self.insert_entities([submitter, previous, reviewer])
+        job = await self._make_job([])
+        review = await self._make_review(job.job_id, submitter, previous)
+
+        # Exactly what the service does: an attribute set, with no flush.
+        review.reviewer_id = reviewer.user_id
+
+        _, notifications = await record_event(
+            self.session,
+            subject_type="job",
+            subject_id=job.job_id,
+            actor_id=submitter.user_id,
+            event_type=RecruitingEvent.REVIEW_REASSIGNED,
+            details={
+                "reviewId": review.review_id,
+                "previousReviewerId": previous.user_id,
+            },
+        )
+
+        self.assertEqual({n.user_id for n in notifications}, {reviewer.user_id})
 
     async def test_review_decided_reaches_the_submitter_not_the_owners(self):
         """Submitting is gated on permission, not ownership.

@@ -242,13 +242,19 @@ async def _render_mentioned(session, event):
     return _with_footer(copy._mentioned(dto, None))
 
 
-# --- review_opened / review_decided (subject is the job) ----------------
+# --- review_opened / review_reassigned / review_decided (subject is the job) --
 
 
 @register_render("recruiting.review_opened")
 async def _render_review_opened(session, event):
     dto = await _base_dto(session, event)
     return _with_footer(copy._job_review_requested(dto, None))
+
+
+@register_render("recruiting.review_reassigned")
+async def _render_review_reassigned(session, event):
+    dto = await _base_dto(session, event)
+    return _with_footer(copy._job_review_reassigned(dto, None))
 
 
 @register_render("recruiting.review_decided")

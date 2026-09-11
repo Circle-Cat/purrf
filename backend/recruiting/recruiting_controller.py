@@ -4,7 +4,11 @@ from backend.utils.permission_decorators import authenticate
 from backend.common.permissions import Permission
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.job_dto import JobCreateDto
-from backend.dto.job_review_dto import JobReviewDecisionDto, JobSubmitDto
+from backend.dto.job_review_dto import (
+    JobReviewDecisionDto,
+    JobReviewReassignDto,
+    JobSubmitDto,
+)
 from backend.common.api_endpoints import (
     RECRUITING_JOBS_ENDPOINT,
     RECRUITING_JOB_ENDPOINT,
@@ -16,6 +20,7 @@ from backend.common.api_endpoints import (
     RECRUITING_APPROVERS_ENDPOINT,
     RECRUITING_REVIEWS_ENDPOINT,
     RECRUITING_REVIEW_ENDPOINT,
+    RECRUITING_JOB_REVIEW_REVIEWER_ENDPOINT,
     RECRUITING_INTERVIEW_POOL_ENDPOINT,
     RECRUITING_JOB_OWNERS_ENDPOINT,
     RECRUITING_EMAIL_SYNC_ENDPOINT,
@@ -159,6 +164,17 @@ class RecruitingController:
             RECRUITING_REVIEW_ENDPOINT,
             endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_APPROVE])(
                 self.review_decision
+            ),
+            methods=["PATCH"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_JOB_REVIEW_REVIEWER_ENDPOINT,
+            # JOB_WRITE, not JOB_APPROVE: the caller is the submitter, who
+            # need not be an approver at all. The submitter-only rule itself
+            # is enforced in the service, against the review row.
+            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
+                self.reassign_review
             ),
             methods=["PATCH"],
             response_model=None,
@@ -337,6 +353,22 @@ class RecruitingController:
                 )
                 message = "Review rejected."
         return api_response(message=message, data=result)
+
+    async def reassign_review(
+        self,
+        current_user: UserContextDto,
+        job_id: int,
+        reassign_data: JobReviewReassignDto,
+    ):
+        """Move a posting's open review to a different approver."""
+        async with self.database.session() as session:
+            result = await self.job_service.reassign_review(
+                session,
+                job_id,
+                acting_user_id=current_user.user_id,
+                reviewer_id=reassign_data.reviewer_id,
+            )
+        return api_response(message="Review reassigned.", data=result)
 
     async def get_job(self, current_user: UserContextDto, job_id: int):
         """Fetch one posting."""

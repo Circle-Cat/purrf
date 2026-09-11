@@ -20,6 +20,17 @@ class JobReviewDecisionDto(BaseRequestDto):
     comment: str | None = None
 
 
+class JobReviewReassignDto(BaseRequestDto):
+    """Request body for moving an open review to a different approver.
+
+    Carries only the destination: who may do this is the authenticated
+    caller, read from the token rather than the body, and which review is
+    the path parameter.
+    """
+
+    reviewer_id: int
+
+
 class JobReviewDto(BaseDto):
     """Response shape for a single review cycle."""
 

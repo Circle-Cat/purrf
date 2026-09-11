@@ -907,6 +907,101 @@ class JobService:
         await session.commit()
         return self.recruiting_mapper.to_job_dto(job)
 
+    async def reassign_review(
+        self,
+        session: AsyncSession,
+        job_id: int,
+        *,
+        acting_user_id: int,
+        reviewer_id: int,
+    ) -> JobDto:
+        """Hand a posting's open review to a different approver. Commits.
+
+        Done by the submitter, not by the reviewer: this is redirecting a
+        question you asked, not handing off a duty you were given. Nobody
+        takes a review over -- the same rule ``BlockService.reassign`` applies
+        to block requests.
+
+        Without this a posting whose reviewer is later deactivated or blocked
+        can never leave its gate. ``_require_pending_review`` admits only the
+        assigned reviewer (a super admin cannot decide it either, the check
+        being on identity rather than permission), ``_open_review`` refuses a
+        second review while one is open, and ``AuthMiddleware`` refuses the
+        one person who could act. Reassignment is the exit.
+
+        The posting's status is deliberately untouched: it is still in the
+        same gate, now waiting on somebody who can actually answer.
+
+        Addressed by job rather than by review id, matching ``submit_for_review``
+        and ``request_close`` -- the same actor, the same permission, and the
+        same thing being set. It also keeps the review id where it already is:
+        only ``list_reviews_for_reviewer`` hands one out, and that is scoped
+        to the assigned reviewer, who is precisely the person this action
+        exists to route around.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_id (int): The posting whose open review is being moved.
+            acting_user_id (int): Must be the review's submitter.
+            reviewer_id (int): The approver to move it to.
+
+        Returns:
+            JobDto: The posting, now naming the new reviewer.
+
+        Raises:
+            ValueError: If the posting has no open review, the new reviewer is
+                the one it already has, the submitter picked themselves, or
+                the new reviewer is not an active approver.
+            PermissionError: If the caller did not submit the review.
+        """
+        # Locked for the same reason a decision locks it: a concurrent approve
+        # must not land on the reviewer this call is replacing, which would
+        # leave a decided review naming somebody who never saw it.
+        review = await self.job_review_repository.get_open_for_job(
+            session, job_id, for_update=True
+        )
+        if review is None:
+            raise ValueError(f"Job {job_id} has no open review to reassign")
+        if review.submitted_by != acting_user_id:
+            raise PermissionError(
+                f"Only the submitter may reassign job {job_id}'s review"
+            )
+        if review.reviewer_id == reviewer_id:
+            raise ValueError("That reviewer already has this review")
+        if reviewer_id == review.submitted_by:
+            # Otherwise reassignment is a way round _open_review's rule: pick
+            # anyone, then move it to yourself.
+            raise ValueError("Submitter cannot self-review the posting")
+
+        approvers = await self.list_active_approvers(session)
+        if reviewer_id not in {a.user_id for a in approvers}:
+            raise ValueError("Reviewer is not an active approver")
+
+        previous_reviewer_id = review.reviewer_id
+        review.reviewer_id = reviewer_id
+
+        job = await self._require_job(session, review.job_id)
+        # After the reviewer write, per record_event's contract: the resolver
+        # reads the new reviewer off the review row this statement just set.
+        await record_event(
+            session,
+            subject_type="job",
+            subject_id=job.job_id,
+            actor_id=acting_user_id,
+            event_type=RecruitingEvent.REVIEW_REASSIGNED,
+            details={
+                "kind": review.kind.value,
+                "reviewId": review.review_id,
+                # The row no longer carries it, and a timeline entry that
+                # cannot say what it undid is not much of a record.
+                "previousReviewerId": previous_reviewer_id,
+            },
+        )
+        await session.commit()
+        return self.recruiting_mapper.to_job_dto(
+            job, reviewer_id=reviewer_id, submit_blockers=submit_blockers(job)
+        )
+
     async def _require_pending_review(
         self, session: AsyncSession, review_id: int, acting_user_id: int
     ) -> JobReviewEntity:
@@ -1085,11 +1180,12 @@ class JobService:
             job_id (int): Identifier of the posting to retrieve.
 
         Returns:
-            JobDto: The requested posting, with ``reviewer_id`` and
-            ``submit_message`` set from its open (PENDING) review cycle when
-            one exists, and ``last_reject_comment``/``last_reject_kind`` set
-            from its most-recent review when that review was a rejection,
-            otherwise ``None`` for all four.
+            JobDto: The requested posting, with ``reviewer_id``,
+            ``submitted_by`` and ``submit_message`` set from its open
+            (PENDING) review cycle when one exists, and
+            ``last_reject_comment``/``last_reject_kind`` set from its
+            most-recent review when that review was a rejection,
+            otherwise ``None`` for all five.
 
         Raises:
             ValueError: If no posting with the given id exists.
@@ -1097,6 +1193,7 @@ class JobService:
         job = await self._require_job(session, job_id)
         open_review = await self.job_review_repository.get_open_for_job(session, job_id)
         reviewer_id = open_review.reviewer_id if open_review is not None else None
+        submitted_by = open_review.submitted_by if open_review is not None else None
         submit_message = open_review.submit_message if open_review is not None else None
         latest_reviews = await self.job_review_repository.get_latest_reviews(
             session, [job_id]
@@ -1107,6 +1204,7 @@ class JobService:
             last_reject_comment=comment,
             last_reject_kind=kind,
             reviewer_id=reviewer_id,
+            submitted_by=submitted_by,
             submit_message=submit_message,
         )
 

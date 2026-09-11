@@ -1228,4 +1228,110 @@ describe("PostingDetailPage", () => {
     );
     expect(screen.getByText("Cooldown days: 60")).toBeInTheDocument();
   });
+  describe("changing the reviewer", () => {
+    const pendingJob = (submittedBy) => ({
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        kind: "employment",
+        status: "pending_review",
+        pipelineConfig: null,
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: 9,
+        submittedBy,
+      },
+    });
+
+    it("offers the action to the submitter", async () => {
+      api.getJob.mockResolvedValue(pendingJob(5));
+      renderAt(1);
+
+      expect(
+        await screen.findByRole("button", { name: "Change reviewer" }),
+      ).toBeInTheDocument();
+    });
+
+    it("withholds it from everyone else", async () => {
+      // Reassignment is the submitter's alone -- not the reviewer's, and not
+      // another approver's. A colleague viewing the same posting sees the
+      // assigned reviewer without an action on it.
+      api.getJob.mockResolvedValue(pendingJob(7));
+      renderAt(1);
+
+      await screen.findByText(/Assigned reviewer:/);
+      expect(
+        screen.queryByRole("button", { name: "Change reviewer" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("withholds it when no review is open", async () => {
+      // submittedBy is null unless something is waiting, so a published
+      // posting offers nothing to redirect.
+      api.getJob.mockResolvedValue(pendingJob(null));
+      renderAt(1);
+
+      await screen.findByText(/Assigned reviewer:/);
+      expect(
+        screen.queryByRole("button", { name: "Change reviewer" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("sends the new reviewer and reloads the posting", async () => {
+      api.getJob.mockResolvedValue(pendingJob(5));
+      api.listApprovers.mockResolvedValue({
+        data: [
+          { userId: 5, name: "Me", email: "me@x.com" },
+          { userId: 9, name: "Gone", email: "gone@x.com" },
+          { userId: 3, name: "Cara", email: "cara@x.com" },
+        ],
+      });
+      api.reassignReviewer.mockResolvedValue({ data: {} });
+      const user = userEvent.setup();
+      renderAt(1);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Change reviewer" }),
+      );
+      fireEvent.change(await screen.findByLabelText("Reviewer"), {
+        target: { value: "3" },
+      });
+      await user.click(screen.getByRole("button", { name: "Reassign" }));
+
+      await waitFor(() =>
+        expect(api.reassignReviewer).toHaveBeenCalledWith("1", {
+          reviewerId: 3,
+        }),
+      );
+      // Reloaded so the page shows who has it now, rather than the stale name.
+      await waitFor(() => expect(api.getJob).toHaveBeenCalledTimes(2));
+    });
+
+    it("keeps the dialog open and reports why when the call fails", async () => {
+      api.getJob.mockResolvedValue(pendingJob(5));
+      api.listApprovers.mockResolvedValue({
+        data: [{ userId: 3, name: "Cara", email: "cara@x.com" }],
+      });
+      api.reassignReviewer.mockRejectedValue(
+        new Error("no longer an approver"),
+      );
+      const user = userEvent.setup();
+      renderAt(1);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Change reviewer" }),
+      );
+      fireEvent.change(await screen.findByLabelText("Reviewer"), {
+        target: { value: "3" },
+      });
+      await user.click(screen.getByRole("button", { name: "Reassign" }));
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith("no longer an approver"),
+      );
+      expect(screen.getByLabelText("Reviewer")).toBeInTheDocument();
+    });
+  });
 });

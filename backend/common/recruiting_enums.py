@@ -139,6 +139,7 @@ class RecruitingEvent(StrEnum):
     INTERVIEW_UPDATED = "recruiting.interview_updated"
     INTERVIEW_CANCELLED = "recruiting.interview_cancelled"
     REVIEW_OPENED = "recruiting.review_opened"
+    REVIEW_REASSIGNED = "recruiting.review_reassigned"
     REVIEW_DECIDED = "recruiting.review_decided"
     MENTIONED = "recruiting.mentioned"
 

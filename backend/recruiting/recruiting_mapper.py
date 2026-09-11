@@ -62,6 +62,7 @@ class RecruitingMapper:
         last_reject_comment: str | None = None,
         last_reject_kind: str | None = None,
         reviewer_id: int | None = None,
+        submitted_by: int | None = None,
         submit_message: str | None = None,
         submit_blockers: list[str] | None = None,
     ) -> JobDto:
@@ -79,6 +80,8 @@ class RecruitingMapper:
             reviewer_id (int | None): The user_id of the posting's currently
                 assigned reviewer, when it has an open (PENDING) review
                 cycle, otherwise ``None``. Serialised as ``reviewerId``.
+            submitted_by (int | None): The user_id who opened the posting's
+                currently-open review, or None when none is open.
             submit_message (str | None): The note the requester wrote to the
                 reviewer when opening that same review cycle, or ``None``
                 when there is no open cycle or it carried no note.
@@ -107,6 +110,7 @@ class RecruitingMapper:
             was_published=job.was_published or False,
             cooldown_days=job.cooldown_days,
             reviewer_id=reviewer_id,
+            submitted_by=submitted_by,
             submit_message=submit_message,
             submit_blockers=submit_blockers or [],
         )
