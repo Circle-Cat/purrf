@@ -1,0 +1,406 @@
+{
+  "$defs": {
+    "EducationRecord": {
+      "additionalProperties": false,
+      "description": "One education entry. Dates are ``YYYY-MM-DD`` or absent.",
+      "properties": {
+        "degree": {
+          "default": "",
+          "title": "Degree",
+          "type": "string"
+        },
+        "school": {
+          "default": "",
+          "title": "School",
+          "type": "string"
+        },
+        "field_of_study": {
+          "default": "",
+          "title": "Field Of Study",
+          "type": "string"
+        },
+        "start_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Date"
+        },
+        "end_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Date"
+        }
+      },
+      "title": "EducationRecord",
+      "type": "object"
+    },
+    "PersonRecord": {
+      "additionalProperties": false,
+      "description": "A mentor or a mentee, carrying only what the matcher scores on.\n\nContact fields and names beyond ``display_name`` are absent: the matcher has\nno consumer for them.",
+      "properties": {
+        "role": {
+          "enum": ["mentor", "mentee"],
+          "title": "Role",
+          "type": "string"
+        },
+        "user_id": {
+          "title": "User Id",
+          "type": "string"
+        },
+        "display_name": {
+          "title": "Display Name",
+          "type": "string"
+        },
+        "timezone": {
+          "default": "",
+          "title": "Timezone",
+          "type": "string"
+        },
+        "goal": {
+          "default": "",
+          "title": "Goal",
+          "type": "string"
+        },
+        "skills": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "title": "Skills",
+          "type": "object"
+        },
+        "education": {
+          "items": {
+            "$ref": "#/$defs/EducationRecord"
+          },
+          "title": "Education",
+          "type": "array"
+        },
+        "work_history": {
+          "items": {
+            "$ref": "#/$defs/WorkHistoryRecord"
+          },
+          "title": "Work History",
+          "type": "array"
+        },
+        "expected_partner_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Expected Partner Ids",
+          "type": "array"
+        },
+        "unexpected_partner_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unexpected Partner Ids",
+          "type": "array"
+        },
+        "specific_industry": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "boolean"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Specific Industry"
+        },
+        "max_partners": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Partners"
+        },
+        "career_transition": {
+          "anyOf": [
+            {
+              "enum": ["none", "path_a", "path_b"],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Career Transition"
+        },
+        "career_transition_other": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Career Transition Other"
+        },
+        "development_region": {
+          "anyOf": [
+            {
+              "enum": ["us", "canada", "china"],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Development Region"
+        },
+        "development_region_other": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Development Region Other"
+        },
+        "external_mentoring_exp": {
+          "anyOf": [
+            {
+              "enum": ["none", "1_to_3", "3_plus"],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External Mentoring Exp"
+        },
+        "mentorship_rounds_participated": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mentorship Rounds Participated"
+        },
+        "mentorship_rounds_completed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mentorship Rounds Completed"
+        },
+        "transition_type": {
+          "anyOf": [
+            {
+              "enum": ["none", "path_a", "path_b", "considering"],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transition Type"
+        },
+        "transition_type_other": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transition Type Other"
+        },
+        "urgency": {
+          "anyOf": [
+            {
+              "enum": ["3m", "6m", "1y_plus", "none"],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Urgency"
+        },
+        "job_market_region": {
+          "anyOf": [
+            {
+              "enum": ["us", "canada", "china"],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Job Market Region"
+        },
+        "job_market_region_other": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Job Market Region Other"
+        },
+        "mentee_stage": {
+          "anyOf": [
+            {
+              "enum": [
+                "job_searching",
+                "employed_growth",
+                "career_switch",
+                "grad_planning"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mentee Stage"
+        }
+      },
+      "required": ["role", "user_id", "display_name", "skills"],
+      "title": "PersonRecord",
+      "type": "object"
+    },
+    "WorkHistoryRecord": {
+      "additionalProperties": false,
+      "description": "One work history entry. Dates are ``YYYY-MM-DD`` or absent.",
+      "properties": {
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        },
+        "company": {
+          "default": "",
+          "title": "Company",
+          "type": "string"
+        },
+        "start_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Date"
+        },
+        "end_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Date"
+        },
+        "is_current_job": {
+          "default": false,
+          "title": "Is Current Job",
+          "type": "boolean"
+        }
+      },
+      "title": "WorkHistoryRecord",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "What Purrf writes to Cloud Storage for one matching run.",
+  "properties": {
+    "contract_version": {
+      "default": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "round_id": {
+      "title": "Round Id",
+      "type": "integer"
+    },
+    "generated_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Generated At"
+    },
+    "mentors": {
+      "items": {
+        "$ref": "#/$defs/PersonRecord"
+      },
+      "title": "Mentors",
+      "type": "array"
+    },
+    "mentees": {
+      "items": {
+        "$ref": "#/$defs/PersonRecord"
+      },
+      "title": "Mentees",
+      "type": "array"
+    }
+  },
+  "required": ["run_id", "round_id", "mentors", "mentees"],
+  "title": "MatchingPayload",
+  "type": "object"
+}

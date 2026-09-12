@@ -28,8 +28,14 @@ py_library(
         "//backend/utils:date_time_util",
         "//backend/utils:permission_decorators",
         "@pypi//intervaltree",
+        "@pypi//pydantic",
         "@pypi//python_dateutil",
         "@pypi//sortedcontainers",
         "@pypi//sqlalchemy",
     ],
+)
+
+filegroup(
+    name = "contracts",
+    srcs = glob(["contracts/*.json"]),
 )
