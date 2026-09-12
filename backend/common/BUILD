@@ -269,3 +269,12 @@ py_library(
     name = "mentorship_survey_codes",
     srcs = ["mentorship_survey_codes.py"],
 )
+
+py_library(
+    name = "matching_job_client",
+    srcs = ["matching_job_client.py"],
+    deps = [
+        "@pypi//google_auth",
+        "@pypi//requests",
+    ],
+)
