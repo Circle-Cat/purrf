@@ -10,14 +10,14 @@ from datetime import datetime, timezone
 
 from backend.common.mentorship_enums import ParticipantRole
 from backend.common.mentorship_survey_codes import (
-    CAREER_TRANSITION_CODES,
-    DEVELOPMENT_REGION_CODES,
-    EXTERNAL_MENTORING_EXP_CODES,
-    JOB_MARKET_REGION_CODES,
+    CAREER_TRANSITION_MAP,
+    DEVELOPMENT_REGION_MAP,
+    EXTERNAL_MENTORING_EXP_MAP,
+    JOB_MARKET_REGION_MAP,
     MENTEE_STAGE_MAP,
     TRANSITION_TYPE_MAP,
     URGENCY_MAP,
-    code_or_none,
+    VOCABULARIES,
     mapped_code_or_none,
     other_text_or_none,
 )
@@ -180,6 +180,7 @@ class MatchingPayloadService:
             generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
             mentors=mentors,
             mentees=mentees,
+            vocabularies=VOCABULARIES,
         )
 
     def _person(
@@ -225,21 +226,21 @@ class MatchingPayloadService:
                     if participant.max_partners is not None
                     else 1
                 ),
-                career_transition=code_or_none(
-                    survey.get("career_transition"), CAREER_TRANSITION_CODES
+                career_transition=mapped_code_or_none(
+                    survey.get("career_transition"), CAREER_TRANSITION_MAP
                 ),
                 career_transition_other=other_text_or_none(
                     survey.get("career_transition"),
                     survey.get("career_transition_other"),
                 ),
-                development_region=code_or_none(
-                    survey.get("region"), DEVELOPMENT_REGION_CODES
+                development_region=mapped_code_or_none(
+                    survey.get("region"), DEVELOPMENT_REGION_MAP
                 ),
                 development_region_other=other_text_or_none(
                     survey.get("region"), survey.get("region_other")
                 ),
-                external_mentoring_exp=code_or_none(
-                    survey.get("external_mentoring_exp"), EXTERNAL_MENTORING_EXP_CODES
+                external_mentoring_exp=mapped_code_or_none(
+                    survey.get("external_mentoring_exp"), EXTERNAL_MENTORING_EXP_MAP
                 ),
                 mentorship_rounds_participated=paired,
                 mentorship_rounds_completed=completed,
@@ -261,8 +262,8 @@ class MatchingPayloadService:
                 participant.current_stage, MENTEE_STAGE_MAP
             ),
             urgency=mapped_code_or_none(participant.time_urgency, URGENCY_MAP),
-            job_market_region=code_or_none(
-                survey.get("target_region"), JOB_MARKET_REGION_CODES
+            job_market_region=mapped_code_or_none(
+                survey.get("target_region"), JOB_MARKET_REGION_MAP
             ),
             job_market_region_other=other_text_or_none(
                 survey.get("target_region"), survey.get("target_region_other")

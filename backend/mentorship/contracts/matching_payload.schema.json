@@ -139,7 +139,11 @@
         "career_transition": {
           "anyOf": [
             {
-              "enum": ["none", "path_a", "path_b"],
+              "enum": [
+                "none_cs_background",
+                "via_cs_masters",
+                "via_work_experience"
+              ],
               "type": "string"
             },
             {
@@ -226,7 +230,12 @@
         "transition_type": {
           "anyOf": [
             {
-              "enum": ["none", "path_a", "path_b", "considering"],
+              "enum": [
+                "none_cs_background",
+                "via_cs_masters",
+                "via_work_experience",
+                "considering_transition"
+              ],
               "type": "string"
             },
             {
@@ -251,7 +260,7 @@
         "urgency": {
           "anyOf": [
             {
-              "enum": ["3m", "6m", "1y_plus", "none"],
+              "enum": ["3m", "6m", "1y_plus", "no_timeline"],
               "type": "string"
             },
             {
@@ -361,7 +370,7 @@
   "description": "What Purrf writes to Cloud Storage for one matching run.",
   "properties": {
     "contract_version": {
-      "default": 1,
+      "default": 2,
       "title": "Contract Version",
       "type": "integer"
     },
@@ -398,6 +407,16 @@
       },
       "title": "Mentees",
       "type": "array"
+    },
+    "vocabularies": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "title": "Vocabularies",
+      "type": "object"
     }
   },
   "required": ["run_id", "round_id", "mentors", "mentees"],

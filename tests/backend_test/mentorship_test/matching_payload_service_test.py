@@ -163,7 +163,7 @@ class MatchingPayloadServiceTest(BaseRepositoryTestLib):
         record = payload.mentees[0]
         self.assertEqual(record.mentee_stage, "employed_growth")
         self.assertEqual(record.urgency, "3m")
-        self.assertEqual(record.transition_type, "path_a")
+        self.assertEqual(record.transition_type, "via_cs_masters")
 
     async def test_other_answer_travels_beside_the_enum(self):
         round_entity, mentor, mentee = await self._minimal_round()
@@ -254,6 +254,41 @@ class MatchingPayloadServiceTest(BaseRepositoryTestLib):
                 self.session, round_entity.round_id, [mentor.user_id]
             )
 
+    async def test_payload_carries_the_wording_behind_every_code(self):
+        round_entity, mentor, mentee = await self._minimal_round()
+        await self._preference(mentee, specific_industry={})
+
+        payload = await self.service.build_matching_payload(
+            self.session, round_entity.round_id, [mentor.user_id, mentee.user_id]
+        )
+
+        # A consumer rendering an answer reads it here rather than keeping a
+        # translation of its own.
+        self.assertEqual(
+            payload.vocabularies["urgency"]["1y_plus"],
+            "More than 1 year; long-term planning.",
+        )
+        self.assertEqual(
+            payload.vocabularies["skills"]["resume_guidance"],
+            "Resume/LinkedIn Profile",
+        )
+        self.assertIn(
+            "CS master", payload.vocabularies["transition_type"]["via_cs_masters"]
+        )
+
+    async def test_every_code_a_person_can_carry_has_wording(self):
+        round_entity, mentor, mentee = await self._minimal_round()
+        await self._preference(mentee, specific_industry={})
+
+        payload = await self.service.build_matching_payload(
+            self.session, round_entity.round_id, [mentor.user_id, mentee.user_id]
+        )
+
+        for field, labels in payload.vocabularies.items():
+            self.assertTrue(labels, f"{field} has no wording")
+            for code, label in labels.items():
+                self.assertTrue(label.strip(), f"{field}.{code} has no wording")
+
     async def test_run_id_names_the_round(self):
         round_entity, mentor, mentee = await self._minimal_round()
         await self._preference(mentee, specific_industry={})
@@ -263,7 +298,7 @@ class MatchingPayloadServiceTest(BaseRepositoryTestLib):
         )
 
         self.assertTrue(payload.run_id.startswith(f"r{round_entity.round_id}-"))
-        self.assertEqual(payload.contract_version, 1)
+        self.assertEqual(payload.contract_version, 2)
 
 
 if __name__ == "__main__":
