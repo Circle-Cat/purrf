@@ -264,3 +264,8 @@ py_library(
         ":mentorship_enums",
     ],
 )
+
+py_library(
+    name = "mentorship_survey_codes",
+    srcs = ["mentorship_survey_codes.py"],
+)
