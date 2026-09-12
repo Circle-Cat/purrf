@@ -1,9 +1,12 @@
 import json
 import unittest
 from pathlib import Path
+from typing import Literal, get_args, get_origin
 
+from backend.common.mentorship_survey_codes import VOCABULARIES
 from backend.mentorship.matching_contract import (
     CONTRACT_VERSION,
+    INDUSTRY_KEYS,
     SKILL_KEYS,
     MatchingPayload,
     PersonRecord,
@@ -147,6 +150,33 @@ class MatchingContractTest(unittest.TestCase):
         again = MatchingPayload.model_validate(json.loads(payload.model_dump_json()))
         self.assertEqual(again.contract_version, CONTRACT_VERSION)
         self.assertEqual(again.mentors[0].user_id, "1")
+
+    def test_every_code_the_contract_allows_has_wording(self):
+        """A renamed or added code without a sentence behind it fails here.
+
+        The wording is what a consumer renders instead of keeping its own
+        translation, so a code that has none puts a raw value in front of
+        somebody.
+        """
+        for field_name, labels in VOCABULARIES.items():
+            if field_name == "skills":
+                self.assertEqual(set(labels), set(SKILL_KEYS))
+                continue
+            if field_name == "specific_industry":
+                self.assertEqual(set(labels), set(INDUSTRY_KEYS))
+                continue
+
+            annotation = PersonRecord.model_fields[field_name].annotation
+            options: set[str] = set()
+            for arg in get_args(annotation):
+                if get_origin(arg) is Literal:
+                    options.update(get_args(arg))
+            self.assertTrue(options, f"{field_name} is not a Literal any more")
+            self.assertEqual(
+                options,
+                set(labels),
+                f"{field_name}: codes and wording have drifted apart",
+            )
 
     def test_generated_schemas_are_committed_and_current(self):
         # Compare only; never write. The bazel runfiles tree is read-only.
