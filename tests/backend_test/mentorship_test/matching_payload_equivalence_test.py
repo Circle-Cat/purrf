@@ -4,6 +4,10 @@ Both read the same rows and share the survey code tables, but they query
 separately and encode differently. This pins them together on every field they
 have in common, so a change to one that the other does not follow shows up here
 rather than as a quiet difference in a matching run.
+
+Temporary by design. The export is being retired; delete this file along with
+it rather than repairing it, because at that point there is nothing left to
+agree with.
 """
 
 import json
