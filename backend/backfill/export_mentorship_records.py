@@ -373,7 +373,9 @@ async def fetch_participants_data(
             "first_name": user.first_name,
             "last_name": user.last_name,
             "preferred_name": user.preferred_name or "",
-            "timezone": user.timezone.value if user.timezone else "",
+            # A plain string column since UserTimezone was retired; calling
+            # .value on it raised on every user who had one set.
+            "timezone": user.timezone or "",
             "communication_channel": (
                 user.communication_channel.value if user.communication_channel else ""
             ),

@@ -47,14 +47,6 @@ def _date_or_none(value) -> str | None:
     return value[:10] or None
 
 
-def _timezone_name(user) -> str:
-    """The IANA name, whether the column has been coerced to its enum yet."""
-    zone = user.timezone
-    if zone is None:
-        return ""
-    return getattr(zone, "value", zone)
-
-
 def _display_name(user) -> str:
     """Preferred name when there is one, otherwise the legal name."""
     preferred = (user.preferred_name or "").strip()
@@ -206,7 +198,7 @@ class MatchingPayloadService:
             "role": "mentor" if is_mentor else "mentee",
             "user_id": user.user_id,
             "display_name": _display_name(user),
-            "timezone": _timezone_name(user),
+            "timezone": user.timezone or "",
             "goal": participant.goal or "",
             "skills": {
                 key: bool(getattr(preference, key, False) if preference else False)

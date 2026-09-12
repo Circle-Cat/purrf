@@ -133,3 +133,17 @@ py_test(
         "//tests/backend_test/repository_test:base_repository_test_lib",
     ],
 )
+
+py_test(
+    name = "matching_payload_equivalence_test",
+    srcs = ["matching_payload_equivalence_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/backfill:export_mentorship_records_lib",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)
