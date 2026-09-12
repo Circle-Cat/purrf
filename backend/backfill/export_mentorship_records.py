@@ -22,6 +22,15 @@ from backend.common.mentorship_enums import (
     TrainingStatus,
 )
 from backend.common.logger import get_logger
+from backend.common.mentorship_survey_codes import (
+    CAREER_TRANSITION_CODES,
+    DEVELOPMENT_REGION_CODES,
+    JOB_MARKET_REGION_CODES,
+    MENTEE_STAGE_MAP,
+    PREV_MENTORING_EXP_MAP,
+    TRANSITION_TYPE_MAP,
+    URGENCY_MAP,
+)
 
 logger = get_logger()
 
@@ -41,71 +50,9 @@ SKILLSET_COLUMNS = [
 # specific_industry is emitted as a JSON object with all four keys present.
 INDUSTRY_KEYS = ["swe", "ds", "pm", "uiux"]
 
-# ─── Survey encodings ───────────────────────────────────────────────────────
-# Each map below translates a backend storage key into the matching-data spec
-# code emitted in the CSV. The "Frontend label" lines are the exact text shown
-# in MentorshipRegistrationDialog.jsx so the mapping stays auditable.
-
-# Mentor — career_transition (backend key already matches spec code)
-#   none   "No. My undergraduate background was already in the CS field."
-#   path_a "Yes, Path A: Non-CS undergraduate background → CS master's degree → technical role."
-#   path_b "Yes, Path B: Non-CS undergraduate background → transitioned into a technical role after several years of work experience."
-#   other  "Other: Please briefly describe."
-CAREER_TRANSITION_CODES = {"none", "path_a", "path_b"}
-
-# Mentor — development_region (backend stores under survey.region)
-#   us     "United States"
-#   canada "Canada"
-#   china  "China"
-#   other  "Other region: Please specify."
-DEVELOPMENT_REGION_CODES = {"us", "canada", "china"}
-
-# Mentor — prev_mentoring_exp (backend external_mentoring_exp → spec midpoint integer)
-#   none   "No"                                  → 0
-#   1_to_3 "1-3 mentoring experiences"           → 2
-#   3_plus "More than 3 mentoring experiences"   → 4
-PREV_MENTORING_EXP_MAP = {"none": 0, "1_to_3": 2, "3_plus": 4}
-
-# Mentee — transition_type (backend stores under survey.current_background)
-#   cs_grad          "All degrees within the CS field, currently following a technical job-search path."
-#   non_cs_cs_master "Non-CS undergraduate background, currently pursuing or recently completed a CS master's degree, looking for a first technical role."
-#   non_tech_to_tech "Have previous non-technical work experience and aiming to transition into a technical role."
-#   non_cs_starting  "Non-CS undergraduate background, have not started transitioning into CS yet, but are considering getting started."
-#   other            "Other: Please specify."
-TRANSITION_TYPE_MAP = {
-    "cs_grad": "none",
-    "non_cs_cs_master": "path_a",
-    "non_tech_to_tech": "path_b",
-    "non_cs_starting": "considering",
-}
-
-# Mentee — mentee_stage (backend round_pref.current_stage)
-#   job_searching      "Currently job searching / preparing for job applications."
-#   employed_growing   "Currently employed, hoping to grow / advance in my career."
-#   changing_direction "Hoping to switch tracks / transition into a different field."
-#   grad_school        "Planning for graduate school / applications."
-MENTEE_STAGE_MAP = {
-    "job_searching": "job_searching",
-    "employed_growing": "employed_growth",
-    "changing_direction": "career_switch",
-    "grad_school": "grad_planning",
-}
-
-# Mentee — urgency (backend round_pref.time_urgency)
-#   within_3_months "Need support within 3 months."
-#   within_6_months "Within 6 months."
-#   1_year_plus     "More than 1 year; long-term planning."
-#   no_timeline     "No clear timeline yet."
-URGENCY_MAP = {
-    "within_3_months": "3m",
-    "within_6_months": "6m",
-    "1_year_plus": "1y_plus",
-    "no_timeline": "none",
-}
-
-# Mentee — job_market_region (backend survey.target_region)
-#   us, canada, china, other  — same labels as REGION_OPTIONS on the mentor side.
-JOB_MARKET_REGION_CODES = {"us", "canada", "china"}
+# Survey encodings are shared with the matching payload builder; see
+# backend/common/mentorship_survey_codes.py for the tables and the frontend
+# labels they correspond to.
 
 
 MENTOR_COLUMNS = [

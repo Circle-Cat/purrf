@@ -5,6 +5,8 @@ from backend.entity.mentorship_round_participants_entity import (
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.users_entity import UsersEntity
+from backend.entity.experience_entity import ExperienceEntity
+from backend.entity.preference_entity import PreferenceEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.job_entity import JobEntity
@@ -594,3 +596,48 @@ class MentorshipRoundParticipantsRepository:
         await session.flush()
 
         return merged_entity
+
+    async def list_for_matching(
+        self, session: AsyncSession, round_id: int, user_ids: list[int]
+    ) -> list[tuple]:
+        """Retrieve the rows a matching payload is built from, for chosen participants.
+
+        No eligibility or account-state filtering: the caller names exactly who
+        takes part, and deciding who is allowed to belongs to whoever assembles
+        that list.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            round_id (int): Mentorship round id.
+            user_ids (list[int]): Users to include.
+
+        Returns:
+            list[tuple]: (user, participant, experience, preference) per row;
+                experience and preference may be None.
+        """
+        if not user_ids:
+            return []
+
+        result = await session.execute(
+            select(
+                UsersEntity,
+                MentorshipRoundParticipantsEntity,
+                ExperienceEntity,
+                PreferenceEntity,
+            )
+            .join(
+                MentorshipRoundParticipantsEntity,
+                and_(
+                    UsersEntity.user_id == MentorshipRoundParticipantsEntity.user_id,
+                    MentorshipRoundParticipantsEntity.round_id == round_id,
+                ),
+            )
+            .outerjoin(
+                ExperienceEntity, UsersEntity.user_id == ExperienceEntity.user_id
+            )
+            .outerjoin(
+                PreferenceEntity, UsersEntity.user_id == PreferenceEntity.user_id
+            )
+            .where(UsersEntity.user_id.in_(user_ids))
+        )
+        return list(result.all())
