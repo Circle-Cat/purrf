@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.common.recruiting_enums import ApplicationStage
 from backend.entity.application_assignment_entity import ApplicationAssignmentEntity
+from backend.entity.application_entity import ApplicationEntity
+from backend.entity.users_entity import UsersEntity
 
 
 class ApplicationAssignmentRepository:
@@ -34,6 +36,51 @@ class ApplicationAssignmentRepository:
             )
         )
         return result.scalar_one_or_none()
+
+    async def get_current_assignee_ids(
+        self, session: AsyncSession, application_id: int
+    ) -> set[int]:
+        """Who is responsible for an application right now, and can still act.
+
+        Scoped to the application's own stage and round. This table keeps one
+        row per (application, stage, round) and reassignment only overwrites
+        within that key, so the rows accumulate as an application walks the
+        pipeline -- unscoped, a round-one screener stays an assignee for every
+        later event.
+
+        Narrowed again to accounts that are active and not blocked. The two
+        flags are read separately because blocking deliberately leaves
+        is_active alone, so activity does not cover it.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            application_id (int): The application whose assignees are wanted.
+
+        Returns:
+            set[int]: Assignee user ids. Empty when nobody who can act holds
+                the current stage and round.
+        """
+        result = await session.execute(
+            select(func.array_agg(ApplicationAssignmentEntity.assignee_id))
+            .select_from(ApplicationAssignmentEntity)
+            .join(
+                ApplicationEntity,
+                ApplicationEntity.application_id
+                == ApplicationAssignmentEntity.application_id,
+            )
+            .join(
+                UsersEntity,
+                UsersEntity.user_id == ApplicationAssignmentEntity.assignee_id,
+            )
+            .where(
+                ApplicationAssignmentEntity.application_id == application_id,
+                ApplicationAssignmentEntity.stage == ApplicationEntity.stage,
+                ApplicationAssignmentEntity.round == ApplicationEntity.current_round,
+                UsersEntity.is_active,
+                UsersEntity.is_blocked.is_(False),
+            )
+        )
+        return set(result.scalar_one_or_none() or ())
 
     async def upsert(
         self,

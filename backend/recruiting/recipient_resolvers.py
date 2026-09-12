@@ -15,89 +15,29 @@ Importing this module registers every resolver. ``fast_app_factory`` imports
 it once at startup for that side effect.
 """
 
-from sqlalchemy import ScalarSelect, Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.recruiting_enums import RecruitingEvent
-from backend.entity.application_assignment_entity import (
-    ApplicationAssignmentEntity,
-)
-from backend.entity.application_entity import ApplicationEntity
 from backend.entity.event_entity import EventEntity
-from backend.entity.job_entity import JobEntity
-from backend.entity.users_entity import UsersEntity
 from backend.notification_management.recipient_registry import (
     Resolver,
     register_recipients,
 )
 from backend.recruiting.pipeline_owners import normalized_owner_ids
+from backend.repository.application_assignment_repository import (
+    ApplicationAssignmentRepository,
+)
 from backend.repository.application_comment_mention_repository import (
     ApplicationCommentMentionRepository,
 )
+from backend.repository.job_repository import JobRepository
 from backend.repository.job_review_repository import JobReviewRepository
 
 # Stateless, so one module-level instance serves every resolver.
+_assignment_repository = ApplicationAssignmentRepository()
+_job_repository = JobRepository()
 _job_review_repository = JobReviewRepository()
 _mention_repository = ApplicationCommentMentionRepository()
-
-
-def _job_id_of_application(application_id: int) -> ScalarSelect:
-    """Subquery selecting the job an application belongs to.
-
-    Args:
-        application_id (int): The application whose job is wanted.
-
-    Returns:
-        ScalarSelect: Yields the job id, NULL if there is no such application.
-    """
-    return (
-        select(ApplicationEntity.job_id)
-        .where(ApplicationEntity.application_id == application_id)
-        .scalar_subquery()
-    )
-
-
-def _current_assignee_ids_query(application_id: int) -> Select:
-    """Statement aggregating who is responsible for an application right now.
-
-    Scoped to the application's current stage and round, and to users who can
-    still act -- active and not blocked.
-    ``application_assignment`` keeps one row per (application, stage, round)
-    and reassignment only overwrites within that key, so the rows accumulate
-    as an application walks the pipeline -- unscoped, a round-1 screener stays
-    a recipient for every later event, and an offboarded interviewer keeps
-    accruing notifications.
-
-    Args:
-        application_id (int): The application whose assignees are wanted.
-
-    Returns:
-        Select: Statement yielding one row: an array of assignee ids, NULL
-            when nobody active is assigned to the current stage and round.
-    """
-    return (
-        select(func.array_agg(ApplicationAssignmentEntity.assignee_id))
-        .select_from(ApplicationAssignmentEntity)
-        .join(
-            ApplicationEntity,
-            ApplicationEntity.application_id
-            == ApplicationAssignmentEntity.application_id,
-        )
-        .join(
-            UsersEntity,
-            UsersEntity.user_id == ApplicationAssignmentEntity.assignee_id,
-        )
-        .where(
-            ApplicationAssignmentEntity.application_id == application_id,
-            ApplicationAssignmentEntity.stage == ApplicationEntity.stage,
-            ApplicationAssignmentEntity.round == ApplicationEntity.current_round,
-            UsersEntity.is_active,
-            # Blocking leaves is_active alone on purpose, so activity does not
-            # cover it: a blocked assignee cannot open the application the mail
-            # is about.
-            UsersEntity.is_blocked.is_(False),
-        )
-    )
 
 
 def _required_id(event: EventEntity, key: str) -> int:
@@ -152,49 +92,6 @@ async def _review_participant(
     return {getattr(review, field)}
 
 
-async def _job_owners(
-    session: AsyncSession,
-    job_id: int | ScalarSelect,
-    *,
-    assignees_of: int | None = None,
-) -> set[int]:
-    """Owner ids of a job, plus one application's assignees when asked.
-
-    Owners are not a column: they live in the job's ``pipeline_config`` JSONB,
-    under ``ownerIds`` on new configs and a scalar ``ownerId`` on ones saved
-    before multi-owner. ``normalized_owner_ids`` is the single reader every
-    consumer goes through, so both shapes keep working.
-
-    One round trip either way -- with ``assignees_of`` the assignee ids ride
-    along as an aggregated subquery on the same statement.
-
-    Args:
-        session (AsyncSession): Session inside the caller's open transaction.
-        job_id (int | ScalarSelect): The job, as an id or as a subquery
-            selecting one -- see ``_job_id_of_application``.
-        assignees_of (int | None): Application whose assignees join the owners.
-            Omit to resolve owners alone.
-
-    Returns:
-        set[int]: Owner user ids, unioned with the assignee ids when asked
-            (empty if the job has no owners configured).
-    """
-    statement = select(JobEntity.pipeline_config).where(JobEntity.job_id == job_id)
-    if assignees_of is not None:
-        statement = statement.add_columns(
-            _current_assignee_ids_query(assignees_of).scalar_subquery()
-        )
-
-    row = (await session.execute(statement)).first()
-    if row is None:
-        return set()
-
-    owners = set(normalized_owner_ids(row[0]))
-    if assignees_of is None:
-        return owners
-    return owners | set(row[1] or ())
-
-
 async def _owners_only(session: AsyncSession, event: EventEntity) -> set[int]:
     """Resolve recipients as just the job's owners.
 
@@ -206,7 +103,8 @@ async def _owners_only(session: AsyncSession, event: EventEntity) -> set[int]:
     Returns:
         set[int]: The job's owner user ids.
     """
-    return await _job_owners(session, _job_id_of_application(event.subject_id))
+    job = await _job_repository.get_by_application_id(session, event.subject_id)
+    return set() if job is None else set(normalized_owner_ids(job.pipeline_config))
 
 
 async def _owners_and_assignees(session: AsyncSession, event: EventEntity) -> set[int]:
@@ -217,14 +115,18 @@ async def _owners_and_assignees(session: AsyncSession, event: EventEntity) -> se
         event (EventEntity): The event being recorded; ``subject_id`` is an
             application id.
 
+    Two reads rather than one. They were a single statement once, the
+    assignee ids riding along as a subquery on the owners' select, which
+    saved a round trip at the cost of one query that no repository owns --
+    it spanned job, application, application_assignment and users. Each half
+    is now a plain read of the table it is about. This runs once per event
+    recorded, immediately before an email leaves the process, so the second
+    round trip buys the boundary for nothing that can be measured.
+
     Returns:
         set[int]: Union of owner user ids and current assignee user ids.
     """
-    return await _job_owners(
-        session,
-        _job_id_of_application(event.subject_id),
-        assignees_of=event.subject_id,
-    )
+    return await _owners_only(session, event) | await _assignees_only(session, event)
 
 
 async def _assignees_only(session: AsyncSession, event: EventEntity) -> set[int]:
@@ -242,8 +144,9 @@ async def _assignees_only(session: AsyncSession, event: EventEntity) -> set[int]
     Returns:
         set[int]: Current assignee user ids (empty if nobody active holds it).
     """
-    result = await session.execute(_current_assignee_ids_query(event.subject_id))
-    return set(result.scalar_one_or_none() or ())
+    return await _assignment_repository.get_current_assignee_ids(
+        session, event.subject_id
+    )
 
 
 @register_recipients(RecruitingEvent.REVIEW_OPENED, subject_type="job")

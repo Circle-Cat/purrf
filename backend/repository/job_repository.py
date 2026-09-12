@@ -1,3 +1,4 @@
+from backend.entity.application_entity import ApplicationEntity
 from backend.entity.job_entity import JobEntity
 from backend.common.recruiting_enums import (
     PUBLICLY_VISIBLE_JOB_STATUSES,
@@ -26,6 +27,30 @@ class JobRepository:
             select(JobEntity).where(JobEntity.job_id == job_id)
         )
         return result.scalar_one_or_none()
+
+    async def get_by_application_id(
+        self, session: AsyncSession, application_id: int
+    ) -> JobEntity | None:
+        """The job an application was made to, in one read.
+
+        For callers that hold an application id and want something off the
+        posting -- its owners live in pipeline_config -- where reading the
+        application row first would be two round trips.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            application_id (int): The application whose job is wanted.
+
+        Returns:
+            JobEntity | None: The job, or None when there is no such
+                application. An application cannot outlive its job.
+        """
+        result = await session.execute(
+            select(JobEntity)
+            .join(ApplicationEntity, ApplicationEntity.job_id == JobEntity.job_id)
+            .where(ApplicationEntity.application_id == application_id)
+        )
+        return result.scalars().one_or_none()
 
     async def list_published(self, session: AsyncSession) -> list[JobEntity]:
         """Return jobs whose status is exactly PUBLISHED.
