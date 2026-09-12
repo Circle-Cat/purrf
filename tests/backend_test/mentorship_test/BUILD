@@ -120,3 +120,16 @@ py_test(
     data = ["//backend/mentorship:contracts"],
     deps = ["//backend/mentorship"],
 )
+
+py_test(
+    name = "matching_payload_service_test",
+    srcs = ["matching_payload_service_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)

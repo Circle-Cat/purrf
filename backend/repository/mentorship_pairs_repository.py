@@ -1,7 +1,7 @@
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.users_entity import UsersEntity
-from sqlalchemy import select, or_, case, func
+from sqlalchemy import select, or_, case, distinct, exists, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.common.mentorship_enums import PairStatus
 
@@ -365,3 +365,53 @@ class MentorshipPairsRepository:
         )
 
         return result.scalars().all()
+
+    async def count_mentoring_rounds(
+        self, session: AsyncSession, mentor_ids: list[int], exclude_round_id: int
+    ) -> dict[int, tuple[int, int]]:
+        """Count past rounds each mentor was paired in, and how many went anywhere.
+
+        A round counts as completed when at least one of its meetings took place.
+        Being paired is not the same as having mentored: a mentee who never
+        answered leaves a pair behind and nothing else, and a rationale that
+        calls that experience is wrong.
+
+        Counted from meeting rows rather than ``mentorship_pairs.completed_count``,
+        which is a derived column on its way out. Historical rounds that recorded
+        only a total have one LEGACY meeting row per completed meeting, so they
+        count correctly here too.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            mentor_ids (list[int]): Mentors to count for.
+            exclude_round_id (int): Round to leave out, being the one now matched.
+
+        Returns:
+            dict[int, tuple[int, int]]: mentor_id -> (rounds paired, rounds with
+                a meeting). Mentors with no past pairs are absent.
+        """
+        if not mentor_ids:
+            return {}
+
+        went_somewhere = exists().where(
+            MentorshipMeetingEntity.pair_id == MentorshipPairsEntity.pair_id,
+            MentorshipMeetingEntity.is_completed.is_(True),
+        )
+        result = await session.execute(
+            select(
+                MentorshipPairsEntity.mentor_id,
+                func.count(distinct(MentorshipPairsEntity.round_id)),
+                func.count(
+                    distinct(case((went_somewhere, MentorshipPairsEntity.round_id)))
+                ),
+            )
+            .where(
+                MentorshipPairsEntity.mentor_id.in_(mentor_ids),
+                MentorshipPairsEntity.round_id != exclude_round_id,
+            )
+            .group_by(MentorshipPairsEntity.mentor_id)
+        )
+        return {
+            mentor_id: (paired, completed)
+            for mentor_id, paired, completed in result.all()
+        }

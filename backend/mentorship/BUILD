@@ -12,6 +12,7 @@ py_library(
         "//backend/common:fast_api_response_wrapper",
         "//backend/common:identity_type",
         "//backend/common:mentorship_enums",
+        "//backend/common:mentorship_survey_codes",
         "//backend/common:name_utils",
         "//backend/common:permissions",
         "//backend/common:recruiting_enums",
