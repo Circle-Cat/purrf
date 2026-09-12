@@ -71,7 +71,7 @@
   "description": "What the matcher writes back. Pairs are keyed on user id, never on email.",
   "properties": {
     "contract_version": {
-      "default": 1,
+      "default": 2,
       "title": "Contract Version",
       "type": "integer"
     },

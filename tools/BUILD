@@ -26,3 +26,16 @@ py_binary(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_binary(
+    name = "dump_matching_payload",
+    srcs = ["dump_matching_payload.py"],
+    deps = [
+        "//backend/common:database",
+        "//backend/common:logger",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/repository:repositories",
+        "@pypi//sqlalchemy",
+    ],
+)

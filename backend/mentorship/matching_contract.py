@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-CONTRACT_VERSION = 1
+CONTRACT_VERSION = 2
 
 SKILL_KEYS = (
     "resume_guidance",
@@ -74,7 +74,9 @@ class PersonRecord(_Strict):
 
     # Mentor only.
     max_partners: int | None = None
-    career_transition: Literal["none", "path_a", "path_b"] | None = None
+    career_transition: (
+        Literal["none_cs_background", "via_cs_masters", "via_work_experience"] | None
+    ) = None
     career_transition_other: str | None = None
     development_region: Literal["us", "canada", "china"] | None = None
     development_region_other: str | None = None
@@ -91,9 +93,17 @@ class PersonRecord(_Strict):
     mentorship_rounds_completed: int | None = None
 
     # Mentee only.
-    transition_type: Literal["none", "path_a", "path_b", "considering"] | None = None
+    transition_type: (
+        Literal[
+            "none_cs_background",
+            "via_cs_masters",
+            "via_work_experience",
+            "considering_transition",
+        ]
+        | None
+    ) = None
     transition_type_other: str | None = None
-    urgency: Literal["3m", "6m", "1y_plus", "none"] | None = None
+    urgency: Literal["3m", "6m", "1y_plus", "no_timeline"] | None = None
     job_market_region: Literal["us", "canada", "china"] | None = None
     job_market_region_other: str | None = None
     mentee_stage: (
@@ -157,6 +167,11 @@ class MatchingPayload(_Strict):
     generated_at: str | None = None
     mentors: list[PersonRecord]
     mentees: list[PersonRecord]
+    # Every coded answer above, with the sentence the participant read. Carried
+    # once per run rather than per person: a consumer that renders an answer
+    # should never have to keep its own translation, which is how one ended up
+    # printing a raw code and another inverted the meaning of an option.
+    vocabularies: dict[str, dict[str, str]] = Field(default_factory=dict)
 
 
 class PairRecord(_Strict):
