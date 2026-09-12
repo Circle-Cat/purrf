@@ -28,6 +28,7 @@ py_library(
         "//backend/service:launchdarkly_service",
         "//backend/utils:date_time_util",
         "//backend/utils:permission_decorators",
+        "@pypi//google_cloud_storage",
         "@pypi//intervaltree",
         "@pypi//pydantic",
         "@pypi//python_dateutil",
