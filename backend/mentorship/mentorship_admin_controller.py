@@ -3,20 +3,31 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
+from backend.dto.matching_run_create_dto import MatchingRunCreateDto
+from backend.dto.user_context_dto import UserContextDto
 from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.api_endpoints import (
     MENTORSHIP_ADMIN_PARTICIPANTS,
     MENTORSHIP_ADMIN_PARTICIPANTS_EXPORT,
     MENTORSHIP_ADMIN_PAIRS_MEETINGS,
+    MENTORSHIP_ADMIN_MATCH_RUNS,
 )
 from backend.common.permissions import Permission
 from backend.utils.permission_decorators import authenticate
 
 
 class MentorshipAdminController:
-    def __init__(self, mentorship_admin_service, database):
+    def __init__(
+        self,
+        mentorship_admin_service,
+        matching_run_service,
+        launchdarkly_service,
+        database,
+    ):
         self.mentorship_admin_service = mentorship_admin_service
+        self.matching_run_service = matching_run_service
+        self.launchdarkly_service = launchdarkly_service
         self.database = database
         self.router = APIRouter(tags=["mentorship-admin"])
 
@@ -44,6 +55,15 @@ class MentorshipAdminController:
                 self.update_meeting_log
             ),
             methods=["PATCH"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ADMIN_MATCH_RUNS,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])(
+                self.start_matching_run
+            ),
+            methods=["POST"],
             response_model=None,
         )
 
@@ -152,5 +172,46 @@ class MentorshipAdminController:
             )
         return api_response(
             message="Successfully updated meeting log.",
+            data=result,
+        )
+
+    async def start_matching_run(
+        self, body: MatchingRunCreateDto, current_user: UserContextDto
+    ):
+        """
+        Start a matching run for a round over a chosen list of participants.
+
+        Returns as soon as the job has started: it takes about an hour at present
+        sizes, and how far along it is comes from what the matcher has written.
+
+        Args:
+            body (MatchingRunCreateDto): Round, participants, and optionally the
+                date to score as though it were.
+            current_user (UserContextDto): Who pressed the button. Travels with
+                the run so the completion notice reaches them; nothing outside
+                the run records who asked for it.
+
+        Returns:
+            API response carrying the run id.
+
+        Raises:
+            PermissionError: The flag is off for this admin. Surfaces as 403.
+        """
+        if not self.launchdarkly_service.is_matching_run_enabled(current_user):
+            # Per-admin, and off by default: one press costs an hour of a paid
+            # job, so the first real rounds are run by the people expecting to
+            # pay for them rather than by anyone who finds the endpoint.
+            raise PermissionError("Starting a matching run is not yet available.")
+
+        async with self.database.session() as session:
+            result = await self.matching_run_service.start_run(
+                session,
+                body.round_id,
+                body.participant_ids,
+                run_date=body.run_date,
+                triggered_by_user_id=current_user.user_id,
+            )
+        return api_response(
+            message="Successfully started the matching run.",
             data=result,
         )
