@@ -55,7 +55,7 @@ class FastAppFactory:
         leave_job_controller,
         leave_request_controller,
         leave_calendar_controller,
-        leave_balance_controller,#为什么这里需要给默认值none，给了下面就标红了
+        leave_balance_controller,
         notification_delivery_controller,
         notification_publisher,
         notification_topic_path,

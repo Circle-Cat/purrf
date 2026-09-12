@@ -232,7 +232,7 @@ class LeaveLedgerRepository:
         """
         stmt = (
             select(LeaveLedgerEntity)
-            .where(LeaveLedgerEntity.user_id == user_id)  # 必须保留 user_id 过滤！
+            .where(LeaveLedgerEntity.user_id == user_id)
             .order_by(
                 LeaveLedgerEntity.effective_date.desc(),
                 LeaveLedgerEntity.leave_ledger_id.desc(),
