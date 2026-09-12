@@ -143,5 +143,11 @@ APP_ORIGINS = "APP_ORIGINS"
 # absent in local development; the code that needs them raises when used rather
 # than at startup, so the app still boots.
 TRAINING_BUCKET = "TRAINING_BUCKET"
+
+# Where a matching run's payload and results live.
+MATCHING_BUCKET = "MATCHING_BUCKET"
+# The whole resource name -- projects/<p>/locations/<l>/jobs/<j> -- rather than
+# three variables that only mean anything together.
+MATCHER_JOB_RESOURCE = "MATCHER_JOB_RESOURCE"
 TRAINING_CONTENT_HOST = "TRAINING_CONTENT_HOST"
 TRAINING_TOKEN_SIGNING_KEY = "TRAINING_TOKEN_SIGNING_KEY"
