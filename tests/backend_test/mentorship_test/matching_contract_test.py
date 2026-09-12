@@ -69,6 +69,15 @@ class MatchingContractTest(unittest.TestCase):
         # deliberate "none of these".
         self.assertIsNone(PersonRecord(**_mentor()).specific_industry)
 
+    def test_mentee_must_declare_an_industry(self):
+        with self.assertRaises(ValueError):
+            PersonRecord(**_mentee(specific_industry=None))
+
+    def test_mentor_must_not_carry_a_leftover_industry(self):
+        industry = {"swe": True, "ds": False, "pm": False, "uiux": False}
+        with self.assertRaises(ValueError):
+            PersonRecord(**_mentor(specific_industry=industry))
+
     def test_mentee_industry_needs_every_key(self):
         with self.assertRaises(ValueError):
             PersonRecord(**_mentee(specific_industry={"swe": True}))

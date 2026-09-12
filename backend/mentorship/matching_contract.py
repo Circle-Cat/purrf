@@ -7,7 +7,7 @@ copy that has fallen behind.
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 CONTRACT_VERSION = 1
 
@@ -132,6 +132,20 @@ class PersonRecord(_Strict):
             unknown = sorted(set(value) - set(INDUSTRY_KEYS))
             raise ValueError(f"specific_industry: missing {missing}, unknown {unknown}")
         return value
+
+    @model_validator(mode="after")
+    def _industry_belongs_to_mentees(self):
+        """Present for a mentee, absent for a mentor.
+
+        A mentee who omits it would score zero on industry rather than fail, and
+        a mentor who carries it is showing an answer left over from a round they
+        took part in as a mentee.
+        """
+        if self.role == "mentee" and self.specific_industry is None:
+            raise ValueError("specific_industry is required for a mentee")
+        if self.role == "mentor" and self.specific_industry is not None:
+            raise ValueError("specific_industry is never asked of a mentor")
+        return self
 
 
 class MatchingPayload(_Strict):
