@@ -168,6 +168,8 @@ from backend.notification_management.delivery_controller import (
 from backend.common.environment_constants import (
     RESUME_BUCKET,
     APP_ORIGINS,
+    MATCHER_JOB_RESOURCE,
+    MATCHING_BUCKET,
     TRAINING_BUCKET,
     TRAINING_CONTENT_HOST,
     TRAINING_TOKEN_SIGNING_KEY,
@@ -209,6 +211,10 @@ from backend.repository.preferences_repository import PreferencesRepository
 from backend.mentorship.mentorship_mapper import MentorshipMapper
 from backend.mentorship.mentorship_controller import MentorshipController
 from backend.mentorship.mentorship_admin_service import MentorshipAdminService
+from backend.mentorship.matching_job_client import MatchingJobClient
+from backend.mentorship.matching_payload_service import MatchingPayloadService
+from backend.mentorship.matching_run_service import MatchingRunService
+from backend.mentorship.matching_storage import MatchingStorage
 from backend.mentorship.mentorship_admin_controller import MentorshipAdminController
 from backend.mentorship.rounds_service import RoundsService
 from backend.mentorship.participation_service import ParticipationService
@@ -701,8 +707,28 @@ class AppDependencyBuilder:
             logger=self.logger,
             mentorship_meeting_repository=self.mentorship_meeting_repository,
         )
+        # Nothing here needs self.database, so it is safe this early; the
+        # matching run service takes a session per call like the rest.
+        self.matching_payload_service = MatchingPayloadService(
+            mentorship_round_participants_repository=self.mentorship_round_participants_repo,
+            mentorship_pairs_repository=self.mentorship_pairs_repository,
+            logger=self.logger,
+        )
+        self.matching_storage = MatchingStorage(
+            os.getenv(MATCHING_BUCKET), logger=self.logger
+        )
+        self.matching_job_client = MatchingJobClient(
+            os.getenv(MATCHER_JOB_RESOURCE), logger=self.logger
+        )
+        self.matching_run_service = MatchingRunService(
+            matching_payload_service=self.matching_payload_service,
+            matching_storage=self.matching_storage,
+            matching_job_client=self.matching_job_client,
+            logger=self.logger,
+        )
         self.mentorship_admin_controller = MentorshipAdminController(
             mentorship_admin_service=self.mentorship_admin_service,
+            matching_run_service=self.matching_run_service,
             database=self.database,
         )
         self.experience_repository = ExperienceRepository()

@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from http import HTTPStatus
 from backend.mentorship.mentorship_admin_controller import MentorshipAdminController
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
+from backend.dto.matching_run_create_dto import MatchingRunCreateDto
 from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
 
 
@@ -14,6 +15,9 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         self.mock_admin_service.apply_v2_meeting_batch = AsyncMock()
         self.mock_admin_service.stream_export_csv = MagicMock()
 
+        self.mock_matching_run_service = MagicMock()
+        self.mock_matching_run_service.start_run = AsyncMock()
+
         self.mock_database = MagicMock()
         self.mock_session = AsyncMock()
         self.mock_database.session.return_value.__aenter__.return_value = (
@@ -23,6 +27,7 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
 
         self.controller = MentorshipAdminController(
             mentorship_admin_service=self.mock_admin_service,
+            matching_run_service=self.mock_matching_run_service,
             database=self.mock_database,
         )
 
@@ -191,6 +196,23 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         )
         content_disposition = response.headers["content-disposition"]
         self.assertIn("non_participant_", content_disposition)
+
+    async def test_start_matching_run_passes_the_selection_through(self):
+        self.mock_matching_run_service.start_run.return_value = {
+            "run_id": "r7-20260912T000000Z-abc123",
+            "gcs_prefix": "gs://bucket/runs/r7-20260912T000000Z-abc123",
+            "execution_name": "projects/p/locations/l/jobs/j/executions/e",
+        }
+        body = MatchingRunCreateDto(
+            round_id=7, participant_ids=[1, 2], run_date="2026-06-01"
+        )
+
+        response = await self.controller.start_matching_run(body)
+
+        self.mock_matching_run_service.start_run.assert_awaited_once_with(
+            self.mock_session, 7, [1, 2], run_date="2026-06-01"
+        )
+        self.assertEqual(response["data"]["run_id"], "r7-20260912T000000Z-abc123")
 
 
 if __name__ == "__main__":

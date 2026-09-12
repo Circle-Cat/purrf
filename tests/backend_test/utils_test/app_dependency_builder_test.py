@@ -568,6 +568,7 @@ class TestAppDependencyBuilder(TestCase):
         )
         mock_mentorship_admin_controller_cls.assert_called_once_with(
             mentorship_admin_service=mock_mentorship_admin_service_cls.return_value,
+            matching_run_service=builder.matching_run_service,
             database=mock_database_cls.return_value,
         )
         mock_rounds_service_cls.assert_called_once_with(
