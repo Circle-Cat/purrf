@@ -1,0 +1,159 @@
+{
+  "$defs": {
+    "CandidateRecord": {
+      "additionalProperties": false,
+      "description": "A runner-up for one mentee. No recommendation text: the matcher only writes\none for final pairs.",
+      "properties": {
+        "mentee_id": {
+          "title": "Mentee Id",
+          "type": "string"
+        },
+        "mentor_id": {
+          "title": "Mentor Id",
+          "type": "string"
+        },
+        "rank": {
+          "title": "Rank",
+          "type": "integer"
+        },
+        "score": {
+          "title": "Score",
+          "type": "integer"
+        },
+        "diagnostic_reason": {
+          "default": "",
+          "title": "Diagnostic Reason",
+          "type": "string"
+        }
+      },
+      "required": ["mentee_id", "mentor_id", "rank", "score"],
+      "title": "CandidateRecord",
+      "type": "object"
+    },
+    "PairRecord": {
+      "additionalProperties": false,
+      "description": "One final assignment.\n\n``recommendation_reason`` is the mentee-facing text and is editable;\n``diagnostic_reason`` is the scoring breakdown and belongs only on the review\nscreen. They are named apart because the old CSV import mapped the breakdown\ninto the mentee-facing field and truncated it.",
+      "properties": {
+        "mentee_id": {
+          "title": "Mentee Id",
+          "type": "string"
+        },
+        "mentor_id": {
+          "title": "Mentor Id",
+          "type": "string"
+        },
+        "score": {
+          "title": "Score",
+          "type": "integer"
+        },
+        "match_type": {
+          "enum": ["mutual_yes", "hungarian"],
+          "title": "Match Type",
+          "type": "string"
+        },
+        "recommendation_reason": {
+          "default": "",
+          "title": "Recommendation Reason",
+          "type": "string"
+        },
+        "diagnostic_reason": {
+          "default": "",
+          "title": "Diagnostic Reason",
+          "type": "string"
+        }
+      },
+      "required": ["mentee_id", "mentor_id", "score", "match_type"],
+      "title": "PairRecord",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "What the matcher writes back. Pairs are keyed on user id, never on email.",
+  "properties": {
+    "contract_version": {
+      "default": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "round_id": {
+      "title": "Round Id",
+      "type": "integer"
+    },
+    "status": {
+      "enum": ["succeeded", "failed"],
+      "title": "Status",
+      "type": "string"
+    },
+    "started_at": {
+      "title": "Started At",
+      "type": "string"
+    },
+    "finished_at": {
+      "title": "Finished At",
+      "type": "string"
+    },
+    "matcher_version": {
+      "title": "Matcher Version",
+      "type": "string"
+    },
+    "run_date": {
+      "title": "Run Date",
+      "type": "string"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error"
+    },
+    "pairs": {
+      "items": {
+        "$ref": "#/$defs/PairRecord"
+      },
+      "title": "Pairs",
+      "type": "array"
+    },
+    "candidates": {
+      "items": {
+        "$ref": "#/$defs/CandidateRecord"
+      },
+      "title": "Candidates",
+      "type": "array"
+    },
+    "unmatched_mentee_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unmatched Mentee Ids",
+      "type": "array"
+    },
+    "unmatched_mentor_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unmatched Mentor Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "run_id",
+    "round_id",
+    "status",
+    "started_at",
+    "finished_at",
+    "matcher_version",
+    "run_date"
+  ],
+  "title": "MatchingResult",
+  "type": "object"
+}
