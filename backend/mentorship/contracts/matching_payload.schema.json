@@ -136,6 +136,18 @@
           "default": null,
           "title": "Career Transition"
         },
+        "career_transition_other": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Career Transition Other"
+        },
         "development_region": {
           "anyOf": [
             {
@@ -149,7 +161,32 @@
           "default": null,
           "title": "Development Region"
         },
-        "prev_mentoring_exp": {
+        "development_region_other": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Development Region Other"
+        },
+        "external_mentoring_exp": {
+          "anyOf": [
+            {
+              "enum": ["none", "1_to_3", "3_plus"],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "External Mentoring Exp"
+        },
+        "mentorship_rounds_participated": {
           "anyOf": [
             {
               "type": "integer"
@@ -159,7 +196,19 @@
             }
           ],
           "default": null,
-          "title": "Prev Mentoring Exp"
+          "title": "Mentorship Rounds Participated"
+        },
+        "mentorship_rounds_completed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mentorship Rounds Completed"
         },
         "transition_type": {
           "anyOf": [
@@ -173,6 +222,18 @@
           ],
           "default": null,
           "title": "Transition Type"
+        },
+        "transition_type_other": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transition Type Other"
         },
         "urgency": {
           "anyOf": [
@@ -199,6 +260,18 @@
           ],
           "default": null,
           "title": "Job Market Region"
+        },
+        "job_market_region_other": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Job Market Region Other"
         },
         "mentee_stage": {
           "anyOf": [

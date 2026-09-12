@@ -72,18 +72,40 @@ class PersonRecord(_Strict):
     # Mentor only.
     max_partners: int | None = None
     career_transition: Literal["none", "path_a", "path_b"] | None = None
+    career_transition_other: str | None = None
     development_region: Literal["us", "canada", "china"] | None = None
-    prev_mentoring_exp: int | None = None
+    development_region_other: str | None = None
+
+    # Mentoring experience is two separate facts and they are not
+    # interchangeable. The registration form asks about experience "outside of
+    # the CircleCat Mentorship Program", so the self-reported answer says
+    # nothing about rounds run here -- and a match rationale that quotes one as
+    # the other is wrong, which is what human review kept correcting.
+    #
+    # The self-report is carried as the bucket the mentor actually picked. The
+    # export used to map it to a midpoint integer (1_to_3 -> 2, 3_plus -> 4),
+    # and the rationale printed that midpoint as though it were a precise count
+    # -- "4 mentoring experiences". There is no precise count to recover here:
+    # the form only ever offered three buckets.
+    external_mentoring_exp: Literal["none", "1_to_3", "3_plus"] | None = None
+
+    # Purrf's own records, counted here rather than asked. Participated counts
+    # rounds the mentor was paired in; completed counts those where at least one
+    # meeting actually took place, which is the number a rationale should cite.
+    # A pair whose mentee never responded raises the first and not the second.
+    mentorship_rounds_participated: int | None = None
+    mentorship_rounds_completed: int | None = None
 
     # Mentee only.
     transition_type: Literal["none", "path_a", "path_b", "considering"] | None = None
+    transition_type_other: str | None = None
     urgency: Literal["3m", "6m", "1y_plus", "none"] | None = None
     job_market_region: Literal["us", "canada", "china"] | None = None
-    # Reserved. The matcher does not read this field and it takes no part in
-    # scoring. Letting the mentee's own answer drive the job-search gate is a
-    # separate change, scheduled after the pipeline is accepted so that a score
-    # difference has only one possible cause. Its presence here is not evidence
-    # that it is live.
+    job_market_region_other: str | None = None
+    # The mentee's own answer about where they are. No scorer reads it yet --
+    # the job-search gate infers the same thing from which skills were ticked,
+    # and gets it wrong in both directions. Carried so that the gate can be
+    # rebuilt on the answer instead of the inference.
     mentee_stage: (
         Literal["job_searching", "employed_growth", "career_switch", "grad_planning"]
         | None

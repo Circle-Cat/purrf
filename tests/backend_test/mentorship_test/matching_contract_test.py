@@ -55,6 +55,47 @@ class MatchingContractTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             PersonRecord(**_mentor(primary_email="ada@example.com"))
 
+    def test_external_experience_keeps_the_bucket_the_mentor_picked(self):
+        person = PersonRecord(**_mentor(external_mentoring_exp="1_to_3"))
+        self.assertEqual(person.external_mentoring_exp, "1_to_3")
+
+    def test_rejects_the_midpoint_encoding_of_external_experience(self):
+        # The export used to send 2 for "1_to_3" and 4 for "3_plus", and the
+        # rationale printed the midpoint as a count. The bucket is the answer.
+        with self.assertRaises(ValueError):
+            PersonRecord(**_mentor(external_mentoring_exp=2))
+
+    def test_internal_round_counts_are_separate_from_the_self_report(self):
+        person = PersonRecord(
+            **_mentor(
+                external_mentoring_exp="3_plus",
+                mentorship_rounds_participated=2,
+                mentorship_rounds_completed=1,
+            )
+        )
+        self.assertEqual(person.external_mentoring_exp, "3_plus")
+        self.assertEqual(person.mentorship_rounds_participated, 2)
+        self.assertEqual(person.mentorship_rounds_completed, 1)
+
+    def test_free_text_answer_travels_beside_the_enum_not_inside_it(self):
+        person = PersonRecord(
+            **_mentor(
+                career_transition=None,
+                career_transition_other="Switched over from bioinformatics",
+            )
+        )
+        self.assertIsNone(person.career_transition)
+        self.assertEqual(
+            person.career_transition_other, "Switched over from bioinformatics"
+        )
+
+    def test_rejects_the_inline_other_encoding(self):
+        # The CSV export packed free text into the same field as "other:<text>".
+        with self.assertRaises(ValueError):
+            PersonRecord(
+                **_mentor(career_transition="other:Switched over from bioinformatics")
+            )
+
     def test_payload_round_trips(self):
         payload = MatchingPayload(
             run_id="r1-20260912T000000Z-abc123",
