@@ -113,3 +113,10 @@ py_test(
         "//tests/backend_test/repository_test:base_repository_test_lib",
     ],
 )
+
+py_test(
+    name = "matching_contract_test",
+    srcs = ["matching_contract_test.py"],
+    data = ["//backend/mentorship:contracts"],
+    deps = ["//backend/mentorship"],
+)
