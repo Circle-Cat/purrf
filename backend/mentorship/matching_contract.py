@@ -52,22 +52,25 @@ class WorkHistoryRecord(_Strict):
 
 
 class PersonRecord(_Strict):
-    """A mentor or a mentee, carrying only what the matcher actually scores on.
+    """A mentor or a mentee, carrying only what the matcher scores on.
 
-    Names beyond ``display_name`` and every contact field are deliberately absent:
-    the matcher has no consumer for them.
+    Contact fields and names beyond ``display_name`` are absent: the matcher has
+    no consumer for them.
     """
 
+    role: Literal["mentor", "mentee"]
     user_id: str
     display_name: str
     timezone: str = ""
     goal: str = ""
     skills: dict[str, bool]
-    specific_industry: dict[str, bool]
     education: list[EducationRecord] = Field(default_factory=list)
     work_history: list[WorkHistoryRecord] = Field(default_factory=list)
     expected_partner_ids: list[str] = Field(default_factory=list)
     unexpected_partner_ids: list[str] = Field(default_factory=list)
+
+    # Mentee only: the registration form asks this of mentees and not of mentors.
+    specific_industry: dict[str, bool] | None = None
 
     # Mentor only.
     max_partners: int | None = None
@@ -76,23 +79,14 @@ class PersonRecord(_Strict):
     development_region: Literal["us", "canada", "china"] | None = None
     development_region_other: str | None = None
 
-    # Mentoring experience is two separate facts and they are not
-    # interchangeable. The registration form asks about experience "outside of
-    # the CircleCat Mentorship Program", so the self-reported answer says
-    # nothing about rounds run here -- and a match rationale that quotes one as
-    # the other is wrong, which is what human review kept correcting.
-    #
-    # The self-report is carried as the bucket the mentor actually picked. The
-    # export used to map it to a midpoint integer (1_to_3 -> 2, 3_plus -> 4),
-    # and the rationale printed that midpoint as though it were a precise count
-    # -- "4 mentoring experiences". There is no precise count to recover here:
-    # the form only ever offered three buckets.
+    # Self-reported, and about mentoring done *outside* CircleCat -- so it says
+    # nothing about rounds run here. Carried as the bucket the form offered; the
+    # export used to flatten it to a midpoint integer that rationales then
+    # printed as a precise count.
     external_mentoring_exp: Literal["none", "1_to_3", "3_plus"] | None = None
 
-    # Purrf's own records, counted here rather than asked. Participated counts
-    # rounds the mentor was paired in; completed counts those where at least one
-    # meeting actually took place, which is the number a rationale should cite.
-    # A pair whose mentee never responded raises the first and not the second.
+    # Counted from Purrf's records. Completed means at least one meeting took
+    # place, so a round whose mentee never answered raises only the first.
     mentorship_rounds_participated: int | None = None
     mentorship_rounds_completed: int | None = None
 
@@ -102,10 +96,6 @@ class PersonRecord(_Strict):
     urgency: Literal["3m", "6m", "1y_plus", "none"] | None = None
     job_market_region: Literal["us", "canada", "china"] | None = None
     job_market_region_other: str | None = None
-    # The mentee's own answer about where they are. No scorer reads it yet --
-    # the job-search gate infers the same thing from which skills were ticked,
-    # and gets it wrong in both directions. Carried so that the gate can be
-    # rebuilt on the answer instead of the inference.
     mentee_stage: (
         Literal["job_searching", "employed_growth", "career_switch", "grad_planning"]
         | None
@@ -134,7 +124,9 @@ class PersonRecord(_Strict):
     @field_validator("specific_industry")
     @classmethod
     def _require_every_industry_key(cls, value):
-        """All four keys: the scorer auto-fills skills from a declared industry."""
+        """All four keys when present; absent for mentors, who are never asked."""
+        if value is None:
+            return value
         if set(value) != set(INDUSTRY_KEYS):
             missing = sorted(set(INDUSTRY_KEYS) - set(value))
             unknown = sorted(set(value) - set(INDUSTRY_KEYS))

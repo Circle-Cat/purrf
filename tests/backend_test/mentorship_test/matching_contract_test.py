@@ -15,8 +15,27 @@ CONTRACTS_DIR = Path(__file__).resolve().parents[3] / "backend/mentorship/contra
 
 def _mentor(**overrides):
     base = dict(
+        role="mentor",
         user_id="1",
         display_name="Ada L",
+        timezone="America/New_York",
+        skills={k: False for k in SKILL_KEYS},
+        education=[],
+        work_history=[],
+        expected_partner_ids=[],
+        unexpected_partner_ids=[],
+        goal="",
+        max_partners=2,
+    )
+    base.update(overrides)
+    return base
+
+
+def _mentee(**overrides):
+    base = dict(
+        role="mentee",
+        user_id="2",
+        display_name="Grace H",
         timezone="America/New_York",
         skills={k: False for k in SKILL_KEYS},
         specific_industry={"swe": True, "ds": False, "pm": False, "uiux": False},
@@ -25,7 +44,6 @@ def _mentor(**overrides):
         expected_partner_ids=[],
         unexpected_partner_ids=[],
         goal="",
-        max_partners=2,
     )
     base.update(overrides)
     return base
@@ -45,11 +63,25 @@ class MatchingContractTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             PersonRecord(**_mentor(skills=partial))
 
+    def test_mentor_carries_no_industry(self):
+        # The registration form only asks mentees, so a mentor has no answer to
+        # send. It is absent rather than four falses, which would read as a
+        # deliberate "none of these".
+        self.assertIsNone(PersonRecord(**_mentor()).specific_industry)
+
+    def test_mentee_industry_needs_every_key(self):
+        with self.assertRaises(ValueError):
+            PersonRecord(**_mentee(specific_industry={"swe": True}))
+
+    def test_rejects_unknown_role(self):
+        with self.assertRaises(ValueError):
+            PersonRecord(**_mentor(role="admin"))
+
     def test_rejects_unknown_mentee_stage(self):
         # employed_growing is the backend storage key, not the contract code the
         # export maps it to. Sending the wrong side of that map has to fail loudly.
         with self.assertRaises(ValueError):
-            PersonRecord(**_mentor(mentee_stage="employed_growing"))
+            PersonRecord(**_mentee(mentee_stage="employed_growing"))
 
     def test_rejects_unknown_field(self):
         with self.assertRaises(ValueError):
@@ -101,7 +133,7 @@ class MatchingContractTest(unittest.TestCase):
             run_id="r1-20260912T000000Z-abc123",
             round_id=1,
             mentors=[PersonRecord(**_mentor())],
-            mentees=[],
+            mentees=[PersonRecord(**_mentee())],
         )
         again = MatchingPayload.model_validate(json.loads(payload.model_dump_json()))
         self.assertEqual(again.contract_version, CONTRACT_VERSION)

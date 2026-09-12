@@ -49,8 +49,13 @@
     },
     "PersonRecord": {
       "additionalProperties": false,
-      "description": "A mentor or a mentee, carrying only what the matcher actually scores on.\n\nNames beyond ``display_name`` and every contact field are deliberately absent:\nthe matcher has no consumer for them.",
+      "description": "A mentor or a mentee, carrying only what the matcher scores on.\n\nContact fields and names beyond ``display_name`` are absent: the matcher has\nno consumer for them.",
       "properties": {
+        "role": {
+          "enum": ["mentor", "mentee"],
+          "title": "Role",
+          "type": "string"
+        },
         "user_id": {
           "title": "User Id",
           "type": "string"
@@ -74,13 +79,6 @@
             "type": "boolean"
           },
           "title": "Skills",
-          "type": "object"
-        },
-        "specific_industry": {
-          "additionalProperties": {
-            "type": "boolean"
-          },
-          "title": "Specific Industry",
           "type": "object"
         },
         "education": {
@@ -110,6 +108,21 @@
           },
           "title": "Unexpected Partner Ids",
           "type": "array"
+        },
+        "specific_industry": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "boolean"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Specific Industry"
         },
         "max_partners": {
           "anyOf": [
@@ -292,7 +305,7 @@
           "title": "Mentee Stage"
         }
       },
-      "required": ["user_id", "display_name", "skills", "specific_industry"],
+      "required": ["role", "user_id", "display_name", "skills"],
       "title": "PersonRecord",
       "type": "object"
     },
