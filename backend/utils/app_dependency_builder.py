@@ -1093,8 +1093,8 @@ class AppDependencyBuilder:
             leave_ledger_repository=self.leave_ledger_repository,
         )
         self.leave_balance_controller = LeaveBalanceController(
-            logger=self.logger,
             leave_balance_service=self.leave_balance_service,
+            database=self.database,
         )
         self.fast_app_factory = FastAppFactory(
             authentication_controller=self.authentication_controller,
