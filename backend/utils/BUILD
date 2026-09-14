@@ -154,6 +154,8 @@ py_library(
         "//backend/leave:leave_participants",
         "//backend/leave:leave_request_controller",
         "//backend/leave:leave_request_service",
+        "//backend/leave:leave_balance_service",
+        "//backend/leave:leave_balance_controller",
         "//backend/mentorship",
         "//backend/notification_management:delivery_controller",
         "//backend/notification_management:delivery_service",
