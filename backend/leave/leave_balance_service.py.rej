@@ -1,0 +1,7 @@
+--- backend/leave/leave_balance_service.py
++++ backend/leave/leave_balance_service.py
+@@ -44,4 +44,3 @@
+         ]
+ 
+         return LeaveBalanceDto(balanceHours=balance_hours_str, entries=entry_dtos)
+-

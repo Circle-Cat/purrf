@@ -61,7 +61,9 @@ class LeaveBalanceServiceTest(IsolatedAsyncioTestCase):
         self.assertEqual(balance_dto.entries[0].hours, "8.00")
         self.assertEqual(balance_dto.entries[0].note, "Monthly Accrual")
 
-    async def test_user_with_no_ledger_history_returns_zero_balance_and_empty_list(self):
+    async def test_user_with_no_ledger_history_returns_zero_balance_and_empty_list(
+        self,
+    ):
         """A user without any ledger records must yield 0.00 hours and an empty entries list."""
         self.repository.balance.return_value = Decimal("0.00")
         self.repository.list_entries.return_value = []
@@ -91,7 +93,9 @@ class LeaveBalanceServiceTest(IsolatedAsyncioTestCase):
         self.assertEqual(balance_dto.entries[0].hours, "7.67")
         self.assertEqual(balance_dto.entries[1].hours, "0.00")
 
-    async def test_invalid_user_id_raises_value_error_without_accessing_repository(self):
+    async def test_invalid_user_id_raises_value_error_without_accessing_repository(
+        self,
+    ):
         """Passing a non-positive or invalid user_id must raise ValueError directly."""
         with self.assertRaises(ValueError):
             await self.service.get_leave_balance(self.session, user_id=-1)
