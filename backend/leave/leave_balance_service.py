@@ -1,4 +1,3 @@
-from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.dto.leave_balance_dto import LeaveBalanceDto, LeaveLedgerEntryDto
