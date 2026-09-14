@@ -1093,7 +1093,6 @@ class AppDependencyBuilder:
         )
         self.leave_balance_service = LeaveBalanceService(
             logger=self.logger,
-            database=self.database,
             leave_ledger_repository=self.leave_ledger_repository,
         )
         self.leave_balance_controller = LeaveBalanceController(
