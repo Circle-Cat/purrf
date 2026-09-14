@@ -45,6 +45,7 @@ class TestFastAppFactory(unittest.TestCase):
             leave_job_controller=self.mock_controller,
             leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
+            leave_balance_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -71,6 +72,7 @@ class TestFastAppFactory(unittest.TestCase):
         self.assertEqual(self.factory.evaluation_controller, self.mock_controller)
         self.assertEqual(self.factory.audit_controller, self.mock_controller)
         self.assertEqual(self.factory.leave_calendar_controller, self.mock_controller)
+        self.assertEqual(self.factory.leave_balance_controller, self.mock_controller)
         self.assertEqual(self.factory.leave_admin_controller, self.mock_controller)
         self.assertEqual(self.factory.leave_job_controller, self.mock_controller)
         self.assertEqual(self.factory.leave_request_controller, self.mock_controller)
@@ -132,6 +134,7 @@ class TestFastAppFactory(unittest.TestCase):
             leave_job_controller=self.mock_controller,
             leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
+            leave_balance_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -183,6 +186,7 @@ class TestFastAppFactory(unittest.TestCase):
             leave_job_controller=self.mock_controller,
             leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
+            leave_balance_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -237,6 +241,7 @@ class TestFastAppFactory(unittest.TestCase):
             leave_job_controller=self.mock_controller,
             leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
+            leave_balance_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -288,6 +293,7 @@ class TestFastAppFactory(unittest.TestCase):
             leave_job_controller=self.mock_controller,
             leave_request_controller=self.mock_controller,
             leave_calendar_controller=leave_calendar,
+            leave_balance_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -339,6 +345,7 @@ class TestFastAppFactory(unittest.TestCase):
             leave_job_controller=self.mock_controller,
             leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
+            leave_balance_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -392,6 +399,7 @@ class TestFastAppFactory(unittest.TestCase):
             leave_job_controller=self.mock_controller,
             leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
+            leave_balance_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -446,6 +454,7 @@ class TestFastAppFactory(unittest.TestCase):
             leave_job_controller=self.mock_controller,
             leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
+            leave_balance_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -508,6 +517,7 @@ class TestFastAppFactory(unittest.TestCase):
             leave_job_controller=self.mock_controller,
             leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
+            leave_balance_controller=self.mock_controller,
             notification_delivery_controller=delivery_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -571,6 +581,7 @@ class TestFastAppFactory(unittest.TestCase):
             leave_job_controller=self.mock_controller,
             leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
+            leave_balance_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -657,6 +668,7 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
             leave_job_controller=self.mock_controller,
             leave_request_controller=self.mock_controller,
             leave_calendar_controller=self.mock_controller,
+            leave_balance_controller=self.mock_controller,
             notification_delivery_controller=self.mock_controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",
@@ -729,6 +741,7 @@ class TestAccountConsoleRoutes(unittest.TestCase):
             leave_job_controller=controller,
             leave_request_controller=controller,
             leave_calendar_controller=controller,
+            leave_balance_controller=controller,
             notification_delivery_controller=controller,
             notification_publisher=MagicMock(),
             notification_topic_path="projects/p/topics/t",

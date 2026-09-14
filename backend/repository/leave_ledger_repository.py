@@ -217,3 +217,26 @@ class LeaveLedgerRepository:
         """
         session.add_all(entries)
         await session.flush()
+
+    async def list_entries(
+        self, session: AsyncSession, user_id: int
+    ) -> list[LeaveLedgerEntity]:
+        """Lists all ledger entries for a single user in reverse chronological order.
+
+        Args:
+            session: Active async session.
+            user_id: Whose ledger entries to retrieve.
+
+        Returns:
+            A list of LeaveLedgerEntity objects ordered by effective_date and id descending.
+        """
+        stmt = (
+            select(LeaveLedgerEntity)
+            .where(LeaveLedgerEntity.user_id == user_id)
+            .order_by(
+                LeaveLedgerEntity.effective_date.desc(),
+                LeaveLedgerEntity.leave_ledger_id.desc(),
+            )
+        )
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
