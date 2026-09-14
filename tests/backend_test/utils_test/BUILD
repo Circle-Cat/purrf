@@ -32,6 +32,7 @@ py_test(
     srcs = ["app_dependency_builder_test.py"],
     deps = [
         "//backend/utils:app_dependency_builder",
+        "//backend/leave:leave_balance_service",
     ],
 )
 
