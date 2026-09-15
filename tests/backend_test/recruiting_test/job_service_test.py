@@ -676,6 +676,29 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.status, JobStatus.PENDING_REVIEW)
 
+    async def test_submit_for_review_names_the_submitter_and_their_note(self):
+        """The response describes the review it just opened, so it names it.
+
+        ``get_job`` reads both fields off the open review and returns them.
+        Leaving them out here has the two endpoints disagree about whether
+        anyone submitted this posting at all.
+        """
+        job = self._job(status=JobStatus.DRAFT)
+        job.pipeline_config = self._valid_pipeline()
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        result = await self.service.submit_for_review(
+            self.session,
+            job.job_id,
+            reviewer_id=2,
+            submitted_by=1,
+            message="Ready for you",
+        )
+
+        self.assertEqual(result.submitted_by, 1)
+        self.assertEqual(result.submit_message, "Ready for you")
+
     async def test_submit_revision_validates_staged_pipeline_not_live(self):
         """A staged edit that empties the pipeline is caught at submit time,
         even when the live config is still valid."""
@@ -1073,7 +1096,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         # The posting must not have advanced.
         self.assertEqual(review.status, JobReviewStatus.PENDING)
 
-    def _pending_review(self, *, review_id=50, submitted_by=1, reviewer_id=2):
+    def _pending_review(
+        self, *, review_id=50, submitted_by=1, reviewer_id=2, submit_message=None
+    ):
         """A PENDING review of the default job, for the reassign tests."""
         return JobReviewEntity(
             review_id=review_id,
@@ -1082,6 +1107,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             reviewer_id=reviewer_id,
             status=JobReviewStatus.PENDING,
             kind=JobReviewKind.INITIAL,
+            submit_message=submit_message,
         )
 
     async def test_reassign_review_moves_it_to_the_new_reviewer(self):
@@ -1103,6 +1129,25 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(review.reviewer_id, 3)
         self.assertEqual(review.status, JobReviewStatus.PENDING)
         self.assertEqual(job.status, JobStatus.PENDING_REVIEW)
+
+    async def test_reassign_review_still_names_who_submitted_it(self):
+        """A redirected review is still open, so the response still names it.
+
+        The reassign affordance is keyed on this field alone, so answering
+        with None tells the caller the posting may no longer be reassigned.
+        """
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        self.repo.get_by_job_id.return_value = job
+        review = self._pending_review(submit_message="Please take a look")
+        self.review_repo.get_open_for_job.return_value = review
+        self._two_approvers()
+
+        result = await self.service.reassign_review(
+            self.session, review.job_id, acting_user_id=1, reviewer_id=3
+        )
+
+        self.assertEqual(result.submitted_by, 1)
+        self.assertEqual(result.submit_message, "Please take a look")
 
     async def test_reassign_review_records_who_it_came_from(self):
         """The event carries the previous reviewer, which the row no longer does.

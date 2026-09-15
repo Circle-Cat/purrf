@@ -631,7 +631,11 @@ class JobService:
         )
         await session.commit()
         return self.recruiting_mapper.to_job_dto(
-            job, reviewer_id=reviewer_id, submit_blockers=submit_blockers(job)
+            job,
+            reviewer_id=reviewer_id,
+            submitted_by=submitted_by,
+            submit_message=message,
+            submit_blockers=submit_blockers(job),
         )
 
     async def submit_for_review(
@@ -999,7 +1003,11 @@ class JobService:
         )
         await session.commit()
         return self.recruiting_mapper.to_job_dto(
-            job, reviewer_id=reviewer_id, submit_blockers=submit_blockers(job)
+            job,
+            reviewer_id=reviewer_id,
+            submitted_by=review.submitted_by,
+            submit_message=review.submit_message,
+            submit_blockers=submit_blockers(job),
         )
 
     async def _require_pending_review(
