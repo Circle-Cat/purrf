@@ -345,8 +345,14 @@ class TrainingProgressService:
 
         moved = next_training_status(assignment.status, cmi.get(_LESSON_STATUS))
 
+        # A run that stores nothing has no row of its own, so it cannot claim
+        # its content is unchanged: `existing` belongs to the verifier's own
+        # learning of the live package, which a trial can never move. Letting
+        # a trial answer that question parks it on the skip below, short of
+        # the stamp it exists to produce.
         unchanged = (
-            _content_unchanged(existing, columns)
+            stores_progress
+            and _content_unchanged(existing, columns)
             and not accumulates_session_time
             and not final
         )
