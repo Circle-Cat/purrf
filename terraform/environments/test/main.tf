@@ -47,5 +47,10 @@ module "purrf_instance" {
   gmail_refresh_token       = var.gmail_refresh_token
   gmail_sender_recruiting   = "recruiting-test@circlecat.org"
   gmail_sender_notification = "notification-test@circlecat.org"
+
+  # The matcher pipeline is brought up here first. matcher_image_tag stays
+  # unset until an image has been pushed to the repository this apply creates;
+  # setting it is what creates the job.
+  enable_matcher = true
 }
 
