@@ -88,6 +88,14 @@ resource "kubernetes_secret" "purrf_app" {
 
     GOOGLE_SERVICE_ACCOUNT_SUBS = data.google_service_account.purrf_service.unique_id
 
+    # Where a matching run's payload is written, and the job that reads it.
+    # MATCHER_JOB_RESOURCE is the full resource name because that is what the
+    # Cloud Run REST call takes. Both are empty where no matcher is
+    # provisioned: the endpoint then refuses to start a run instead of
+    # reaching for something that is not there.
+    MATCHING_BUCKET      = var.enable_matcher ? google_storage_bucket.matching[0].name : ""
+    MATCHER_JOB_RESOURCE = local.matcher_job_enabled ? "projects/${var.gcp_project_id}/locations/${var.gcp_region}/jobs/${google_cloud_run_v2_job.matcher[0].name}" : ""
+
     # Every origin this environment answers on. The backend reads these only to
     # refuse a TRAINING_CONTENT_HOST that matches one of them. Course hosting
     # stays disabled until this is set.
