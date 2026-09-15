@@ -69,6 +69,7 @@ MENTORSHIP_ROUNDS_FEEDBACK_ENDPOINT = "/mentorship/rounds/{round_id}/feedback"
 MENTORSHIP_ADMIN_PARTICIPANTS = "/mentorship/admin/participants"
 MENTORSHIP_ADMIN_PARTICIPANTS_EXPORT = "/mentorship/admin/participants/export"
 MENTORSHIP_ADMIN_PAIRS_MEETINGS = "/mentorship/admin/pairs/{pair_id}/meetings"
+MENTORSHIP_ADMIN_MATCH_RUNS = "/mentorship/admin/match-runs"
 
 ADMIN_PERMISSIONS_ENDPOINT = "/admin/permissions"
 ADMIN_USERS_ENDPOINT = "/admin/users"
