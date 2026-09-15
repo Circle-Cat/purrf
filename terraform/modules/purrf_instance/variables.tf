@@ -189,3 +189,21 @@ variable "interview_calendar_id" {
   description = "Secondary calendar under user_email that recruiting interview meetings are created on, patched on and deleted from. Same per-environment and ownership requirements as mentorship_calendar_id. Cancellation here is automation-driven (advance / reject / blacklist, and the blacklist sweep covers every application), so a shared calendar lets one environment delete another's real interviews in bulk."
   type        = string
 }
+
+variable "enable_matcher" {
+  description = "Provision the mentorship matcher: its Artifact Registry repository, secrets, service account and Cloud Run job. Off by default while the pipeline is being brought up on test."
+  type        = bool
+  default     = false
+}
+
+variable "matcher_image_tag" {
+  description = "Tag of the matcher image in this environment's Artifact Registry repository. Explicit rather than a floating tag such as main: a run has to be traceable to the code that produced it. Empty leaves the job uncreated, which is what the first apply needs -- Cloud Run rejects a job whose image does not exist yet."
+  type        = string
+  default     = ""
+}
+
+variable "matcher_llm_concurrency" {
+  description = "How many scoring calls the matcher has in flight at once."
+  type        = number
+  default     = 4
+}
