@@ -1450,6 +1450,49 @@ class TestTheSaveReportsWhetherTheCourseIsVerified(_ProgressServiceCase):
 
         self.assertIs(result.course_verified, True)
 
+    async def test_a_trial_stamps_even_when_it_matches_the_verifier_own_row(self):
+        """A trial has no row of its own, so "unchanged" cannot describe it.
+
+        The verifier most likely to run a replacement package is whoever
+        already completed the course: their row holds ``completed`` and the
+        bookmark a re-export of the same content ends on, and a DONE
+        assignment moves nowhere. Skipping on that likeness parks the trial
+        short of the stamp it exists to produce -- and since a trial stores
+        nothing, the next commit compares against the same row and skips
+        again, so the package can never be published.
+        """
+        self.package.state = TrainingPackageState.PENDING
+        self.package.verified_completable_at = None
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="completed",
+                lesson_location="Summary",
+                suspend_data="x" * 5000,
+                session_time_seconds=500,
+            )
+        )
+        assignment = self.training_repository.get_training_by_id.return_value
+        assignment.status = TrainingStatus.DONE
+
+        result = await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {
+                **_COMMIT,
+                "cmi.core.lesson_status": "completed",
+                "cmi.core.total_time": "00:08:20",
+            },
+            may_verify_course=True,
+            session_token=_session_token(),
+        )
+
+        self.assertIs(result.course_verified, True)
+        self.assertIsNotNone(self.package.verified_completable_at)
+        # Only the skip changed: a trial still banks nothing on the row.
+        self.progress_repository.upsert.assert_not_awaited()
+
     async def test_an_already_stamped_course_reads_verified_too(self):
         package = self.package_repository.get_by_state.return_value
         package.verified_completable_at = _EARLIER
