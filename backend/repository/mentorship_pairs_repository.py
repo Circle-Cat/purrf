@@ -367,14 +367,19 @@ class MentorshipPairsRepository:
         return result.scalars().all()
 
     async def count_mentoring_rounds(
-        self, session: AsyncSession, mentor_ids: list[int], exclude_round_id: int
+        self, session: AsyncSession, user_ids: list[int], exclude_round_id: int
     ) -> dict[int, tuple[int, int]]:
-        """Count past rounds each mentor was paired in, and how many went anywhere.
+        """Count past rounds each person was paired in, and how many went anywhere.
 
         A round counts as completed when at least one of its meetings took place.
         Being paired is not the same as having mentored: a mentee who never
         answered leaves a pair behind and nothing else, and a rationale that
         calls that experience is wrong.
+
+        Either side of a pair counts, so someone who mentored two rounds ago and
+        is a mentee now is not reported as having never been paired. What the
+        matcher asks of these numbers is whether a person has been through the
+        process at all, which the role they were in at the time does not change.
 
         Counted from meeting rows rather than ``mentorship_pairs.completed_count``,
         which is a derived column on its way out. Historical rounds that recorded
@@ -383,35 +388,46 @@ class MentorshipPairsRepository:
 
         Args:
             session (AsyncSession): The active async database session.
-            mentor_ids (list[int]): Mentors to count for.
+            user_ids (list[int]): People to count for, mentors and mentees alike.
             exclude_round_id (int): Round to leave out, being the one now matched.
 
         Returns:
-            dict[int, tuple[int, int]]: mentor_id -> (rounds paired, rounds with
-                a meeting). Mentors with no past pairs are absent.
+            dict[int, tuple[int, int]]: user_id -> (rounds paired, rounds with
+                a meeting). People with no past pairs are absent.
         """
-        if not mentor_ids:
+        if not user_ids:
             return {}
 
         went_somewhere = exists().where(
             MentorshipMeetingEntity.pair_id == MentorshipPairsEntity.pair_id,
             MentorshipMeetingEntity.is_completed.is_(True),
         )
-        result = await session.execute(
-            select(
-                MentorshipPairsEntity.mentor_id,
-                func.count(distinct(MentorshipPairsEntity.round_id)),
-                func.count(
-                    distinct(case((went_somewhere, MentorshipPairsEntity.round_id)))
-                ),
-            )
-            .where(
-                MentorshipPairsEntity.mentor_id.in_(mentor_ids),
+
+        def side(column):
+            return select(
+                column.label("user_id"),
+                MentorshipPairsEntity.round_id.label("round_id"),
+                went_somewhere.label("went_somewhere"),
+            ).where(
+                column.in_(user_ids),
                 MentorshipPairsEntity.round_id != exclude_round_id,
             )
-            .group_by(MentorshipPairsEntity.mentor_id)
+
+        # One row per pair per side. A mentor carrying two mentees in a round
+        # contributes two rows for that round, which is why both counts below
+        # are over distinct rounds rather than rows.
+        pairs = (
+            side(MentorshipPairsEntity.mentor_id)
+            .union_all(side(MentorshipPairsEntity.mentee_id))
+            .subquery()
+        )
+        result = await session.execute(
+            select(
+                pairs.c.user_id,
+                func.count(distinct(pairs.c.round_id)),
+                func.count(distinct(case((pairs.c.went_somewhere, pairs.c.round_id)))),
+            ).group_by(pairs.c.user_id)
         )
         return {
-            mentor_id: (paired, completed)
-            for mentor_id, paired, completed in result.all()
+            user_id: (paired, completed) for user_id, paired, completed in result.all()
         }
