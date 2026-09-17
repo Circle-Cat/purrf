@@ -7,9 +7,11 @@ from backend.common.mentorship_survey_codes import VOCABULARIES
 from backend.mentorship.matching_contract import (
     INDUSTRY_KEYS,
     META_VERSION,
+    RESULT_VERSION,
     SKILL_KEYS,
     Candidate,
     MatchingMeta,
+    MatchingRunResult,
     MenteeResult,
     PersonRecord,
 )
@@ -49,6 +51,22 @@ def _mentee(**overrides):
         expected_partner_ids=[],
         unexpected_partner_ids=[],
         goal="",
+    )
+    base.update(overrides)
+    return base
+
+
+def _run_result(**overrides):
+    base = dict(
+        contract_version=RESULT_VERSION,
+        run_id="r1-20260912T000000Z-abc123",
+        round_id=1,
+        status="succeeded",
+        started_at="2026-09-12T00:00:00+00:00",
+        finished_at="2026-09-12T00:50:00+00:00",
+        matcher_version="deadbee",
+        run_date="2026-09-12",
+        mentee_count=18,
     )
     base.update(overrides)
     return base
@@ -191,6 +209,65 @@ class MatchingContractTest(unittest.TestCase):
             MenteeResult(
                 candidates=[Candidate(mentor_id=str(i), score=60) for i in range(4)]
             )
+
+    def test_candidates_carry_their_ranking_in_their_order(self):
+        # Nothing else records the rank, and the review screen renders them in
+        # the order they arrive.
+        result = MenteeResult(
+            candidates=[
+                Candidate(mentor_id="9", score=71),
+                Candidate(mentor_id="3", score=64),
+                Candidate(mentor_id="8", score=64),
+            ]
+        )
+        self.assertEqual([c.mentor_id for c in result.candidates], ["9", "3", "8"])
+
+    def test_rejects_candidates_out_of_ranking_order(self):
+        with self.assertRaises(ValueError):
+            MenteeResult(
+                candidates=[
+                    Candidate(mentor_id="3", score=64),
+                    Candidate(mentor_id="9", score=71),
+                ]
+            )
+
+    def test_rejects_a_tie_broken_the_wrong_way(self):
+        with self.assertRaises(ValueError):
+            MenteeResult(
+                candidates=[
+                    Candidate(mentor_id="8", score=64),
+                    Candidate(mentor_id="3", score=64),
+                ]
+            )
+
+    def test_run_result_needs_a_version_it_can_check(self):
+        # The only model Purrf never writes. An absent version would read as the
+        # current one, and MenteeResult carries none of its own because this
+        # check is supposed to have happened first.
+        with self.assertRaises(ValueError):
+            MatchingRunResult(**_run_result(contract_version=None))
+        with self.assertRaises(ValueError):
+            MatchingRunResult(**_run_result(contract_version=RESULT_VERSION + 1))
+
+    def test_run_result_round_trips(self):
+        result = MatchingRunResult(**_run_result())
+        again = MatchingRunResult.model_validate(json.loads(result.model_dump_json()))
+        self.assertEqual(again.mentee_count, 18)
+        self.assertEqual(again.unmatched_mentor_ids, [])
+
+    def test_a_failed_run_says_why(self):
+        # Not rejected when it does not: refusing a failed result would throw
+        # away the only record of the failure.
+        result = MatchingRunResult(
+            **_run_result(status="failed", error="PayloadError: meta missing")
+        )
+        self.assertEqual(result.status, "failed")
+
+    def test_version_constants_are_pinned(self):
+        # Both sides agreed on 1 for the Redis-shaped contract. Written as a
+        # literal so a bump is a deliberate edit in two places rather than one.
+        self.assertEqual(META_VERSION, 1)
+        self.assertEqual(RESULT_VERSION, 1)
 
     def test_every_code_the_contract_allows_has_wording(self):
         """A renamed or added code without a sentence behind it fails here.

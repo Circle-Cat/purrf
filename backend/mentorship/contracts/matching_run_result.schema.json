@@ -3,7 +3,6 @@
   "description": "Written after the last mentee, and the run's commit marker.\n\nA failed run is this value and nothing else: ``out`` stays empty, so a null\n``mentor_id`` always means nobody was assigned and never that the run died\npartway.",
   "properties": {
     "contract_version": {
-      "default": 1,
       "title": "Contract Version",
       "type": "integer"
     },
@@ -61,6 +60,7 @@
     }
   },
   "required": [
+    "contract_version",
     "run_id",
     "round_id",
     "status",

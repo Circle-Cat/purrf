@@ -229,6 +229,12 @@ class MenteeResult(_Strict):
     mentor_id: str | None = None
     score: int | None = None
     match_type: Literal["mutual_yes", "hungarian"] | None = None
+    # Deliberately no max_length, though the column it ends up in is
+    # String(300). The matcher truncates at its own exit; a length check here
+    # would turn one over-long sentence into a run nobody can open, and the
+    # review screen -- where an admin sees the text and a counter, and can trim
+    # it -- is the thing that would stop opening. A column constraint fails one
+    # row; a constraint on this model fails a run.
     recommendation_reason: str = ""
     diagnostic_reason: str = ""
     candidates: list[Candidate] = Field(default_factory=list, max_length=3)
@@ -270,6 +276,24 @@ class MenteeResult(_Strict):
             raise ValueError("the assigned mentor is listed among the candidates")
         return self
 
+    @model_validator(mode="after")
+    def _candidates_are_in_ranking_order(self):
+        """Position in the list is the rank, so the list has to be sorted.
+
+        Nothing else records the ranking -- there is no rank field -- and the
+        review screen renders them in the order they arrive. Ties break on
+        mentor_id so that the same input always produces the same list.
+        """
+        ranked = sorted(
+            self.candidates,
+            key=lambda candidate: (-candidate.score, candidate.mentor_id),
+        )
+        if self.candidates != ranked:
+            raise ValueError(
+                "candidates are not in ranking order (score descending, then mentor_id)"
+            )
+        return self
+
 
 class MatchingRunResult(_Strict):
     """Written after the last mentee, and the run's commit marker.
@@ -279,7 +303,11 @@ class MatchingRunResult(_Strict):
     partway.
     """
 
-    contract_version: int = RESULT_VERSION
+    # No default, unlike the meta Purrf stamps itself. This is the one model
+    # Purrf only ever reads, and a default would let an absent version read as
+    # the current one. MenteeResult carries no version of its own precisely
+    # because this check is supposed to have happened first.
+    contract_version: int
     run_id: str
     round_id: int
     status: Literal["succeeded", "failed"]
@@ -295,3 +323,14 @@ class MatchingRunResult(_Strict):
     # Not derivable from ``out``: a mentor may take several mentees, and one who
     # took fewer than his cap is not unmatched.
     unmatched_mentor_ids: list[str] = Field(default_factory=list)
+
+    @field_validator("contract_version")
+    @classmethod
+    def _reject_a_version_this_reader_does_not_know(cls, value):
+        """A matcher image that has fallen behind is refused, not guessed at."""
+        if value != RESULT_VERSION:
+            raise ValueError(
+                f"result contract_version {value} is not supported; "
+                f"this reader knows {RESULT_VERSION}"
+            )
+        return value
