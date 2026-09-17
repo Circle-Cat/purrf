@@ -1,7 +1,9 @@
-"""Print the matching payload for a round, without writing anything.
+"""Print what a matching run would store for a round, without writing anything.
 
 Read-only. Builds exactly what a matching run would be given, so it is also the
-way to look at a round before committing to an hour of scoring.
+way to look at a round before committing to an hour of scoring. The output is
+keyed the way Redis is -- one object per key, people under their own id -- and
+is a view of those keys rather than a document the contract defines.
 
     bazel run //tools:dump_matching_payload -- --list-rounds
     bazel run //tools:dump_matching_payload -- --round-id 12
@@ -131,9 +133,21 @@ async def main() -> None:
     finally:
         await database.close()
 
-    text = json.dumps(
-        json.loads(payload.model_dump_json()), ensure_ascii=False, indent=2
-    )
+    # A view of the keys a run would write, not a document the contract defines
+    # -- the envelope and the two groups live in three separate Redis keys, and
+    # the people are stored one per field under their own id.
+    view = {
+        "meta": json.loads(payload.meta.model_dump_json()),
+        "in:mentors": {
+            person.user_id: json.loads(person.model_dump_json())
+            for person in payload.mentors
+        },
+        "in:mentees": {
+            person.user_id: json.loads(person.model_dump_json())
+            for person in payload.mentees
+        },
+    }
+    text = json.dumps(view, ensure_ascii=False, indent=2)
     if args.out:
         with open(args.out, "w", encoding="utf-8") as handle:
             handle.write(text + "\n")
