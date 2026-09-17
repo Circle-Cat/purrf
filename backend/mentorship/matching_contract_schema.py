@@ -10,11 +10,20 @@ when they drift.
 import json
 from pathlib import Path
 
-from backend.mentorship.matching_contract import MatchingPayload, MatchingResult
+from backend.mentorship.matching_contract import (
+    MatchingMeta,
+    MatchingRunResult,
+    MenteeResult,
+    PersonRecord,
+)
 
+# One file per addressable Redis value, so every schema can be checked against
+# something that is actually stored.
 _MODELS = {
-    "matching_payload.schema.json": MatchingPayload,
-    "matching_result.schema.json": MatchingResult,
+    "matching_meta.schema.json": MatchingMeta,
+    "person_record.schema.json": PersonRecord,
+    "mentee_result.schema.json": MenteeResult,
+    "matching_run_result.schema.json": MatchingRunResult,
 }
 
 
@@ -32,7 +41,7 @@ def render_schemas() -> dict[str, str]:
 
 
 def write_schemas(out_dir: Path) -> None:
-    """Write both schemas into out_dir."""
+    """Write every schema into out_dir."""
     out_dir.mkdir(parents=True, exist_ok=True)
     for filename, text in render_schemas().items():
         (out_dir / filename).write_text(text, encoding="utf-8")

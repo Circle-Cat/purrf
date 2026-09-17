@@ -7,6 +7,7 @@ question that belongs with whoever assembles that list.
 
 import secrets
 from datetime import datetime, timezone
+from typing import NamedTuple
 
 from backend.common.mentorship_enums import ParticipantRole
 from backend.common.mentorship_survey_codes import (
@@ -25,7 +26,7 @@ from backend.mentorship.matching_contract import (
     INDUSTRY_KEYS,
     SKILL_KEYS,
     EducationRecord,
-    MatchingPayload,
+    MatchingMeta,
     PersonRecord,
     WorkHistoryRecord,
 )
@@ -33,6 +34,20 @@ from backend.mentorship.matching_contract import (
 # Dates arrive as strings in a JSONB column, where 1970-01-01 stands in for
 # "unknown". The contract says absent instead.
 _PLACEHOLDER_DATE_PREFIX = "1970-"
+
+
+class MatchingInput(NamedTuple):
+    """The three things one run needs written, in the order they are written.
+
+    Not a contract type: the envelope and the two groups land in three separate
+    Redis keys and never travel together as one document. Named rather than a
+    plain tuple because the two lists have the same type, and swapping them
+    would produce a run that matches mentors against mentors.
+    """
+
+    meta: MatchingMeta
+    mentors: list[PersonRecord]
+    mentees: list[PersonRecord]
 
 
 def new_run_id(round_id: int) -> str:
@@ -110,7 +125,8 @@ class MatchingPayloadService:
         participant_ids: list[int],
         *,
         run_id: str | None = None,
-    ) -> MatchingPayload:
+        triggered_by_user_id: str | None = None,
+    ) -> MatchingInput:
         """Translate chosen participants of a round into a matching payload.
 
         Args:
@@ -119,9 +135,12 @@ class MatchingPayloadService:
             participant_ids (list[int]): Users to include. Every one of them has
                 to be registered for this round.
             run_id (str | None): Run identifier; generated when absent.
+            triggered_by_user_id (str | None): Who asked for this run. Carried
+                so the completion notice has somewhere to go; nothing else
+                outlives the run.
 
         Returns:
-            MatchingPayload: Validated payload, ready to be written out.
+            MatchingInput: Validated envelope and both groups, ready to write.
 
         Raises:
             ValueError: A requested user is not a participant of this round,
@@ -174,13 +193,16 @@ class MatchingPayloadService:
             len(mentors),
             len(mentees),
         )
-        return MatchingPayload(
-            run_id=run_id or new_run_id(round_id),
-            round_id=round_id,
-            generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        return MatchingInput(
+            meta=MatchingMeta(
+                run_id=run_id or new_run_id(round_id),
+                round_id=round_id,
+                generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                triggered_by_user_id=triggered_by_user_id,
+                vocabularies=VOCABULARIES,
+            ),
             mentors=mentors,
             mentees=mentees,
-            vocabularies=VOCABULARIES,
         )
 
     def _person(

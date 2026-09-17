@@ -1,15 +1,30 @@
 """The data contract between Purrf and purrf-matcher, defined once, here.
 
-Both repositories keep a copy of the JSON Schema generated from these models.
-There is no automatic sync between them; `contract_version` is what catches a
-copy that has fallen behind.
+The transport is Redis, and the unit of the contract is one addressable value.
+A schema describing a document nobody stores cannot be validated against
+anything, which is what the previous pair of schemas had become: they described
+a payload and a result that Redis never holds, because the two person lists are
+key names now and the pairs are spread one per field.
+
+    match:{run}:meta          MatchingMeta       Purrf writes, last
+    match:{run}:in:mentors    PersonRecord       Purrf writes, one per field
+    match:{run}:in:mentees    PersonRecord       Purrf writes, one per field
+    match:{run}:out           MenteeResult       the matcher writes, one per field
+    match:{run}:result_meta   MatchingRunResult  the matcher writes, last
+
+Both repositories keep a copy of the JSON Schema generated from these models,
+and nothing syncs them, so each direction carries its own version: Purrf stamps
+META_VERSION, the matcher stamps RESULT_VERSION, and each reader checks the one
+it receives. Separate constants on purpose -- a single number covering both
+directions made a change to either contract look like a change to both.
 """
 
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-CONTRACT_VERSION = 2
+META_VERSION = 1
+RESULT_VERSION = 1
 
 SKILL_KEYS = (
     "resume_guidance",
@@ -158,15 +173,25 @@ class PersonRecord(_Strict):
         return self
 
 
-class MatchingPayload(_Strict):
-    """What Purrf writes to Cloud Storage for one matching run."""
+class MatchingMeta(_Strict):
+    """The envelope for one run, written after the two person hashes.
 
-    contract_version: int = CONTRACT_VERSION
+    It is the commit marker. A reader that cannot find it is looking at a run
+    Purrf has not finished writing and has to stop, because the alternative --
+    reading the people that are there so far -- succeeds and produces a round
+    that is quietly short.
+    """
+
+    contract_version: int = META_VERSION
+    # Repeats the run id that is already in the key, on purpose: the job takes
+    # its run id from the environment, and comparing the two catches a job
+    # pointed at a different run.
     run_id: str
     round_id: int
     generated_at: str | None = None
-    mentors: list[PersonRecord]
-    mentees: list[PersonRecord]
+    # The matcher never reads this. It rides along because nothing else outlives
+    # the run, and the completion notice has to reach whoever started it.
+    triggered_by_user_id: str | None = None
     # Every coded answer above, with the sentence the participant read. Carried
     # once per run rather than per person: a consumer that renders an answer
     # should never have to keep its own translation, which is how one ended up
@@ -174,38 +199,115 @@ class MatchingPayload(_Strict):
     vocabularies: dict[str, dict[str, str]] = Field(default_factory=dict)
 
 
-class PairRecord(_Strict):
-    """One final assignment.
+class Candidate(_Strict):
+    """A mentor the admin can swap in, in a list whose order is the ranking.
+
+    There is no rank field. With the assigned mentor left out of the list, a
+    stored rank could mean either the position here or the position in the full
+    ranking, and nothing would catch the two being read apart.
+    """
+
+    mentor_id: str
+    score: int
+    diagnostic_reason: str = ""
+
+
+class MenteeResult(_Strict):
+    """One mentee's outcome, stored under that mentee's id.
 
     ``recommendation_reason`` is the mentee-facing text and is editable;
     ``diagnostic_reason`` is the scoring breakdown and belongs only on the review
     screen. They are named apart because the old CSV import mapped the breakdown
     into the mentee-facing field and truncated it.
+
+    ``score`` carries real scores only. The matcher decides its hard rules with
+    sentinels (+1000 for a mutual choice, -1000 when either side refused), and a
+    sentinel that reached this field would be read as a score by whoever is
+    comparing the assignment against its alternatives.
     """
 
-    mentee_id: str
-    mentor_id: str
-    score: int
-    match_type: Literal["mutual_yes", "hungarian"]
+    mentor_id: str | None = None
+    score: int | None = None
+    match_type: Literal["mutual_yes", "hungarian"] | None = None
+    # Deliberately no max_length, though the column it ends up in is
+    # String(300). The matcher truncates at its own exit; a length check here
+    # would turn one over-long sentence into a run nobody can open, and the
+    # review screen -- where an admin sees the text and a counter, and can trim
+    # it -- is the thing that would stop opening. A column constraint fails one
+    # row; a constraint on this model fails a run.
     recommendation_reason: str = ""
     diagnostic_reason: str = ""
+    candidates: list[Candidate] = Field(default_factory=list, max_length=3)
+
+    @model_validator(mode="after")
+    def _outcome_is_one_of_three_shapes(self):
+        """Unmatched, mutual choice, or scored assignment -- and never a mix.
+
+        ``score`` is absent in two of the three, so it is not what a reader
+        branches on; ``mentor_id`` is. Checked here so a malformed row fails
+        when it arrives rather than on the review screen.
+        """
+        if self.mentor_id is None:
+            if self.match_type is not None or self.score is not None:
+                raise ValueError(
+                    "an unmatched mentee carries neither score nor match_type"
+                )
+        elif self.match_type is None:
+            raise ValueError("an assigned mentor needs a match_type")
+        elif self.match_type == "mutual_yes":
+            if self.score is not None:
+                raise ValueError(
+                    "a mutual choice is not scored; match_type already says so"
+                )
+        elif self.score is None:
+            raise ValueError("a hungarian assignment carries its score")
+        return self
+
+    @model_validator(mode="after")
+    def _candidates_are_alternatives(self):
+        """The assigned mentor is not among his own alternatives.
+
+        The list is what the admin can swap in, so keeping the current mentor in
+        it spends one of three slots offering a change that changes nothing.
+        """
+        if self.mentor_id is not None and any(
+            candidate.mentor_id == self.mentor_id for candidate in self.candidates
+        ):
+            raise ValueError("the assigned mentor is listed among the candidates")
+        return self
+
+    @model_validator(mode="after")
+    def _candidates_are_in_ranking_order(self):
+        """Position in the list is the rank, so the list has to be sorted.
+
+        Nothing else records the ranking -- there is no rank field -- and the
+        review screen renders them in the order they arrive. Ties break on
+        mentor_id so that the same input always produces the same list.
+        """
+        ranked = sorted(
+            self.candidates,
+            key=lambda candidate: (-candidate.score, candidate.mentor_id),
+        )
+        if self.candidates != ranked:
+            raise ValueError(
+                "candidates are not in ranking order (score descending, then mentor_id)"
+            )
+        return self
 
 
-class CandidateRecord(_Strict):
-    """A runner-up for one mentee. No recommendation text: the matcher only writes
-    one for final pairs."""
+class MatchingRunResult(_Strict):
+    """Written after the last mentee, and the run's commit marker.
 
-    mentee_id: str
-    mentor_id: str
-    rank: int
-    score: int
-    diagnostic_reason: str = ""
+    A failed run is this value and nothing else: ``out`` stays empty, so a null
+    ``mentor_id`` always means nobody was assigned and never that the run died
+    partway.
+    """
 
-
-class MatchingResult(_Strict):
-    """What the matcher writes back. Pairs are keyed on user id, never on email."""
-
-    contract_version: int = CONTRACT_VERSION
+    # No default, unlike the meta Purrf stamps itself. This is the one model
+    # Purrf only ever reads, and a default would let an absent version read as
+    # the current one. MenteeResult carries no version of its own precisely
+    # because this check is supposed to have happened first.
+    contract_version: int
     run_id: str
     round_id: int
     status: Literal["succeeded", "failed"]
@@ -213,8 +315,22 @@ class MatchingResult(_Strict):
     finished_at: str
     matcher_version: str
     run_date: str
+    # How many fields ``out`` should hold. Purrf knows the same number as HLEN
+    # of the mentee hash; the two together say whether a short run lost people
+    # on the way in or on the way out, which decides whose logs to read.
+    mentee_count: int
     error: str | None = None
-    pairs: list[PairRecord] = Field(default_factory=list)
-    candidates: list[CandidateRecord] = Field(default_factory=list)
-    unmatched_mentee_ids: list[str] = Field(default_factory=list)
+    # Not derivable from ``out``: a mentor may take several mentees, and one who
+    # took fewer than his cap is not unmatched.
     unmatched_mentor_ids: list[str] = Field(default_factory=list)
+
+    @field_validator("contract_version")
+    @classmethod
+    def _reject_a_version_this_reader_does_not_know(cls, value):
+        """A matcher image that has fallen behind is refused, not guessed at."""
+        if value != RESULT_VERSION:
+            raise ValueError(
+                f"result contract_version {value} is not supported; "
+                f"this reader knows {RESULT_VERSION}"
+            )
+        return value

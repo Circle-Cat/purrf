@@ -5,10 +5,14 @@ from typing import Literal, get_args, get_origin
 
 from backend.common.mentorship_survey_codes import VOCABULARIES
 from backend.mentorship.matching_contract import (
-    CONTRACT_VERSION,
     INDUSTRY_KEYS,
+    META_VERSION,
+    RESULT_VERSION,
     SKILL_KEYS,
-    MatchingPayload,
+    Candidate,
+    MatchingMeta,
+    MatchingRunResult,
+    MenteeResult,
     PersonRecord,
 )
 from backend.mentorship.matching_contract_schema import render_schemas
@@ -47,6 +51,22 @@ def _mentee(**overrides):
         expected_partner_ids=[],
         unexpected_partner_ids=[],
         goal="",
+    )
+    base.update(overrides)
+    return base
+
+
+def _run_result(**overrides):
+    base = dict(
+        contract_version=RESULT_VERSION,
+        run_id="r1-20260912T000000Z-abc123",
+        round_id=1,
+        status="succeeded",
+        started_at="2026-09-12T00:00:00+00:00",
+        finished_at="2026-09-12T00:50:00+00:00",
+        matcher_version="deadbee",
+        run_date="2026-09-12",
+        mentee_count=18,
     )
     base.update(overrides)
     return base
@@ -140,16 +160,114 @@ class MatchingContractTest(unittest.TestCase):
                 **_mentor(career_transition="other:Switched over from bioinformatics")
             )
 
-    def test_payload_round_trips(self):
-        payload = MatchingPayload(
-            run_id="r1-20260912T000000Z-abc123",
-            round_id=1,
-            mentors=[PersonRecord(**_mentor())],
-            mentees=[PersonRecord(**_mentee())],
+    def test_meta_and_person_round_trip_separately(self):
+        # They land in different Redis keys and are read back one at a time, so
+        # each has to survive a round trip on its own.
+        meta = MatchingMeta(run_id="r1-20260912T000000Z-abc123", round_id=1)
+        again = MatchingMeta.model_validate(json.loads(meta.model_dump_json()))
+        self.assertEqual(again.contract_version, META_VERSION)
+
+        person = PersonRecord(**_mentor())
+        person_again = PersonRecord.model_validate(json.loads(person.model_dump_json()))
+        self.assertEqual(person_again.user_id, "1")
+
+    def test_unmatched_mentee_carries_no_score_and_no_match_type(self):
+        result = MenteeResult(candidates=[Candidate(mentor_id="7", score=64)])
+        self.assertIsNone(result.mentor_id)
+        self.assertIsNone(result.score)
+        self.assertIsNone(result.match_type)
+
+    def test_rejects_a_score_on_a_mentee_nobody_was_assigned(self):
+        with self.assertRaises(ValueError):
+            MenteeResult(score=64)
+
+    def test_mutual_choice_is_not_scored(self):
+        # +1000 is the matcher's sentinel for "both asked for each other". It
+        # would be read as a score beside the candidates, which carry real ones.
+        result = MenteeResult(mentor_id="7", match_type="mutual_yes")
+        self.assertIsNone(result.score)
+        with self.assertRaises(ValueError):
+            MenteeResult(mentor_id="7", match_type="mutual_yes", score=1000)
+
+    def test_rejects_an_assignment_without_a_score_or_a_match_type(self):
+        with self.assertRaises(ValueError):
+            MenteeResult(mentor_id="7", match_type="hungarian")
+        with self.assertRaises(ValueError):
+            MenteeResult(mentor_id="7", score=64)
+
+    def test_rejects_the_assigned_mentor_among_his_own_alternatives(self):
+        with self.assertRaises(ValueError):
+            MenteeResult(
+                mentor_id="7",
+                match_type="hungarian",
+                score=64,
+                candidates=[Candidate(mentor_id="7", score=64)],
+            )
+
+    def test_rejects_a_fourth_alternative(self):
+        with self.assertRaises(ValueError):
+            MenteeResult(
+                candidates=[Candidate(mentor_id=str(i), score=60) for i in range(4)]
+            )
+
+    def test_candidates_carry_their_ranking_in_their_order(self):
+        # Nothing else records the rank, and the review screen renders them in
+        # the order they arrive.
+        result = MenteeResult(
+            candidates=[
+                Candidate(mentor_id="9", score=71),
+                Candidate(mentor_id="3", score=64),
+                Candidate(mentor_id="8", score=64),
+            ]
         )
-        again = MatchingPayload.model_validate(json.loads(payload.model_dump_json()))
-        self.assertEqual(again.contract_version, CONTRACT_VERSION)
-        self.assertEqual(again.mentors[0].user_id, "1")
+        self.assertEqual([c.mentor_id for c in result.candidates], ["9", "3", "8"])
+
+    def test_rejects_candidates_out_of_ranking_order(self):
+        with self.assertRaises(ValueError):
+            MenteeResult(
+                candidates=[
+                    Candidate(mentor_id="3", score=64),
+                    Candidate(mentor_id="9", score=71),
+                ]
+            )
+
+    def test_rejects_a_tie_broken_the_wrong_way(self):
+        with self.assertRaises(ValueError):
+            MenteeResult(
+                candidates=[
+                    Candidate(mentor_id="8", score=64),
+                    Candidate(mentor_id="3", score=64),
+                ]
+            )
+
+    def test_run_result_needs_a_version_it_can_check(self):
+        # The only model Purrf never writes. An absent version would read as the
+        # current one, and MenteeResult carries none of its own because this
+        # check is supposed to have happened first.
+        with self.assertRaises(ValueError):
+            MatchingRunResult(**_run_result(contract_version=None))
+        with self.assertRaises(ValueError):
+            MatchingRunResult(**_run_result(contract_version=RESULT_VERSION + 1))
+
+    def test_run_result_round_trips(self):
+        result = MatchingRunResult(**_run_result())
+        again = MatchingRunResult.model_validate(json.loads(result.model_dump_json()))
+        self.assertEqual(again.mentee_count, 18)
+        self.assertEqual(again.unmatched_mentor_ids, [])
+
+    def test_a_failed_run_says_why(self):
+        # Not rejected when it does not: refusing a failed result would throw
+        # away the only record of the failure.
+        result = MatchingRunResult(
+            **_run_result(status="failed", error="PayloadError: meta missing")
+        )
+        self.assertEqual(result.status, "failed")
+
+    def test_version_constants_are_pinned(self):
+        # Both sides agreed on 1 for the Redis-shaped contract. Written as a
+        # literal so a bump is a deliberate edit in two places rather than one.
+        self.assertEqual(META_VERSION, 1)
+        self.assertEqual(RESULT_VERSION, 1)
 
     def test_every_code_the_contract_allows_has_wording(self):
         """A renamed or added code without a sentence behind it fails here.
@@ -188,7 +306,12 @@ class MatchingContractTest(unittest.TestCase):
         rendered = render_schemas()
         self.assertEqual(
             set(rendered),
-            {"matching_payload.schema.json", "matching_result.schema.json"},
+            {
+                "matching_meta.schema.json",
+                "person_record.schema.json",
+                "mentee_result.schema.json",
+                "matching_run_result.schema.json",
+            },
         )
         for filename, text in rendered.items():
             committed = (CONTRACTS_DIR / filename).read_text(encoding="utf-8")
