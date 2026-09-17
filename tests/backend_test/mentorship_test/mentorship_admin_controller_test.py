@@ -3,6 +3,8 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from http import HTTPStatus
 from backend.mentorship.mentorship_admin_controller import MentorshipAdminController
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
+from backend.dto.matching_run_create_dto import MatchingRunCreateDto
+from backend.dto.user_context_dto import UserContextDto
 from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
 
 
@@ -14,6 +16,12 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         self.mock_admin_service.apply_v2_meeting_batch = AsyncMock()
         self.mock_admin_service.stream_export_csv = MagicMock()
 
+        self.mock_matching_run_service = MagicMock()
+        self.mock_matching_run_service.start_run = AsyncMock()
+
+        self.mock_launchdarkly_service = MagicMock()
+        self.mock_launchdarkly_service.is_matching_run_enabled.return_value = True
+
         self.mock_database = MagicMock()
         self.mock_session = AsyncMock()
         self.mock_database.session.return_value.__aenter__.return_value = (
@@ -23,6 +31,8 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
 
         self.controller = MentorshipAdminController(
             mentorship_admin_service=self.mock_admin_service,
+            matching_run_service=self.mock_matching_run_service,
+            launchdarkly_service=self.mock_launchdarkly_service,
             database=self.mock_database,
         )
 
@@ -191,6 +201,44 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         )
         content_disposition = response.headers["content-disposition"]
         self.assertIn("non_participant_", content_disposition)
+
+    async def test_start_matching_run_passes_the_selection_through(self):
+        self.mock_matching_run_service.start_run.return_value = {
+            "run_id": "r7-20260912T000000Z-abc123"
+        }
+        body = MatchingRunCreateDto(
+            round_id=7, participant_ids=[1, 2], run_date="2026-06-01"
+        )
+
+        response = await self.controller.start_matching_run(
+            body, UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+        )
+
+        # The caller's id travels with the run: the completion notice goes to
+        # them, and nothing outside the run records who asked for it.
+        self.mock_matching_run_service.start_run.assert_awaited_once_with(
+            self.mock_session,
+            7,
+            [1, 2],
+            run_date="2026-06-01",
+            triggered_by_user_id=9,
+        )
+        self.assertEqual(response["data"]["run_id"], "r7-20260912T000000Z-abc123")
+
+    async def test_start_matching_run_is_refused_while_the_flag_is_off(self):
+        self.mock_launchdarkly_service.is_matching_run_enabled.return_value = False
+        body = MatchingRunCreateDto(round_id=7, participant_ids=[1, 2])
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+
+        with self.assertRaises(PermissionError):
+            await self.controller.start_matching_run(body, caller)
+
+        # Nothing is started, and the flag is read for this caller rather than
+        # globally: one press costs an hour of a paid job.
+        self.mock_matching_run_service.start_run.assert_not_awaited()
+        self.mock_launchdarkly_service.is_matching_run_enabled.assert_called_once_with(
+            caller
+        )
 
 
 if __name__ == "__main__":
