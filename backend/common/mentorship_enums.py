@@ -57,6 +57,7 @@ class MentorshipEvent(StrEnum):
     """
 
     MENTOR_ADMITTED = "mentorship.mentor_admitted"
+    MATCHING_RUN_COMPLETED = "mentorship.matching_run_completed"
 
 
 class ParticipantRole(Enum):
