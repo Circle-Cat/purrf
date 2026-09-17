@@ -19,7 +19,7 @@ outlive several days of review. One key cannot do both.
 """
 
 from backend.common.constants import THREE_MONTHS_IN_SECONDS
-from backend.mentorship.matching_contract import MatchingRunResult
+from backend.mentorship.matching_contract import MatchingMeta, MatchingRunResult
 
 # Matches the job's own timeout, so a run that dies without releasing the lock
 # frees its round by itself and nobody has to abandon it by hand.
@@ -66,6 +66,11 @@ def out_key(run_id: str) -> str:
 def result_meta_key(run_id: str) -> str:
     """Key holding what the matcher reports about the run as a whole."""
     return f"match:{run_id}:result_meta"
+
+
+def notified_key(run_id: str) -> str:
+    """Key marking that this run's completion has already been announced."""
+    return f"match:{run_id}:notified"
 
 
 class MatchingStorage:
@@ -116,6 +121,25 @@ class MatchingStorage:
         if self.redis_client.get(key) != run_id:
             return
         self.redis_client.delete(key)
+
+    def already_notified(self, run_id: str) -> bool:
+        """Whether this run's completion has been announced already."""
+        return bool(self.redis_client.exists(notified_key(run_id)))
+
+    def mark_notified(self, run_id: str) -> None:
+        """Record that this run's completion has been announced.
+
+        Deliberately two calls rather than one ``SET NX`` used as the gate.
+        A gate marks before the announcement goes out, and a crash in between
+        then loses that announcement for good, because every retry is turned
+        away by a mark for something that never happened. Reading first and
+        writing afterwards risks the opposite: a retry that arrives mid-flight
+        sends a second "matching finished" email, which costs a reader one
+        glance.
+        """
+        self.redis_client.set(
+            notified_key(run_id), "1", nx=True, ex=THREE_MONTHS_IN_SECONDS
+        )
 
     def current_run_id(self, round_id: int) -> str | None:
         """Return this round's most recent run id, or None once it has expired."""
@@ -174,6 +198,19 @@ class MatchingStorage:
         if batch:
             self.redis_client.hset(key, mapping=batch)
         self.redis_client.expire(key, THREE_MONTHS_IN_SECONDS)
+
+    def read_meta(self, run_id: str) -> MatchingMeta | None:
+        """Return the run's envelope, or None if this run is not there.
+
+        The envelope is what says who asked for the run: nothing outside it
+        records that, so a completion notice has nowhere else to look.
+        """
+        raw = self.redis_client.get(meta_key(run_id))
+        return None if raw is None else MatchingMeta.model_validate_json(raw)
+
+    def mentor_count(self, run_id: str) -> int:
+        """How many mentors the run was given."""
+        return self.redis_client.hlen(mentors_key(run_id))
 
     def read_run_result(self, run_id: str) -> MatchingRunResult | None:
         """Return what the matcher reported, or None while it has yet to report.
