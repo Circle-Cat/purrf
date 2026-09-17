@@ -5,10 +5,12 @@ from typing import Literal, get_args, get_origin
 
 from backend.common.mentorship_survey_codes import VOCABULARIES
 from backend.mentorship.matching_contract import (
-    CONTRACT_VERSION,
     INDUSTRY_KEYS,
+    META_VERSION,
     SKILL_KEYS,
-    MatchingPayload,
+    Candidate,
+    MatchingMeta,
+    MenteeResult,
     PersonRecord,
 )
 from backend.mentorship.matching_contract_schema import render_schemas
@@ -140,16 +142,55 @@ class MatchingContractTest(unittest.TestCase):
                 **_mentor(career_transition="other:Switched over from bioinformatics")
             )
 
-    def test_payload_round_trips(self):
-        payload = MatchingPayload(
-            run_id="r1-20260912T000000Z-abc123",
-            round_id=1,
-            mentors=[PersonRecord(**_mentor())],
-            mentees=[PersonRecord(**_mentee())],
-        )
-        again = MatchingPayload.model_validate(json.loads(payload.model_dump_json()))
-        self.assertEqual(again.contract_version, CONTRACT_VERSION)
-        self.assertEqual(again.mentors[0].user_id, "1")
+    def test_meta_and_person_round_trip_separately(self):
+        # They land in different Redis keys and are read back one at a time, so
+        # each has to survive a round trip on its own.
+        meta = MatchingMeta(run_id="r1-20260912T000000Z-abc123", round_id=1)
+        again = MatchingMeta.model_validate(json.loads(meta.model_dump_json()))
+        self.assertEqual(again.contract_version, META_VERSION)
+
+        person = PersonRecord(**_mentor())
+        person_again = PersonRecord.model_validate(json.loads(person.model_dump_json()))
+        self.assertEqual(person_again.user_id, "1")
+
+    def test_unmatched_mentee_carries_no_score_and_no_match_type(self):
+        result = MenteeResult(candidates=[Candidate(mentor_id="7", score=64)])
+        self.assertIsNone(result.mentor_id)
+        self.assertIsNone(result.score)
+        self.assertIsNone(result.match_type)
+
+    def test_rejects_a_score_on_a_mentee_nobody_was_assigned(self):
+        with self.assertRaises(ValueError):
+            MenteeResult(score=64)
+
+    def test_mutual_choice_is_not_scored(self):
+        # +1000 is the matcher's sentinel for "both asked for each other". It
+        # would be read as a score beside the candidates, which carry real ones.
+        result = MenteeResult(mentor_id="7", match_type="mutual_yes")
+        self.assertIsNone(result.score)
+        with self.assertRaises(ValueError):
+            MenteeResult(mentor_id="7", match_type="mutual_yes", score=1000)
+
+    def test_rejects_an_assignment_without_a_score_or_a_match_type(self):
+        with self.assertRaises(ValueError):
+            MenteeResult(mentor_id="7", match_type="hungarian")
+        with self.assertRaises(ValueError):
+            MenteeResult(mentor_id="7", score=64)
+
+    def test_rejects_the_assigned_mentor_among_his_own_alternatives(self):
+        with self.assertRaises(ValueError):
+            MenteeResult(
+                mentor_id="7",
+                match_type="hungarian",
+                score=64,
+                candidates=[Candidate(mentor_id="7", score=64)],
+            )
+
+    def test_rejects_a_fourth_alternative(self):
+        with self.assertRaises(ValueError):
+            MenteeResult(
+                candidates=[Candidate(mentor_id=str(i), score=60) for i in range(4)]
+            )
 
     def test_every_code_the_contract_allows_has_wording(self):
         """A renamed or added code without a sentence behind it fails here.
@@ -188,7 +229,12 @@ class MatchingContractTest(unittest.TestCase):
         rendered = render_schemas()
         self.assertEqual(
             set(rendered),
-            {"matching_payload.schema.json", "matching_result.schema.json"},
+            {
+                "matching_meta.schema.json",
+                "person_record.schema.json",
+                "mentee_result.schema.json",
+                "matching_run_result.schema.json",
+            },
         )
         for filename, text in rendered.items():
             committed = (CONTRACTS_DIR / filename).read_text(encoding="utf-8")

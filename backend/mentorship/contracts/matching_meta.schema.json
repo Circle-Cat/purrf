@@ -1,0 +1,56 @@
+{
+  "additionalProperties": false,
+  "description": "The envelope for one run, written after the two person hashes.\n\nIt is the commit marker. A reader that cannot find it is looking at a run\nPurrf has not finished writing and has to stop, because the alternative --\nreading the people that are there so far -- succeeds and produces a round\nthat is quietly short.",
+  "properties": {
+    "contract_version": {
+      "default": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "round_id": {
+      "title": "Round Id",
+      "type": "integer"
+    },
+    "generated_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Generated At"
+    },
+    "triggered_by_user_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Triggered By User Id"
+    },
+    "vocabularies": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "title": "Vocabularies",
+      "type": "object"
+    }
+  },
+  "required": ["run_id", "round_id"],
+  "title": "MatchingMeta",
+  "type": "object"
+}

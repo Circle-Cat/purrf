@@ -1,0 +1,75 @@
+{
+  "additionalProperties": false,
+  "description": "Written after the last mentee, and the run's commit marker.\n\nA failed run is this value and nothing else: ``out`` stays empty, so a null\n``mentor_id`` always means nobody was assigned and never that the run died\npartway.",
+  "properties": {
+    "contract_version": {
+      "default": 1,
+      "title": "Contract Version",
+      "type": "integer"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "round_id": {
+      "title": "Round Id",
+      "type": "integer"
+    },
+    "status": {
+      "enum": ["succeeded", "failed"],
+      "title": "Status",
+      "type": "string"
+    },
+    "started_at": {
+      "title": "Started At",
+      "type": "string"
+    },
+    "finished_at": {
+      "title": "Finished At",
+      "type": "string"
+    },
+    "matcher_version": {
+      "title": "Matcher Version",
+      "type": "string"
+    },
+    "run_date": {
+      "title": "Run Date",
+      "type": "string"
+    },
+    "mentee_count": {
+      "title": "Mentee Count",
+      "type": "integer"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error"
+    },
+    "unmatched_mentor_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unmatched Mentor Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "run_id",
+    "round_id",
+    "status",
+    "started_at",
+    "finished_at",
+    "matcher_version",
+    "run_date",
+    "mentee_count"
+  ],
+  "title": "MatchingRunResult",
+  "type": "object"
+}
