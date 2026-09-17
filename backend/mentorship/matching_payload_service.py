@@ -158,13 +158,8 @@ class MatchingPayloadService:
                 f"Users {missing} are not registered for round {round_id}."
             )
 
-        mentor_ids = [
-            user.user_id
-            for user, participant, _, _ in rows
-            if participant.participant_role == ParticipantRole.MENTOR
-        ]
         round_counts = await self.mentorship_pairs_repository.count_mentoring_rounds(
-            session, mentor_ids, round_id
+            session, [user.user_id for user, _, _, _ in rows], round_id
         )
 
         mentors: list[PersonRecord] = []
@@ -237,10 +232,14 @@ class MatchingPayloadService:
             "unexpected_partner_ids": [
                 str(i) for i in (participant.unexpected_partner_user_id or [])
             ],
+            # Both sides carry these. The matcher reads them to avoid pairing two
+            # people who have never been through a round, which is a question
+            # about the pair, not about either role.
+            "mentorship_rounds_participated": round_counts[0],
+            "mentorship_rounds_completed": round_counts[1],
         }
 
         if is_mentor:
-            paired, completed = round_counts
             return PersonRecord(
                 **common,
                 max_partners=(
@@ -264,8 +263,6 @@ class MatchingPayloadService:
                 external_mentoring_exp=mapped_code_or_none(
                     survey.get("external_mentoring_exp"), EXTERNAL_MENTORING_EXP_MAP
                 ),
-                mentorship_rounds_participated=paired,
-                mentorship_rounds_completed=completed,
             )
 
         industry = (preference.specific_industry if preference else None) or {}

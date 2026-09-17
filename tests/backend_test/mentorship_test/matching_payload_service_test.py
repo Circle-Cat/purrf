@@ -222,6 +222,56 @@ class MatchingPayloadServiceTest(BaseRepositoryTestLib):
         self.assertEqual(record.mentorship_rounds_participated, 2)
         self.assertEqual(record.mentorship_rounds_completed, 1)
 
+    async def test_a_mentee_carries_her_own_past_rounds(self):
+        round_entity, mentor, mentee = await self._minimal_round()
+        await self._preference(mentee, specific_industry={})
+
+        past_a = await self._round(name="2025 Spring")
+        past_b = await self._round(name="2025 Autumn")
+        old_mentor = await self._user(first="Past", last="Mentor")
+        await self._pair_with_meetings(past_a, old_mentor, mentee, completed=True)
+        await self._pair_with_meetings(past_b, old_mentor, mentee, completed=False)
+
+        payload = await self.service.build_matching_payload(
+            self.session, round_entity.round_id, [mentor.user_id, mentee.user_id]
+        )
+
+        record = payload.mentees[0]
+        self.assertEqual(record.mentorship_rounds_participated, 2)
+        self.assertEqual(record.mentorship_rounds_completed, 1)
+
+    async def test_a_first_time_mentee_reports_zero_rather_than_nothing(self):
+        round_entity, mentor, mentee = await self._minimal_round()
+        await self._preference(mentee, specific_industry={})
+
+        payload = await self.service.build_matching_payload(
+            self.session, round_entity.round_id, [mentor.user_id, mentee.user_id]
+        )
+
+        # Null would be indistinguishable from "we did not look", and the
+        # matcher reads a zero here as "never been through a round".
+        self.assertEqual(payload.mentees[0].mentorship_rounds_participated, 0)
+        self.assertEqual(payload.mentees[0].mentorship_rounds_completed, 0)
+
+    async def test_a_past_mentor_now_a_mentee_is_not_a_newcomer(self):
+        round_entity, mentor, mentee = await self._minimal_round()
+        await self._preference(mentee, specific_industry={})
+
+        past = await self._round(name="2025 Spring")
+        someone_she_mentored = await self._user(first="Her", last="Mentee")
+        await self._pair_with_meetings(
+            past, mentee, someone_she_mentored, completed=True
+        )
+
+        payload = await self.service.build_matching_payload(
+            self.session, round_entity.round_id, [mentor.user_id, mentee.user_id]
+        )
+
+        # She mentored that round rather than being mentored in it. Counting
+        # only her own side would report her as never having been paired.
+        self.assertEqual(payload.mentees[0].mentorship_rounds_participated, 1)
+        self.assertEqual(payload.mentees[0].mentorship_rounds_completed, 1)
+
     async def test_the_round_being_matched_is_not_counted_as_experience(self):
         round_entity, mentor, mentee = await self._minimal_round()
         await self._preference(mentee, specific_industry={})
