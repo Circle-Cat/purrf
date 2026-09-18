@@ -46,6 +46,39 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+# The role rules the model validators enforce further down, said again in JSON
+# Schema so the copy the matcher works from carries them. A model validator does
+# not reach model_json_schema(), and a reader working from the copy alone cannot
+# see it -- which has already cost the other side three mistakes in a week.
+#
+# Narrowing the type rather than listing the field as required: both fields
+# default to null, so "not answered" arrives as an absent key about as often as
+# an explicit null, and a rule that catches one and not the other is worse than
+# none. specific_industry needs both -- present, and an object.
+#
+# Not everything can come along. A rule that spans two fields (the assigned
+# mentor absent from his own candidates, the candidate order being the ranking)
+# has nowhere to live in a per-value schema, and one that spans two Redis keys
+# (HLEN out equalling HLEN in:mentees) has less. The schema gets closer to the
+# contract; it does not become it.
+_ROLE_RULES = [
+    {
+        "if": {"properties": {"role": {"const": "mentee"}}, "required": ["role"]},
+        "then": {
+            "properties": {
+                "specific_industry": {"type": "object"},
+                "max_partners": {"type": "null"},
+            },
+            "required": ["specific_industry"],
+        },
+    },
+    {
+        "if": {"properties": {"role": {"const": "mentor"}}, "required": ["role"]},
+        "then": {"properties": {"specific_industry": {"type": "null"}}},
+    },
+]
+
+
 class EducationRecord(_Strict):
     """One education entry. Dates are ``YYYY-MM-DD`` or absent."""
 
@@ -72,6 +105,8 @@ class PersonRecord(_Strict):
     Contact fields and names beyond ``display_name`` are absent: the matcher has
     no consumer for them.
     """
+
+    model_config = ConfigDict(json_schema_extra={"allOf": _ROLE_RULES})
 
     role: Literal["mentor", "mentee"]
     user_id: str

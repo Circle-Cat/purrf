@@ -3,6 +3,8 @@ import unittest
 from pathlib import Path
 from typing import Literal, get_args, get_origin
 
+from jsonschema import Draft202012Validator
+
 from backend.common.mentorship_survey_codes import VOCABULARIES
 from backend.mentorship.matching_contract import (
     INDUSTRY_KEYS,
@@ -340,6 +342,54 @@ class MatchingContractTest(unittest.TestCase):
                 f"python3 -m backend.mentorship.matching_contract_schema, "
                 f"run bazel run //:format, and commit",
             )
+
+
+class PersonRecordSchemaEnforcesRoleRulesTest(unittest.TestCase):
+    """The role rules have to survive the trip into JSON Schema.
+
+    A pydantic model validator is invisible to anybody working from the schema
+    file, and the matcher works from the schema file. Three of their mistakes
+    this week came from reading the copy and not the prose beside it, so these
+    assert against a real JSON Schema validator rather than against the shape
+    of the document: what matters is that their checker refuses what ours does.
+    """
+
+    def setUp(self):
+        self.schema = PersonRecord.model_json_schema()
+
+    def _valid(self, document) -> bool:
+        return not list(Draft202012Validator(self.schema).iter_errors(document))
+
+    def test_a_well_formed_mentor_and_mentee_both_pass(self):
+        self.assertTrue(self._valid(_mentor()))
+        self.assertTrue(self._valid(_mentee()))
+
+    def test_a_mentee_without_an_industry_is_refused_by_the_schema(self):
+        self.assertFalse(self._valid(_mentee(specific_industry=None)))
+
+    def test_a_mentee_missing_the_industry_key_entirely_is_refused(self):
+        # Absent is not the same document as null, and pydantic treats both as
+        # "not answered". The schema has to refuse both or the two readers
+        # disagree about a record neither of them should accept.
+        document = _mentee()
+        del document["specific_industry"]
+        self.assertFalse(self._valid(document))
+
+    def test_a_mentor_carrying_an_industry_is_refused_by_the_schema(self):
+        industry = {"swe": True, "ds": False, "pm": False, "uiux": False}
+        self.assertFalse(self._valid(_mentor(specific_industry=industry)))
+
+    def test_a_mentee_carrying_a_partner_cap_is_refused_by_the_schema(self):
+        self.assertFalse(self._valid(_mentee(max_partners=1)))
+
+    def test_a_mentor_keeps_his_partner_cap_under_the_schema(self):
+        self.assertTrue(self._valid(_mentor(max_partners=3)))
+
+    def test_a_mentee_may_still_leave_the_cap_out_or_null(self):
+        self.assertTrue(self._valid(_mentee(max_partners=None)))
+        document = _mentee()
+        document.pop("max_partners", None)
+        self.assertTrue(self._valid(document))
 
 
 if __name__ == "__main__":
