@@ -41,6 +41,14 @@ locals {
 }
 
 locals {
+  # Mentorship matcher. The registry has to exist and hold an image before a
+  # job can point at one, so the job trails the rest of the matcher resources
+  # by one apply: provision with enable_matcher, push the image, then set
+  # matcher_image_tag.
+  matcher_job_enabled = var.enable_matcher && var.matcher_image_tag != ""
+}
+
+locals {
   # Pub/Sub
   pubsub_names = [
     "chat-google-events",
