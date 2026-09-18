@@ -4,7 +4,7 @@ from http import HTTPStatus
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from backend.common.api_endpoints import LEAVE_BALANCE_ENDPOINT
+from backend.common.api_endpoints import LEAVE_ME_LEDGER_ENDPOINT
 from backend.dto.user_context_dto import UserContextDto
 from backend.leave.leave_balance_controller import LeaveBalanceController
 
@@ -64,7 +64,7 @@ class TestLeaveBalanceController(unittest.IsolatedAsyncioTestCase):
 
     def test_reading_balance_is_open_to_any_signed_in_employee(self):
         """Leave balance queries require authentication but no extra LEAVE_ADMIN permission."""
-        route = self.routes[(LEAVE_BALANCE_ENDPOINT, "GET")]
+        route = self.routes[(LEAVE_ME_LEDGER_ENDPOINT, "GET")]
 
         self.assertIsNone(_route_permissions(route))
 

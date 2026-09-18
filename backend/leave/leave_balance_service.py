@@ -27,12 +27,16 @@ class LeaveBalanceService:
         Returns:
             Formatted total balance hours and individual ledger entry DTOs.
         """
+        if user_id is None or user_id <= 0:
+            raise ValueError(f"Invalid user_id: {user_id}. Must be a positive integer.")
+
         raw_balance = await self.leave_ledger_repository.balance(session, user_id)
         balance_hours_str = f"{raw_balance:.2f}"
 
         entries_entities = await self.leave_ledger_repository.list_entries(
             session, user_id
         )
+
         entry_dtos = [
             LeaveLedgerEntryDto(
                 effectiveDate=str(entry.effective_date),

@@ -1,14 +1,13 @@
-from typing import List, Optional
-from pydantic import BaseModel
+from backend.dto.base_dto import BaseDto
 
 
-class LeaveLedgerEntryDto(BaseModel):
+class LeaveLedgerEntryDto(BaseDto):
     effectiveDate: str
     entryType: str
     hours: str
-    note: Optional[str] = None
+    note: str | None = None
 
 
-class LeaveBalanceDto(BaseModel):
+class LeaveBalanceDto(BaseDto):
     balanceHours: str
-    entries: List[LeaveLedgerEntryDto]
+    entries: list[LeaveLedgerEntryDto]
