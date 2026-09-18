@@ -13,8 +13,11 @@ import { safeHttpUrl } from "@/utils/url";
  * interpreted in the viewer's profile timezone (an IANA string like
  * "Asia/Shanghai").
  *
- * Returns "-" for null/empty/invalid inputs and for the 1970 sentinel
- * the backend stores when a training row hasn't been completed yet.
+ * Returns "-" for null/empty/invalid inputs, and for a timestamp before 2000.
+ * An unfinished training row carries null, not an epoch stand-in -- the
+ * backend only ever writes the completion time it actually observed. The
+ * pre-2000 floor stays as a guard against a stray epoch value reaching the
+ * page and being rendered as a real date in 1970.
  */
 const formatTrainingDate = (iso, timezone) => {
   if (!iso) return "-";
