@@ -19,7 +19,10 @@ def _reported(**overrides):
         run_id="r7-x-y",
         round_id=7,
         status="succeeded",
-        started_at="2026-09-18T01:00:00+00:00",
+        # Deliberately apart from the envelope's generated_at below. The two
+        # were once the same value here, and a fixture where every clock
+        # agrees cannot catch one being read for another.
+        started_at="2026-09-18T01:40:00+00:00",
         finished_at="2026-09-18T01:50:00+00:00",
         matcher_version="deadbee",
         run_date="2026-09-18",
@@ -143,6 +146,20 @@ class MatchingRunOverviewTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(overview["mentee_count"], 3)
         self.assertEqual(overview["matched_count"], 2)
         self.assertEqual(overview["unmatched_count"], 1)
+
+    async def test_a_finished_run_is_timed_by_the_matcher_s_own_clock(self):
+        """Both timestamps have to come from the same place or the duration
+        between them is meaningless. The envelope's is when Purrf wrote the
+        input, which is not when the job began: on a real run seeded by hand
+        the two were nineteen hours apart for work that took thirty-four
+        seconds."""
+        self._succeeded()
+
+        overview = await self.service.read_overview(self.session, 7)
+
+        self.assertEqual(overview["started_at"], "2026-09-18T01:40:00+00:00")
+        self.assertEqual(overview["finished_at"], "2026-09-18T01:50:00+00:00")
+        self.assertEqual(overview["input_written_at"], "2026-09-18T01:00:00+00:00")
 
     async def test_a_published_round_says_so(self):
         self._running()

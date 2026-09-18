@@ -149,8 +149,16 @@ class MatchingRunReadService:
         if reported is None:
             return {**started, "status": MatchingRunStatus.RUNNING}, None
 
+        # Once the matcher has reported, its own clock owns both ends. The
+        # envelope's timestamp is when Purrf wrote the input, which is not
+        # when the job began -- on a run whose input was seeded by hand the
+        # two were nineteen hours apart for work that took thirty-four
+        # seconds, and anybody subtracting one from the other would have
+        # believed it. It stays, under a name that says what it is.
         finished = {
             **started,
+            "input_written_at": started["started_at"],
+            "started_at": reported.started_at,
             "finished_at": reported.finished_at,
             "matcher_version": reported.matcher_version,
             "run_date": reported.run_date,
