@@ -105,6 +105,24 @@ class MatchingContractTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             PersonRecord(**_mentee(specific_industry={"swe": True}))
 
+    def test_a_mentee_must_not_carry_a_partner_cap(self):
+        # A mentee takes one mentor, so the cap has no meaning on that side.
+        # Left unchecked it is accepted here and then ignored downstream, which
+        # is two silences over a field whose whole job is to say how many
+        # people somebody takes: whoever set it would believe it applied.
+        with self.assertRaisesRegex(ValueError, "max_partners"):
+            PersonRecord(**_mentee(max_partners=3))
+
+    def test_a_mentee_carrying_the_cap_it_would_have_anyway_is_still_refused(self):
+        # 1 is the value a mentee effectively has, which is exactly why it must
+        # not travel: accepting the harmless case is what makes the field look
+        # like one a mentee may set.
+        with self.assertRaisesRegex(ValueError, "max_partners"):
+            PersonRecord(**_mentee(max_partners=1))
+
+    def test_a_mentor_keeps_the_cap_he_registered_with(self):
+        self.assertEqual(PersonRecord(**_mentor(max_partners=3)).max_partners, 3)
+
     def test_rejects_unknown_role(self):
         with self.assertRaises(ValueError):
             PersonRecord(**_mentor(role="admin"))

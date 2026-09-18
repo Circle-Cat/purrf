@@ -87,7 +87,7 @@ class PersonRecord(_Strict):
     # Mentee only: the registration form asks this of mentees and not of mentors.
     specific_industry: dict[str, bool] | None = None
 
-    # Mentor only.
+    # Mentor only, and checked below rather than only said here.
     max_partners: int | None = None
     career_transition: (
         Literal["none_cs_background", "via_cs_masters", "via_work_experience"] | None
@@ -170,6 +170,26 @@ class PersonRecord(_Strict):
             raise ValueError("specific_industry is required for a mentee")
         if self.role == "mentor" and self.specific_industry is not None:
             raise ValueError("specific_industry is never asked of a mentor")
+        return self
+
+    @model_validator(mode="after")
+    def _the_partner_cap_belongs_to_mentors(self):
+        """A mentee takes one mentor, so the cap has no meaning on that side.
+
+        Stated only in a comment until now, which left it enforced nowhere: a
+        mentee carrying it was accepted here and then ignored by the matcher,
+        which reads the cap for mentors alone. Two silences over a field whose
+        whole job is to say how many people somebody takes -- whoever set it
+        would have believed it applied.
+
+        1 is refused along with everything else. It is the value a mentee
+        effectively has, which is exactly why it must not travel: accepting the
+        harmless case is what makes this look like a field a mentee may set.
+        """
+        if self.role == "mentee" and self.max_partners is not None:
+            raise ValueError(
+                "max_partners is a mentor's cap; a mentee always takes one mentor"
+            )
         return self
 
 
