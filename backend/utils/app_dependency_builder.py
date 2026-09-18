@@ -77,6 +77,7 @@ from backend.common.environment_constants import (
     JIRA_USER,
     MENTORSHIP_CALENDAR_ID,
     INTERVIEW_CALENDAR_ID,
+    MATCHER_JOB_SUBS,
     NOTIFICATION_PUSHER_SUBS,
     NOTIFICATION_TOPIC,
     USER_EMAIL,
@@ -213,6 +214,9 @@ from backend.mentorship.mentorship_controller import MentorshipController
 from backend.mentorship.mentorship_admin_service import MentorshipAdminService
 from backend.mentorship.matching_payload_service import MatchingPayloadService
 from backend.mentorship.matching_run_service import MatchingRunService
+from backend.mentorship.matching_run_complete_controller import (
+    MatchingRunCompleteController,
+)
 from backend.mentorship.matching_storage import MatchingStorage
 from backend.mentorship.mentorship_admin_controller import MentorshipAdminController
 from backend.mentorship.rounds_service import RoundsService
@@ -280,6 +284,11 @@ class AppDependencyBuilder:
         notification_pusher_subs = frozenset(
             sub.strip()
             for sub in (os.getenv(NOTIFICATION_PUSHER_SUBS) or "").split(",")
+            if sub.strip()
+        )
+        matcher_job_subs = frozenset(
+            sub.strip()
+            for sub in (os.getenv(MATCHER_JOB_SUBS) or "").split(",")
             if sub.strip()
         )
 
@@ -725,6 +734,14 @@ class AppDependencyBuilder:
             matching_job_client=self.matching_job_client,
             logger=self.logger,
         )
+        self.matching_run_complete_controller = MatchingRunCompleteController(
+            logger=self.logger,
+            auth_service=self.authentication_service,
+            matcher_job_subs=matcher_job_subs,
+            matching_storage=self.matching_storage,
+            mentorship_round_repository=self.mentorship_round_repository,
+            database=self.database,
+        )
         self.mentorship_admin_controller = MentorshipAdminController(
             mentorship_admin_service=self.mentorship_admin_service,
             matching_run_service=self.matching_run_service,
@@ -1127,6 +1144,7 @@ class AppDependencyBuilder:
             profile_controller=self.profile_controller,
             mentorship_controller=self.mentorship_controller,
             mentorship_admin_controller=self.mentorship_admin_controller,
+            matching_run_complete_controller=self.matching_run_complete_controller,
             email_management_controller=self.email_management_controller,
             permission_admin_controller=self.permission_admin_controller,
             user_account_controller=self.user_account_controller,
