@@ -89,7 +89,13 @@ function ToggleActiveButton({ course, onDeactivate, onActivate }) {
 // clicked yet -- hiding it would hide the rule (spec §4.1); the hover title
 // is the only place that rule is taught, so it isn't optional here, and it
 // names which of the two rules is unmet rather than the commoner one.
-function RowActions({ course, onDeactivate, onActivate, onUpload }) {
+function RowActions({ course, onDeactivate, onActivate, onUpload, canWrite }) {
+  // Withheld rather than shown dead: every one of these calls an endpoint the
+  // API answers 403 to for a reader, and a 403 toast names no permission, so
+  // clicking teaches nothing. Same rule the assignment card beside this table
+  // already follows for its own controls.
+  if (!canWrite) return null;
+
   const toggle = (
     <ToggleActiveButton
       course={course}
@@ -154,7 +160,7 @@ function PackageCell({ course }) {
 // The sub-row a staged package gets directly under the course it belongs to
 // (spec §8). Spans every column rather than living in one of them, since it
 // is describing the row above, not adding another cell to it.
-function StagedRow({ course, onDiscard, onPublish, discarding }) {
+function StagedRow({ course, onDiscard, onPublish, discarding, canWrite }) {
   const { staged } = course;
   const verified = Boolean(staged.verifiedCompletableAt);
   const uploadedLabel = formatDateTimeWithZone(
@@ -192,38 +198,45 @@ function StagedRow({ course, onDiscard, onPublish, discarding }) {
                 : "Learners still see the current package."
               : "Nothing is live yet; publishing makes this course assignable."}
           </p>
-          <div className="flex justify-end gap-2 pt-1">
-            <Button size="sm" variant="outline" asChild>
-              <Link to={ROUTE_PATHS.TRAINING_TRIAL(course.courseId)}>
-                Trial run
-              </Link>
-            </Button>
-            {/* The reason hangs on the wrapper, not on the button: a
+          {/* The sub-row itself stays for a reader: that a package is waiting
+              is the kind of thing the read grant exists to show. Only the
+              three controls go -- and the trial link with them, because its
+              route is gated on the write grant, so it is a door the router
+              shuts in their face. */}
+          {canWrite && (
+            <div className="flex justify-end gap-2 pt-1">
+              <Button size="sm" variant="outline" asChild>
+                <Link to={ROUTE_PATHS.TRAINING_TRIAL(course.courseId)}>
+                  Trial run
+                </Link>
+              </Button>
+              {/* The reason hangs on the wrapper, not on the button: a
                 browser fires no pointer events on a disabled control, so a
                 title there is never shown -- and this is the only place the
                 "run it first" rule is stated. Same shape as the Assign
                 button's reasons on the assignment card. */}
-            <span
-              className="inline-flex"
-              title={publishBlockedReason(course) ?? undefined}
-            >
+              <span
+                className="inline-flex"
+                title={publishBlockedReason(course) ?? undefined}
+              >
+                <Button
+                  size="sm"
+                  disabled={!verified}
+                  onClick={() => onPublish(course)}
+                >
+                  Publish
+                </Button>
+              </span>
               <Button
                 size="sm"
-                disabled={!verified}
-                onClick={() => onPublish(course)}
+                variant="ghost"
+                disabled={discarding}
+                onClick={() => onDiscard(course)}
               >
-                Publish
+                Discard
               </Button>
-            </span>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={discarding}
-              onClick={() => onDiscard(course)}
-            >
-              Discard
-            </Button>
-          </div>
+            </div>
+          )}
         </div>
       </TableCell>
     </TableRow>
@@ -251,7 +264,7 @@ function StagedRow({ course, onDiscard, onPublish, discarding }) {
  * @param {{courses: Array<Object>, onCoursesChanged: () => (void|Promise<void>)}} props
  *   `courses` are `TrainingCourseDto`-shaped rows; `onCoursesChanged` refetches them.
  */
-export default function CourseTable({ courses, onCoursesChanged }) {
+export default function CourseTable({ courses, onCoursesChanged, canWrite }) {
   const [deactivating, setDeactivating] = useState(null);
   const [uploading, setUploading] = useState(null);
   const [publishing, setPublishing] = useState(null);
@@ -361,11 +374,13 @@ export default function CourseTable({ courses, onCoursesChanged }) {
                     onDeactivate={setDeactivating}
                     onActivate={handleActivate}
                     onUpload={setUploading}
+                    canWrite={canWrite}
                   />
                 </TableCell>
               </TableRow>
               {course.staged && (
                 <StagedRow
+                  canWrite={canWrite}
                   course={course}
                   onDiscard={handleDiscard}
                   onPublish={setPublishing}

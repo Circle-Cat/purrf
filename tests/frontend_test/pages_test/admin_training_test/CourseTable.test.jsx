@@ -76,9 +76,19 @@ const externalLink = {
 
 const renderTable = (courses, onCoursesChanged) =>
   render(
-    <CourseTable courses={courses} onCoursesChanged={onCoursesChanged} />,
+    <CourseTable
+      courses={courses}
+      onCoursesChanged={onCoursesChanged}
+      canWrite
+    />,
     { wrapper: MemoryRouter },
   );
+
+/** The page is reachable on the read grant alone, so this is a real caller. */
+const renderReadOnly = (courses) =>
+  render(<CourseTable courses={courses} canWrite={false} />, {
+    wrapper: MemoryRouter,
+  });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -127,7 +137,9 @@ describe("CourseTable", () => {
   });
 
   it("shows an external-link course as such, with the link", () => {
-    render(<CourseTable courses={[externalLink]} />, { wrapper: MemoryRouter });
+    render(<CourseTable courses={[externalLink]} canWrite />, {
+      wrapper: MemoryRouter,
+    });
 
     expect(screen.getByText("External link")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /view/i })).toHaveAttribute(
@@ -199,6 +211,7 @@ describe("CourseTable", () => {
       <CourseTable
         courses={[reactivated]}
         onCoursesChanged={onCoursesChanged}
+        canWrite
       />,
     );
 
@@ -282,6 +295,51 @@ describe("CourseTable", () => {
   });
 });
 
+describe("CourseTable without the write grant", () => {
+  // The route onto this page is gated on the read grant, so somebody holding
+  // only that reaches the table. Every control below calls an endpoint the API
+  // answers 403 to, and the Trial run link goes to a route the router bounces
+  // them off. The assignment card beside this table is already hidden from the
+  // same person; the table was the half that had not caught up.
+  it("offers a reader no way to change a live course", () => {
+    renderReadOnly([verified]);
+
+    expect(screen.getByText("Live")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /replace package/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /deactivate/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers a reader no way to upload to a course that has no package", () => {
+    renderReadOnly([noPackage]);
+
+    expect(
+      screen.queryByRole("button", { name: /upload package/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers a reader no way to turn a course back on", () => {
+    renderReadOnly([{ ...verified, isActive: false }]);
+
+    expect(screen.getByText("Off")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /activate/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("still tells a reader everything the table is for", () => {
+    // Hiding the actions must not hide the catalogue: the point of the read
+    // grant is seeing what exists and what state it is in.
+    renderReadOnly([verified]);
+
+    expect(screen.getByText("Live")).toBeInTheDocument();
+    expect(screen.getByText(/mentor onboarding/i)).toBeInTheDocument();
+  });
+});
+
 // One staged sub-row per course whose `staged` is non-null (spec §8). Kept
 // separate from the `describe` above because these fixtures shape `staged`
 // directly rather than reusing `verified`/`noPackage`/etc.
@@ -299,6 +357,27 @@ describe("CourseTable staged sub-row", () => {
       verifiedCompletableAt: null,
     },
     ...over,
+  });
+
+  it("offers a reader no way to publish, discard or trial a staged package", () => {
+    // The sub-row still appears: that a package is waiting is exactly the kind
+    // of thing the read grant exists to show. Only the three controls go.
+    renderReadOnly([staged()]);
+
+    expect(
+      screen.getByText("Learners still see qPpo9zHD."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^publish$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^discard$/i }),
+    ).not.toBeInTheDocument();
+    // The trial route is gated on the write grant, so this link is a door the
+    // router shuts in their face.
+    expect(
+      screen.queryByRole("link", { name: /trial run/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows no sub-row for a course with nothing staged", () => {
