@@ -213,6 +213,7 @@ from backend.mentorship.mentorship_mapper import MentorshipMapper
 from backend.mentorship.mentorship_controller import MentorshipController
 from backend.mentorship.mentorship_admin_service import MentorshipAdminService
 from backend.mentorship.matching_payload_service import MatchingPayloadService
+from backend.mentorship.matching_run_read_service import MatchingRunReadService
 from backend.mentorship.matching_run_service import MatchingRunService
 from backend.mentorship.matching_run_complete_controller import (
     MatchingRunCompleteController,
@@ -734,6 +735,12 @@ class AppDependencyBuilder:
             matching_job_client=self.matching_job_client,
             logger=self.logger,
         )
+        self.matching_run_read_service = MatchingRunReadService(
+            matching_storage=self.matching_storage,
+            mentorship_pairs_repository=self.mentorship_pairs_repository,
+            users_repository=self.users_repository,
+            logger=self.logger,
+        )
         self.matching_run_complete_controller = MatchingRunCompleteController(
             logger=self.logger,
             auth_service=self.authentication_service,
@@ -745,6 +752,7 @@ class AppDependencyBuilder:
         self.mentorship_admin_controller = MentorshipAdminController(
             mentorship_admin_service=self.mentorship_admin_service,
             matching_run_service=self.matching_run_service,
+            matching_run_read_service=self.matching_run_read_service,
             launchdarkly_service=self.launchdarkly_service,
             database=self.database,
         )
