@@ -158,7 +158,13 @@ export default function TrainingTrial() {
     playerSrc,
     writes,
     courseVerified,
-  } = useTrainingRuntime(trainingId, user, { open: openTrialSession });
+  } = useTrainingRuntime(trainingId, user, {
+    open: openTrialSession,
+    // The diagnostics panel below is the only reader of the write log in the
+    // app, and a trial is one run by one verifier rather than a course sat
+    // for weeks, so the log it keeps is bounded by the sitting.
+    collectWrites: true,
+  });
 
   const tz = resolveViewerTimezone();
 

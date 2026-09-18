@@ -448,7 +448,11 @@ describe("useTrainingRuntime when the run does not record", () => {
   it("saves nothing when the session does not record", async () => {
     const open = vi.fn().mockResolvedValue({ data: SESSION });
     const { result } = renderHook(() =>
-      useTrainingRuntime(9, USER, { open, records: false }),
+      useTrainingRuntime(9, USER, {
+        open,
+        records: false,
+        collectWrites: true,
+      }),
     );
     await waitFor(() => expect(open).toHaveBeenCalledWith(9));
     await waitFor(() => expect(result.current.session).toBeTruthy());
@@ -459,9 +463,10 @@ describe("useTrainingRuntime when the run does not record", () => {
         cmi: { "cmi.core.lesson_status": "completed" },
       });
     });
-    // The write is still collected even though nothing is sent -- this is
-    // the signal that the message was actually handled, rather than dropped
-    // for arriving before the bridge's listener was attached.
+    // The log is asked for here only to prove the message was handled rather
+    // than dropped for arriving before the bridge's listener was attached.
+    // Without that proof "nothing was sent" would also pass for a commit
+    // nobody ever saw.
     await waitFor(() => expect(result.current.writes).toHaveLength(1));
 
     await waitFor(() => expect(api.saveProgress).not.toHaveBeenCalled());
@@ -489,7 +494,11 @@ describe("useTrainingRuntime when the run does not record", () => {
   it("sends no parting save on hide when it does not record", async () => {
     const open = vi.fn().mockResolvedValue({ data: SESSION });
     const { result } = renderHook(() =>
-      useTrainingRuntime(9, USER, { open, records: false }),
+      useTrainingRuntime(9, USER, {
+        open,
+        records: false,
+        collectWrites: true,
+      }),
     );
     await waitFor(() => expect(open).toHaveBeenCalled());
     await waitFor(() => expect(result.current.session).toBeTruthy());
@@ -507,7 +516,8 @@ describe("useTrainingRuntime when the run does not record", () => {
   it("sends no parting save after it stops recording", async () => {
     const open = vi.fn().mockResolvedValue({ data: SESSION });
     const { result, rerender } = renderHook(
-      ({ records }) => useTrainingRuntime(9, USER, { open, records }),
+      ({ records }) =>
+        useTrainingRuntime(9, USER, { open, records, collectWrites: true }),
       { initialProps: { records: true } },
     );
     await waitFor(() => expect(result.current.session).toBeTruthy());
@@ -525,5 +535,41 @@ describe("useTrainingRuntime when the run does not record", () => {
     window.dispatchEvent(new Event("pagehide"));
 
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps no write log for a page that never reads one", async () => {
+    // saveProgress is the proof the commit was handled: the log stayed empty
+    // because nothing collects it, not because the message went unnoticed.
+    const open = vi.fn().mockResolvedValue({ data: SESSION });
+    const { result } = renderHook(() =>
+      useTrainingRuntime(TRAINING_ID, USER, { open }),
+    );
+    await waitFor(() => expect(result.current.session).toBeTruthy());
+
+    await act(async () => {
+      postFromContent({ type: MESSAGE_TYPES.COMMIT, cmi: { a: "1" } });
+    });
+    await waitFor(() => expect(api.saveProgress).toHaveBeenCalledTimes(1));
+
+    expect(result.current.writes).toHaveLength(0);
+  });
+
+  it("keeps the whole write log for a page that asks for it", async () => {
+    const open = vi.fn().mockResolvedValue({ data: SESSION });
+    const { result } = renderHook(() =>
+      useTrainingRuntime(TRAINING_ID, USER, { open, collectWrites: true }),
+    );
+    await waitFor(() => expect(result.current.session).toBeTruthy());
+
+    await act(async () => {
+      postFromContent({ type: MESSAGE_TYPES.COMMIT, cmi: { a: "1" } });
+      postFromContent({ type: MESSAGE_TYPES.COMMIT, cmi: { a: "2" } });
+    });
+
+    await waitFor(() => expect(result.current.writes).toHaveLength(2));
+    expect(result.current.writes.map((write) => write.cmi.a)).toEqual([
+      "1",
+      "2",
+    ]);
   });
 });

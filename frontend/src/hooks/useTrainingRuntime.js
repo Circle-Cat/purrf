@@ -66,7 +66,7 @@ const partingBody = (cmi, sessionToken) => {
 export default function useTrainingRuntime(
   trainingId,
   user,
-  { open = openSession, records = true } = {},
+  { open = openSession, records = true, collectWrites = false } = {},
 ) {
   const [session, setSession] = useState(null);
   const [loadError, setLoadError] = useState(null);
@@ -199,18 +199,25 @@ export default function useTrainingRuntime(
         event.data.type === MESSAGE_TYPES.COMMIT ||
         event.data.type === MESSAGE_TYPES.FINISH
       ) {
-        setWrites((prev) => [
-          ...prev,
-          {
-            type:
-              event.data.type === MESSAGE_TYPES.FINISH ? "finish" : "commit",
-            cmi: event.data.cmi,
-            receivedAt: Date.now(),
-          },
-        ]);
-        // A preview watches the course run without banking any of it. The
-        // writes above are still collected -- they are what a diagnostics
-        // panel reads -- but nothing leaves the page.
+        // Only for a caller that reads the log. Every entry holds the whole
+        // CMI model, suspend_data included, which the server accepts up to
+        // 64 KiB; a course commits every twenty seconds and each entry
+        // rebuilds the array. A learner sitting a long course would carry
+        // hundreds of copies of their own bookmark for the life of the page,
+        // and the learner's page has never read one.
+        if (collectWrites) {
+          setWrites((prev) => [
+            ...prev,
+            {
+              type:
+                event.data.type === MESSAGE_TYPES.FINISH ? "finish" : "commit",
+              cmi: event.data.cmi,
+              receivedAt: Date.now(),
+            },
+          ]);
+        }
+        // A preview watches the course run without banking any of it: the
+        // commit is noticed, and nothing leaves the page.
         if (!records) return;
         lastCmiRef.current = event.data.cmi;
         unsavedRef.current = true;
