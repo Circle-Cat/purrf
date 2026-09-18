@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from backend.common.api_endpoints import LEAVE_BALANCE_ENDPOINT
+from backend.common.api_endpoints import LEAVE_ME_LEDGER_ENDPOINT
 from backend.common.fast_api_response_wrapper import api_response
 from backend.dto.user_context_dto import UserContextDto
 from backend.utils.permission_decorators import authenticate
@@ -22,7 +22,7 @@ class LeaveBalanceController:
         self.router = APIRouter(tags=["leave-balance"])
 
         self.router.add_api_route(
-            LEAVE_BALANCE_ENDPOINT,
+            LEAVE_ME_LEDGER_ENDPOINT,
             endpoint=authenticate()(self.get_balance),
             methods=["GET"],
             response_model=None,

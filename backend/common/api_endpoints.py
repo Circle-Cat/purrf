@@ -185,7 +185,7 @@ LEAVE_REQUESTS_ENDPOINT = "/leave/requests"
 LEAVE_REQUESTS_APPROVALS_ENDPOINT = "/leave/requests/approvals"
 LEAVE_REQUEST_WITHDRAW_ENDPOINT = "/leave/requests/{request_id}/withdraw"
 LEAVE_REQUEST_DECISION_ENDPOINT = "/leave/requests/{request_id}/decision"
-LEAVE_BALANCE_ENDPOINT = "/leave/balance"
+LEAVE_ME_LEDGER_ENDPOINT = "/leave/me/ledger"
 
 TRAINING_COURSES_ENDPOINT = "/training/courses"
 TRAINING_COURSE_ENDPOINT = "/training/courses/{course_id}"
