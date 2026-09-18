@@ -118,7 +118,10 @@ py_test(
     name = "matching_contract_test",
     srcs = ["matching_contract_test.py"],
     data = ["//backend/mentorship:contracts"],
-    deps = ["//backend/mentorship"],
+    deps = [
+        "//backend/mentorship",
+        "@pypi//jsonschema",
+    ],
 )
 
 py_test(

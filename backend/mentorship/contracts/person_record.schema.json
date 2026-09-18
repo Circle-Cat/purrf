@@ -96,6 +96,46 @@
     }
   },
   "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "role": {
+            "const": "mentee"
+          }
+        },
+        "required": ["role"]
+      },
+      "then": {
+        "properties": {
+          "specific_industry": {
+            "type": "object"
+          },
+          "max_partners": {
+            "type": "null"
+          }
+        },
+        "required": ["specific_industry"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "role": {
+            "const": "mentor"
+          }
+        },
+        "required": ["role"]
+      },
+      "then": {
+        "properties": {
+          "specific_industry": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ],
   "description": "A mentor or a mentee, carrying only what the matcher scores on.\n\nContact fields and names beyond ``display_name`` are absent: the matcher has\nno consumer for them.",
   "properties": {
     "role": {
