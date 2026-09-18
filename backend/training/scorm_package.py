@@ -26,9 +26,14 @@ from backend.training.scorm_manifest import (
 MAX_TOTAL_UNCOMPRESSED_BYTES = 500 * 1024 * 1024
 MAX_ENTRY_COUNT = 5000
 MAX_FILE_BYTES = 200 * 1024 * 1024
-# Video and audio barely compress; text and JSON reach 10-20x. A single entry
-# beyond this is not a course asset.
-MAX_COMPRESSION_RATIO = 200
+# There is deliberately no ratio cap beside these. A ratio is computed from the
+# same declared file_size the three caps above already bound, so it cannot
+# refuse anything they allow except an entry that is inside the budget and
+# merely compresses well -- four megabytes of zeros reaches a thousandfold. And
+# it cannot catch a header that understates its size: reading such a member
+# raises BadZipFile on the CRC, which member_bytes turns into a rejection.
+# Arithmetic on an attacker's header was never what stood between us and a
+# bomb; the byte caps and the CRC are.
 
 # Paths we serve ourselves from inside the package's own URL space. A package
 # containing one of these could otherwise replace the player that hosts the
@@ -162,14 +167,6 @@ def _reject_oversized(entries: list[zipfile.ZipInfo]) -> int:
                 f"Rejected: {entry.filename!r} unpacks to "
                 f"{entry.file_size} bytes, more than the "
                 f"{MAX_FILE_BYTES} allowed for one file."
-            )
-        if (
-            entry.compress_size > 0
-            and entry.file_size / entry.compress_size > MAX_COMPRESSION_RATIO
-        ):
-            raise PackageRejected(
-                f"Rejected: {entry.filename!r} expands more than "
-                f"{MAX_COMPRESSION_RATIO} times, which no course asset does."
             )
         total += entry.file_size
         if total > MAX_TOTAL_UNCOMPRESSED_BYTES:

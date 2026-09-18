@@ -7,11 +7,11 @@ import zipfile
 from backend.common.mentorship_enums import ScormVersion
 from backend.training.scorm_manifest import MANIFEST_NAME
 from backend.training.scorm_package import (
-    MAX_COMPRESSION_RATIO,
     MAX_ENTRY_COUNT,
     MAX_FILE_BYTES,
     MAX_TOTAL_UNCOMPRESSED_BYTES,
     PackageRejected,
+    member_bytes,
     read_package,
 )
 
@@ -123,7 +123,6 @@ class TestReadPackageRejections(unittest.TestCase):
         # Declaring the size is enough; writing 200MB would only slow the suite down.
         info = archive.getinfo("assets/lecture.mp4")
         info.file_size = MAX_FILE_BYTES + 1
-        info.compress_size = info.file_size // 2
 
         with self.assertRaises(PackageRejected):
             read_package(archive)
@@ -137,20 +136,33 @@ class TestReadPackageRejections(unittest.TestCase):
             info = archive.getinfo(f"assets/lecture{index}.mp4")
             # Each file stays within the per-file cap; only the sum is over.
             info.file_size = MAX_FILE_BYTES
-            info.compress_size = info.file_size // 2
         self.assertGreater(3 * MAX_FILE_BYTES, MAX_TOTAL_UNCOMPRESSED_BYTES)
 
         with self.assertRaises(PackageRejected):
             read_package(archive)
 
-    def test_a_zip_bomb_compression_ratio_is_rejected(self):
-        entries = _valid_entries(**{"assets/bomb.bin": b"\0" * (4 * 1024 * 1024)})
+    def test_an_entry_that_compresses_well_is_still_a_course_asset(self):
+        # Four megabytes of zeros compresses about a thousandfold and is inside
+        # every byte cap. A ratio alone says nothing: the declared size is what
+        # the caps already bound, and a size that lies low is refused by the
+        # CRC when the member is read, not by arithmetic on its header.
+        entries = _valid_entries(**{"assets/padded.bin": b"\0" * (4 * 1024 * 1024)})
         archive = _build_zip(entries)
-        info = archive.getinfo("assets/bomb.bin")
-        self.assertGreater(info.file_size / info.compress_size, MAX_COMPRESSION_RATIO)
+        info = archive.getinfo("assets/padded.bin")
+        self.assertGreater(info.file_size / info.compress_size, 200)
+        self.assertLess(info.file_size, MAX_FILE_BYTES)
+
+        read_package(archive)
+
+    def test_a_member_whose_declared_size_lies_is_refused_when_read(self):
+        # The guard the ratio check was standing in for, and the reason it was
+        # never needed: understating file_size does not get more bytes out.
+        entries = _valid_entries(**{"assets/padded.bin": b"\0" * (1024 * 1024)})
+        archive = _build_zip(entries)
+        archive.getinfo("assets/padded.bin").file_size = 100
 
         with self.assertRaises(PackageRejected):
-            read_package(archive)
+            member_bytes(archive, "assets/padded.bin", "assets/padded.bin")
 
     def test_an_archive_without_a_manifest_is_rejected(self):
         with self.assertRaises(PackageRejected):
