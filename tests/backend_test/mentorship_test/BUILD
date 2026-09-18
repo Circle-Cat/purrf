@@ -148,3 +148,12 @@ py_test(
         "//backend/mentorship",
     ],
 )
+
+py_test(
+    name = "matching_run_read_test",
+    srcs = ["matching_run_read_test.py"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/mentorship",
+    ],
+)
