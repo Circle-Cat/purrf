@@ -276,7 +276,22 @@ class TrainingProgressService:
             # the same session more than once.
             parsed_total = _timespan_seconds(cmi[_TOTAL_TIME])
             if parsed_total is not None:
-                columns["session_time_seconds"] = parsed_total
+                # Never below what is already banked. The seed a tab computes
+                # from is captured when it opens, so two tabs open at once
+                # each report that same seed plus only their own elapsed
+                # time, and the one that commits last carries a total missing
+                # everything the other banked. Taking the larger costs the
+                # second tab's own minutes -- the model has no per-session
+                # figure to add them back with -- but the alternative spends
+                # time the learner has already served.
+                #
+                # Safe as a read and then a write: the assignment row is held
+                # FOR UPDATE for the whole commit, so a concurrent one cannot
+                # land between them. Nothing else lowers this column either;
+                # replacing a package deliberately leaves it alone while
+                # clearing the bookmark beside it.
+                stored_total = getattr(existing, "session_time_seconds", 0) or 0
+                columns["session_time_seconds"] = max(parsed_total, stored_total)
             else:
                 # Leave the stored value alone. A course that cannot format
                 # its own elapsed time must not zero out what was already
