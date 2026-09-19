@@ -638,6 +638,7 @@ class TestAppDependencyBuilder(TestCase):
             leave_job_controller=ANY,
             leave_request_controller=ANY,
             leave_calendar_controller=ANY,
+            leave_balance_controller=ANY,
             notification_delivery_controller=ANY,
             notification_publisher=mock_notification_publisher_client,
             notification_topic_path="projects/test-project/topics/notifications",

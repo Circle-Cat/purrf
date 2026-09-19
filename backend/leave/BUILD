@@ -194,3 +194,26 @@ py_library(
         "@pypi//fastapi",
     ],
 )
+
+py_library(
+    name = "leave_balance_service",
+    srcs = ["leave_balance_service.py"],
+    deps = [
+        "//backend/dto",
+        "//backend/repository:repositories",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "leave_balance_controller",
+    srcs = ["leave_balance_controller.py"],
+    deps = [
+        ":leave_balance_service",
+        "//backend/common:api_endpoints",
+        "//backend/common:fast_api_response_wrapper",
+        "//backend/dto",
+        "//backend/utils:permission_decorators",
+        "@pypi//fastapi",
+    ],
+)

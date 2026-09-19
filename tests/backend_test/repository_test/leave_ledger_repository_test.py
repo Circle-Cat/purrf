@@ -410,6 +410,73 @@ class TestLeaveLedgerRepository(BaseRepositoryTestLib):
             datetime.date(2026, 7, 1),
         )
 
+    async def test_list_entries_returns_entries_in_reverse_chronological_order(self):
+        """list_entries returns all rows for a user in reverse chronological order
+        by effective_date and leave_ledger_id."""
+        # Insert entries in random date order to verify sorting
+        entry1 = self._entry(
+            LeaveEntryType.WEEKLY_ACCRUAL, "1.54", datetime.date(2026, 1, 1)
+        )
+        entry2 = self._entry(
+            LeaveEntryType.LEAVE_DEDUCTION, "-8.00", datetime.date(2026, 6, 1)
+        )
+        # Two entries on the same day to verify ID secondary ordering
+        entry3_first = self._entry(
+            LeaveEntryType.WEEKLY_ACCRUAL, "1.54", datetime.date(2026, 3, 1)
+        )
+        entry3_second = self._entry(
+            LeaveEntryType.MANUAL_ADJUSTMENT, "40.00", datetime.date(2026, 3, 1)
+        )
+
+        await self.insert_entities([entry1, entry2, entry3_first, entry3_second])
+
+        entries = await self.repository.list_entries(self.session, self.user.user_id)
+
+        # Assert total count
+        self.assertEqual(len(entries), 4)
+
+        # Assert reverse chronological order by date: Jun 1 -> Mar 1 -> Mar 1 -> Jan 1
+        self.assertEqual(entries[0].effective_date, datetime.date(2026, 6, 1))
+        self.assertEqual(entries[1].effective_date, datetime.date(2026, 3, 1))
+        self.assertEqual(entries[2].effective_date, datetime.date(2026, 3, 1))
+        self.assertEqual(entries[3].effective_date, datetime.date(2026, 1, 1))
+
+        # Assert same-day tie-breaker orders by leave_ledger_id descending (newer row first)
+        self.assertGreater(entries[1].leave_ledger_id, entries[2].leave_ledger_id)
+        self.assertEqual(entries[1].entry_type, LeaveEntryType.MANUAL_ADJUSTMENT)
+        self.assertEqual(entries[2].entry_type, LeaveEntryType.WEEKLY_ACCRUAL)
+
+    async def test_list_entries_filters_by_user_id(self):
+        """list_entries only returns rows belonging to the specified user and returns
+        an empty list for a user with no ledger entries."""
+        await self.insert_entities([
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL, "1.54", datetime.date(2026, 3, 1)
+            ),
+            self._entry(
+                LeaveEntryType.WEEKLY_ACCRUAL,
+                "80.00",
+                datetime.date(2026, 3, 1),
+                user=self.other_user,
+            ),
+        ])
+
+        # Assert querying one user isolates their records from others
+        user_entries = await self.repository.list_entries(
+            self.session, self.user.user_id
+        )
+        self.assertEqual(len(user_entries), 1)
+        self.assertEqual(user_entries[0].hours, Decimal("1.54"))
+
+        # Assert querying a user with no ledger rows returns [] rather than None
+        empty_user = _make_user()
+        await self.insert_entities([empty_user])
+
+        empty_entries = await self.repository.list_entries(
+            self.session, empty_user.user_id
+        )
+        self.assertEqual(empty_entries, [])
+
 
 if __name__ == "__main__":
     import unittest

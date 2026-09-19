@@ -138,6 +138,8 @@ from backend.leave.leave_calendar_service import LeaveCalendarService
 from backend.leave.leave_calendar_controller import LeaveCalendarController
 from backend.leave.leave_adjustment_service import LeaveAdjustmentService
 from backend.leave.leave_admin_controller import LeaveAdminController
+from backend.leave.leave_balance_service import LeaveBalanceService
+from backend.leave.leave_balance_controller import LeaveBalanceController
 from backend.training.content_host import resolve_content_host
 from backend.training.training_admin_controller import TrainingAdminController
 from backend.training.training_assignment_service import TrainingAssignmentService
@@ -1089,6 +1091,14 @@ class AppDependencyBuilder:
             self.leave_request_service,
             self.database,
         )
+        self.leave_balance_service = LeaveBalanceService(
+            logger=self.logger,
+            leave_ledger_repository=self.leave_ledger_repository,
+        )
+        self.leave_balance_controller = LeaveBalanceController(
+            leave_balance_service=self.leave_balance_service,
+            database=self.database,
+        )
         self.fast_app_factory = FastAppFactory(
             authentication_controller=self.authentication_controller,
             authentication_service=self.authentication_service,
@@ -1118,6 +1128,7 @@ class AppDependencyBuilder:
             leave_job_controller=self.leave_job_controller,
             leave_request_controller=self.leave_request_controller,
             leave_calendar_controller=self.leave_calendar_controller,
+            leave_balance_controller=self.leave_balance_controller,
             notification_delivery_controller=self.notification_delivery_controller,
             notification_publisher=self.notification_publisher_client,
             notification_topic_path=self.notification_topic_path,

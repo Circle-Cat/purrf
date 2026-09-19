@@ -127,6 +127,25 @@ py_test(
 )
 
 py_test(
+    name = "leave_balance_service_test",
+    srcs = ["leave_balance_service_test.py"],
+    deps = [
+        "//backend/common:leave_enums",
+        "//backend/entity:entities",
+        "//backend/leave:leave_balance_service",
+    ],
+)
+
+py_test(
+    name = "leave_balance_controller_test",
+    srcs = ["leave_balance_controller_test.py"],
+    deps = [
+        "//backend/common:leave_enums",
+        "//backend/leave:leave_balance_controller",
+    ],
+)
+
+py_test(
     name = "leave_request_service_test",
     srcs = ["leave_request_service_test.py"],
     deps = [

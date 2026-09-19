@@ -147,6 +147,8 @@ py_library(
         "//backend/internal_activity_service:summary_service",
         "//backend/leave:employment_sync_service",
         "//backend/leave:leave_admin_controller",
+        "//backend/leave:leave_balance_controller",
+        "//backend/leave:leave_balance_service",
         "//backend/leave:leave_calendar_controller",
         "//backend/leave:leave_calendar_service",
         "//backend/leave:leave_engine_service",
