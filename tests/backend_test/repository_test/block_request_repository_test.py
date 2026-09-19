@@ -22,12 +22,14 @@ class TestBlockRequestRepository(BaseRepositoryTestLib):
         self.target = self._make_user()
         self.other_target = self._make_user()
         self.raiser = self._make_user()
+        self.other_raiser = self._make_user()
         self.reviewer = self._make_user()
         self.other_reviewer = self._make_user()
         await self.insert_entities([
             self.target,
             self.other_target,
             self.raiser,
+            self.other_raiser,
             self.reviewer,
             self.other_reviewer,
         ])
@@ -43,11 +45,13 @@ class TestBlockRequestRepository(BaseRepositoryTestLib):
             updated_timestamp=datetime.now(timezone.utc),
         )
 
-    async def _create(self, *, target=None, reviewer=None, reason="second no-show"):
+    async def _create(
+        self, *, target=None, reviewer=None, raiser=None, reason="second no-show"
+    ):
         return await self.repo.create(
             self.session,
             target_user_id=(target or self.target).user_id,
-            raised_by=self.raiser.user_id,
+            raised_by=(raiser or self.raiser).user_id,
             raised_from="recruiting_board",
             reason=reason,
             reviewer_id=(reviewer or self.reviewer).user_id,
@@ -109,6 +113,32 @@ class TestBlockRequestRepository(BaseRepositoryTestLib):
         rows = await self.repo.list_pending_for_reviewer(
             self.session, self.reviewer.user_id
         )
+
+        self.assertEqual(rows, [])
+
+    async def test_list_pending_raised_by_is_scoped_to_the_raiser(self):
+        """The raiser reads back only what they asked for. Someone else's open
+        request about the same person stays invisible to them."""
+        mine = await self._create()
+        await self._create(raiser=self.other_raiser, reviewer=self.other_reviewer)
+
+        rows = await self.repo.list_pending_raised_by(self.session, self.raiser.user_id)
+
+        self.assertEqual([r.request_id for r in rows], [mine.request_id])
+
+    async def test_list_pending_raised_by_excludes_closed(self):
+        """A decided request is an event, delivered by notification. Leaving it
+        in this read would pin a stale banner to the page forever."""
+        row = await self._create()
+        await self.repo.close(
+            self.session,
+            row.request_id,
+            status=BlockRequestStatus.REJECTED,
+            decided_by=self.reviewer.user_id,
+            decision_note=None,
+        )
+
+        rows = await self.repo.list_pending_raised_by(self.session, self.raiser.user_id)
 
         self.assertEqual(rows, [])
 

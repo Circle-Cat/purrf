@@ -69,6 +69,14 @@ export const createBlockRequest = (
 export const getPendingBlockRequests = () =>
   request.get(API_ENDPOINTS.BLOCK_REQUESTS);
 
+/**
+ * The open requests the caller raised. Scoped to them, like the queue above:
+ * it is what lets a page they raised from show the request again on reload.
+ * Pending only -- a decided one reaches them as a notification.
+ */
+export const getRaisedBlockRequests = () =>
+  request.get(API_ENDPOINTS.BLOCK_REQUESTS_RAISED);
+
 /** Hand a request the caller raised to a different reviewer. */
 export const reassignBlockRequest = (requestId, reviewerId) =>
   request.post(API_ENDPOINTS.BLOCK_REQUEST_REASSIGN(requestId), { reviewerId });

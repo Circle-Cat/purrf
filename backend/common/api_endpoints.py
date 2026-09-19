@@ -93,6 +93,10 @@ ADMIN_ACCOUNT_BLOCK_ENDPOINT = "/admin/accounts/{user_id}/block"
 # standing on a domain page and holds no console permission at all.
 BLOCK_PREFLIGHT_ENDPOINT = "/block-preflight/{user_id}"
 BLOCK_REQUESTS_ENDPOINT = "/block-requests"
+# What the caller raised and is still waiting on. A separate path rather than a
+# filter on the line above: that one is the reviewer's queue and its gate says
+# so, and the two are read by people holding different permissions.
+BLOCK_REQUESTS_RAISED_ENDPOINT = "/block-requests/raised"
 BLOCK_REQUEST_REASSIGN_ENDPOINT = "/block-requests/{request_id}/reassign"
 BLOCK_REQUEST_DECIDE_ENDPOINT = "/block-requests/{request_id}/decide"
 # The reviewer picker for a raise. Named for its use, and outside /admin like

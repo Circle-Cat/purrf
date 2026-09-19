@@ -219,6 +219,10 @@ beforeEach(() => {
     data: { applicationCount: 0, interviewTimes: [] },
   });
   adminApi.getUserAdmins.mockResolvedValue({ data: [] });
+  // The page reads back any open block request this caller raised, so the
+  // automocked module needs a promise here or every test on this page dies in
+  // the effect before it renders.
+  adminApi.getRaisedBlockRequests.mockResolvedValue({ data: [] });
   api.resumeUrl.mockImplementation(
     (id) => `/api/recruiting/applications/${id}/resume`,
   );

@@ -20,6 +20,7 @@ from backend.common.api_endpoints import (
     BLOCK_REQUEST_DECIDE_ENDPOINT,
     BLOCK_REQUEST_REASSIGN_ENDPOINT,
     BLOCK_REQUESTS_ENDPOINT,
+    BLOCK_REQUESTS_RAISED_ENDPOINT,
 )
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.permissions import Permission
@@ -72,6 +73,12 @@ class BlockController:
         self.router.add_api_route(
             BLOCK_REQUESTS_ENDPOINT,
             endpoint=authenticate(permissions=_DECIDE_GATE)(self.list_pending),
+            methods=["GET"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            BLOCK_REQUESTS_RAISED_ENDPOINT,
+            endpoint=authenticate(permissions=_RAISE_GATE)(self.list_raised),
             methods=["GET"],
             response_model=None,
         )
@@ -160,6 +167,26 @@ class BlockController:
                 session, current_user.user_id
             )
         return api_response(message="Pending block requests", data=view)
+
+    async def list_raised(self, current_user: UserContextDto):
+        """The requests this caller raised and is still waiting on.
+
+        Scoped to the caller, like the reviewer's queue: their own id is the
+        only input. It is what lets the page they raised from show an open
+        request again after a reload, and it is behind the raise gate rather
+        than the decide one because it answers only for its own caller.
+
+        Args:
+            current_user (UserContextDto): The authenticated caller (injected).
+
+        Returns:
+            A standardized API response wrapping a list of ``BlockRequestDto``.
+        """
+        async with self._database.session() as session:
+            view = await self._service.list_pending_raised_by_actor(
+                session, current_user.user_id
+            )
+        return api_response(message="Block requests you raised", data=view)
 
     async def reassign(
         self,

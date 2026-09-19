@@ -55,10 +55,10 @@ const HOLDERS = [
   { userId: OWNER_ID, name: "Olive Owner" },
 ];
 
-/** A BlockRequestDto as the create/reassign endpoints return it. */
-const requestDto = (reviewerId, reviewerName) => ({
+/** A BlockRequestDto as the create/reassign/raised endpoints return it. */
+const requestDto = (reviewerId, reviewerName, targetUserId = APPLICANT_ID) => ({
   id: 42,
-  userId: APPLICANT_ID,
+  targetUserId,
   reviewerId,
   reviewerName,
   status: "pending",
@@ -129,6 +129,7 @@ beforeEach(() => {
   adminApi.reassignBlockRequest.mockResolvedValue({
     data: requestDto(88, "Sam Steward"),
   });
+  adminApi.getRaisedBlockRequests.mockResolvedValue({ data: [] });
 });
 
 const renderPage = () => {
@@ -387,5 +388,55 @@ describe("Request block — the raised request lives only in page state", () => 
 
     expect(adminApi.createBlockRequest).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/Block requested/)).not.toBeInTheDocument();
+  });
+});
+
+describe("Request block — an open request survives a reload", () => {
+  it("shows the banner again for a request this caller already raised", async () => {
+    // The page holds the request it raised in component state, so without
+    // this read a reload offers the button again and the send is refused as a
+    // duplicate. The request is the caller's own, which is why they may read
+    // it back at all.
+    adminApi.getRaisedBlockRequests.mockResolvedValue({
+      data: [requestDto(77, "Rita Reviewer")],
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(
+      await screen.findByText("Block requested — sent to Rita Reviewer"),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Request block" }),
+      ).toBeDisabled(),
+    );
+  });
+
+  it("keeps the button open when the caller's open request is about someone else", async () => {
+    // The read is scoped to the caller, not to this application: a request
+    // they raised about a different person must not close this one down.
+    adminApi.getRaisedBlockRequests.mockResolvedValue({
+      data: [requestDto(77, "Rita Reviewer", APPLICANT_ID + 1)],
+    });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByRole("button", { name: "Request block" })).toBeEnabled();
+    expect(
+      screen.queryByText(/^Block requested — sent to /),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says nothing when the read fails", async () => {
+    // The operator did not ask for this read, so a failure is swallowed
+    // rather than toasted at them. The page stays usable and the worst case
+    // is the duplicate refusal that was the whole behaviour before it.
+    adminApi.getRaisedBlockRequests.mockRejectedValue(new Error("boom"));
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByRole("button", { name: "Request block" })).toBeEnabled();
+    expect(toast.error).not.toHaveBeenCalled();
   });
 });

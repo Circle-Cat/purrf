@@ -15,6 +15,11 @@ class NotificationDto(BaseDto):
     same fallback convention as MyEvaluationDto/CommentDto. A null
     ``actor_name`` means nobody did it: the rules did.
 
+    ``subject_name`` names the person a user-scoped event is about (a block
+    request's target). It is "" for every other subject type, where the person
+    in the line is the applicant and ``applicant_name`` already carries them
+    under the candidate naming rule.
+
     ``job_kind`` is the resolved posting's kind (None when the posting is
     missing), so consumers outside React can honour the display-only rule
     that an activity posting's `hired` stage reads as "Admitted".
@@ -26,6 +31,7 @@ class NotificationDto(BaseDto):
     job_title: str = ""
     job_kind: JobKind | None = None
     applicant_name: str = ""
+    subject_name: str = ""
     actor_name: str | None = None
     created_at: datetime
 
