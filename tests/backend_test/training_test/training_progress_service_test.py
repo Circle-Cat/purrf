@@ -238,6 +238,28 @@ class TestSave(_ProgressServiceCase):
 
         self.assertEqual(self._saved_columns()["session_time_seconds"], 300)
 
+    async def test_a_second_tab_cannot_spend_the_time_the_first_one_banked(self):
+        """Both tabs seed total_time from the same stored value, so each one
+        reports that value plus only its own elapsed time. The tab that
+        commits last would otherwise write a total missing everything the
+        other one banked, and banked time is the one thing that never goes
+        backwards."""
+        # The first tab has already committed 500 + 600.
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(training_id=_TRAINING_ID, session_time_seconds=1100)
+        )
+
+        # The second tab opened at 500 and has been watching for a minute.
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "00:09:20"},
+            session_token=_session_token(),
+        )
+
+        self.assertEqual(self._saved_columns()["session_time_seconds"], 1100)
+
     async def test_a_malformed_session_time_does_not_lose_the_commit(self):
         await self.service.save(
             self.session,
@@ -723,6 +745,29 @@ class TestSave(_ProgressServiceCase):
             _TRAINING_ID,
             _USER_ID,
             {**_COMMIT, "cmi.core.total_time": "01:00:00"},
+            session_token=_session_token(),
+        )
+
+        self.progress_repository.upsert.assert_not_awaited()
+
+    async def test_a_stale_tab_reporting_less_time_does_not_rewrite_the_row(self):
+        """The guard above leaves the column at what is stored, so a tab left
+        open on an older seed stops being a reason to write at all."""
+        self.progress_repository.get_by_training_id.return_value = (
+            TrainingProgressEntity(
+                training_id=_TRAINING_ID,
+                lesson_status="incomplete",
+                lesson_location="Summary",
+                suspend_data="x" * 5000,
+                session_time_seconds=3600,
+            )
+        )
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.total_time": "00:10:00"},
             session_token=_session_token(),
         )
 
