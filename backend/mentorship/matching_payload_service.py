@@ -158,9 +158,21 @@ class MatchingPayloadService:
                 f"Users {missing} are not registered for round {round_id}."
             )
 
-        round_counts = await self.mentorship_pairs_repository.count_mentoring_rounds(
-            session, [user.user_id for user, _, _, _ in rows], round_id
+        user_ids = [user.user_id for user, _, _, _ in rows]
+        registered = (
+            await self.mentorship_round_participants_repository.count_registered_rounds(
+                session, user_ids, round_id
+            )
         )
+        completed = await self.mentorship_pairs_repository.count_completed_rounds(
+            session, user_ids, round_id
+        )
+        round_counts = {
+            user_id: self._round_counts(
+                user_id, registered.get(user_id, 0), completed.get(user_id, 0)
+            )
+            for user_id in user_ids
+        }
 
         mentors: list[PersonRecord] = []
         mentees: list[PersonRecord] = []
@@ -172,7 +184,7 @@ class MatchingPayloadService:
                 experience,
                 preference,
                 is_mentor=is_mentor,
-                round_counts=round_counts.get(user.user_id, (0, 0)),
+                round_counts=round_counts[user.user_id],
             )
             (mentors if is_mentor else mentees).append(record)
 
@@ -199,6 +211,29 @@ class MatchingPayloadService:
             mentors=mentors,
             mentees=mentees,
         )
+
+    def _round_counts(
+        self, user_id: int, registered: int, completed: int
+    ) -> tuple[int, int]:
+        """Reconcile the two round counts so their difference stays meaningful.
+
+        The matcher reads ``participated - completed`` as rounds that were
+        paired and then went nowhere, so a negative difference would report a
+        gap in our own records as somebody standing people up. It can only
+        arise where a historical round left a pair behind without a
+        registration row, which is a data gap worth saying out loud.
+        """
+        if registered < completed:
+            self.logger.warning(
+                "[MatchingPayloadService] user=%s has %d completed round(s) but "
+                "only %d registration(s); reporting %d participated.",
+                user_id,
+                completed,
+                registered,
+                completed,
+            )
+            return completed, completed
+        return registered, completed
 
     def _person(
         self,
