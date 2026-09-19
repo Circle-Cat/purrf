@@ -81,6 +81,7 @@ import {
   createBlockRequest,
   getBlockPreflight,
   getUserAdmins,
+  getRaisedBlockRequests,
   reassignBlockRequest,
 } from "@/api/adminAccountsApi";
 import BlockDialog from "@/pages/AdminAccounts/components/BlockDialog";
@@ -1168,8 +1169,9 @@ const ApplicationDetailPage = () => {
   // Distinct from an empty list: the dialog says something different for
   // "couldn't read the reviewers" than for "there genuinely are none".
   const [reviewerOptionsFailed, setReviewerOptionsFailed] = useState(false);
-  // The request this page raised, kept only for as long as the page is open.
-  // There is no backend read scoped to the raiser, so a reload loses it.
+  // The open request this caller raised about this applicant. Seeded from the
+  // raiser-scoped read below so it survives a reload -- without it the page
+  // offers "Request block" again and the send comes back as a duplicate.
   const [raisedBlockRequest, setRaisedBlockRequest] = useState(null);
   const [blockReassignOpen, setBlockReassignOpen] = useState(false);
   const [blockReassigning, setBlockReassigning] = useState(false);
@@ -1280,6 +1282,29 @@ const ApplicationDetailPage = () => {
   useEffect(() => {
     load();
   }, [load]);
+
+  const applicantId = detail?.application?.userId ?? null;
+
+  useEffect(() => {
+    // Gated on the same grant the read is: asking without it is a guaranteed
+    // 403.
+    if (applicantId == null || !canRequestBlock) return;
+    let current = true;
+    getRaisedBlockRequests()
+      .then(({ data }) => {
+        if (!current) return;
+        setRaisedBlockRequest(
+          (data ?? []).find((r) => r.targetUserId === applicantId) ?? null,
+        );
+      })
+      // Swallowed, not toasted: this is a background read the operator never
+      // asked for, and the page works without it -- the worst case is the
+      // duplicate refusal that was the whole behaviour before it existed.
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [applicantId, canRequestBlock]);
 
   const jobStages = useMemo(
     () => (job?.pipelineConfig?.stages ?? []).map((s) => s.stage),

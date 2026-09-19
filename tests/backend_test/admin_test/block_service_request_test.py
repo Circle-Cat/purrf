@@ -132,6 +132,17 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         self.requests_repo.close = AsyncMock(side_effect=close)
         self.requests_repo.list_pending_for_reviewer = AsyncMock(return_value=[])
 
+        async def list_pending_raised_by(_s, raised_by):
+            return [
+                r
+                for r in self.rows.values()
+                if r.raised_by == raised_by and r.status is BlockRequestStatus.PENDING
+            ]
+
+        self.requests_repo.list_pending_raised_by = AsyncMock(
+            side_effect=list_pending_raised_by
+        )
+
         recorder = patch(
             "backend.admin.block_service.record_event", new_callable=AsyncMock
         )
@@ -910,6 +921,31 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(out, [])
         self.users_repo.get_all_by_ids.assert_not_awaited()
+
+    # -- what the raiser can read back --------------------------------------
+
+    async def test_raiser_reads_back_the_request_they_raised(self):
+        """The banner the raising page shows has to survive a reload, so the
+        raiser gets a read of their own open requests."""
+        await self._raise()
+
+        out = await self.service.list_pending_raised_by_actor(self.session, RAISER)
+
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0].target_user_id, TARGET)
+        self.assertEqual(out[0].reviewer_id, REVIEWER)
+        self.assertTrue(out[0].reviewer_name)
+
+    async def test_raiser_does_not_read_back_someone_elses_request(self):
+        """Scoped to the caller, like the reviewer queue: an open request
+        raised by a colleague is not this caller's to see."""
+        await self._raise()
+
+        out = await self.service.list_pending_raised_by_actor(
+            self.session, OTHER_RAISER
+        )
+
+        self.assertEqual(out, [])
 
 
 if __name__ == "__main__":
