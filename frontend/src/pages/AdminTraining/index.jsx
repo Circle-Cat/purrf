@@ -15,9 +15,13 @@ import CourseTable from "@/pages/AdminTraining/components/CourseTable";
 export default function AdminTraining() {
   const [courses, setCourses] = useState(null);
   // The route is gated on the read grant, so a reader reaches this page and
-  // must not be shown a card whose every action the API would refuse.
+  // must not be shown a control whose action the API would refuse. Both
+  // halves below take the same grant: the table withholds its row actions,
+  // and the card withholds the ticks and the Assign button while still
+  // answering who is on a course -- which is a read, and the reason a reader
+  // is here at all.
   const { permissions } = useAuth();
-  const canAssign = permissions.includes(PERMISSIONS.TRAINING_ADMIN_WRITE);
+  const canWrite = permissions.includes(PERMISSIONS.TRAINING_ADMIN_WRITE);
 
   // The single source of truth for the list. Row actions in CourseTable
   // never patch `courses` themselves -- they call this again once their
@@ -52,13 +56,17 @@ export default function AdminTraining() {
               No training courses yet.
             </p>
           ) : (
-            <CourseTable courses={courses} onCoursesChanged={fetchCourses} />
+            <CourseTable
+              courses={courses}
+              onCoursesChanged={fetchCourses}
+              canWrite={canWrite}
+            />
           )}
         </CardContent>
       </Card>
 
-      {canAssign && courses !== null && (
-        <AssignTrainingCard courses={courses} />
+      {courses !== null && (
+        <AssignTrainingCard courses={courses} canWrite={canWrite} />
       )}
     </div>
   );

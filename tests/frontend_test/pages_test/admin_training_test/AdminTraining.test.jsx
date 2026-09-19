@@ -56,7 +56,9 @@ describe("AdminTraining page", () => {
 
     renderPage();
 
-    expect(await screen.findByText("Mentor Onboarding")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("cell", { name: /mentor onboarding/i }),
+    ).toBeInTheDocument();
     expect(api.listCourses).toHaveBeenCalled();
   });
 
@@ -79,13 +81,31 @@ describe("AdminTraining page", () => {
       expect(toast.error).toHaveBeenCalledWith("network error"),
     );
   });
-  it("keeps the assignment card away from a read-only caller", async () => {
+  it("still shows a read-only caller who is on a course", async () => {
+    // The card answers two questions, and only one of them is assigning:
+    // "what does this person hold" is a read, and the read grant is what
+    // this page is gated on. Hiding the card took the roster with it.
     api.listCourses.mockResolvedValue({ data: [course] });
+    api.searchAudience.mockResolvedValue({ data: { rows: [], total: 0 } });
 
     renderPage();
 
-    expect(await screen.findByText("Mentor Onboarding")).toBeInTheDocument();
-    expect(screen.queryByText("Assign training")).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole("cell", { name: /mentor onboarding/i }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("Assign training")).toBeInTheDocument();
+  });
+
+  it("gives a read-only caller no way to assign from that card", async () => {
+    api.listCourses.mockResolvedValue({ data: [course] });
+    api.searchAudience.mockResolvedValue({ data: { rows: [], total: 0 } });
+
+    renderPage();
+
+    await screen.findByText("Assign training");
+    expect(
+      screen.queryByRole("button", { name: /^assign$/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the assignment card to a caller who may assign", async () => {

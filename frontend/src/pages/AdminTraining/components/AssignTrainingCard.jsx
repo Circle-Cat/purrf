@@ -35,7 +35,7 @@ const SELECT_CLASS =
  *   deactivated and packageless ones included -- they still carry learners,
  *   and filtering them out of the dropdown would hide those people.
  */
-export default function AssignTrainingCard({ courses }) {
+export default function AssignTrainingCard({ courses, canWrite = true }) {
   const audience = useAudienceSearch({ courses });
   const blockedReason = bulkAssignBlockedReason(audience.selectedCourse);
   const selectedCount = audience.selectedIds.length;
@@ -43,11 +43,18 @@ export default function AssignTrainingCard({ courses }) {
   // taken before there is an assignable course could never be submitted.
   // The controls that take one, and the column they are taken in, are
   // withheld rather than shown dead.
-  const canAssign = blockedReason === null;
+  // The write grant joins the two conditions already here rather than gating
+  // the card: a reader is on this page to see who holds what, and that answer
+  // is the same table. Only the ticks and the Assign button go.
+  const canAssign = canWrite && blockedReason === null;
   const showControls = canAssign && audience.rows.length > 0;
   // Why a named course cannot be assigned. Naming none is not a fault to
   // report -- the card answers "what does this person hold" that way.
-  const courseBlockedReason = audience.selectedCourse ? blockedReason : null;
+  // Not shown to a reader: it explains why assigning is unavailable, and for
+  // them assigning was never on offer, so it would answer a question they did
+  // not ask with a rule that does not apply to them.
+  const courseBlockedReason =
+    canWrite && audience.selectedCourse ? blockedReason : null;
 
   return (
     <Card>
