@@ -168,6 +168,46 @@ class MentorshipRoundParticipantsRepository:
         )
         return [tuple(row) for row in result.all()]
 
+    async def count_registered_rounds(
+        self, session: AsyncSession, user_ids: list[int], exclude_round_id: int
+    ) -> dict[int, int]:
+        """Count past rounds each person put their name down for.
+
+        Registration rather than pairing, so a round nobody could be found for
+        still counts: the person went through the process, and reading their
+        pairs instead would report that round as if they had never shown up.
+
+        Every ``approval_status`` counts, ``rejected`` included. That value
+        carries two meanings at once -- not accepted, and left partway -- and
+        the second of those is participation.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_ids (list[int]): People to count for.
+            exclude_round_id (int): Round to leave out, being the one now
+                matched, which everyone in the payload is registered for.
+
+        Returns:
+            dict[int, int]: user_id -> rounds registered. People with no past
+                registration are absent.
+        """
+        if not user_ids:
+            return {}
+
+        # One row per person per round, by the table's own unique constraint.
+        result = await session.execute(
+            select(
+                MentorshipRoundParticipantsEntity.user_id,
+                func.count(MentorshipRoundParticipantsEntity.round_id),
+            )
+            .where(
+                MentorshipRoundParticipantsEntity.user_id.in_(user_ids),
+                MentorshipRoundParticipantsEntity.round_id != exclude_round_id,
+            )
+            .group_by(MentorshipRoundParticipantsEntity.user_id)
+        )
+        return {user_id: rounds for user_id, rounds in result.all()}
+
     async def get_average_program_rating_by_round_and_role(
         self,
         session: AsyncSession,

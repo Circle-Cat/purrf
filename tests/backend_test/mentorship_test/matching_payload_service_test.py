@@ -210,6 +210,8 @@ class MatchingPayloadServiceTest(BaseRepositoryTestLib):
         past_b = await self._round(name="2025 Autumn")
         quiet_mentee = await self._user(first="Quiet", last="Mentee")
         busy_mentee = await self._user(first="Busy", last="Mentee")
+        await self._participant(mentor, past_a, ParticipantRole.MENTOR)
+        await self._participant(mentor, past_b, ParticipantRole.MENTOR)
         # One round went somewhere; in the other the mentee never turned up.
         await self._pair_with_meetings(past_a, mentor, busy_mentee, completed=True)
         await self._pair_with_meetings(past_b, mentor, quiet_mentee, completed=False)
@@ -229,6 +231,8 @@ class MatchingPayloadServiceTest(BaseRepositoryTestLib):
         past_a = await self._round(name="2025 Spring")
         past_b = await self._round(name="2025 Autumn")
         old_mentor = await self._user(first="Past", last="Mentor")
+        await self._participant(mentee, past_a, ParticipantRole.MENTEE)
+        await self._participant(mentee, past_b, ParticipantRole.MENTEE)
         await self._pair_with_meetings(past_a, old_mentor, mentee, completed=True)
         await self._pair_with_meetings(past_b, old_mentor, mentee, completed=False)
 
@@ -239,6 +243,48 @@ class MatchingPayloadServiceTest(BaseRepositoryTestLib):
         record = payload.mentees[0]
         self.assertEqual(record.mentorship_rounds_participated, 2)
         self.assertEqual(record.mentorship_rounds_completed, 1)
+
+    async def test_signing_up_counts_even_when_the_round_produced_no_pair(self):
+        round_entity, mentor, mentee = await self._minimal_round()
+        await self._preference(mentee, specific_industry={})
+
+        past = await self._round(name="2025 Spring")
+        await self._participant(mentee, past, ParticipantRole.MENTEE)
+
+        payload = await self.service.build_matching_payload(
+            self.session, round_entity.round_id, [mentor.user_id, mentee.user_id]
+        )
+
+        # She put her name down and nobody was found for her. Counting pairs
+        # instead would report that round as if she had never shown up.
+        record = payload.mentees[0]
+        self.assertEqual(record.mentorship_rounds_participated, 1)
+        self.assertEqual(record.mentorship_rounds_completed, 0)
+
+    async def test_a_pair_with_no_registration_row_never_reports_a_negative_gap(self):
+        round_entity, mentor, mentee = await self._minimal_round()
+        await self._preference(mentee, specific_industry={})
+
+        # A historical round backfilled as a pair without the registration row
+        # that would have come with it.
+        past = await self._round(name="2025 Spring")
+        old_mentor = await self._user(first="Past", last="Mentor")
+        await self._pair_with_meetings(past, old_mentor, mentee, completed=True)
+
+        payload = await self.service.build_matching_payload(
+            self.session, round_entity.round_id, [mentor.user_id, mentee.user_id]
+        )
+
+        # Reporting the registration count alone would make participated minus
+        # completed negative, which the matcher reads as rounds paired that
+        # went nowhere.
+        record = payload.mentees[0]
+        self.assertEqual(record.mentorship_rounds_participated, 1)
+        self.assertEqual(record.mentorship_rounds_completed, 1)
+        warned_about = [
+            call.args[1] for call in self.service.logger.warning.call_args_list
+        ]
+        self.assertEqual(warned_about, [mentee.user_id])
 
     async def test_a_first_time_mentee_reports_zero_rather_than_nothing(self):
         round_entity, mentor, mentee = await self._minimal_round()
@@ -259,6 +305,7 @@ class MatchingPayloadServiceTest(BaseRepositoryTestLib):
 
         past = await self._round(name="2025 Spring")
         someone_she_mentored = await self._user(first="Her", last="Mentee")
+        await self._participant(mentee, past, ParticipantRole.MENTOR)
         await self._pair_with_meetings(
             past, mentee, someone_she_mentored, completed=True
         )
