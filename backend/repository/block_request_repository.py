@@ -124,6 +124,33 @@ class BlockRequestRepository:
         )
         return list(result.scalars().all())
 
+    async def list_pending_raised_by(
+        self, session: AsyncSession, raised_by: int
+    ) -> list[BlockRequestEntity]:
+        """The open requests this person raised, so their own page can show
+        them again after a reload.
+
+        Pending only, and deliberately: a decided request is an event, and it
+        reaches the raiser as a notification. Returning closed rows here would
+        pin a verdict to the page with no rule for when it comes down.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            raised_by (int): The person who raised them.
+
+        Returns:
+            list[BlockRequestEntity]: Pending rows, oldest first.
+        """
+        result = await session.execute(
+            select(BlockRequestEntity)
+            .where(
+                BlockRequestEntity.raised_by == raised_by,
+                BlockRequestEntity.status == BlockRequestStatus.PENDING,
+            )
+            .order_by(BlockRequestEntity.created_at)
+        )
+        return list(result.scalars().all())
+
     async def set_reviewer(
         self, session: AsyncSession, request_id: int, reviewer_id: int
     ) -> bool:

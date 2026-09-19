@@ -13,6 +13,7 @@ from backend.common.api_endpoints import (
     BLOCK_REQUEST_DECIDE_ENDPOINT,
     BLOCK_REQUEST_REASSIGN_ENDPOINT,
     BLOCK_REQUESTS_ENDPOINT,
+    BLOCK_REQUESTS_RAISED_ENDPOINT,
 )
 from backend.common.fast_api_error_handler import register_exception_handlers
 from backend.common.permissions import Permission
@@ -62,6 +63,7 @@ class TestBlockController(unittest.TestCase):
         self.service.reassign = AsyncMock(return_value=_request_dto())
         self.service.decide = AsyncMock(return_value=_request_dto())
         self.service.list_pending_for_reviewer = AsyncMock(return_value=[])
+        self.service.list_pending_raised_by_actor = AsyncMock(return_value=[])
         self.service.list_user_admins = AsyncMock(return_value=[])
 
     def _client(self, *, permissions, user_id=CALLER):
@@ -176,6 +178,16 @@ class TestBlockController(unittest.TestCase):
 
         self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
 
+    def test_user_admin_cannot_read_what_they_raised(self):
+        """The read mirrors the write: someone who cannot raise a request has
+        nothing to read back here."""
+        client = self._client(permissions=[Permission.USER_ADMIN])
+
+        resp = client.get(BLOCK_REQUESTS_RAISED_ENDPOINT)
+
+        self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
+        self.service.list_pending_raised_by_actor.assert_not_awaited()
+
     def test_user_admin_cannot_read_the_reviewer_dropdown(self):
         client = self._client(permissions=[Permission.USER_ADMIN])
 
@@ -221,6 +233,20 @@ class TestBlockController(unittest.TestCase):
         self.assertEqual(resp.status_code, HTTPStatus.OK)
         self.assertEqual(
             self.service.list_pending_for_reviewer.await_args.args[1], REVIEWER
+        )
+
+    def test_raised_list_is_scoped_to_the_caller(self):
+        """Scoped, not filtered: the caller's own id is the only input, so
+        there is no parameter anyone could widen into someone else's."""
+        client = self._client(
+            permissions=[Permission.RECRUITING_APPLICATION_ADVANCE], user_id=CALLER
+        )
+
+        resp = client.get(BLOCK_REQUESTS_RAISED_ENDPOINT)
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK)
+        self.assertEqual(
+            self.service.list_pending_raised_by_actor.await_args.args[1], CALLER
         )
 
     def test_decide_passes_the_verdict_and_the_actor(self):

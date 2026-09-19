@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.name_utils import display_name_of
+from backend.common.user_enums import USER_SUBJECT_TYPE
 from backend.dto.notification_dto import (
     NotificationDto,
     NotificationListDto,
@@ -89,6 +90,7 @@ class RecruitingNotificationService:
         job_title = ""
         job_kind = None
         applicant_name = ""
+        subject_name = ""
         if event is not None and event.subject_type == "application":
             application = await self.application_repository.get_by_id(
                 session, event.subject_id
@@ -102,6 +104,11 @@ class RecruitingNotificationService:
                 applicant_name = await self._candidate_name(
                     session, application.user_id
                 )
+        elif event is not None and event.subject_type == USER_SUBJECT_TYPE:
+            # A block request is about a person with no application in sight.
+            # Named by the colleague rule, which is what the email about the
+            # same event uses -- the two channels must agree on who this is.
+            subject_name = await self._actor_name(session, event.subject_id)
         elif event is not None and event.subject_type == "job":
             job = await self.job_repository.get_by_job_id(session, event.subject_id)
             job_title = job.title if job is not None else ""
@@ -120,6 +127,7 @@ class RecruitingNotificationService:
             job_title=job_title,
             job_kind=job_kind,
             applicant_name=applicant_name,
+            subject_name=subject_name,
             actor_name=actor_name,
             created_at=row.created_at,
         )

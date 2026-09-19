@@ -104,6 +104,66 @@ class TestRecruitingNotificationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(item.applicant_name, "Ada Lovelace")
         self.assertEqual(item.actor_name, "Grace Hopper")
 
+    async def test_list_for_user_names_the_person_a_user_scoped_event_is_about(self):
+        """A block-request event is about a person, not an application, so the
+        bell has to resolve its subject or the line has nobody in it.
+
+        Named the way the email about the same event names them -- preferred
+        first -- so the two channels never disagree about who this is.
+        """
+        row = self._notification(
+            event=self._event(
+                subject_type="user",
+                subject_id=3,
+                actor_id=9,
+                event_type="user.block_request_decided",
+                details={"requestId": 12, "approved": False},
+            )
+        )
+        self.notification_repo.list_by_user = AsyncMock(return_value=[row])
+        self.notification_repo.count_by_user = AsyncMock(return_value=1)
+        target = UsersEntity(
+            first_name="Ada", last_name="Lovelace", preferred_name="Addy"
+        )
+        target.user_id = 3
+        actor = UsersEntity(
+            first_name="Grace", last_name="Hopper", preferred_name="Amazing Grace"
+        )
+        actor.user_id = 9
+
+        async def get_user(session, user_id):
+            return {3: target, 9: actor}[user_id]
+
+        self.users_repo.get_user_by_user_id = AsyncMock(side_effect=get_user)
+
+        result = await self.service.list_for_user(self.session, user_id=2)
+
+        item = result.notifications[0]
+        self.assertEqual(item.subject_name, "Addy")
+        self.assertEqual(item.actor_name, "Amazing Grace")
+        # The application fields stay empty: there is no application here, and
+        # filling them from the subject would name the same person twice under
+        # two different rules.
+        self.assertEqual(item.applicant_name, "")
+        self.assertEqual(item.job_title, "")
+
+    async def test_subject_name_is_blank_for_an_application_scoped_event(self):
+        """The field answers "who is this event about" only where the subject
+        is a person. An application-scoped row leaves it empty rather than
+        resolving the applicant a second time under the colleague rule."""
+        row = self._notification()
+        self.notification_repo.list_by_user = AsyncMock(return_value=[row])
+        self.notification_repo.count_by_user = AsyncMock(return_value=1)
+        self.app_repo.get_by_id = AsyncMock(return_value=None)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=None)
+        actor = UsersEntity(first_name="Grace", last_name="Hopper")
+        actor.user_id = 9
+        self.users_repo.get_user_by_user_id = AsyncMock(return_value=actor)
+
+        result = await self.service.list_for_user(self.session, user_id=2)
+
+        self.assertEqual(result.notifications[0].subject_name, "")
+
     async def test_list_for_user_names_the_actor_by_preferred_and_applicant_legally(
         self,
     ):

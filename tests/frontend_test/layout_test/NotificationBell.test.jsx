@@ -299,6 +299,79 @@ describe("NotificationBell", () => {
       ),
     ).toBeInTheDocument();
   });
+  // -- the block-request lines -------------------------------------------
+  //
+  // These rows are written under subject_type "user", so they carry no job or
+  // applicant -- only subjectName. Before these cases existed the bell listed
+  // them as blank rows that still counted towards the unread badge.
+
+  const blockRow = (overrides) => ({
+    id: 4,
+    jobTitle: "",
+    applicantName: "",
+    subjectName: "Ada Lovelace",
+    actorName: "Grace Hopper",
+    createdAt: "2026-09-19T00:00:00Z",
+    ...overrides,
+  });
+
+  const openWith = async (notification) => {
+    const user = userEvent.setup();
+    api.listNotifications.mockResolvedValue({
+      data: { unreadCount: 1, notifications: [notification] },
+    });
+    renderBell();
+    await waitFor(() => expect(api.listNotifications).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+  };
+
+  it("tells a reviewer a block request is waiting for them", async () => {
+    await openWith(blockRow({ eventType: "user.block_requested" }));
+
+    expect(
+      screen.getByText("Grace Hopper asked you to block Ada Lovelace"),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the raiser their block request was rejected", async () => {
+    await openWith(
+      blockRow({
+        eventType: "user.block_request_decided",
+        details: { requestId: 12, approved: false },
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Grace Hopper rejected the block request you raised about Ada Lovelace",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the raiser their block request was approved", async () => {
+    await openWith(
+      blockRow({
+        eventType: "user.block_request_decided",
+        details: { requestId: 12, approved: true },
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Grace Hopper approved the block request you raised about Ada Lovelace",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells both reviewers a block request moved", async () => {
+    await openWith(blockRow({ eventType: "user.block_request_reassigned" }));
+
+    expect(
+      screen.getByText(
+        "Grace Hopper reassigned the block request about Ada Lovelace",
+      ),
+    ).toBeInTheDocument();
+  });
 });
 
 const MENTION = {

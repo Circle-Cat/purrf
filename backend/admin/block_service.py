@@ -585,6 +585,27 @@ class BlockService:
         rows = await self._requests.list_pending_for_reviewer(session, reviewer_id)
         return await self._to_dtos(session, rows)
 
+    async def list_pending_raised_by_actor(
+        self, session, actor_id: int
+    ) -> list[BlockRequestDto]:
+        """The open requests this person raised.
+
+        The mirror of ``list_pending_for_reviewer``, and scoped the same way:
+        the caller's own id is the only input. It discloses nothing new -- the
+        raiser wrote these requests and may reassign them -- but it is what
+        lets their own page show an open one again after a reload, instead of
+        offering a button that will be refused.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            actor_id (int): The person who raised them.
+
+        Returns:
+            list[BlockRequestDto]: Pending requests, oldest first.
+        """
+        rows = await self._requests.list_pending_raised_by(session, actor_id)
+        return await self._to_dtos(session, rows)
+
     async def list_user_admins(self, session) -> list[ReviewerOptionDto]:
         """The people who can be named as reviewer on a block request.
 

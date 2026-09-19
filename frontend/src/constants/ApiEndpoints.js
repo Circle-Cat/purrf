@@ -58,6 +58,7 @@ export const API_ENDPOINTS = {
   BLOCK_REQUEST_REVIEWERS: "/block-request-reviewers",
   BLOCK_PREFLIGHT: (userId) => `/block-preflight/${userId}`,
   BLOCK_REQUESTS: "/block-requests",
+  BLOCK_REQUESTS_RAISED: "/block-requests/raised",
   BLOCK_REQUEST_REASSIGN: (requestId) =>
     `/block-requests/${requestId}/reassign`,
   BLOCK_REQUEST_DECIDE: (requestId) => `/block-requests/${requestId}/decide`,

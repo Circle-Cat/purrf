@@ -68,6 +68,20 @@ const describe = (n) => {
       return `${actor} changed the interview with ${n.applicantName} — ${n.jobTitle}`;
     case "recruiting.interview_cancelled":
       return `${actor} cancelled the interview with ${n.applicantName} — ${n.jobTitle}`;
+    // The block-request lines are about a person, not an application, so they
+    // read subjectName and never jobTitle/applicantName, which are always
+    // blank here. Their audiences differ per case: the reviewer is told a
+    // request arrived, the raiser is told how it ended.
+    case "user.block_requested":
+      return `${actor} asked you to block ${n.subjectName}`;
+    case "user.block_request_reassigned":
+      // One line for two audiences -- the reviewer it left and the one it
+      // reached. Neither is named, because the row carries only the actor.
+      return `${actor} reassigned the block request about ${n.subjectName}`;
+    case "user.block_request_decided":
+      return n.details?.approved
+        ? `${actor} approved the block request you raised about ${n.subjectName}`
+        : `${actor} rejected the block request you raised about ${n.subjectName}`;
     default:
       return "";
   }
