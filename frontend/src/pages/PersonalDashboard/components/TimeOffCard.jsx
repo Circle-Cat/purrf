@@ -139,6 +139,12 @@ const TimeOffCard = ({
               >
                 My requests
               </Button>
+          <Button
+            variant="outline"
+            onClick={() => navigate(ROUTE_PATHS.LEAVE_BALANCE_HISTORY)}
+          >
+            Balance history
+          </Button>
               {approvals}
             </div>
           </>

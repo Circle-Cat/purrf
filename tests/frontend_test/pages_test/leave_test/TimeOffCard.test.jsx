@@ -44,6 +44,10 @@ const renderCard = (props = {}) =>
         />
         <Route path="/leave/requests" element={<p>My requests page</p>} />
         <Route path="/leave/approvals" element={<p>Approvals page</p>} />
+        <Route
+          path="/leave/balance-history"
+          element={<p>Balance history page</p>}
+        />
       </Routes>
     </MemoryRouter>,
   );
@@ -248,5 +252,16 @@ describe("TimeOffCard for an approver", () => {
 
     expect(container).toBeEmptyDOMElement();
     expect(api.getMyLeaveRequests).not.toHaveBeenCalled();
+  });
+
+  it("sends the balance history to a page of its own", async () => {
+    renderCard();
+    await waitFor(() =>
+      expect(screen.getByText("Time off")).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Balance history" }));
+
+    expect(screen.getByText("Balance history page")).toBeInTheDocument();
   });
 });
