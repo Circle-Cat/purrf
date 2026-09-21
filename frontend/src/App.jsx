@@ -33,6 +33,7 @@ import ApplicationDetailPage from "@/pages/Recruiting/applications/ApplicationDe
 import MyEvaluations from "@/pages/Recruiting/MyEvaluations";
 import Audit from "@/pages/Recruiting/audit/Audit";
 import LeaveApprovalsPage from "@/pages/Leave/ApprovalsPage";
+import BalanceHistoryPage from "@/pages/Leave/BalanceHistoryPage";
 import LeaveRequestsPage from "@/pages/Leave/RequestsPage";
 import LeaveAdminPage from "@/pages/Leave/AdminPage";
 import TrainingCourse from "@/pages/TrainingCourse";
@@ -116,6 +117,10 @@ function App() {
                     <Route
                       path={ROUTE_PATHS.LEAVE_APPROVALS}
                       element={<LeaveApprovalsPage />}
+                    />
+                    <Route
+                      path={ROUTE_PATHS.LEAVE_BALANCE_HISTORY}
+                      element={<BalanceHistoryPage />}
                     />
                     <Route
                       path={ROUTE_PATHS.LEAVE_REQUESTS}
