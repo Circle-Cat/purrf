@@ -86,6 +86,7 @@ import {
 } from "@/api/adminAccountsApi";
 import BlockDialog from "@/pages/AdminAccounts/components/BlockDialog";
 import ReassignDialog from "@/pages/Recruiting/components/ReassignDialog";
+import { termHint } from "@/pages/Recruiting/components/glossary";
 import {
   humanize,
   stageLabel,
@@ -1858,6 +1859,16 @@ const ApplicationDetailPage = () => {
     (detail.assigneeId != null
       ? unresolvedPersonLabel(detail.assigneeId)
       : null);
+  // Why the block button is closed, in the order the backend refuses: no
+  // standing to ask, then nothing left to ask for, then a question already
+  // asked. Undefined when it is live, which is what leaves the title off.
+  const blockButtonHint = !canRequestBlock
+    ? "Requires the recruiting advance permission"
+    : detail.applicantIsBlocked
+      ? "This applicant is already blocked"
+      : raisedBlockRequest
+        ? "You already have an open request about this applicant"
+        : undefined;
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -1876,6 +1887,15 @@ const ApplicationDetailPage = () => {
             <Badge variant="secondary">
               {stageLabel(detail.application.stage, job?.kind)}
             </Badge>
+            {/* The account's live state, not this application's
+                tags.blacklisted -- that tag only records that the row was
+                once swept and never comes back off. Same term as the board
+                card so one person does not read as two things. */}
+            {detail.applicantIsBlocked && (
+              <Badge variant="destructive" title={termHint("tag.blacklisted")}>
+                Blacklisted
+              </Badge>
+            )}
           </div>
           <p className="text-sm text-slate-600">{detail.applicantEmail}</p>
         </div>
@@ -1963,13 +1983,10 @@ const ApplicationDetailPage = () => {
                     disabled={
                       blockSubmitting ||
                       !canRequestBlock ||
+                      detail.applicantIsBlocked ||
                       Boolean(raisedBlockRequest)
                     }
-                    title={
-                      canRequestBlock
-                        ? undefined
-                        : "Requires the recruiting advance permission"
-                    }
+                    title={blockButtonHint}
                     onClick={handleOpenBlockRequest}
                   >
                     Request block

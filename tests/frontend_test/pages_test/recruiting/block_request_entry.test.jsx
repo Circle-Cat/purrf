@@ -391,6 +391,49 @@ describe("Request block — the raised request lives only in page state", () => 
   });
 });
 
+describe("Request block — the applicant is already blocked", () => {
+  const blocked = () => ({ ...makeDetail(), applicantIsBlocked: true });
+
+  it("closes the button down and says why", async () => {
+    // BlockService.raise_request refuses a second block outright, so the only
+    // thing the old live button bought was a dialog filled in to reach a red
+    // toast. The refusal has to be readable before the click, not after it.
+    const user = userEvent.setup();
+    api.getApplicationDetail.mockResolvedValue({ data: blocked() });
+    renderPage();
+    await waitLoaded();
+
+    const button = screen.getByRole("button", { name: "Request block" });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute(
+      "title",
+      "This applicant is already blocked",
+    );
+
+    await user.click(button);
+    expect(adminApi.getBlockPreflight).not.toHaveBeenCalled();
+  });
+
+  it("marks the applicant so the state is readable without a click", async () => {
+    // The pre-flight would say nothing here either -- it skips rows already
+    // tagged, so an already-blocked person counts zero applications, which
+    // reads as "this will do nothing" rather than "this is already done".
+    api.getApplicationDetail.mockResolvedValue({ data: blocked() });
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.getByText("Blacklisted")).toBeInTheDocument();
+  });
+
+  it("leaves an applicant who is not blocked unmarked and still blockable", async () => {
+    renderPage();
+    await waitLoaded();
+
+    expect(screen.queryByText("Blacklisted")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Request block" })).toBeEnabled();
+  });
+});
+
 describe("Request block — an open request survives a reload", () => {
   it("shows the banner again for a request this caller already raised", async () => {
     // The page holds the request it raised in component state, so without
@@ -410,6 +453,12 @@ describe("Request block — an open request survives a reload", () => {
       expect(
         screen.getByRole("button", { name: "Request block" }),
       ).toBeDisabled(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Request block" }),
+    ).toHaveAttribute(
+      "title",
+      "You already have an open request about this applicant",
     );
   });
 

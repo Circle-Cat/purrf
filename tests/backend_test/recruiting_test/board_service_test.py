@@ -1324,6 +1324,44 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(result.resume_available)
 
+    async def test_get_application_detail_reports_a_blocked_applicant(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        applicant = self._user(user_id=3)
+        applicant.is_blocked = True
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = None
+        # Per id, not one return_value: the viewer is read through the same
+        # method, and a single row would let the flag be read off whoever asked.
+        self._users_by_id({2: self._user(user_id=2), 3: applicant})
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertTrue(result.applicant_is_blocked)
+
+    async def test_get_application_detail_reports_an_applicant_who_is_not_blocked(self):
+        job = self._job(job_id=1, owner_ids=(2,))
+        application = self._application(application_id=10, job_id=1, user_id=3)
+        viewer = self._user(user_id=2)
+        viewer.is_blocked = True
+        self.app_repo.get_by_id = AsyncMock(return_value=application)
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        self.assignment_repo.get.return_value = None
+        # The viewer carries the flag and the applicant does not, so reading
+        # the wrong row shows up as a True here rather than as nothing.
+        self._users_by_id({2: viewer, 3: self._user(user_id=3)})
+        self.sub_repo.get_current = AsyncMock(return_value=None)
+
+        result = await self.service.get_application_detail(
+            self.session, self._ctx(user_id=2), 10
+        )
+
+        self.assertFalse(result.applicant_is_blocked)
+
     async def test_get_application_detail_raises_when_missing(self):
         self.app_repo.get_by_id = AsyncMock(return_value=None)
 

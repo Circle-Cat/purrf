@@ -339,9 +339,11 @@ class BlockService:
         # reviewer, which is a status oracle over the whole population.
         if target.is_blocked:
             # Approving it later would overwrite blocked_by/at/reason and erase
-            # who imposed the original sanction and why. The raiser cannot see
-            # account state, so say it plainly rather than let them find out
-            # from a pre-flight that counts nothing.
+            # who imposed the original sanction and why. A page a request is
+            # raised from carries the target's block state now and closes the
+            # action down, so reaching here is a race or a direct call -- say
+            # it plainly rather than let them read a pre-flight that counts
+            # nothing.
             raise ValueError("This person is already blocked")
 
         pending = await self._requests.list_pending_for_target(session, user_id)

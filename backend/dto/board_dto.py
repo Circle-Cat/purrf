@@ -109,6 +109,12 @@ class ApplicationDetailDto(BaseDto):
     # actionable control (those still gate on is_owner specifically).
     can_view: bool = False
     assignee_id: int | None = None
+    # Whether the APPLICANT is currently blocked org-wide. Distinct from the
+    # embedded application's tags["blacklisted"], which only records that this
+    # row was swept by a block at some point and never changes after. The page
+    # needs the live flag: it decides whether raising a block request is still
+    # something to offer, and BlockService.raise_request refuses one either way.
+    applicant_is_blocked: bool = False
     interview: InterviewDto | None = None
     # The CALLER's IANA zone from their profile, for rendering the interview's
     # UTC instants as local wall clock. Per-request, not per-meeting: no zone is

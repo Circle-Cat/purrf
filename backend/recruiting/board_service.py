@@ -1164,6 +1164,8 @@ class BoardService:
             is_owner=is_owner,
             can_view=can_view,
             assignee_id=assignment.assignee_id if assignment is not None else None,
+            # Free: `user` was already fetched above for the applicant's name.
+            applicant_is_blocked=bool(user is not None and user.is_blocked),
             interview=interview_dto,
             viewer_timezone=viewer_timezone,
         )
