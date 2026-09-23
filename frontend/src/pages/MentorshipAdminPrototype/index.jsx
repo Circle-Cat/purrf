@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ManagementPage from "@/pages/MentorshipAdminPrototype/ManagementPage";
 import ParticipantDetailPage from "@/pages/MentorshipAdminPrototype/ParticipantDetailPage";
-import PairDetailPage from "@/pages/MentorshipAdminPrototype/PairDetailPage";
 import NoteDialog from "@/pages/MentorshipAdminPrototype/NoteDialog";
 import RaiseRequestDialog from "@/pages/MentorshipAdminPrototype/RaiseRequestDialog";
 import ComposeDialog from "@/pages/MentorshipAdminPrototype/ComposeDialog";
@@ -47,7 +46,9 @@ const newId = (prefix) => `${prefix}-${nextId++}`;
  * Where the reader is, read from the URL hash.
  *
  * The Pages bundle has no router, so the hash stands in for the real routes:
- * `#mentorship/participants/:id`, `#mentorship/pairs/:id`,
+ * `#mentorship/participants/:id?pair=…` (a person, with one of their pairs
+ * open), `#mentorship/pairs/:id` (an older pair link, which opens the
+ * mentee's page on that pair),
  * `#mentorship/people/:userId/:roundId` for someone not registered,
  * `#mentorship/matching/:roundId` for a round's matching run, and
  * `#mentorship?tab=…&q=…` for the list. The list's tab, round and filters live
@@ -59,12 +60,14 @@ const parseLocation = () => {
   const [root, kind, id, extra] = path.split("/");
   const query = Object.fromEntries(new URLSearchParams(search));
   const timeline = query.timeline ?? null;
+  const pair = query.pair ? Number(query.pair) : null;
   if (root === HASH_ROOT && kind === "participants" && id) {
     return {
       view: {
         kind: "participant",
         participantId: decodeURIComponent(id),
         timeline,
+        pair,
       },
       query,
     };
@@ -90,7 +93,15 @@ const parseLocation = () => {
 };
 
 const toHash = (view, query) => {
-  const timeline = view.timeline ? `?timeline=${view.timeline}` : "";
+  const params = new URLSearchParams(
+    Object.fromEntries(
+      [
+        ["timeline", view.timeline],
+        ["pair", view.pair],
+      ].filter(([, v]) => v),
+    ),
+  ).toString();
+  const timeline = params ? `?${params}` : "";
   if (view.kind === "participant") {
     return `#${HASH_ROOT}/participants/${encodeURIComponent(view.participantId)}${timeline}`;
   }
@@ -876,11 +887,22 @@ const MentorshipAdminPrototype = () => {
   const backLabel = "← Participants";
 
   const body = () => {
-    if (view.kind === "participant" || view.kind === "person") {
+    if (
+      view.kind === "participant" ||
+      view.kind === "person" ||
+      view.kind === "pair"
+    ) {
+      const linkedPair =
+        view.kind === "pair"
+          ? pairs.find((p) => p.pairId === view.pairId)
+          : null;
       const person =
         view.kind === "participant"
           ? participants.find((p) => p.participantId === view.participantId)
-          : personInRound(view.userId, view.roundId);
+          : view.kind === "pair"
+            ? linkedPair && menteeParticipantOf(linkedPair)
+            : personInRound(view.userId, view.roundId);
+      const openPairId = view.kind === "pair" ? view.pairId : view.pair;
       if (!person) return null;
       const personPairs = pairs.filter(
         (p) =>
@@ -889,6 +911,35 @@ const MentorshipAdminPrototype = () => {
       );
       return (
         <ParticipantDetailPage
+          key={`${person.participantId ?? person.userId}-${openPairId ?? ""}`}
+          openPairId={openPairId}
+          pairMeetings={(pairId) =>
+            meetings
+              .filter((m) => m.pairId === pairId)
+              .sort((a, b) => a.startDatetime.localeCompare(b.startDatetime))
+          }
+          pairRequests={(pairId) =>
+            requests.filter(
+              (r) => r.pairId === pairId || r.affectedPairIds?.includes(pairId),
+            )
+          }
+          onSaveMeetings={saveMeetings}
+          onAddPairNote={(pair) =>
+            setNoteTarget({
+              participantId: menteeParticipantOf(pair)?.participantId,
+              pairId: pair.pairId,
+            })
+          }
+          onRaisePair={(pair) =>
+            setRequestTarget({
+              roundId: pair.roundId,
+              participantId: menteeParticipantOf(pair)?.participantId,
+              pairId: pair.pairId,
+              targetLabel: pairLabel(pair),
+              actions: ["change_partner"],
+            })
+          }
+          onMarkFirstContact={(pairId) => markCell(pairId, "firstContact")}
           person={person}
           rounds={rounds}
           participants={participants}
@@ -934,7 +985,9 @@ const MentorshipAdminPrototype = () => {
           can={can}
           backLabel={backLabel}
           onBack={backToList}
-          onOpenPair={(pairId) => navigate({ kind: "pair", pairId })}
+          onOpenPair={(participantId, pairId) =>
+            navigate({ kind: "participant", participantId, pair: pairId })
+          }
           onAddNote={() =>
             setNoteTarget(
               person.participantId
@@ -1001,45 +1054,6 @@ const MentorshipAdminPrototype = () => {
       );
     }
 
-    if (view.kind === "pair") {
-      const pair = pairs.find((p) => p.pairId === view.pairId);
-      if (!pair) return null;
-      return (
-        <PairDetailPage
-          pair={pair}
-          round={rounds.find((r) => r.id === pair.roundId)}
-          meetings={meetings
-            .filter((m) => m.pairId === pair.pairId)
-            .sort((a, b) => a.startDatetime.localeCompare(b.startDatetime))}
-          onSaveMeetings={(batch) => saveMeetings(pair.pairId, batch)}
-          notes={notes.filter((n) => n.pairId === pair.pairId)}
-          requests={requests.filter(
-            (r) =>
-              r.pairId === pair.pairId ||
-              r.affectedPairIds?.includes(pair.pairId),
-          )}
-          can={can}
-          backLabel={backLabel}
-          onBack={backToList}
-          onAddNote={() =>
-            setNoteTarget({
-              participantId: menteeParticipantOf(pair)?.participantId,
-              pairId: pair.pairId,
-            })
-          }
-          onRaise={() =>
-            setRequestTarget({
-              roundId: pair.roundId,
-              participantId: menteeParticipantOf(pair)?.participantId,
-              pairId: pair.pairId,
-              targetLabel: pairLabel(pair),
-              actions: ["change_partner"],
-            })
-          }
-        />
-      );
-    }
-
     return (
       <ManagementPage
         round={round}
@@ -1064,7 +1078,9 @@ const MentorshipAdminPrototype = () => {
         onOpenParticipant={(participantId, timeline) =>
           navigate({ kind: "participant", participantId, timeline })
         }
-        onOpenPair={(pairId) => navigate({ kind: "pair", pairId })}
+        onOpenPair={(participantId, pairId) =>
+          navigate({ kind: "participant", participantId, pair: pairId })
+        }
         onMarkCell={markCell}
         onCompose={(recipients, defaultTemplate) =>
           setComposeTarget({ recipients, defaultTemplate })

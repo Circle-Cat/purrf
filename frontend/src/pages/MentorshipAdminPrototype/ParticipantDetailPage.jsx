@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import FlagBadges from "@/pages/MentorshipAdminPrototype/FlagBadges";
+import PairSection from "@/pages/MentorshipAdminPrototype/PairSection";
 import {
   ACTION_LABELS,
   ACTOR_NAMES,
@@ -150,17 +151,47 @@ const ParticipantDetailPage = ({
   exempt,
   onRequestExemption,
   initialTimeline,
+  openPairId,
+  pairMeetings,
+  pairRequests,
+  onSaveMeetings,
+  onAddPairNote,
+  onRaisePair,
+  onMarkFirstContact,
 }) => {
   const [filter, setFilter] = useState(initialTimeline ?? "all");
+  // The pair that was clicked to get here opens; otherwise the first does.
+  const [openPairs, setOpenPairs] = useState(() => {
+    if (openPairId) return [openPairId];
+    const first = pairs.find(
+      (p) =>
+        p.roundId === person?.roundId &&
+        p.status === "active" &&
+        (p.mentorId === person?.userId || p.menteeId === person?.userId),
+    );
+    return first ? [first.pairId] : [];
+  });
   const [syncMessage, setSyncMessage] = useState(null);
+  // Arriving from a pair link lands on that pair, not the top of the page.
+  useEffect(() => {
+    if (!openPairId) return;
+    document
+      .getElementById(`pair-${openPairId}`)
+      ?.scrollIntoView?.({ block: "start" });
+  }, [openPairId]);
   if (!person) return null;
 
   const round = rounds.find((r) => r.id === person.roundId);
-  const myPairs = pairs.filter(
-    (p) =>
-      p.roundId === person.roundId &&
-      (p.mentorId === person.userId || p.menteeId === person.userId),
-  );
+  // Active pairs first; an ended one stays readable below them.
+  const myPairs = pairs
+    .filter(
+      (p) =>
+        p.roundId === person.roundId &&
+        (p.mentorId === person.userId || p.menteeId === person.userId),
+    )
+    .sort(
+      (a, b) => Number(b.status === "active") - Number(a.status === "active"),
+    );
   const history = participants
     .filter((p) => p.userId === person.userId)
     .map((p) => ({
@@ -271,37 +302,32 @@ const ParticipantDetailPage = ({
           </span>
           {myPairs.length === 0 ? (
             <span className="text-slate-500">No pair this round</span>
-          ) : myPairs.length === 1 ? (
-            <button
-              type="button"
-              className="underline-offset-2 hover:underline"
-              onClick={() => onOpenPair(myPairs[0].pairId)}
-            >
-              With{" "}
-              {myPairs[0].mentorId === person.userId
-                ? myPairs[0].menteeName
-                : myPairs[0].mentorName}{" "}
-              · {myPairs[0].completed}/{myPairs[0].required} meetings ↗
-            </button>
-          ) : (
-            <span>
-              {myPairs.length} mentees —{" "}
-              <button
-                type="button"
-                className="underline-offset-2 hover:underline"
-                onClick={() => onOpenPair(myPairs[0].pairId)}
-              >
-                see the Pairs tab ↗
-              </button>
-            </span>
-          )}
+          ) : null}
         </div>
-        {myPairs.length > 1 ? (
-          <p className="mt-2 text-xs text-slate-500">
-            Meetings are counted per pair, so there is no single number for a
-            mentor carrying more than one mentee.
-          </p>
-        ) : null}
+        {myPairs.map((pair) => (
+          <PairSection
+            key={pair.pairId}
+            pair={pair}
+            person={person}
+            round={round}
+            meetings={pairMeetings(pair.pairId)}
+            notes={notes.filter((n) => n.pairId === pair.pairId)}
+            requests={pairRequests(pair.pairId)}
+            can={can}
+            open={openPairs.includes(pair.pairId)}
+            onToggle={() =>
+              setOpenPairs((all) =>
+                all.includes(pair.pairId)
+                  ? all.filter((id) => id !== pair.pairId)
+                  : [...all, pair.pairId],
+              )
+            }
+            onAddNote={() => onAddPairNote(pair)}
+            onRaise={() => onRaisePair(pair)}
+            onSaveMeetings={(batch) => onSaveMeetings(pair.pairId, batch)}
+            onMarkFirstContact={() => onMarkFirstContact(pair.pairId)}
+          />
+        ))}
       </Block>
 
       {requests.length > 0 ? (
@@ -414,7 +440,9 @@ const ParticipantDetailPage = ({
                   <button
                     type="button"
                     className="underline-offset-2 hover:underline"
-                    onClick={() => onOpenPair(pair.pairId)}
+                    onClick={() =>
+                      onOpenPair(participant.participantId, pair.pairId)
+                    }
                   >
                     {pair.mentorId === participant.userId
                       ? pair.menteeName

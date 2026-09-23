@@ -483,7 +483,7 @@ const ParticipantsTable = ({
                     person={p}
                     pairs={pairs}
                     writable={writable}
-                    onOpenPair={onOpenPair}
+                    onOpenPair={(pairId) => onOpenPair(p.participantId, pairId)}
                     onMarkFirstContact={(pairId) =>
                       onMarkCell(pairId, "firstContact")
                     }

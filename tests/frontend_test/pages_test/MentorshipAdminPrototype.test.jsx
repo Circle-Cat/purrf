@@ -98,7 +98,10 @@ describe("MentorshipAdminPrototype smoke", () => {
     // Feedback always names whose opinion it is.
     expect(screen.getByText(/Wang, Cara's feedback about/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /With Liu, Bob/ }));
+    // Her pair is on her own page, open: no separate pair page to go to.
+    expect(
+      screen.getByRole("button", { name: /with Liu, Bob/, expanded: true }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Meeting log")).toBeInTheDocument();
     expect(screen.getByText("Notes about this pair")).toBeInTheDocument();
   });
@@ -154,11 +157,26 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(screen.queryByRole("button", { name: "Wang, Cara" })).toBeNull();
   });
 
-  it("puts a change raised from a pair on that pair's page once approved", () => {
+  it("puts a change raised from a pair on that pair's section once approved", () => {
     render(<MentorshipAdminPrototype />);
 
-    fireEvent.click(pairLink("Liu, Bob", "Wang, Cara"));
-    raise("Schedules stopped overlapping.");
+    // From Bob's row: his page, with his pair with Cara open.
+    fireEvent.click(
+      within(personRow("Liu, Bob")).getByRole("button", {
+        name: "Open pair Liu, Bob and Wang, Cara",
+      }),
+    );
+    expect(window.location.hash).toContain("pair=501");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Change partner — Liu, Bob and Wang, Cara",
+      }),
+    );
+    fireEvent.change(screen.getByPlaceholderText(/Five days past/), {
+      target: { value: "Schedules stopped overlapping." },
+    });
+    chooseReviewer();
+    fireEvent.click(screen.getByRole("button", { name: "Send for approval" }));
 
     fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
     signInAs(JASMINE);
@@ -459,7 +477,8 @@ describe("MentorshipAdminPrototype smoke", () => {
     fireEvent.click(screen.getByRole("button", { name: "Wang, Cara" }));
     expect(screen.getByText("(revoked)")).toBeInTheDocument();
     expect(
-      screen.getByText(/Revoked the No show of 2026-09-20/),
+      // On her timeline, and on the pair it was about.
+      screen.getAllByText(/Revoked the No show of 2026-09-20/)[0],
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Revoke" }),
@@ -1043,5 +1062,33 @@ describe("Meetings last round", () => {
   it("looks only at earlier rounds, by date", () => {
     // Last summer's own rows have nothing before them.
     expect(of("p-cara-6")).toBe("First time");
+  });
+
+  it("shows a person's pairs on their own page, opening the one that was clicked", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(
+      within(personRow("Liu, Bob")).getByRole("button", {
+        name: "Open pair Liu, Bob and Ma, Erin",
+      }),
+    );
+    // Bob carries two mentees: two sections, the one clicked is open.
+    expect(
+      screen.getByRole("button", { name: /with Ma, Erin/, expanded: true }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /with Wang, Cara/, expanded: false }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Ma, Erin absent")).toBeInTheDocument();
+  });
+
+  it("still opens an old pair link, on the mentee's page", () => {
+    window.history.replaceState(null, "", "#mentorship/pairs/502");
+    render(<MentorshipAdminPrototype />);
+    expect(
+      screen.getByRole("heading", { name: "Ma, Erin" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /with Liu, Bob/, expanded: true }),
+    ).toBeInTheDocument();
   });
 });
