@@ -2,8 +2,15 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { PROFILES } from "@/pages/MentorshipAdminPrototype/mockData";
-import { REASON_LIMIT } from "@/pages/MentorshipAdminPrototype/matching";
+import {
+  REASON_LIMIT,
+  effectiveRows,
+  problemsOf,
+} from "@/pages/MentorshipAdminPrototype/matching";
+import {
+  ACTOR_NAMES,
+  PROFILES,
+} from "@/pages/MentorshipAdminPrototype/mockData";
 
 const TYPE_LABELS = {
   hungarian: "Scored",
@@ -72,12 +79,16 @@ const cell = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
  * round. Once it finishes, every mentee has a row, the unmatched ones too.
  * Opening a row puts both people's résumés and applications side by side
  * with the reason. The admin can rewrite the reason and move the mentee to a
- * different mentor; those edits sit in a draft over the matcher's result
- * until publishing, and the matcher's own reason is kept beside the edit so
- * the difference can be handed back to the algorithm side.
+ * different mentor. Edits stay on the page until *Save draft* stores them
+ * over the matcher's result, so an abandoned tab never overwrites a
+ * colleague's saved draft; the matcher's own reason is kept beside the edit
+ * so the difference can be handed back to the algorithm side.
  *
- * Publishing writes the pairs, once. It does not mark anyone unmatched:
- * that list is confirmed through an approval, from here.
+ * Publishing is an approval: asking locks the result so what is approved is
+ * what gets published, and approving re-checks it before writing the pairs,
+ * once. Everyone who went into the run and has no partner in the result —
+ * mentor or mentee — is marked unmatched at that moment; the approval is
+ * where that list is seen and confirmed.
  *
  * @returns {JSX.Element}
  */
@@ -88,10 +99,11 @@ const MatchingPage = ({
   can,
   onBack,
   onFinish,
-  onEditDraft,
-  onRevert,
-  onPublish,
-  onConfirmUnmatched,
+  onSaveDraft,
+  onRequestPublish,
+  publishRequest,
+  viewerId,
+  onCancelRequest,
 }) => {
   // Several rows can be open at once: moving a mentee from one mentor to
   // another usually means looking at both of that mentor's mentees.
@@ -101,6 +113,8 @@ const MatchingPage = ({
       all.includes(id) ? all.filter((x) => x !== id) : [...all, id],
     );
   const writable = can("mentorship.admin.write");
+  // Edits not yet saved: menteeId → patch, or null for "back to the matcher".
+  const [unsaved, setUnsaved] = useState({});
 
   if (!run) {
     return (
@@ -115,10 +129,13 @@ const MatchingPage = ({
     );
   }
 
-  const effective = run.rows.map((row) => {
-    const edit = run.draft[row.menteeId];
-    return edit ? { ...row, ...edit, edited: true } : { ...row, edited: false };
+  const working = { ...run.draft };
+  Object.entries(unsaved).forEach(([id, patch]) => {
+    if (patch === null) delete working[id];
+    else working[id] = patch;
   });
+  const hasUnsaved = Object.keys(unsaved).length > 0;
+  const effective = effectiveRows(run, working);
   const slotsOf = Object.fromEntries(
     run.mentors.map((m) => [m.userId, m.freeSlots]),
   );
@@ -126,27 +143,34 @@ const MatchingPage = ({
     if (r.mentorId) acc[r.mentorId] = (acc[r.mentorId] ?? 0) + 1;
     return acc;
   }, {});
-  const overCap = run.mentors.filter(
-    (m) => (taken[m.userId] ?? 0) > m.freeSlots,
-  );
-  const tooLong = effective.filter((r) => r.reason.length > REASON_LIMIT);
-  const noReason = effective.filter((r) => r.mentorId && !r.reason.trim());
-  const problems = [
-    ...overCap.map(
-      (m) =>
-        `${nameOf(m.userId)} is given ${taken[m.userId]} mentees but has ${m.freeSlots} slot${m.freeSlots === 1 ? "" : "s"} left.`,
-    ),
-    ...tooLong.map(
-      (r) =>
-        `The reason for ${nameOf(r.menteeId)} is over ${REASON_LIMIT} characters.`,
-    ),
-    ...noReason.map((r) => `${nameOf(r.menteeId)} is matched with no reason.`),
+  const problems = problemsOf(run, working, nameOf);
+
+  /**
+   * One edit to one row. Moving a mentee to another mentor clears a reason
+   * written for the old one, so it cannot be published by accident.
+   */
+  const edit = (menteeId, patch) => {
+    const current = effective.find((r) => r.menteeId === menteeId);
+    const next = { ...working[menteeId], ...patch };
+    if (
+      patch.mentorId !== undefined &&
+      patch.mentorId !== current.mentorId &&
+      patch.reason === undefined
+    ) {
+      next.reason = "";
+    }
+    setUnsaved((all) => ({ ...all, [menteeId]: next }));
+  };
+  const revert = (menteeId) =>
+    setUnsaved((all) => ({ ...all, [menteeId]: null }));
+
+  // Everyone who went into the run with no partner in it — either side.
+  const unpaired = [
+    ...run.mentors.map((m) => m.userId).filter((id) => !taken[id]),
+    ...effective.filter((r) => !r.mentorId).map((r) => r.menteeId),
   ];
-  const unmatchedMentors = run.mentors
-    .map((m) => m.userId)
-    .filter((id) => !taken[id]);
   const published = run.status === "published";
-  const editable = writable && run.status === "succeeded";
+  const editable = writable && run.status === "succeeded" && !publishRequest;
 
   const csv = [
     [
@@ -211,19 +235,12 @@ const MatchingPage = ({
           <div className="border-t border-slate-200 px-5 py-3 text-sm">
             {effective.filter((r) => r.mentorId).length} of {effective.length}{" "}
             mentees matched.{" "}
-            {unmatchedMentors.length > 0 ? (
+            {unpaired.length > 0 ? (
               <>
-                Mentors without a mentee:{" "}
-                {unmatchedMentors.map(nameOf).join(", ")}.{" "}
-                {published && writable ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onConfirmUnmatched(unmatchedMentors)}
-                  >
-                    Confirm as unmatched
-                  </Button>
-                ) : null}
+                Without a partner: {unpaired.map(nameOf).join(", ")}.{" "}
+                {published
+                  ? "They were marked unmatched when the result was published."
+                  : "Publishing will mark them unmatched."}
               </>
             ) : null}
           </div>
@@ -284,7 +301,7 @@ const MatchingPage = ({
                       className="w-full rounded-md border border-slate-300 p-2 text-sm"
                       value={r.mentorId ?? ""}
                       onChange={(e) =>
-                        onEditDraft(r.menteeId, {
+                        edit(r.menteeId, {
                           mentorId: e.target.value
                             ? Number(e.target.value)
                             : null,
@@ -324,7 +341,7 @@ const MatchingPage = ({
                       rows={3}
                       value={r.reason}
                       onChange={(e) =>
-                        onEditDraft(r.menteeId, { reason: e.target.value })
+                        edit(r.menteeId, { reason: e.target.value })
                       }
                     />
                     <p
@@ -359,7 +376,7 @@ const MatchingPage = ({
                             size="sm"
                             variant="ghost"
                             className="mt-1"
-                            onClick={() => onRevert(r.menteeId)}
+                            onClick={() => revert(r.menteeId)}
                           >
                             Revert to the matcher&apos;s result
                           </Button>
@@ -380,6 +397,23 @@ const MatchingPage = ({
                 ))}
               </ul>
             ) : null}
+            {publishRequest ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                Waiting for approval to publish — sent to{" "}
+                {ACTOR_NAMES[publishRequest.reviewerId]} by{" "}
+                {ACTOR_NAMES[publishRequest.raisedBy]}. Edits are locked so that
+                what is approved is what gets published.
+                {publishRequest.raisedBy === viewerId ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onCancelRequest(publishRequest.requestId)}
+                  >
+                    Withdraw to edit
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
             <div className="flex flex-wrap items-center gap-2">
               {published ? (
                 <p className="text-sm text-slate-600">
@@ -387,13 +421,42 @@ const MatchingPage = ({
                   changed.
                 </p>
               ) : (
-                <Button
-                  size="sm"
-                  disabled={!editable || problems.length > 0}
-                  onClick={onPublish}
-                >
-                  Publish results
-                </Button>
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!editable || !hasUnsaved}
+                    onClick={() => {
+                      onSaveDraft(working);
+                      setUnsaved({});
+                    }}
+                  >
+                    Save draft
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={!hasUnsaved}
+                    onClick={() => setUnsaved({})}
+                  >
+                    Discard changes
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={!editable || hasUnsaved || problems.length > 0}
+                    title={
+                      hasUnsaved ? "Save the draft before asking" : undefined
+                    }
+                    onClick={onRequestPublish}
+                  >
+                    Request publishing
+                  </Button>
+                  {hasUnsaved ? (
+                    <span className="text-xs text-amber-800">
+                      Unsaved changes — save the draft before asking to publish.
+                    </span>
+                  ) : null}
+                </>
               )}
               <a
                 className="text-sm text-slate-700 underline underline-offset-2"

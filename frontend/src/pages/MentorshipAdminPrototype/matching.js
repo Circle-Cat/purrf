@@ -66,3 +66,48 @@ export const simulateRun = ({ mentors, mentees }) => {
       .filter((id) => !used.has(id)),
   };
 };
+
+/**
+ * The rows as they would be published: the matcher's result with a draft
+ * laid over it. A draft entry of `null` means "back to what the matcher said".
+ *
+ * @returns {object[]}
+ */
+export const effectiveRows = (run, draft) =>
+  run.rows.map((row) => {
+    const edit = draft[row.menteeId];
+    return edit ? { ...row, ...edit, edited: true } : { ...row, edited: false };
+  });
+
+/**
+ * Why a result cannot be published yet, one sentence each.
+ *
+ * The same check runs twice: on the review page before asking, and again
+ * when the request is approved, since days can pass in between.
+ *
+ * @returns {string[]}
+ */
+export const problemsOf = (run, draft, nameOf) => {
+  const rows = effectiveRows(run, draft);
+  const taken = {};
+  rows.forEach((r) => {
+    if (r.mentorId) taken[r.mentorId] = (taken[r.mentorId] ?? 0) + 1;
+  });
+  return [
+    ...run.mentors
+      .filter((m) => (taken[m.userId] ?? 0) > m.freeSlots)
+      .map(
+        (m) =>
+          `${nameOf(m.userId)} is given ${taken[m.userId]} mentees but has ${m.freeSlots} slot${m.freeSlots === 1 ? "" : "s"} left.`,
+      ),
+    ...rows
+      .filter((r) => r.reason.length > REASON_LIMIT)
+      .map(
+        (r) =>
+          `The reason for ${nameOf(r.menteeId)} is over ${REASON_LIMIT} characters.`,
+      ),
+    ...rows
+      .filter((r) => r.mentorId && !r.reason.trim())
+      .map((r) => `${nameOf(r.menteeId)} is matched with no reason.`),
+  ];
+};

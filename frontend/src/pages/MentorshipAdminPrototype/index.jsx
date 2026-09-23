@@ -7,7 +7,11 @@ import RaiseRequestDialog from "@/pages/MentorshipAdminPrototype/RaiseRequestDia
 import ComposeDialog from "@/pages/MentorshipAdminPrototype/ComposeDialog";
 import RoundModal from "@/pages/MentorshipAdminPrototype/RoundModal";
 import MatchingPage from "@/pages/MentorshipAdminPrototype/MatchingPage";
-import { simulateRun } from "@/pages/MentorshipAdminPrototype/matching";
+import {
+  effectiveRows,
+  problemsOf,
+  simulateRun,
+} from "@/pages/MentorshipAdminPrototype/matching";
 import {
   ACTOR_NAMES,
   ALL_PERMISSIONS,
@@ -234,6 +238,7 @@ const MentorshipAdminPrototype = () => {
       participantIds,
       pairId,
       noteId,
+      runId,
       targetLabel,
       reason,
       reviewerId,
@@ -248,6 +253,7 @@ const MentorshipAdminPrototype = () => {
           participantIds: participantIds ?? null,
           pairId: pairId ?? null,
           noteId: noteId ?? null,
+          runId: runId ?? null,
           reason,
           raisedBy: viewerId,
           reviewerId,
@@ -351,15 +357,75 @@ const MentorshipAdminPrototype = () => {
    * world first: a request that no longer makes sense is invalidated, not
    * applied.
    */
-  const decideRequest = useCallback(
-    (requestId, approved, decisionNote) => {
+  const updateRun = (forRound, change) =>
+    setMatchRuns((all) => ({ ...all, [forRound]: change(all[forRound]) }));
+
+  /**
+   * Publishing writes the pairs, marks both sides matched, and marks everyone
+   * else who went into the run unmatched — once. The approval that leads here
+   * is where the unmatched list is seen and confirmed.
+   */
+  const publishRun = (forRound) => {
+    const run = matchRuns[forRound];
+    const target = rounds.find((r) => r.id === forRound);
+    const finalRows = effectiveRows(run, run.draft).filter((r) => r.mentorId);
+    const firstPairId = Math.max(...pairs.map((p) => p.pairId)) + 1;
+    setPairs((all) => [
+      ...all,
+      ...finalRows.map((r, i) => ({
+        pairId: firstPairId + i,
+        roundId: forRound,
+        mentorId: r.mentorId,
+        menteeId: r.menteeId,
+        mentorName: nameOfUser(r.mentorId),
+        menteeName: nameOfUser(r.menteeId),
+        status: "active",
+        firstContactConfirmedAt: null,
+        completed: 0,
+        required: target.requiredMeetings,
+      })),
+    ]);
+    const matchedIds = new Set(
+      finalRows.flatMap((r) => [r.mentorId, r.menteeId]),
+    );
+    // Everyone who went into the run and came out without a partner.
+    const inRun = new Set([
+      ...run.mentors.map((m) => m.userId),
+      ...run.mentees.map((m) => m.userId),
+    ]);
+    setParticipants((all) =>
+      all.map((p) => {
+        if (p.roundId !== forRound || !inRun.has(p.userId)) return p;
+        return {
+          ...p,
+          approvalStatus: matchedIds.has(p.userId) ? "matched" : "un_matched",
+        };
+      }),
+    );
+    updateRun(forRound, (r) => ({ ...r, status: "published" }));
+  };
+
+  const nameOfUser = (userId) =>
+    participants.find((p) => p.userId === userId)?.name ?? `User ${userId}`;
+
+  const decideRequest = (requestId, approved, decisionNote) => {
+    {
       const request = requests.find((r) => r.requestId === requestId);
       if (!request || request.raisedBy === viewerId) return;
 
+      const run =
+        request.action === "publish_matching"
+          ? matchRuns[request.roundId]
+          : null;
       const stale =
         approved &&
-        ((request.action === "revoke_flag" &&
-          revokedNoteIds.has(request.noteId)) ||
+        ((request.action === "publish_matching" &&
+          (!run ||
+            run.runId !== request.runId ||
+            run.status !== "succeeded" ||
+            problemsOf(run, run.draft, nameOfUser).length > 0)) ||
+          (request.action === "revoke_flag" &&
+            revokedNoteIds.has(request.noteId)) ||
           (request.action === "withdraw" &&
             participants.find((p) => p.participantId === request.participantId)
               ?.approvalStatus === "withdrawn"));
@@ -426,6 +492,11 @@ const MentorshipAdminPrototype = () => {
         ACTOR_NAMES[request.raisedBy]
       }, approved by ${viewerName}.${decisionNote ? ` ${decisionNote}` : ""}`;
 
+      if (request.action === "publish_matching") {
+        publishRun(request.roundId);
+        return;
+      }
+
       if (request.action === "revoke_flag") {
         const flag = notes.find((n) => n.noteId === request.noteId);
         addNote({
@@ -483,18 +554,8 @@ const MentorshipAdminPrototype = () => {
           ),
         );
       }
-    },
-    [
-      addNote,
-      requests,
-      participants,
-      pairs,
-      notes,
-      revokedNoteIds,
-      viewerId,
-      viewerName,
-    ],
-  );
+    }
+  };
 
   const menteeParticipantOf = useCallback(
     (pair) =>
@@ -710,9 +771,6 @@ const MentorshipAdminPrototype = () => {
     [matchRuns, roundId, viewerId],
   );
 
-  const updateRun = (forRound, change) =>
-    setMatchRuns((all) => ({ ...all, [forRound]: change(all[forRound]) }));
-
   const finishRun = (forRound) =>
     updateRun(forRound, (run) => ({
       ...run,
@@ -720,68 +778,31 @@ const MentorshipAdminPrototype = () => {
       ...simulateRun(run),
     }));
 
+  /** Saving the draft replaces what is stored with what the page holds. */
+  const saveDraft = (forRound, draft) =>
+    updateRun(forRound, (run) => ({ ...run, draft }));
+
   /**
-   * An edit sits over the matcher's row. Moving a mentee to another mentor
-   * clears a reason that was written for the old one, so a stale reason
-   * cannot be published by accident.
+   * Publishing is an approval like any other decision with consequences. The
+   * request names the run, so approving an older run after a new one has
+   * replaced it invalidates rather than publishes.
    */
-  const editDraft = (forRound, menteeId, patch) =>
-    updateRun(forRound, (run) => {
-      const original = run.rows.find((r) => r.menteeId === menteeId);
-      const current = { ...original, ...run.draft[menteeId] };
-      const next = { ...run.draft[menteeId], ...patch };
-      if (
-        patch.mentorId !== undefined &&
-        patch.mentorId !== current.mentorId &&
-        patch.reason === undefined
-      ) {
-        next.reason = "";
-      }
-      return { ...run, draft: { ...run.draft, [menteeId]: next } };
-    });
-
-  const revertDraft = (forRound, menteeId) =>
-    updateRun(forRound, (run) => {
-      const { [menteeId]: _dropped, ...rest } = run.draft;
-      return { ...run, draft: rest };
-    });
-
-  /** Publishing writes the pairs and marks both sides matched — once. */
-  const publishRun = (forRound) => {
+  const requestPublish = (forRound) => {
     const run = matchRuns[forRound];
     const target = rounds.find((r) => r.id === forRound);
-    const finalRows = run.rows
-      .map((r) => ({ ...r, ...run.draft[r.menteeId] }))
-      .filter((r) => r.mentorId);
-    const nameOfUser = (userId) =>
-      participants.find((p) => p.userId === userId)?.name;
-    const firstPairId = Math.max(...pairs.map((p) => p.pairId)) + 1;
-    setPairs((all) => [
-      ...all,
-      ...finalRows.map((r, i) => ({
-        pairId: firstPairId + i,
-        roundId: forRound,
-        mentorId: r.mentorId,
-        menteeId: r.menteeId,
-        mentorName: nameOfUser(r.mentorId),
-        menteeName: nameOfUser(r.menteeId),
-        status: "active",
-        firstContactConfirmedAt: null,
-        completed: 0,
-        required: target.requiredMeetings,
-      })),
-    ]);
-    const matchedIds = new Set(
-      finalRows.flatMap((r) => [r.mentorId, r.menteeId]),
-    );
-    setParticipants((all) =>
-      all.map((p) =>
-        p.roundId === forRound && matchedIds.has(p.userId)
-          ? { ...p, approvalStatus: "matched" }
-          : p,
-      ),
-    );
-    updateRun(forRound, (r) => ({ ...r, status: "published" }));
+    const matched = effectiveRows(run, run.draft).filter((r) => r.mentorId);
+    const paired = new Set(matched.flatMap((r) => [r.mentorId, r.menteeId]));
+    const left = [...run.mentors, ...run.mentees]
+      .map((x) => x.userId)
+      .filter((id) => !paired.has(id));
+    setRequestTarget({
+      roundId: forRound,
+      runId: run.runId,
+      targetLabel: `${target?.name} — ${matched.length} pairs from run ${run.runId}; ${
+        left.length
+      } unmatched${left.length ? `: ${left.map(nameOfUser).join("; ")}` : ""}`,
+      actions: ["publish_matching"],
+    });
   };
 
   const saveRound = useCallback((draft) => {
@@ -988,24 +1009,18 @@ const MentorshipAdminPrototype = () => {
           can={can}
           onBack={backToList}
           onFinish={() => finishRun(forRound)}
-          onEditDraft={(menteeId, patch) =>
-            editDraft(forRound, menteeId, patch)
+          onSaveDraft={(draft) => saveDraft(forRound, draft)}
+          onRequestPublish={() => requestPublish(forRound)}
+          publishRequest={
+            requests.find(
+              (r) =>
+                r.action === "publish_matching" &&
+                r.status === "pending" &&
+                r.runId === matchRuns[forRound]?.runId,
+            ) ?? null
           }
-          onRevert={(menteeId) => revertDraft(forRound, menteeId)}
-          onPublish={() => publishRun(forRound)}
-          onConfirmUnmatched={(userIds) => {
-            const people = participants.filter(
-              (p) => p.roundId === forRound && userIds.includes(p.userId),
-            );
-            setRequestTarget({
-              roundId: forRound,
-              participantIds: people.map((p) => p.participantId),
-              targetLabel: `${people.length} ${
-                people.length === 1 ? "person" : "people"
-              } — ${people.map((p) => p.name).join("; ")}`,
-              actions: ["confirm_unmatched"],
-            });
-          }}
+          viewerId={viewerId}
+          onCancelRequest={cancelRequest}
         />
       );
     }

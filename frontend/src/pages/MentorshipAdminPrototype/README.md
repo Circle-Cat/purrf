@@ -115,9 +115,11 @@ a row, and opening one puts both people's résumés and applications side by
 side with the reason. Move a mentee to another mentor (which clears the old
 reason) or rewrite the reason; the matcher's proposal stays visible and can be
 restored. Publishing is blocked while a mentor is over their free slots or a
-reason is missing or over 300 characters, and happens once. Mentors left
-without a mentee are confirmed as unmatched through an approval, not by
-publishing. There is no matcher here: *Simulate the run finishing* stands in.
+reason is missing or over 300 characters. Edits stay on the page until *Save
+draft*. Publishing is itself an approval: asking locks the result, approving
+re-checks it and writes the pairs once, and everyone who went into the run
+without a partner — mentor or mentee — becomes unmatched at that moment; the
+approval card lists them. There is no matcher here: *Simulate the run finishing* stands in.
 
 ## What is deliberately missing
 

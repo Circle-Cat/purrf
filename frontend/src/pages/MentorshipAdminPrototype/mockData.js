@@ -808,6 +808,11 @@ export const APPROVAL_ACTIONS = [
   },
   { key: "revoke_flag", label: "Revoke a flag", target: "note" },
   {
+    key: "publish_matching",
+    label: "Publish matching results",
+    target: "run",
+  },
+  {
     key: "exempt_matching",
     label: "Exempt from the onboarding requirement",
     target: "person",

@@ -617,9 +617,10 @@ describe("MentorshipAdminPrototype smoke", () => {
   });
 
   const startRun = () => {
-    fireEvent.click(
-      screen.getByRole("button", { name: "Eligible for matching" }),
-    );
+    const filter = screen.getByRole("button", {
+      name: "Eligible for matching",
+    });
+    if (filter.getAttribute("aria-pressed") !== "true") fireEvent.click(filter);
     const row = (name) =>
       screen
         .getAllByRole("row")
@@ -690,7 +691,7 @@ describe("MentorshipAdminPrototype smoke", () => {
       screen.getByText(/Wu, Dana is matched with no reason/),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Publish results" }),
+      screen.getByRole("button", { name: "Request publishing" }),
     ).toBeDisabled();
 
     // Send Alice to Fay instead and write both reasons.
@@ -704,7 +705,35 @@ describe("MentorshipAdminPrototype smoke", () => {
       target: { value: "Bob can speak to leading a platform team." },
     });
     expect(screen.getAllByText("The matcher proposed")).toHaveLength(2);
-    fireEvent.click(screen.getByRole("button", { name: "Publish results" }));
+
+    // Nothing is asked for until the edits are saved.
+    expect(
+      screen.getByRole("button", { name: "Request publishing" }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+    fireEvent.click(screen.getByRole("button", { name: "Request publishing" }));
+    fireEvent.change(screen.getByPlaceholderText(/Five days past/), {
+      target: { value: "Reviewed every pair against both applications." },
+    });
+    chooseReviewer();
+    fireEvent.click(screen.getByRole("button", { name: "Send for approval" }));
+
+    // Locked while it waits, so what is approved is what gets published.
+    expect(
+      screen.getByText(/Waiting for approval to publish/),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Mentor for Chen, Alice")).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
+    signInAs(JASMINE);
+    fireEvent.click(
+      within(pendingItem("pairs from run")).getByRole("button", {
+        name: "Approve",
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "View matching results" }),
+    );
     expect(screen.getByText(/Published\./)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
@@ -724,8 +753,110 @@ describe("MentorshipAdminPrototype smoke", () => {
       target: { value: "x".repeat(301) },
     });
     expect(screen.getByText("301/300")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
     expect(
-      screen.getByRole("button", { name: "Publish results" }),
+      screen.getByRole("button", { name: "Request publishing" }),
     ).toBeDisabled();
+  });
+
+  it("keeps edits on the page until the draft is saved, and can throw them away", () => {
+    render(<MentorshipAdminPrototype />);
+    startRun();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Simulate the run finishing/ }),
+    );
+    expect(screen.getByRole("button", { name: "Save draft" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Chen, Alice/ }));
+    fireEvent.change(screen.getByLabelText("Reason for Chen, Alice"), {
+      target: { value: "A different reason." },
+    });
+    expect(screen.getByText(/Unsaved changes/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Request publishing" }),
+    ).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(screen.queryByText(/Unsaved changes/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Reason for Chen, Alice")).not.toHaveValue(
+      "A different reason.",
+    );
+    expect(
+      screen.getByRole("button", { name: "Request publishing" }),
+    ).toBeEnabled();
+  });
+
+  it("marks everyone in the run without a partner as unmatched once publishing is approved", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Eligible for matching" }),
+    );
+    const row = (name) =>
+      screen
+        .getAllByRole("row")
+        .find((r) => within(r).queryByRole("button", { name }));
+    ["Liu, Bob", "Guo, Fay", "Chen, Alice"].forEach((name) =>
+      fireEvent.click(within(row(name)).getByRole("checkbox")),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Run matching · 3" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Simulate the run finishing/ }),
+    );
+    expect(
+      screen.getByText(/Publishing will mark them unmatched/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Request publishing" }));
+    fireEvent.change(screen.getByPlaceholderText(/Five days past/), {
+      target: { value: "One pair; Fay sits this one out." },
+    });
+    chooseReviewer();
+    fireEvent.click(screen.getByRole("button", { name: "Send for approval" }));
+    fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
+
+    // The approver sees the unmatched list before deciding.
+    expect(pendingItem("pairs from run").textContent).toMatch(
+      /1 unmatched: Guo, Fay/,
+    );
+    signInAs(JASMINE);
+    fireEvent.click(
+      within(pendingItem("pairs from run")).getByRole("button", {
+        name: "Approve",
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Eligible for matching" }),
+    );
+    expect(within(row("Guo, Fay")).getByText("un_matched")).toBeInTheDocument();
+  });
+
+  it("invalidates a publish approval for a run that has since been replaced", () => {
+    render(<MentorshipAdminPrototype />);
+    startRun();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Simulate the run finishing/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Request publishing" }));
+    fireEvent.change(screen.getByPlaceholderText(/Five days past/), {
+      target: { value: "First run looks right." },
+    });
+    chooseReviewer();
+    fireEvent.click(screen.getByRole("button", { name: "Send for approval" }));
+    fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
+
+    // Someone starts a fresh run before the approval comes in.
+    startRun();
+    fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
+    signInAs(JASMINE);
+    fireEvent.click(
+      within(pendingItem("First run looks right.")).getByRole("button", {
+        name: "Approve",
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Pairs" }));
+    expect(
+      screen.queryByRole("row", { name: "Open pair Liu, Bob and Chen, Alice" }),
+    ).toBeNull();
   });
 });
