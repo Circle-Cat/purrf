@@ -37,18 +37,25 @@ const newId = (prefix) => `${prefix}-${nextId++}`;
  * Where the reader is, read from the URL hash.
  *
  * The Pages bundle has no router, so the hash stands in for the real routes:
- * `#mentorship/participants/:id`, `#mentorship/pairs/:id`, and
+ * `#mentorship/participants/:id`, `#mentorship/pairs/:id`,
+ * `#mentorship/people/:userId/:roundId` for someone not registered, and
  * `#mentorship?tab=…&q=…` for the list. The list's tab, round and filters live
  * in the query so that opening a detail page and coming back lands on the same
  * filtered list — the one cost of making details full pages instead of drawers.
  */
 const parseLocation = () => {
   const [path, search = ""] = window.location.hash.replace(/^#/, "").split("?");
-  const [root, kind, id] = path.split("/");
+  const [root, kind, id, extra] = path.split("/");
   const query = Object.fromEntries(new URLSearchParams(search));
   if (root === HASH_ROOT && kind === "participants" && id) {
     return {
       view: { kind: "participant", participantId: decodeURIComponent(id) },
+      query,
+    };
+  }
+  if (root === HASH_ROOT && kind === "people" && id && extra) {
+    return {
+      view: { kind: "person", userId: Number(id), roundId: Number(extra) },
       query,
     };
   }
@@ -61,6 +68,9 @@ const parseLocation = () => {
 const toHash = (view, query) => {
   if (view.kind === "participant") {
     return `#${HASH_ROOT}/participants/${encodeURIComponent(view.participantId)}`;
+  }
+  if (view.kind === "person") {
+    return `#${HASH_ROOT}/people/${view.userId}/${view.roundId}`;
   }
   if (view.kind === "pair") return `#${HASH_ROOT}/pairs/${view.pairId}`;
   const search = new URLSearchParams(query).toString();
@@ -168,12 +178,21 @@ const MentorshipAdminPrototype = () => {
       held.includes(key) ? held.filter((p) => p !== key) : [...held, key],
     );
 
+  /**
+   * A note is written against a person and a round. Callers holding a
+   * registration pass its participant id and it is resolved here; callers
+   * holding someone who has not registered pass the user and round directly.
+   */
   const addNote = useCallback(
-    ({ participantId, pairId, tag, body, revokesNoteId }) => {
+    ({ participantId, userId, roundId, pairId, tag, body, revokesNoteId }) => {
+      const registration = participantId
+        ? participants.find((p) => p.participantId === participantId)
+        : null;
       setNotes((all) => [
         {
           noteId: newId("n"),
-          participantId,
+          userId: registration?.userId ?? userId,
+          roundId: registration?.roundId ?? roundId,
           pairId: pairId ?? null,
           tag: tag || null,
           body,
@@ -184,7 +203,7 @@ const MentorshipAdminPrototype = () => {
         ...all,
       ]);
     },
-    [viewerId],
+    [viewerId, participants],
   );
 
   /**
@@ -242,11 +261,16 @@ const MentorshipAdminPrototype = () => {
       if (NOTE_KIND[n.tag] !== "decided" || revokedNoteIds.has(n.noteId)) {
         return;
       }
-      out[n.participantId] = out[n.participantId] ?? {};
-      out[n.participantId][n.tag] = (out[n.participantId][n.tag] ?? 0) + 1;
+      const registration = participants.find(
+        (p) => p.userId === n.userId && p.roundId === n.roundId,
+      );
+      if (!registration) return;
+      const key = registration.participantId;
+      out[key] = out[key] ?? {};
+      out[key][n.tag] = (out[key][n.tag] ?? 0) + 1;
     });
     return out;
-  }, [notes, revokedNoteIds]);
+  }, [notes, revokedNoteIds, participants]);
 
   /** Only the person who raised a request can withdraw it, and only while it waits. */
   const cancelRequest = useCallback(
@@ -526,6 +550,13 @@ const MentorshipAdminPrototype = () => {
     [addNote],
   );
 
+  /** The same, for people not registered for the round: notes still land. */
+  const bulkMarkUnregistered = useCallback(
+    (userIds, tag) =>
+      userIds.forEach((userId) => addNote({ userId, roundId, tag, body: "" })),
+    [addNote, roundId],
+  );
+
   /**
    * Sending writes one message per recipient onto their own timeline — there
    * is no separate "an email went out" note to keep in step with it.
@@ -539,9 +570,12 @@ const MentorshipAdminPrototype = () => {
         ...messages.map(({ participantId, userId, body }) => ({
           messageId: newId("e"),
           threadId: newId("t"),
-          participantId: participantId ?? null,
-          userId: userId ?? null,
-          roundId,
+          userId:
+            userId ??
+            participants.find((p) => p.participantId === participantId)?.userId,
+          roundId:
+            participants.find((p) => p.participantId === participantId)
+              ?.roundId ?? roundId,
           direction: "out",
           templateKey,
           body,
@@ -560,14 +594,15 @@ const MentorshipAdminPrototype = () => {
         ),
       );
     },
-    [viewerId, roundId],
+    [viewerId, roundId, participants],
   );
 
   /** Pulls this person's waiting replies in; returns how many arrived. */
   const refreshEmails = useCallback(
-    (participantId) => {
-      const arrived = mailbox.filter((m) => m.participantId === participantId);
-      setMailbox((all) => all.filter((m) => m.participantId !== participantId));
+    (userId, forRound) => {
+      const mine = (m) => m.userId === userId && m.roundId === forRound;
+      const arrived = mailbox.filter(mine);
+      setMailbox((all) => all.filter((m) => !mine(m)));
       setEmails((all) => [...arrived, ...all]);
       return arrived.length;
     },
@@ -657,14 +692,42 @@ const MentorshipAdminPrototype = () => {
     ].filter((p) => !registered.has(p.userId));
   }, [participants, rounds, round]);
 
+  /**
+   * A person as seen from one round. Registered, it is their participant row;
+   * not registered, it is who they are with no status — the same page, so a
+   * note written before they sign up is where they will find it after.
+   */
+  const personInRound = (userId, forRound) => {
+    const registration = participants.find(
+      (p) => p.userId === userId && p.roundId === forRound,
+    );
+    if (registration) return registration;
+    const known =
+      participants.find((p) => p.userId === userId) ??
+      NEVER_REGISTERED.find((p) => p.userId === userId);
+    if (!known) return null;
+    return {
+      participantId: null,
+      userId,
+      roundId: forRound,
+      name: known.name,
+      email: known.email,
+      identity: known.identity,
+      role: null,
+      approvalStatus: null,
+      onboardingDone: false,
+    };
+  };
+
   const pairLabel = (p) => `${p.mentorName} ↔ ${p.menteeName}`;
   const backLabel = listQuery.tab === "pairs" ? "← Pairs" : "← Participants";
 
   const body = () => {
-    if (view.kind === "participant") {
-      const person = participants.find(
-        (p) => p.participantId === view.participantId,
-      );
+    if (view.kind === "participant" || view.kind === "person") {
+      const person =
+        view.kind === "participant"
+          ? participants.find((p) => p.participantId === view.participantId)
+          : personInRound(view.userId, view.roundId);
       if (!person) return null;
       const personPairs = pairs.filter(
         (p) =>
@@ -679,9 +742,9 @@ const MentorshipAdminPrototype = () => {
           pairs={pairs}
           notes={notes}
           emails={emails.filter(
-            (e) => e.participantId === person.participantId,
+            (e) => e.userId === person.userId && e.roundId === person.roundId,
           )}
-          onRefreshEmails={() => refreshEmails(person.participantId)}
+          onRefreshEmails={() => refreshEmails(person.userId, person.roundId)}
           feedback={INITIAL_FEEDBACK}
           flags={flagsByParticipant[person.participantId] ?? {}}
           revokedNoteIds={revokedNoteIds}
@@ -710,7 +773,11 @@ const MentorshipAdminPrototype = () => {
           onBack={backToList}
           onOpenPair={(pairId) => navigate({ kind: "pair", pairId })}
           onAddNote={() =>
-            setNoteTarget({ participantId: person.participantId })
+            setNoteTarget(
+              person.participantId
+                ? { participantId: person.participantId }
+                : { userId: person.userId, roundId: person.roundId },
+            )
           }
           onRaise={() =>
             setRequestTarget({
@@ -729,7 +796,11 @@ const MentorshipAdminPrototype = () => {
           onCompose={() =>
             setComposeTarget({
               recipients: [
-                { participantId: person.participantId, name: person.name },
+                {
+                  participantId: person.participantId,
+                  userId: person.userId,
+                  name: person.name,
+                },
               ],
             })
           }
@@ -800,6 +871,10 @@ const MentorshipAdminPrototype = () => {
           setComposeTarget({ recipients, defaultTemplate })
         }
         onBulkMark={bulkMark}
+        onBulkMarkUnregistered={bulkMarkUnregistered}
+        onOpenPerson={(userId) =>
+          navigate({ kind: "person", userId, roundId: round.id })
+        }
         onConfirmUnmatched={(people) =>
           setRequestTarget({
             roundId: round.id,
@@ -876,10 +951,18 @@ const MentorshipAdminPrototype = () => {
         target={noteTarget}
         onClose={() => setNoteTarget(null)}
         onSave={({ tag, body: text }) => {
-          const { mark, participantId, pairId } = noteTarget;
+          const {
+            mark,
+            participantId,
+            userId,
+            roundId: forRound,
+            pairId,
+          } = noteTarget;
           if (mark) applyMark(pairId, mark, true);
           addNote({
             participantId,
+            userId,
+            roundId: forRound,
             pairId,
             tag,
             body:

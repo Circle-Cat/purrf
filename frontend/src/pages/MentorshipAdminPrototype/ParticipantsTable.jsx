@@ -116,6 +116,8 @@ const ParticipantsTable = ({
   onConfirmUnmatched,
   flagsByParticipant = {},
   emails = [],
+  onBulkMarkUnregistered,
+  onOpenPerson,
 }) => {
   const tab = query.tab ?? "participants";
   const term = query.q ?? "";
@@ -127,6 +129,7 @@ const ParticipantsTable = ({
   const unregisteredOnly = query.filter === "unregistered";
   const [selected, setSelected] = useState([]);
   const [bulkTag, setBulkTag] = useState(RECORDED_TAGS[3]);
+  const [unregisteredTag, setUnregisteredTag] = useState("round_invitation");
 
   const writable = can("mentorship.admin.write");
 
@@ -426,7 +429,13 @@ const ParticipantsTable = ({
                       />
                     </TableCell>
                     <TableCell>
-                      <div className="font-medium">{p.name}</div>
+                      <button
+                        type="button"
+                        className="text-left font-medium underline-offset-2 hover:underline"
+                        onClick={() => onOpenPerson(p.userId)}
+                      >
+                        {p.name}
+                      </button>
                       <div className="text-xs text-slate-500">{p.email}</div>
                     </TableCell>
                     <TableCell className="text-sm">{p.identity}</TableCell>
@@ -613,9 +622,39 @@ const ParticipantsTable = ({
           >
             Send email · {selected.length}
           </Button>
+          <div className="flex items-center gap-2">
+            <Select value={unregisteredTag} onValueChange={setUnregisteredTag}>
+              <SelectTrigger className="h-8 w-52 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {["round_invitation", "onboarding_reminder"].map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {NOTE_LABELS[t]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                onBulkMarkUnregistered(
+                  nonParticipantRows
+                    .filter((p) => selected.includes(`u${p.userId}`))
+                    .map((p) => p.userId),
+                  unregisteredTag,
+                );
+                setSelected([]);
+              }}
+            >
+              Mark as sent
+            </Button>
+          </div>
           <span className="text-xs text-slate-500">
-            There is no &ldquo;mark as sent&rdquo; here: a note hangs off a
-            round registration, and these people do not have one yet.
+            For invitations and reminders sent on Teams. The note is kept
+            against the person and this round, so it is on their timeline if
+            they register.
           </span>
         </div>
       ) : null}
@@ -665,11 +704,13 @@ const ParticipantsTable = ({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {RECORDED_TAGS.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {NOTE_LABELS[t]}
-                  </SelectItem>
-                ))}
+                {RECORDED_TAGS.filter((t) => t !== "round_invitation").map(
+                  (t) => (
+                    <SelectItem key={t} value={t}>
+                      {NOTE_LABELS[t]}
+                    </SelectItem>
+                  ),
+                )}
               </SelectContent>
             </Select>
             <Button

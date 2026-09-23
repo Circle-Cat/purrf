@@ -169,9 +169,11 @@ const ParticipantDetailPage = ({
       ),
     );
 
+  const registered = person.participantId != null;
+
   const timeline = [
     ...notes
-      .filter((n) => n.participantId === person.participantId)
+      .filter((n) => n.userId === person.userId && n.roundId === person.roundId)
       .map((n) => ({ kind: "note", at: n.createdAt, item: n })),
     ...emails.map((e) => ({ kind: "email", at: e.at, item: e })),
   ]
@@ -197,7 +199,9 @@ const ParticipantDetailPage = ({
         <div>
           <h2 className="text-base font-semibold">{person.name}</h2>
           <p className="text-xs text-slate-500">
-            {person.role} · {person.identity} · {person.email}
+            {[person.role, person.identity, person.email]
+              .filter(Boolean)
+              .join(" · ")}
           </p>
         </div>
       </header>
@@ -210,14 +214,27 @@ const ParticipantDetailPage = ({
               <Button size="sm" variant="outline" onClick={onCompose}>
                 Send email
               </Button>
-              <Button size="sm" onClick={onRaise}>
-                Change status / flag
-              </Button>
+              {registered ? (
+                <Button size="sm" onClick={onRaise}>
+                  Change status / flag
+                </Button>
+              ) : null}
             </div>
           ) : null
         }
       >
-        <div className="flex flex-wrap items-center gap-4 text-sm">
+        {registered ? null : (
+          <p className="text-sm text-slate-600">
+            Not registered for this round. Notes and emails here are kept
+            against {person.name} and {round?.name}, and stay on this timeline
+            if they register.
+          </p>
+        )}
+        <div
+          className={`flex flex-wrap items-center gap-4 text-sm ${
+            registered ? "" : "hidden"
+          }`}
+        >
           <span>
             <Badge variant="secondary">{person.approvalStatus}</Badge>
             <FlagBadges flags={flags} />

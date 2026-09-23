@@ -423,6 +423,7 @@ export const NOTE_KIND = {
   first_contact_reminder: "recorded",
   mentor_check_in: "recorded",
   midterm_reminder: "recorded",
+  round_invitation: "recorded",
   final_followup: "recorded",
 };
 
@@ -436,6 +437,7 @@ export const NOTE_LABELS = {
   mentor_check_in: "Mentor check-in",
   midterm_reminder: "Mid-term reminder",
   final_followup: "Final follow-up",
+  round_invitation: "Round invitation",
 };
 
 /** Tags an admin may write directly. The rest go through an approval. */
@@ -443,10 +445,16 @@ export const RECORDED_TAGS = Object.keys(NOTE_KIND).filter(
   (tag) => NOTE_KIND[tag] === "recorded",
 );
 
+/**
+ * Notes hang off a person and a round, not off a registration: someone who has
+ * not signed up yet can still have "invited on Teams, 9/18" written about
+ * them, and when they do register that note is already on their timeline.
+ */
 export const INITIAL_NOTES = [
   {
     noteId: "n-1",
-    participantId: "p-cara-7",
+    userId: 3103,
+    roundId: 7,
     pairId: 501,
     tag: "no_show",
     body: "No response after the first-contact deadline. Email and Teams both tried.",
@@ -455,7 +463,8 @@ export const INITIAL_NOTES = [
   },
   {
     noteId: "n-3",
-    participantId: "p-cara-7",
+    userId: 3103,
+    roundId: 7,
     pairId: null,
     tag: "status_change",
     body: "signed_up → matched. Raised by Jiang, Goose. Approved by Wang, Jasmine.",
@@ -464,7 +473,8 @@ export const INITIAL_NOTES = [
   },
   {
     noteId: "n-4",
-    participantId: "p-cara-7",
+    userId: 3103,
+    roundId: 7,
     pairId: null,
     tag: null,
     body: "Called her. She says she will start next week.",
@@ -473,7 +483,8 @@ export const INITIAL_NOTES = [
   },
   {
     noteId: "n-5",
-    participantId: "p-erin-7",
+    userId: 3105,
+    roundId: 7,
     pairId: 502,
     tag: "partner_change_request",
     body: "Mentee asked to change partner: schedules no longer overlap after her team move.",
@@ -525,7 +536,8 @@ export const INITIAL_EMAILS = [
   {
     messageId: "e-1",
     threadId: "t-cara-fc",
-    participantId: "p-cara-7",
+    userId: 3103,
+    roundId: 7,
     direction: "out",
     templateKey: "mentorship_first_contact_reminder",
     body: "Our records show you have not yet contacted your mentor. The deadline is 2026-09-19.",
@@ -535,7 +547,8 @@ export const INITIAL_EMAILS = [
   {
     messageId: "e-2",
     threadId: "t-cara-fc",
-    participantId: "p-cara-7",
+    userId: 3103,
+    roundId: 7,
     direction: "in",
     templateKey: "mentorship_first_contact_reminder",
     body: "Thanks — I have emailed Bob and copied the outreach address.",
@@ -544,7 +557,8 @@ export const INITIAL_EMAILS = [
   {
     messageId: "e-3",
     threadId: "t-cara-mt",
-    participantId: "p-cara-7",
+    userId: 3103,
+    roundId: 7,
     direction: "out",
     templateKey: "mentorship_midterm_reminder",
     body: "You have logged 0 of 5 meetings for this round. Please sign in to Purrf and record any meetings you have already held.",
@@ -554,7 +568,8 @@ export const INITIAL_EMAILS = [
   {
     messageId: "e-4",
     threadId: "t-alice-ob",
-    participantId: "p-alice-7",
+    userId: 3101,
+    roundId: 7,
     direction: "out",
     templateKey: "mentorship_onboarding_reminder",
     body: "Your onboarding course is still open. It needs to be finished before matching.",
@@ -573,7 +588,8 @@ export const MAILBOX_REPLIES = [
   {
     messageId: "e-5",
     threadId: "t-cara-mt",
-    participantId: "p-cara-7",
+    userId: 3103,
+    roundId: 7,
     direction: "in",
     templateKey: "mentorship_midterm_reminder",
     body: "Sorry — we met twice but I forgot to log it. Will do it tonight.",

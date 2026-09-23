@@ -482,8 +482,8 @@ describe("MentorshipAdminPrototype smoke", () => {
     );
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Park, Min" }));
     expect(
-      screen.queryByRole("button", { name: "Mark as sent" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: "Mark as sent" }),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Send email · 2" }));
     expect(
       within(screen.getByRole("dialog")).getByText("New round invitation"),
@@ -512,5 +512,39 @@ describe("MentorshipAdminPrototype smoke", () => {
       within(rowOf("Liu, Bob")).getByText("Mentorship 2026 Fall"),
     ).toBeInTheDocument();
     expect(rowOf("Osei, Kwame")).toBeDefined();
+  });
+
+  it("lets notes be written about someone who has not registered", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(screen.getByRole("button", { name: "Show them" }));
+
+    // In bulk, after inviting on Teams.
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Park, Min" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark as sent" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Park, Min" }));
+    expect(window.location.hash).toContain("people/3111/7");
+    expect(
+      screen.getByText(/Not registered for this round/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Round invitation")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Change status / flag" }),
+    ).not.toBeInTheDocument();
+
+    // One at a time, from their page.
+    fireEvent.click(screen.getByRole("button", { name: "Add a note" }));
+    fireEvent.change(
+      screen.getByPlaceholderText("Sent on Teams. No reply yet."),
+      {
+        target: { value: "Says he will sign up after his team offsite." },
+      },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.getByText(/after his team offsite/)).toBeInTheDocument();
+
+    // Last year's registration is still there to read.
+    expect(screen.getByText("Participation history")).toBeInTheDocument();
+    expect(screen.getByText("Mentorship 2025 Summer")).toBeInTheDocument();
   });
 });

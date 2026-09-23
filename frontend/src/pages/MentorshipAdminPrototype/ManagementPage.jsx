@@ -188,6 +188,8 @@ const ManagementPage = ({
   onMarkCell,
   onCompose,
   onBulkMark,
+  onBulkMarkUnregistered,
+  onOpenPerson,
   onConfirmUnmatched,
   onEditRound,
 }) => {
@@ -248,6 +250,8 @@ const ManagementPage = ({
               onMarkCell={onMarkCell}
               onCompose={onCompose}
               onBulkMark={onBulkMark}
+              onBulkMarkUnregistered={onBulkMarkUnregistered}
+              onOpenPerson={onOpenPerson}
               onConfirmUnmatched={onConfirmUnmatched}
             />
           </Card>
