@@ -229,6 +229,20 @@ export const INITIAL_PARTICIPANTS = [
     lastRound: { kind: "count", completed: 5, required: 5 },
     midtermReminderAt: "2026-09-18",
   },
+  // Registered and onboarded, but blocked: never offered to matching.
+  {
+    participantId: "p-oscar-7",
+    userId: 3113,
+    roundId: 7,
+    name: "Lin, Oscar",
+    email: "oscar@example.com",
+    role: "mentee",
+    identity: "external",
+    approvalStatus: "signed_up",
+    onboardingDone: true,
+    lastRound: { kind: "first-time" },
+    midtermReminderAt: null,
+  },
   // Cara's history row, so the participant detail page has more than one round.
   {
     participantId: "p-cara-6",
@@ -273,6 +287,7 @@ export const HIRED_APPLICATIONS = [
   { userId: 3108, role: "mentee" },
   { userId: 3109, role: "mentor" },
   { userId: 3110, role: "mentee" },
+  { userId: 3113, role: "mentee" },
 ];
 
 /**
@@ -296,6 +311,7 @@ export const ONBOARDING_TRAININGS = [
   { userId: 3110, role: "mentee", status: "in_progress" },
   { userId: 3111, role: "mentor", status: "done" },
   { userId: 3112, role: "mentor", status: "in_progress" },
+  { userId: 3113, role: "mentee", status: "done" },
 ];
 
 /** Who the people with no registration anywhere are. */
@@ -327,8 +343,9 @@ export const NEVER_REGISTERED = [
  */
 export const ACCOUNT_STATES = {
   3107: { isActive: true, isBlocked: true },
-  3109: { isActive: false, isBlocked: false },
-  3110: { isActive: false, isBlocked: true },
+  3109: { isActive: false, isBlocked: true },
+  3110: { isActive: false, isBlocked: false },
+  3113: { isActive: true, isBlocked: true },
 };
 
 export const accountStateOf = (userId) =>
@@ -465,6 +482,7 @@ export const NOTE_KIND = {
   no_show: "decided",
   red_flag: "decided",
   partner_change_request: "decided",
+  matching_exemption: "decided",
   status_change: "system",
   onboarding_reminder: "recorded",
   first_contact_reminder: "recorded",
@@ -478,6 +496,7 @@ export const NOTE_LABELS = {
   no_show: "No show",
   red_flag: "Red flag",
   partner_change_request: "Partner change request",
+  matching_exemption: "Matching exemption",
   status_change: "Status change",
   onboarding_reminder: "Onboarding reminder",
   first_contact_reminder: "First contact reminder",
@@ -656,6 +675,11 @@ export const APPROVAL_ACTIONS = [
     target: "batch",
   },
   { key: "revoke_flag", label: "Revoke a flag", target: "note" },
+  {
+    key: "exempt_matching",
+    label: "Exempt from the onboarding requirement",
+    target: "person",
+  },
 ];
 
 export const ACTION_LABELS = Object.fromEntries(

@@ -44,7 +44,13 @@ const NoteRow = ({ note, revoked, onRevoke }) => {
     <li className="flex gap-3 py-2">
       <span className="w-40 shrink-0 text-xs">
         {note.tag ? (
-          <Badge variant={kind === "decided" ? "destructive" : "secondary"}>
+          <Badge
+            variant={
+              kind === "decided" && note.tag !== "matching_exemption"
+                ? "destructive"
+                : "secondary"
+            }
+          >
             {NOTE_LABELS[note.tag]}
           </Badge>
         ) : (
@@ -141,6 +147,8 @@ const ParticipantDetailPage = ({
   viewerId,
   onCancelRequest,
   onRevoke,
+  exempt,
+  onRequestExemption,
 }) => {
   const [filter, setFilter] = useState("all");
   const [syncMessage, setSyncMessage] = useState(null);
@@ -239,7 +247,27 @@ const ParticipantDetailPage = ({
             <Badge variant="secondary">{person.approvalStatus}</Badge>
             <FlagBadges flags={flags} />
           </span>
-          <span>Onboarding {person.onboardingDone ? "done" : "not done"}</span>
+          <span>
+            Onboarding {person.onboardingDone ? "done" : "not done"}
+            {!person.onboardingDone && exempt ? (
+              <Badge
+                variant="outline"
+                className="ml-1 border-amber-300 bg-amber-50 text-amber-900"
+              >
+                Exempted
+              </Badge>
+            ) : null}
+            {!person.onboardingDone && !exempt && writable ? (
+              <Button
+                size="sm"
+                variant="link"
+                className="h-auto px-1"
+                onClick={onRequestExemption}
+              >
+                Request exemption
+              </Button>
+            ) : null}
+          </span>
           {myPairs.length === 0 ? (
             <span className="text-slate-500">No pair this round</span>
           ) : myPairs.length === 1 ? (

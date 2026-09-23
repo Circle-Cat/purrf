@@ -117,6 +117,7 @@ const ParticipantsTable = ({
   onBulkMark,
   onConfirmUnmatched,
   flagsByParticipant = {},
+  exemptParticipantIds = new Set(),
   emails = [],
   onBulkMarkUnregistered,
   onOpenPerson,
@@ -160,19 +161,34 @@ const ParticipantsTable = ({
     ...p,
     freeSlots: capacityOf(p) - activePairsOf(p.userId),
   }));
+  const isBlocked = (p) => accountStateOf(p.userId).isBlocked;
+  const isExempt = (p) => exemptParticipantIds.has(p.participantId);
+  /**
+   * An approved exemption stands in for onboarding and for nothing else: a
+   * block is final, a withdrawal is the person's own choice, and a full slot
+   * is a place that does not exist.
+   */
   const inPool = (p) =>
-    p.onboardingDone &&
+    !isBlocked(p) &&
+    (p.onboardingDone || isExempt(p)) &&
     POOL_STATUSES.includes(p.approvalStatus) &&
     p.freeSlots > 0;
   const leftOut = {
+    blocked: withSlots.filter((p) => isBlocked(p)).length,
     full: withSlots.filter(
-      (p) => p.approvalStatus === "matched" && p.freeSlots <= 0,
+      (p) =>
+        !isBlocked(p) && p.approvalStatus === "matched" && p.freeSlots <= 0,
     ).length,
     onboarding: withSlots.filter(
-      (p) => !p.onboardingDone && POOL_STATUSES.includes(p.approvalStatus),
+      (p) =>
+        !p.onboardingDone &&
+        !isExempt(p) &&
+        !isBlocked(p) &&
+        POOL_STATUSES.includes(p.approvalStatus),
     ).length,
-    other: withSlots.filter((p) => !POOL_STATUSES.includes(p.approvalStatus))
-      .length,
+    other: withSlots.filter(
+      (p) => !isBlocked(p) && !POOL_STATUSES.includes(p.approvalStatus),
+    ).length,
   };
 
   const rows = withSlots.filter(
@@ -471,9 +487,10 @@ const ParticipantsTable = ({
       {tab === "participants" && eligibleOnly ? (
         <p className="mb-2 text-xs text-slate-500">
           Registered this round, onboarding done, not withdrawn, and at least
-          one free slot. Not listed: {leftOut.full} matched with no free slot ·{" "}
-          {leftOut.onboarding} onboarding not done · {leftOut.other} withdrawn
-          or closed out.
+          one free slot; an approved exemption stands in for onboarding. Not
+          listed: {leftOut.full} matched with no free slot ·{" "}
+          {leftOut.onboarding} onboarding not done · {leftOut.blocked} blocked ·{" "}
+          {leftOut.other} withdrawn or closed out.
         </p>
       ) : null}
 
@@ -526,6 +543,14 @@ const ParticipantsTable = ({
                 </TableCell>
                 <TableCell className="text-sm">
                   {p.onboardingDone ? "Done" : "Not done"}
+                  {!p.onboardingDone && isExempt(p) ? (
+                    <Badge
+                      variant="outline"
+                      className="ml-1 border-amber-300 bg-amber-50 text-amber-900"
+                    >
+                      Exempted
+                    </Badge>
+                  ) : null}
                 </TableCell>
                 {eligibleOnly ? (
                   <>

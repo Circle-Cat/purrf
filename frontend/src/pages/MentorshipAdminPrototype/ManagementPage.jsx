@@ -181,6 +181,7 @@ const ManagementPage = ({
   requests,
   viewerId,
   flagsByParticipant,
+  exemptParticipantIds,
   can,
   onDecide,
   onOpenParticipant,
@@ -243,6 +244,7 @@ const ManagementPage = ({
               nonParticipants={nonParticipants}
               pairs={pairs.filter((p) => p.roundId === round.id)}
               flagsByParticipant={flagsByParticipant}
+              exemptParticipantIds={exemptParticipantIds}
               emails={emails}
               can={can}
               onOpenParticipant={onOpenParticipant}

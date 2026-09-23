@@ -260,7 +260,11 @@ const MentorshipAdminPrototype = () => {
   const flagsByParticipant = useMemo(() => {
     const out = {};
     notes.forEach((n) => {
-      if (NOTE_KIND[n.tag] !== "decided" || revokedNoteIds.has(n.noteId)) {
+      if (
+        NOTE_KIND[n.tag] !== "decided" ||
+        n.tag === "matching_exemption" ||
+        revokedNoteIds.has(n.noteId)
+      ) {
         return;
       }
       const registration = participants.find(
@@ -273,6 +277,30 @@ const MentorshipAdminPrototype = () => {
     });
     return out;
   }, [notes, revokedNoteIds, participants]);
+
+  /**
+   * Registrations with a standing exemption from the onboarding requirement.
+   * Kept apart from the flags: an exemption lets someone in, a flag is a
+   * judgement against them. Revoking one takes the person back out.
+   */
+  const exemptParticipantIds = useMemo(
+    () =>
+      new Set(
+        notes
+          .filter(
+            (n) =>
+              n.tag === "matching_exemption" && !revokedNoteIds.has(n.noteId),
+          )
+          .map(
+            (n) =>
+              participants.find(
+                (p) => p.userId === n.userId && p.roundId === n.roundId,
+              )?.participantId,
+          )
+          .filter(Boolean),
+      ),
+    [notes, revokedNoteIds, participants],
+  );
 
   /** Only the person who raised a request can withdraw it, and only while it waits. */
   const cancelRequest = useCallback(
@@ -384,6 +412,7 @@ const MentorshipAdminPrototype = () => {
         change_partner: "partner_change_request",
         withdraw: "status_change",
         confirm_unmatched: "status_change",
+        exempt_matching: "matching_exemption",
       };
       const body = `${request.reason} — raised by ${
         ACTOR_NAMES[request.raisedBy]
@@ -762,6 +791,15 @@ const MentorshipAdminPrototype = () => {
           onRefreshEmails={() => refreshEmails(person.userId, person.roundId)}
           feedback={INITIAL_FEEDBACK}
           flags={flagsByParticipant[person.participantId] ?? {}}
+          exempt={exemptParticipantIds.has(person.participantId)}
+          onRequestExemption={() =>
+            setRequestTarget({
+              roundId: person.roundId,
+              participantId: person.participantId,
+              targetLabel: person.name,
+              actions: ["exempt_matching"],
+            })
+          }
           revokedNoteIds={revokedNoteIds}
           requests={requests.filter(
             (r) =>
@@ -799,9 +837,9 @@ const MentorshipAdminPrototype = () => {
               roundId: person.roundId,
               participantId: person.participantId,
               targetLabel: person.name,
-              actions: ["withdraw", "mark_no_show", "mark_red_flag"].concat(
-                personPairs.length ? ["change_partner"] : [],
-              ),
+              actions: ["withdraw", "mark_no_show", "mark_red_flag"]
+                .concat(personPairs.length ? ["change_partner"] : [])
+                .concat(person.onboardingDone ? [] : ["exempt_matching"]),
               pairChoices: personPairs.map((p) => ({
                 pairId: p.pairId,
                 label: pairLabel(p),
@@ -875,6 +913,7 @@ const MentorshipAdminPrototype = () => {
         requests={requests}
         viewerId={viewerId}
         flagsByParticipant={flagsByParticipant}
+        exemptParticipantIds={exemptParticipantIds}
         can={can}
         onDecide={decideRequest}
         onOpenParticipant={(participantId) =>
