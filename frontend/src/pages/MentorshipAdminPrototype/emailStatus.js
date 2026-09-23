@@ -1,12 +1,14 @@
 /**
- * The emails of a round, in the order they go out, and how to tell whether
- * each one has gone to a given person.
+ * The notifications of a round, in the order they go out, and how to tell
+ * whether each one has reached a given person.
  *
- * Nothing here is stored. "Sent" is read from what already exists: an email
- * on the person's timeline with one of the step's templates; for the
- * admission email, the notification Purrf sent on its own when they were
- * admitted; or — for the half that goes out on Teams, which Purrf never sees —
- * a recorded note with the step's tag, written when an admin marks it sent.
+ * A notification counts however it went: an email from Purrf, or anything
+ * else — Teams, Google Chat, a call — recorded by hand as a note. So nothing
+ * here is stored. "Notified" is read from what already exists: an email on the
+ * person's timeline with one of the step's templates; for the admission email,
+ * the notification Purrf sent on its own when they were admitted; or a
+ * recorded note with the step's tag, written when an admin marks it notified.
+ * Every step has a tag, so every one can be marked by hand.
  */
 export const EMAIL_STEPS = [
   {
@@ -25,7 +27,7 @@ export const EMAIL_STEPS = [
     label: "Admission & onboarding",
     short: "Admission",
     templates: ["mentorship_onboarding_invite"],
-    tag: null,
+    tag: "admission_notice",
     automatic: "mentorship_admitted",
     registered: null,
   },
@@ -45,7 +47,7 @@ export const EMAIL_STEPS = [
       "mentorship_match_result_matched",
       "mentorship_match_result_unmatched",
     ],
-    tag: null,
+    tag: "match_result_notice",
     registered: true,
   },
   {
@@ -85,7 +87,7 @@ export const EMAIL_STEPS = [
     label: "Feedback invitation",
     short: "Feedback",
     templates: ["mentorship_feedback_invite"],
-    tag: null,
+    tag: "feedback_invite",
     registered: true,
   },
 ];
@@ -98,9 +100,9 @@ export const stepsFor = (registered) =>
 
 export const EMAIL_STATES = [
   { key: "replied", label: "Replied" },
-  { key: "sent", label: "Sent" },
+  { key: "sent", label: "Notified" },
   { key: "failed", label: "Failed" },
-  { key: "not_sent", label: "Not sent" },
+  { key: "not_sent", label: "Not notified" },
 ];
 
 /**
@@ -156,7 +158,7 @@ export const stepState = (
       )
     : [];
   if (marked.length) {
-    return { state: "sent", channel: "teams", at: latest(marked).createdAt };
+    return { state: "sent", channel: "manual", at: latest(marked).createdAt };
   }
   if (out.length)
     return { state: "failed", channel: "email", at: latest(out).at };

@@ -653,6 +653,9 @@ export const NOTE_KIND = {
   first_contact_reminder: "recorded",
   mentor_check_in: "recorded",
   midterm_reminder: "recorded",
+  admission_notice: "recorded",
+  match_result_notice: "recorded",
+  feedback_invite: "recorded",
   round_invitation: "recorded",
   final_followup: "recorded",
 };
@@ -669,6 +672,9 @@ export const NOTE_LABELS = {
   midterm_reminder: "Mid-term reminder",
   final_followup: "Final follow-up",
   round_invitation: "Round invitation",
+  admission_notice: "Admission & onboarding",
+  match_result_notice: "Match result",
+  feedback_invite: "Feedback invitation",
 };
 
 /** Tags an admin may write directly. The rest go through an approval. */

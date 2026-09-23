@@ -388,11 +388,14 @@ const ParticipantsTable = ({
               value={emailStep}
               onValueChange={(v) => onQueryChange({ email: v })}
             >
-              <SelectTrigger className="h-8 w-48 text-xs" aria-label="Email">
-                <SelectValue placeholder="Email" />
+              <SelectTrigger
+                className="h-8 w-48 text-xs"
+                aria-label="Notification"
+              >
+                <SelectValue placeholder="Notification" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Any email</SelectItem>
+                <SelectItem value="all">Any notification</SelectItem>
                 {stepsFor(!unregisteredOnly).map((step) => (
                   <SelectItem key={step.key} value={step.key}>
                     {step.label}
@@ -406,7 +409,7 @@ const ParticipantsTable = ({
             >
               <SelectTrigger
                 className="h-8 w-32 text-xs"
-                aria-label="Email state"
+                aria-label="Notification state"
               >
                 <SelectValue placeholder="State" />
               </SelectTrigger>
@@ -470,7 +473,7 @@ const ParticipantsTable = ({
                 <TableHead>Name</TableHead>
                 <TableHead>Int / ext</TableHead>
                 <TableHead>Account</TableHead>
-                <TableHead>Emails</TableHead>
+                <TableHead>Notifications</TableHead>
                 <TableHead>Mentor training</TableHead>
                 <TableHead>Mentee training</TableHead>
                 <TableHead>Last took part</TableHead>
@@ -554,7 +557,7 @@ const ParticipantsTable = ({
               <TableHead>Int / ext</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Account</TableHead>
-              <TableHead>Emails</TableHead>
+              <TableHead>Notifications</TableHead>
               <TableHead>Training</TableHead>
               {eligibleOnly ? (
                 <>
@@ -724,7 +727,11 @@ const ParticipantsTable = ({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {["round_invitation", "onboarding_reminder"].map((t) => (
+                {[
+                  "round_invitation",
+                  "admission_notice",
+                  "onboarding_reminder",
+                ].map((t) => (
                   <SelectItem key={t} value={t}>
                     {NOTE_LABELS[t]}
                   </SelectItem>
@@ -744,7 +751,7 @@ const ParticipantsTable = ({
                 setSelected([]);
               }}
             >
-              Mark as sent
+              Mark as notified
             </Button>
           </div>
           <span className="text-xs text-slate-500">
@@ -824,7 +831,7 @@ const ParticipantsTable = ({
                 setSelected([]);
               }}
             >
-              Mark as sent
+              Mark as notified
             </Button>
           </div>
           {tab === "participants" && eligibleOnly ? (

@@ -198,7 +198,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     fireEvent.click(
       within(pairRow("Liu, Bob", "Ma, Erin")).getByRole("checkbox"),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Mark as sent" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark as notified" }));
     expect(
       within(pairRow("Liu, Bob", "Ma, Erin")).getByText("2026-09-22"),
     ).toBeInTheDocument();
@@ -481,7 +481,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     );
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Park, Min" }));
     expect(
-      screen.getByRole("button", { name: "Mark as sent" }),
+      screen.getByRole("button", { name: "Mark as notified" }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Send email · 2" }));
     expect(
@@ -521,7 +521,7 @@ describe("MentorshipAdminPrototype smoke", () => {
 
     // In bulk, after inviting on Teams.
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Park, Min" }));
-    fireEvent.click(screen.getByRole("button", { name: "Mark as sent" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark as notified" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Park, Min" }));
     expect(window.location.hash).toContain("people/3111/7");
@@ -862,7 +862,7 @@ describe("MentorshipAdminPrototype smoke", () => {
 
   it("shows where each person's emails stand, one dot per email of the round", () => {
     render(<MentorshipAdminPrototype />);
-    expect(screen.getByText("Emails")).toBeInTheDocument();
+    expect(screen.getByText("Notifications")).toBeInTheDocument();
     // How far each person has got, in words, above the dots.
     const cara = screen
       .getAllByRole("row")
@@ -879,7 +879,7 @@ describe("MentorshipAdminPrototype smoke", () => {
         .getAllByRole("row")
         .find((r) => within(r).queryByRole("button", { name }));
 
-    // Replied, sent by email, sent on Teams, failed, not sent.
+    // Replied, notified by email, notified manually, failed, not notified.
     expect(
       within(rowOf("Wang, Cara")).getByRole("button", {
         name: "First contact reminder: replied 2026-09-11",
@@ -887,12 +887,12 @@ describe("MentorshipAdminPrototype smoke", () => {
     ).toBeInTheDocument();
     expect(
       within(rowOf("Wang, Cara")).getByRole("button", {
-        name: "Mid-term reminder: sent 2026-09-18",
+        name: "Mid-term reminder: notified by email 2026-09-18",
       }),
     ).toBeInTheDocument();
     expect(
       within(rowOf("Wu, Dana")).getByRole("button", {
-        name: "Onboarding reminder: sent on Teams 2026-09-07",
+        name: "Onboarding reminder: notified manually 2026-09-07",
       }),
     ).toBeInTheDocument();
     expect(
@@ -902,14 +902,14 @@ describe("MentorshipAdminPrototype smoke", () => {
     ).toBeInTheDocument();
     expect(
       within(rowOf("Chen, Alice")).getByRole("button", {
-        name: "Match result: not sent",
+        name: "Match result: not notified",
       }),
     ).toBeInTheDocument();
 
     // The admission email is sent by Purrf itself, and can fail on its own.
     expect(
       within(rowOf("Chen, Alice")).getByRole("button", {
-        name: "Admission & onboarding: sent automatically 2026-08-27",
+        name: "Admission & onboarding: notified automatically 2026-08-27",
       }),
     ).toBeInTheDocument();
     expect(
@@ -921,7 +921,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     // A dot opens that person's timeline showing emails only.
     fireEvent.click(
       within(rowOf("Wang, Cara")).getByRole("button", {
-        name: "Mid-term reminder: sent 2026-09-18",
+        name: "Mid-term reminder: notified by email 2026-09-18",
       }),
     );
     expect(screen.getByRole("button", { name: "Emails only" })).toHaveAttribute(

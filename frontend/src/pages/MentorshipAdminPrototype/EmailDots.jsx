@@ -10,7 +10,7 @@ const BADGE = {
     className: "border-emerald-600 bg-emerald-600 text-white",
   },
   sent: {
-    text: "Sent",
+    text: "Notified",
     className: "border-emerald-300 bg-emerald-50 text-emerald-800",
   },
   failed: {
@@ -18,33 +18,33 @@ const BADGE = {
     className: "border-amber-400 bg-amber-50 text-amber-900",
   },
   not_sent: {
-    text: "Not sent",
+    text: "Not notified",
     className: "border-slate-200 bg-white text-slate-400",
   },
 };
 
 const how = (s) =>
-  s.channel === "teams"
-    ? " on Teams"
+  s.channel === "manual"
+    ? " manually"
     : s.channel === "auto"
       ? " automatically"
-      : "";
+      : " by email";
 
 const describe = (step, s) => {
-  if (s.state === "not_sent") return `${step.label}: not sent`;
+  if (s.state === "not_sent") return `${step.label}: not notified`;
   if (s.state === "failed") return `${step.label}: failed on ${s.at}`;
   if (s.state === "replied") return `${step.label}: replied ${s.at}`;
-  return `${step.label}: sent${how(s)} ${s.at}`;
+  return `${step.label}: notified${how(s)} ${s.at}`;
 };
 
 /**
  * EmailDots
  *
- * One line per email of the round, in the order they go out: a badge that
- * says where it stands — Replied, Sent (with "Teams" when it went out there,
- * which counts), Failed, or Not sent — then the email's name and date. Lines
- * for emails not yet sent are greyed so the ones that have gone stand out.
- * Pressing a line opens the person's timeline showing emails only.
+ * One line per notification of the round, in the order they go out: a badge
+ * that says where it stands — Replied, Notified (with "manually" when it went
+ * out some other way and was recorded as a note, which counts), Failed, or Not
+ * notified — then its name and date. Lines not yet notified are greyed so the
+ * ones that have gone stand out. Pressing a line opens the person's timeline.
  *
  * @param {{person: {userId: number, roundId: number}, registered: boolean, emails: object[], notes: object[], notifications: object[], onOpen: () => void}} props
  * @returns {JSX.Element}
@@ -76,7 +76,7 @@ const EmailDots = ({
               className={`w-24 shrink-0 justify-center px-1 py-0 text-[10px] ${badge.className}`}
             >
               {badge.text}
-              {s.channel === "teams" ? " · Teams" : ""}
+              {s.channel === "manual" ? " · manually" : ""}
             </Badge>
             <span className="whitespace-nowrap">
               {step.label}
