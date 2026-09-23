@@ -30,13 +30,12 @@ const PairSection = ({
   person,
   round,
   meetings,
-  can,
+  writable,
   open,
   onToggle,
   onSaveMeetings,
   onMarkFirstContact,
 }) => {
-  const writable = can("mentorship.admin.write");
   const isMentee = pair.menteeId === person.userId;
   const partner = isMentee ? pair.mentorName : pair.menteeName;
 

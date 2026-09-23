@@ -417,6 +417,29 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(screen.getByText(/No earlier rounds/)).toBeInTheDocument();
   });
 
+  it("opens any earlier round from the history, with its flags, read only", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(screen.getByRole("button", { name: "Wei Tan" }));
+    const history = screen
+      .getByText("Participation history")
+      .closest("section");
+    // Wei was never paired last summer, but the round still opens, and its
+    // red flag shows on the row.
+    expect(within(history).getByText("Red flag")).toBeInTheDocument();
+    fireEvent.click(
+      within(history).getByRole("button", { name: "Mentorship 2025 Summer" }),
+    );
+    expect(window.location.hash).toContain("round=6");
+    expect(
+      screen.getByText(/An earlier round — read only/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add a note" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Change status / flag" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Revoke" })).toBeNull();
+  });
+
   it("shows a failed send as failed on the timeline, not as sent", () => {
     render(<MentorshipAdminPrototype />);
     fireEvent.click(screen.getByRole("button", { name: "Alice Chen" }));
@@ -432,8 +455,16 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(screen.getByText("Reply")).toBeInTheDocument();
     expect(screen.getByText(/Called her/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Emails only" }));
-    expect(screen.queryByText(/Called her/)).not.toBeInTheDocument();
+    // One list, newest first, whatever the kind: the call on 9/12 sits
+    // between the email of 9/10 and the reminder of 9/18.
+    const entries = screen
+      .getAllByText(/Called her|Our records show|You have logged 0 of 5/)
+      .map((el) => el.textContent);
+    expect(entries.map((e) => e.slice(0, 10))).toEqual([
+      "You have l",
+      "Called her",
+      "Our record",
+    ]);
 
     expect(screen.queryByText(/we met twice/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Refresh emails" }));
@@ -1289,17 +1320,15 @@ describe("MentorshipAdminPrototype smoke", () => {
       }),
     ).toBeInTheDocument();
 
-    // A dot opens that person's timeline showing emails only.
+    // A line opens that person's page.
     fireEvent.click(
       within(rowOf("Cara Wang")).getByRole("button", {
         name: "Mid-term reminder: notified by email 2026-09-18",
       }),
     );
-    expect(screen.getByRole("button", { name: "Emails only" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    expect(screen.queryByText(/Called her/)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Cara Wang" }),
+    ).toBeInTheDocument();
   });
 
   it("filters to who has not had a given email, from a link", () => {

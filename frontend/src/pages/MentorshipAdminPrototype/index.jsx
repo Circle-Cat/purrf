@@ -1089,6 +1089,12 @@ const MentorshipAdminPrototype = () => {
     };
   };
 
+  /** From recruitment to the feedback deadline; outside it a round is a record. */
+  const isRunning = (r) =>
+    Boolean(r) &&
+    (r.timeline.promotionStartAt ?? "") <= TODAY &&
+    TODAY <= (r.timeline.feedbackDeadlineAt ?? "");
+
   const pairLabel = (p) => `${p.mentorName} ↔ ${p.menteeName}`;
   const backLabel = "← Participants";
 
@@ -1126,6 +1132,7 @@ const MentorshipAdminPrototype = () => {
           }
           onSaveMeetings={saveMeetings}
           onMarkFirstContact={(pairId) => markCell(pairId, "firstContact")}
+          readOnly={!isRunning(rounds.find((r) => r.id === person.roundId))}
           person={person}
           rounds={rounds}
           participants={participants}
@@ -1136,7 +1143,6 @@ const MentorshipAdminPrototype = () => {
           )}
           onRefreshEmails={() => refreshEmails(person.userId, person.roundId)}
           feedback={INITIAL_FEEDBACK}
-          initialTimeline={view.timeline}
           flags={flagsByParticipant[person.participantId] ?? {}}
           exempt={exemptParticipantIds.has(person.participantId)}
           historyIssues={person.participantId ? issuesOf(person) : []}
@@ -1176,7 +1182,7 @@ const MentorshipAdminPrototype = () => {
           can={can}
           backLabel={backLabel}
           onBack={backToList}
-          onOpenPair={(participantId, pairId) => {
+          onOpenPair={(participantId, pairId = null) => {
             const other = participants.find(
               (p) => p.participantId === participantId,
             );
@@ -1330,10 +1336,7 @@ const MentorshipAdminPrototype = () => {
         onEditRound={(r) => setRoundModal(r ?? { timeline: {} })}
         matchRun={matchRuns[round.id] ?? null}
         matchingOpen={TODAY <= (round.timeline.matchNotificationAt ?? "")}
-        roundRunning={
-          (round.timeline.promotionStartAt ?? "") <= TODAY &&
-          TODAY <= (round.timeline.feedbackDeadlineAt ?? "")
-        }
+        roundRunning={isRunning(round)}
         onRunMatching={(people) => {
           startRun(people);
           navigate({ kind: "matching", roundId: round.id });

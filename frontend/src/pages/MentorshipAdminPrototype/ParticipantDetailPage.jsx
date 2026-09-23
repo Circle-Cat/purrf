@@ -11,12 +11,6 @@ import {
   TEMPLATE_LABELS,
 } from "@/pages/MentorshipAdminPrototype/mockData";
 
-const TIMELINE_FILTERS = [
-  { key: "all", label: "All" },
-  { key: "note", label: "Notes only" },
-  { key: "email", label: "Emails only" },
-];
-
 const Block = ({ title, right, children }) => (
   <section className="border-t border-slate-200 px-5 py-4">
     <header className="mb-3 flex items-center gap-3">
@@ -126,9 +120,9 @@ const EmailRow = ({ email, personName }) => (
  * their timeline, every round they have taken part in, and the feedback they
  * wrote.
  *
- * The timeline is notes and emails together, newest first. "What has happened
- * with her" is one question; answering it from two lists means interleaving
- * them by date in your head.
+ * The timeline is notes and emails together, newest first, with no filter by
+ * kind. "What has happened with her" is one question; answering it from two
+ * lists means interleaving them by date in your head.
  *
  * Each pair this person is in this round is a section of its own, with its
  * meeting log. A mentor carrying two mentees has two sections and two logs:
@@ -161,7 +155,6 @@ const ParticipantDetailPage = ({
   exempt,
   historyIssues = [],
   onRequestExemption,
-  initialTimeline,
   openPairId,
   pairMeetings,
   onSaveMeetings,
@@ -169,8 +162,8 @@ const ParticipantDetailPage = ({
   blocked = false,
   onRequestBlock,
   onMarkNotified,
+  readOnly = false,
 }) => {
-  const [filter, setFilter] = useState(initialTimeline ?? "all");
   // The pair that was clicked to get here opens; otherwise the first does.
   const [openPairs, setOpenPairs] = useState(() => {
     if (openPairId) return [openPairId];
@@ -234,9 +227,7 @@ const ParticipantDetailPage = ({
       .filter((n) => n.userId === person.userId && n.roundId === person.roundId)
       .map((n) => ({ kind: "note", at: n.createdAt, item: n })),
     ...emails.map((e) => ({ kind: "email", at: e.at, item: e })),
-  ]
-    .filter((entry) => filter === "all" || entry.kind === filter)
-    .sort((a, b) => b.at.localeCompare(a.at));
+  ].sort((a, b) => b.at.localeCompare(a.at));
 
   const refresh = () => {
     const count = onRefreshEmails();
@@ -246,7 +237,25 @@ const ParticipantDetailPage = ({
         : `Checked the mailbox — ${count} new ${count === 1 ? "reply" : "replies"}.`,
     );
   };
-  const writable = can("mentorship.admin.write");
+  // An earlier round is a record: it can be read, not changed.
+  const writable = can("mentorship.admin.write") && !readOnly;
+  /** Flags that still stand from one round, as `{tag: count}`. */
+  const flagsIn = (roundId) => {
+    const out = {};
+    notes
+      .filter(
+        (n) =>
+          n.userId === person.userId &&
+          n.roundId === roundId &&
+          NOTE_KIND[n.tag] === "decided" &&
+          n.tag !== "matching_exemption" &&
+          !revokedNoteIds.has(n.noteId),
+      )
+      .forEach((n) => {
+        out[n.tag] = (out[n.tag] ?? 0) + 1;
+      });
+    return out;
+  };
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white">
@@ -264,6 +273,12 @@ const ParticipantDetailPage = ({
         </div>
       </header>
 
+      {readOnly ? (
+        <p className="border-t border-slate-200 bg-slate-50 px-5 py-2 text-xs text-slate-600">
+          An earlier round — read only. Nothing here can be changed; what
+          happens next is written on the current round.
+        </p>
+      ) : null}
       <Block
         title={round?.name ?? "This round"}
         right={
@@ -344,7 +359,7 @@ const ParticipantDetailPage = ({
             person={person}
             round={round}
             meetings={pairMeetings(pair.pairId)}
-            can={can}
+            writable={writable}
             open={openPairs.includes(pair.pairId)}
             onToggle={() =>
               setOpenPairs((all) =>
@@ -426,27 +441,6 @@ const ParticipantDetailPage = ({
           </div>
         }
       >
-        <div
-          role="group"
-          aria-label="Timeline filter"
-          className="mb-2 flex gap-1"
-        >
-          {TIMELINE_FILTERS.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              aria-pressed={filter === f.key}
-              onClick={() => setFilter(f.key)}
-              className={`rounded-md px-2 py-0.5 text-xs ${
-                filter === f.key
-                  ? "bg-slate-900 text-white"
-                  : "text-slate-500 hover:bg-slate-100"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
         {syncMessage ? (
           <p className="mb-2 text-xs text-slate-500">{syncMessage}</p>
         ) : null}
@@ -489,7 +483,16 @@ const ParticipantDetailPage = ({
         <ul className="divide-y divide-slate-100 text-sm">
           {history.map(({ participant, round: r, pairs: theirs }) => (
             <li key={participant.participantId} className="flex gap-4 py-2">
-              <span className="w-56 shrink-0">{r?.name}</span>
+              <span className="w-56 shrink-0">
+                <button
+                  type="button"
+                  className="text-left font-medium underline-offset-2 hover:underline"
+                  onClick={() => onOpenPair(participant.participantId, null)}
+                >
+                  {r?.name}
+                </button>
+                <FlagBadges flags={flagsIn(participant.roundId)} />
+              </span>
               <span className="w-20 shrink-0 text-slate-600">
                 {participant.role}
               </span>
