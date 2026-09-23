@@ -7,6 +7,7 @@ import RaiseRequestDialog from "@/pages/MentorshipAdminPrototype/RaiseRequestDia
 import ComposeDialog from "@/pages/MentorshipAdminPrototype/ComposeDialog";
 import RoundModal from "@/pages/MentorshipAdminPrototype/RoundModal";
 import MatchingPage from "@/pages/MentorshipAdminPrototype/MatchingPage";
+import { lastRoundOf } from "@/pages/MentorshipAdminPrototype/lastRound";
 import {
   effectiveRows,
   problemsOf,
@@ -1053,7 +1054,10 @@ const MentorshipAdminPrototype = () => {
         rounds={rounds}
         query={listQuery}
         onQueryChange={updateListQuery}
-        participants={participants}
+        participants={participants.map((p) => ({
+          ...p,
+          lastRound: lastRoundOf(p, participants, pairs, rounds),
+        }))}
         nonParticipants={unregistered}
         emails={emails}
         notes={notes}

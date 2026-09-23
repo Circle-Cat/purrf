@@ -7,6 +7,15 @@ import {
   within,
 } from "@testing-library/react";
 import MentorshipAdminPrototype from "@/pages/MentorshipAdminPrototype";
+import {
+  describeLastRound,
+  lastRoundOf,
+} from "@/pages/MentorshipAdminPrototype/lastRound";
+import {
+  INITIAL_PAIRS,
+  INITIAL_PARTICIPANTS,
+  INITIAL_ROUNDS,
+} from "@/pages/MentorshipAdminPrototype/mockData";
 
 /** The permission chips are their own labelled group; card buttons are not. */
 const chip = (name) =>
@@ -311,8 +320,19 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(
       within(poolRow("Chen, Alice")).getByText("First time"),
     ).toBeInTheDocument();
+    // Their latest earlier round, told apart rather than turned into a 0.
     expect(
-      within(poolRow("Wu, Dana")).getByText("Not matched"),
+      within(poolRow("Wu, Dana")).getByText("Mentorship 2025 Summer · 7/7"),
+    ).toBeInTheDocument();
+    expect(
+      within(poolRow("Liu, Bob")).getByText(
+        "Mentorship 2025 Summer · Not matched",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(poolRow("Guo, Fay")).getByText(
+        "Mentorship 2025 Summer · Withdrawn at 2/7",
+      ),
     ).toBeInTheDocument();
 
     fireEvent.click(within(poolRow("Liu, Bob")).getByRole("checkbox"));
@@ -508,11 +528,15 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(rowOf("Park, Min")).toBeUndefined();
     // Took part this autumn but not last summer.
     expect(
-      within(rowOf("Liu, Bob")).getByText("Mentorship 2026 Fall"),
+      within(rowOf("Chen, Alice")).getByText("Mentorship 2026 Fall"),
     ).toBeInTheDocument();
     expect(rowOf("Osei, Kwame")).toBeDefined();
-    // Role and onboarding come from the course rows: Dana holds both.
-    expect(within(rowOf("Wu, Dana")).getAllByText("done")).toHaveLength(2);
+    // Registered last summer, so not on last summer's list either.
+    expect(rowOf("Wu, Dana")).toBeUndefined();
+    // Training comes from the course rows.
+    expect(
+      within(rowOf("Osei, Kwame")).getByText("in_progress"),
+    ).toBeInTheDocument();
   });
 
   it("lets notes be written about someone who has not registered", () => {
@@ -988,5 +1012,31 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(
       await screen.findByRole("button", { name: "Wang, Cara" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("Meetings last round", () => {
+  const of = (participantId) =>
+    describeLastRound(
+      lastRoundOf(
+        INITIAL_PARTICIPANTS.find((p) => p.participantId === participantId),
+        INITIAL_PARTICIPANTS,
+        INITIAL_PAIRS,
+        INITIAL_ROUNDS,
+      ),
+    );
+
+  it("tells the ways a last round can have gone apart", () => {
+    expect(of("p-alice-7")).toBe("First time");
+    expect(of("p-bob-7")).toBe("Mentorship 2025 Summer · Not matched");
+    expect(of("p-fay-7")).toBe("Mentorship 2025 Summer · Withdrawn at 2/7");
+    // Gina stayed; her partner left, so her pair ended early.
+    expect(of("p-gina-7")).toBe("Mentorship 2025 Summer · Pair ended at 2/7");
+    expect(of("p-dana-7")).toBe("Mentorship 2025 Summer · 7/7");
+  });
+
+  it("looks only at earlier rounds, by date", () => {
+    // Last summer's own rows have nothing before them.
+    expect(of("p-cara-6")).toBe("First time");
   });
 });

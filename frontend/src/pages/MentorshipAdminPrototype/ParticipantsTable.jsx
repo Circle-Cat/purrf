@@ -4,6 +4,7 @@ import FlagBadges from "@/pages/MentorshipAdminPrototype/FlagBadges";
 import AccountStateChips from "@/pages/MentorshipAdminPrototype/AccountStateChips";
 import EmailDots from "@/pages/MentorshipAdminPrototype/EmailDots";
 import NotificationFilter from "@/pages/MentorshipAdminPrototype/NotificationFilter";
+import { describeLastRound } from "@/pages/MentorshipAdminPrototype/lastRound";
 import {
   EMAIL_STEPS,
   stepState,
@@ -49,29 +50,26 @@ const capacityOf = (person) =>
   person.role === "mentor" ? (person.maxPartners ?? 1) : 1;
 
 /**
- * How many meetings someone held *in the round they last took part in*.
+ * How many meetings someone held in the latest round they took part in
+ * before this one — or that they never took part, were not matched, or left.
  *
  * Shown only under the "Eligible for matching" filter: it is a signal for
  * choosing who goes into a run, and outside matching it answers nothing
- * anyone is asking.
- *
- * Four answers, and only one of them is the number zero. Rendering "never took
- * part" and "was not matched" as 0 would sort a brand-new participant to the
- * top of the chase list, which is exactly backwards.
+ * anyone is asking. Only the counts are numbers; "first time" and "not
+ * matched" are never shown as 0, which would sort a newcomer to the top of
+ * the chase list.
  */
-const LastRound = ({ value }) => {
-  if (value.kind === "first-time")
-    return <span className="text-slate-500">First time</span>;
-  if (value.kind === "unmatched")
-    return <span className="text-slate-500">Not matched</span>;
-  if (value.kind === "unknown")
-    return <span className="text-slate-400">Unknown</span>;
-  return (
-    <span>
-      {value.completed}/{value.required}
-    </span>
-  );
-};
+const LastRound = ({ value }) => (
+  <span
+    className={
+      value.kind === "first-time" || value.kind === "unmatched"
+        ? "text-slate-500"
+        : ""
+    }
+  >
+    {describeLastRound(value)}
+  </span>
+);
 
 const Mark = ({ on, label, onClick, disabled }) => (
   <button

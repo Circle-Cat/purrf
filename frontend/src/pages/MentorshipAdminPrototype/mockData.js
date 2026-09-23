@@ -117,10 +117,8 @@ export const INITIAL_ROUNDS = [
 /**
  * One row per person per round.
  *
- * `lastRound` carries the four-state value deliberately as an object rather
- * than a number, because "never took part", "was not matched", "matched and
- * held none" and "3 of 5" are four different answers and only one of them is
- * the number zero.
+ * "Meetings last round" is not stored on these rows: it is read from the
+ * person's latest earlier registration and that round's pairs.
  */
 export const INITIAL_PARTICIPANTS = [
   {
@@ -133,7 +131,6 @@ export const INITIAL_PARTICIPANTS = [
     identity: "external",
     approvalStatus: "signed_up",
     onboardingDone: true,
-    lastRound: { kind: "first-time" },
   },
   {
     participantId: "p-bob-7",
@@ -146,7 +143,6 @@ export const INITIAL_PARTICIPANTS = [
     approvalStatus: "matched",
     maxPartners: 3,
     onboardingDone: true,
-    lastRound: { kind: "count", completed: 5, required: 5 },
   },
   {
     participantId: "p-cara-7",
@@ -158,7 +154,6 @@ export const INITIAL_PARTICIPANTS = [
     identity: "external",
     approvalStatus: "matched",
     onboardingDone: true,
-    lastRound: { kind: "count", completed: 0, required: 5 },
   },
   {
     participantId: "p-dana-7",
@@ -170,7 +165,6 @@ export const INITIAL_PARTICIPANTS = [
     identity: "internal",
     approvalStatus: "signed_up",
     onboardingDone: true,
-    lastRound: { kind: "unmatched" },
   },
   {
     participantId: "p-ivy-7",
@@ -182,7 +176,6 @@ export const INITIAL_PARTICIPANTS = [
     identity: "external",
     approvalStatus: "signed_up",
     onboardingDone: false,
-    lastRound: { kind: "first-time" },
   },
   {
     participantId: "p-erin-7",
@@ -194,7 +187,6 @@ export const INITIAL_PARTICIPANTS = [
     identity: "external",
     approvalStatus: "matched",
     onboardingDone: true,
-    lastRound: { kind: "first-time" },
   },
   {
     participantId: "p-fay-7",
@@ -207,7 +199,6 @@ export const INITIAL_PARTICIPANTS = [
     approvalStatus: "matched",
     maxPartners: 2,
     onboardingDone: true,
-    lastRound: { kind: "count", completed: 4, required: 5 },
   },
   {
     participantId: "p-gina-7",
@@ -219,7 +210,6 @@ export const INITIAL_PARTICIPANTS = [
     identity: "external",
     approvalStatus: "withdrawn",
     onboardingDone: true,
-    lastRound: { kind: "count", completed: 5, required: 5 },
   },
   // Registered and onboarded, but blocked: never offered to matching.
   {
@@ -232,7 +222,6 @@ export const INITIAL_PARTICIPANTS = [
     identity: "external",
     approvalStatus: "signed_up",
     onboardingDone: true,
-    lastRound: { kind: "first-time" },
   },
   // Cara's history row, so the participant detail page has more than one round.
   {
@@ -245,7 +234,56 @@ export const INITIAL_PARTICIPANTS = [
     identity: "external",
     approvalStatus: "matched",
     onboardingDone: true,
-    lastRound: { kind: "first-time" },
+  },
+  // Last summer, so this round's "Meetings last round" has something to read:
+  // Dana mentored Cara to the end, Bob was not matched, Fay withdrew part
+  // way, and Gina's pair ended with her.
+  {
+    participantId: "p-dana-6",
+    userId: 3104,
+    roundId: 6,
+    name: "Wu, Dana",
+    email: "dana@circlecat.org",
+    role: "mentor",
+    identity: "internal",
+    approvalStatus: "matched",
+    maxPartners: 1,
+    onboardingDone: true,
+  },
+  {
+    participantId: "p-bob-6",
+    userId: 3102,
+    roundId: 6,
+    name: "Liu, Bob",
+    email: "bob@circlecat.org",
+    role: "mentor",
+    identity: "internal",
+    approvalStatus: "un_matched",
+    maxPartners: 2,
+    onboardingDone: true,
+  },
+  {
+    participantId: "p-fay-6",
+    userId: 3106,
+    roundId: 6,
+    name: "Guo, Fay",
+    email: "fay@circlecat.org",
+    role: "mentor",
+    identity: "internal",
+    approvalStatus: "withdrawn",
+    maxPartners: 1,
+    onboardingDone: true,
+  },
+  {
+    participantId: "p-gina-6",
+    userId: 3107,
+    roundId: 6,
+    name: "Shen, Gina",
+    email: "gina@example.com",
+    role: "mentee",
+    identity: "external",
+    approvalStatus: "matched",
+    onboardingDone: true,
   },
   // Took part last summer and has not signed up for this round.
   {
@@ -259,7 +297,6 @@ export const INITIAL_PARTICIPANTS = [
     approvalStatus: "un_matched",
     maxPartners: 1,
     onboardingDone: true,
-    lastRound: { kind: "first-time" },
   },
 ];
 
@@ -563,6 +600,18 @@ export const INITIAL_PAIRS = [
     status: "active",
     firstContactConfirmedAt: "2025-05-15",
     completed: 7,
+    required: 7,
+  },
+  {
+    pairId: 491,
+    roundId: 6,
+    mentorId: 3106,
+    menteeId: 3107,
+    mentorName: "Guo, Fay",
+    menteeName: "Shen, Gina",
+    status: "inactive",
+    firstContactConfirmedAt: "2025-05-16",
+    completed: 2,
     required: 7,
   },
 ];

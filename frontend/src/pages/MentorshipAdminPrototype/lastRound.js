@@ -1,0 +1,67 @@
+/**
+ * How a person's latest earlier round went, for "Meetings last round".
+ *
+ * "Earlier" is by the rounds' end dates, not their ids — ids do not run in
+ * time order. The answer is one of:
+ *
+ *   first-time  — no registration in any earlier round
+ *   unmatched   — registered, never paired
+ *   withdrawn   — they left part way; each pair's count where they stopped
+ *   played      — each pair's count; a pair that ended early is flagged,
+ *                 which is how a partner leaving shows up on this side
+ *
+ * A mentor who carried two mentees has two counts. They are kept apart:
+ * meetings are counted per pair, and adding them would invent a number.
+ *
+ * @returns {object}
+ */
+export const lastRoundOf = (person, participants, pairs, rounds) => {
+  const endOf = (roundId) =>
+    rounds.find((r) => r.id === roundId)?.timeline
+      .meetingsCompletionDeadlineAt ?? "";
+  const now = endOf(person.roundId);
+  const earlier = participants
+    .filter(
+      (p) =>
+        p.userId === person.userId &&
+        endOf(p.roundId) &&
+        endOf(p.roundId) < now,
+    )
+    .sort((a, b) => endOf(b.roundId).localeCompare(endOf(a.roundId)));
+  const last = earlier[0];
+  if (!last) return { kind: "first-time" };
+
+  const roundName = rounds.find((r) => r.id === last.roundId)?.name ?? "";
+  const theirs = pairs.filter(
+    (p) =>
+      p.roundId === last.roundId &&
+      (p.mentorId === person.userId || p.menteeId === person.userId),
+  );
+  if (theirs.length === 0) return { kind: "unmatched", roundName };
+
+  return {
+    kind: last.approvalStatus === "withdrawn" ? "withdrawn" : "played",
+    roundName,
+    pairs: theirs.map((p) => ({
+      completed: p.completed,
+      required: p.required,
+      unknown: p.completed == null,
+      ended: p.status === "inactive" && p.completed < p.required,
+    })),
+  };
+};
+
+/** The cell's text for one of the answers above. */
+export const describeLastRound = (value) => {
+  if (value.kind === "first-time") return "First time";
+  if (value.kind === "unmatched") return `${value.roundName} · Not matched`;
+  const counts = value.pairs
+    .map((p) => {
+      if (p.unknown) return "Unknown";
+      const n = `${p.completed}/${p.required}`;
+      if (value.kind === "withdrawn") return `Withdrawn at ${n}`;
+      return p.ended ? `Pair ended at ${n}` : n;
+    })
+    .join(" · ");
+  return `${value.roundName} · ${counts}`;
+};
