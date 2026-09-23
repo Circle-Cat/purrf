@@ -11,7 +11,7 @@ const LOOK = {
 };
 
 /** Every dot sits in a slot this wide, so the header's labels line up. */
-const SLOT = "w-8 shrink-0 text-center";
+const SLOT = "w-16 shrink-0 text-center";
 
 const how = (s) =>
   s.channel === "teams"
@@ -28,7 +28,37 @@ const describe = (step, s) => {
 };
 
 /**
- * The column header: one short label above each dot, in the same slots.
+ * What the colours mean, drawn with the very dots the table uses.
+ *
+ * @returns {JSX.Element}
+ */
+export const EmailLegend = () => (
+  <p className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
+    <span className="font-medium">Emails:</span>
+    {[
+      { look: LOOK.sent, mark: "", text: "Sent" },
+      { look: LOOK.replied, mark: "", text: "Sent and replied" },
+      { look: LOOK.sent, mark: "T", text: "Sent on Teams" },
+      { look: LOOK.failed, mark: "!", text: "Failed to send" },
+      { look: LOOK.not_sent, mark: "", text: "Not sent" },
+    ].map((item) => (
+      <span key={item.text} className="inline-flex items-center gap-1">
+        <span
+          className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] leading-none ${item.look}`}
+        >
+          {item.mark}
+        </span>
+        {item.text}
+      </span>
+    ))}
+    <span className="text-slate-400">
+      Hover a dot for the date; press it to open the emails.
+    </span>
+  </p>
+);
+
+/**
+ * The column header: the name of each email above its dot, in the same slots.
  *
  * @param {{registered: boolean}} props
  * @returns {JSX.Element}
@@ -36,7 +66,7 @@ const describe = (step, s) => {
 export const EmailDotsHeader = ({ registered }) => (
   <span className="block">
     <span className="block">Emails</span>
-    <span className="flex text-[10px] font-normal text-slate-500">
+    <span className="mt-1 flex items-end text-[10px] font-normal leading-tight text-slate-500">
       {stepsFor(registered).map((step) => (
         <span key={step.key} className={SLOT} title={step.label}>
           {step.short}

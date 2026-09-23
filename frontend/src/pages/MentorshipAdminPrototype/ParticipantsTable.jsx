@@ -4,6 +4,7 @@ import FlagBadges from "@/pages/MentorshipAdminPrototype/FlagBadges";
 import AccountStateChips from "@/pages/MentorshipAdminPrototype/AccountStateChips";
 import EmailDots, {
   EmailDotsHeader,
+  EmailLegend,
 } from "@/pages/MentorshipAdminPrototype/EmailDots";
 import {
   EMAIL_STATES,
@@ -468,6 +469,8 @@ const ParticipantsTable = ({
           </button>
         </p>
       ) : null}
+
+      {tab === "participants" ? <EmailLegend /> : null}
 
       {tab === "participants" && unregisteredOnly ? (
         <>
