@@ -1228,9 +1228,11 @@ const MentorshipAdminPrototype = () => {
               roundId: person.roundId,
               participantId: person.participantId,
               targetLabel: person.name,
-              actions: ["withdraw", "mark_no_show", "mark_red_flag"]
-                .concat(personPairs.length ? ["change_partner"] : [])
-                .concat(issuesOf(person).length ? ["exempt_matching"] : []),
+              // A partner change is about one pair, so it is raised from that
+              // pair's section rather than here.
+              actions: ["withdraw", "mark_no_show", "mark_red_flag"].concat(
+                issuesOf(person).length ? ["exempt_matching"] : [],
+              ),
               pairChoices: personPairs.map((p) => ({
                 pairId: p.pairId,
                 label: pairLabel(p),
