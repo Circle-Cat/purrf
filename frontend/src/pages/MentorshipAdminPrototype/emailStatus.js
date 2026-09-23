@@ -98,11 +98,12 @@ export const stepsFor = (registered) =>
     (s) => s.registered === null || s.registered === registered,
   );
 
+/** In the order a notification moves through them. */
 export const EMAIL_STATES = [
-  { key: "replied", label: "Replied" },
+  { key: "not_sent", label: "Not notified" },
   { key: "sent", label: "Notified" },
   { key: "failed", label: "Failed" },
-  { key: "not_sent", label: "Not notified" },
+  { key: "replied", label: "Replied" },
 ];
 
 /**
