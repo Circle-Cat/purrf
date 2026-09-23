@@ -110,9 +110,10 @@ status history stay on the pair's section, and the mentee is eligible again.
 mentors and mentees and press _Run matching_. While it runs no other run can
 start in the round. The review puts both people's résumés and applications
 side by side with the reason; move a mentee or rewrite the reason, then _Save
-draft_. A round's first publish is an approval; a later, supplemental run
-publishes from its page. Either way the people in it are re-checked against
-today — someone who withdrew or was blocked in the meantime stops it — and
+draft_. Every publish is an approval, a supplemental run's too. A latecomer
+who joins after the round's matching is placed the same way: pick them and
+the mentors who offered, run, set the mentor who was agreed, and ask. The
+people in it are re-checked against today — someone who withdrew or was blocked in the meantime stops it — and
 whoever went in and still has no pair this round becomes unmatched; someone
 already in a pair keeps their status. There is no matcher here: _Simulate the
 run finishing_ stands in.

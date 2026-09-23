@@ -1122,7 +1122,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(pairLines("Liu, Bob", "Chen, Alice")).toHaveLength(0);
   });
 
-  it("publishes a supplemental run without an approval", () => {
+  it("puts a latecomer through a supplemental run, approved like the first", () => {
     render(<MentorshipAdminPrototype />);
     fireEvent.click(
       screen.getByRole("button", { name: "Eligible for matching" }),
@@ -1146,7 +1146,8 @@ describe("MentorshipAdminPrototype smoke", () => {
       within(pendingItem("Main run.")).getByRole("button", { name: "Approve" }),
     );
 
-    // A second run in the same round publishes from its own page.
+    // Dana joins late; Bob has agreed to take her. The same filter, a run
+    // with just them, the agreed reason, and an approval.
     const eligible = screen.getByRole("button", {
       name: "Eligible for matching",
     });
@@ -1160,14 +1161,35 @@ describe("MentorshipAdminPrototype smoke", () => {
     fireEvent.click(
       screen.getByRole("button", { name: /Simulate the run finishing/ }),
     );
+    fireEvent.click(screen.getByRole("button", { name: /^Wu, Dana/ }));
+    fireEvent.change(screen.getByLabelText("Reason for Wu, Dana"), {
+      target: { value: "Bob offered on Teams, 9/22." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+    fireEvent.click(screen.getByRole("button", { name: "Request publishing" }));
+    fireEvent.change(screen.getByPlaceholderText(/Five days past/), {
+      target: { value: "Late joiner; Bob agreed." },
+    });
+    chooseReviewer("2001");
+    fireEvent.click(screen.getByRole("button", { name: "Send for approval" }));
     expect(
-      screen.queryByRole("button", { name: "Request publishing" }),
-    ).toBeNull();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Publish supplemental matches" }),
-    );
-    expect(screen.getByText(/Published\./)).toBeInTheDocument();
+      screen.getByText(/Waiting for approval to publish/),
+    ).toBeInTheDocument();
     expect(screen.getByText("Earlier published runs")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
+    signInAs("2001");
+    fireEvent.click(
+      within(pendingItem("Late joiner; Bob agreed.")).getByRole("button", {
+        name: "Approve",
+      }),
+    );
+    expect(screen.queryByText(/^Not applied/)).toBeNull();
+    // Both are full now, so they have left the eligible list.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Eligible for matching" }),
+    );
+    expect(pairLine("Liu, Bob", "Wu, Dana")).toBeInTheDocument();
   });
 
   it("shows where each person's emails stand, one dot per email of the round", () => {

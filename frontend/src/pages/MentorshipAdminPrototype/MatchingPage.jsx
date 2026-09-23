@@ -84,13 +84,14 @@ const cell = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
  * colleague's saved draft; the matcher's own reason is kept beside the edit
  * so the difference can be handed back to the algorithm side.
  *
- * A round's first publish is an approval: asking locks the result so what is
- * approved is what gets published, and approving re-checks it before writing
- * the pairs, once. A supplemental run — any run after the round already has a
- * published one — publishes from here without one. Either way the people in
- * it are re-checked against today (withdrawn, blocked, slots filled since),
- * and everyone who went in and still has no pair this round is marked
- * unmatched; someone already in a pair keeps their status.
+ * Every publish is an approval, the first of a round and any later one alike:
+ * a latecomer placed by hand with a mentor who agreed still has that choice
+ * approved, since more than one mentor may have offered. Asking locks the
+ * result so what is approved is what gets published, and approving re-checks
+ * the people in it against today (withdrawn, blocked, slots filled since)
+ * before writing the pairs, once. Everyone who went in and still has no pair
+ * this round is marked unmatched; someone already in a pair keeps their
+ * status.
  *
  * Runs that were published stay listed after a newer run replaces them.
  *
@@ -102,13 +103,11 @@ const MatchingPage = ({
   nameOf,
   checkPeople = () => [],
   earlierRuns = [],
-  supplemental = false,
   can,
   onBack,
   onFinish,
   onSaveDraft,
   onRequestPublish,
-  onPublish,
   publishRequest,
   viewerId,
   onCancelRequest,
@@ -467,27 +466,16 @@ const MatchingPage = ({
                   >
                     Discard changes
                   </Button>
-                  {supplemental ? (
-                    <Button
-                      size="sm"
-                      disabled={!editable || hasUnsaved || problems.length > 0}
-                      title="A supplemental run: the round already has a published result, so this needs no approval"
-                      onClick={onPublish}
-                    >
-                      Publish supplemental matches
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      disabled={!editable || hasUnsaved || problems.length > 0}
-                      title={
-                        hasUnsaved ? "Save the draft before asking" : undefined
-                      }
-                      onClick={onRequestPublish}
-                    >
-                      Request publishing
-                    </Button>
-                  )}
+                  <Button
+                    size="sm"
+                    disabled={!editable || hasUnsaved || problems.length > 0}
+                    title={
+                      hasUnsaved ? "Save the draft before asking" : undefined
+                    }
+                    onClick={onRequestPublish}
+                  >
+                    Request publishing
+                  </Button>
                   {hasUnsaved ? (
                     <span className="text-xs text-amber-800">
                       Unsaved changes — save the draft before asking to publish.

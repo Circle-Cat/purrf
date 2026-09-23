@@ -974,10 +974,10 @@ const MentorshipAdminPrototype = () => {
     updateRun(forRound, (run) => ({ ...run, draft }));
 
   /**
-   * A round's first publish is an approval like any other decision with
-   * consequences. The request names the run, so approving an older run after
-   * a new one has replaced it invalidates rather than publishes. A later,
-   * supplemental run publishes straight from its page.
+   * Every publish is an approval like any other decision with consequences,
+   * supplemental runs included. The request names the run, so approving an
+   * older run after a new one has replaced it invalidates rather than
+   * publishes.
    */
   const requestPublish = (forRound) => {
     const run = matchRuns[forRound];
@@ -1282,16 +1282,11 @@ const MentorshipAdminPrototype = () => {
             (r) =>
               r.roundId === forRound && r.runId !== matchRuns[forRound]?.runId,
           )}
-          supplemental={publishedRuns.some(
-            (r) =>
-              r.roundId === forRound && r.runId !== matchRuns[forRound]?.runId,
-          )}
           can={can}
           onBack={backToList}
           onFinish={() => finishRun(forRound)}
           onSaveDraft={(draft) => saveDraft(forRound, draft)}
           onRequestPublish={() => requestPublish(forRound)}
-          onPublish={() => publishRun(forRound)}
           publishRequest={
             requests.find(
               (r) =>
