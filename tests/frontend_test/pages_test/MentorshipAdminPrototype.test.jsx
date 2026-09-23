@@ -238,7 +238,9 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(screen.getAllByText("signed_up")).toHaveLength(1);
 
     // Confirmed as unmatched this time; still eligible for the next run.
-    fireEvent.click(screen.getByRole("button", { name: "Matching pool" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Eligible for matching" }),
+    );
     expect(screen.getAllByText("un_matched")).toHaveLength(2);
   });
 
@@ -284,11 +286,14 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(screen.getByText("Mid-term reminder")).toBeInTheDocument();
   });
 
-  it("pools only people with a free slot, and exports mentors with what they have left", () => {
+  it("filters the person axis to who can be matched, and exports mentors with what they have left", () => {
     render(<MentorshipAdminPrototype />);
-    fireEvent.click(screen.getByRole("button", { name: "Matching pool" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Eligible for matching" }),
+    );
 
     expect(screen.getByText("Meetings last round")).toBeInTheDocument();
+    expect(window.location.hash).toContain("eligible=1");
     const poolRow = (name) =>
       screen
         .getAllByRole("row")
@@ -429,5 +434,23 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(
       screen.queryByRole("button", { name: "Revoke" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("keeps the matching columns off the table outside the filter", () => {
+    render(<MentorshipAdminPrototype />);
+    const filter = screen.getByRole("button", {
+      name: "Eligible for matching",
+    });
+
+    fireEvent.click(filter);
+    expect(screen.getByText("Free slots")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Wang, Cara" })).toBeNull();
+
+    fireEvent.click(filter);
+    expect(screen.queryByText("Free slots")).not.toBeInTheDocument();
+    expect(screen.queryByText("Meetings last round")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Wang, Cara" }),
+    ).toBeInTheDocument();
   });
 });

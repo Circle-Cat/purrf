@@ -28,7 +28,6 @@ const TABS = [
   { key: "participants", label: "Participants" },
   { key: "non-participants", label: "Non-participants" },
   { key: "pairs", label: "Pairs" },
-  { key: "matching", label: "Matching pool" },
 ];
 
 /**
@@ -44,8 +43,9 @@ const capacityOf = (person) =>
 /**
  * How many meetings someone held *in the round they last took part in*.
  *
- * Only the matching pool shows it: it is a signal for choosing who goes into
- * a run, and outside matching it answers nothing anyone is asking.
+ * Shown only under the "Eligible for matching" filter: it is a signal for
+ * choosing who goes into a run, and outside matching it answers nothing
+ * anyone is asking.
  *
  * Four answers, and only one of them is the number zero. Rendering "never took
  * part" and "was not matched" as 0 would sort a brand-new participant to the
@@ -121,6 +121,7 @@ const ParticipantsTable = ({
   const identity = query.identity ?? "all";
   const onboarding = query.onboarding ?? "all";
   const pairStatus = query.pairStatus ?? "all";
+  const eligibleOnly = query.eligible === "1";
   const [selected, setSelected] = useState([]);
   const [bulkTag, setBulkTag] = useState(RECORDED_TAGS[3]);
 
@@ -128,19 +129,53 @@ const ParticipantsTable = ({
 
   const needle = term.trim().toLowerCase();
 
-  const rows = useMemo(
-    () =>
-      participants.filter(
-        (p) =>
-          (role === "all" || p.role === role) &&
-          (identity === "all" || p.identity === identity) &&
-          (onboarding === "all" ||
-            (onboarding === "done") === p.onboardingDone) &&
-          (!needle ||
-            p.name.toLowerCase().includes(needle) ||
-            p.email.toLowerCase().includes(needle)),
-      ),
-    [participants, role, identity, onboarding, needle],
+  /**
+   * Who can go into a matching run right now.
+   *
+   * Registered this round, onboarding done, not withdrawn, and a free slot.
+   * Unmatched people are in. A matched person is in only while they have a
+   * free slot — a mentor with three places and two mentees, or anyone whose
+   * pair has ended. A matched mentee with an active pair, or a mentor at
+   * their cap, is out: sending them would offer places that do not exist.
+   *
+   * This is a filter on the person axis rather than a table of its own: the
+   * people are the same people, and the rule has to be enforced where the
+   * list is assembled anyway.
+   */
+  const activePairsOf = (userId) =>
+    pairs.filter(
+      (p) =>
+        p.status === "active" &&
+        (p.mentorId === userId || p.menteeId === userId),
+    ).length;
+  const withSlots = participants.map((p) => ({
+    ...p,
+    freeSlots: capacityOf(p) - activePairsOf(p.userId),
+  }));
+  const inPool = (p) =>
+    p.onboardingDone &&
+    POOL_STATUSES.includes(p.approvalStatus) &&
+    p.freeSlots > 0;
+  const leftOut = {
+    full: withSlots.filter(
+      (p) => p.approvalStatus === "matched" && p.freeSlots <= 0,
+    ).length,
+    onboarding: withSlots.filter(
+      (p) => !p.onboardingDone && POOL_STATUSES.includes(p.approvalStatus),
+    ).length,
+    other: withSlots.filter((p) => !POOL_STATUSES.includes(p.approvalStatus))
+      .length,
+  };
+
+  const rows = withSlots.filter(
+    (p) =>
+      (!eligibleOnly || inPool(p)) &&
+      (role === "all" || p.role === role) &&
+      (identity === "all" || p.identity === identity) &&
+      (onboarding === "all" || (onboarding === "done") === p.onboardingDone) &&
+      (!needle ||
+        p.name.toLowerCase().includes(needle) ||
+        p.email.toLowerCase().includes(needle)),
   );
 
   /** Searching on this tab finds a pair by either side — "who is Bob paired with". */
@@ -156,44 +191,31 @@ const ParticipantsTable = ({
     [pairs, pairStatus, needle],
   );
 
-  /**
-   * Who can go into a matching run right now.
-   *
-   * Unmatched people are in. A matched person is in only while they have a free slot — a mentor with
-   * three places and two mentees, or anyone whose pair has ended. A matched
-   * mentee with an active pair, or a mentor at their cap, is out: sending
-   * them would offer places that do not exist.
-   */
-  const activePairsOf = (userId) =>
-    pairs.filter(
-      (p) =>
-        p.status === "active" &&
-        (p.mentorId === userId || p.menteeId === userId),
-    ).length;
-  const pool = participants
-    .filter((p) => role === "all" || p.role === role)
-    .filter((p) => identity === "all" || p.identity === identity)
-    .map((p) => ({ ...p, freeSlots: capacityOf(p) - activePairsOf(p.userId) }));
-  const inPool = (p) =>
-    p.onboardingDone &&
-    POOL_STATUSES.includes(p.approvalStatus) &&
-    p.freeSlots > 0;
-  const poolRows = pool.filter(
-    (p) =>
-      inPool(p) &&
-      (!needle ||
-        p.name.toLowerCase().includes(needle) ||
-        p.email.toLowerCase().includes(needle)),
-  );
-  const leftOut = {
-    full: pool.filter((p) => p.approvalStatus === "matched" && p.freeSlots <= 0)
-      .length,
-    onboarding: pool.filter(
-      (p) => !p.onboardingDone && POOL_STATUSES.includes(p.approvalStatus),
-    ).length,
-    other: pool.filter((p) => !POOL_STATUSES.includes(p.approvalStatus)).length,
-  };
   const [exported, setExported] = useState(null);
+
+  const exportChosen = rows.filter(
+    (p) => selected.includes(p.participantId) && inPool(p),
+  );
+  const exportMentors = exportChosen.filter((p) => p.role === "mentor");
+  const exportReady =
+    exportMentors.length > 0 && exportChosen.some((p) => p.role === "mentee");
+  const exportForMatching = () => {
+    const partial = exportMentors.filter((m) => m.freeSlots < capacityOf(m));
+    setExported(
+      `Exported ${exportChosen.length} people for matching.` +
+        (partial.length
+          ? ` ${partial
+              .map(
+                (m) =>
+                  `${m.name} goes in with ${m.freeSlots} slot${
+                    m.freeSlots === 1 ? "" : "s"
+                  }, not ${capacityOf(m)}`,
+              )
+              .join("; ")} — the places already taken stay taken.`
+          : ""),
+    );
+    setSelected([]);
+  };
 
   const nonParticipantRows = nonParticipants.filter(
     (p) =>
@@ -270,7 +292,7 @@ const ParticipantsTable = ({
             </SelectContent>
           </Select>
         ) : null}
-        {tab === "participants" || tab === "matching" ? (
+        {tab === "participants" ? (
           <>
             <Select
               value={role}
@@ -315,9 +337,33 @@ const ParticipantsTable = ({
                 <SelectItem value="not_done">Onboarding not done</SelectItem>
               </SelectContent>
             </Select>
+            <button
+              type="button"
+              aria-pressed={eligibleOnly}
+              onClick={() => {
+                setExported(null);
+                onQueryChange({ eligible: eligibleOnly ? "" : "1" });
+              }}
+              className={`h-8 rounded-md border px-3 text-xs transition-colors ${
+                eligibleOnly
+                  ? "border-slate-900 bg-slate-900 text-white"
+                  : "border-slate-300 text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              Eligible for matching
+            </button>
           </>
         ) : null}
       </div>
+
+      {tab === "participants" && eligibleOnly ? (
+        <p className="mb-2 text-xs text-slate-500">
+          Registered this round, onboarding done, not withdrawn, and at least
+          one free slot. Not listed: {leftOut.full} matched with no free slot ·{" "}
+          {leftOut.onboarding} onboarding not done · {leftOut.other} withdrawn
+          or closed out.
+        </p>
+      ) : null}
 
       {tab === "participants" ? (
         <Table>
@@ -329,6 +375,12 @@ const ParticipantsTable = ({
               <TableHead>Int / ext</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Onboarding</TableHead>
+              {eligibleOnly ? (
+                <>
+                  <TableHead>Free slots</TableHead>
+                  <TableHead>Meetings last round</TableHead>
+                </>
+              ) : null}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -359,72 +411,20 @@ const ParticipantsTable = ({
                 <TableCell className="text-sm">
                   {p.onboardingDone ? "Done" : "Not done"}
                 </TableCell>
+                {eligibleOnly ? (
+                  <>
+                    <TableCell className="text-sm">
+                      {p.freeSlots} of {capacityOf(p)}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      <LastRound value={p.lastRound} />
+                    </TableCell>
+                  </>
+                ) : null}
               </TableRow>
             ))}
           </TableBody>
         </Table>
-      ) : null}
-
-      {tab === "matching" ? (
-        <>
-          <p className="mb-2 text-xs text-slate-500">
-            Everyone who can go into a matching run now: onboarding done, not
-            withdrawn, and at least one free slot. Not listed: {leftOut.full}{" "}
-            matched with no free slot · {leftOut.onboarding} onboarding not done
-            · {leftOut.other} withdrawn or closed out.
-          </p>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-8" />
-                <TableHead>Name</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Int / ext</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Free slots</TableHead>
-                <TableHead>Meetings last round</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {poolRows.map((p) => (
-                <TableRow key={p.participantId}>
-                  <TableCell>
-                    <Checkbox
-                      checked={selected.includes(p.participantId)}
-                      onCheckedChange={() => toggle(p.participantId)}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <button
-                      type="button"
-                      className="text-left font-medium underline-offset-2 hover:underline"
-                      onClick={() => onOpenParticipant(p.participantId)}
-                    >
-                      {p.name}
-                    </button>
-                  </TableCell>
-                  <TableCell className="text-sm">{p.role}</TableCell>
-                  <TableCell className="text-sm">{p.identity}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{p.approvalStatus}</Badge>
-                    <FlagBadges flags={flagsByParticipant[p.participantId]} />
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {p.freeSlots} of {capacityOf(p)}
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    <LastRound value={p.lastRound} />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          {exported ? (
-            <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-              {exported}
-            </p>
-          ) : null}
-        </>
       ) : null}
 
       {tab === "non-participants" ? (
@@ -527,58 +527,13 @@ const ParticipantsTable = ({
         </Table>
       ) : null}
 
-      {tab === "matching" && selected.length > 0 && writable
-        ? (() => {
-            const chosen = poolRows.filter((p) =>
-              selected.includes(p.participantId),
-            );
-            const mentors = chosen.filter((p) => p.role === "mentor");
-            const mentees = chosen.filter((p) => p.role === "mentee");
-            const ready = mentors.length > 0 && mentees.length > 0;
-            return (
-              <div className="mt-4 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
-                <span className="text-sm">
-                  <strong>{mentors.length} mentors</strong>,{" "}
-                  <strong>{mentees.length} mentees</strong> selected
-                </span>
-                <Button
-                  size="sm"
-                  disabled={!ready}
-                  onClick={() => {
-                    const partial = mentors.filter(
-                      (m) => m.freeSlots < capacityOf(m),
-                    );
-                    setExported(
-                      `Exported ${chosen.length} people for matching.` +
-                        (partial.length
-                          ? ` ${partial
-                              .map(
-                                (m) =>
-                                  `${m.name} goes in with ${m.freeSlots} slot${
-                                    m.freeSlots === 1 ? "" : "s"
-                                  }, not ${capacityOf(m)}`,
-                              )
-                              .join(
-                                "; ",
-                              )} — the places already taken stay taken.`
-                          : ""),
-                    );
-                    setSelected([]);
-                  }}
-                >
-                  Export for matching · {chosen.length}
-                </Button>
-                <span className="text-xs text-slate-500">
-                  {ready
-                    ? "Each mentor goes in with the slots they have left, not their cap."
-                    : "A run needs at least one mentor and one mentee."}
-                </span>
-              </div>
-            );
-          })()
-        : null}
+      {exported ? (
+        <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+          {exported}
+        </p>
+      ) : null}
 
-      {tab !== "matching" && selected.length > 0 && writable ? (
+      {selected.length > 0 && writable ? (
         <div className="mt-4 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
           <span className="text-sm">
             {tab === "pairs" ? (
@@ -646,6 +601,20 @@ const ParticipantsTable = ({
               Mark as sent
             </Button>
           </div>
+          {tab === "participants" && eligibleOnly ? (
+            <Button
+              size="sm"
+              disabled={!exportReady}
+              title={
+                exportReady
+                  ? "Each mentor goes in with the slots they have left, not their cap"
+                  : "A run needs at least one mentor and one mentee"
+              }
+              onClick={exportForMatching}
+            >
+              Export for matching · {exportChosen.length}
+            </Button>
+          ) : null}
           {tab === "participants" ? (
             <Button
               size="sm"

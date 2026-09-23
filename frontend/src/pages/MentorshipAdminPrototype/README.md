@@ -58,12 +58,13 @@ attendance tags, batch Edit mode — moved out of its dialog, not redrawn.
 There is no "add a meeting": the console cannot create one today, and moving
 the log is not the place to start.
 
-**Matching has its own pool.** The *Matching pool* tab lists only people who
-can go into a run now: onboarding done, not withdrawn, and at least one free
-slot. A matched mentee with an active pair, or a mentor at their cap, is not
-there. A mentor with a place left is, and goes in with the slots left, not
-their cap. "Meetings last round" lives only on this tab — it is a signal for
-choosing who to match and means nothing the rest of the round.
+**Matching is a filter, not a table.** *Eligible for matching* on the
+Participants tab narrows it to who can go into a run now: onboarding done, not
+withdrawn, and at least one free slot. A matched mentee with an active pair, or
+a mentor at their cap, drops out; a mentor with a place left stays, and is
+exported with the slots left rather than the cap. Only under this filter do
+"Free slots" and "Meetings last round" appear — they are signals for choosing
+who to match and mean nothing the rest of the round.
 
 ## Try this
 
