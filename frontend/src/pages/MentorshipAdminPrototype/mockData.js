@@ -17,6 +17,17 @@
 /** The admin the prototype signs you in as. */
 export const CURRENT_USER = { userId: 2001, name: "Jiang, Goose" };
 
+/**
+ * Everyone holding `mentorship.approve`. A request names one of them so it is
+ * addressed to a person, but any of them may decide it — except whoever
+ * raised it.
+ */
+export const APPROVE_HOLDERS = [
+  { userId: 2001, name: "Jiang, Goose", email: "goose@circlecat.org" },
+  { userId: 2002, name: "Wang, Jasmine", email: "jasmine@circlecat.org" },
+  { userId: 2003, name: "Wang, Yanpei", email: "yanpei@circlecat.org" },
+];
+
 /** Rendered wherever an actor id has to become a name. */
 export const ACTOR_NAMES = {
   2001: "Jiang, Goose",
@@ -466,7 +477,8 @@ export const INITIAL_REQUESTS = [
     pairId: 502,
     reason:
       "Mentee asked to change partner: schedules no longer overlap after her team move.",
-    raisedBy: 2001,
+    raisedBy: 2002,
+    reviewerId: 2001,
     createdAt: "2026-09-22",
     status: "pending",
   },
@@ -479,7 +491,8 @@ export const INITIAL_REQUESTS = [
     pairId: null,
     reason:
       "Five days past the first-contact deadline. No reply on email or Teams.",
-    raisedBy: 2001,
+    raisedBy: 2003,
+    reviewerId: 2001,
     createdAt: "2026-09-21",
     status: "pending",
   },
@@ -564,6 +577,7 @@ export const APPROVAL_ACTIONS = [
     label: "Confirm as unmatched",
     target: "batch",
   },
+  { key: "revoke_flag", label: "Revoke a flag", target: "note" },
 ];
 
 export const ACTION_LABELS = Object.fromEntries(

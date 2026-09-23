@@ -18,11 +18,12 @@ import {
 import {
   ACTION_LABELS,
   APPROVAL_ACTIONS,
+  APPROVE_HOLDERS,
 } from "@/pages/MentorshipAdminPrototype/mockData";
 
 const NO_PAIR = "none";
 
-const RaiseRequestForm = ({ target, pending, onClose, onSave }) => {
+const RaiseRequestForm = ({ target, pending, viewerId, onClose, onSave }) => {
   const actions = APPROVAL_ACTIONS.filter((a) =>
     (target.actions ?? APPROVAL_ACTIONS.map((x) => x.key)).includes(a.key),
   );
@@ -32,18 +33,20 @@ const RaiseRequestForm = ({ target, pending, onClose, onSave }) => {
     pairChoices.length === 1 ? String(pairChoices[0].pairId) : NO_PAIR,
   );
   const [reason, setReason] = useState("");
+  const [reviewerId, setReviewerId] = useState("");
+  const reviewers = APPROVE_HOLDERS.filter((h) => h.userId !== viewerId);
 
   const isPairAction =
     APPROVAL_ACTIONS.find((a) => a.key === action)?.target === "pair";
   const chosenPair =
     target.pairId ?? (pairId === NO_PAIR ? null : Number(pairId));
-  const ready = reason.trim() && (!isPairAction || chosenPair);
+  const ready = reason.trim() && reviewerId && (!isPairAction || chosenPair);
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Raise a change — {target.targetLabel}</DialogTitle>
+          <DialogTitle>Change status / flag — {target.targetLabel}</DialogTitle>
         </DialogHeader>
 
         {pending.length > 0 ? (
@@ -101,6 +104,30 @@ const RaiseRequestForm = ({ target, pending, onClose, onSave }) => {
           </>
         ) : null}
 
+        <label
+          className="mt-2 text-xs text-slate-500"
+          htmlFor="approval-reviewer"
+        >
+          Reviewer
+        </label>
+        <select
+          id="approval-reviewer"
+          className="w-full rounded-md border border-slate-300 p-2 text-sm"
+          value={reviewerId}
+          onChange={(e) => setReviewerId(e.target.value)}
+        >
+          <option value="">Select a reviewer…</option>
+          {reviewers.map((h) => (
+            <option key={h.userId} value={h.userId}>
+              {h.name} ({h.email})
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-slate-500">
+          It is sent to this person, but anyone holding the approve permission
+          can decide it — except you.
+        </p>
+
         <label className="mt-2 text-xs text-slate-500">Why</label>
         <Textarea
           value={reason}
@@ -119,7 +146,14 @@ const RaiseRequestForm = ({ target, pending, onClose, onSave }) => {
           </Button>
           <Button
             disabled={!ready}
-            onClick={() => onSave({ action, reason, pairId: chosenPair })}
+            onClick={() =>
+              onSave({
+                action,
+                reason,
+                pairId: chosenPair,
+                reviewerId: Number(reviewerId),
+              })
+            }
           >
             Send for approval
           </Button>
@@ -145,11 +179,12 @@ const RaiseRequestForm = ({ target, pending, onClose, onSave }) => {
  *
  * @returns {JSX.Element|null}
  */
-const RaiseRequestDialog = ({ target, pending, onClose, onSave }) =>
+const RaiseRequestDialog = ({ target, pending, viewerId, onClose, onSave }) =>
   target ? (
     <RaiseRequestForm
       target={target}
       pending={pending}
+      viewerId={viewerId}
       onClose={onClose}
       onSave={onSave}
     />

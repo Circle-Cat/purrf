@@ -23,11 +23,24 @@ const pairRow = (mentor, mentee) =>
 const pendingItem = (text) =>
   screen.getAllByRole("listitem").find((li) => li.textContent.includes(text));
 
+const JASMINE = "2002";
+
+const chooseReviewer = (userId = JASMINE) =>
+  fireEvent.change(screen.getByLabelText("Reviewer"), {
+    target: { value: userId },
+  });
+
+const signInAs = (userId) =>
+  fireEvent.change(screen.getByLabelText("Signed in as"), {
+    target: { value: userId },
+  });
+
 const raise = (reason) => {
-  fireEvent.click(screen.getByRole("button", { name: "Raise a change" }));
+  fireEvent.click(screen.getByRole("button", { name: "Change status / flag" }));
   fireEvent.change(screen.getByPlaceholderText(/Five days past/), {
     target: { value: reason },
   });
+  chooseReviewer();
   fireEvent.click(screen.getByRole("button", { name: "Send for approval" }));
 };
 
@@ -78,11 +91,16 @@ describe("MentorshipAdminPrototype smoke", () => {
     render(<MentorshipAdminPrototype />);
 
     fireEvent.click(screen.getByRole("button", { name: "Wu, Dana" }));
-    fireEvent.click(screen.getByRole("button", { name: "Raise a change" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Change status / flag" }),
+    );
     fireEvent.change(screen.getByRole("textbox"), {
       target: { value: "No reply on either channel." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Send for approval" }));
+    const send = screen.getByRole("button", { name: "Send for approval" });
+    expect(send).toBeDisabled();
+    chooseReviewer();
+    fireEvent.click(send);
 
     // The status has not moved — only a pending request exists.
     expect(screen.getAllByText("signed_up").length).toBeGreaterThan(0);
@@ -120,6 +138,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     raise("Schedules stopped overlapping.");
 
     fireEvent.click(screen.getByRole("button", { name: "← Pairs" }));
+    signInAs(JASMINE);
     fireEvent.click(
       within(pendingItem("Liu, Bob ↔ Wang, Cara")).getByRole("button", {
         name: "Approve",
@@ -141,6 +160,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     fireEvent.click(screen.getByRole("button", { name: "Wang, Cara" }));
     raise("She has left the programme.");
     fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
+    signInAs(JASMINE);
     fireEvent.click(
       within(pendingItem("She has left the programme.")).getByRole("button", {
         name: "Approve",
@@ -203,10 +223,12 @@ describe("MentorshipAdminPrototype smoke", () => {
     fireEvent.change(screen.getByPlaceholderText(/Five days past/), {
       target: { value: "Checked with Jasmine." },
     });
+    chooseReviewer();
     fireEvent.click(screen.getByRole("button", { name: "Send for approval" }));
     // Alice and Dana, plus Ivy who was not selected.
     expect(screen.getAllByText("signed_up")).toHaveLength(3);
 
+    signInAs(JASMINE);
     fireEvent.click(
       within(pendingItem("Checked with Jasmine.")).getByRole("button", {
         name: "Approve",
@@ -331,6 +353,81 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(screen.getByText("Meeting log")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("sends a request to a named reviewer, and never lets the raiser decide it", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(screen.getByRole("button", { name: "Wu, Dana" }));
+    raise("Still no reply.");
+    fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
+
+    const mine = pendingItem("Still no reply.");
+    expect(within(mine).getByText(/You raised this/)).toBeInTheDocument();
+    expect(within(mine).queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(
+      within(mine).getByText(/Sent\s+to\s+Wang, Jasmine/),
+    ).toBeInTheDocument();
+
+    // Sent to Jasmine, but any approver may decide — Yanpei here.
+    signInAs("2003");
+    expect(
+      within(pendingItem("Still no reply.")).getByRole("button", {
+        name: "Approve",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("lets the raiser withdraw a request while it waits", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(screen.getByRole("button", { name: "Wu, Dana" }));
+    raise("Raised by mistake.");
+
+    expect(screen.getByText("Waiting on a decision")).toBeInTheDocument();
+    const before = screen.getAllByRole("button", { name: "Withdraw" }).length;
+    fireEvent.click(screen.getAllByRole("button", { name: "Withdraw" })[0]);
+    expect(screen.queryAllByRole("button", { name: "Withdraw" })).toHaveLength(
+      before - 1,
+    );
+  });
+
+  it("shows standing flags beside the status, and revokes one through an approval", () => {
+    render(<MentorshipAdminPrototype />);
+    const caraRow = () =>
+      screen
+        .getAllByRole("row")
+        .find((row) =>
+          within(row).queryByRole("button", { name: "Wang, Cara" }),
+        );
+    expect(within(caraRow()).getByText("No show")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Wang, Cara" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+    expect(screen.getByText(/Revoke a flag/)).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText(/Five days past/), {
+      target: { value: "She had emailed; it went to spam." },
+    });
+    chooseReviewer();
+    fireEvent.click(screen.getByRole("button", { name: "Send for approval" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
+    // Nothing changes until someone else decides.
+    expect(within(caraRow()).getByText("No show")).toBeInTheDocument();
+    signInAs(JASMINE);
+    fireEvent.click(
+      within(pendingItem("went to spam")).getByRole("button", {
+        name: "Approve",
+      }),
+    );
+    expect(within(caraRow()).queryByText("No show")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Wang, Cara" }));
+    expect(screen.getByText("(revoked)")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Revoked the No show of 2026-09-20/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Revoke" }),
     ).not.toBeInTheDocument();
   });
 });

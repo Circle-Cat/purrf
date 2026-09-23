@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import FlagBadges from "@/pages/MentorshipAdminPrototype/FlagBadges";
 import {
+  ACTION_LABELS,
   ACTOR_NAMES,
   NOTE_KIND,
   NOTE_LABELS,
@@ -31,8 +33,12 @@ const Block = ({ title, right, children }) => (
  * something anyone typed into this page — it exists because a request was
  * approved, and saying so stops the next reader assuming the admin could have
  * written it directly.
+ *
+ * A decided flag can be revoked, which is itself a judgement and so goes for
+ * approval too. A revoked flag stays, struck through: what was once decided
+ * about someone is part of their record even after it is taken back.
  */
-const NoteRow = ({ note }) => {
+const NoteRow = ({ note, revoked, onRevoke }) => {
   const kind = note.tag ? NOTE_KIND[note.tag] : "written";
   return (
     <li className="flex gap-3 py-2">
@@ -49,11 +55,20 @@ const NoteRow = ({ note }) => {
         {ACTOR_NAMES[note.authorId]} · {note.createdAt}
       </span>
       <span className="flex-1 text-sm text-slate-700">
-        {note.body || <em className="text-slate-400">No comment</em>}
+        <span className={revoked ? "line-through" : ""}>
+          {note.body || <em className="text-slate-400">No comment</em>}
+        </span>
         {kind === "decided" ? (
-          <em className="ml-2 text-xs text-slate-500">(via approval)</em>
+          <em className="ml-2 text-xs text-slate-500">
+            {revoked ? "(revoked)" : "(via approval)"}
+          </em>
         ) : null}
       </span>
+      {kind === "decided" && !revoked && onRevoke ? (
+        <Button size="sm" variant="ghost" onClick={() => onRevoke(note)}>
+          Revoke
+        </Button>
+      ) : null}
     </li>
   );
 };
@@ -120,6 +135,12 @@ const ParticipantDetailPage = ({
   onAddNote,
   onRaise,
   onCompose,
+  flags,
+  revokedNoteIds,
+  requests,
+  viewerId,
+  onCancelRequest,
+  onRevoke,
 }) => {
   const [filter, setFilter] = useState("all");
   const [syncMessage, setSyncMessage] = useState(null);
@@ -190,14 +211,17 @@ const ParticipantDetailPage = ({
                 Send email
               </Button>
               <Button size="sm" onClick={onRaise}>
-                Raise a change
+                Change status / flag
               </Button>
             </div>
           ) : null
         }
       >
         <div className="flex flex-wrap items-center gap-4 text-sm">
-          <Badge variant="secondary">{person.approvalStatus}</Badge>
+          <span>
+            <Badge variant="secondary">{person.approvalStatus}</Badge>
+            <FlagBadges flags={flags} />
+          </span>
           <span>Onboarding {person.onboardingDone ? "done" : "not done"}</span>
           {myPairs.length === 0 ? (
             <span className="text-slate-500">No pair this round</span>
@@ -233,6 +257,31 @@ const ParticipantDetailPage = ({
           </p>
         ) : null}
       </Block>
+
+      {requests.length > 0 ? (
+        <Block title="Waiting on a decision">
+          <ul className="divide-y divide-slate-100 text-sm">
+            {requests.map((r) => (
+              <li key={r.requestId} className="flex flex-wrap gap-3 py-2">
+                <span className="flex-1">
+                  {ACTION_LABELS[r.action]} — raised by{" "}
+                  {r.raisedBy === viewerId ? "you" : ACTOR_NAMES[r.raisedBy]} ·
+                  sent to {ACTOR_NAMES[r.reviewerId]}
+                </span>
+                {r.raisedBy === viewerId ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onCancelRequest(r.requestId)}
+                  >
+                    Withdraw
+                  </Button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </Block>
+      ) : null}
 
       <Block
         title="Timeline"
@@ -279,7 +328,12 @@ const ParticipantDetailPage = ({
           <ul className="divide-y divide-slate-100">
             {timeline.map(({ kind, item }) =>
               kind === "note" ? (
-                <NoteRow key={item.noteId} note={item} />
+                <NoteRow
+                  key={item.noteId}
+                  note={item}
+                  revoked={revokedNoteIds.has(item.noteId)}
+                  onRevoke={writable ? onRevoke : null}
+                />
               ) : (
                 <EmailRow
                   key={item.messageId}

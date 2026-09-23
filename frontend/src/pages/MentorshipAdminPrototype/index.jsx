@@ -9,6 +9,7 @@ import RoundModal from "@/pages/MentorshipAdminPrototype/RoundModal";
 import {
   ACTOR_NAMES,
   ALL_PERMISSIONS,
+  APPROVE_HOLDERS,
   CURRENT_USER,
   DEFAULT_PERMISSIONS,
   INITIAL_EMAILS,
@@ -21,6 +22,8 @@ import {
   INITIAL_ROUNDS,
   MAILBOX_REPLIES,
   NON_PARTICIPANTS,
+  NOTE_KIND,
+  NOTE_LABELS,
 } from "@/pages/MentorshipAdminPrototype/mockData";
 
 const TODAY = "2026-09-22";
@@ -93,6 +96,8 @@ const cleanQuery = (query) =>
  */
 const MentorshipAdminPrototype = () => {
   const [permissions, setPermissions] = useState(DEFAULT_PERMISSIONS);
+  const [viewerId, setViewerId] = useState(CURRENT_USER.userId);
+  const viewerName = ACTOR_NAMES[viewerId];
   const [location, setLocation] = useState(parseLocation);
   const [listQuery, setListQuery] = useState(() =>
     location.view.kind === "management" ? location.query : {},
@@ -163,20 +168,34 @@ const MentorshipAdminPrototype = () => {
       held.includes(key) ? held.filter((p) => p !== key) : [...held, key],
     );
 
-  const addNote = useCallback(({ participantId, pairId, tag, body }) => {
-    setNotes((all) => [
-      {
-        noteId: newId("n"),
-        participantId,
-        pairId: pairId ?? null,
-        tag: tag || null,
-        body,
-        authorId: CURRENT_USER.userId,
-        createdAt: TODAY,
-      },
-      ...all,
-    ]);
-  }, []);
+  const addNote = useCallback(
+    ({ participantId, pairId, tag, body, revokesNoteId }) => {
+      setNotes((all) => [
+        {
+          noteId: newId("n"),
+          participantId,
+          pairId: pairId ?? null,
+          tag: tag || null,
+          body,
+          authorId: viewerId,
+          createdAt: TODAY,
+          revokesNoteId: revokesNoteId ?? null,
+        },
+        ...all,
+      ]);
+    },
+    [viewerId],
+  );
+
+  /**
+   * A flag stays on record when revoked; the revocation is a second note
+   * pointing at it. Whether a flag still counts is read from that, not stored
+   * on the flag.
+   */
+  const revokedNoteIds = useMemo(
+    () => new Set(notes.map((n) => n.revokesNoteId).filter(Boolean)),
+    [notes],
+  );
 
   const raiseRequest = useCallback(
     ({
@@ -185,8 +204,10 @@ const MentorshipAdminPrototype = () => {
       participantId,
       participantIds,
       pairId,
+      noteId,
       targetLabel,
       reason,
+      reviewerId,
     }) => {
       setRequests((all) => [
         {
@@ -197,15 +218,49 @@ const MentorshipAdminPrototype = () => {
           participantId: participantId ?? null,
           participantIds: participantIds ?? null,
           pairId: pairId ?? null,
+          noteId: noteId ?? null,
           reason,
-          raisedBy: CURRENT_USER.userId,
+          raisedBy: viewerId,
+          reviewerId,
           createdAt: TODAY,
           status: "pending",
         },
         ...all,
       ]);
     },
-    [],
+    [viewerId],
+  );
+
+  /**
+   * The judgement flags on each person that still stand, as `{tag: count}`.
+   * Shown next to their status because a flag coexists with it: someone can
+   * be matched and have a no show on record.
+   */
+  const flagsByParticipant = useMemo(() => {
+    const out = {};
+    notes.forEach((n) => {
+      if (NOTE_KIND[n.tag] !== "decided" || revokedNoteIds.has(n.noteId)) {
+        return;
+      }
+      out[n.participantId] = out[n.participantId] ?? {};
+      out[n.participantId][n.tag] = (out[n.participantId][n.tag] ?? 0) + 1;
+    });
+    return out;
+  }, [notes, revokedNoteIds]);
+
+  /** Only the person who raised a request can withdraw it, and only while it waits. */
+  const cancelRequest = useCallback(
+    (requestId) =>
+      setRequests((all) =>
+        all.map((r) =>
+          r.requestId === requestId &&
+          r.status === "pending" &&
+          r.raisedBy === viewerId
+            ? { ...r, status: "cancelled", decidedAt: TODAY }
+            : r,
+        ),
+      ),
+    [viewerId],
   );
 
   /** Pending requests already aimed at any of the same people, or the same pair. */
@@ -228,11 +283,39 @@ const MentorshipAdminPrototype = () => {
    * Deciding is where the approval becomes real: the state change, the note
    * and the decision are one step. Splitting them would leave a window where
    * a request reads "approved" and nothing has happened.
+   *
+   * Anyone holding the approve permission may decide, whoever the request
+   * was sent to — but not the person who raised it. Approving re-checks the
+   * world first: a request that no longer makes sense is invalidated, not
+   * applied.
    */
   const decideRequest = useCallback(
     (requestId, approved, decisionNote) => {
       const request = requests.find((r) => r.requestId === requestId);
-      if (!request) return;
+      if (!request || request.raisedBy === viewerId) return;
+
+      const stale =
+        approved &&
+        ((request.action === "revoke_flag" &&
+          revokedNoteIds.has(request.noteId)) ||
+          (request.action === "withdraw" &&
+            participants.find((p) => p.participantId === request.participantId)
+              ?.approvalStatus === "withdrawn"));
+      if (stale) {
+        setRequests((all) =>
+          all.map((r) =>
+            r.requestId === requestId
+              ? {
+                  ...r,
+                  status: "invalidated",
+                  decidedBy: viewerId,
+                  decidedAt: TODAY,
+                }
+              : r,
+          ),
+        );
+        return;
+      }
 
       // Withdrawing takes the person's pairs with them, whichever pair the
       // request was raised from.
@@ -258,7 +341,7 @@ const MentorshipAdminPrototype = () => {
             ? {
                 ...r,
                 status: approved ? "approved" : "rejected",
-                decidedBy: CURRENT_USER.userId,
+                decidedBy: viewerId,
                 decidedAt: TODAY,
                 decisionNote,
                 affectedPairIds,
@@ -278,9 +361,21 @@ const MentorshipAdminPrototype = () => {
       };
       const body = `${request.reason} — raised by ${
         ACTOR_NAMES[request.raisedBy]
-      }, approved by ${CURRENT_USER.name}.${
-        decisionNote ? ` ${decisionNote}` : ""
-      }`;
+      }, approved by ${viewerName}.${decisionNote ? ` ${decisionNote}` : ""}`;
+
+      if (request.action === "revoke_flag") {
+        const flag = notes.find((n) => n.noteId === request.noteId);
+        addNote({
+          participantId: request.participantId,
+          pairId: flag?.pairId,
+          tag: "status_change",
+          body: `Revoked the ${NOTE_LABELS[flag?.tag] ?? "flag"} of ${
+            flag?.createdAt
+          }. ${body}`,
+          revokesNoteId: request.noteId,
+        });
+        return;
+      }
 
       if (request.action === "confirm_unmatched") {
         request.participantIds.forEach((participantId) =>
@@ -326,7 +421,16 @@ const MentorshipAdminPrototype = () => {
         );
       }
     },
-    [addNote, requests, participants, pairs],
+    [
+      addNote,
+      requests,
+      participants,
+      pairs,
+      notes,
+      revokedNoteIds,
+      viewerId,
+      viewerName,
+    ],
   );
 
   const menteeParticipantOf = useCallback(
@@ -429,30 +533,33 @@ const MentorshipAdminPrototype = () => {
    * A mid-term reminder sent from here stamps the mentee's cell by itself;
    * the manual mark stays for the Teams half and for anything sent elsewhere.
    */
-  const sendEmails = useCallback(({ templateKey, messages }) => {
-    setEmails((all) => [
-      ...messages.map(({ participantId, body }) => ({
-        messageId: newId("e"),
-        threadId: newId("t"),
-        participantId,
-        direction: "out",
-        templateKey,
-        body,
-        sentBy: CURRENT_USER.userId,
-        at: TODAY,
-      })),
-      ...all,
-    ]);
-    if (templateKey !== "mentorship_midterm_reminder") return;
-    const ids = messages.map((m) => m.participantId);
-    setParticipants((all) =>
-      all.map((p) =>
-        ids.includes(p.participantId) && p.role === "mentee"
-          ? { ...p, midtermReminderAt: TODAY }
-          : p,
-      ),
-    );
-  }, []);
+  const sendEmails = useCallback(
+    ({ templateKey, messages }) => {
+      setEmails((all) => [
+        ...messages.map(({ participantId, body }) => ({
+          messageId: newId("e"),
+          threadId: newId("t"),
+          participantId,
+          direction: "out",
+          templateKey,
+          body,
+          sentBy: viewerId,
+          at: TODAY,
+        })),
+        ...all,
+      ]);
+      if (templateKey !== "mentorship_midterm_reminder") return;
+      const ids = messages.map((m) => m.participantId);
+      setParticipants((all) =>
+        all.map((p) =>
+          ids.includes(p.participantId) && p.role === "mentee"
+            ? { ...p, midtermReminderAt: TODAY }
+            : p,
+        ),
+      );
+    },
+    [viewerId],
+  );
 
   /** Pulls this person's waiting replies in; returns how many arrived. */
   const refreshEmails = useCallback(
@@ -536,6 +643,28 @@ const MentorshipAdminPrototype = () => {
           )}
           onRefreshEmails={() => refreshEmails(person.participantId)}
           feedback={INITIAL_FEEDBACK}
+          flags={flagsByParticipant[person.participantId] ?? {}}
+          revokedNoteIds={revokedNoteIds}
+          requests={requests.filter(
+            (r) =>
+              r.status === "pending" &&
+              (r.participantId === person.participantId ||
+                r.participantIds?.includes(person.participantId)),
+          )}
+          viewerId={viewerId}
+          onCancelRequest={cancelRequest}
+          onRevoke={(note) =>
+            setRequestTarget({
+              roundId: person.roundId,
+              participantId: person.participantId,
+              pairId: note.pairId,
+              noteId: note.noteId,
+              targetLabel: `${person.name} — ${NOTE_LABELS[note.tag]} of ${
+                note.createdAt
+              }`,
+              actions: ["revoke_flag"],
+            })
+          }
           can={can}
           backLabel={backLabel}
           onBack={backToList}
@@ -617,6 +746,8 @@ const MentorshipAdminPrototype = () => {
         nonParticipants={NON_PARTICIPANTS}
         pairs={pairs}
         requests={requests}
+        viewerId={viewerId}
+        flagsByParticipant={flagsByParticipant}
         can={can}
         onDecide={decideRequest}
         onOpenParticipant={(participantId) =>
@@ -646,9 +777,21 @@ const MentorshipAdminPrototype = () => {
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-6 py-3">
           <span className="text-sm font-semibold">Mentorship management</span>
-          <span className="text-xs text-slate-500">
-            signed in as {CURRENT_USER.name}
-          </span>
+          <label className="flex items-center gap-1 text-xs text-slate-500">
+            signed in as
+            <select
+              aria-label="Signed in as"
+              className="rounded border border-slate-300 px-1 py-0.5 text-xs text-slate-700"
+              value={viewerId}
+              onChange={(e) => setViewerId(Number(e.target.value))}
+            >
+              {APPROVE_HOLDERS.map((h) => (
+                <option key={h.userId} value={h.userId}>
+                  {h.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <div
             role="group"
             aria-label="Permissions"
@@ -707,6 +850,7 @@ const MentorshipAdminPrototype = () => {
       <RaiseRequestDialog
         target={requestTarget}
         pending={requestTarget ? pendingFor(requestTarget) : []}
+        viewerId={viewerId}
         onClose={() => setRequestTarget(null)}
         onSave={(payload) => {
           raiseRequest({ ...requestTarget, ...payload });

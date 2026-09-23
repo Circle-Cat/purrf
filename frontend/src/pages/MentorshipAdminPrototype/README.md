@@ -19,12 +19,25 @@ answers both from one table, which is why a mentor with two mentees appears
 twice with no visible reason.
 
 **Marking someone is not writing a note.** Three tags — no show, red flag,
-partner change — are judgements with consequences, so the button that looks
-like it applies them actually raises a request. The note appears only once
+partner change — are judgements with consequences, so the *Change status /
+flag* button raises a request instead of applying them. The note appears only once
 somebody holding the approve permission decides it, and it is marked *(via
 approval)* so the next reader does not assume an admin typed it. Everything
 else — a reminder having gone out, a phone call — is written straight from the
 page.
+
+**A request names a reviewer, but any approver can decide it.** Raising a
+change means picking one person holding the approve permission, so the request
+is addressed to someone rather than to a role. Anyone holding the permission
+may still decide it — except whoever raised it. Switch *signed in as* in the
+header to see the same card from each approver's side. The raiser can withdraw
+a request while it waits.
+
+**Flags sit beside the status.** No show, red flag and partner change are
+shown as badges next to a person's status, in the table and on their page,
+because a flag does not end a status. Revoking one is itself a judgement, so it
+is raised and approved like any other; the flag stays on the timeline, struck
+through, and stops counting.
 
 **Feedback has a direction.** The label always reads "*X's feedback about Y*",
 never "pair feedback". On Cara's page this is what Cara wrote about a partner,

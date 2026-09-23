@@ -75,7 +75,7 @@ const PairDetailPage = ({
         </div>
         {writable ? (
           <Button size="sm" className="ml-auto" onClick={onRaise}>
-            Raise a change
+            Change status / flag
           </Button>
         ) : null}
       </header>

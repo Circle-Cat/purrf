@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import FlagBadges from "@/pages/MentorshipAdminPrototype/FlagBadges";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -112,6 +113,7 @@ const ParticipantsTable = ({
   onCompose,
   onBulkMark,
   onConfirmUnmatched,
+  flagsByParticipant = {},
 }) => {
   const tab = query.tab ?? "participants";
   const term = query.q ?? "";
@@ -352,6 +354,7 @@ const ParticipantsTable = ({
                 <TableCell className="text-sm">{p.identity}</TableCell>
                 <TableCell>
                   <Badge variant="secondary">{p.approvalStatus}</Badge>
+                  <FlagBadges flags={flagsByParticipant[p.participantId]} />
                 </TableCell>
                 <TableCell className="text-sm">
                   {p.onboardingDone ? "Done" : "Not done"}
@@ -404,6 +407,7 @@ const ParticipantsTable = ({
                   <TableCell className="text-sm">{p.identity}</TableCell>
                   <TableCell>
                     <Badge variant="secondary">{p.approvalStatus}</Badge>
+                    <FlagBadges flags={flagsByParticipant[p.participantId]} />
                   </TableCell>
                   <TableCell className="text-sm">
                     {p.freeSlots} of {capacityOf(p)}

@@ -35,9 +35,19 @@ const Card = ({ title, right, children }) => (
  *
  * The decision note is optional and travels with the decision into the note
  * the approval writes, so "approved, but talk to her first" is not lost.
+ *
+ * Every request names a reviewer, and the ones sent to you come first — but
+ * any approver may decide any of them. The one exception is a request you
+ * raised yourself: it is listed, and left for someone else.
  */
-const ApprovalsCard = ({ requests, onDecide }) => {
-  const pending = requests.filter((r) => r.status === "pending");
+const ApprovalsCard = ({ requests, viewerId, onDecide }) => {
+  const pending = requests
+    .filter((r) => r.status === "pending")
+    .sort(
+      (a, b) =>
+        Number(b.reviewerId === viewerId) - Number(a.reviewerId === viewerId),
+    );
+  const mine = pending.filter((r) => r.reviewerId === viewerId).length;
   const [decisionNotes, setDecisionNotes] = useState({});
   const decide = (requestId, approved) =>
     onDecide(requestId, approved, decisionNotes[requestId]?.trim() || null);
@@ -45,11 +55,13 @@ const ApprovalsCard = ({ requests, onDecide }) => {
     <Card
       title="Pending approvals"
       right={
-        <span className="text-xs text-slate-500">{pending.length} waiting</span>
+        <span className="text-xs text-slate-500">
+          {pending.length} waiting · {mine} sent to you
+        </span>
       }
     >
       {pending.length === 0 ? (
-        <p className="text-sm text-slate-500">Nothing waiting on you.</p>
+        <p className="text-sm text-slate-500">Nothing waiting.</p>
       ) : (
         <ul className="divide-y divide-slate-200">
           {pending.map((r) => (
@@ -60,33 +72,44 @@ const ApprovalsCard = ({ requests, onDecide }) => {
                 </p>
                 <p className="mt-1 text-sm text-slate-600">{r.reason}</p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Raised by {ACTOR_NAMES[r.raisedBy]} · {r.createdAt}
+                  Raised by {ACTOR_NAMES[r.raisedBy]} · {r.createdAt} · Sent to{" "}
+                  {r.reviewerId === viewerId ? (
+                    <strong>you</strong>
+                  ) : (
+                    ACTOR_NAMES[r.reviewerId]
+                  )}
                 </p>
               </div>
-              <div className="flex flex-wrap items-start gap-2">
-                <Input
-                  aria-label={`Decision note for request ${r.requestId}`}
-                  value={decisionNotes[r.requestId] ?? ""}
-                  onChange={(e) =>
-                    setDecisionNotes((all) => ({
-                      ...all,
-                      [r.requestId]: e.target.value,
-                    }))
-                  }
-                  placeholder="Decision note (optional)"
-                  className="h-8 w-56 text-sm"
-                />
-                <Button size="sm" onClick={() => decide(r.requestId, true)}>
-                  Approve
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => decide(r.requestId, false)}
-                >
-                  Reject
-                </Button>
-              </div>
+              {r.raisedBy === viewerId ? (
+                <p className="self-center text-xs text-slate-500">
+                  You raised this — another approver decides it.
+                </p>
+              ) : (
+                <div className="flex flex-wrap items-start gap-2">
+                  <Input
+                    aria-label={`Decision note for request ${r.requestId}`}
+                    value={decisionNotes[r.requestId] ?? ""}
+                    onChange={(e) =>
+                      setDecisionNotes((all) => ({
+                        ...all,
+                        [r.requestId]: e.target.value,
+                      }))
+                    }
+                    placeholder="Decision note (optional)"
+                    className="h-8 w-56 text-sm"
+                  />
+                  <Button size="sm" onClick={() => decide(r.requestId, true)}>
+                    Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => decide(r.requestId, false)}
+                  >
+                    Reject
+                  </Button>
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -155,6 +178,8 @@ const ManagementPage = ({
   nonParticipants,
   pairs,
   requests,
+  viewerId,
+  flagsByParticipant,
   can,
   onDecide,
   onOpenParticipant,
@@ -170,7 +195,11 @@ const ManagementPage = ({
   return (
     <>
       {can("mentorship.approve") ? (
-        <ApprovalsCard requests={requests} onDecide={onDecide} />
+        <ApprovalsCard
+          requests={requests}
+          viewerId={viewerId}
+          onDecide={onDecide}
+        />
       ) : null}
 
       {can("mentorship.admin.read") ? (
@@ -212,6 +241,7 @@ const ManagementPage = ({
                 (p) => p.roundId === round.id,
               )}
               pairs={pairs.filter((p) => p.roundId === round.id)}
+              flagsByParticipant={flagsByParticipant}
               can={can}
               onOpenParticipant={onOpenParticipant}
               onOpenPair={onOpenPair}
