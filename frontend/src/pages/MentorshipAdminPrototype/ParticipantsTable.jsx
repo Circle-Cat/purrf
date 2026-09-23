@@ -2,10 +2,7 @@ import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import FlagBadges from "@/pages/MentorshipAdminPrototype/FlagBadges";
 import AccountStateChips from "@/pages/MentorshipAdminPrototype/AccountStateChips";
-import EmailDots, {
-  EmailDotsHeader,
-  EmailLegend,
-} from "@/pages/MentorshipAdminPrototype/EmailDots";
+import EmailDots from "@/pages/MentorshipAdminPrototype/EmailDots";
 import {
   EMAIL_STATES,
   EMAIL_STEPS,
@@ -33,7 +30,6 @@ import {
 import {
   RECORDED_TAGS,
   NOTE_LABELS,
-  TEMPLATE_LABELS,
   accountStateOf,
 } from "@/pages/MentorshipAdminPrototype/mockData";
 
@@ -253,17 +249,6 @@ const ParticipantsTable = ({
     runChosen.some((p) => p.role === "mentor") &&
     runChosen.some((p) => p.role === "mentee");
 
-  /** The latest email to someone about the selected round, so nobody is invited twice. */
-  const lastEmailTo = (userId) =>
-    emails
-      .filter(
-        (e) =>
-          e.userId === userId &&
-          e.roundId === round.id &&
-          e.direction === "out",
-      )
-      .sort((a, b) => b.at.localeCompare(a.at))[0];
-
   const setFilter = (next) => {
     setSelected([]);
     onQueryChange({ filter: query.filter === next ? "" : next });
@@ -391,12 +376,12 @@ const ParticipantsTable = ({
               onValueChange={(v) => onQueryChange({ onboarding: v })}
             >
               <SelectTrigger className="h-8 w-40 text-xs">
-                <SelectValue placeholder="Onboarding" />
+                <SelectValue placeholder="Training" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Any onboarding</SelectItem>
-                <SelectItem value="done">Onboarding done</SelectItem>
-                <SelectItem value="not_done">Onboarding not done</SelectItem>
+                <SelectItem value="all">Any training</SelectItem>
+                <SelectItem value="done">Training done</SelectItem>
+                <SelectItem value="not_done">Training not done</SelectItem>
               </SelectContent>
             </Select>
             <Select
@@ -470,8 +455,6 @@ const ParticipantsTable = ({
         </p>
       ) : null}
 
-      {tab === "participants" ? <EmailLegend /> : null}
-
       {tab === "participants" && unregisteredOnly ? (
         <>
           <p className="mb-2 text-xs text-slate-500">
@@ -487,18 +470,14 @@ const ParticipantsTable = ({
                 <TableHead>Name</TableHead>
                 <TableHead>Int / ext</TableHead>
                 <TableHead>Account</TableHead>
-                <TableHead>
-                  <EmailDotsHeader registered={false} />
-                </TableHead>
-                <TableHead>Mentor onboarding</TableHead>
-                <TableHead>Mentee onboarding</TableHead>
+                <TableHead>Emails</TableHead>
+                <TableHead>Mentor training</TableHead>
+                <TableHead>Mentee training</TableHead>
                 <TableHead>Last took part</TableHead>
-                <TableHead>Last email</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {nonParticipantRows.map((p) => {
-                const last = lastEmailTo(p.userId);
                 return (
                   <TableRow key={p.userId}>
                     <TableCell>
@@ -541,11 +520,6 @@ const ParticipantsTable = ({
                     <TableCell className="text-sm">
                       {p.lastTookPart ?? "Never"}
                     </TableCell>
-                    <TableCell className="text-sm">
-                      {last
-                        ? `${TEMPLATE_LABELS[last.templateKey]} · ${last.at}`
-                        : "—"}
-                    </TableCell>
                   </TableRow>
                 );
               })}
@@ -580,10 +554,8 @@ const ParticipantsTable = ({
               <TableHead>Int / ext</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Account</TableHead>
-              <TableHead>
-                <EmailDotsHeader registered />
-              </TableHead>
-              <TableHead>Onboarding</TableHead>
+              <TableHead>Emails</TableHead>
+              <TableHead>Training</TableHead>
               {eligibleOnly ? (
                 <>
                   <TableHead>Free slots</TableHead>
@@ -614,8 +586,13 @@ const ParticipantsTable = ({
                 <TableCell className="text-sm">{p.role}</TableCell>
                 <TableCell className="text-sm">{p.identity}</TableCell>
                 <TableCell>
-                  <Badge variant="secondary">{p.approvalStatus}</Badge>
-                  <FlagBadges flags={flagsByParticipant[p.participantId]} />
+                  <div className="flex flex-col items-start gap-1">
+                    <Badge variant="secondary">{p.approvalStatus}</Badge>
+                    <FlagBadges
+                      stacked
+                      flags={flagsByParticipant[p.participantId]}
+                    />
+                  </div>
                 </TableCell>
                 <TableCell>
                   <AccountStateChips {...accountStateOf(p.userId)} />

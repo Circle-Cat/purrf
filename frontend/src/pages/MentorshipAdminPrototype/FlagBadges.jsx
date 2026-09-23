@@ -9,14 +9,22 @@ import { NOTE_LABELS } from "@/pages/MentorshipAdminPrototype/mockData";
  * not end a status, so "matched" and "no show ×2" are both true at once.
  * Revoked flags are not counted; they stay on the timeline, struck through.
  *
- * @param {{flags: Record<string, number>}} props
+ * `stacked` puts each flag on its own line, for a table cell.
+ *
+ * @param {{flags: Record<string, number>, stacked?: boolean}} props
  * @returns {JSX.Element|null}
  */
-const FlagBadges = ({ flags }) => {
+const FlagBadges = ({ flags, stacked = false }) => {
   const entries = Object.entries(flags ?? {});
   if (entries.length === 0) return null;
   return (
-    <span className="ml-1 inline-flex flex-wrap gap-1">
+    <span
+      className={
+        stacked
+          ? "flex flex-col items-start gap-1"
+          : "ml-1 inline-flex flex-wrap gap-1"
+      }
+    >
       {entries.map(([tag, count]) => (
         <Badge key={tag} variant="destructive">
           {NOTE_LABELS[tag]}

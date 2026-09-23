@@ -867,11 +867,13 @@ describe("MentorshipAdminPrototype smoke", () => {
     const cara = screen
       .getAllByRole("row")
       .find((r) => within(r).queryByRole("button", { name: "Wang, Cara" }));
-    expect(within(cara).getByText("Mid-term reminder")).toBeInTheDocument();
+    expect(
+      within(cara).getByText("Mid-term reminder · 2026-09-18"),
+    ).toBeInTheDocument();
     const alice = screen
       .getAllByRole("row")
       .find((r) => within(r).queryByRole("button", { name: "Chen, Alice" }));
-    expect(within(alice).getByText(/1 failed/)).toBeInTheDocument();
+    expect(within(alice).getByText("Failed")).toBeInTheDocument();
     const rowOf = (name) =>
       screen
         .getAllByRole("row")
