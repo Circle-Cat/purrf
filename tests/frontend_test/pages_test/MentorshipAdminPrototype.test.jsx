@@ -107,7 +107,12 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(screen.getByText("Timeline")).toBeInTheDocument();
     expect(screen.getByText("Participation history")).toBeInTheDocument();
 
-    // Feedback always names whose opinion it is.
+    // Feedback always names whose opinion it is. Hers is from last summer,
+    // so it is under that round in the history, not in this round's block.
+    expect(screen.queryByText(/Cara Wang's feedback about/)).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Mentorship 2025 Summer/ }),
+    );
     expect(screen.getByText(/Cara Wang's feedback about/)).toBeInTheDocument();
 
     // Her pair is on her own page, open: no separate pair page to go to.
@@ -125,6 +130,10 @@ describe("MentorshipAdminPrototype smoke", () => {
 
     fireEvent.click(chip("Feedback"));
     fireEvent.click(screen.getByRole("button", { name: "Cara Wang" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Mentorship 2025 Summer/ }),
+    );
+    expect(screen.getByText("Meeting log — with Dana Wu")).toBeInTheDocument();
     expect(screen.queryByText(/feedback about/)).not.toBeInTheDocument();
   });
 
@@ -408,36 +417,56 @@ describe("MentorshipAdminPrototype smoke", () => {
       .getByText("Participation history")
       .closest("section");
     expect(
-      within(history).getByText("Mentorship 2025 Summer"),
+      within(history).getByRole("button", { name: /Mentorship 2025 Summer/ }),
     ).toBeInTheDocument();
-    expect(within(history).queryByText("Mentorship 2026 Fall")).toBeNull();
+    expect(within(history).queryByText(/Mentorship 2026 Fall/)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
     fireEvent.click(screen.getByRole("button", { name: "Alice Chen" }));
     expect(screen.getByText(/No earlier rounds/)).toBeInTheDocument();
   });
 
-  it("opens any earlier round from the history, with its flags, read only", () => {
+  it("opens an earlier round in place, with its flags, read only", () => {
     render(<MentorshipAdminPrototype />);
     fireEvent.click(screen.getByRole("button", { name: "Wei Tan" }));
     const history = screen
       .getByText("Participation history")
       .closest("section");
-    // Wei was never paired last summer, but the round still opens, and its
-    // red flag shows on the row.
+    // Never paired last summer, but the round still opens, and its red flag
+    // shows on the row.
     expect(within(history).getByText("Red flag")).toBeInTheDocument();
     fireEvent.click(
-      within(history).getByRole("button", { name: "Mentorship 2025 Summer" }),
+      within(history).getByRole("button", { name: /Mentorship 2025 Summer/ }),
     );
-    expect(window.location.hash).toContain("round=6");
+    // The page stays where it is; the round opens under its row.
+    expect(window.location.hash).not.toContain("round=6");
     expect(
-      screen.getByText(/An earlier round — read only/),
+      within(history).getByRole("button", {
+        name: /Mentorship 2025 Summer/,
+        expanded: true,
+      }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Add a note" })).toBeNull();
     expect(
-      screen.queryByRole("button", { name: "Change status / flag" }),
+      within(history).getByText(/Missed two agreed calls/),
+    ).toBeInTheDocument();
+    expect(
+      within(history).queryByRole("button", { name: "Revoke" }),
     ).toBeNull();
-    expect(screen.queryByRole("button", { name: "Revoke" })).toBeNull();
+  });
+
+  it("shows an earlier round's meeting log inside its history row", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(screen.getByRole("button", { name: "Cara Wang" }));
+    const history = screen
+      .getByText("Participation history")
+      .closest("section");
+    fireEvent.click(
+      within(history).getByRole("button", { name: /Mentorship 2025 Summer/ }),
+    );
+    expect(
+      within(history).getByText("Meeting log — with Dana Wu"),
+    ).toBeInTheDocument();
+    expect(within(history).queryByRole("button", { name: "Edit" })).toBeNull();
   });
 
   it("shows a failed send as failed on the timeline, not as sent", () => {
@@ -568,11 +597,10 @@ describe("MentorshipAdminPrototype smoke", () => {
   it("leaves a v1 round's meeting log read-only", () => {
     render(<MentorshipAdminPrototype />);
     fireEvent.click(screen.getByRole("button", { name: "Cara Wang" }));
-    fireEvent.click(screen.getByRole("button", { name: "Dana Wu" }));
-    expect(screen.getByText("Meeting log")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Edit" }),
-    ).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Mentorship 2025 Summer/ }),
+    );
+    expect(screen.getByText("Meeting log — with Dana Wu")).toBeInTheDocument();
   });
 
   it("sends a request to a named reviewer, and never lets the raiser decide it", () => {
@@ -780,7 +808,9 @@ describe("MentorshipAdminPrototype smoke", () => {
 
     // Last year's registration is still there to read.
     expect(screen.getByText("Participation history")).toBeInTheDocument();
-    expect(screen.getByText("Mentorship 2025 Summer")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Mentorship 2025 Summer/ }),
+    ).toBeInTheDocument();
   });
 
   it("shows each person's account state beside their round status", () => {

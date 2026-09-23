@@ -1138,9 +1138,7 @@ const MentorshipAdminPrototype = () => {
           participants={participants}
           pairs={pairs}
           notes={notes}
-          emails={emails.filter(
-            (e) => e.userId === person.userId && e.roundId === person.roundId,
-          )}
+          emails={emails.filter((e) => e.userId === person.userId)}
           onRefreshEmails={() => refreshEmails(person.userId, person.roundId)}
           feedback={INITIAL_FEEDBACK}
           flags={flagsByParticipant[person.participantId] ?? {}}
@@ -1182,17 +1180,6 @@ const MentorshipAdminPrototype = () => {
           can={can}
           backLabel={backLabel}
           onBack={backToList}
-          onOpenPair={(participantId, pairId = null) => {
-            const other = participants.find(
-              (p) => p.participantId === participantId,
-            );
-            navigate({
-              kind: "person",
-              userId: other.userId,
-              roundId: other.roundId,
-              pair: pairId,
-            });
-          }}
           onAddNote={() =>
             setNoteTarget(
               person.participantId

@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import FlagBadges from "@/pages/MentorshipAdminPrototype/FlagBadges";
 import PairSection from "@/pages/MentorshipAdminPrototype/PairSection";
+import MeetingLogTable from "@/pages/MentorshipAdminPrototype/MeetingLogTable";
 import {
   ACTION_LABELS,
   ACTOR_NAMES,
@@ -142,7 +143,6 @@ const ParticipantDetailPage = ({
   can,
   backLabel,
   onBack,
-  onOpenPair,
   onAddNote,
   onRaise,
   onCompose,
@@ -176,6 +176,7 @@ const ParticipantDetailPage = ({
     return first ? [first.pairId] : [];
   });
   const [syncMessage, setSyncMessage] = useState(null);
+  const [openRounds, setOpenRounds] = useState([]);
   // Arriving from a pair link lands on that pair, not the top of the page.
   useEffect(() => {
     if (!openPairId) return;
@@ -222,12 +223,65 @@ const ParticipantDetailPage = ({
 
   const registered = person.participantId != null;
 
-  const timeline = [
-    ...notes
-      .filter((n) => n.userId === person.userId && n.roundId === person.roundId)
-      .map((n) => ({ kind: "note", at: n.createdAt, item: n })),
-    ...emails.map((e) => ({ kind: "email", at: e.at, item: e })),
-  ].sort((a, b) => b.at.localeCompare(a.at));
+  /** Notes and emails of one round, newest first. */
+  const timelineOf = (roundId) =>
+    [
+      ...notes
+        .filter((n) => n.userId === person.userId && n.roundId === roundId)
+        .map((n) => ({ kind: "note", at: n.createdAt, item: n })),
+      ...emails
+        .filter((e) => e.roundId === roundId)
+        .map((e) => ({ kind: "email", at: e.at, item: e })),
+    ].sort((a, b) => b.at.localeCompare(a.at));
+  const timeline = timelineOf(person.roundId);
+  const renderTimeline = (entries, revoke) =>
+    entries.length === 0 ? (
+      <p className="text-sm text-slate-500">Nothing recorded yet.</p>
+    ) : (
+      <ul className="divide-y divide-slate-100">
+        {entries.map(({ kind, item }) =>
+          kind === "note" ? (
+            <NoteRow
+              key={item.noteId}
+              note={item}
+              revoked={revokedNoteIds.has(item.noteId)}
+              onRevoke={revoke}
+            />
+          ) : (
+            <EmailRow
+              key={item.messageId}
+              email={item}
+              personName={person.name}
+            />
+          ),
+        )}
+      </ul>
+    );
+
+  /** What they wrote in one round's feedback form. */
+  const renderFeedback = (f) => (
+    <div>
+      <p className="text-sm font-medium">
+        Programme rating {f.programRating}/5
+      </p>
+      <p className="mt-1 text-sm text-slate-700">
+        <span className="text-slate-500">Most valuable: </span>
+        {f.mostValuable}
+      </p>
+      <p className="text-sm text-slate-700">
+        <span className="text-slate-500">Challenges: </span>
+        {f.challenges}
+      </p>
+      {f.partnerFeedback.map((pf) => (
+        <p key={pf.partnerName} className="mt-2 text-sm text-slate-700">
+          <span className="text-slate-500">
+            {person.name}&apos;s feedback about {pf.partnerName}:{" "}
+          </span>
+          {pf.rating}/5 — &ldquo;{pf.text}&rdquo;
+        </p>
+      ))}
+    </div>
+  );
 
   const refresh = () => {
     const count = onRefreshEmails();
@@ -444,28 +498,7 @@ const ParticipantDetailPage = ({
         {syncMessage ? (
           <p className="mb-2 text-xs text-slate-500">{syncMessage}</p>
         ) : null}
-        {timeline.length === 0 ? (
-          <p className="text-sm text-slate-500">Nothing recorded yet.</p>
-        ) : (
-          <ul className="divide-y divide-slate-100">
-            {timeline.map(({ kind, item }) =>
-              kind === "note" ? (
-                <NoteRow
-                  key={item.noteId}
-                  note={item}
-                  revoked={revokedNoteIds.has(item.noteId)}
-                  onRevoke={writable ? onRevoke : null}
-                />
-              ) : (
-                <EmailRow
-                  key={item.messageId}
-                  email={item}
-                  personName={person.name}
-                />
-              ),
-            )}
-          </ul>
-        )}
+        {renderTimeline(timeline, writable ? onRevoke : null)}
         {person.identity === "internal" ? (
           <p className="mt-2 text-xs text-slate-500">
             Reminders to internal members go out on Teams, which Purrf does not
@@ -481,50 +514,99 @@ const ParticipantDetailPage = ({
           </p>
         ) : null}
         <ul className="divide-y divide-slate-100 text-sm">
-          {history.map(({ participant, round: r, pairs: theirs }) => (
-            <li key={participant.participantId} className="flex gap-4 py-2">
-              <span className="w-56 shrink-0">
-                <button
-                  type="button"
-                  className="text-left font-medium underline-offset-2 hover:underline"
-                  onClick={() => onOpenPair(participant.participantId, null)}
-                >
-                  {r?.name}
-                </button>
-                <FlagBadges flags={flagsIn(participant.roundId)} />
-              </span>
-              <span className="w-20 shrink-0 text-slate-600">
-                {participant.role}
-              </span>
-              <span className="w-28 shrink-0 text-slate-600">
-                {participant.approvalStatus}
-              </span>
-              <ul className="flex-1 space-y-0.5 text-slate-600">
-                {theirs.length === 0 ? <li>—</li> : null}
-                {theirs.map((pair) => (
-                  <li key={pair.pairId} className="flex gap-4">
+          {history.map(({ participant, round: r, pairs: theirs }) => {
+            const expanded = openRounds.includes(participant.roundId);
+            return (
+              <li key={participant.participantId} className="py-2">
+                <div className="flex gap-4">
+                  <span className="w-56 shrink-0">
                     <button
                       type="button"
-                      className={`flex-1 text-left underline-offset-2 hover:underline ${
-                        pair.status === "active" ? "" : "text-slate-400"
-                      }`}
+                      aria-expanded={expanded}
+                      className="text-left font-medium"
                       onClick={() =>
-                        onOpenPair(participant.participantId, pair.pairId)
+                        setOpenRounds((all) =>
+                          expanded
+                            ? all.filter((id) => id !== participant.roundId)
+                            : [...all, participant.roundId],
+                        )
                       }
                     >
-                      {pair.mentorId === participant.userId
-                        ? pair.menteeName
-                        : pair.mentorName}
-                      {pair.status === "active" ? "" : " · ended"}
+                      {expanded ? "▾" : "▸"} {r?.name}
                     </button>
-                    <span className="w-16 shrink-0 text-right">
-                      {pair.completed}/{pair.required}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
+                    <FlagBadges flags={flagsIn(participant.roundId)} />
+                  </span>
+                  <span className="w-20 shrink-0 text-slate-600">
+                    {participant.role}
+                  </span>
+                  <span className="w-28 shrink-0 text-slate-600">
+                    {participant.approvalStatus}
+                  </span>
+                  <ul className="flex-1 space-y-0.5 text-slate-600">
+                    {theirs.length === 0 ? <li>—</li> : null}
+                    {theirs.map((pair) => (
+                      <li
+                        key={pair.pairId}
+                        className={`flex gap-4 ${
+                          pair.status === "active" ? "" : "text-slate-400"
+                        }`}
+                      >
+                        <span className="flex-1">
+                          {pair.mentorId === participant.userId
+                            ? pair.menteeName
+                            : pair.mentorName}
+                          {pair.status === "active" ? "" : " · ended"}
+                        </span>
+                        <span className="w-16 shrink-0 text-right">
+                          {pair.completed}/{pair.required}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                {expanded ? (
+                  // Read only: an earlier round is a record.
+                  <div className="mt-2 rounded-md bg-slate-50 px-3 py-2">
+                    {theirs.map((pair) => (
+                      <div key={pair.pairId} className="mb-3">
+                        <p className="mb-1 text-xs font-medium text-slate-600">
+                          Meeting log — with{" "}
+                          {pair.mentorId === participant.userId
+                            ? pair.menteeName
+                            : pair.mentorName}
+                        </p>
+                        <MeetingLogTable
+                          roundVersion={null}
+                          mentorName={pair.mentorName}
+                          menteeName={pair.menteeName}
+                          meetings={pairMeetings(pair.pairId)}
+                          onSave={() => {}}
+                        />
+                      </div>
+                    ))}
+                    <p className="mb-1 text-xs font-medium text-slate-600">
+                      Timeline
+                    </p>
+                    {renderTimeline(timelineOf(participant.roundId), null)}
+                    {can("mentorship.feedback.read") ? (
+                      <>
+                        <p className="mb-1 mt-3 text-xs font-medium text-slate-600">
+                          Feedback
+                        </p>
+                        {feedback[participant.participantId] ? (
+                          renderFeedback(feedback[participant.participantId])
+                        ) : (
+                          <p className="text-sm text-slate-500">
+                            Nothing submitted.
+                          </p>
+                        )}
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
         <p className="mt-2 text-xs text-slate-500">
           Ordered by the round&apos;s end date, not by round id — ids do not run
@@ -534,43 +616,13 @@ const ParticipantDetailPage = ({
 
       {can("mentorship.feedback.read") ? (
         <Block title="Feedback">
-          {everyRound.filter(
-            ({ participant }) => feedback[participant.participantId],
-          ).length === 0 ? (
-            <p className="text-sm text-slate-500">Nothing submitted yet.</p>
+          {feedback[person.participantId] ? (
+            renderFeedback(feedback[person.participantId])
           ) : (
-            everyRound
-              .filter(({ participant }) => feedback[participant.participantId])
-              .map(({ participant, round: r }) => {
-                const f = feedback[participant.participantId];
-                return (
-                  <div key={participant.participantId} className="mb-4">
-                    <p className="text-sm font-medium">
-                      {r?.name} · programme rating {f.programRating}/5
-                    </p>
-                    <p className="mt-1 text-sm text-slate-700">
-                      <span className="text-slate-500">Most valuable: </span>
-                      {f.mostValuable}
-                    </p>
-                    <p className="text-sm text-slate-700">
-                      <span className="text-slate-500">Challenges: </span>
-                      {f.challenges}
-                    </p>
-                    {f.partnerFeedback.map((pf) => (
-                      <p
-                        key={pf.partnerName}
-                        className="mt-2 text-sm text-slate-700"
-                      >
-                        <span className="text-slate-500">
-                          {person.name}&apos;s feedback about {pf.partnerName}
-                          :{" "}
-                        </span>
-                        {pf.rating}/5 — &ldquo;{pf.text}&rdquo;
-                      </p>
-                    ))}
-                  </div>
-                );
-              })
+            <p className="text-sm text-slate-500">
+              Nothing submitted for this round yet. Earlier rounds&apos;
+              feedback is under each round in the participation history.
+            </p>
           )}
           <p className="mt-1 text-xs text-slate-500">
             The label always says whose opinion this is. On this page it is what{" "}
