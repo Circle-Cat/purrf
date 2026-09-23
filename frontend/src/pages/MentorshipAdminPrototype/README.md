@@ -51,9 +51,19 @@ the page changes shape between them:
 Then select two rows on the *Pairs* tab and look at the send button: two pairs
 is four people. A count of selected rows would be a lie there.
 
+Filter the *Pairs* tab, open a pair, and press back: the same tab and the same
+filter come back, because they live in the URL. The link in the address bar
+can be sent to someone else and opens on that filtered list.
+
+Open a pair and raise a partner change from there, then approve it: the note
+and the status history appear on that pair's page. A request raised without
+the pair it is about would never reach it.
+
 ## What is deliberately missing
 
 - The matching run and review screen. That work is waiting on the export
   format the algorithm side needs.
+- The export button. What the algorithm side wants from it is still being
+  agreed, so it is left out rather than drawn in a shape that may change.
 - Anything that talks to a server. Sending an email opens the composer and
   closes it; nothing is delivered.

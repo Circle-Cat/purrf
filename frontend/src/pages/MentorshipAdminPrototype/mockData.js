@@ -374,7 +374,7 @@ export const INITIAL_NOTES = [
   {
     noteId: "n-1",
     participantId: "p-cara-7",
-    pairId: null,
+    pairId: 501,
     tag: "no_show",
     body: "No response after the first-contact deadline. Email and Teams both tried.",
     authorId: 2002,
@@ -449,10 +449,15 @@ export const INITIAL_REQUESTS = [
 
 /** The actions that must be approved before they take effect. */
 export const APPROVAL_ACTIONS = [
-  { key: "withdraw", label: "Withdraw from round" },
-  { key: "mark_no_show", label: "Mark as no show" },
-  { key: "mark_red_flag", label: "Raise a red flag" },
-  { key: "change_partner", label: "Request a partner change" },
+  { key: "withdraw", label: "Withdraw from round", target: "person" },
+  { key: "mark_no_show", label: "Mark as no show", target: "person" },
+  { key: "mark_red_flag", label: "Raise a red flag", target: "person" },
+  { key: "change_partner", label: "Request a partner change", target: "pair" },
+  {
+    key: "confirm_unmatched",
+    label: "Confirm as unmatched",
+    target: "batch",
+  },
 ];
 
 export const ACTION_LABELS = Object.fromEntries(

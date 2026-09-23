@@ -20,9 +20,14 @@ const PROTOTYPES = [
   },
 ];
 
-/** Which prototype the current URL hash selects, defaulting to the first. */
+/**
+ * Which prototype the current URL hash selects, defaulting to the first.
+ *
+ * Only the first segment names the prototype; anything after a `/` or `?` is
+ * that prototype's own deep link.
+ */
 const fromHash = () => {
-  const key = window.location.hash.replace("#", "");
+  const key = window.location.hash.replace("#", "").split(/[/?]/)[0];
   return PROTOTYPES.some((p) => p.hash === key) ? key : PROTOTYPES[0].hash;
 };
 

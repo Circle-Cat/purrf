@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -31,9 +32,15 @@ const Card = ({ title, right, children }) => (
  * permission — not greyed out, absent. It holds pending requests only: a
  * decided one is already visible as a note on the person's timeline, which is
  * where you would go looking for it afterwards anyway.
+ *
+ * The decision note is optional and travels with the decision into the note
+ * the approval writes, so "approved, but talk to her first" is not lost.
  */
 const ApprovalsCard = ({ requests, onDecide }) => {
   const pending = requests.filter((r) => r.status === "pending");
+  const [decisionNotes, setDecisionNotes] = useState({});
+  const decide = (requestId, approved) =>
+    onDecide(requestId, approved, decisionNotes[requestId]?.trim() || null);
   return (
     <Card
       title="Pending approvals"
@@ -56,14 +63,26 @@ const ApprovalsCard = ({ requests, onDecide }) => {
                   Raised by {ACTOR_NAMES[r.raisedBy]} · {r.createdAt}
                 </p>
               </div>
-              <div className="flex items-start gap-2">
-                <Button size="sm" onClick={() => onDecide(r.requestId, true)}>
+              <div className="flex flex-wrap items-start gap-2">
+                <Input
+                  aria-label={`Decision note for request ${r.requestId}`}
+                  value={decisionNotes[r.requestId] ?? ""}
+                  onChange={(e) =>
+                    setDecisionNotes((all) => ({
+                      ...all,
+                      [r.requestId]: e.target.value,
+                    }))
+                  }
+                  placeholder="Decision note (optional)"
+                  className="h-8 w-56 text-sm"
+                />
+                <Button size="sm" onClick={() => decide(r.requestId, true)}>
                   Approve
                 </Button>
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => onDecide(r.requestId, false)}
+                  onClick={() => decide(r.requestId, false)}
                 >
                   Reject
                 </Button>
@@ -130,7 +149,8 @@ const RoundsCard = ({ rounds, roundId, onSelectRound, onEditRound, can }) => (
 const ManagementPage = ({
   round,
   rounds,
-  onSelectRound,
+  query,
+  onQueryChange,
   participants,
   nonParticipants,
   pairs,
@@ -142,9 +162,10 @@ const ManagementPage = ({
   onMarkCell,
   onCompose,
   onBulkMark,
+  onConfirmUnmatched,
   onEditRound,
 }) => {
-  const [tab, setTab] = useState("participants");
+  const onSelectRound = (id) => onQueryChange({ round: String(id) });
 
   return (
     <>
@@ -183,8 +204,8 @@ const ManagementPage = ({
             }
           >
             <ParticipantsTable
-              tab={tab}
-              onTabChange={setTab}
+              query={query}
+              onQueryChange={onQueryChange}
               round={round}
               participants={participants.filter((p) => p.roundId === round.id)}
               nonParticipants={nonParticipants.filter(
@@ -197,6 +218,7 @@ const ManagementPage = ({
               onMarkCell={onMarkCell}
               onCompose={onCompose}
               onBulkMark={onBulkMark}
+              onConfirmUnmatched={onConfirmUnmatched}
             />
           </Card>
         </>

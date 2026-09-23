@@ -4,6 +4,7 @@ import {
   ACTION_LABELS,
   ACTOR_NAMES,
   MEETING_TAG_LABELS,
+  NOTE_KIND,
   NOTE_LABELS,
 } from "@/pages/MentorshipAdminPrototype/mockData";
 
@@ -36,8 +37,10 @@ const PairDetailPage = ({
   notes,
   requests,
   can,
+  backLabel,
   onBack,
   onAddNote,
+  onRaise,
 }) => {
   if (!pair) return null;
   const writable = can("mentorship.admin.write");
@@ -47,7 +50,7 @@ const PairDetailPage = ({
     <div className="rounded-lg border border-slate-200 bg-white">
       <header className="flex flex-wrap items-center gap-3 px-5 py-4">
         <Button size="sm" variant="ghost" onClick={onBack}>
-          ← Pairs
+          {backLabel}
         </Button>
         <div>
           <h2 className="text-base font-semibold">
@@ -69,6 +72,11 @@ const PairDetailPage = ({
             </span>
           </p>
         </div>
+        {writable ? (
+          <Button size="sm" className="ml-auto" onClick={onRaise}>
+            Raise a change
+          </Button>
+        ) : null}
       </header>
 
       <Block
@@ -134,7 +142,15 @@ const PairDetailPage = ({
               <li key={n.noteId} className="flex gap-3 py-2">
                 <span className="w-44 shrink-0 text-xs">
                   {n.tag ? (
-                    <Badge variant="destructive">{NOTE_LABELS[n.tag]}</Badge>
+                    <Badge
+                      variant={
+                        NOTE_KIND[n.tag] === "decided"
+                          ? "destructive"
+                          : "secondary"
+                      }
+                    >
+                      {NOTE_LABELS[n.tag]}
+                    </Badge>
                   ) : (
                     <span className="text-slate-400">Note</span>
                   )}
@@ -142,7 +158,9 @@ const PairDetailPage = ({
                 <span className="w-40 shrink-0 text-xs text-slate-500">
                   {ACTOR_NAMES[n.authorId]} · {n.createdAt}
                 </span>
-                <span className="flex-1 text-sm text-slate-700">{n.body}</span>
+                <span className="flex-1 text-sm text-slate-700">
+                  {n.body || <em className="text-slate-400">No comment</em>}
+                </span>
               </li>
             ))}
           </ul>
@@ -165,6 +183,7 @@ const PairDetailPage = ({
                   {ACTION_LABELS[r.action]} — {r.status} · raised by{" "}
                   {ACTOR_NAMES[r.raisedBy]}, decided by{" "}
                   {ACTOR_NAMES[r.decidedBy]}
+                  {r.decisionNote ? ` — ${r.decisionNote}` : ""}
                 </span>
               </li>
             ))}

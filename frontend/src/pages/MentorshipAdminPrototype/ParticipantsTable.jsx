@@ -54,7 +54,10 @@ const Mark = ({ on, label, onClick, disabled }) => (
   <button
     type="button"
     disabled={disabled}
-    onClick={onClick}
+    onClick={(e) => {
+      e.stopPropagation();
+      onClick();
+    }}
     title={label}
     className={`rounded px-2 py-0.5 text-xs transition-colors ${
       on
@@ -76,11 +79,15 @@ const Mark = ({ on, label, onClick, disabled }) => (
  * question about a person ("has she registered?") and a question about a
  * pairing ("have they met yet?") cannot be answered by the same row.
  *
+ * The tab and every filter come from `query`, which is the URL. Open the third
+ * person on a filtered list, come back, and the list is still filtered — the
+ * selection is the one thing that deliberately does not survive.
+ *
  * @returns {JSX.Element}
  */
 const ParticipantsTable = ({
-  tab,
-  onTabChange,
+  query,
+  onQueryChange,
   participants,
   nonParticipants,
   pairs,
@@ -90,26 +97,55 @@ const ParticipantsTable = ({
   onMarkCell,
   onCompose,
   onBulkMark,
+  onConfirmUnmatched,
 }) => {
-  const [term, setTerm] = useState("");
-  const [role, setRole] = useState("all");
-  const [identity, setIdentity] = useState("all");
+  const tab = query.tab ?? "participants";
+  const term = query.q ?? "";
+  const role = query.role ?? "all";
+  const identity = query.identity ?? "all";
+  const onboarding = query.onboarding ?? "all";
+  const pairStatus = query.pairStatus ?? "all";
   const [selected, setSelected] = useState([]);
   const [bulkTag, setBulkTag] = useState(RECORDED_TAGS[3]);
 
   const writable = can("mentorship.admin.write");
 
-  const rows = useMemo(() => {
-    const needle = term.trim().toLowerCase();
-    return participants.filter(
-      (p) =>
-        (role === "all" || p.role === role) &&
-        (identity === "all" || p.identity === identity) &&
-        (!needle ||
-          p.name.toLowerCase().includes(needle) ||
-          p.email.toLowerCase().includes(needle)),
-    );
-  }, [participants, role, identity, term]);
+  const needle = term.trim().toLowerCase();
+
+  const rows = useMemo(
+    () =>
+      participants.filter(
+        (p) =>
+          (role === "all" || p.role === role) &&
+          (identity === "all" || p.identity === identity) &&
+          (onboarding === "all" ||
+            (onboarding === "done") === p.onboardingDone) &&
+          (!needle ||
+            p.name.toLowerCase().includes(needle) ||
+            p.email.toLowerCase().includes(needle)),
+      ),
+    [participants, role, identity, onboarding, needle],
+  );
+
+  /** Searching on this tab finds a pair by either side — "who is Bob paired with". */
+  const pairRows = useMemo(
+    () =>
+      pairs.filter(
+        (p) =>
+          (pairStatus === "all" || p.status === pairStatus) &&
+          (!needle ||
+            p.mentorName.toLowerCase().includes(needle) ||
+            p.menteeName.toLowerCase().includes(needle)),
+      ),
+    [pairs, pairStatus, needle],
+  );
+
+  const nonParticipantRows = nonParticipants.filter(
+    (p) =>
+      !needle ||
+      p.name.toLowerCase().includes(needle) ||
+      p.email.toLowerCase().includes(needle),
+  );
 
   /** The mentee's participant row is where a pair's mid-term mark actually lives. */
   const participantOf = (userId) =>
@@ -123,10 +159,17 @@ const ParticipantsTable = ({
 
   const switchTab = (key) => {
     setSelected([]);
-    onTabChange(key);
+    onQueryChange({ tab: key === "participants" ? "" : key });
   };
 
   const selectedPairs = pairs.filter((p) => selected.includes(p.pairId));
+  const selectedPeople = participants.filter((p) =>
+    selected.includes(p.participantId),
+  );
+  /** Only someone still waiting to be matched can be confirmed as unmatched. */
+  const unmatchable = selectedPeople.filter(
+    (p) => p.approvalStatus === "signed_up",
+  );
 
   return (
     <>
@@ -150,13 +193,33 @@ const ParticipantsTable = ({
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Input
           value={term}
-          onChange={(e) => setTerm(e.target.value)}
-          placeholder="Search name or email"
+          onChange={(e) => onQueryChange({ q: e.target.value })}
+          placeholder={
+            tab === "pairs" ? "Search mentor or mentee" : "Search name or email"
+          }
           className="h-8 w-56 text-sm"
         />
+        {tab === "pairs" ? (
+          <Select
+            value={pairStatus}
+            onValueChange={(v) => onQueryChange({ pairStatus: v })}
+          >
+            <SelectTrigger className="h-8 w-36 text-xs">
+              <SelectValue placeholder="Pair status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Any pair status</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : null}
         {tab === "participants" ? (
           <>
-            <Select value={role} onValueChange={setRole}>
+            <Select
+              value={role}
+              onValueChange={(v) => onQueryChange({ role: v })}
+            >
               <SelectTrigger className="h-8 w-32 text-xs">
                 <SelectValue placeholder="Role" />
               </SelectTrigger>
@@ -166,7 +229,10 @@ const ParticipantsTable = ({
                 <SelectItem value="mentee">Mentee</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={identity} onValueChange={setIdentity}>
+            <Select
+              value={identity}
+              onValueChange={(v) => onQueryChange({ identity: v })}
+            >
               <SelectTrigger className="h-8 w-40 text-xs">
                 <SelectValue placeholder="Internal / external" />
               </SelectTrigger>
@@ -174,6 +240,19 @@ const ParticipantsTable = ({
                 <SelectItem value="all">Internal & external</SelectItem>
                 <SelectItem value="internal">Internal</SelectItem>
                 <SelectItem value="external">External</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={onboarding}
+              onValueChange={(v) => onQueryChange({ onboarding: v })}
+            >
+              <SelectTrigger className="h-8 w-40 text-xs">
+                <SelectValue placeholder="Onboarding" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Any onboarding</SelectItem>
+                <SelectItem value="done">Onboarding done</SelectItem>
+                <SelectItem value="not_done">Onboarding not done</SelectItem>
               </SelectContent>
             </Select>
           </>
@@ -246,7 +325,7 @@ const ParticipantsTable = ({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {nonParticipants.map((p) => (
+              {nonParticipantRows.map((p) => (
                 <TableRow key={p.userId}>
                   <TableCell>
                     <div className="font-medium">{p.name}</div>
@@ -280,24 +359,23 @@ const ParticipantsTable = ({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {pairs.map((p) => (
-              <TableRow key={p.pairId}>
-                <TableCell>
+            {pairRows.map((p) => (
+              <TableRow
+                key={p.pairId}
+                tabIndex={0}
+                aria-label={`Open pair ${p.mentorName} and ${p.menteeName}`}
+                className="cursor-pointer"
+                onClick={() => onOpenPair(p.pairId)}
+                onKeyDown={(e) => e.key === "Enter" && onOpenPair(p.pairId)}
+              >
+                <TableCell onClick={(e) => e.stopPropagation()}>
                   <Checkbox
                     checked={selected.includes(p.pairId)}
                     onCheckedChange={() => toggle(p.pairId)}
                   />
                 </TableCell>
                 <TableCell className="text-sm">{p.mentorName}</TableCell>
-                <TableCell>
-                  <button
-                    type="button"
-                    className="text-left text-sm underline-offset-2 hover:underline"
-                    onClick={() => onOpenPair(p.pairId)}
-                  >
-                    {p.menteeName}
-                  </button>
-                </TableCell>
+                <TableCell className="text-sm">{p.menteeName}</TableCell>
                 <TableCell>
                   <Badge
                     variant={p.status === "active" ? "secondary" : "outline"}
@@ -350,9 +428,7 @@ const ParticipantsTable = ({
               onCompose(
                 tab === "pairs"
                   ? selectedPairs.flatMap((p) => [p.mentorName, p.menteeName])
-                  : rows
-                      .filter((p) => selected.includes(p.participantId))
-                      .map((p) => p.name),
+                  : selectedPeople.map((p) => p.name),
               )
             }
           >
@@ -390,6 +466,20 @@ const ParticipantsTable = ({
               Mark as sent
             </Button>
           </div>
+          {tab === "participants" ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={unmatchable.length === 0}
+              title="Only people still signed up can be confirmed as unmatched"
+              onClick={() => {
+                onConfirmUnmatched(unmatchable);
+                setSelected([]);
+              }}
+            >
+              Confirm as unmatched · {unmatchable.length}
+            </Button>
+          ) : null}
           <span className="text-xs text-slate-500">
             Reminders to internal members go out on Teams, which Purrf cannot
             send — so they are marked here after the fact, in one go.

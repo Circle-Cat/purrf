@@ -30,6 +30,9 @@ import {
  * are judgements with consequences, and they are raised as a request instead.
  * Putting them in this dropdown would make an approval look optional.
  *
+ * Clicking a mark on the Pairs table opens this same box with the kind fixed
+ * (`target.fixedTag`), so a reply summary can go in with the mark — or not.
+ *
  * @returns {JSX.Element|null}
  */
 const NoteDialog = ({ target, onClose, onSave }) => {
@@ -47,23 +50,27 @@ const NoteDialog = ({ target, onClose, onSave }) => {
     <Dialog open onOpenChange={(open) => !open && close()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add a note</DialogTitle>
+          <DialogTitle>{target.title ?? "Add a note"}</DialogTitle>
         </DialogHeader>
 
-        <label className="text-xs text-slate-500">Kind</label>
-        <Select value={tag} onValueChange={setTag}>
-          <SelectTrigger className="text-sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">Plain note</SelectItem>
-            {RECORDED_TAGS.map((t) => (
-              <SelectItem key={t} value={t}>
-                {NOTE_LABELS[t]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {target.fixedTag ? null : (
+          <>
+            <label className="text-xs text-slate-500">Kind</label>
+            <Select value={tag} onValueChange={setTag}>
+              <SelectTrigger className="text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Plain note</SelectItem>
+                {RECORDED_TAGS.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {NOTE_LABELS[t]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
+        )}
 
         <label className="mt-2 text-xs text-slate-500">
           What happened (may be left empty)
@@ -86,12 +93,15 @@ const NoteDialog = ({ target, onClose, onSave }) => {
           </Button>
           <Button
             onClick={() => {
-              onSave({ tag: tag === "none" ? null : tag, body });
+              onSave({
+                tag: target.fixedTag ?? (tag === "none" ? null : tag),
+                body,
+              });
               setTag("none");
               setBody("");
             }}
           >
-            Save
+            {target.mark ? "Mark" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>
