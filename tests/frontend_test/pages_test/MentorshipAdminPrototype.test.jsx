@@ -461,7 +461,9 @@ describe("MentorshipAdminPrototype smoke", () => {
     ).not.toBeInTheDocument();
 
     expect(
-      screen.getByText(/3 people in the programme have not registered/),
+      screen.getByText(
+        /3 people in the programme have not registered for Mentorship 2026 Fall/,
+      ),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Show them" }));
     expect(window.location.hash).toContain("filter=unregistered");
@@ -491,5 +493,24 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(
       screen.getAllByText("New round invitation · 2026-09-22"),
     ).toHaveLength(2);
+  });
+
+  it("counts who has not registered against the round that is selected", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Mentorship 2025 Summer" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Show them" }));
+
+    const rowOf = (name) =>
+      screen.getAllByRole("row").find((row) => within(row).queryByText(name));
+    // Registered for last summer, so not on last summer's list.
+    expect(rowOf("Wang, Cara")).toBeUndefined();
+    expect(rowOf("Park, Min")).toBeUndefined();
+    // Took part this autumn but not last summer.
+    expect(
+      within(rowOf("Liu, Bob")).getByText("Mentorship 2026 Fall"),
+    ).toBeInTheDocument();
+    expect(rowOf("Osei, Kwame")).toBeDefined();
   });
 });

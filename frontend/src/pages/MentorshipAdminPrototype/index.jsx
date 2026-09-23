@@ -21,7 +21,7 @@ import {
   INITIAL_REQUESTS,
   INITIAL_ROUNDS,
   MAILBOX_REPLIES,
-  NON_PARTICIPANTS,
+  NEVER_REGISTERED,
   NOTE_KIND,
   NOTE_LABELS,
 } from "@/pages/MentorshipAdminPrototype/mockData";
@@ -541,6 +541,7 @@ const MentorshipAdminPrototype = () => {
           threadId: newId("t"),
           participantId: participantId ?? null,
           userId: userId ?? null,
+          roundId,
           direction: "out",
           templateKey,
           body,
@@ -559,7 +560,7 @@ const MentorshipAdminPrototype = () => {
         ),
       );
     },
-    [viewerId],
+    [viewerId, roundId],
   );
 
   /** Pulls this person's waiting replies in; returns how many arrived. */
@@ -617,6 +618,44 @@ const MentorshipAdminPrototype = () => {
     () => rounds.find((r) => r.id === roundId) ?? rounds[0],
     [rounds, roundId],
   );
+
+  /**
+   * Everyone in the programme with no registration for the selected round.
+   *
+   * Derived, not listed: the programme is everyone who has ever registered
+   * plus those admitted who never did, and "not registered" is that minus the
+   * selected round's participants. Pick last year's round and it answers for
+   * last year.
+   */
+  const unregistered = useMemo(() => {
+    const endOf = (id) =>
+      rounds.find((r) => r.id === id)?.timeline.meetingsCompletionDeadlineAt ??
+      "";
+    const registered = new Set(
+      participants.filter((p) => p.roundId === round.id).map((p) => p.userId),
+    );
+    const latestRowOf = new Map();
+    participants.forEach((p) => {
+      const seen = latestRowOf.get(p.userId);
+      if (!seen || endOf(p.roundId) > endOf(seen.roundId)) {
+        latestRowOf.set(p.userId, p);
+      }
+    });
+    const onboardingOf = (row, role) =>
+      row.role === role ? (row.onboardingDone ? "done" : "in_progress") : null;
+    return [
+      ...[...latestRowOf.values()].map((row) => ({
+        userId: row.userId,
+        name: row.name,
+        email: row.email,
+        identity: row.identity,
+        mentorOnboarding: onboardingOf(row, "mentor"),
+        menteeOnboarding: onboardingOf(row, "mentee"),
+        lastTookPart: rounds.find((r) => r.id === row.roundId)?.name ?? null,
+      })),
+      ...NEVER_REGISTERED.map((p) => ({ ...p, lastTookPart: null })),
+    ].filter((p) => !registered.has(p.userId));
+  }, [participants, rounds, round]);
 
   const pairLabel = (p) => `${p.mentorName} ↔ ${p.menteeName}`;
   const backLabel = listQuery.tab === "pairs" ? "← Pairs" : "← Participants";
@@ -744,7 +783,7 @@ const MentorshipAdminPrototype = () => {
         query={listQuery}
         onQueryChange={updateListQuery}
         participants={participants}
-        nonParticipants={NON_PARTICIPANTS}
+        nonParticipants={unregistered}
         emails={emails}
         pairs={pairs}
         requests={requests}

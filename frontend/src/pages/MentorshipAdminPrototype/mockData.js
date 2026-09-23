@@ -243,47 +243,47 @@ export const INITIAL_PARTICIPANTS = [
     lastRound: { kind: "first-time" },
     midtermReminderAt: "2025-07-02",
   },
+  // Took part last summer and has not signed up for this round.
+  {
+    participantId: "p-min-6",
+    userId: 3111,
+    roundId: 6,
+    name: "Park, Min",
+    email: "min@circlecat.org",
+    role: "mentor",
+    identity: "internal",
+    approvalStatus: "un_matched",
+    maxPartners: 1,
+    onboardingDone: true,
+    lastRound: { kind: "first-time" },
+    midtermReminderAt: null,
+  },
 ];
 
 /**
- * People in the mentorship programme who have not registered for this round.
+ * People in the programme who have never registered for any round.
  *
  * "In the programme" is today's gate: admitted to a mentorship posting, or
- * holding a mentorship onboarding course. The list is per round — someone who
- * took part last summer and has not signed up again is here, which is exactly
- * who a new round's invitation is for. They have no participant row, so they
- * never appear on the Participants table itself; this is its own filter.
+ * holding a mentorship onboarding course. Everyone else in the programme has a
+ * participant row somewhere; together they are who "not registered" is
+ * counted against, for whichever round is selected.
  */
-export const NON_PARTICIPANTS = [
+export const NEVER_REGISTERED = [
   {
     userId: 3108,
-    roundId: 7,
     name: "Osei, Kwame",
     email: "kwame@example.com",
     identity: "external",
     mentorOnboarding: null,
     menteeOnboarding: "in_progress",
-    lastTookPart: null,
   },
   {
     userId: 3109,
-    roundId: 7,
     name: "Rossi, Lia",
     email: "lia@circlecat.org",
     identity: "internal",
     mentorOnboarding: "done",
     menteeOnboarding: null,
-    lastTookPart: null,
-  },
-  {
-    userId: 3111,
-    roundId: 7,
-    name: "Park, Min",
-    email: "min@circlecat.org",
-    identity: "internal",
-    mentorOnboarding: "done",
-    menteeOnboarding: null,
-    lastTookPart: "Mentorship 2025 Summer",
   },
 ];
 

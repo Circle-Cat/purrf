@@ -104,6 +104,7 @@ const ParticipantsTable = ({
   query,
   onQueryChange,
   participants,
+  round,
   nonParticipants,
   pairs,
   can,
@@ -219,10 +220,15 @@ const ParticipantsTable = ({
     setSelected([]);
   };
 
-  /** The latest email to someone not yet registered, so nobody is invited twice. */
+  /** The latest email to someone about the selected round, so nobody is invited twice. */
   const lastEmailTo = (userId) =>
     emails
-      .filter((e) => e.userId === userId && e.direction === "out")
+      .filter(
+        (e) =>
+          e.userId === userId &&
+          e.roundId === round.id &&
+          e.direction === "out",
+      )
       .sort((a, b) => b.at.localeCompare(a.at))[0];
 
   const setFilter = (next) => {
@@ -354,7 +360,7 @@ const ParticipantsTable = ({
             </Select>
             {[
               { key: "eligible", label: "Eligible for matching" },
-              { key: "unregistered", label: "Not registered this round" },
+              { key: "unregistered", label: "Not registered for this round" },
             ].map((f) => (
               <button
                 key={f.key}
@@ -377,7 +383,7 @@ const ParticipantsTable = ({
       {tab === "participants" && !query.filter && nonParticipants.length > 0 ? (
         <p className="mb-2 text-xs text-slate-500">
           {nonParticipants.length} people in the programme have not registered
-          for this round.{" "}
+          for {round.name}.{" "}
           <button
             type="button"
             className="font-medium text-slate-700 underline underline-offset-2"
@@ -392,8 +398,8 @@ const ParticipantsTable = ({
         <>
           <p className="mb-2 text-xs text-slate-500">
             In the programme — admitted to a mentorship posting, or holding its
-            onboarding course — and not registered for this round. This is who a
-            new round&apos;s invitation and the onboarding reminders go to.
+            onboarding course — and not registered for {round.name}. This is who
+            a new round&apos;s invitation and the onboarding reminders go to.
           </p>
           <Table>
             <TableHeader>

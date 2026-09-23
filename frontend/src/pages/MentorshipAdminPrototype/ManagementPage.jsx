@@ -238,9 +238,7 @@ const ManagementPage = ({
               onQueryChange={onQueryChange}
               round={round}
               participants={participants.filter((p) => p.roundId === round.id)}
-              nonParticipants={nonParticipants.filter(
-                (p) => p.roundId === round.id,
-              )}
+              nonParticipants={nonParticipants}
               pairs={pairs.filter((p) => p.roundId === round.id)}
               flagsByParticipant={flagsByParticipant}
               emails={emails}
