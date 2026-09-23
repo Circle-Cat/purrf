@@ -1124,18 +1124,7 @@ const MentorshipAdminPrototype = () => {
               .filter((m) => m.pairId === pairId)
               .sort((a, b) => a.startDatetime.localeCompare(b.startDatetime))
           }
-          pairRequests={(pairId) =>
-            requests.filter(
-              (r) => r.pairId === pairId || r.affectedPairIds?.includes(pairId),
-            )
-          }
           onSaveMeetings={saveMeetings}
-          onAddPairNote={(pair) =>
-            setNoteTarget({
-              participantId: menteeParticipantOf(pair)?.participantId,
-              pairId: pair.pairId,
-            })
-          }
           onMarkFirstContact={(pairId) => markCell(pairId, "firstContact")}
           person={person}
           rounds={rounds}

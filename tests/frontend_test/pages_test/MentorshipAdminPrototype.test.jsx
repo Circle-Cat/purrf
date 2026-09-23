@@ -115,7 +115,6 @@ describe("MentorshipAdminPrototype smoke", () => {
       screen.getByRole("button", { name: /with Bob Liu/, expanded: true }),
     ).toBeInTheDocument();
     expect(screen.getByText("Meeting log")).toBeInTheDocument();
-    expect(screen.getByText("Notes about this pair")).toBeInTheDocument();
   });
 
   it("drops whole blocks rather than greying them out when a grant is missing", () => {
@@ -169,7 +168,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(screen.queryByRole("button", { name: "Cara Wang" })).toBeNull();
   });
 
-  it("puts an approved partner change on that pair's section, and ends the pair", () => {
+  it("ends the pair on an approved partner change, and records it on the person", () => {
     render(<MentorshipAdminPrototype />);
 
     // One way in: Bob's name. His pairs are all on his page.
@@ -196,14 +195,17 @@ describe("MentorshipAdminPrototype smoke", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Bob Liu" }));
-    fireEvent.click(screen.getByRole("button", { name: /with Cara Wang/ }));
-    // On Bob's timeline and in the pair's own notes.
+    // A badge beside his status, and the details on his timeline; the pair's
+    // section holds only its meeting log.
+    // Once beside his status, once as the timeline entry's tag.
+    expect(screen.getAllByText("Partner change request")).toHaveLength(2);
     expect(
-      screen.getAllByText(/Schedules stopped overlapping\. — raised by/),
-    ).toHaveLength(2);
-    expect(
-      screen.getByText(/Request a partner change — approved/),
+      screen.getByText(/Schedules stopped overlapping\. — raised by/),
     ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /with Cara Wang/ }));
+    expect(screen.getAllByText("Meeting log")).toHaveLength(2);
+    expect(screen.queryByText("Notes about this pair")).toBeNull();
+    expect(screen.queryByText("Status history")).toBeNull();
   });
 
   it("raises a partner change from the same dialog, on a pair still going", () => {

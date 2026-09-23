@@ -164,9 +164,7 @@ const ParticipantDetailPage = ({
   initialTimeline,
   openPairId,
   pairMeetings,
-  pairRequests,
   onSaveMeetings,
-  onAddPairNote,
   onMarkFirstContact,
   blocked = false,
   onRequestBlock,
@@ -344,8 +342,6 @@ const ParticipantDetailPage = ({
             person={person}
             round={round}
             meetings={pairMeetings(pair.pairId)}
-            notes={notes.filter((n) => n.pairId === pair.pairId)}
-            requests={pairRequests(pair.pairId)}
             can={can}
             open={openPairs.includes(pair.pairId)}
             onToggle={() =>
@@ -355,7 +351,6 @@ const ParticipantDetailPage = ({
                   : [...all, pair.pairId],
               )
             }
-            onAddNote={() => onAddPairNote(pair)}
             onSaveMeetings={(batch) => onSaveMeetings(pair.pairId, batch)}
             onMarkFirstContact={() => onMarkFirstContact(pair.pairId)}
           />
