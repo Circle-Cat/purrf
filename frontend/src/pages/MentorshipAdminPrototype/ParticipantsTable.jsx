@@ -30,6 +30,12 @@ const TABS = [
   { key: "matching", label: "Matching pool" },
 ];
 
+/**
+ * Statuses that can go into a run. `un_matched` is included: being confirmed
+ * as not matched in one run does not rule someone out of the next.
+ */
+const POOL_STATUSES = ["signed_up", "matched", "un_matched"];
+
 /** A mentee always takes one mentor; a mentor takes up to their own cap. */
 const capacityOf = (person) =>
   person.role === "mentor" ? (person.maxPartners ?? 1) : 1;
@@ -151,7 +157,7 @@ const ParticipantsTable = ({
   /**
    * Who can go into a matching run right now.
    *
-   * A matched person is in only while they have a free slot — a mentor with
+   * Unmatched people are in. A matched person is in only while they have a free slot — a mentor with
    * three places and two mentees, or anyone whose pair has ended. A matched
    * mentee with an active pair, or a mentor at their cap, is out: sending
    * them would offer places that do not exist.
@@ -168,7 +174,7 @@ const ParticipantsTable = ({
     .map((p) => ({ ...p, freeSlots: capacityOf(p) - activePairsOf(p.userId) }));
   const inPool = (p) =>
     p.onboardingDone &&
-    ["signed_up", "matched"].includes(p.approvalStatus) &&
+    POOL_STATUSES.includes(p.approvalStatus) &&
     p.freeSlots > 0;
   const poolRows = pool.filter(
     (p) =>
@@ -181,13 +187,9 @@ const ParticipantsTable = ({
     full: pool.filter((p) => p.approvalStatus === "matched" && p.freeSlots <= 0)
       .length,
     onboarding: pool.filter(
-      (p) =>
-        !p.onboardingDone &&
-        ["signed_up", "matched"].includes(p.approvalStatus),
+      (p) => !p.onboardingDone && POOL_STATUSES.includes(p.approvalStatus),
     ).length,
-    other: pool.filter(
-      (p) => !["signed_up", "matched"].includes(p.approvalStatus),
-    ).length,
+    other: pool.filter((p) => !POOL_STATUSES.includes(p.approvalStatus)).length,
   };
   const [exported, setExported] = useState(null);
 

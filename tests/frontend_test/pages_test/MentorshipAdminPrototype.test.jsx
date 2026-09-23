@@ -214,6 +214,10 @@ describe("MentorshipAdminPrototype smoke", () => {
     );
     expect(screen.getAllByText("un_matched")).toHaveLength(2);
     expect(screen.getAllByText("signed_up")).toHaveLength(1);
+
+    // Confirmed as unmatched this time; still eligible for the next run.
+    fireEvent.click(screen.getByRole("button", { name: "Matching pool" }));
+    expect(screen.getAllByText("un_matched")).toHaveLength(2);
   });
 
   it("keeps emails and notes on one timeline, and Refresh pulls replies in", () => {
