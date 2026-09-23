@@ -1078,9 +1078,6 @@ const MentorshipAdminPrototype = () => {
         onOpenParticipant={(participantId, timeline) =>
           navigate({ kind: "participant", participantId, timeline })
         }
-        onOpenPair={(participantId, pairId) =>
-          navigate({ kind: "participant", participantId, pair: pairId })
-        }
         onMarkCell={markCell}
         onCompose={(recipients, defaultTemplate) =>
           setComposeTarget({ recipients, defaultTemplate })

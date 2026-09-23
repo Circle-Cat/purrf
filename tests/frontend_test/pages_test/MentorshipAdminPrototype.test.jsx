@@ -25,17 +25,13 @@ const chip = (name) =>
   );
 
 /**
- * The link that opens a pair. It appears on both people's rows — once on the
+ * A pair's line in the table. It appears on both people's rows — once on the
  * mentor's, once on the mentee's — so the first is as good as any.
  */
-const pairLink = (mentor, mentee) =>
-  screen.getAllByRole("button", {
-    name: `Open pair ${mentor} and ${mentee}`,
-  })[0];
-const pairLinks = (mentor, mentee) =>
-  screen.queryAllByRole("button", {
-    name: `Open pair ${mentor} and ${mentee}`,
-  });
+const pairLine = (mentor, mentee) =>
+  screen.getAllByRole("listitem", { name: `Pair ${mentor} and ${mentee}` })[0];
+const pairLines = (mentor, mentee) =>
+  screen.queryAllByRole("listitem", { name: `Pair ${mentor} and ${mentee}` });
 
 /** A person's row, found by the button with their name. */
 const personRow = (name) =>
@@ -86,8 +82,8 @@ describe("MentorshipAdminPrototype smoke", () => {
     // for each of his pairs.
     expect(screen.queryByRole("button", { name: "Pairs" })).toBeNull();
     expect(
-      within(personRow("Liu, Bob")).getAllByRole("button", {
-        name: /^Open pair Liu, Bob and/,
+      within(personRow("Liu, Bob")).getAllByRole("listitem", {
+        name: /^Pair Liu, Bob and/,
       }),
     ).toHaveLength(2);
 
@@ -147,7 +143,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(screen.queryByRole("button", { name: "Wang, Cara" })).toBeNull();
     expect(window.location.hash).toContain("q=Bob");
 
-    fireEvent.click(pairLink("Liu, Bob", "Ma, Erin"));
+    fireEvent.click(screen.getByRole("button", { name: "Liu, Bob" }));
     expect(screen.getByText("Meeting log")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
@@ -160,13 +156,8 @@ describe("MentorshipAdminPrototype smoke", () => {
   it("puts a change raised from a pair on that pair's section once approved", () => {
     render(<MentorshipAdminPrototype />);
 
-    // From Bob's row: his page, with his pair with Cara open.
-    fireEvent.click(
-      within(personRow("Liu, Bob")).getByRole("button", {
-        name: "Open pair Liu, Bob and Wang, Cara",
-      }),
-    );
-    expect(window.location.hash).toContain("pair=501");
+    // One way in: Bob's name. His pairs are all on his page.
+    fireEvent.click(screen.getByRole("button", { name: "Liu, Bob" }));
     fireEvent.click(
       screen.getByRole("button", {
         name: "Change partner — Liu, Bob and Wang, Cara",
@@ -186,7 +177,7 @@ describe("MentorshipAdminPrototype smoke", () => {
       }),
     );
 
-    fireEvent.click(pairLink("Liu, Bob", "Wang, Cara"));
+    fireEvent.click(screen.getByRole("button", { name: "Liu, Bob" }));
     expect(
       screen.getByText(/Schedules stopped overlapping\. — raised by/),
     ).toBeInTheDocument();
@@ -208,9 +199,13 @@ describe("MentorshipAdminPrototype smoke", () => {
       }),
     );
 
-    // Her pair has ended, so it is no longer listed; Bob keeps Erin.
-    expect(pairLinks("Liu, Bob", "Wang, Cara")).toHaveLength(0);
-    expect(pairLink("Liu, Bob", "Ma, Erin")).toBeInTheDocument();
+    // Her pair has ended: still listed, marked Ended, nothing left to mark.
+    const ended = pairLine("Liu, Bob", "Wang, Cara");
+    expect(within(ended).getByText("Ended")).toBeInTheDocument();
+    expect(within(ended).queryByRole("button")).toBeNull();
+    expect(
+      within(pairLine("Liu, Bob", "Ma, Erin")).queryByText("Ended"),
+    ).toBeNull();
   });
 
   it("asks for an optional note before marking first contact, and bulk marks count as notified", () => {
@@ -379,7 +374,7 @@ describe("MentorshipAdminPrototype smoke", () => {
 
   it("shows the existing meeting log on the pair page, editable only in a v2 round", () => {
     render(<MentorshipAdminPrototype />);
-    fireEvent.click(pairLink("Liu, Bob", "Ma, Erin"));
+    fireEvent.click(screen.getByRole("button", { name: "Ma, Erin" }));
 
     expect(screen.getByText("Ma, Erin absent")).toBeInTheDocument();
     expect(screen.getByText("Insufficient duration")).toBeInTheDocument();
@@ -799,8 +794,8 @@ describe("MentorshipAdminPrototype smoke", () => {
     if (eligible.getAttribute("aria-pressed") === "true") {
       fireEvent.click(eligible);
     }
-    expect(pairLink("Guo, Fay", "Chen, Alice")).toBeInTheDocument();
-    expect(pairLink("Liu, Bob", "Wu, Dana")).toBeInTheDocument();
+    expect(pairLine("Guo, Fay", "Chen, Alice")).toBeInTheDocument();
+    expect(pairLine("Liu, Bob", "Wu, Dana")).toBeInTheDocument();
   });
 
   it("keeps the reason within what the published column can hold", () => {
@@ -915,7 +910,7 @@ describe("MentorshipAdminPrototype smoke", () => {
       }),
     );
 
-    expect(pairLinks("Liu, Bob", "Chen, Alice")).toHaveLength(0);
+    expect(pairLines("Liu, Bob", "Chen, Alice")).toHaveLength(0);
   });
 
   it("shows where each person's emails stand, one dot per email of the round", () => {
@@ -1064,20 +1059,23 @@ describe("Meetings last round", () => {
     expect(of("p-cara-6")).toBe("First time");
   });
 
-  it("shows a person's pairs on their own page, opening the one that was clicked", () => {
+  it("shows every pair on the person's page, from their name alone", () => {
     render(<MentorshipAdminPrototype />);
-    fireEvent.click(
-      within(personRow("Liu, Bob")).getByRole("button", {
-        name: "Open pair Liu, Bob and Ma, Erin",
-      }),
-    );
-    // Bob carries two mentees: two sections, the one clicked is open.
+    // The partner's name in the table is plain text, not a second way in.
     expect(
-      screen.getByRole("button", { name: /with Ma, Erin/, expanded: true }),
-    ).toBeInTheDocument();
+      within(personRow("Liu, Bob")).queryByRole("button", { name: /Ma, Erin/ }),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Liu, Bob" }));
+    // Bob carries two mentees: two sections, the first open.
     expect(
-      screen.getByRole("button", { name: /with Wang, Cara/, expanded: false }),
+      screen.getByRole("button", { name: /with Wang, Cara/, expanded: true }),
     ).toBeInTheDocument();
+    const erin = screen.getByRole("button", {
+      name: /with Ma, Erin/,
+      expanded: false,
+    });
+    fireEvent.click(erin);
     expect(screen.getByText("Ma, Erin absent")).toBeInTheDocument();
   });
 

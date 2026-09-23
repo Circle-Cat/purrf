@@ -5,27 +5,24 @@
  * table. A mentee has at most one active pair a round, so their row carries
  * that pair's facts, first contact included: it is the mentee who reaches out,
  * and marking it is marking them. A mentor can carry several mentees and gets
- * one line per pair, still in one row. Ended pairs are not listed; they stay
- * on the person's page and the pair's own page.
+ * one line per pair, still in one row. Pairs that ended this round are listed
+ * too, greyed and marked Ended with the count they stopped at, after the
+ * active ones — so a mentee who changed partner shows both. The partner's
+ * name is not a link: the one way in is the person's own name, and their page
+ * holds every pair they are in.
  *
  * First contact is kept on the pair rather than the person so that a mentee
  * who changes partner starts again at "not yet" with the new mentor.
  *
- * @param {{person: object, pairs: object[], writable: boolean, onOpenPair: (pairId: number) => void, onMarkFirstContact: (pairId: number) => void}} props
+ * @param {{person: object, pairs: object[], writable: boolean, onMarkFirstContact: (pairId: number) => void}} props
  * @returns {JSX.Element}
  */
-const PairCell = ({
-  person,
-  pairs,
-  writable,
-  onOpenPair,
-  onMarkFirstContact,
-}) => {
-  const mine = pairs.filter(
-    (p) =>
-      p.status === "active" &&
-      (p.mentorId === person.userId || p.menteeId === person.userId),
-  );
+const PairCell = ({ person, pairs, writable, onMarkFirstContact }) => {
+  const mine = pairs
+    .filter((p) => p.mentorId === person.userId || p.menteeId === person.userId)
+    .sort(
+      (a, b) => Number(b.status === "active") - Number(a.status === "active"),
+    );
   if (mine.length === 0) return <span className="text-slate-400">—</span>;
 
   return (
@@ -34,23 +31,27 @@ const PairCell = ({
         const isMentee = pair.menteeId === person.userId;
         const partner = isMentee ? pair.mentorName : pair.menteeName;
         const contacted = pair.firstContactConfirmedAt;
+        const ended = pair.status !== "active";
         return (
           <li
             key={pair.pairId}
-            className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
+            aria-label={`Pair ${pair.mentorName} and ${pair.menteeName}`}
+            className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-xs ${
+              ended ? "text-slate-400" : ""
+            }`}
           >
-            <button
-              type="button"
-              aria-label={`Open pair ${pair.mentorName} and ${pair.menteeName}`}
-              onClick={() => onOpenPair(pair.pairId)}
-              className="font-medium text-slate-800 underline-offset-2 hover:underline"
-            >
+            <span className={ended ? "" : "font-medium text-slate-800"}>
               with {partner}
-            </button>
-            <span className="text-slate-500">
+            </span>
+            {ended ? (
+              <span className="rounded border border-slate-200 px-1 text-[10px]">
+                Ended
+              </span>
+            ) : null}
+            <span className={ended ? "" : "text-slate-500"}>
               Meetings {pair.completed}/{pair.required}
             </span>
-            {isMentee ? (
+            {isMentee && !ended ? (
               <button
                 type="button"
                 aria-label={

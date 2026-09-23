@@ -187,7 +187,6 @@ const ManagementPage = ({
   can,
   onDecide,
   onOpenParticipant,
-  onOpenPair,
   onMarkCell,
   onCompose,
   onBulkMark,
@@ -270,7 +269,6 @@ const ManagementPage = ({
               notifications={notifications}
               can={can}
               onOpenParticipant={onOpenParticipant}
-              onOpenPair={onOpenPair}
               onMarkCell={onMarkCell}
               onCompose={onCompose}
               onBulkMark={onBulkMark}
