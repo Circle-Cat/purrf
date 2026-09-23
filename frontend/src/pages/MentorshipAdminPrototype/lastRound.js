@@ -65,3 +65,74 @@ export const describeLastRound = (value) => {
     .join(" · ");
   return `${value.roundName} · ${counts}`;
 };
+
+/**
+ * What in someone's past has to be exempted before they can be matched.
+ *
+ * Their most recent earlier round — not the round just before this one —
+ * decides two things: for a mentee, whether they reached the meetings it
+ * required (withdrawing counts as not; a pair ended by the partner does not
+ * count against them; no meeting data is not held against anyone), and for
+ * anyone, a no show recorded in it. A red flag counts from any round. Revoked
+ * flags never count. Someone who never took part has nothing to exempt.
+ *
+ * @returns {string[]} One reason per problem, empty when there is none.
+ */
+export const historyIssuesOf = (
+  person,
+  participants,
+  pairs,
+  rounds,
+  notes,
+  revokedNoteIds,
+) => {
+  const nameOf = (roundId) => rounds.find((r) => r.id === roundId)?.name ?? "";
+  const standing = (n) => !revokedNoteIds.has(n.noteId);
+  const issues = notes
+    .filter(
+      (n) => n.userId === person.userId && n.tag === "red_flag" && standing(n),
+    )
+    .map((n) => `Red flag in ${nameOf(n.roundId)}`);
+
+  const endOf = (roundId) =>
+    rounds.find((r) => r.id === roundId)?.timeline
+      .meetingsCompletionDeadlineAt ?? "";
+  const now = endOf(person.roundId);
+  const last = participants
+    .filter(
+      (p) =>
+        p.userId === person.userId &&
+        endOf(p.roundId) &&
+        endOf(p.roundId) < now,
+    )
+    .sort((a, b) => endOf(b.roundId).localeCompare(endOf(a.roundId)))[0];
+  if (!last) return issues;
+
+  const where = nameOf(last.roundId);
+  if (
+    notes.some(
+      (n) =>
+        n.userId === person.userId &&
+        n.roundId === last.roundId &&
+        n.tag === "no_show" &&
+        standing(n),
+    )
+  ) {
+    issues.push(`No show in ${where}`);
+  }
+
+  if (person.role === "mentee") {
+    pairs
+      .filter((p) => p.roundId === last.roundId && p.menteeId === person.userId)
+      .forEach((p) => {
+        if (p.completed == null) return;
+        const n = `${p.completed}/${p.required}`;
+        if (last.approvalStatus === "withdrawn") {
+          issues.push(`Withdrew at ${n} in ${where}`);
+        } else if (p.completed < p.required && p.status === "active") {
+          issues.push(`Met ${n} in ${where}`);
+        }
+      });
+  }
+  return issues;
+};

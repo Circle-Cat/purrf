@@ -211,6 +211,30 @@ export const INITIAL_PARTICIPANTS = [
     approvalStatus: "withdrawn",
     onboardingDone: true,
   },
+  // Signed up and onboarded, but their past needs an exemption first: Sora
+  // met 3 of 7 last time, Wei has a red flag from last summer.
+  {
+    participantId: "p-sora-7",
+    userId: 3114,
+    roundId: 7,
+    name: "Kim, Sora",
+    email: "sora@example.com",
+    role: "mentee",
+    identity: "external",
+    approvalStatus: "signed_up",
+    onboardingDone: true,
+  },
+  {
+    participantId: "p-wei-7",
+    userId: 3115,
+    roundId: 7,
+    name: "Tan, Wei",
+    email: "wei@circlecat.org",
+    role: "mentee",
+    identity: "internal",
+    approvalStatus: "signed_up",
+    onboardingDone: true,
+  },
   // Registered and onboarded, but blocked: never offered to matching.
   {
     participantId: "p-oscar-7",
@@ -233,6 +257,28 @@ export const INITIAL_PARTICIPANTS = [
     role: "mentee",
     identity: "external",
     approvalStatus: "matched",
+    onboardingDone: true,
+  },
+  {
+    participantId: "p-sora-6",
+    userId: 3114,
+    roundId: 6,
+    name: "Kim, Sora",
+    email: "sora@example.com",
+    role: "mentee",
+    identity: "external",
+    approvalStatus: "matched",
+    onboardingDone: true,
+  },
+  {
+    participantId: "p-wei-6",
+    userId: 3115,
+    roundId: 6,
+    name: "Tan, Wei",
+    email: "wei@circlecat.org",
+    role: "mentee",
+    identity: "internal",
+    approvalStatus: "un_matched",
     onboardingDone: true,
   },
   // Last summer, so this round's "Meetings last round" has something to read:
@@ -294,7 +340,7 @@ export const INITIAL_PARTICIPANTS = [
     email: "min@circlecat.org",
     role: "mentor",
     identity: "internal",
-    approvalStatus: "un_matched",
+    approvalStatus: "matched",
     maxPartners: 1,
     onboardingDone: true,
   },
@@ -338,6 +384,8 @@ export const ONBOARDING_TRAININGS = [
   { userId: 3111, role: "mentor", status: "done" },
   { userId: 3112, role: "mentor", status: "in_progress" },
   { userId: 3113, role: "mentee", status: "done" },
+  { userId: 3114, role: "mentee", status: "done" },
+  { userId: 3115, role: "mentee", status: "done" },
 ];
 
 /** Who the people with no registration anywhere are. */
@@ -614,6 +662,18 @@ export const INITIAL_PAIRS = [
     completed: 2,
     required: 7,
   },
+  {
+    pairId: 492,
+    roundId: 6,
+    mentorId: 3111,
+    menteeId: 3114,
+    mentorName: "Park, Min",
+    menteeName: "Kim, Sora",
+    status: "active",
+    firstContactConfirmedAt: "2025-05-18",
+    completed: 3,
+    required: 7,
+  },
 ];
 
 /** A meeting a few days out, so the log always has one still to come. */
@@ -737,6 +797,16 @@ export const RECORDED_TAGS = Object.keys(NOTE_KIND).filter(
  * them, and when they do register that note is already on their timeline.
  */
 export const INITIAL_NOTES = [
+  {
+    noteId: "n-8",
+    userId: 3115,
+    roundId: 6,
+    pairId: null,
+    tag: "red_flag",
+    body: "Missed two agreed calls without notice; mentor raised it with the programme.",
+    authorId: 2002,
+    createdAt: "2025-06-20",
+  },
   {
     noteId: "n-6",
     userId: 3104,
@@ -935,7 +1005,7 @@ export const APPROVAL_ACTIONS = [
   },
   {
     key: "exempt_matching",
-    label: "Exempt from the onboarding requirement",
+    label: "Exempt from the history check",
     target: "person",
   },
 ];

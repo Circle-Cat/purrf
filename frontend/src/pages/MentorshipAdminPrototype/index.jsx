@@ -6,7 +6,10 @@ import RaiseRequestDialog from "@/pages/MentorshipAdminPrototype/RaiseRequestDia
 import ComposeDialog from "@/pages/MentorshipAdminPrototype/ComposeDialog";
 import RoundModal from "@/pages/MentorshipAdminPrototype/RoundModal";
 import MatchingPage from "@/pages/MentorshipAdminPrototype/MatchingPage";
-import { lastRoundOf } from "@/pages/MentorshipAdminPrototype/lastRound";
+import {
+  historyIssuesOf,
+  lastRoundOf,
+} from "@/pages/MentorshipAdminPrototype/lastRound";
 import {
   effectiveRows,
   problemsOf,
@@ -883,6 +886,9 @@ const MentorshipAdminPrototype = () => {
     };
   };
 
+  const issuesOf = (person) =>
+    historyIssuesOf(person, participants, pairs, rounds, notes, revokedNoteIds);
+
   const pairLabel = (p) => `${p.mentorName} ↔ ${p.menteeName}`;
   const backLabel = "← Participants";
 
@@ -953,6 +959,7 @@ const MentorshipAdminPrototype = () => {
           initialTimeline={view.timeline}
           flags={flagsByParticipant[person.participantId] ?? {}}
           exempt={exemptParticipantIds.has(person.participantId)}
+          historyIssues={person.participantId ? issuesOf(person) : []}
           onRequestExemption={() =>
             setRequestTarget({
               roundId: person.roundId,
@@ -1002,7 +1009,7 @@ const MentorshipAdminPrototype = () => {
               targetLabel: person.name,
               actions: ["withdraw", "mark_no_show", "mark_red_flag"]
                 .concat(personPairs.length ? ["change_partner"] : [])
-                .concat(person.onboardingDone ? [] : ["exempt_matching"]),
+                .concat(issuesOf(person).length ? ["exempt_matching"] : []),
               pairChoices: personPairs.map((p) => ({
                 pairId: p.pairId,
                 label: pairLabel(p),
@@ -1063,6 +1070,7 @@ const MentorshipAdminPrototype = () => {
         participants={participants.map((p) => ({
           ...p,
           lastRound: lastRoundOf(p, participants, pairs, rounds),
+          historyIssues: issuesOf(p),
         }))}
         nonParticipants={unregistered}
         emails={emails}

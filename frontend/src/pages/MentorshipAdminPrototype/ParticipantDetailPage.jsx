@@ -149,6 +149,7 @@ const ParticipantDetailPage = ({
   onCancelRequest,
   onRevoke,
   exempt,
+  historyIssues = [],
   onRequestExemption,
   initialTimeline,
   openPairId,
@@ -279,31 +280,41 @@ const ParticipantDetailPage = ({
             <Badge variant="secondary">{person.approvalStatus}</Badge>
             <FlagBadges flags={flags} />
           </span>
-          <span>
-            Onboarding {person.onboardingDone ? "done" : "not done"}
-            {!person.onboardingDone && exempt ? (
-              <Badge
-                variant="outline"
-                className="ml-1 border-amber-300 bg-amber-50 text-amber-900"
-              >
-                Exempted
-              </Badge>
-            ) : null}
-            {!person.onboardingDone && !exempt && writable ? (
+          <span>Training {person.onboardingDone ? "done" : "not done"}</span>
+          {myPairs.length === 0 ? (
+            <span className="text-slate-500">No pair this round</span>
+          ) : null}
+        </div>
+        {registered && historyIssues.length > 0 ? (
+          <div
+            className={`mt-3 rounded-md border px-3 py-2 text-sm ${
+              exempt
+                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                : "border-amber-200 bg-amber-50 text-amber-900"
+            }`}
+          >
+            <p className="font-medium">
+              {exempt
+                ? "Exempted for this round's matching"
+                : "Needs an exemption before being matched this round"}
+            </p>
+            <ul className="mt-1 list-disc pl-5 text-xs">
+              {historyIssues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+            {!exempt && writable ? (
               <Button
                 size="sm"
-                variant="link"
-                className="h-auto px-1"
+                variant="outline"
+                className="mt-2"
                 onClick={onRequestExemption}
               >
                 Request exemption
               </Button>
             ) : null}
-          </span>
-          {myPairs.length === 0 ? (
-            <span className="text-slate-500">No pair this round</span>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
         {myPairs.map((pair) => (
           <PairSection
             key={pair.pairId}

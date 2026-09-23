@@ -161,19 +161,35 @@ const ParticipantsTable = ({
     freeSlots: capacityOf(p) - activePairsOf(p.userId),
   }));
   const isBlocked = (p) => accountStateOf(p.userId).isBlocked;
+  const isDeactivated = (p) => !accountStateOf(p.userId).isActive;
   const isExempt = (p) => exemptParticipantIds.has(p.participantId);
+  const needsExemption = (p) =>
+    (p.historyIssues ?? []).length > 0 && !isExempt(p);
   /**
-   * An approved exemption stands in for onboarding and for nothing else: a
-   * block is final, a withdrawal is the person's own choice, and a full slot
-   * is a place that does not exist.
+   * Blocked and deactivated accounts never go in. Training has to be done —
+   * there is no exemption for it. A past that needs looking at (a mentee short
+   * of the meetings in their latest round, a no show there, a red flag ever)
+   * keeps someone out until an exemption is approved for this round; an
+   * exemption stands in for that and nothing else.
    */
   const inPool = (p) =>
     !isBlocked(p) &&
-    (p.onboardingDone || isExempt(p)) &&
+    !isDeactivated(p) &&
+    p.onboardingDone &&
+    !needsExemption(p) &&
     POOL_STATUSES.includes(p.approvalStatus) &&
     p.freeSlots > 0;
+  const waitingOnExemption = withSlots.filter(
+    (p) =>
+      needsExemption(p) &&
+      !isBlocked(p) &&
+      !isDeactivated(p) &&
+      p.onboardingDone &&
+      POOL_STATUSES.includes(p.approvalStatus) &&
+      p.freeSlots > 0,
+  );
   const leftOut = {
-    blocked: withSlots.filter((p) => isBlocked(p)).length,
+    blocked: withSlots.filter((p) => isBlocked(p) || isDeactivated(p)).length,
     full: withSlots.filter(
       (p) =>
         !isBlocked(p) && p.approvalStatus === "matched" && p.freeSlots <= 0,
@@ -181,8 +197,8 @@ const ParticipantsTable = ({
     onboarding: withSlots.filter(
       (p) =>
         !p.onboardingDone &&
-        !isExempt(p) &&
         !isBlocked(p) &&
+        !isDeactivated(p) &&
         POOL_STATUSES.includes(p.approvalStatus),
     ).length,
     other: withSlots.filter(
@@ -409,10 +425,10 @@ const ParticipantsTable = ({
 
       {tab === "participants" && eligibleOnly ? (
         <p className="mb-2 text-xs text-slate-500">
-          Registered this round, onboarding done, not withdrawn, and at least
-          one free slot; an approved exemption stands in for onboarding. Not
-          listed: {leftOut.full} matched with no free slot ·{" "}
-          {leftOut.onboarding} onboarding not done · {leftOut.blocked} blocked ·{" "}
+          Registered this round, training done, not withdrawn, at least one free
+          slot, and nothing in their past waiting on an exemption. Not listed:{" "}
+          {leftOut.full} matched with no free slot · {leftOut.onboarding}{" "}
+          training not done · {leftOut.blocked} blocked or deactivated ·{" "}
           {leftOut.other} withdrawn or closed out.
           {running ? (
             <strong className="ml-1 text-slate-700">
@@ -422,6 +438,28 @@ const ParticipantsTable = ({
           ) : null}
         </p>
       ) : null}
+      {tab === "participants" && eligibleOnly && waitingOnExemption.length ? (
+        <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <p className="font-medium">
+            {waitingOnExemption.length} need an exemption before they can be
+            matched:
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {waitingOnExemption.map((p) => (
+              <li key={p.participantId}>
+                <button
+                  type="button"
+                  className="font-medium underline underline-offset-2"
+                  onClick={() => onOpenParticipant(p.participantId)}
+                >
+                  {p.name}
+                </button>{" "}
+                — {p.historyIssues.join("; ")}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {tab === "participants" && !unregisteredOnly ? (
         <Table>
@@ -430,12 +468,20 @@ const ParticipantsTable = ({
               <TableHead className="w-8" />
               <TableHead>Name</TableHead>
               <TableHead>Role</TableHead>
-              <TableHead>Int / ext</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Account</TableHead>
+              {eligibleOnly ? null : (
+                <>
+                  <TableHead>Int / ext</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Account</TableHead>
+                </>
+              )}
               <TableHead>Pair</TableHead>
-              <TableHead>Notifications</TableHead>
-              <TableHead>Training</TableHead>
+              {eligibleOnly ? null : (
+                <>
+                  <TableHead>Notifications</TableHead>
+                  <TableHead>Training</TableHead>
+                </>
+              )}
               {eligibleOnly ? (
                 <>
                   <TableHead>Free slots</TableHead>
@@ -464,19 +510,23 @@ const ParticipantsTable = ({
                   <div className="text-xs text-slate-500">{p.email}</div>
                 </TableCell>
                 <TableCell className="text-sm">{p.role}</TableCell>
-                <TableCell className="text-sm">{p.identity}</TableCell>
-                <TableCell>
-                  <div className="flex flex-col items-start gap-1">
-                    <Badge variant="secondary">{p.approvalStatus}</Badge>
-                    <FlagBadges
-                      stacked
-                      flags={flagsByParticipant[p.participantId]}
-                    />
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <AccountStateChips {...accountStateOf(p.userId)} />
-                </TableCell>
+                {eligibleOnly ? null : (
+                  <>
+                    <TableCell className="text-sm">{p.identity}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col items-start gap-1">
+                        <Badge variant="secondary">{p.approvalStatus}</Badge>
+                        <FlagBadges
+                          stacked
+                          flags={flagsByParticipant[p.participantId]}
+                        />
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <AccountStateChips {...accountStateOf(p.userId)} />
+                    </TableCell>
+                  </>
+                )}
                 <TableCell>
                   <PairCell
                     person={p}
@@ -487,27 +537,25 @@ const ParticipantsTable = ({
                     }
                   />
                 </TableCell>
-                <TableCell>
-                  <EmailDots
-                    person={p}
-                    registered
-                    emails={emails}
-                    notes={notes}
-                    notifications={notifications}
-                    onOpen={() => onOpenParticipant(p.participantId, "email")}
-                  />
-                </TableCell>
-                <TableCell className="text-sm">
-                  {p.onboardingDone ? "Done" : "Not done"}
-                  {!p.onboardingDone && isExempt(p) ? (
-                    <Badge
-                      variant="outline"
-                      className="ml-1 border-amber-300 bg-amber-50 text-amber-900"
-                    >
-                      Exempted
-                    </Badge>
-                  ) : null}
-                </TableCell>
+                {eligibleOnly ? null : (
+                  <>
+                    <TableCell>
+                      <EmailDots
+                        person={p}
+                        registered
+                        emails={emails}
+                        notes={notes}
+                        notifications={notifications}
+                        onOpen={() =>
+                          onOpenParticipant(p.participantId, "email")
+                        }
+                      />
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {p.onboardingDone ? "Done" : "Not done"}
+                    </TableCell>
+                  </>
+                )}
                 {eligibleOnly ? (
                   <>
                     <TableCell className="text-sm">
