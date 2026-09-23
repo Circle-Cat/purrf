@@ -331,6 +331,9 @@ const ParticipantsTable = ({
                     ? `Needs exemption · ${waitingOnExemption.length}`
                     : "Needs exemption",
                 disabled: !matchingOpen,
+                // Stands out while someone is waiting: it is the one filter
+                // that means there is something to do.
+                urgent: matchingOpen && waitingOnExemption.length > 0,
                 title: matchingOpen
                   ? "Registered people whose past needs an exemption before they can be matched"
                   : `Only until this round's matching closes (${round.timeline.matchNotificationAt})`,
@@ -345,9 +348,13 @@ const ParticipantsTable = ({
                 title={f.title}
                 onClick={() => setFilter(f.key)}
                 className={`h-8 rounded-md border px-3 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                  query.filter === f.key
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-300 text-slate-600 hover:bg-slate-100"
+                  f.urgent
+                    ? query.filter === f.key
+                      ? "border-amber-600 bg-amber-600 font-medium text-white"
+                      : "border-amber-400 bg-amber-100 font-medium text-amber-900 hover:bg-amber-200"
+                    : query.filter === f.key
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-300 text-slate-600 hover:bg-slate-100"
                 }`}
               >
                 {f.label}
