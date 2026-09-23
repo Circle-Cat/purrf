@@ -19,6 +19,8 @@ import { EMAIL_TEMPLATES } from "@/pages/MentorshipAdminPrototype/mockData";
 
 /** Placeholder bodies. Real wording comes from the business side, verbatim. */
 const PREVIEW = {
+  mentorship_round_recruitment: (name) =>
+    `Dear ${name},\n\nRegistration for the next mentorship round is open. Sign in to Purrf and register as a mentor or mentee before the deadline.\n\n[PLACEHOLDER — the real wording comes from the business side.]`,
   mentorship_midterm_reminder: (name) =>
     `Dear ${name},\n\nYou have logged 0 of 5 meetings for this round. Please sign in to Purrf and record the date and time of any meetings you have already held.\n\nIf anything is getting in the way, reply to this email and let us know.`,
   mentorship_first_contact_reminder: (name) =>
@@ -39,18 +41,21 @@ const fallback = (name) =>
  * only show one of them. Saying whose it is stops the sender assuming everyone
  * gets the text on screen.
  *
- * `target.recipients` are `{ participantId, name }`. Each one gets their own
- * message, which lands on their own timeline.
+ * `target.recipients` are `{ participantId, userId, name }` — someone not yet
+ * registered has a user id and no participant id. Each one gets their own
+ * message, anchored on the person and the round.
  *
  * @returns {JSX.Element|null}
  */
 const ComposeDialog = ({ target, onClose, onSend }) => {
-  const [template, setTemplate] = useState("mentorship_midterm_reminder");
+  const [template, setTemplate] = useState(null);
   if (!target) return null;
+  const chosen =
+    template ?? target.defaultTemplate ?? "mentorship_midterm_reminder";
 
   const recipients = target.recipients ?? [];
   const first = recipients[0]?.name ?? "there";
-  const render = PREVIEW[template] ?? fallback;
+  const render = PREVIEW[chosen] ?? fallback;
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -67,7 +72,7 @@ const ComposeDialog = ({ target, onClose, onSend }) => {
         </p>
 
         <label className="mt-2 text-xs text-slate-500">Template</label>
-        <Select value={template} onValueChange={setTemplate}>
+        <Select value={chosen} onValueChange={setTemplate}>
           <SelectTrigger className="text-sm">
             <SelectValue />
           </SelectTrigger>
@@ -95,9 +100,10 @@ const ComposeDialog = ({ target, onClose, onSend }) => {
           <Button
             onClick={() =>
               onSend({
-                templateKey: template,
+                templateKey: chosen,
                 messages: recipients.map((r) => ({
                   participantId: r.participantId,
+                  userId: r.userId,
                   body: render(r.name),
                 })),
               })

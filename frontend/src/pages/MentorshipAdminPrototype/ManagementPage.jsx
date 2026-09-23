@@ -176,6 +176,7 @@ const ManagementPage = ({
   onQueryChange,
   participants,
   nonParticipants,
+  emails,
   pairs,
   requests,
   viewerId,
@@ -242,6 +243,7 @@ const ManagementPage = ({
               )}
               pairs={pairs.filter((p) => p.roundId === round.id)}
               flagsByParticipant={flagsByParticipant}
+              emails={emails}
               can={can}
               onOpenParticipant={onOpenParticipant}
               onOpenPair={onOpenPair}

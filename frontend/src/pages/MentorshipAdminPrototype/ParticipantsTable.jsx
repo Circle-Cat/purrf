@@ -22,11 +22,11 @@ import {
 import {
   RECORDED_TAGS,
   NOTE_LABELS,
+  TEMPLATE_LABELS,
 } from "@/pages/MentorshipAdminPrototype/mockData";
 
 const TABS = [
   { key: "participants", label: "Participants" },
-  { key: "non-participants", label: "Non-participants" },
   { key: "pairs", label: "Pairs" },
 ];
 
@@ -114,6 +114,7 @@ const ParticipantsTable = ({
   onBulkMark,
   onConfirmUnmatched,
   flagsByParticipant = {},
+  emails = [],
 }) => {
   const tab = query.tab ?? "participants";
   const term = query.q ?? "";
@@ -121,7 +122,8 @@ const ParticipantsTable = ({
   const identity = query.identity ?? "all";
   const onboarding = query.onboarding ?? "all";
   const pairStatus = query.pairStatus ?? "all";
-  const eligibleOnly = query.eligible === "1";
+  const eligibleOnly = query.filter === "eligible";
+  const unregisteredOnly = query.filter === "unregistered";
   const [selected, setSelected] = useState([]);
   const [bulkTag, setBulkTag] = useState(RECORDED_TAGS[3]);
 
@@ -217,11 +219,24 @@ const ParticipantsTable = ({
     setSelected([]);
   };
 
+  /** The latest email to someone not yet registered, so nobody is invited twice. */
+  const lastEmailTo = (userId) =>
+    emails
+      .filter((e) => e.userId === userId && e.direction === "out")
+      .sort((a, b) => b.at.localeCompare(a.at))[0];
+
+  const setFilter = (next) => {
+    setSelected([]);
+    setExported(null);
+    onQueryChange({ filter: query.filter === next ? "" : next });
+  };
+
   const nonParticipantRows = nonParticipants.filter(
     (p) =>
-      !needle ||
-      p.name.toLowerCase().includes(needle) ||
-      p.email.toLowerCase().includes(needle),
+      (identity === "all" || p.identity === identity) &&
+      (!needle ||
+        p.name.toLowerCase().includes(needle) ||
+        p.email.toLowerCase().includes(needle)),
   );
 
   /** The mentee's participant row is where a pair's mid-term mark actually lives. */
@@ -337,24 +352,99 @@ const ParticipantsTable = ({
                 <SelectItem value="not_done">Onboarding not done</SelectItem>
               </SelectContent>
             </Select>
-            <button
-              type="button"
-              aria-pressed={eligibleOnly}
-              onClick={() => {
-                setExported(null);
-                onQueryChange({ eligible: eligibleOnly ? "" : "1" });
-              }}
-              className={`h-8 rounded-md border px-3 text-xs transition-colors ${
-                eligibleOnly
-                  ? "border-slate-900 bg-slate-900 text-white"
-                  : "border-slate-300 text-slate-600 hover:bg-slate-100"
-              }`}
-            >
-              Eligible for matching
-            </button>
+            {[
+              { key: "eligible", label: "Eligible for matching" },
+              { key: "unregistered", label: "Not registered this round" },
+            ].map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                aria-pressed={query.filter === f.key}
+                onClick={() => setFilter(f.key)}
+                className={`h-8 rounded-md border px-3 text-xs transition-colors ${
+                  query.filter === f.key
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-300 text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
           </>
         ) : null}
       </div>
+
+      {tab === "participants" && !query.filter && nonParticipants.length > 0 ? (
+        <p className="mb-2 text-xs text-slate-500">
+          {nonParticipants.length} people in the programme have not registered
+          for this round.{" "}
+          <button
+            type="button"
+            className="font-medium text-slate-700 underline underline-offset-2"
+            onClick={() => setFilter("unregistered")}
+          >
+            Show them
+          </button>
+        </p>
+      ) : null}
+
+      {tab === "participants" && unregisteredOnly ? (
+        <>
+          <p className="mb-2 text-xs text-slate-500">
+            In the programme — admitted to a mentorship posting, or holding its
+            onboarding course — and not registered for this round. This is who a
+            new round&apos;s invitation and the onboarding reminders go to.
+          </p>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-8" />
+                <TableHead>Name</TableHead>
+                <TableHead>Int / ext</TableHead>
+                <TableHead>Mentor onboarding</TableHead>
+                <TableHead>Mentee onboarding</TableHead>
+                <TableHead>Last took part</TableHead>
+                <TableHead>Last email</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {nonParticipantRows.map((p) => {
+                const last = lastEmailTo(p.userId);
+                return (
+                  <TableRow key={p.userId}>
+                    <TableCell>
+                      <Checkbox
+                        aria-label={`Select ${p.name}`}
+                        checked={selected.includes(`u${p.userId}`)}
+                        onCheckedChange={() => toggle(`u${p.userId}`)}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-medium">{p.name}</div>
+                      <div className="text-xs text-slate-500">{p.email}</div>
+                    </TableCell>
+                    <TableCell className="text-sm">{p.identity}</TableCell>
+                    <TableCell className="text-sm">
+                      {p.mentorOnboarding ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {p.menteeOnboarding ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {p.lastTookPart ?? "Never"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {last
+                        ? `${TEMPLATE_LABELS[last.templateKey]} · ${last.at}`
+                        : "—"}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </>
+      ) : null}
 
       {tab === "participants" && eligibleOnly ? (
         <p className="mb-2 text-xs text-slate-500">
@@ -365,7 +455,7 @@ const ParticipantsTable = ({
         </p>
       ) : null}
 
-      {tab === "participants" ? (
+      {tab === "participants" && !unregisteredOnly ? (
         <Table>
           <TableHeader>
             <TableRow>
@@ -425,43 +515,6 @@ const ParticipantsTable = ({
             ))}
           </TableBody>
         </Table>
-      ) : null}
-
-      {tab === "non-participants" ? (
-        <>
-          <p className="mb-2 text-xs text-slate-500">
-            Admitted to a mentorship posting but not registered for this round.
-            They are not filtered out of the Participants tab — they were never
-            in it.
-          </p>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Int / ext</TableHead>
-                <TableHead>Mentor onboarding</TableHead>
-                <TableHead>Mentee onboarding</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {nonParticipantRows.map((p) => (
-                <TableRow key={p.userId}>
-                  <TableCell>
-                    <div className="font-medium">{p.name}</div>
-                    <div className="text-xs text-slate-500">{p.email}</div>
-                  </TableCell>
-                  <TableCell className="text-sm">{p.identity}</TableCell>
-                  <TableCell className="text-sm">
-                    {p.mentorOnboarding ?? "—"}
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {p.menteeOnboarding ?? "—"}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </>
       ) : null}
 
       {tab === "pairs" ? (
@@ -533,7 +586,37 @@ const ParticipantsTable = ({
         </p>
       ) : null}
 
-      {selected.length > 0 && writable ? (
+      {unregisteredOnly &&
+      tab === "participants" &&
+      selected.length > 0 &&
+      writable ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
+          <span className="text-sm">
+            <strong>{selected.length} people</strong> selected
+          </span>
+          <Button
+            size="sm"
+            onClick={() =>
+              onCompose(
+                nonParticipantRows
+                  .filter((p) => selected.includes(`u${p.userId}`))
+                  .map(({ userId, name }) => ({ userId, name })),
+                "mentorship_round_recruitment",
+              )
+            }
+          >
+            Send email · {selected.length}
+          </Button>
+          <span className="text-xs text-slate-500">
+            There is no &ldquo;mark as sent&rdquo; here: a note hangs off a
+            round registration, and these people do not have one yet.
+          </span>
+        </div>
+      ) : null}
+
+      {!(unregisteredOnly && tab === "participants") &&
+      selected.length > 0 &&
+      writable ? (
         <div className="mt-4 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
           <span className="text-sm">
             {tab === "pairs" ? (

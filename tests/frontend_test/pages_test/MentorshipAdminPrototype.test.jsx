@@ -293,7 +293,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     );
 
     expect(screen.getByText("Meetings last round")).toBeInTheDocument();
-    expect(window.location.hash).toContain("eligible=1");
+    expect(window.location.hash).toContain("filter=eligible");
     const poolRow = (name) =>
       screen
         .getAllByRole("row")
@@ -452,5 +452,44 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(
       screen.getByRole("button", { name: "Wang, Cara" }),
     ).toBeInTheDocument();
+  });
+
+  it("finds who has not registered this round, and invites them to the new one", () => {
+    render(<MentorshipAdminPrototype />);
+    expect(
+      screen.queryByRole("button", { name: "Non-participants" }),
+    ).not.toBeInTheDocument();
+
+    expect(
+      screen.getByText(/3 people in the programme have not registered/),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show them" }));
+    expect(window.location.hash).toContain("filter=unregistered");
+
+    // Took part last summer, not signed up again: exactly who an invitation is for.
+    const minRow = screen
+      .getAllByRole("row")
+      .find((row) => within(row).queryByText("Park, Min"));
+    expect(
+      within(minRow).getByText("Mentorship 2025 Summer"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Never")).toHaveLength(2);
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select Osei, Kwame" }),
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Park, Min" }));
+    expect(
+      screen.queryByRole("button", { name: "Mark as sent" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Send email · 2" }));
+    expect(
+      within(screen.getByRole("dialog")).getByText("New round invitation"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Send 2" }));
+
+    expect(
+      screen.getAllByText("New round invitation · 2026-09-22"),
+    ).toHaveLength(2);
   });
 });

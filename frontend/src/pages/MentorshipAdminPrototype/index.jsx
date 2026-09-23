@@ -536,10 +536,11 @@ const MentorshipAdminPrototype = () => {
   const sendEmails = useCallback(
     ({ templateKey, messages }) => {
       setEmails((all) => [
-        ...messages.map(({ participantId, body }) => ({
+        ...messages.map(({ participantId, userId, body }) => ({
           messageId: newId("e"),
           threadId: newId("t"),
-          participantId,
+          participantId: participantId ?? null,
+          userId: userId ?? null,
           direction: "out",
           templateKey,
           body,
@@ -744,6 +745,7 @@ const MentorshipAdminPrototype = () => {
         onQueryChange={updateListQuery}
         participants={participants}
         nonParticipants={NON_PARTICIPANTS}
+        emails={emails}
         pairs={pairs}
         requests={requests}
         viewerId={viewerId}
@@ -755,7 +757,9 @@ const MentorshipAdminPrototype = () => {
         }
         onOpenPair={(pairId) => navigate({ kind: "pair", pairId })}
         onMarkCell={markCell}
-        onCompose={(recipients) => setComposeTarget({ recipients })}
+        onCompose={(recipients, defaultTemplate) =>
+          setComposeTarget({ recipients, defaultTemplate })
+        }
         onBulkMark={bulkMark}
         onConfirmUnmatched={(people) =>
           setRequestTarget({
@@ -857,14 +861,16 @@ const MentorshipAdminPrototype = () => {
           setRequestTarget(null);
         }}
       />
-      <ComposeDialog
-        target={composeTarget}
-        onClose={() => setComposeTarget(null)}
-        onSend={(payload) => {
-          sendEmails(payload);
-          setComposeTarget(null);
-        }}
-      />
+      {composeTarget ? (
+        <ComposeDialog
+          target={composeTarget}
+          onClose={() => setComposeTarget(null)}
+          onSend={(payload) => {
+            sendEmails(payload);
+            setComposeTarget(null);
+          }}
+        />
+      ) : null}
       <RoundModal
         round={roundModal}
         onClose={() => setRoundModal(null)}

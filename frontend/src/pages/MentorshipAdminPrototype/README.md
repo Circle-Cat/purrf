@@ -58,6 +58,14 @@ attendance tags, batch Edit mode — moved out of its dialog, not redrawn.
 There is no "add a meeting": the console cannot create one today, and moving
 the log is not the place to start.
 
+**Not registered is a filter too.** There is no Non-participants tab. Above
+the Participants table a line counts the people in the programme who have not
+registered for this round; *Show them* (or the *Not registered this round*
+filter) lists them with when they last took part and what they were last
+emailed. It is for sending a new round's invitation and the onboarding
+reminders. It is per round: someone who took part last summer and has not
+signed up again is on it.
+
 **Matching is a filter, not a table.** *Eligible for matching* on the
 Participants tab narrows it to who can go into a run now: onboarding done, not
 withdrawn, and at least one free slot. A matched mentee with an active pair, or

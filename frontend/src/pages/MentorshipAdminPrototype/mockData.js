@@ -246,10 +246,13 @@ export const INITIAL_PARTICIPANTS = [
 ];
 
 /**
- * People with an onboarding training row but no participant row for the round.
+ * People in the mentorship programme who have not registered for this round.
  *
- * They are not filtered out of the Participants tab — they were never in it.
- * "Who still has to register" is a question only this tab can answer.
+ * "In the programme" is today's gate: admitted to a mentorship posting, or
+ * holding a mentorship onboarding course. The list is per round — someone who
+ * took part last summer and has not signed up again is here, which is exactly
+ * who a new round's invitation is for. They have no participant row, so they
+ * never appear on the Participants table itself; this is its own filter.
  */
 export const NON_PARTICIPANTS = [
   {
@@ -260,6 +263,7 @@ export const NON_PARTICIPANTS = [
     identity: "external",
     mentorOnboarding: null,
     menteeOnboarding: "in_progress",
+    lastTookPart: null,
   },
   {
     userId: 3109,
@@ -269,6 +273,17 @@ export const NON_PARTICIPANTS = [
     identity: "internal",
     mentorOnboarding: "done",
     menteeOnboarding: null,
+    lastTookPart: null,
+  },
+  {
+    userId: 3111,
+    roundId: 7,
+    name: "Park, Min",
+    email: "min@circlecat.org",
+    identity: "internal",
+    mentorOnboarding: "done",
+    menteeOnboarding: null,
+    lastTookPart: "Mentorship 2025 Summer",
   },
 ];
 
@@ -610,6 +625,7 @@ export const INITIAL_FEEDBACK = {
 
 /** The email templates the console can send. Wording is placeholder. */
 export const EMAIL_TEMPLATES = [
+  { key: "mentorship_round_recruitment", label: "New round invitation" },
   { key: "mentorship_onboarding_invite", label: "Onboarding invitation" },
   { key: "mentorship_onboarding_reminder", label: "Onboarding reminder" },
   { key: "mentorship_match_result_matched", label: "Match result — matched" },
