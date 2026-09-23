@@ -178,6 +178,7 @@ const ManagementPage = ({
   nonParticipants,
   emails,
   notes,
+  notifications,
   pairs,
   requests,
   viewerId,
@@ -266,6 +267,7 @@ const ManagementPage = ({
               exemptParticipantIds={exemptParticipantIds}
               emails={emails}
               notes={notes}
+              notifications={notifications}
               can={can}
               onOpenParticipant={onOpenParticipant}
               onOpenPair={onOpenPair}

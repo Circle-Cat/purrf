@@ -14,6 +14,7 @@ import {
 } from "@/pages/MentorshipAdminPrototype/matching";
 import {
   ACTOR_NAMES,
+  ADMISSION_NOTIFICATIONS,
   ALL_PERMISSIONS,
   APPROVE_HOLDERS,
   CURRENT_USER,
@@ -1056,6 +1057,7 @@ const MentorshipAdminPrototype = () => {
         nonParticipants={unregistered}
         emails={emails}
         notes={notes}
+        notifications={ADMISSION_NOTIFICATIONS}
         pairs={pairs}
         requests={requests}
         viewerId={viewerId}

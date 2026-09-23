@@ -3,9 +3,10 @@
  * each one has gone to a given person.
  *
  * Nothing here is stored. "Sent" is read from what already exists: an email
- * on the person's timeline with one of the step's templates, or — for the
- * half that goes out on Teams, which Purrf never sees — a recorded note with
- * the step's tag, written when an admin marks it sent.
+ * on the person's timeline with one of the step's templates; for the
+ * admission email, the notification Purrf sent on its own when they were
+ * admitted; or — for the half that goes out on Teams, which Purrf never sees —
+ * a recorded note with the step's tag, written when an admin marks it sent.
  */
 export const EMAIL_STEPS = [
   {
@@ -17,11 +18,15 @@ export const EMAIL_STEPS = [
     registered: false,
   },
   {
-    key: "onboarding_invite",
-    label: "Onboarding invitation",
-    short: "Onbd",
+    // Sent by Purrf itself the moment someone is admitted, mentor or mentee,
+    // and it carries the onboarding course and its deadline. The template is
+    // only for sending it again by hand.
+    key: "admission",
+    label: "Admission & onboarding",
+    short: "Admitted",
     templates: ["mentorship_onboarding_invite"],
     tag: null,
+    automatic: "mentorship_admitted",
     registered: null,
   },
   {
@@ -107,7 +112,13 @@ export const EMAIL_STATES = [
  *
  * @returns {{state: string, channel?: string, at?: string}}
  */
-export const stepState = (step, { userId, roundId }, emails, notes) => {
+export const stepState = (
+  step,
+  { userId, roundId },
+  emails,
+  notes,
+  notifications = [],
+) => {
   const mine = emails.filter(
     (e) =>
       e.userId === userId &&
@@ -126,6 +137,18 @@ export const stepState = (step, { userId, roundId }, emails, notes) => {
   if (delivered.length) {
     return { state: "sent", channel: "email", at: latest(delivered).at };
   }
+  const automatic = step.automatic
+    ? notifications.filter(
+        (n) =>
+          n.userId === userId &&
+          n.roundId === roundId &&
+          n.event === step.automatic,
+      )
+    : [];
+  const autoSent = automatic.filter((n) => n.status === "delivered");
+  if (autoSent.length) {
+    return { state: "sent", channel: "auto", at: latest(autoSent).at };
+  }
   const marked = step.tag
     ? notes.filter(
         (n) =>
@@ -137,5 +160,8 @@ export const stepState = (step, { userId, roundId }, emails, notes) => {
   }
   if (out.length)
     return { state: "failed", channel: "email", at: latest(out).at };
+  if (automatic.length) {
+    return { state: "failed", channel: "auto", at: latest(automatic).at };
+  }
   return { state: "not_sent" };
 };

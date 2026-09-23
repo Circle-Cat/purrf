@@ -128,6 +128,7 @@ const ParticipantsTable = ({
   matchRun = null,
   onRunMatching,
   notes = [],
+  notifications = [],
   emails = [],
   onBulkMarkUnregistered,
   onOpenPerson,
@@ -149,7 +150,8 @@ const ParticipantsTable = ({
     if (emailStep === "all" || emailState === "all") return true;
     const step = EMAIL_STEPS.find((s) => s.key === emailStep);
     return step
-      ? stepState(step, person, emails, notes).state === emailState
+      ? stepState(step, person, emails, notes, notifications).state ===
+          emailState
       : true;
   };
   const unregisteredOnly = query.filter === "unregistered";
@@ -519,6 +521,7 @@ const ParticipantsTable = ({
                         registered={false}
                         emails={emails}
                         notes={notes}
+                        notifications={notifications}
                         onOpen={() => onOpenPerson(p.userId, "email")}
                       />
                     </TableCell>
@@ -614,6 +617,7 @@ const ParticipantsTable = ({
                     registered
                     emails={emails}
                     notes={notes}
+                    notifications={notifications}
                     onOpen={() => onOpenParticipant(p.participantId, "email")}
                   />
                 </TableCell>

@@ -472,6 +472,50 @@ export const MATCH_REASONS = {
     "Ivy is looking for a first full-time role; Fay hires engineers and can speak to what interviewers look for.",
 };
 
+/**
+ * The admission emails Purrf sent by itself, as the notification pipeline
+ * records them. One per admission, tagged with the round the person was
+ * admitted towards; mentors and mentees alike, and each carries the
+ * onboarding course and its deadline. `failed` is the pipeline's own status.
+ */
+export const ADMISSION_NOTIFICATIONS = [
+  {
+    userId: 3101,
+    roundId: 7,
+    event: "mentorship_admitted",
+    status: "delivered",
+    at: "2026-08-27",
+  },
+  {
+    userId: 3105,
+    roundId: 7,
+    event: "mentorship_admitted",
+    status: "delivered",
+    at: "2026-08-27",
+  },
+  {
+    userId: 3108,
+    roundId: 7,
+    event: "mentorship_admitted",
+    status: "delivered",
+    at: "2026-08-28",
+  },
+  {
+    userId: 3109,
+    roundId: 7,
+    event: "mentorship_admitted",
+    status: "delivered",
+    at: "2026-08-28",
+  },
+  {
+    userId: 3110,
+    roundId: 7,
+    event: "mentorship_admitted",
+    status: "failed",
+    at: "2026-08-29",
+  },
+];
+
 export const INITIAL_PAIRS = [
   {
     pairId: 501,
@@ -872,7 +916,10 @@ export const INITIAL_FEEDBACK = {
 /** The email templates the console can send. Wording is placeholder. */
 export const EMAIL_TEMPLATES = [
   { key: "mentorship_round_recruitment", label: "New round invitation" },
-  { key: "mentorship_onboarding_invite", label: "Onboarding invitation" },
+  {
+    key: "mentorship_onboarding_invite",
+    label: "Admission & onboarding (resend)",
+  },
   { key: "mentorship_onboarding_reminder", label: "Onboarding reminder" },
   { key: "mentorship_match_result_matched", label: "Match result — matched" },
   {

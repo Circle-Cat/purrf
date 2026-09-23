@@ -895,6 +895,18 @@ describe("MentorshipAdminPrototype smoke", () => {
       }),
     ).toBeInTheDocument();
 
+    // The admission email is sent by Purrf itself, and can fail on its own.
+    expect(
+      within(rowOf("Chen, Alice")).getByRole("button", {
+        name: "Admission & onboarding: sent automatically 2026-08-27",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(rowOf("Hu, Ivy")).getByRole("button", {
+        name: "Admission & onboarding: failed on 2026-08-29",
+      }),
+    ).toBeInTheDocument();
+
     // A dot opens that person's timeline showing emails only.
     fireEvent.click(
       within(rowOf("Wang, Cara")).getByRole("button", {

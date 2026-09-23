@@ -14,7 +14,13 @@ const describe = (step, s) => {
   if (s.state === "not_sent") return `${step.label}: not sent`;
   if (s.state === "failed") return `${step.label}: failed on ${s.at}`;
   if (s.state === "replied") return `${step.label}: replied ${s.at}`;
-  return `${step.label}: sent${s.channel === "teams" ? " on Teams" : ""} ${s.at}`;
+  const how =
+    s.channel === "teams"
+      ? " on Teams"
+      : s.channel === "auto"
+        ? " automatically"
+        : "";
+  return `${step.label}: sent${how} ${s.at}`;
 };
 
 /**
@@ -28,10 +34,17 @@ const describe = (step, s) => {
  * @param {{person: {userId: number, roundId: number}, registered: boolean, emails: object[], notes: object[], onOpen: () => void}} props
  * @returns {JSX.Element}
  */
-const EmailDots = ({ person, registered, emails, notes, onOpen }) => (
+const EmailDots = ({
+  person,
+  registered,
+  emails,
+  notes,
+  notifications,
+  onOpen,
+}) => (
   <span className="inline-flex flex-wrap gap-1">
     {stepsFor(registered).map((step) => {
-      const s = stepState(step, person, emails, notes);
+      const s = stepState(step, person, emails, notes, notifications);
       const text = describe(step, s);
       return (
         <button
