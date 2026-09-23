@@ -3,8 +3,8 @@ import { Badge } from "@/components/ui/badge";
 import FlagBadges from "@/pages/MentorshipAdminPrototype/FlagBadges";
 import AccountStateChips from "@/pages/MentorshipAdminPrototype/AccountStateChips";
 import EmailDots from "@/pages/MentorshipAdminPrototype/EmailDots";
+import NotificationFilter from "@/pages/MentorshipAdminPrototype/NotificationFilter";
 import {
-  EMAIL_STATES,
   EMAIL_STEPS,
   stepState,
   stepsFor,
@@ -384,44 +384,12 @@ const ParticipantsTable = ({
                 <SelectItem value="not_done">Training not done</SelectItem>
               </SelectContent>
             </Select>
-            <Select
-              value={emailStep}
-              onValueChange={(v) => onQueryChange({ email: v })}
-            >
-              <SelectTrigger
-                className="h-8 w-48 text-xs"
-                aria-label="Notification"
-              >
-                <SelectValue placeholder="Notification" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Any notification</SelectItem>
-                {stepsFor(!unregisteredOnly).map((step) => (
-                  <SelectItem key={step.key} value={step.key}>
-                    {step.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={emailState}
-              onValueChange={(v) => onQueryChange({ emailState: v })}
-            >
-              <SelectTrigger
-                className="h-8 w-32 text-xs"
-                aria-label="Notification state"
-              >
-                <SelectValue placeholder="State" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Any state</SelectItem>
-                {EMAIL_STATES.map((st) => (
-                  <SelectItem key={st.key} value={st.key}>
-                    {st.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <NotificationFilter
+              steps={stepsFor(!unregisteredOnly)}
+              step={emailStep}
+              state={emailState}
+              onChange={onQueryChange}
+            />
             {[
               { key: "eligible", label: "Eligible for matching" },
               { key: "unregistered", label: "Not registered for this round" },

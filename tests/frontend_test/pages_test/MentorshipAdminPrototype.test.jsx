@@ -954,4 +954,39 @@ describe("MentorshipAdminPrototype smoke", () => {
     });
     expect(cara).toBeDisabled();
   });
+
+  it("picks a notification first, then its state, in one control", async () => {
+    render(<MentorshipAdminPrototype />);
+    const open = () =>
+      fireEvent.keyDown(
+        screen.getByRole("button", { name: "Notification filter" }),
+        { key: "Enter" },
+      );
+
+    open();
+    fireEvent.keyDown(
+      await screen.findByRole("menuitem", { name: "Mid-term reminder" }),
+      { key: "ArrowRight" },
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Not notified" }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Notification filter" }),
+    ).toHaveTextContent("Mid-term reminder · Not notified");
+    expect(window.location.hash).toContain("email=midterm_reminder");
+    expect(screen.queryByRole("button", { name: "Wang, Cara" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Ma, Erin" }),
+    ).toBeInTheDocument();
+
+    open();
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Any notification" }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Wang, Cara" }),
+    ).toBeInTheDocument();
+  });
 });
