@@ -579,10 +579,10 @@ const MentorshipAdminPrototype = () => {
   );
 
   /**
-   * Setting a mark on the pair axis.
+   * Marking a mentee's first contact with their mentor.
    *
-   * Setting one opens the note box first, so a reply summary can go in with
-   * it; clearing one is a correction and happens straight away. The pair is
+   * Setting it opens the note box first, so a reply summary can go in with
+   * it; clearing it is a correction and happens straight away. The pair is
    * looked up from current state before any setter runs: calling one updater
    * from inside another runs it twice under StrictMode, which would toggle the
    * mark straight back off again.
@@ -591,8 +591,6 @@ const MentorshipAdminPrototype = () => {
     (pairId, field, on) => {
       const pair = pairs.find((p) => p.pairId === pairId);
       if (!pair) return;
-      // Only first contact is a stored column. The mid-term mark is the note
-      // the dialog writes; nothing else needs setting.
       if (field === "firstContact") {
         setPairs((all) =>
           all.map((p) =>
@@ -611,9 +609,7 @@ const MentorshipAdminPrototype = () => {
       const pair = pairs.find((p) => p.pairId === pairId);
       if (!pair) return;
       const mentee = menteeParticipantOf(pair);
-      // A sent reminder cannot be unsent — it is an email or a note on the
-      // timeline — so only first contact toggles back off.
-      if (field === "firstContact" && pair.firstContactConfirmedAt) {
+      if (pair.firstContactConfirmedAt) {
         applyMark(pairId, field, false);
         return;
       }
@@ -621,20 +617,16 @@ const MentorshipAdminPrototype = () => {
         participantId: mentee?.participantId,
         pairId,
         mark: field,
-        title:
-          field === "firstContact"
-            ? `First contact confirmed — ${pair.mentorName} ↔ ${pair.menteeName}`
-            : `Mid-term reminder sent — ${pair.menteeName}`,
-        fixedTag:
-          field === "firstContact" ? "status_change" : "midterm_reminder",
+        title: `First contact confirmed — ${pair.mentorName} ↔ ${pair.menteeName}`,
+        fixedTag: "status_change",
       });
     },
     [pairs, menteeParticipantOf, applyMark],
   );
 
   /**
-   * Marking many people at once, after sending on Teams. The note is the
-   * mark: the email dots and the Pairs table's reminder cell both read it.
+   * Marking many people at once, after notifying them some other way. The
+   * note is the mark: the Notifications column reads it.
    */
   const bulkMark = useCallback(
     (participantIds, tag) =>
@@ -881,7 +873,7 @@ const MentorshipAdminPrototype = () => {
   };
 
   const pairLabel = (p) => `${p.mentorName} ↔ ${p.menteeName}`;
-  const backLabel = listQuery.tab === "pairs" ? "← Pairs" : "← Participants";
+  const backLabel = "← Participants";
 
   const body = () => {
     if (view.kind === "participant" || view.kind === "person") {

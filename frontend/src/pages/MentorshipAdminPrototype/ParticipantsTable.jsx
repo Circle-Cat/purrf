@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import FlagBadges from "@/pages/MentorshipAdminPrototype/FlagBadges";
 import AccountStateChips from "@/pages/MentorshipAdminPrototype/AccountStateChips";
 import EmailDots from "@/pages/MentorshipAdminPrototype/EmailDots";
+import PairCell from "@/pages/MentorshipAdminPrototype/PairCell";
 import NotificationFilter from "@/pages/MentorshipAdminPrototype/NotificationFilter";
 import { describeLastRound } from "@/pages/MentorshipAdminPrototype/lastRound";
 import {
@@ -34,11 +35,6 @@ import {
   accountStateOf,
 } from "@/pages/MentorshipAdminPrototype/mockData";
 
-const TABS = [
-  { key: "participants", label: "Participants" },
-  { key: "pairs", label: "Pairs" },
-];
-
 /**
  * Statuses that can go into a run. `un_matched` is included: being confirmed
  * as not matched in one run does not rule someone out of the next.
@@ -69,25 +65,6 @@ const LastRound = ({ value }) => (
   >
     {describeLastRound(value)}
   </span>
-);
-
-const Mark = ({ on, label, onClick, disabled }) => (
-  <button
-    type="button"
-    disabled={disabled}
-    onClick={(e) => {
-      e.stopPropagation();
-      onClick();
-    }}
-    title={label}
-    className={`rounded px-2 py-0.5 text-xs transition-colors ${
-      on
-        ? "bg-emerald-100 text-emerald-800"
-        : "border border-slate-300 text-slate-400 hover:bg-slate-100"
-    } ${disabled ? "cursor-default opacity-60" : ""}`}
-  >
-    {on ? label : "Mark"}
-  </button>
 );
 
 /**
@@ -130,12 +107,13 @@ const ParticipantsTable = ({
   onBulkMarkUnregistered,
   onOpenPerson,
 }) => {
-  const tab = query.tab ?? "participants";
+  // One table since the pair axis was folded into it; kept as a name so the
+  // conditions below still read as "on the person table".
+  const tab = "participants";
   const term = query.q ?? "";
   const role = query.role ?? "all";
   const identity = query.identity ?? "all";
   const onboarding = query.onboarding ?? "all";
-  const pairStatus = query.pairStatus ?? "all";
   const eligibleOnly = query.filter === "eligible";
   const emailStep = query.email ?? "all";
   const emailState = query.emailState ?? "all";
@@ -225,19 +203,6 @@ const ParticipantsTable = ({
         p.email.toLowerCase().includes(needle)),
   );
 
-  /** Searching on this tab finds a pair by either side — "who is Bob paired with". */
-  const pairRows = useMemo(
-    () =>
-      pairs.filter(
-        (p) =>
-          (pairStatus === "all" || p.status === pairStatus) &&
-          (!needle ||
-            p.mentorName.toLowerCase().includes(needle) ||
-            p.menteeName.toLowerCase().includes(needle)),
-      ),
-    [pairs, pairStatus, needle],
-  );
-
   const running = matchRun?.status === "running";
   const runChosen = rows.filter(
     (p) => selected.includes(p.participantId) && inPool(p),
@@ -261,31 +226,11 @@ const ParticipantsTable = ({
         p.email.toLowerCase().includes(needle)),
   );
 
-  /** The mentee's participant row is where a pair's mid-term mark actually lives. */
-  const participantOf = (userId) =>
-    participants.find((p) => p.userId === userId);
-  /** Read, not stored: an email with the template, or a note marking it sent on Teams. */
-  const reminderOf = (pair) => {
-    const s = stepState(
-      EMAIL_STEPS.find((x) => x.key === "midterm_reminder"),
-      { userId: pair.menteeId, roundId: pair.roundId },
-      emails,
-      notes,
-    );
-    return s.state === "sent" || s.state === "replied" ? s.at : null;
-  };
-
   const toggle = (id) =>
     setSelected((all) =>
       all.includes(id) ? all.filter((x) => x !== id) : [...all, id],
     );
 
-  const switchTab = (key) => {
-    setSelected([]);
-    onQueryChange({ tab: key === "participants" ? "" : key });
-  };
-
-  const selectedPairs = pairs.filter((p) => selected.includes(p.pairId));
   const selectedPeople = participants.filter((p) =>
     selected.includes(p.participantId),
   );
@@ -296,47 +241,13 @@ const ParticipantsTable = ({
 
   return (
     <>
-      <div className="mb-3 flex gap-1 border-b border-slate-200">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => switchTab(t.key)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm transition-colors ${
-              tab === t.key
-                ? "border-slate-900 font-medium text-slate-900"
-                : "border-transparent text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Input
           value={term}
           onChange={(e) => onQueryChange({ q: e.target.value })}
-          placeholder={
-            tab === "pairs" ? "Search mentor or mentee" : "Search name or email"
-          }
+          placeholder="Search name or email"
           className="h-8 w-56 text-sm"
         />
-        {tab === "pairs" ? (
-          <Select
-            value={pairStatus}
-            onValueChange={(v) => onQueryChange({ pairStatus: v })}
-          >
-            <SelectTrigger className="h-8 w-36 text-xs">
-              <SelectValue placeholder="Pair status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Any pair status</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="inactive">Inactive</SelectItem>
-            </SelectContent>
-          </Select>
-        ) : null}
         {tab === "participants" ? (
           <>
             <Select
@@ -523,6 +434,7 @@ const ParticipantsTable = ({
               <TableHead>Int / ext</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Account</TableHead>
+              <TableHead>Pair</TableHead>
               <TableHead>Notifications</TableHead>
               <TableHead>Training</TableHead>
               {eligibleOnly ? (
@@ -567,6 +479,17 @@ const ParticipantsTable = ({
                   <AccountStateChips {...accountStateOf(p.userId)} />
                 </TableCell>
                 <TableCell>
+                  <PairCell
+                    person={p}
+                    pairs={pairs}
+                    writable={writable}
+                    onOpenPair={onOpenPair}
+                    onMarkFirstContact={(pairId) =>
+                      onMarkCell(pairId, "firstContact")
+                    }
+                  />
+                </TableCell>
+                <TableCell>
                   <EmailDots
                     person={p}
                     registered
@@ -597,69 +520,6 @@ const ParticipantsTable = ({
                     </TableCell>
                   </>
                 ) : null}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      ) : null}
-
-      {tab === "pairs" ? (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-8" />
-              <TableHead>Mentor</TableHead>
-              <TableHead>Mentee</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>First contact</TableHead>
-              <TableHead>Meetings</TableHead>
-              <TableHead>Mentee reminder</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {pairRows.map((p) => (
-              <TableRow
-                key={p.pairId}
-                tabIndex={0}
-                aria-label={`Open pair ${p.mentorName} and ${p.menteeName}`}
-                className="cursor-pointer"
-                onClick={() => onOpenPair(p.pairId)}
-                onKeyDown={(e) => e.key === "Enter" && onOpenPair(p.pairId)}
-              >
-                <TableCell onClick={(e) => e.stopPropagation()}>
-                  <Checkbox
-                    checked={selected.includes(p.pairId)}
-                    onCheckedChange={() => toggle(p.pairId)}
-                  />
-                </TableCell>
-                <TableCell className="text-sm">{p.mentorName}</TableCell>
-                <TableCell className="text-sm">{p.menteeName}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant={p.status === "active" ? "secondary" : "outline"}
-                  >
-                    {p.status}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <Mark
-                    on={Boolean(p.firstContactConfirmedAt)}
-                    label={p.firstContactConfirmedAt ?? "Mark"}
-                    disabled={!writable}
-                    onClick={() => onMarkCell(p.pairId, "firstContact")}
-                  />
-                </TableCell>
-                <TableCell className="text-sm">
-                  {p.completed}/{p.required}
-                </TableCell>
-                <TableCell>
-                  <Mark
-                    on={Boolean(reminderOf(p))}
-                    label={reminderOf(p) ?? "Mark"}
-                    disabled={!writable || Boolean(reminderOf(p))}
-                    onClick={() => onMarkCell(p.pairId, "midterm")}
-                  />
-                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -733,39 +593,20 @@ const ParticipantsTable = ({
       writable ? (
         <div className="mt-4 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
           <span className="text-sm">
-            {tab === "pairs" ? (
-              <>
-                <strong>{selected.length} pairs</strong> selected —{" "}
-                <strong>{selected.length * 2} people</strong>
-              </>
-            ) : (
-              <>
-                <strong>{selected.length} people</strong> selected
-              </>
-            )}
+            <strong>{selected.length} people</strong> selected
           </span>
           <Button
             size="sm"
             onClick={() =>
               onCompose(
-                tab === "pairs"
-                  ? selectedPairs.flatMap((p) =>
-                      [participantOf(p.mentorId), participantOf(p.menteeId)]
-                        .filter(Boolean)
-                        .map(({ participantId, name }) => ({
-                          participantId,
-                          name,
-                        })),
-                    )
-                  : selectedPeople.map(({ participantId, name }) => ({
-                      participantId,
-                      name,
-                    })),
+                selectedPeople.map(({ participantId, name }) => ({
+                  participantId,
+                  name,
+                })),
               )
             }
           >
-            Send email ·{" "}
-            {tab === "pairs" ? selected.length * 2 : selected.length}
+            Send email · {selected.length}
           </Button>
           <div className="flex items-center gap-2">
             <Select value={bulkTag} onValueChange={setBulkTag}>
@@ -786,14 +627,7 @@ const ParticipantsTable = ({
               size="sm"
               variant="outline"
               onClick={() => {
-                onBulkMark(
-                  tab === "pairs"
-                    ? selectedPairs
-                        .map((p) => participantOf(p.menteeId)?.participantId)
-                        .filter(Boolean)
-                    : selected,
-                  bulkTag,
-                );
+                onBulkMark(selected, bulkTag);
                 setSelected([]);
               }}
             >

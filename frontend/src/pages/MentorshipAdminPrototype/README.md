@@ -11,12 +11,13 @@ Open it at `#mentorship` in the Pages bundle.
 Four things are the design rather than decoration, and each is hard to convey
 in a document.
 
-**One mentor, two mentees.** Bob Liu is a single row under *Participants* and
-two rows under *Pairs*. That is the whole reason the search is split in two: a
-question about a person ("has she registered?") and a question about a pairing
-("have they met yet?") cannot be answered by the same row. Today's console
-answers both from one table, which is why a mentor with two mentees appears
-twice with no visible reason.
+**One table, pairs inside it.** There is no separate Pairs table. Each
+person's row has a Pair column: a mentee's single active pair with the
+meetings held and first contact (it is the mentee who reaches out, so the mark
+is theirs), and a mentor's pairs one line each — Bob carries two mentees and is
+still one row. The mid-term reminder is in the same row's Notifications, next
+to the meeting count that decides whether it is needed. First contact is
+stored on the pair, so a mentee who changes partner starts again at "not yet".
 
 **Marking someone is not writing a note.** Three tags — no show, red flag,
 partner change — are judgements with consequences, so the *Change status /
@@ -102,8 +103,6 @@ the page changes shape between them:
   should not grow with it.
 - Drop **Write** — everything is still readable and nothing can be changed.
 
-Then select two rows on the *Pairs* tab and look at the send button: two pairs
-is four people. A count of selected rows would be a lie there.
 
 On Cara's page press *Refresh emails*: a reply that was waiting in the mailbox
 comes in. Send a mid-term reminder to a pair from the *Pairs* tab and the

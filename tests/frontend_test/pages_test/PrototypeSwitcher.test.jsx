@@ -16,10 +16,12 @@ describe("PrototypeSwitcher", () => {
   });
 
   it("opens a filtered list from a shared link", () => {
-    window.history.replaceState(null, "", "#mentorship?tab=pairs&q=Fay");
+    window.history.replaceState(null, "", "#mentorship?q=Bob");
     render(<PrototypeSwitcher />);
 
-    expect(screen.getByText("Mentee reminder")).toBeInTheDocument();
-    expect(screen.queryByText("Liu, Bob")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Liu, Bob" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Wang, Cara" })).toBeNull();
   });
 });
