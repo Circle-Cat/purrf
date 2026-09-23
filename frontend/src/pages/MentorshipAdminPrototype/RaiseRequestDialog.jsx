@@ -9,13 +9,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   ACTION_LABELS,
   APPROVAL_ACTIONS,
   APPROVE_HOLDERS,
@@ -27,19 +20,27 @@ const RaiseRequestForm = ({ target, pending, viewerId, onClose, onSave }) => {
   const actions = APPROVAL_ACTIONS.filter((a) =>
     (target.actions ?? APPROVAL_ACTIONS.map((x) => x.key)).includes(a.key),
   );
-  const pairChoices = target.pairChoices ?? [];
   const [action, setAction] = useState(actions[0].key);
-  const [pairId, setPairId] = useState(
-    pairChoices.length === 1 ? String(pairChoices[0].pairId) : NO_PAIR,
+  const isPairAction =
+    APPROVAL_ACTIONS.find((a) => a.key === action)?.target === "pair";
+  // A partner change can only end a pair that is still going; anything else
+  // may be about an ended one too.
+  const pairChoices = (target.pairChoices ?? []).filter(
+    (p) => !isPairAction || p.active,
   );
+  const [pairId, setPairId] = useState(NO_PAIR);
+  const onlyPair = pairChoices.length === 1 ? pairChoices[0].pairId : null;
   const [reason, setReason] = useState("");
   const [reviewerId, setReviewerId] = useState("");
   const reviewers = APPROVE_HOLDERS.filter((h) => h.userId !== viewerId);
 
-  const isPairAction =
-    APPROVAL_ACTIONS.find((a) => a.key === action)?.target === "pair";
   const chosenPair =
-    target.pairId ?? (pairId === NO_PAIR ? null : Number(pairId));
+    target.pairId ??
+    (pairId !== NO_PAIR && pairChoices.some((p) => String(p.pairId) === pairId)
+      ? Number(pairId)
+      : isPairAction
+        ? onlyPair
+        : null);
   const ready = reason.trim() && reviewerId && (!isPairAction || chosenPair);
 
   return (
@@ -59,21 +60,21 @@ const RaiseRequestForm = ({ target, pending, viewerId, onClose, onSave }) => {
 
         {actions.length > 1 ? (
           <>
-            <label className="text-xs text-slate-500">
+            <label className="text-xs text-slate-500" htmlFor="approval-action">
               What are you asking for
             </label>
-            <Select value={action} onValueChange={setAction}>
-              <SelectTrigger className="text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {actions.map((a) => (
-                  <SelectItem key={a.key} value={a.key}>
-                    {a.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <select
+              id="approval-action"
+              className="w-full rounded-md border border-slate-300 p-2 text-sm"
+              value={action}
+              onChange={(e) => setAction(e.target.value)}
+            >
+              {actions.map((a) => (
+                <option key={a.key} value={a.key}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
           </>
         ) : (
           <p className="text-sm font-medium">{actions[0].label}</p>
@@ -81,26 +82,29 @@ const RaiseRequestForm = ({ target, pending, viewerId, onClose, onSave }) => {
 
         {target.pairId == null && pairChoices.length > 0 ? (
           <>
-            <label className="mt-2 text-xs text-slate-500">
+            <label
+              className="mt-2 text-xs text-slate-500"
+              htmlFor="approval-pair"
+            >
               {isPairAction
                 ? "Which pair"
                 : "Which pair is this about (optional)"}
             </label>
-            <Select value={pairId} onValueChange={setPairId}>
-              <SelectTrigger className="text-sm">
-                <SelectValue placeholder="Choose a pair" />
-              </SelectTrigger>
-              <SelectContent>
-                {isPairAction ? null : (
-                  <SelectItem value={NO_PAIR}>Not about one pair</SelectItem>
-                )}
-                {pairChoices.map((p) => (
-                  <SelectItem key={p.pairId} value={String(p.pairId)}>
-                    {p.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <select
+              id="approval-pair"
+              className="w-full rounded-md border border-slate-300 p-2 text-sm"
+              value={chosenPair == null ? NO_PAIR : String(chosenPair)}
+              onChange={(e) => setPairId(e.target.value)}
+            >
+              <option value={NO_PAIR}>
+                {isPairAction ? "Choose a pair…" : "Not about one pair"}
+              </option>
+              {pairChoices.map((p) => (
+                <option key={p.pairId} value={String(p.pairId)}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
           </>
         ) : null}
 

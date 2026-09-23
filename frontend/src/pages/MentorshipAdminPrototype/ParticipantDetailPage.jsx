@@ -167,7 +167,6 @@ const ParticipantDetailPage = ({
   pairRequests,
   onSaveMeetings,
   onAddPairNote,
-  onRaisePair,
   onMarkFirstContact,
   blocked = false,
   onRequestBlock,
@@ -357,7 +356,6 @@ const ParticipantDetailPage = ({
               )
             }
             onAddNote={() => onAddPairNote(pair)}
-            onRaise={() => onRaisePair(pair)}
             onSaveMeetings={(batch) => onSaveMeetings(pair.pairId, batch)}
             onMarkFirstContact={() => onMarkFirstContact(pair.pairId)}
           />

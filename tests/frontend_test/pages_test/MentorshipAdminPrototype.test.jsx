@@ -55,6 +55,21 @@ const signInAs = (userId) =>
     target: { value: userId },
   });
 
+const raisePartnerChange = (pairId, reason) => {
+  fireEvent.click(screen.getByRole("button", { name: "Change status / flag" }));
+  fireEvent.change(screen.getByLabelText("What are you asking for"), {
+    target: { value: "change_partner" },
+  });
+  fireEvent.change(screen.getByLabelText("Which pair"), {
+    target: { value: pairId },
+  });
+  fireEvent.change(screen.getByPlaceholderText(/Five days past/), {
+    target: { value: reason },
+  });
+  chooseReviewer();
+  fireEvent.click(screen.getByRole("button", { name: "Send for approval" }));
+};
+
 const raise = (reason) => {
   fireEvent.click(screen.getByRole("button", { name: "Change status / flag" }));
   fireEvent.change(screen.getByPlaceholderText(/Five days past/), {
@@ -154,21 +169,12 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(screen.queryByRole("button", { name: "Cara Wang" })).toBeNull();
   });
 
-  it("puts a change raised from a pair on that pair's section once approved", () => {
+  it("puts an approved partner change on that pair's section, and ends the pair", () => {
     render(<MentorshipAdminPrototype />);
 
     // One way in: Bob's name. His pairs are all on his page.
     fireEvent.click(screen.getByRole("button", { name: "Bob Liu" }));
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Change partner — Bob Liu and Cara Wang",
-      }),
-    );
-    fireEvent.change(screen.getByPlaceholderText(/Five days past/), {
-      target: { value: "Schedules stopped overlapping." },
-    });
-    chooseReviewer();
-    fireEvent.click(screen.getByRole("button", { name: "Send for approval" }));
+    raisePartnerChange("501", "Schedules stopped overlapping.");
 
     fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
     signInAs(JASMINE);
@@ -191,32 +197,44 @@ describe("MentorshipAdminPrototype smoke", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Bob Liu" }));
     fireEvent.click(screen.getByRole("button", { name: /with Cara Wang/ }));
+    // On Bob's timeline and in the pair's own notes.
     expect(
-      screen.getByText(/Schedules stopped overlapping\. — raised by/),
-    ).toBeInTheDocument();
+      screen.getAllByText(/Schedules stopped overlapping\. — raised by/),
+    ).toHaveLength(2);
     expect(
       screen.getByText(/Request a partner change — approved/),
     ).toBeInTheDocument();
+  });
+
+  it("raises a partner change from the same dialog, on a pair still going", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(screen.getByRole("button", { name: "Bob Liu" }));
     expect(
-      screen.queryByRole("button", {
-        name: "Change partner — Bob Liu and Cara Wang",
-      }),
+      screen.queryByRole("button", { name: /^Change partner/ }),
     ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Change status / flag" }),
+    );
+    fireEvent.change(screen.getByLabelText("What are you asking for"), {
+      target: { value: "change_partner" },
+    });
+    const pair = screen.getByLabelText("Which pair");
+    // Bob has two pairs going, so he has to say which.
+    expect(pair).toHaveValue("none");
+    expect(
+      screen.getByRole("button", { name: "Send for approval" }),
+    ).toBeDisabled();
+    expect(
+      within(pair)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["Choose a pair…", "Bob Liu ↔ Cara Wang", "Bob Liu ↔ Erin Ma"]);
   });
 
   it("shows a partner change raised from the mentor's page on the mentor's page too", () => {
     render(<MentorshipAdminPrototype />);
     fireEvent.click(screen.getByRole("button", { name: "Bob Liu" }));
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Change partner — Bob Liu and Cara Wang",
-      }),
-    );
-    fireEvent.change(screen.getByPlaceholderText(/Five days past/), {
-      target: { value: "Schedules stopped overlapping." },
-    });
-    chooseReviewer();
-    fireEvent.click(screen.getByRole("button", { name: "Send for approval" }));
+    raisePartnerChange("501", "Schedules stopped overlapping.");
 
     // Listed with Erin's request on Bob's other pair; only his own can be
     // withdrawn by him.

@@ -1136,15 +1136,6 @@ const MentorshipAdminPrototype = () => {
               pairId: pair.pairId,
             })
           }
-          onRaisePair={(pair) =>
-            setRequestTarget({
-              roundId: pair.roundId,
-              participantId: menteeParticipantOf(pair)?.participantId,
-              pairId: pair.pairId,
-              targetLabel: pairLabel(pair),
-              actions: ["change_partner"],
-            })
-          }
           onMarkFirstContact={(pairId) => markCell(pairId, "firstContact")}
           person={person}
           rounds={rounds}
@@ -1228,14 +1219,19 @@ const MentorshipAdminPrototype = () => {
               roundId: person.roundId,
               participantId: person.participantId,
               targetLabel: person.name,
-              // A partner change is about one pair, so it is raised from that
-              // pair's section rather than here.
-              actions: ["withdraw", "mark_no_show", "mark_red_flag"].concat(
-                issuesOf(person).length ? ["exempt_matching"] : [],
-              ),
+              // A partner change is one of these too: the dialog asks which
+              // pair, and offers only the ones still going.
+              actions: ["withdraw", "mark_no_show", "mark_red_flag"]
+                .concat(
+                  personPairs.some((p) => p.status === "active")
+                    ? ["change_partner"]
+                    : [],
+                )
+                .concat(issuesOf(person).length ? ["exempt_matching"] : []),
               pairChoices: personPairs.map((p) => ({
                 pairId: p.pairId,
-                label: pairLabel(p),
+                label: `${pairLabel(p)}${p.status === "active" ? "" : " (ended)"}`,
+                active: p.status === "active",
               })),
             })
           }
@@ -1450,7 +1446,19 @@ const MentorshipAdminPrototype = () => {
         viewerId={viewerId}
         onClose={() => setRequestTarget(null)}
         onSave={(payload) => {
-          raiseRequest({ ...requestTarget, ...payload });
+          // A partner change is about the pair it names, so that is what the
+          // approver reads first.
+          const pair = requestTarget.pairChoices?.find(
+            (p) => p.pairId === payload.pairId,
+          );
+          raiseRequest({
+            ...requestTarget,
+            ...payload,
+            targetLabel:
+              payload.action === "change_partner" && pair
+                ? pair.label
+                : requestTarget.targetLabel,
+          });
           setRequestTarget(null);
         }}
       />

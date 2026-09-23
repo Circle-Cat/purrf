@@ -43,7 +43,6 @@ const PairSection = ({
   open,
   onToggle,
   onAddNote,
-  onRaise,
   onSaveMeetings,
   onMarkFirstContact,
 }) => {
@@ -92,17 +91,6 @@ const PairSection = ({
               ? `First contact ✓ ${pair.firstContactConfirmedAt}`
               : "First contact — mark"}
           </button>
-        ) : null}
-        {writable && pair.status === "active" ? (
-          <Button
-            size="sm"
-            variant="outline"
-            className="ml-auto"
-            aria-label={`Change partner — ${pair.mentorName} and ${pair.menteeName}`}
-            onClick={onRaise}
-          >
-            Change partner
-          </Button>
         ) : null}
       </header>
 
