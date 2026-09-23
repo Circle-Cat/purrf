@@ -19,9 +19,7 @@ describe("PrototypeSwitcher", () => {
     window.history.replaceState(null, "", "#mentorship?q=Bob");
     render(<PrototypeSwitcher />);
 
-    expect(
-      screen.getByRole("button", { name: "Liu, Bob" }),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Wang, Cara" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Bob Liu" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cara Wang" })).toBeNull();
   });
 });

@@ -81,7 +81,8 @@ const NoteRow = ({ note, revoked, onRevoke }) => {
 };
 
 /**
- * One email on the timeline — a message Purrf sent, or a reply pulled back in.
+ * One email on the timeline — a message Purrf sent (or tried to, and failed),
+ * or a reply pulled back in.
  *
  * The template name leads because it answers the question people come here
  * with ("did she get the mid-term reminder?"); the body is only a glimpse.
@@ -89,9 +90,18 @@ const NoteRow = ({ note, revoked, onRevoke }) => {
 const EmailRow = ({ email, personName }) => (
   <li className="flex gap-3 py-2">
     <span className="w-40 shrink-0 text-xs">
-      <Badge variant="outline">
-        {email.direction === "out" ? "Email sent" : "Reply"}
-      </Badge>
+      {email.direction === "in" ? (
+        <Badge variant="outline">Reply</Badge>
+      ) : email.status === "failed" ? (
+        <Badge
+          variant="outline"
+          className="border-amber-400 bg-amber-50 text-amber-900"
+        >
+          Failed to send
+        </Badge>
+      ) : (
+        <Badge variant="outline">Email sent</Badge>
+      )}
     </span>
     <span className="w-40 shrink-0 text-xs text-slate-500">
       {email.direction === "out"

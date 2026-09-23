@@ -83,21 +83,21 @@ describe("MentorshipAdminPrototype smoke", () => {
     // for each of his pairs.
     expect(screen.queryByRole("button", { name: "Pairs" })).toBeNull();
     expect(
-      within(personRow("Liu, Bob")).getAllByRole("listitem", {
-        name: /^Pair Liu, Bob and/,
+      within(personRow("Bob Liu")).getAllByRole("listitem", {
+        name: /^Pair Bob Liu and/,
       }),
     ).toHaveLength(2);
 
-    fireEvent.click(screen.getByRole("button", { name: "Wang, Cara" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cara Wang" }));
     expect(screen.getByText("Timeline")).toBeInTheDocument();
     expect(screen.getByText("Participation history")).toBeInTheDocument();
 
     // Feedback always names whose opinion it is.
-    expect(screen.getByText(/Wang, Cara's feedback about/)).toBeInTheDocument();
+    expect(screen.getByText(/Cara Wang's feedback about/)).toBeInTheDocument();
 
     // Her pair is on her own page, open: no separate pair page to go to.
     expect(
-      screen.getByRole("button", { name: /with Liu, Bob/, expanded: true }),
+      screen.getByRole("button", { name: /with Bob Liu/, expanded: true }),
     ).toBeInTheDocument();
     expect(screen.getByText("Meeting log")).toBeInTheDocument();
     expect(screen.getByText("Notes about this pair")).toBeInTheDocument();
@@ -110,14 +110,14 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(screen.queryByText("Pending approvals")).not.toBeInTheDocument();
 
     fireEvent.click(chip("Feedback"));
-    fireEvent.click(screen.getByRole("button", { name: "Wang, Cara" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cara Wang" }));
     expect(screen.queryByText(/feedback about/)).not.toBeInTheDocument();
   });
 
   it("raises a request instead of writing the note directly", () => {
     render(<MentorshipAdminPrototype />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Wu, Dana" }));
+    fireEvent.click(screen.getByRole("button", { name: "Dana Wu" }));
     fireEvent.click(
       screen.getByRole("button", { name: "Change status / flag" }),
     );
@@ -141,27 +141,27 @@ describe("MentorshipAdminPrototype smoke", () => {
     fireEvent.change(screen.getByPlaceholderText("Search name or email"), {
       target: { value: "Bob" },
     });
-    expect(screen.queryByRole("button", { name: "Wang, Cara" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cara Wang" })).toBeNull();
     expect(window.location.hash).toContain("q=Bob");
 
-    fireEvent.click(screen.getByRole("button", { name: "Liu, Bob" }));
+    fireEvent.click(screen.getByRole("button", { name: "Bob Liu" }));
     expect(screen.getByText("Meeting log")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
     expect(screen.getByPlaceholderText("Search name or email")).toHaveValue(
       "Bob",
     );
-    expect(screen.queryByRole("button", { name: "Wang, Cara" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cara Wang" })).toBeNull();
   });
 
   it("puts a change raised from a pair on that pair's section once approved", () => {
     render(<MentorshipAdminPrototype />);
 
     // One way in: Bob's name. His pairs are all on his page.
-    fireEvent.click(screen.getByRole("button", { name: "Liu, Bob" }));
+    fireEvent.click(screen.getByRole("button", { name: "Bob Liu" }));
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Change partner — Liu, Bob and Wang, Cara",
+        name: "Change partner — Bob Liu and Cara Wang",
       }),
     );
     fireEvent.change(screen.getByPlaceholderText(/Five days past/), {
@@ -173,24 +173,24 @@ describe("MentorshipAdminPrototype smoke", () => {
     fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
     signInAs(JASMINE);
     fireEvent.click(
-      within(pendingItem("Liu, Bob ↔ Wang, Cara")).getByRole("button", {
+      within(pendingItem("Bob Liu ↔ Cara Wang")).getByRole("button", {
         name: "Approve",
       }),
     );
 
     // Approving it ends the pair: Cara has a free slot again and can be
     // matched with someone else.
-    expect(within(pairLine("Liu, Bob", "Wang, Cara")).getByText("Ended"));
+    expect(within(pairLine("Bob Liu", "Cara Wang")).getByText("Ended"));
     fireEvent.click(
       screen.getByRole("button", { name: "Eligible for matching" }),
     );
-    expect(personRow("Wang, Cara")).toBeDefined();
+    expect(personRow("Cara Wang")).toBeDefined();
     fireEvent.click(
       screen.getByRole("button", { name: "Eligible for matching" }),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Liu, Bob" }));
-    fireEvent.click(screen.getByRole("button", { name: /with Wang, Cara/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Bob Liu" }));
+    fireEvent.click(screen.getByRole("button", { name: /with Cara Wang/ }));
     expect(
       screen.getByText(/Schedules stopped overlapping\. — raised by/),
     ).toBeInTheDocument();
@@ -199,17 +199,17 @@ describe("MentorshipAdminPrototype smoke", () => {
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", {
-        name: "Change partner — Liu, Bob and Wang, Cara",
+        name: "Change partner — Bob Liu and Cara Wang",
       }),
     ).toBeNull();
   });
 
   it("shows a partner change raised from the mentor's page on the mentor's page too", () => {
     render(<MentorshipAdminPrototype />);
-    fireEvent.click(screen.getByRole("button", { name: "Liu, Bob" }));
+    fireEvent.click(screen.getByRole("button", { name: "Bob Liu" }));
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Change partner — Liu, Bob and Wang, Cara",
+        name: "Change partner — Bob Liu and Cara Wang",
       }),
     );
     fireEvent.change(screen.getByPlaceholderText(/Five days past/), {
@@ -221,18 +221,18 @@ describe("MentorshipAdminPrototype smoke", () => {
     // Listed with Erin's request on Bob's other pair; only his own can be
     // withdrawn by him.
     expect(
-      screen.getByText(/Request a partner change \(Liu, Bob ↔ Wang, Cara\)/),
+      screen.getByText(/Request a partner change \(Bob Liu ↔ Cara Wang\)/),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Withdraw" }));
     expect(
-      screen.queryByText(/Request a partner change \(Liu, Bob ↔ Wang, Cara\)/),
+      screen.queryByText(/Request a partner change \(Bob Liu ↔ Cara Wang\)/),
     ).toBeNull();
   });
 
   it("ends the person's pair when a withdrawal is approved", () => {
     render(<MentorshipAdminPrototype />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Wang, Cara" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cara Wang" }));
     raise("She has left the programme.");
     fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
     signInAs(JASMINE);
@@ -243,11 +243,11 @@ describe("MentorshipAdminPrototype smoke", () => {
     );
 
     // Her pair has ended: still listed, marked Ended, nothing left to mark.
-    const ended = pairLine("Liu, Bob", "Wang, Cara");
+    const ended = pairLine("Bob Liu", "Cara Wang");
     expect(within(ended).getByText("Ended")).toBeInTheDocument();
     expect(within(ended).queryByRole("button")).toBeNull();
     expect(
-      within(pairLine("Liu, Bob", "Ma, Erin")).queryByText("Ended"),
+      within(pairLine("Bob Liu", "Erin Ma")).queryByText("Ended"),
     ).toBeNull();
   });
 
@@ -256,35 +256,35 @@ describe("MentorshipAdminPrototype smoke", () => {
 
     // First contact sits on the mentee's row: it is the mentee who reaches out.
     fireEvent.click(
-      within(personRow("Wang, Cara")).getByRole("button", {
-        name: "Mark first contact — Wang, Cara",
+      within(personRow("Cara Wang")).getByRole("button", {
+        name: "Mark first contact — Cara Wang",
       }),
     );
     expect(
-      screen.getByText("First contact confirmed — Liu, Bob ↔ Wang, Cara"),
+      screen.getByText("First contact confirmed — Bob Liu ↔ Cara Wang"),
     ).toBeInTheDocument();
     fireEvent.click(
       within(screen.getByRole("dialog")).getByRole("button", { name: "Mark" }),
     );
     expect(
-      within(personRow("Wang, Cara")).getByRole("button", {
-        name: "First contact confirmed 2026-09-22 — Wang, Cara",
+      within(personRow("Cara Wang")).getByRole("button", {
+        name: "First contact confirmed 2026-09-22 — Cara Wang",
       }),
     ).toBeInTheDocument();
     // The mentor's row has no such mark.
     expect(
-      within(personRow("Liu, Bob")).queryByRole("button", {
+      within(personRow("Bob Liu")).queryByRole("button", {
         name: /^(Mark first contact|First contact confirmed)/,
       }),
     ).toBeNull();
 
     // The list can send email to many at once, but marking one sent some
     // other way happens on the person's page, with a note of how.
-    fireEvent.click(within(personRow("Ma, Erin")).getByRole("checkbox"));
+    fireEvent.click(within(personRow("Erin Ma")).getByRole("checkbox"));
     expect(
       screen.queryByRole("button", { name: "Mark as notified" }),
     ).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Ma, Erin" }));
+    fireEvent.click(screen.getByRole("button", { name: "Erin Ma" }));
     fireEvent.click(screen.getByRole("button", { name: "Mark as notified" }));
     const dialog = screen.getByRole("dialog");
     const confirm = within(dialog).getByRole("button", {
@@ -301,7 +301,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(screen.getByText("Sent on Teams on 9/22.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
     expect(
-      within(personRow("Ma, Erin")).getByRole("button", {
+      within(personRow("Erin Ma")).getByRole("button", {
         name: "Mid-term reminder: notified manually 2026-09-22",
       }),
     ).toBeInTheDocument();
@@ -309,7 +309,7 @@ describe("MentorshipAdminPrototype smoke", () => {
 
   it("blocks someone from their page through an approval, ending their pairs", () => {
     render(<MentorshipAdminPrototype />);
-    fireEvent.click(screen.getByRole("button", { name: "Ma, Erin" }));
+    fireEvent.click(screen.getByRole("button", { name: "Erin Ma" }));
     fireEvent.click(screen.getByRole("button", { name: "Block from Purrf" }));
     fireEvent.change(screen.getByPlaceholderText(/Five days past/), {
       target: { value: "Harassed her mentor." },
@@ -325,10 +325,10 @@ describe("MentorshipAdminPrototype smoke", () => {
     );
 
     expect(
-      within(personRow("Ma, Erin")).getByText("Blocked"),
+      within(personRow("Erin Ma")).getByText("Blocked"),
     ).toBeInTheDocument();
     expect(
-      within(pairLine("Liu, Bob", "Ma, Erin")).getByText("Ended"),
+      within(pairLine("Bob Liu", "Erin Ma")).getByText("Ended"),
     ).toBeInTheDocument();
     // Erin's own partner-change request no longer has a pair to act on.
     signInAs("2001");
@@ -346,7 +346,7 @@ describe("MentorshipAdminPrototype smoke", () => {
 
   it("has no way to mark people unmatched by hand", () => {
     render(<MentorshipAdminPrototype />);
-    fireEvent.click(within(personRow("Chen, Alice")).getByRole("checkbox"));
+    fireEvent.click(within(personRow("Alice Chen")).getByRole("checkbox"));
     expect(
       screen.queryByRole("button", { name: /Confirm as unmatched/ }),
     ).toBeNull();
@@ -355,7 +355,7 @@ describe("MentorshipAdminPrototype smoke", () => {
   it("does not apply an approval the world has moved past, and says why", () => {
     render(<MentorshipAdminPrototype />);
     // Dana has a no show waiting; she withdraws before anyone decides it.
-    fireEvent.click(screen.getByRole("button", { name: "Wu, Dana" }));
+    fireEvent.click(screen.getByRole("button", { name: "Dana Wu" }));
     raise("She has left the programme.");
     fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
     signInAs(JASMINE);
@@ -373,17 +373,24 @@ describe("MentorshipAdminPrototype smoke", () => {
 
     expect(
       screen.getByRole("listitem", {
-        name: "Not applied: Mark as no show — Wu, Dana",
+        name: "Not applied: Mark as no show — Dana Wu",
       }),
-    ).toHaveTextContent("Wu, Dana has already withdrawn.");
-    fireEvent.click(screen.getByRole("button", { name: "Wu, Dana" }));
+    ).toHaveTextContent("Dana Wu has already withdrawn.");
+    fireEvent.click(screen.getByRole("button", { name: "Dana Wu" }));
     expect(screen.getByText("Not applied")).toBeInTheDocument();
     expect(screen.queryByText("No show")).toBeNull();
   });
 
+  it("shows a failed send as failed on the timeline, not as sent", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(screen.getByRole("button", { name: "Alice Chen" }));
+    expect(screen.getByText("Failed to send")).toBeInTheDocument();
+    expect(screen.queryByText("Email sent")).toBeNull();
+  });
+
   it("keeps emails and notes on one timeline, and Refresh pulls replies in", () => {
     render(<MentorshipAdminPrototype />);
-    fireEvent.click(screen.getByRole("button", { name: "Wang, Cara" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cara Wang" }));
 
     expect(screen.getAllByText("Email sent").length).toBeGreaterThan(0);
     expect(screen.getByText("Reply")).toBeInTheDocument();
@@ -404,17 +411,17 @@ describe("MentorshipAdminPrototype smoke", () => {
   it("puts a sent mid-term reminder on the timeline and in the Notifications column", () => {
     render(<MentorshipAdminPrototype />);
 
-    fireEvent.click(within(personRow("Ma, Erin")).getByRole("checkbox"));
+    fireEvent.click(within(personRow("Erin Ma")).getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "Send email · 1" }));
     fireEvent.click(screen.getByRole("button", { name: "Send 1" }));
 
     expect(
-      within(personRow("Ma, Erin")).getByRole("button", {
+      within(personRow("Erin Ma")).getByRole("button", {
         name: "Mid-term reminder: notified by email 2026-09-22",
       }),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Ma, Erin" }));
+    fireEvent.click(screen.getByRole("button", { name: "Erin Ma" }));
     expect(screen.getByText("Email sent")).toBeInTheDocument();
     expect(screen.getByText("Mid-term reminder")).toBeInTheDocument();
   });
@@ -433,37 +440,37 @@ describe("MentorshipAdminPrototype smoke", () => {
         .find((row) => within(row).queryByRole("button", { name }));
 
     // Matched with an active pair: no free slot, so not offered again.
-    expect(poolRow("Wang, Cara")).toBeUndefined();
-    expect(poolRow("Ma, Erin")).toBeUndefined();
+    expect(poolRow("Cara Wang")).toBeUndefined();
+    expect(poolRow("Erin Ma")).toBeUndefined();
     // Onboarding not done.
-    expect(poolRow("Hu, Ivy")).toBeUndefined();
+    expect(poolRow("Ivy Hu")).toBeUndefined();
     // Matched, but a slot is still open.
-    expect(within(poolRow("Liu, Bob")).getByText("1 of 3")).toBeInTheDocument();
-    expect(within(poolRow("Guo, Fay")).getByText("2 of 2")).toBeInTheDocument();
+    expect(within(poolRow("Bob Liu")).getByText("1 of 3")).toBeInTheDocument();
+    expect(within(poolRow("Fay Guo")).getByText("2 of 2")).toBeInTheDocument();
     // The four states still read as four answers here.
     expect(
-      within(poolRow("Chen, Alice")).getByText("First time"),
+      within(poolRow("Alice Chen")).getByText("First time"),
     ).toBeInTheDocument();
     // Their latest earlier round, told apart rather than turned into a 0.
     expect(
-      within(poolRow("Wu, Dana")).getByText("Mentorship 2025 Summer · 7/7"),
+      within(poolRow("Dana Wu")).getByText("Mentorship 2025 Summer · 7/7"),
     ).toBeInTheDocument();
     expect(
-      within(poolRow("Liu, Bob")).getByText(
+      within(poolRow("Bob Liu")).getByText(
         "Mentorship 2025 Summer · Not matched",
       ),
     ).toBeInTheDocument();
     expect(
-      within(poolRow("Guo, Fay")).getByText(
+      within(poolRow("Fay Guo")).getByText(
         "Mentorship 2025 Summer · Withdrawn at 2/7",
       ),
     ).toBeInTheDocument();
 
-    fireEvent.click(within(poolRow("Liu, Bob")).getByRole("checkbox"));
+    fireEvent.click(within(poolRow("Bob Liu")).getByRole("checkbox"));
     expect(
       screen.getByRole("button", { name: "Run matching · 1" }),
     ).toBeDisabled();
-    fireEvent.click(within(poolRow("Chen, Alice")).getByRole("checkbox"));
+    fireEvent.click(within(poolRow("Alice Chen")).getByRole("checkbox"));
     expect(
       screen.getByRole("button", { name: "Run matching · 2" }),
     ).toBeEnabled();
@@ -471,9 +478,9 @@ describe("MentorshipAdminPrototype smoke", () => {
 
   it("shows the existing meeting log on the pair page, editable only in a v2 round", () => {
     render(<MentorshipAdminPrototype />);
-    fireEvent.click(screen.getByRole("button", { name: "Ma, Erin" }));
+    fireEvent.click(screen.getByRole("button", { name: "Erin Ma" }));
 
-    expect(screen.getByText("Ma, Erin absent")).toBeInTheDocument();
+    expect(screen.getByText("Erin Ma absent")).toBeInTheDocument();
     expect(screen.getByText("Insufficient duration")).toBeInTheDocument();
     expect(screen.getByText("Scheduled")).toBeInTheDocument();
     expect(screen.getByText("Incomplete")).toBeInTheDocument();
@@ -487,14 +494,14 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(screen.getByText("Delete meetings?")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Confirm changes" }));
     return waitFor(() =>
-      expect(screen.queryByText("Ma, Erin absent")).not.toBeInTheDocument(),
+      expect(screen.queryByText("Erin Ma absent")).not.toBeInTheDocument(),
     );
   });
 
   it("leaves a v1 round's meeting log read-only", () => {
     render(<MentorshipAdminPrototype />);
-    fireEvent.click(screen.getByRole("button", { name: "Wang, Cara" }));
-    fireEvent.click(screen.getByRole("button", { name: "Wu, Dana" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cara Wang" }));
+    fireEvent.click(screen.getByRole("button", { name: "Dana Wu" }));
     expect(screen.getByText("Meeting log")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Edit" }),
@@ -503,7 +510,7 @@ describe("MentorshipAdminPrototype smoke", () => {
 
   it("sends a request to a named reviewer, and never lets the raiser decide it", () => {
     render(<MentorshipAdminPrototype />);
-    fireEvent.click(screen.getByRole("button", { name: "Wu, Dana" }));
+    fireEvent.click(screen.getByRole("button", { name: "Dana Wu" }));
     raise("Still no reply.");
     fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
 
@@ -511,7 +518,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(within(mine).getByText(/You raised this/)).toBeInTheDocument();
     expect(within(mine).queryByRole("button", { name: "Approve" })).toBeNull();
     expect(
-      within(mine).getByText(/Sent\s+to\s+Wang, Jasmine/),
+      within(mine).getByText(/Sent\s+to\s+Jasmine Wang/),
     ).toBeInTheDocument();
 
     // Sent to Jasmine, but any approver may decide — Yanpei here.
@@ -525,7 +532,7 @@ describe("MentorshipAdminPrototype smoke", () => {
 
   it("lets the raiser withdraw a request while it waits", () => {
     render(<MentorshipAdminPrototype />);
-    fireEvent.click(screen.getByRole("button", { name: "Wu, Dana" }));
+    fireEvent.click(screen.getByRole("button", { name: "Dana Wu" }));
     raise("Raised by mistake.");
 
     expect(screen.getByText("Waiting on a decision")).toBeInTheDocument();
@@ -542,11 +549,11 @@ describe("MentorshipAdminPrototype smoke", () => {
       screen
         .getAllByRole("row")
         .find((row) =>
-          within(row).queryByRole("button", { name: "Wang, Cara" }),
+          within(row).queryByRole("button", { name: "Cara Wang" }),
         );
     expect(within(caraRow()).getByText("No show")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Wang, Cara" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cara Wang" }));
     fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
     expect(screen.getByText(/Revoke a flag/)).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText(/Five days past/), {
@@ -566,7 +573,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     );
     expect(within(caraRow()).queryByText("No show")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Wang, Cara" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cara Wang" }));
     expect(screen.getByText("(revoked)")).toBeInTheDocument();
     expect(
       // On her timeline, and on the pair it was about.
@@ -585,13 +592,13 @@ describe("MentorshipAdminPrototype smoke", () => {
 
     fireEvent.click(filter);
     expect(screen.getByText("Free slots")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Wang, Cara" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cara Wang" })).toBeNull();
 
     fireEvent.click(filter);
     expect(screen.queryByText("Free slots")).not.toBeInTheDocument();
     expect(screen.queryByText("Meetings last round")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Wang, Cara" }),
+      screen.getByRole("button", { name: "Cara Wang" }),
     ).toBeInTheDocument();
   });
 
@@ -612,18 +619,18 @@ describe("MentorshipAdminPrototype smoke", () => {
     // Took part last summer, not signed up again: exactly who an invitation is for.
     const minRow = screen
       .getAllByRole("row")
-      .find((row) => within(row).queryByText("Park, Min"));
+      .find((row) => within(row).queryByText("Min Park"));
     expect(
       within(minRow).getByText("Mentorship 2025 Summer"),
     ).toBeInTheDocument();
     expect(screen.getAllByText("Never")).toHaveLength(2);
     // Handed an onboarding course but never admitted: not in the programme.
-    expect(screen.queryByText("Zhou, Tao")).not.toBeInTheDocument();
+    expect(screen.queryByText("Tao Zhou")).not.toBeInTheDocument();
 
     fireEvent.click(
-      screen.getByRole("checkbox", { name: "Select Osei, Kwame" }),
+      screen.getByRole("checkbox", { name: "Select Kwame Osei" }),
     );
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select Park, Min" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Min Park" }));
     expect(
       screen.queryByRole("button", { name: "Mark as notified" }),
     ).toBeNull();
@@ -645,13 +652,13 @@ describe("MentorshipAdminPrototype smoke", () => {
       screen.getAllByRole("row").find((row) => within(row).queryByText(name));
     // Took part last summer and not this autumn.
     expect(
-      within(rowOf("Park, Min")).getByText("Mentorship 2025 Summer"),
+      within(rowOf("Min Park")).getByText("Mentorship 2025 Summer"),
     ).toBeInTheDocument();
     // Registered this autumn, so not on the list.
-    expect(rowOf("Chen, Alice")).toBeUndefined();
+    expect(rowOf("Alice Chen")).toBeUndefined();
     // Training comes from the course rows.
     expect(
-      within(rowOf("Osei, Kwame")).getByText("in_progress"),
+      within(rowOf("Kwame Osei")).getByText("in_progress"),
     ).toBeInTheDocument();
 
     // A finished round has nobody left to invite: the filter is off, and
@@ -663,14 +670,14 @@ describe("MentorshipAdminPrototype smoke", () => {
       screen.getByRole("button", { name: "Not registered for this round" }),
     ).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Show them" })).toBeNull();
-    expect(rowOf("Osei, Kwame")).toBeUndefined();
+    expect(rowOf("Kwame Osei")).toBeUndefined();
   });
 
   it("lets notes be written about someone who has not registered", () => {
     render(<MentorshipAdminPrototype />);
     fireEvent.click(screen.getByRole("button", { name: "Show them" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Park, Min" }));
+    fireEvent.click(screen.getByRole("button", { name: "Min Park" }));
     expect(window.location.hash).toContain("participants/3111?round=7");
     expect(
       screen.getByText(/Not registered for this round/),
@@ -715,23 +722,19 @@ describe("MentorshipAdminPrototype smoke", () => {
     const rowOf = (name) =>
       screen.getAllByRole("row").find((row) => within(row).queryByText(name));
 
-    expect(within(rowOf("Liu, Bob")).getByText("Active")).toBeInTheDocument();
+    expect(within(rowOf("Bob Liu")).getByText("Active")).toBeInTheDocument();
+    expect(within(rowOf("Gina Shen")).getByText("Blocked")).toBeInTheDocument();
+    expect(within(rowOf("Gina Shen")).queryByText("Active")).toBeNull();
     expect(
-      within(rowOf("Shen, Gina")).getByText("Blocked"),
-    ).toBeInTheDocument();
-    expect(within(rowOf("Shen, Gina")).queryByText("Active")).toBeNull();
-    expect(
-      within(rowOf("Hu, Ivy")).getByText("Deactivated"),
+      within(rowOf("Ivy Hu")).getByText("Deactivated"),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Show them" }));
     // Independent flags: both at once.
     expect(
-      within(rowOf("Rossi, Lia")).getByText("Deactivated"),
+      within(rowOf("Lia Rossi")).getByText("Deactivated"),
     ).toBeInTheDocument();
-    expect(
-      within(rowOf("Rossi, Lia")).getByText("Blocked"),
-    ).toBeInTheDocument();
+    expect(within(rowOf("Lia Rossi")).getByText("Blocked")).toBeInTheDocument();
   });
 
   it("never offers a blocked person to matching", () => {
@@ -739,7 +742,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Eligible for matching" }),
     );
-    expect(screen.queryByRole("button", { name: "Lin, Oscar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Oscar Lin" })).toBeNull();
     // Gina and Oscar blocked, Ivy deactivated.
     expect(screen.getByText(/3 blocked or/)).toBeInTheDocument();
   });
@@ -750,7 +753,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Eligible for matching" }),
     );
-    expect(screen.queryByRole("button", { name: "Kim, Sora" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Sora Kim" })).toBeNull();
     expect(screen.getByText(/2 waiting on an exemption/)).toBeInTheDocument();
 
     // Counted on the button without asking; listed when pressed.
@@ -758,17 +761,17 @@ describe("MentorshipAdminPrototype smoke", () => {
       screen.getByRole("button", { name: "Needs exemption · 2" }),
     );
     expect(
-      within(personRow("Kim, Sora")).getByText(
+      within(personRow("Sora Kim")).getByText(
         "Met 3/7 in Mentorship 2025 Summer",
       ),
     ).toBeInTheDocument();
     expect(
-      within(personRow("Tan, Wei")).getByText(
+      within(personRow("Wei Tan")).getByText(
         "Red flag in Mentorship 2025 Summer",
       ),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Kim, Sora" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sora Kim" }));
     expect(
       screen.getByText("Needs an exemption before being matched this round"),
     ).toBeInTheDocument();
@@ -790,14 +793,14 @@ describe("MentorshipAdminPrototype smoke", () => {
       }),
     );
     // Out of the exemption list, into the pool; Wei is still waiting.
-    expect(personRow("Kim, Sora")).toBeUndefined();
+    expect(personRow("Sora Kim")).toBeUndefined();
     expect(
       screen.getByRole("button", { name: "Needs exemption · 1" }),
     ).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: "Eligible for matching" }),
     );
-    expect(personRow("Kim, Sora")).toBeDefined();
+    expect(personRow("Sora Kim")).toBeDefined();
   });
 
   it("hides what does not help choose who to match", () => {
@@ -835,7 +838,7 @@ describe("MentorshipAdminPrototype smoke", () => {
       screen
         .getAllByRole("row")
         .find((r) => within(r).queryByRole("button", { name }));
-    ["Liu, Bob", "Guo, Fay", "Chen, Alice", "Wu, Dana"].forEach((name) =>
+    ["Bob Liu", "Fay Guo", "Alice Chen", "Dana Wu"].forEach((name) =>
       fireEvent.click(within(row(name)).getByRole("checkbox")),
     );
     fireEvent.click(screen.getByRole("button", { name: "Run matching · 4" }));
@@ -857,11 +860,11 @@ describe("MentorshipAdminPrototype smoke", () => {
     ).toBeInTheDocument();
     const row = screen
       .getAllByRole("row")
-      .find((r) => within(r).queryByRole("button", { name: "Chen, Alice" }));
+      .find((r) => within(r).queryByRole("button", { name: "Alice Chen" }));
     fireEvent.click(within(row).getByRole("checkbox"));
     const bob = screen
       .getAllByRole("row")
-      .find((r) => within(r).queryByRole("button", { name: "Liu, Bob" }));
+      .find((r) => within(r).queryByRole("button", { name: "Bob Liu" }));
     fireEvent.click(within(bob).getByRole("checkbox"));
     expect(
       screen.getByRole("button", { name: "Run matching · 2" }),
@@ -876,7 +879,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     );
     expect(screen.getByText(/2 of 2\s+mentees matched/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Chen, Alice/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Alice Chen/ }));
     // Both sides, résumé and application.
     expect(
       screen.getByText(/Data Analyst · Northwind Health/),
@@ -889,29 +892,29 @@ describe("MentorshipAdminPrototype smoke", () => {
     ).toBeInTheDocument();
 
     // Bob has one slot left; giving him Dana as well is over his cap.
-    fireEvent.click(screen.getByRole("button", { name: /^Wu, Dana/ }));
-    fireEvent.change(screen.getByLabelText("Mentor for Wu, Dana"), {
+    fireEvent.click(screen.getByRole("button", { name: /^Dana Wu/ }));
+    fireEvent.change(screen.getByLabelText("Mentor for Dana Wu"), {
       target: { value: "3102" },
     });
     expect(
-      screen.getByText(/Liu, Bob is given 2 mentees but has 1 slot left/),
+      screen.getByText(/Bob Liu is given 2 mentees but has 1 slot left/),
     ).toBeInTheDocument();
     // Moving her cleared the reason written for her old mentor.
     expect(
-      screen.getByText(/Wu, Dana is matched with no reason/),
+      screen.getByText(/Dana Wu is matched with no reason/),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Request publishing" }),
     ).toBeDisabled();
 
     // Send Alice to Fay instead and write both reasons.
-    fireEvent.change(screen.getByLabelText("Mentor for Chen, Alice"), {
+    fireEvent.change(screen.getByLabelText("Mentor for Alice Chen"), {
       target: { value: "3106" },
     });
-    fireEvent.change(screen.getByLabelText("Reason for Chen, Alice"), {
+    fireEvent.change(screen.getByLabelText("Reason for Alice Chen"), {
       target: { value: "Fay hires for ML-adjacent roles." },
     });
-    fireEvent.change(screen.getByLabelText("Reason for Wu, Dana"), {
+    fireEvent.change(screen.getByLabelText("Reason for Dana Wu"), {
       target: { value: "Bob can speak to leading a platform team." },
     });
     expect(screen.getAllByText("The matcher proposed")).toHaveLength(2);
@@ -932,7 +935,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(
       screen.getByText(/Waiting for approval to publish/),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Mentor for Chen, Alice")).toBeDisabled();
+    expect(screen.getByLabelText("Mentor for Alice Chen")).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
     signInAs(JASMINE);
@@ -953,8 +956,8 @@ describe("MentorshipAdminPrototype smoke", () => {
     if (eligible.getAttribute("aria-pressed") === "true") {
       fireEvent.click(eligible);
     }
-    expect(pairLine("Guo, Fay", "Chen, Alice")).toBeInTheDocument();
-    expect(pairLine("Liu, Bob", "Wu, Dana")).toBeInTheDocument();
+    expect(pairLine("Fay Guo", "Alice Chen")).toBeInTheDocument();
+    expect(pairLine("Bob Liu", "Dana Wu")).toBeInTheDocument();
   });
 
   it("keeps the reason within what the published column can hold", () => {
@@ -963,8 +966,8 @@ describe("MentorshipAdminPrototype smoke", () => {
     fireEvent.click(
       screen.getByRole("button", { name: /Simulate the run finishing/ }),
     );
-    fireEvent.click(screen.getByRole("button", { name: /^Chen, Alice/ }));
-    fireEvent.change(screen.getByLabelText("Reason for Chen, Alice"), {
+    fireEvent.click(screen.getByRole("button", { name: /^Alice Chen/ }));
+    fireEvent.change(screen.getByLabelText("Reason for Alice Chen"), {
       target: { value: "x".repeat(301) },
     });
     expect(screen.getByText("301/300")).toBeInTheDocument();
@@ -982,8 +985,8 @@ describe("MentorshipAdminPrototype smoke", () => {
     );
     expect(screen.getByRole("button", { name: "Save draft" })).toBeDisabled();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Chen, Alice/ }));
-    fireEvent.change(screen.getByLabelText("Reason for Chen, Alice"), {
+    fireEvent.click(screen.getByRole("button", { name: /^Alice Chen/ }));
+    fireEvent.change(screen.getByLabelText("Reason for Alice Chen"), {
       target: { value: "A different reason." },
     });
     expect(screen.getByText(/Unsaved changes/)).toBeInTheDocument();
@@ -993,7 +996,7 @@ describe("MentorshipAdminPrototype smoke", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
     expect(screen.queryByText(/Unsaved changes/)).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Reason for Chen, Alice")).not.toHaveValue(
+    expect(screen.getByLabelText("Reason for Alice Chen")).not.toHaveValue(
       "A different reason.",
     );
     expect(
@@ -1008,14 +1011,14 @@ describe("MentorshipAdminPrototype smoke", () => {
     );
     // Bob already has two mentees and a slot left; Dana will take Fay, and
     // Bob gets nobody new.
-    ["Liu, Bob", "Guo, Fay", "Wu, Dana"].forEach((name) =>
+    ["Bob Liu", "Fay Guo", "Dana Wu"].forEach((name) =>
       fireEvent.click(within(personRow(name)).getByRole("checkbox")),
     );
     fireEvent.click(screen.getByRole("button", { name: "Run matching · 3" }));
     fireEvent.click(
       screen.getByRole("button", { name: /Simulate the run finishing/ }),
     );
-    expect(screen.getByText(/Without a partner: Liu, Bob/)).toBeInTheDocument();
+    expect(screen.getByText(/Without a partner: Bob Liu/)).toBeInTheDocument();
     expect(
       screen.getByText(/Publishing marks them unmatched, unless/),
     ).toBeInTheDocument();
@@ -1029,7 +1032,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
 
     expect(pendingItem("pairs from run").textContent).toMatch(
-      /1 unmatched: Liu, Bob/,
+      /1 unmatched: Bob Liu/,
     );
     signInAs(JASMINE);
     fireEvent.click(
@@ -1041,9 +1044,9 @@ describe("MentorshipAdminPrototype smoke", () => {
       screen.getByRole("button", { name: "Eligible for matching" }),
     );
     expect(
-      within(personRow("Liu, Bob")).getByText("matched"),
+      within(personRow("Bob Liu")).getByText("matched"),
     ).toBeInTheDocument();
-    expect(pairLine("Guo, Fay", "Wu, Dana")).toBeInTheDocument();
+    expect(pairLine("Fay Guo", "Dana Wu")).toBeInTheDocument();
   });
 
   it("re-checks the people in a run when publishing is approved", () => {
@@ -1061,7 +1064,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
 
     // Alice withdraws while the result waits.
-    fireEvent.click(screen.getByRole("button", { name: "Chen, Alice" }));
+    fireEvent.click(screen.getByRole("button", { name: "Alice Chen" }));
     raise("Took a new job; no time this round.");
     fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
     signInAs(JASMINE);
@@ -1078,13 +1081,13 @@ describe("MentorshipAdminPrototype smoke", () => {
 
     expect(
       screen.getByRole("listitem", { name: /^Not applied: Publish matching/ }),
-    ).toHaveTextContent("Chen, Alice has withdrawn or been closed out.");
+    ).toHaveTextContent("Alice Chen has withdrawn or been closed out.");
     fireEvent.click(
       screen.getByRole("button", { name: "Eligible for matching" }),
     );
-    expect(within(personRow("Chen, Alice")).getByText("withdrawn"));
+    expect(within(personRow("Alice Chen")).getByText("withdrawn"));
     expect(
-      screen.queryAllByRole("listitem", { name: /^Pair .* and Chen, Alice$/ }),
+      screen.queryAllByRole("listitem", { name: /^Pair .* and Alice Chen$/ }),
     ).toHaveLength(0);
   });
 
@@ -1119,7 +1122,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(
       screen.getByRole("listitem", { name: /^Not applied: Publish matching/ }),
     ).toHaveTextContent("A newer matching run has replaced this one.");
-    expect(pairLines("Liu, Bob", "Chen, Alice")).toHaveLength(0);
+    expect(pairLines("Bob Liu", "Alice Chen")).toHaveLength(0);
   });
 
   it("puts a latecomer through a supplemental run, approved like the first", () => {
@@ -1127,7 +1130,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Eligible for matching" }),
     );
-    ["Guo, Fay", "Chen, Alice"].forEach((name) =>
+    ["Fay Guo", "Alice Chen"].forEach((name) =>
       fireEvent.click(within(personRow(name)).getByRole("checkbox")),
     );
     fireEvent.click(screen.getByRole("button", { name: "Run matching · 2" }));
@@ -1154,15 +1157,15 @@ describe("MentorshipAdminPrototype smoke", () => {
     if (eligible.getAttribute("aria-pressed") !== "true") {
       fireEvent.click(eligible);
     }
-    ["Liu, Bob", "Wu, Dana"].forEach((name) =>
+    ["Bob Liu", "Dana Wu"].forEach((name) =>
       fireEvent.click(within(personRow(name)).getByRole("checkbox")),
     );
     fireEvent.click(screen.getByRole("button", { name: "Run matching · 2" }));
     fireEvent.click(
       screen.getByRole("button", { name: /Simulate the run finishing/ }),
     );
-    fireEvent.click(screen.getByRole("button", { name: /^Wu, Dana/ }));
-    fireEvent.change(screen.getByLabelText("Reason for Wu, Dana"), {
+    fireEvent.click(screen.getByRole("button", { name: /^Dana Wu/ }));
+    fireEvent.change(screen.getByLabelText("Reason for Dana Wu"), {
       target: { value: "Bob offered on Teams, 9/22." },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
@@ -1189,7 +1192,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Eligible for matching" }),
     );
-    expect(pairLine("Liu, Bob", "Wu, Dana")).toBeInTheDocument();
+    expect(pairLine("Bob Liu", "Dana Wu")).toBeInTheDocument();
   });
 
   it("shows where each person's emails stand, one dot per email of the round", () => {
@@ -1198,13 +1201,13 @@ describe("MentorshipAdminPrototype smoke", () => {
     // How far each person has got, in words, above the dots.
     const cara = screen
       .getAllByRole("row")
-      .find((r) => within(r).queryByRole("button", { name: "Wang, Cara" }));
+      .find((r) => within(r).queryByRole("button", { name: "Cara Wang" }));
     expect(
       within(cara).getByText("Mid-term reminder · 2026-09-18"),
     ).toBeInTheDocument();
     const alice = screen
       .getAllByRole("row")
-      .find((r) => within(r).queryByRole("button", { name: "Chen, Alice" }));
+      .find((r) => within(r).queryByRole("button", { name: "Alice Chen" }));
     expect(within(alice).getByText("Failed")).toBeInTheDocument();
     const rowOf = (name) =>
       screen
@@ -1213,46 +1216,46 @@ describe("MentorshipAdminPrototype smoke", () => {
 
     // Replied, notified by email, notified manually, failed, not notified.
     expect(
-      within(rowOf("Wang, Cara")).getByRole("button", {
+      within(rowOf("Cara Wang")).getByRole("button", {
         name: "First contact reminder: replied 2026-09-11",
       }),
     ).toBeInTheDocument();
     expect(
-      within(rowOf("Wang, Cara")).getByRole("button", {
+      within(rowOf("Cara Wang")).getByRole("button", {
         name: "Mid-term reminder: notified by email 2026-09-18",
       }),
     ).toBeInTheDocument();
     expect(
-      within(rowOf("Wu, Dana")).getByRole("button", {
+      within(rowOf("Dana Wu")).getByRole("button", {
         name: "Onboarding reminder: notified manually 2026-09-07",
       }),
     ).toBeInTheDocument();
     expect(
-      within(rowOf("Chen, Alice")).getByRole("button", {
+      within(rowOf("Alice Chen")).getByRole("button", {
         name: "Onboarding reminder: failed on 2026-09-05",
       }),
     ).toBeInTheDocument();
     expect(
-      within(rowOf("Chen, Alice")).getByRole("button", {
+      within(rowOf("Alice Chen")).getByRole("button", {
         name: "Match result: not notified",
       }),
     ).toBeInTheDocument();
 
     // The admission email is sent by Purrf itself, and can fail on its own.
     expect(
-      within(rowOf("Chen, Alice")).getByRole("button", {
+      within(rowOf("Alice Chen")).getByRole("button", {
         name: "Admission & onboarding: notified automatically 2026-08-27",
       }),
     ).toBeInTheDocument();
     expect(
-      within(rowOf("Hu, Ivy")).getByRole("button", {
+      within(rowOf("Ivy Hu")).getByRole("button", {
         name: "Admission & onboarding: failed on 2026-08-29",
       }),
     ).toBeInTheDocument();
 
     // A dot opens that person's timeline showing emails only.
     fireEvent.click(
-      within(rowOf("Wang, Cara")).getByRole("button", {
+      within(rowOf("Cara Wang")).getByRole("button", {
         name: "Mid-term reminder: notified by email 2026-09-18",
       }),
     );
@@ -1270,11 +1273,9 @@ describe("MentorshipAdminPrototype smoke", () => {
       "#mentorship?email=midterm_reminder&emailState=not_sent",
     );
     render(<MentorshipAdminPrototype />);
-    expect(screen.queryByRole("button", { name: "Wang, Cara" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Shen, Gina" })).toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Ma, Erin" }),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cara Wang" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Gina Shen" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Erin Ma" })).toBeInTheDocument();
   });
 
   it("picks a notification first, then its state, in one control", async () => {
@@ -1298,17 +1299,15 @@ describe("MentorshipAdminPrototype smoke", () => {
       screen.getByRole("button", { name: "Notification filter" }),
     ).toHaveTextContent("Mid-term reminder · Not notified");
     expect(window.location.hash).toContain("email=midterm_reminder");
-    expect(screen.queryByRole("button", { name: "Wang, Cara" })).toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Ma, Erin" }),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cara Wang" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Erin Ma" })).toBeInTheDocument();
 
     open();
     fireEvent.click(
       await screen.findByRole("menuitem", { name: "Any notification" }),
     );
     expect(
-      await screen.findByRole("button", { name: "Wang, Cara" }),
+      await screen.findByRole("button", { name: "Cara Wang" }),
     ).toBeInTheDocument();
   });
 });
@@ -1342,30 +1341,30 @@ describe("Meetings last round", () => {
     render(<MentorshipAdminPrototype />);
     // The partner's name in the table is plain text, not a second way in.
     expect(
-      within(personRow("Liu, Bob")).queryByRole("button", { name: /Ma, Erin/ }),
+      within(personRow("Bob Liu")).queryByRole("button", { name: /Erin Ma/ }),
     ).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Liu, Bob" }));
+    fireEvent.click(screen.getByRole("button", { name: "Bob Liu" }));
     // Bob carries two mentees: two sections, the first open.
     expect(
-      screen.getByRole("button", { name: /with Wang, Cara/, expanded: true }),
+      screen.getByRole("button", { name: /with Cara Wang/, expanded: true }),
     ).toBeInTheDocument();
     const erin = screen.getByRole("button", {
-      name: /with Ma, Erin/,
+      name: /with Erin Ma/,
       expanded: false,
     });
     fireEvent.click(erin);
-    expect(screen.getByText("Ma, Erin absent")).toBeInTheDocument();
+    expect(screen.getByText("Erin Ma absent")).toBeInTheDocument();
   });
 
   it("still opens an old pair link, on the mentee's page", () => {
     window.history.replaceState(null, "", "#mentorship/pairs/502");
     render(<MentorshipAdminPrototype />);
     expect(
-      screen.getByRole("heading", { name: "Ma, Erin" }),
+      screen.getByRole("heading", { name: "Erin Ma" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /with Liu, Bob/, expanded: true }),
+      screen.getByRole("button", { name: /with Bob Liu/, expanded: true }),
     ).toBeInTheDocument();
   });
 

@@ -15,7 +15,7 @@
  */
 
 /** The admin the prototype signs you in as. */
-export const CURRENT_USER = { userId: 2001, name: "Jiang, Goose" };
+export const CURRENT_USER = { userId: 2001, name: "Goose Jiang" };
 
 /**
  * Everyone holding `mentorship.approve`. A request names one of them so it is
@@ -23,16 +23,16 @@ export const CURRENT_USER = { userId: 2001, name: "Jiang, Goose" };
  * raised it.
  */
 export const APPROVE_HOLDERS = [
-  { userId: 2001, name: "Jiang, Goose", email: "goose@circlecat.org" },
-  { userId: 2002, name: "Wang, Jasmine", email: "jasmine@circlecat.org" },
-  { userId: 2003, name: "Wang, Yanpei", email: "yanpei@circlecat.org" },
+  { userId: 2001, name: "Goose Jiang", email: "goose@circlecat.org" },
+  { userId: 2002, name: "Jasmine Wang", email: "jasmine@circlecat.org" },
+  { userId: 2003, name: "Yanpei Wang", email: "yanpei@circlecat.org" },
 ];
 
 /** Rendered wherever an actor id has to become a name. */
 export const ACTOR_NAMES = {
-  2001: "Jiang, Goose",
-  2002: "Wang, Jasmine",
-  2003: "Wang, Yanpei",
+  2001: "Goose Jiang",
+  2002: "Jasmine Wang",
+  2003: "Yanpei Wang",
 };
 
 /**
@@ -125,7 +125,7 @@ export const INITIAL_PARTICIPANTS = [
     participantId: "p-alice-7",
     userId: 3101,
     roundId: 7,
-    name: "Chen, Alice",
+    name: "Alice Chen",
     email: "alice@example.com",
     role: "mentee",
     identity: "external",
@@ -136,7 +136,7 @@ export const INITIAL_PARTICIPANTS = [
     participantId: "p-bob-7",
     userId: 3102,
     roundId: 7,
-    name: "Liu, Bob",
+    name: "Bob Liu",
     email: "bob@circlecat.org",
     role: "mentor",
     identity: "internal",
@@ -148,7 +148,7 @@ export const INITIAL_PARTICIPANTS = [
     participantId: "p-cara-7",
     userId: 3103,
     roundId: 7,
-    name: "Wang, Cara",
+    name: "Cara Wang",
     email: "cara@example.com",
     role: "mentee",
     identity: "external",
@@ -159,7 +159,7 @@ export const INITIAL_PARTICIPANTS = [
     participantId: "p-dana-7",
     userId: 3104,
     roundId: 7,
-    name: "Wu, Dana",
+    name: "Dana Wu",
     email: "dana@circlecat.org",
     role: "mentee",
     identity: "internal",
@@ -170,7 +170,7 @@ export const INITIAL_PARTICIPANTS = [
     participantId: "p-ivy-7",
     userId: 3110,
     roundId: 7,
-    name: "Hu, Ivy",
+    name: "Ivy Hu",
     email: "ivy@example.com",
     role: "mentee",
     identity: "external",
@@ -181,7 +181,7 @@ export const INITIAL_PARTICIPANTS = [
     participantId: "p-erin-7",
     userId: 3105,
     roundId: 7,
-    name: "Ma, Erin",
+    name: "Erin Ma",
     email: "erin@example.com",
     role: "mentee",
     identity: "external",
@@ -192,7 +192,7 @@ export const INITIAL_PARTICIPANTS = [
     participantId: "p-fay-7",
     userId: 3106,
     roundId: 7,
-    name: "Guo, Fay",
+    name: "Fay Guo",
     email: "fay@circlecat.org",
     role: "mentor",
     identity: "internal",
@@ -204,7 +204,7 @@ export const INITIAL_PARTICIPANTS = [
     participantId: "p-gina-7",
     userId: 3107,
     roundId: 7,
-    name: "Shen, Gina",
+    name: "Gina Shen",
     email: "gina@example.com",
     role: "mentee",
     identity: "external",
@@ -217,7 +217,7 @@ export const INITIAL_PARTICIPANTS = [
     participantId: "p-sora-7",
     userId: 3114,
     roundId: 7,
-    name: "Kim, Sora",
+    name: "Sora Kim",
     email: "sora@example.com",
     role: "mentee",
     identity: "external",
@@ -228,7 +228,7 @@ export const INITIAL_PARTICIPANTS = [
     participantId: "p-wei-7",
     userId: 3115,
     roundId: 7,
-    name: "Tan, Wei",
+    name: "Wei Tan",
     email: "wei@circlecat.org",
     role: "mentee",
     identity: "internal",
@@ -240,7 +240,7 @@ export const INITIAL_PARTICIPANTS = [
     participantId: "p-oscar-7",
     userId: 3113,
     roundId: 7,
-    name: "Lin, Oscar",
+    name: "Oscar Lin",
     email: "oscar@example.com",
     role: "mentee",
     identity: "external",
@@ -252,7 +252,7 @@ export const INITIAL_PARTICIPANTS = [
     participantId: "p-cara-6",
     userId: 3103,
     roundId: 6,
-    name: "Wang, Cara",
+    name: "Cara Wang",
     email: "cara@example.com",
     role: "mentee",
     identity: "external",
@@ -263,7 +263,7 @@ export const INITIAL_PARTICIPANTS = [
     participantId: "p-sora-6",
     userId: 3114,
     roundId: 6,
-    name: "Kim, Sora",
+    name: "Sora Kim",
     email: "sora@example.com",
     role: "mentee",
     identity: "external",
@@ -274,7 +274,7 @@ export const INITIAL_PARTICIPANTS = [
     participantId: "p-wei-6",
     userId: 3115,
     roundId: 6,
-    name: "Tan, Wei",
+    name: "Wei Tan",
     email: "wei@circlecat.org",
     role: "mentee",
     identity: "internal",
@@ -288,7 +288,7 @@ export const INITIAL_PARTICIPANTS = [
     participantId: "p-dana-6",
     userId: 3104,
     roundId: 6,
-    name: "Wu, Dana",
+    name: "Dana Wu",
     email: "dana@circlecat.org",
     role: "mentor",
     identity: "internal",
@@ -300,7 +300,7 @@ export const INITIAL_PARTICIPANTS = [
     participantId: "p-bob-6",
     userId: 3102,
     roundId: 6,
-    name: "Liu, Bob",
+    name: "Bob Liu",
     email: "bob@circlecat.org",
     role: "mentor",
     identity: "internal",
@@ -312,7 +312,7 @@ export const INITIAL_PARTICIPANTS = [
     participantId: "p-fay-6",
     userId: 3106,
     roundId: 6,
-    name: "Guo, Fay",
+    name: "Fay Guo",
     email: "fay@circlecat.org",
     role: "mentor",
     identity: "internal",
@@ -324,7 +324,7 @@ export const INITIAL_PARTICIPANTS = [
     participantId: "p-gina-6",
     userId: 3107,
     roundId: 6,
-    name: "Shen, Gina",
+    name: "Gina Shen",
     email: "gina@example.com",
     role: "mentee",
     identity: "external",
@@ -336,7 +336,7 @@ export const INITIAL_PARTICIPANTS = [
     participantId: "p-min-6",
     userId: 3111,
     roundId: 6,
-    name: "Park, Min",
+    name: "Min Park",
     email: "min@circlecat.org",
     role: "mentor",
     identity: "internal",
@@ -366,7 +366,7 @@ export const HIRED_APPLICATIONS = [
  * Mentorship onboarding courses, one row per person per role.
  *
  * Not a way into the programme — a course can be handed out on its own, as
- * Zhou, Tao's was. It is what a registered person must have finished for
+ * Tao Zhou's was. It is what a registered person must have finished for
  * their role, and what an onboarding reminder chases.
  */
 export const ONBOARDING_TRAININGS = [
@@ -392,19 +392,19 @@ export const ONBOARDING_TRAININGS = [
 export const NEVER_REGISTERED = [
   {
     userId: 3108,
-    name: "Osei, Kwame",
+    name: "Kwame Osei",
     email: "kwame@example.com",
     identity: "external",
   },
   {
     userId: 3109,
-    name: "Rossi, Lia",
+    name: "Lia Rossi",
     email: "lia@circlecat.org",
     identity: "internal",
   },
   {
     userId: 3112,
-    name: "Zhou, Tao",
+    name: "Tao Zhou",
     email: "tao@circlecat.org",
     identity: "internal",
   },
@@ -607,8 +607,8 @@ export const INITIAL_PAIRS = [
     roundId: 7,
     mentorId: 3102,
     menteeId: 3103,
-    mentorName: "Liu, Bob",
-    menteeName: "Wang, Cara",
+    mentorName: "Bob Liu",
+    menteeName: "Cara Wang",
     status: "active",
     firstContactConfirmedAt: null,
     completed: 0,
@@ -619,8 +619,8 @@ export const INITIAL_PAIRS = [
     roundId: 7,
     mentorId: 3102,
     menteeId: 3105,
-    mentorName: "Liu, Bob",
-    menteeName: "Ma, Erin",
+    mentorName: "Bob Liu",
+    menteeName: "Erin Ma",
     status: "active",
     firstContactConfirmedAt: "2026-09-12",
     completed: 3,
@@ -631,8 +631,8 @@ export const INITIAL_PAIRS = [
     roundId: 7,
     mentorId: 3106,
     menteeId: 3107,
-    mentorName: "Guo, Fay",
-    menteeName: "Shen, Gina",
+    mentorName: "Fay Guo",
+    menteeName: "Gina Shen",
     status: "inactive",
     firstContactConfirmedAt: "2026-09-10",
     completed: 5,
@@ -643,8 +643,8 @@ export const INITIAL_PAIRS = [
     roundId: 6,
     mentorId: 3104,
     menteeId: 3103,
-    mentorName: "Wu, Dana",
-    menteeName: "Wang, Cara",
+    mentorName: "Dana Wu",
+    menteeName: "Cara Wang",
     status: "active",
     firstContactConfirmedAt: "2025-05-15",
     completed: 7,
@@ -655,8 +655,8 @@ export const INITIAL_PAIRS = [
     roundId: 6,
     mentorId: 3106,
     menteeId: 3107,
-    mentorName: "Guo, Fay",
-    menteeName: "Shen, Gina",
+    mentorName: "Fay Guo",
+    menteeName: "Gina Shen",
     status: "inactive",
     firstContactConfirmedAt: "2025-05-16",
     completed: 2,
@@ -667,8 +667,8 @@ export const INITIAL_PAIRS = [
     roundId: 6,
     mentorId: 3111,
     menteeId: 3114,
-    mentorName: "Park, Min",
-    menteeName: "Kim, Sora",
+    mentorName: "Min Park",
+    menteeName: "Sora Kim",
     status: "active",
     firstContactConfirmedAt: "2025-05-18",
     completed: 3,
@@ -866,7 +866,7 @@ export const INITIAL_REQUESTS = [
     requestId: 9001,
     action: "change_partner",
     roundId: 7,
-    targetLabel: "Ma, Erin  ↔  Liu, Bob",
+    targetLabel: "Erin Ma  ↔  Bob Liu",
     participantId: "p-erin-7",
     pairId: 502,
     reason:
@@ -880,7 +880,7 @@ export const INITIAL_REQUESTS = [
     requestId: 9002,
     action: "mark_no_show",
     roundId: 7,
-    targetLabel: "Wu, Dana",
+    targetLabel: "Dana Wu",
     participantId: "p-dana-7",
     pairId: null,
     reason:
@@ -1017,7 +1017,7 @@ export const INITIAL_FEEDBACK = {
     challenges: "None worth mentioning.",
     partnerFeedback: [
       {
-        partnerName: "Wang, Cara",
+        partnerName: "Cara Wang",
         rating: 5,
         text: "Came prepared to every session.",
       },
@@ -1030,7 +1030,7 @@ export const INITIAL_FEEDBACK = {
     challenges: "Finding a slot that worked across time zones.",
     partnerFeedback: [
       {
-        partnerName: "Wu, Dana",
+        partnerName: "Dana Wu",
         rating: 4,
         text: "Easy to talk to, though a few sessions got rescheduled late.",
       },
