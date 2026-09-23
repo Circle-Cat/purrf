@@ -134,7 +134,6 @@ export const INITIAL_PARTICIPANTS = [
     approvalStatus: "signed_up",
     onboardingDone: true,
     lastRound: { kind: "first-time" },
-    midtermReminderAt: null,
   },
   {
     participantId: "p-bob-7",
@@ -148,7 +147,6 @@ export const INITIAL_PARTICIPANTS = [
     maxPartners: 3,
     onboardingDone: true,
     lastRound: { kind: "count", completed: 5, required: 5 },
-    midtermReminderAt: null,
   },
   {
     participantId: "p-cara-7",
@@ -161,7 +159,6 @@ export const INITIAL_PARTICIPANTS = [
     approvalStatus: "matched",
     onboardingDone: true,
     lastRound: { kind: "count", completed: 0, required: 5 },
-    midtermReminderAt: "2026-09-18",
   },
   {
     participantId: "p-dana-7",
@@ -174,7 +171,6 @@ export const INITIAL_PARTICIPANTS = [
     approvalStatus: "signed_up",
     onboardingDone: true,
     lastRound: { kind: "unmatched" },
-    midtermReminderAt: null,
   },
   {
     participantId: "p-ivy-7",
@@ -187,7 +183,6 @@ export const INITIAL_PARTICIPANTS = [
     approvalStatus: "signed_up",
     onboardingDone: false,
     lastRound: { kind: "first-time" },
-    midtermReminderAt: null,
   },
   {
     participantId: "p-erin-7",
@@ -200,7 +195,6 @@ export const INITIAL_PARTICIPANTS = [
     approvalStatus: "matched",
     onboardingDone: true,
     lastRound: { kind: "first-time" },
-    midtermReminderAt: null,
   },
   {
     participantId: "p-fay-7",
@@ -214,7 +208,6 @@ export const INITIAL_PARTICIPANTS = [
     maxPartners: 2,
     onboardingDone: true,
     lastRound: { kind: "count", completed: 4, required: 5 },
-    midtermReminderAt: "2026-09-18",
   },
   {
     participantId: "p-gina-7",
@@ -227,7 +220,6 @@ export const INITIAL_PARTICIPANTS = [
     approvalStatus: "withdrawn",
     onboardingDone: true,
     lastRound: { kind: "count", completed: 5, required: 5 },
-    midtermReminderAt: "2026-09-18",
   },
   // Registered and onboarded, but blocked: never offered to matching.
   {
@@ -241,7 +233,6 @@ export const INITIAL_PARTICIPANTS = [
     approvalStatus: "signed_up",
     onboardingDone: true,
     lastRound: { kind: "first-time" },
-    midtermReminderAt: null,
   },
   // Cara's history row, so the participant detail page has more than one round.
   {
@@ -255,7 +246,6 @@ export const INITIAL_PARTICIPANTS = [
     approvalStatus: "matched",
     onboardingDone: true,
     lastRound: { kind: "first-time" },
-    midtermReminderAt: "2025-07-02",
   },
   // Took part last summer and has not signed up for this round.
   {
@@ -270,7 +260,6 @@ export const INITIAL_PARTICIPANTS = [
     maxPartners: 1,
     onboardingDone: true,
     lastRound: { kind: "first-time" },
-    midtermReminderAt: null,
   },
 ];
 
@@ -650,6 +639,26 @@ export const RECORDED_TAGS = Object.keys(NOTE_KIND).filter(
  */
 export const INITIAL_NOTES = [
   {
+    noteId: "n-6",
+    userId: 3104,
+    roundId: 7,
+    pairId: null,
+    tag: "onboarding_reminder",
+    body: "Reminded on Teams.",
+    authorId: 2001,
+    createdAt: "2026-09-07",
+  },
+  {
+    noteId: "n-7",
+    userId: 3103,
+    roundId: 6,
+    pairId: null,
+    tag: "midterm_reminder",
+    body: "",
+    authorId: 2002,
+    createdAt: "2025-07-02",
+  },
+  {
     noteId: "n-1",
     userId: 3103,
     roundId: 7,
@@ -732,6 +741,17 @@ export const INITIAL_REQUESTS = [
  */
 export const INITIAL_EMAILS = [
   {
+    messageId: "e-6",
+    threadId: "t-gina-mt",
+    userId: 3107,
+    roundId: 7,
+    direction: "out",
+    templateKey: "mentorship_midterm_reminder",
+    body: "You have logged 5 of 5 meetings for this round.",
+    sentBy: 2001,
+    at: "2026-09-18",
+  },
+  {
     messageId: "e-1",
     threadId: "t-cara-fc",
     userId: 3103,
@@ -773,6 +793,8 @@ export const INITIAL_EMAILS = [
     body: "Your onboarding course is still open. It needs to be finished before matching.",
     sentBy: 2001,
     at: "2026-09-05",
+    // Gmail refused it (quota). Pressed, not delivered.
+    status: "failed",
   },
 ];
 

@@ -149,8 +149,9 @@ const ParticipantDetailPage = ({
   onRevoke,
   exempt,
   onRequestExemption,
+  initialTimeline,
 }) => {
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState(initialTimeline ?? "all");
   const [syncMessage, setSyncMessage] = useState(null);
   if (!person) return null;
 

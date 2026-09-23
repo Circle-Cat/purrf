@@ -72,6 +72,15 @@ people too — in bulk after inviting on Teams, or from their page — because a
 note is kept against a person and a round rather than a registration, and so
 it is already on their timeline if they sign up.
 
+**Every email has a dot.** The Emails column shows one dot per email of the
+round, in order: replied, sent (a "T" when it went out on Teams, which
+counts), failed, or not sent. Hover for which one and when; press it to open
+the person's timeline with emails only. The Email and State filters answer
+"who has not had the mid-term reminder" — and the link can be shared. None of
+it is stored: it is read from the emails and from the notes that mark a Teams
+message sent, which is also why the Pairs table's reminder cell has no column
+behind it any more.
+
 **Matching is a filter, not a table.** *Eligible for matching* on the
 Participants tab narrows it to who can go into a run now: onboarding done, not
 withdrawn, and at least one free slot. A matched mentee with an active pair, or

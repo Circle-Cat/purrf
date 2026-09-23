@@ -2,6 +2,13 @@ import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import FlagBadges from "@/pages/MentorshipAdminPrototype/FlagBadges";
 import AccountStateChips from "@/pages/MentorshipAdminPrototype/AccountStateChips";
+import EmailDots from "@/pages/MentorshipAdminPrototype/EmailDots";
+import {
+  EMAIL_STATES,
+  EMAIL_STEPS,
+  stepState,
+  stepsFor,
+} from "@/pages/MentorshipAdminPrototype/emailStatus";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -120,6 +127,7 @@ const ParticipantsTable = ({
   exemptParticipantIds = new Set(),
   matchRun = null,
   onRunMatching,
+  notes = [],
   emails = [],
   onBulkMarkUnregistered,
   onOpenPerson,
@@ -131,6 +139,19 @@ const ParticipantsTable = ({
   const onboarding = query.onboarding ?? "all";
   const pairStatus = query.pairStatus ?? "all";
   const eligibleOnly = query.filter === "eligible";
+  const emailStep = query.email ?? "all";
+  const emailState = query.emailState ?? "all";
+  /**
+   * "Who has not had the mid-term reminder" — the question the email filter
+   * answers. Both halves have to be chosen for it to narrow anything.
+   */
+  const passesEmail = (person) => {
+    if (emailStep === "all" || emailState === "all") return true;
+    const step = EMAIL_STEPS.find((s) => s.key === emailStep);
+    return step
+      ? stepState(step, person, emails, notes).state === emailState
+      : true;
+  };
   const unregisteredOnly = query.filter === "unregistered";
   const [selected, setSelected] = useState([]);
   const [bulkTag, setBulkTag] = useState(RECORDED_TAGS[3]);
@@ -199,6 +220,7 @@ const ParticipantsTable = ({
       (role === "all" || p.role === role) &&
       (identity === "all" || p.identity === identity) &&
       (onboarding === "all" || (onboarding === "done") === p.onboardingDone) &&
+      passesEmail(p) &&
       (!needle ||
         p.name.toLowerCase().includes(needle) ||
         p.email.toLowerCase().includes(needle)),
@@ -245,6 +267,7 @@ const ParticipantsTable = ({
   const nonParticipantRows = nonParticipants.filter(
     (p) =>
       (identity === "all" || p.identity === identity) &&
+      passesEmail({ userId: p.userId, roundId: round.id }) &&
       (!needle ||
         p.name.toLowerCase().includes(needle) ||
         p.email.toLowerCase().includes(needle)),
@@ -253,7 +276,16 @@ const ParticipantsTable = ({
   /** The mentee's participant row is where a pair's mid-term mark actually lives. */
   const participantOf = (userId) =>
     participants.find((p) => p.userId === userId);
-  const reminderOf = (userId) => participantOf(userId)?.midtermReminderAt;
+  /** Read, not stored: an email with the template, or a note marking it sent on Teams. */
+  const reminderOf = (pair) => {
+    const s = stepState(
+      EMAIL_STEPS.find((x) => x.key === "midterm_reminder"),
+      { userId: pair.menteeId, roundId: pair.roundId },
+      emails,
+      notes,
+    );
+    return s.state === "sent" || s.state === "replied" ? s.at : null;
+  };
 
   const toggle = (id) =>
     setSelected((all) =>
@@ -362,6 +394,41 @@ const ParticipantsTable = ({
                 <SelectItem value="not_done">Onboarding not done</SelectItem>
               </SelectContent>
             </Select>
+            <Select
+              value={emailStep}
+              onValueChange={(v) => onQueryChange({ email: v })}
+            >
+              <SelectTrigger className="h-8 w-48 text-xs" aria-label="Email">
+                <SelectValue placeholder="Email" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Any email</SelectItem>
+                {stepsFor(!unregisteredOnly).map((step) => (
+                  <SelectItem key={step.key} value={step.key}>
+                    {step.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={emailState}
+              onValueChange={(v) => onQueryChange({ emailState: v })}
+            >
+              <SelectTrigger
+                className="h-8 w-32 text-xs"
+                aria-label="Email state"
+              >
+                <SelectValue placeholder="State" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Any state</SelectItem>
+                {EMAIL_STATES.map((st) => (
+                  <SelectItem key={st.key} value={st.key}>
+                    {st.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {[
               { key: "eligible", label: "Eligible for matching" },
               { key: "unregistered", label: "Not registered for this round" },
@@ -413,6 +480,7 @@ const ParticipantsTable = ({
                 <TableHead>Name</TableHead>
                 <TableHead>Int / ext</TableHead>
                 <TableHead>Account</TableHead>
+                <TableHead>Emails</TableHead>
                 <TableHead>Mentor onboarding</TableHead>
                 <TableHead>Mentee onboarding</TableHead>
                 <TableHead>Last took part</TableHead>
@@ -444,6 +512,15 @@ const ParticipantsTable = ({
                     <TableCell className="text-sm">{p.identity}</TableCell>
                     <TableCell>
                       <AccountStateChips {...accountStateOf(p.userId)} />
+                    </TableCell>
+                    <TableCell>
+                      <EmailDots
+                        person={{ userId: p.userId, roundId: round.id }}
+                        registered={false}
+                        emails={emails}
+                        notes={notes}
+                        onOpen={() => onOpenPerson(p.userId, "email")}
+                      />
                     </TableCell>
                     <TableCell className="text-sm">
                       {p.mentorOnboarding ?? "—"}
@@ -493,6 +570,7 @@ const ParticipantsTable = ({
               <TableHead>Int / ext</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Account</TableHead>
+              <TableHead>Emails</TableHead>
               <TableHead>Onboarding</TableHead>
               {eligibleOnly ? (
                 <>
@@ -529,6 +607,15 @@ const ParticipantsTable = ({
                 </TableCell>
                 <TableCell>
                   <AccountStateChips {...accountStateOf(p.userId)} />
+                </TableCell>
+                <TableCell>
+                  <EmailDots
+                    person={p}
+                    registered
+                    emails={emails}
+                    notes={notes}
+                    onOpen={() => onOpenParticipant(p.participantId, "email")}
+                  />
                 </TableCell>
                 <TableCell className="text-sm">
                   {p.onboardingDone ? "Done" : "Not done"}
@@ -608,9 +695,9 @@ const ParticipantsTable = ({
                 </TableCell>
                 <TableCell>
                   <Mark
-                    on={Boolean(reminderOf(p.menteeId))}
-                    label={reminderOf(p.menteeId) ?? "Mark"}
-                    disabled={!writable}
+                    on={Boolean(reminderOf(p))}
+                    label={reminderOf(p) ?? "Mark"}
+                    disabled={!writable || Boolean(reminderOf(p))}
                     onClick={() => onMarkCell(p.pairId, "midterm")}
                   />
                 </TableCell>

@@ -859,4 +859,76 @@ describe("MentorshipAdminPrototype smoke", () => {
       screen.queryByRole("row", { name: "Open pair Liu, Bob and Chen, Alice" }),
     ).toBeNull();
   });
+
+  it("shows where each person's emails stand, one dot per email of the round", () => {
+    render(<MentorshipAdminPrototype />);
+    expect(screen.getByText("Emails")).toBeInTheDocument();
+    const rowOf = (name) =>
+      screen
+        .getAllByRole("row")
+        .find((r) => within(r).queryByRole("button", { name }));
+
+    // Replied, sent by email, sent on Teams, failed, not sent.
+    expect(
+      within(rowOf("Wang, Cara")).getByRole("button", {
+        name: "First contact reminder: replied 2026-09-11",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(rowOf("Wang, Cara")).getByRole("button", {
+        name: "Mid-term reminder: sent 2026-09-18",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(rowOf("Wu, Dana")).getByRole("button", {
+        name: "Onboarding reminder: sent on Teams 2026-09-07",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(rowOf("Chen, Alice")).getByRole("button", {
+        name: "Onboarding reminder: failed on 2026-09-05",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(rowOf("Chen, Alice")).getByRole("button", {
+        name: "Match result: not sent",
+      }),
+    ).toBeInTheDocument();
+
+    // A dot opens that person's timeline showing emails only.
+    fireEvent.click(
+      within(rowOf("Wang, Cara")).getByRole("button", {
+        name: "Mid-term reminder: sent 2026-09-18",
+      }),
+    );
+    expect(screen.getByRole("button", { name: "Emails only" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.queryByText(/Called her/)).not.toBeInTheDocument();
+  });
+
+  it("filters to who has not had a given email, from a link", () => {
+    window.history.replaceState(
+      null,
+      "",
+      "#mentorship?email=midterm_reminder&emailState=not_sent",
+    );
+    render(<MentorshipAdminPrototype />);
+    expect(screen.queryByRole("button", { name: "Wang, Cara" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Shen, Gina" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Ma, Erin" }),
+    ).toBeInTheDocument();
+  });
+
+  it("reads the mid-term cell from the reminder itself, with no column behind it", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(screen.getByRole("button", { name: "Pairs" }));
+    // Sent by email: lit, and it cannot be unsent from here.
+    const cara = within(pairRow("Liu, Bob", "Wang, Cara")).getByRole("button", {
+      name: "2026-09-18",
+    });
+    expect(cara).toBeDisabled();
+  });
 });

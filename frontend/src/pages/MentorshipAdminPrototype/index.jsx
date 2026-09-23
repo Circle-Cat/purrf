@@ -56,15 +56,25 @@ const parseLocation = () => {
   const [path, search = ""] = window.location.hash.replace(/^#/, "").split("?");
   const [root, kind, id, extra] = path.split("/");
   const query = Object.fromEntries(new URLSearchParams(search));
+  const timeline = query.timeline ?? null;
   if (root === HASH_ROOT && kind === "participants" && id) {
     return {
-      view: { kind: "participant", participantId: decodeURIComponent(id) },
+      view: {
+        kind: "participant",
+        participantId: decodeURIComponent(id),
+        timeline,
+      },
       query,
     };
   }
   if (root === HASH_ROOT && kind === "people" && id && extra) {
     return {
-      view: { kind: "person", userId: Number(id), roundId: Number(extra) },
+      view: {
+        kind: "person",
+        userId: Number(id),
+        roundId: Number(extra),
+        timeline,
+      },
       query,
     };
   }
@@ -78,11 +88,12 @@ const parseLocation = () => {
 };
 
 const toHash = (view, query) => {
+  const timeline = view.timeline ? `?timeline=${view.timeline}` : "";
   if (view.kind === "participant") {
-    return `#${HASH_ROOT}/participants/${encodeURIComponent(view.participantId)}`;
+    return `#${HASH_ROOT}/participants/${encodeURIComponent(view.participantId)}${timeline}`;
   }
   if (view.kind === "person") {
-    return `#${HASH_ROOT}/people/${view.userId}/${view.roundId}`;
+    return `#${HASH_ROOT}/people/${view.userId}/${view.roundId}${timeline}`;
   }
   if (view.kind === "matching") return `#${HASH_ROOT}/matching/${view.roundId}`;
   if (view.kind === "pair") return `#${HASH_ROOT}/pairs/${view.pairId}`;
@@ -578,6 +589,8 @@ const MentorshipAdminPrototype = () => {
     (pairId, field, on) => {
       const pair = pairs.find((p) => p.pairId === pairId);
       if (!pair) return;
+      // Only first contact is a stored column. The mid-term mark is the note
+      // the dialog writes; nothing else needs setting.
       if (field === "firstContact") {
         setPairs((all) =>
           all.map((p) =>
@@ -586,15 +599,7 @@ const MentorshipAdminPrototype = () => {
               : p,
           ),
         );
-        return;
       }
-      setParticipants((people) =>
-        people.map((person) =>
-          person.userId === pair.menteeId && person.roundId === pair.roundId
-            ? { ...person, midtermReminderAt: on ? TODAY : null }
-            : person,
-        ),
-      );
     },
     [pairs],
   );
@@ -604,11 +609,9 @@ const MentorshipAdminPrototype = () => {
       const pair = pairs.find((p) => p.pairId === pairId);
       if (!pair) return;
       const mentee = menteeParticipantOf(pair);
-      const isOn =
-        field === "firstContact"
-          ? Boolean(pair.firstContactConfirmedAt)
-          : Boolean(mentee?.midtermReminderAt);
-      if (isOn) {
+      // A sent reminder cannot be unsent — it is an email or a note on the
+      // timeline — so only first contact toggles back off.
+      if (field === "firstContact" && pair.firstContactConfirmedAt) {
         applyMark(pairId, field, false);
         return;
       }
@@ -628,25 +631,14 @@ const MentorshipAdminPrototype = () => {
   );
 
   /**
-   * Marking many people at once, after sending on Teams.
-   *
-   * The mid-term reminder is a real column, not only a note, so marking it in
-   * bulk has to light the same cell a single click does.
+   * Marking many people at once, after sending on Teams. The note is the
+   * mark: the email dots and the Pairs table's reminder cell both read it.
    */
   const bulkMark = useCallback(
-    (participantIds, tag) => {
+    (participantIds, tag) =>
       participantIds.forEach((participantId) =>
         addNote({ participantId, tag, body: "" }),
-      );
-      if (tag !== "midterm_reminder") return;
-      setParticipants((all) =>
-        all.map((p) =>
-          participantIds.includes(p.participantId) && p.role === "mentee"
-            ? { ...p, midtermReminderAt: TODAY }
-            : p,
-        ),
-      );
-    },
+      ),
     [addNote],
   );
 
@@ -659,10 +651,8 @@ const MentorshipAdminPrototype = () => {
 
   /**
    * Sending writes one message per recipient onto their own timeline — there
-   * is no separate "an email went out" note to keep in step with it.
-   *
-   * A mid-term reminder sent from here stamps the mentee's cell by itself;
-   * the manual mark stays for the Teams half and for anything sent elsewhere.
+   * is no separate "an email went out" note to keep in step with it, and
+   * every "has this gone out" answer is read from these messages.
    */
   const sendEmails = useCallback(
     ({ templateKey, messages }) => {
@@ -684,15 +674,6 @@ const MentorshipAdminPrototype = () => {
         })),
         ...all,
       ]);
-      if (templateKey !== "mentorship_midterm_reminder") return;
-      const ids = messages.map((m) => m.participantId);
-      setParticipants((all) =>
-        all.map((p) =>
-          ids.includes(p.participantId) && p.role === "mentee"
-            ? { ...p, midtermReminderAt: TODAY }
-            : p,
-        ),
-      );
     },
     [viewerId, roundId, participants],
   );
@@ -924,6 +905,7 @@ const MentorshipAdminPrototype = () => {
           )}
           onRefreshEmails={() => refreshEmails(person.userId, person.roundId)}
           feedback={INITIAL_FEEDBACK}
+          initialTimeline={view.timeline}
           flags={flagsByParticipant[person.participantId] ?? {}}
           exempt={exemptParticipantIds.has(person.participantId)}
           onRequestExemption={() =>
@@ -1073,6 +1055,7 @@ const MentorshipAdminPrototype = () => {
         participants={participants}
         nonParticipants={unregistered}
         emails={emails}
+        notes={notes}
         pairs={pairs}
         requests={requests}
         viewerId={viewerId}
@@ -1080,8 +1063,8 @@ const MentorshipAdminPrototype = () => {
         exemptParticipantIds={exemptParticipantIds}
         can={can}
         onDecide={decideRequest}
-        onOpenParticipant={(participantId) =>
-          navigate({ kind: "participant", participantId })
+        onOpenParticipant={(participantId, timeline) =>
+          navigate({ kind: "participant", participantId, timeline })
         }
         onOpenPair={(pairId) => navigate({ kind: "pair", pairId })}
         onMarkCell={markCell}
@@ -1090,8 +1073,8 @@ const MentorshipAdminPrototype = () => {
         }
         onBulkMark={bulkMark}
         onBulkMarkUnregistered={bulkMarkUnregistered}
-        onOpenPerson={(userId) =>
-          navigate({ kind: "person", userId, roundId: round.id })
+        onOpenPerson={(userId, timeline) =>
+          navigate({ kind: "person", userId, roundId: round.id, timeline })
         }
         onConfirmUnmatched={(people) =>
           setRequestTarget({
