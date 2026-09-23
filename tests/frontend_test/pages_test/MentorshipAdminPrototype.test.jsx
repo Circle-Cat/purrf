@@ -1327,4 +1327,20 @@ describe("Meetings last round", () => {
       screen.getByRole("button", { name: "Needs exemption" }),
     ).toBeDisabled();
   });
+
+  it("offers matching only while the round is running", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Eligible for matching" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Mentorship 2025 Summer" }),
+    );
+    const eligible = screen.getByRole("button", {
+      name: "Eligible for matching",
+    });
+    expect(eligible).toBeDisabled();
+    expect(eligible).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByText("Free slots")).toBeNull();
+  });
 });

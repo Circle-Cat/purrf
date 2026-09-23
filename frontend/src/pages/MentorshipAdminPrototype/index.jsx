@@ -1358,9 +1358,8 @@ const MentorshipAdminPrototype = () => {
         }
         onEditRound={(r) => setRoundModal(r ?? { timeline: {} })}
         matchRun={matchRuns[round.id] ?? null}
-        roundClosed={round.status === "closed"}
         matchingOpen={TODAY <= (round.timeline.matchNotificationAt ?? "")}
-        unregisteredOpen={
+        roundRunning={
           (round.timeline.promotionStartAt ?? "") <= TODAY &&
           TODAY <= (round.timeline.feedbackDeadlineAt ?? "")
         }

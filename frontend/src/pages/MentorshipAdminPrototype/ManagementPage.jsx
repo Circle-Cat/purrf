@@ -280,10 +280,9 @@ const ManagementPage = ({
   onOpenPerson,
   onEditRound,
   matchRun,
-  roundClosed,
   onRunMatching,
   matchingOpen,
-  unregisteredOpen,
+  roundRunning,
   onOpenMatching,
   feedback,
 }) => {
@@ -292,7 +291,7 @@ const ManagementPage = ({
   const onSelectRound = (id) =>
     onQueryChange({
       round: String(id),
-      ...(["needs_exemption", "unregistered"].includes(query.filter)
+      ...(["eligible", "needs_exemption", "unregistered"].includes(query.filter)
         ? { filter: "" }
         : {}),
     });
@@ -374,9 +373,8 @@ const ManagementPage = ({
               onBulkMarkUnregistered={onBulkMarkUnregistered}
               onOpenPerson={onOpenPerson}
               matchRun={matchRun}
-              roundClosed={roundClosed}
               matchingOpen={matchingOpen}
-              unregisteredOpen={unregisteredOpen}
+              roundRunning={roundRunning}
               onRunMatching={onRunMatching}
             />
           </Card>

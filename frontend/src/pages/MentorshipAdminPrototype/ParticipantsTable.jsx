@@ -87,10 +87,9 @@ const ParticipantsTable = ({
   exemptParticipantIds = new Set(),
   accountOf,
   matchRun = null,
-  roundClosed = false,
   onRunMatching,
   matchingOpen = false,
-  unregisteredOpen = false,
+  roundRunning = false,
   notes = [],
   notifications = [],
   emails = [],
@@ -104,7 +103,9 @@ const ParticipantsTable = ({
   const role = query.role ?? "all";
   const identity = query.identity ?? "all";
   const onboarding = query.onboarding ?? "all";
-  const eligibleOnly = query.filter === "eligible";
+  // Matching and the unregistered list only mean something while the round
+  // runs, from recruitment to its end; a past round offers neither.
+  const eligibleOnly = roundRunning && query.filter === "eligible";
   // Only until this round's matching closes; after that there is nothing left
   // to exempt anyone for.
   const exemptionOnly = matchingOpen && query.filter === "needs_exemption";
@@ -123,9 +124,7 @@ const ParticipantsTable = ({
           emailState
       : true;
   };
-  // Only while the round is running, from recruitment to its end: that is
-  // when an invitation or a reminder can still bring someone in.
-  const unregisteredOnly = unregisteredOpen && query.filter === "unregistered";
+  const unregisteredOnly = roundRunning && query.filter === "unregistered";
   const [selected, setSelected] = useState([]);
   const [bulkTag, setBulkTag] = useState("midterm_reminder");
   const [unregisteredTag, setUnregisteredTag] = useState("round_invitation");
@@ -190,7 +189,6 @@ const ParticipantsTable = ({
   );
   const runReady =
     !running &&
-    !roundClosed &&
     runChosen.some((p) => p.role === "mentor") &&
     runChosen.some((p) => p.role === "mentee");
 
@@ -295,7 +293,14 @@ const ParticipantsTable = ({
               onChange={onQueryChange}
             />
             {[
-              { key: "eligible", label: "Eligible for matching" },
+              {
+                key: "eligible",
+                label: "Eligible for matching",
+                disabled: !roundRunning,
+                title: roundRunning
+                  ? undefined
+                  : "Only while the round is running, from recruitment to its end",
+              },
               {
                 key: "needs_exemption",
                 // Counted on every visit, listed on demand: a number cannot be
@@ -315,8 +320,8 @@ const ParticipantsTable = ({
               {
                 key: "unregistered",
                 label: "Not registered for this round",
-                disabled: !unregisteredOpen,
-                title: unregisteredOpen
+                disabled: !roundRunning,
+                title: roundRunning
                   ? undefined
                   : "Only while the round is running, from recruitment to its end",
               },
@@ -347,7 +352,7 @@ const ParticipantsTable = ({
 
       {tab === "participants" &&
       !query.filter &&
-      unregisteredOpen &&
+      roundRunning &&
       nonParticipants.length > 0 ? (
         <p className="mb-2 text-xs text-slate-500">
           {nonParticipants.length} people in the programme have not registered
@@ -685,13 +690,11 @@ const ParticipantsTable = ({
               size="sm"
               disabled={!runReady}
               title={
-                roundClosed
-                  ? "This round is closed"
-                  : running
-                    ? "A run is already going in this round"
-                    : runReady
-                      ? "Each mentor goes in with the slots they have left, not their cap"
-                      : "A run needs at least one mentor and one mentee"
+                running
+                  ? "A run is already going in this round"
+                  : runReady
+                    ? "Each mentor goes in with the slots they have left, not their cap"
+                    : "A run needs at least one mentor and one mentee"
               }
               onClick={() => {
                 onRunMatching(runChosen);
