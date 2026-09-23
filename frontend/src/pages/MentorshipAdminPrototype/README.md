@@ -63,7 +63,10 @@ the Participants table a line counts the people in the programme who have not
 registered for this round; *Show them* (or the *Not registered this round*
 filter) lists them with when they last took part and what they were last
 emailed. It is for sending a new round's invitation and the onboarding
-reminders. It is counted against the selected round: someone who took part last summer
+reminders. "In the programme" means admitted to a mentor or
+mentee posting, or registered for some round (the historical backfill); an
+onboarding course on its own does not count. It is counted against the
+selected round: someone who took part last summer
 and has not signed up again is on this autumn's list. Notes work for these
 people too — in bulk after inviting on Teams, or from their page — because a
 note is kept against a person and a round rather than a registration, and so

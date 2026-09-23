@@ -261,29 +261,62 @@ export const INITIAL_PARTICIPANTS = [
 ];
 
 /**
- * People in the programme who have never registered for any round.
+ * Admissions: a hired application to a mentor or mentee posting.
  *
- * "In the programme" is today's gate: admitted to a mentorship posting, or
- * holding a mentorship onboarding course. Everyone else in the programme has a
- * participant row somewhere; together they are who "not registered" is
- * counted against, for whichever round is selected.
+ * This, together with having registered for some round (which covers the
+ * historical backfill), is what "in the programme" means. A job is not tied
+ * to a round, so an admission counts for every round after it.
  */
+export const HIRED_APPLICATIONS = [
+  { userId: 3101, role: "mentee" },
+  { userId: 3105, role: "mentee" },
+  { userId: 3108, role: "mentee" },
+  { userId: 3109, role: "mentor" },
+  { userId: 3110, role: "mentee" },
+];
+
+/**
+ * Mentorship onboarding courses, one row per person per role.
+ *
+ * Not a way into the programme — a course can be handed out on its own, as
+ * Zhou, Tao's was. It is what a registered person must have finished for
+ * their role, and what an onboarding reminder chases.
+ */
+export const ONBOARDING_TRAININGS = [
+  { userId: 3101, role: "mentee", status: "done" },
+  { userId: 3102, role: "mentor", status: "done" },
+  { userId: 3103, role: "mentee", status: "done" },
+  { userId: 3104, role: "mentor", status: "done" },
+  { userId: 3104, role: "mentee", status: "done" },
+  { userId: 3105, role: "mentee", status: "done" },
+  { userId: 3106, role: "mentor", status: "done" },
+  { userId: 3107, role: "mentee", status: "done" },
+  { userId: 3108, role: "mentee", status: "in_progress" },
+  { userId: 3109, role: "mentor", status: "done" },
+  { userId: 3110, role: "mentee", status: "in_progress" },
+  { userId: 3111, role: "mentor", status: "done" },
+  { userId: 3112, role: "mentor", status: "in_progress" },
+];
+
+/** Who the people with no registration anywhere are. */
 export const NEVER_REGISTERED = [
   {
     userId: 3108,
     name: "Osei, Kwame",
     email: "kwame@example.com",
     identity: "external",
-    mentorOnboarding: null,
-    menteeOnboarding: "in_progress",
   },
   {
     userId: 3109,
     name: "Rossi, Lia",
     email: "lia@circlecat.org",
     identity: "internal",
-    mentorOnboarding: "done",
-    menteeOnboarding: null,
+  },
+  {
+    userId: 3112,
+    name: "Zhou, Tao",
+    email: "tao@circlecat.org",
+    identity: "internal",
   },
 ];
 

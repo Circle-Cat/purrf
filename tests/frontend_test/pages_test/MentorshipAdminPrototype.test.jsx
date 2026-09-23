@@ -476,6 +476,8 @@ describe("MentorshipAdminPrototype smoke", () => {
       within(minRow).getByText("Mentorship 2025 Summer"),
     ).toBeInTheDocument();
     expect(screen.getAllByText("Never")).toHaveLength(2);
+    // Handed an onboarding course but never admitted: not in the programme.
+    expect(screen.queryByText("Zhou, Tao")).not.toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole("checkbox", { name: "Select Osei, Kwame" }),
@@ -512,6 +514,8 @@ describe("MentorshipAdminPrototype smoke", () => {
       within(rowOf("Liu, Bob")).getByText("Mentorship 2026 Fall"),
     ).toBeInTheDocument();
     expect(rowOf("Osei, Kwame")).toBeDefined();
+    // Role and onboarding come from the course rows: Dana holds both.
+    expect(within(rowOf("Wu, Dana")).getAllByText("done")).toHaveLength(2);
   });
 
   it("lets notes be written about someone who has not registered", () => {

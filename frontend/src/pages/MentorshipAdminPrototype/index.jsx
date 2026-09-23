@@ -21,7 +21,9 @@ import {
   INITIAL_REQUESTS,
   INITIAL_ROUNDS,
   MAILBOX_REPLIES,
+  HIRED_APPLICATIONS,
   NEVER_REGISTERED,
+  ONBOARDING_TRAININGS,
   NOTE_KIND,
   NOTE_LABELS,
 } from "@/pages/MentorshipAdminPrototype/mockData";
@@ -657,10 +659,13 @@ const MentorshipAdminPrototype = () => {
   /**
    * Everyone in the programme with no registration for the selected round.
    *
-   * Derived, not listed: the programme is everyone who has ever registered
-   * plus those admitted who never did, and "not registered" is that minus the
-   * selected round's participants. Pick last year's round and it answers for
-   * last year.
+   * "In the programme" is having been admitted to a mentor or mentee posting,
+   * or having registered for any round (which is how the historical backfill
+   * arrived). An onboarding course on its own does not count — courses can be
+   * handed out separately — but the course rows say how far onboarding has
+   * got, which is what a reminder chases. "Not registered" is the programme
+   * minus the selected round's participants: pick last year's round and it
+   * answers for last year.
    */
   const unregistered = useMemo(() => {
     const endOf = (id) =>
@@ -669,27 +674,37 @@ const MentorshipAdminPrototype = () => {
     const registered = new Set(
       participants.filter((p) => p.roundId === round.id).map((p) => p.userId),
     );
-    const latestRowOf = new Map();
-    participants.forEach((p) => {
-      const seen = latestRowOf.get(p.userId);
-      if (!seen || endOf(p.roundId) > endOf(seen.roundId)) {
-        latestRowOf.set(p.userId, p);
-      }
-    });
-    const onboardingOf = (row, role) =>
-      row.role === role ? (row.onboardingDone ? "done" : "in_progress") : null;
-    return [
-      ...[...latestRowOf.values()].map((row) => ({
-        userId: row.userId,
-        name: row.name,
-        email: row.email,
-        identity: row.identity,
-        mentorOnboarding: onboardingOf(row, "mentor"),
-        menteeOnboarding: onboardingOf(row, "mentee"),
-        lastTookPart: rounds.find((r) => r.id === row.roundId)?.name ?? null,
-      })),
-      ...NEVER_REGISTERED.map((p) => ({ ...p, lastTookPart: null })),
-    ].filter((p) => !registered.has(p.userId));
+    const courseOf = (userId, role) =>
+      ONBOARDING_TRAININGS.find((t) => t.userId === userId && t.role === role)
+        ?.status ?? null;
+    const lastRowOf = (userId) =>
+      participants
+        .filter((p) => p.userId === userId)
+        .sort((a, b) => endOf(b.roundId).localeCompare(endOf(a.roundId)))[0];
+    const inProgramme = [
+      ...new Set([
+        ...HIRED_APPLICATIONS.map((a) => a.userId),
+        ...participants.map((p) => p.userId),
+      ]),
+    ];
+    return inProgramme
+      .filter((userId) => !registered.has(userId))
+      .map((userId) => {
+        const last = lastRowOf(userId);
+        const who = last ?? NEVER_REGISTERED.find((p) => p.userId === userId);
+        return {
+          userId,
+          name: who?.name,
+          email: who?.email,
+          identity: who?.identity,
+          mentorOnboarding: courseOf(userId, "mentor"),
+          menteeOnboarding: courseOf(userId, "mentee"),
+          lastTookPart: last
+            ? (rounds.find((r) => r.id === last.roundId)?.name ?? null)
+            : null,
+        };
+      })
+      .filter((p) => p.name);
   }, [participants, rounds, round]);
 
   /**

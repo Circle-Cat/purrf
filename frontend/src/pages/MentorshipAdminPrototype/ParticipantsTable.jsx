@@ -400,9 +400,10 @@ const ParticipantsTable = ({
       {tab === "participants" && unregisteredOnly ? (
         <>
           <p className="mb-2 text-xs text-slate-500">
-            In the programme — admitted to a mentorship posting, or holding its
-            onboarding course — and not registered for {round.name}. This is who
-            a new round&apos;s invitation and the onboarding reminders go to.
+            In the programme — admitted to a mentor or mentee posting, or
+            registered for an earlier round — and not registered for{" "}
+            {round.name}. This is who a new round&apos;s invitation and the
+            onboarding reminders go to.
           </p>
           <Table>
             <TableHeader>
