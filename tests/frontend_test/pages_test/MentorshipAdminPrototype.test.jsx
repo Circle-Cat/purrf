@@ -317,15 +317,12 @@ describe("MentorshipAdminPrototype smoke", () => {
 
     fireEvent.click(within(poolRow("Liu, Bob")).getByRole("checkbox"));
     expect(
-      screen.getByRole("button", { name: "Export for matching · 1" }),
+      screen.getByRole("button", { name: "Run matching · 1" }),
     ).toBeDisabled();
     fireEvent.click(within(poolRow("Chen, Alice")).getByRole("checkbox"));
-    fireEvent.click(
-      screen.getByRole("button", { name: "Export for matching · 2" }),
-    );
     expect(
-      screen.getByText(/Liu, Bob goes in with 1 slot, not 3/),
-    ).toBeInTheDocument();
+      screen.getByRole("button", { name: "Run matching · 2" }),
+    ).toBeEnabled();
   });
 
   it("shows the existing meeting log on the pair page, editable only in a v2 round", () => {
@@ -617,5 +614,118 @@ describe("MentorshipAdminPrototype smoke", () => {
       .getAllByRole("row")
       .find((row) => within(row).queryByRole("button", { name: "Hu, Ivy" }));
     expect(within(ivy).getByText("Exempted")).toBeInTheDocument();
+  });
+
+  const startRun = () => {
+    fireEvent.click(
+      screen.getByRole("button", { name: "Eligible for matching" }),
+    );
+    const row = (name) =>
+      screen
+        .getAllByRole("row")
+        .find((r) => within(r).queryByRole("button", { name }));
+    ["Liu, Bob", "Guo, Fay", "Chen, Alice", "Wu, Dana"].forEach((name) =>
+      fireEvent.click(within(row(name)).getByRole("checkbox")),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Run matching · 4" }));
+  };
+
+  it("runs matching on the chosen people, and holds the round while it runs", () => {
+    render(<MentorshipAdminPrototype />);
+    expect(
+      screen.getByRole("button", { name: "View matching results" }),
+    ).toBeDisabled();
+
+    startRun();
+    expect(window.location.hash).toContain("matching/7");
+    expect(screen.getByText(/No other run can start/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
+    expect(
+      screen.getByRole("button", { name: "Matching running…" }),
+    ).toBeInTheDocument();
+    const row = screen
+      .getAllByRole("row")
+      .find((r) => within(r).queryByRole("button", { name: "Chen, Alice" }));
+    fireEvent.click(within(row).getByRole("checkbox"));
+    const bob = screen
+      .getAllByRole("row")
+      .find((r) => within(r).queryByRole("button", { name: "Liu, Bob" }));
+    fireEvent.click(within(bob).getByRole("checkbox"));
+    expect(
+      screen.getByRole("button", { name: "Run matching · 2" }),
+    ).toBeDisabled();
+  });
+
+  it("reviews a result with both résumés, lets pairs and reasons be changed, then publishes", () => {
+    render(<MentorshipAdminPrototype />);
+    startRun();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Simulate the run finishing/ }),
+    );
+    expect(screen.getByText(/2 of 2\s+mentees matched/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Chen, Alice/ }));
+    // Both sides, résumé and application.
+    expect(
+      screen.getByText(/Data Analyst · Northwind Health/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Staff Software Engineer · Circle Cat/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/People moving into ML from analytics/),
+    ).toBeInTheDocument();
+
+    // Bob has one slot left; giving him Dana as well is over his cap.
+    fireEvent.click(screen.getByRole("button", { name: /^Wu, Dana/ }));
+    fireEvent.change(screen.getByLabelText("Mentor for Wu, Dana"), {
+      target: { value: "3102" },
+    });
+    expect(
+      screen.getByText(/Liu, Bob is given 2 mentees but has 1 slot left/),
+    ).toBeInTheDocument();
+    // Moving her cleared the reason written for her old mentor.
+    expect(
+      screen.getByText(/Wu, Dana is matched with no reason/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Publish results" }),
+    ).toBeDisabled();
+
+    // Send Alice to Fay instead and write both reasons.
+    fireEvent.change(screen.getByLabelText("Mentor for Chen, Alice"), {
+      target: { value: "3106" },
+    });
+    fireEvent.change(screen.getByLabelText("Reason for Chen, Alice"), {
+      target: { value: "Fay hires for ML-adjacent roles." },
+    });
+    fireEvent.change(screen.getByLabelText("Reason for Wu, Dana"), {
+      target: { value: "Bob can speak to leading a platform team." },
+    });
+    expect(screen.getAllByText("The matcher proposed")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Publish results" }));
+    expect(screen.getByText(/Published\./)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pairs" }));
+    expect(pairRow("Guo, Fay", "Chen, Alice")).toBeInTheDocument();
+    expect(pairRow("Liu, Bob", "Wu, Dana")).toBeInTheDocument();
+  });
+
+  it("keeps the reason within what the published column can hold", () => {
+    render(<MentorshipAdminPrototype />);
+    startRun();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Simulate the run finishing/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Chen, Alice/ }));
+    fireEvent.change(screen.getByLabelText("Reason for Chen, Alice"), {
+      target: { value: "x".repeat(301) },
+    });
+    expect(screen.getByText("301/300")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Publish results" }),
+    ).toBeDisabled();
   });
 });

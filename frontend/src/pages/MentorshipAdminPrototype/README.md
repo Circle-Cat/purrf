@@ -108,10 +108,19 @@ Open a pair and raise a partner change from there, then approve it: the note
 and the status history appear on that pair's page. A request raised without
 the pair it is about would never reach it.
 
+**Matching runs from the same filter.** Under *Eligible for matching*, pick
+mentors and mentees and press *Run matching*. While it runs no other run can
+start in the round. *View matching results* opens the review: every mentee has
+a row, and opening one puts both people's résumés and applications side by
+side with the reason. Move a mentee to another mentor (which clears the old
+reason) or rewrite the reason; the matcher's proposal stays visible and can be
+restored. Publishing is blocked while a mentor is over their free slots or a
+reason is missing or over 300 characters, and happens once. Mentors left
+without a mentee are confirmed as unmatched through an approval, not by
+publishing. There is no matcher here: *Simulate the run finishing* stands in.
+
 ## What is deliberately missing
 
-- The matching run and review screen. That work is waiting on the export
-  format the algorithm side needs.
 - What the export file contains. *Export for matching* shows who goes in and
   with how many slots; the format is still being agreed with the algorithm
   side.

@@ -351,6 +351,138 @@ export const ACCOUNT_STATES = {
 export const accountStateOf = (userId) =>
   ACCOUNT_STATES[userId] ?? { isActive: true, isBlocked: false };
 
+/**
+ * What the review screen shows for each side of a proposed pair: their
+ * résumé as held on their profile, and their answers to the mentorship
+ * application. The real page reuses the profile's experience view and the
+ * recruiting console's answers section rather than drawing new ones.
+ */
+export const PROFILES = {
+  3101: {
+    headline: "Data analyst moving into ML engineering",
+    workHistory: [
+      {
+        title: "Data Analyst",
+        company: "Northwind Health",
+        years: "2023 – now",
+      },
+      { title: "BI Intern", company: "Contoso", years: "2022" },
+    ],
+    education: [{ degree: "BSc Statistics", school: "UC Davis" }],
+    answers: [
+      {
+        q: "What do you want to get out of this round?",
+        a: "A plan for moving from analytics into an ML engineering role within a year.",
+      },
+      {
+        q: "Which skills do you most want to build?",
+        a: "Production ML, system design, interviewing.",
+      },
+    ],
+  },
+  3104: {
+    headline: "Backend engineer, three years in, wants to lead",
+    workHistory: [
+      {
+        title: "Software Engineer",
+        company: "Circle Cat",
+        years: "2023 – now",
+      },
+    ],
+    education: [
+      { degree: "BEng Computer Science", school: "Zhejiang University" },
+    ],
+    answers: [
+      {
+        q: "What do you want to get out of this round?",
+        a: "How to take on tech-lead responsibilities without dropping delivery.",
+      },
+      {
+        q: "Which skills do you most want to build?",
+        a: "Technical leadership, stakeholder management.",
+      },
+    ],
+  },
+  3110: {
+    headline: "New grad, frontend",
+    workHistory: [
+      { title: "Frontend Intern", company: "Fabrikam", years: "2025" },
+    ],
+    education: [
+      { degree: "BSc Computer Science", school: "University of Toronto" },
+    ],
+    answers: [
+      {
+        q: "What do you want to get out of this round?",
+        a: "Landing a first full-time role.",
+      },
+      {
+        q: "Which skills do you most want to build?",
+        a: "Interviewing, portfolio, React performance.",
+      },
+    ],
+  },
+  3102: {
+    headline: "Staff engineer, ML platform",
+    workHistory: [
+      {
+        title: "Staff Software Engineer",
+        company: "Circle Cat",
+        years: "2019 – now",
+      },
+      { title: "ML Engineer", company: "Litware", years: "2015 – 2019" },
+    ],
+    education: [{ degree: "MS Computer Science", school: "Georgia Tech" }],
+    answers: [
+      {
+        q: "Who would you most like to mentor?",
+        a: "People moving into ML from analytics or research.",
+      },
+      {
+        q: "How much time can you give each month?",
+        a: "Two hours per mentee.",
+      },
+    ],
+  },
+  3106: {
+    headline: "Engineering manager, backend",
+    workHistory: [
+      {
+        title: "Engineering Manager",
+        company: "Circle Cat",
+        years: "2020 – now",
+      },
+      { title: "Senior Engineer", company: "Adatum", years: "2016 – 2020" },
+    ],
+    education: [
+      { degree: "BEng Software Engineering", school: "Tongji University" },
+    ],
+    answers: [
+      {
+        q: "Who would you most like to mentor?",
+        a: "Engineers stepping into their first lead role.",
+      },
+      {
+        q: "How much time can you give each month?",
+        a: "One hour per mentee, flexible.",
+      },
+    ],
+  },
+};
+
+/**
+ * What the matcher would say for a pairing, in the prototype. The real
+ * reasons come from the matcher and are capped at 300 characters on write.
+ */
+export const MATCH_REASONS = {
+  "3101-3102":
+    "Alice wants to move from analytics into ML engineering, and Bob built an ML platform after starting in ML engineering himself. He asked for mentees coming from analytics.",
+  "3104-3106":
+    "Dana wants to grow into a tech lead, and Fay manages backend engineers and asked for people stepping into their first lead role.",
+  "3110-3106":
+    "Ivy is looking for a first full-time role; Fay hires engineers and can speak to what interviewers look for.",
+};
+
 export const INITIAL_PAIRS = [
   {
     pairId: 501,

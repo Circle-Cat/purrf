@@ -6,6 +6,8 @@ import NoteDialog from "@/pages/MentorshipAdminPrototype/NoteDialog";
 import RaiseRequestDialog from "@/pages/MentorshipAdminPrototype/RaiseRequestDialog";
 import ComposeDialog from "@/pages/MentorshipAdminPrototype/ComposeDialog";
 import RoundModal from "@/pages/MentorshipAdminPrototype/RoundModal";
+import MatchingPage from "@/pages/MentorshipAdminPrototype/MatchingPage";
+import { simulateRun } from "@/pages/MentorshipAdminPrototype/matching";
 import {
   ACTOR_NAMES,
   ALL_PERMISSIONS,
@@ -40,7 +42,8 @@ const newId = (prefix) => `${prefix}-${nextId++}`;
  *
  * The Pages bundle has no router, so the hash stands in for the real routes:
  * `#mentorship/participants/:id`, `#mentorship/pairs/:id`,
- * `#mentorship/people/:userId/:roundId` for someone not registered, and
+ * `#mentorship/people/:userId/:roundId` for someone not registered,
+ * `#mentorship/matching/:roundId` for a round's matching run, and
  * `#mentorship?tab=…&q=…` for the list. The list's tab, round and filters live
  * in the query so that opening a detail page and coming back lands on the same
  * filtered list — the one cost of making details full pages instead of drawers.
@@ -61,6 +64,9 @@ const parseLocation = () => {
       query,
     };
   }
+  if (root === HASH_ROOT && kind === "matching" && id) {
+    return { view: { kind: "matching", roundId: Number(id) }, query };
+  }
   if (root === HASH_ROOT && kind === "pairs" && id) {
     return { view: { kind: "pair", pairId: Number(id) }, query };
   }
@@ -74,6 +80,7 @@ const toHash = (view, query) => {
   if (view.kind === "person") {
     return `#${HASH_ROOT}/people/${view.userId}/${view.roundId}`;
   }
+  if (view.kind === "matching") return `#${HASH_ROOT}/matching/${view.roundId}`;
   if (view.kind === "pair") return `#${HASH_ROOT}/pairs/${view.pairId}`;
   const search = new URLSearchParams(query).toString();
   return `#${HASH_ROOT}${search ? `?${search}` : ""}`;
@@ -122,6 +129,7 @@ const MentorshipAdminPrototype = () => {
   const [notes, setNotes] = useState(INITIAL_NOTES);
   const [requests, setRequests] = useState(INITIAL_REQUESTS);
   const [emails, setEmails] = useState(INITIAL_EMAILS);
+  const [matchRuns, setMatchRuns] = useState({});
   const [mailbox, setMailbox] = useState(MAILBOX_REPLIES);
 
   const [noteTarget, setNoteTarget] = useState(null);
@@ -671,6 +679,111 @@ const MentorshipAdminPrototype = () => {
     [meetings],
   );
 
+  /**
+   * Starting a run takes the round's lock: while it runs, nothing else can
+   * start in that round. A finished, unpublished run can be replaced by a
+   * new one; its draft goes with it.
+   */
+  const startRun = useCallback(
+    (people) => {
+      if (matchRuns[roundId]?.status === "running") return;
+      const mentors = people
+        .filter((p) => p.role === "mentor")
+        .map(({ userId, freeSlots }) => ({ userId, freeSlots }));
+      const mentees = people
+        .filter((p) => p.role === "mentee")
+        .map(({ userId }) => ({ userId }));
+      setMatchRuns((all) => ({
+        ...all,
+        [roundId]: {
+          runId: `r${roundId}-${TODAY.replaceAll("-", "")}-${nextId++}`,
+          status: "running",
+          startedAt: `${TODAY} 10:02`,
+          triggeredBy: viewerId,
+          mentors,
+          mentees,
+          rows: [],
+          draft: {},
+        },
+      }));
+    },
+    [matchRuns, roundId, viewerId],
+  );
+
+  const updateRun = (forRound, change) =>
+    setMatchRuns((all) => ({ ...all, [forRound]: change(all[forRound]) }));
+
+  const finishRun = (forRound) =>
+    updateRun(forRound, (run) => ({
+      ...run,
+      status: "succeeded",
+      ...simulateRun(run),
+    }));
+
+  /**
+   * An edit sits over the matcher's row. Moving a mentee to another mentor
+   * clears a reason that was written for the old one, so a stale reason
+   * cannot be published by accident.
+   */
+  const editDraft = (forRound, menteeId, patch) =>
+    updateRun(forRound, (run) => {
+      const original = run.rows.find((r) => r.menteeId === menteeId);
+      const current = { ...original, ...run.draft[menteeId] };
+      const next = { ...run.draft[menteeId], ...patch };
+      if (
+        patch.mentorId !== undefined &&
+        patch.mentorId !== current.mentorId &&
+        patch.reason === undefined
+      ) {
+        next.reason = "";
+      }
+      return { ...run, draft: { ...run.draft, [menteeId]: next } };
+    });
+
+  const revertDraft = (forRound, menteeId) =>
+    updateRun(forRound, (run) => {
+      const { [menteeId]: _dropped, ...rest } = run.draft;
+      return { ...run, draft: rest };
+    });
+
+  /** Publishing writes the pairs and marks both sides matched — once. */
+  const publishRun = (forRound) => {
+    const run = matchRuns[forRound];
+    const target = rounds.find((r) => r.id === forRound);
+    const finalRows = run.rows
+      .map((r) => ({ ...r, ...run.draft[r.menteeId] }))
+      .filter((r) => r.mentorId);
+    const nameOfUser = (userId) =>
+      participants.find((p) => p.userId === userId)?.name;
+    const firstPairId = Math.max(...pairs.map((p) => p.pairId)) + 1;
+    setPairs((all) => [
+      ...all,
+      ...finalRows.map((r, i) => ({
+        pairId: firstPairId + i,
+        roundId: forRound,
+        mentorId: r.mentorId,
+        menteeId: r.menteeId,
+        mentorName: nameOfUser(r.mentorId),
+        menteeName: nameOfUser(r.menteeId),
+        status: "active",
+        firstContactConfirmedAt: null,
+        completed: 0,
+        required: target.requiredMeetings,
+      })),
+    ]);
+    const matchedIds = new Set(
+      finalRows.flatMap((r) => [r.mentorId, r.menteeId]),
+    );
+    setParticipants((all) =>
+      all.map((p) =>
+        p.roundId === forRound && matchedIds.has(p.userId)
+          ? { ...p, approvalStatus: "matched" }
+          : p,
+      ),
+    );
+    updateRun(forRound, (r) => ({ ...r, status: "published" }));
+  };
+
   const saveRound = useCallback((draft) => {
     setRounds((all) =>
       all.some((r) => r.id === draft.id)
@@ -861,6 +974,42 @@ const MentorshipAdminPrototype = () => {
       );
     }
 
+    if (view.kind === "matching") {
+      const forRound = view.roundId;
+      const target = rounds.find((r) => r.id === forRound) ?? round;
+      return (
+        <MatchingPage
+          round={target}
+          run={matchRuns[forRound] ?? null}
+          nameOf={(userId) =>
+            participants.find((p) => p.userId === userId)?.name ??
+            `User ${userId}`
+          }
+          can={can}
+          onBack={backToList}
+          onFinish={() => finishRun(forRound)}
+          onEditDraft={(menteeId, patch) =>
+            editDraft(forRound, menteeId, patch)
+          }
+          onRevert={(menteeId) => revertDraft(forRound, menteeId)}
+          onPublish={() => publishRun(forRound)}
+          onConfirmUnmatched={(userIds) => {
+            const people = participants.filter(
+              (p) => p.roundId === forRound && userIds.includes(p.userId),
+            );
+            setRequestTarget({
+              roundId: forRound,
+              participantIds: people.map((p) => p.participantId),
+              targetLabel: `${people.length} ${
+                people.length === 1 ? "person" : "people"
+              } — ${people.map((p) => p.name).join("; ")}`,
+              actions: ["confirm_unmatched"],
+            });
+          }}
+        />
+      );
+    }
+
     if (view.kind === "pair") {
       const pair = pairs.find((p) => p.pairId === view.pairId);
       if (!pair) return null;
@@ -940,6 +1089,12 @@ const MentorshipAdminPrototype = () => {
           })
         }
         onEditRound={(r) => setRoundModal(r ?? { timeline: {} })}
+        matchRun={matchRuns[round.id] ?? null}
+        onRunMatching={(people) => {
+          startRun(people);
+          navigate({ kind: "matching", roundId: round.id });
+        }}
+        onOpenMatching={() => navigate({ kind: "matching", roundId: round.id })}
       />
     );
   };

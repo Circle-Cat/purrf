@@ -193,6 +193,9 @@ const ManagementPage = ({
   onOpenPerson,
   onConfirmUnmatched,
   onEditRound,
+  matchRun,
+  onRunMatching,
+  onOpenMatching,
 }) => {
   const onSelectRound = (id) => onQueryChange({ round: String(id) });
 
@@ -219,21 +222,36 @@ const ManagementPage = ({
           <Card
             title="Participants"
             right={
-              <Select
-                value={String(round.id)}
-                onValueChange={(v) => onSelectRound(Number(v))}
-              >
-                <SelectTrigger className="h-8 w-56 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {rounds.map((r) => (
-                    <SelectItem key={r.id} value={String(r.id)}>
-                      {r.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!matchRun}
+                  onClick={onOpenMatching}
+                  title={
+                    matchRun ? undefined : "No matching run for this round yet"
+                  }
+                >
+                  {matchRun?.status === "running"
+                    ? "Matching running…"
+                    : "View matching results"}
+                </Button>
+                <Select
+                  value={String(round.id)}
+                  onValueChange={(v) => onSelectRound(Number(v))}
+                >
+                  <SelectTrigger className="h-8 w-56 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {rounds.map((r) => (
+                      <SelectItem key={r.id} value={String(r.id)}>
+                        {r.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </>
             }
           >
             <ParticipantsTable
@@ -255,6 +273,8 @@ const ManagementPage = ({
               onBulkMarkUnregistered={onBulkMarkUnregistered}
               onOpenPerson={onOpenPerson}
               onConfirmUnmatched={onConfirmUnmatched}
+              matchRun={matchRun}
+              onRunMatching={onRunMatching}
             />
           </Card>
         </>

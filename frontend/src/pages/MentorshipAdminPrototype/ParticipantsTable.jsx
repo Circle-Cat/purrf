@@ -118,6 +118,8 @@ const ParticipantsTable = ({
   onConfirmUnmatched,
   flagsByParticipant = {},
   exemptParticipantIds = new Set(),
+  matchRun = null,
+  onRunMatching,
   emails = [],
   onBulkMarkUnregistered,
   onOpenPerson,
@@ -215,31 +217,14 @@ const ParticipantsTable = ({
     [pairs, pairStatus, needle],
   );
 
-  const [exported, setExported] = useState(null);
-
-  const exportChosen = rows.filter(
+  const running = matchRun?.status === "running";
+  const runChosen = rows.filter(
     (p) => selected.includes(p.participantId) && inPool(p),
   );
-  const exportMentors = exportChosen.filter((p) => p.role === "mentor");
-  const exportReady =
-    exportMentors.length > 0 && exportChosen.some((p) => p.role === "mentee");
-  const exportForMatching = () => {
-    const partial = exportMentors.filter((m) => m.freeSlots < capacityOf(m));
-    setExported(
-      `Exported ${exportChosen.length} people for matching.` +
-        (partial.length
-          ? ` ${partial
-              .map(
-                (m) =>
-                  `${m.name} goes in with ${m.freeSlots} slot${
-                    m.freeSlots === 1 ? "" : "s"
-                  }, not ${capacityOf(m)}`,
-              )
-              .join("; ")} — the places already taken stay taken.`
-          : ""),
-    );
-    setSelected([]);
-  };
+  const runReady =
+    !running &&
+    runChosen.some((p) => p.role === "mentor") &&
+    runChosen.some((p) => p.role === "mentee");
 
   /** The latest email to someone about the selected round, so nobody is invited twice. */
   const lastEmailTo = (userId) =>
@@ -254,7 +239,6 @@ const ParticipantsTable = ({
 
   const setFilter = (next) => {
     setSelected([]);
-    setExported(null);
     onQueryChange({ filter: query.filter === next ? "" : next });
   };
 
@@ -278,7 +262,6 @@ const ParticipantsTable = ({
 
   const switchTab = (key) => {
     setSelected([]);
-    setExported(null);
     onQueryChange({ tab: key === "participants" ? "" : key });
   };
 
@@ -491,6 +474,12 @@ const ParticipantsTable = ({
           listed: {leftOut.full} matched with no free slot ·{" "}
           {leftOut.onboarding} onboarding not done · {leftOut.blocked} blocked ·{" "}
           {leftOut.other} withdrawn or closed out.
+          {running ? (
+            <strong className="ml-1 text-slate-700">
+              A matching run is going in this round; no new run can start until
+              it finishes.
+            </strong>
+          ) : null}
         </p>
       ) : null}
 
@@ -631,12 +620,6 @@ const ParticipantsTable = ({
         </Table>
       ) : null}
 
-      {exported ? (
-        <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-          {exported}
-        </p>
-      ) : null}
-
       {unregisteredOnly &&
       tab === "participants" &&
       selected.length > 0 &&
@@ -770,15 +753,20 @@ const ParticipantsTable = ({
           {tab === "participants" && eligibleOnly ? (
             <Button
               size="sm"
-              disabled={!exportReady}
+              disabled={!runReady}
               title={
-                exportReady
-                  ? "Each mentor goes in with the slots they have left, not their cap"
-                  : "A run needs at least one mentor and one mentee"
+                running
+                  ? "A run is already going in this round"
+                  : runReady
+                    ? "Each mentor goes in with the slots they have left, not their cap"
+                    : "A run needs at least one mentor and one mentee"
               }
-              onClick={exportForMatching}
+              onClick={() => {
+                onRunMatching(runChosen);
+                setSelected([]);
+              }}
             >
-              Export for matching · {exportChosen.length}
+              Run matching · {runChosen.length}
             </Button>
           ) : null}
           {tab === "participants" ? (
