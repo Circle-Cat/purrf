@@ -82,7 +82,7 @@ export const INITIAL_ROUNDS = [
       menteeApplicationDeadlineAt: "2026-08-25",
       onboardingNotificationAt: "2026-09-02",
       onboardingDeadlineAt: "2026-09-09",
-      matchNotificationAt: "2026-09-12",
+      matchNotificationAt: "2026-09-30",
       firstMeetingDeadlineAt: "2026-09-19",
       meetingLogReminderAt: "2026-11-02",
       meetingsCompletionDeadlineAt: "2026-11-30",

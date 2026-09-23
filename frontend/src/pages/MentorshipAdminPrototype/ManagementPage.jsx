@@ -196,6 +196,7 @@ const ManagementPage = ({
   onEditRound,
   matchRun,
   onRunMatching,
+  matchingOpen,
   onOpenMatching,
 }) => {
   const onSelectRound = (id) => onQueryChange({ round: String(id) });
@@ -276,6 +277,7 @@ const ManagementPage = ({
               onOpenPerson={onOpenPerson}
               onConfirmUnmatched={onConfirmUnmatched}
               matchRun={matchRun}
+              matchingOpen={matchingOpen}
               onRunMatching={onRunMatching}
             />
           </Card>

@@ -1107,6 +1107,7 @@ const MentorshipAdminPrototype = () => {
         }
         onEditRound={(r) => setRoundModal(r ?? { timeline: {} })}
         matchRun={matchRuns[round.id] ?? null}
+        matchingOpen={TODAY <= (round.timeline.matchNotificationAt ?? "")}
         onRunMatching={(people) => {
           startRun(people);
           navigate({ kind: "matching", roundId: round.id });

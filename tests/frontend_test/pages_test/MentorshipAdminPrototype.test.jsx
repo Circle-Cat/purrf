@@ -638,17 +638,26 @@ describe("MentorshipAdminPrototype smoke", () => {
 
   it("keeps people with a past to look at out of matching until an exemption is approved", () => {
     render(<MentorshipAdminPrototype />);
-    const filter = () =>
-      screen.getByRole("button", { name: "Eligible for matching" });
-    fireEvent.click(filter());
+    // The pool itself is clean: nobody waiting on an exemption is in it.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Eligible for matching" }),
+    );
+    expect(screen.queryByRole("button", { name: "Kim, Sora" })).toBeNull();
+    expect(screen.getByText(/2 waiting on an exemption/)).toBeInTheDocument();
 
-    // Not in the list, but named with the reason, so they can be followed up.
-    expect(screen.queryByRole("row", { name: /Kim, Sora/ })).toBeNull();
+    // Counted on the button without asking; listed when pressed.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Needs exemption · 2" }),
+    );
     expect(
-      screen.getByText(/Met 3\/7 in Mentorship 2025 Summer/),
+      within(personRow("Kim, Sora")).getByText(
+        "Met 3/7 in Mentorship 2025 Summer",
+      ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Red flag in Mentorship 2025 Summer/),
+      within(personRow("Tan, Wei")).getByText(
+        "Red flag in Mentorship 2025 Summer",
+      ),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Kim, Sora" }));
@@ -672,14 +681,15 @@ describe("MentorshipAdminPrototype smoke", () => {
         name: "Approve",
       }),
     );
+    // Out of the exemption list, into the pool; Wei is still waiting.
+    expect(personRow("Kim, Sora")).toBeUndefined();
+    expect(
+      screen.getByRole("button", { name: "Needs exemption · 1" }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Eligible for matching" }),
+    );
     expect(personRow("Kim, Sora")).toBeDefined();
-    expect(
-      within(personRow("Kim, Sora")).getByText("mentee"),
-    ).toBeInTheDocument();
-    // Wei is still waiting on one.
-    expect(
-      screen.getByText(/Red flag in Mentorship 2025 Summer/),
-    ).toBeInTheDocument();
   });
 
   it("hides what does not help choose who to match", () => {
@@ -1129,5 +1139,15 @@ describe("Meetings last round", () => {
     expect(
       screen.getByRole("button", { name: /with Liu, Bob/, expanded: true }),
     ).toBeInTheDocument();
+  });
+
+  it("offers the exemption list only until the round's matching closes", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Mentorship 2025 Summer" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Needs exemption" }),
+    ).toBeDisabled();
   });
 });

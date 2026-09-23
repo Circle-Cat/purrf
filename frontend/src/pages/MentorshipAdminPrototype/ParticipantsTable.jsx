@@ -100,6 +100,7 @@ const ParticipantsTable = ({
   exemptParticipantIds = new Set(),
   matchRun = null,
   onRunMatching,
+  matchingOpen = false,
   notes = [],
   notifications = [],
   emails = [],
@@ -114,6 +115,10 @@ const ParticipantsTable = ({
   const identity = query.identity ?? "all";
   const onboarding = query.onboarding ?? "all";
   const eligibleOnly = query.filter === "eligible";
+  // Only until this round's matching closes; after that there is nothing left
+  // to exempt anyone for.
+  const exemptionOnly = matchingOpen && query.filter === "needs_exemption";
+  const narrow = eligibleOnly || exemptionOnly;
   const emailStep = query.email ?? "all";
   const emailState = query.emailState ?? "all";
   /**
@@ -209,6 +214,7 @@ const ParticipantsTable = ({
   const rows = withSlots.filter(
     (p) =>
       (!eligibleOnly || inPool(p)) &&
+      (!exemptionOnly || waitingOnExemption.includes(p)) &&
       (role === "all" || p.role === role) &&
       (identity === "all" || p.identity === identity) &&
       (onboarding === "all" || (onboarding === "done") === p.onboardingDone) &&
@@ -316,14 +322,29 @@ const ParticipantsTable = ({
             />
             {[
               { key: "eligible", label: "Eligible for matching" },
+              {
+                key: "needs_exemption",
+                // Counted on every visit, listed on demand: a number cannot be
+                // missed the way a list nobody opens can, and it costs no room.
+                label:
+                  matchingOpen && waitingOnExemption.length
+                    ? `Needs exemption · ${waitingOnExemption.length}`
+                    : "Needs exemption",
+                disabled: !matchingOpen,
+                title: matchingOpen
+                  ? "Registered people whose past needs an exemption before they can be matched"
+                  : `Only until this round's matching closes (${round.timeline.matchNotificationAt})`,
+              },
               { key: "unregistered", label: "Not registered for this round" },
             ].map((f) => (
               <button
                 key={f.key}
                 type="button"
                 aria-pressed={query.filter === f.key}
+                disabled={f.disabled}
+                title={f.title}
                 onClick={() => setFilter(f.key)}
-                className={`h-8 rounded-md border px-3 text-xs transition-colors ${
+                className={`h-8 rounded-md border px-3 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                   query.filter === f.key
                     ? "border-slate-900 bg-slate-900 text-white"
                     : "border-slate-300 text-slate-600 hover:bg-slate-100"
@@ -426,10 +447,14 @@ const ParticipantsTable = ({
       {tab === "participants" && eligibleOnly ? (
         <p className="mb-2 text-xs text-slate-500">
           Registered this round, training done, not withdrawn, at least one free
-          slot, and nothing in their past waiting on an exemption. Not listed:{" "}
-          {leftOut.full} matched with no free slot · {leftOut.onboarding}{" "}
-          training not done · {leftOut.blocked} blocked or deactivated ·{" "}
-          {leftOut.other} withdrawn or closed out.
+          slot, and nothing in their past waiting on an exemption — everyone
+          here can be matched. Not listed: {leftOut.full} matched with no free
+          slot · {leftOut.onboarding} training not done · {leftOut.blocked}{" "}
+          blocked or deactivated · {leftOut.other} withdrawn or closed out
+          {waitingOnExemption.length
+            ? ` · ${waitingOnExemption.length} waiting on an exemption (see Needs exemption)`
+            : ""}
+          .
           {running ? (
             <strong className="ml-1 text-slate-700">
               A matching run is going in this round; no new run can start until
@@ -437,28 +462,6 @@ const ParticipantsTable = ({
             </strong>
           ) : null}
         </p>
-      ) : null}
-      {tab === "participants" && eligibleOnly && waitingOnExemption.length ? (
-        <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          <p className="font-medium">
-            {waitingOnExemption.length} need an exemption before they can be
-            matched:
-          </p>
-          <ul className="mt-1 space-y-0.5">
-            {waitingOnExemption.map((p) => (
-              <li key={p.participantId}>
-                <button
-                  type="button"
-                  className="font-medium underline underline-offset-2"
-                  onClick={() => onOpenParticipant(p.participantId)}
-                >
-                  {p.name}
-                </button>{" "}
-                — {p.historyIssues.join("; ")}
-              </li>
-            ))}
-          </ul>
-        </div>
       ) : null}
 
       {tab === "participants" && !unregisteredOnly ? (
@@ -468,26 +471,23 @@ const ParticipantsTable = ({
               <TableHead className="w-8" />
               <TableHead>Name</TableHead>
               <TableHead>Role</TableHead>
-              {eligibleOnly ? null : (
+              {exemptionOnly ? <TableHead>Why</TableHead> : null}
+              {narrow ? null : (
                 <>
                   <TableHead>Int / ext</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Account</TableHead>
                 </>
               )}
-              <TableHead>Pair</TableHead>
-              {eligibleOnly ? null : (
+              {exemptionOnly ? null : <TableHead>Pair</TableHead>}
+              {narrow ? null : (
                 <>
                   <TableHead>Notifications</TableHead>
                   <TableHead>Training</TableHead>
                 </>
               )}
-              {eligibleOnly ? (
-                <>
-                  <TableHead>Free slots</TableHead>
-                  <TableHead>Meetings last round</TableHead>
-                </>
-              ) : null}
+              {eligibleOnly ? <TableHead>Free slots</TableHead> : null}
+              {narrow ? <TableHead>Meetings last round</TableHead> : null}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -510,7 +510,16 @@ const ParticipantsTable = ({
                   <div className="text-xs text-slate-500">{p.email}</div>
                 </TableCell>
                 <TableCell className="text-sm">{p.role}</TableCell>
-                {eligibleOnly ? null : (
+                {exemptionOnly ? (
+                  <TableCell className="text-xs text-amber-900">
+                    <ul className="space-y-0.5">
+                      {p.historyIssues.map((issue) => (
+                        <li key={issue}>{issue}</li>
+                      ))}
+                    </ul>
+                  </TableCell>
+                ) : null}
+                {narrow ? null : (
                   <>
                     <TableCell className="text-sm">{p.identity}</TableCell>
                     <TableCell>
@@ -527,17 +536,19 @@ const ParticipantsTable = ({
                     </TableCell>
                   </>
                 )}
-                <TableCell>
-                  <PairCell
-                    person={p}
-                    pairs={pairs}
-                    writable={writable}
-                    onMarkFirstContact={(pairId) =>
-                      onMarkCell(pairId, "firstContact")
-                    }
-                  />
-                </TableCell>
-                {eligibleOnly ? null : (
+                {exemptionOnly ? null : (
+                  <TableCell>
+                    <PairCell
+                      person={p}
+                      pairs={pairs}
+                      writable={writable}
+                      onMarkFirstContact={(pairId) =>
+                        onMarkCell(pairId, "firstContact")
+                      }
+                    />
+                  </TableCell>
+                )}
+                {narrow ? null : (
                   <>
                     <TableCell>
                       <EmailDots
@@ -557,14 +568,14 @@ const ParticipantsTable = ({
                   </>
                 )}
                 {eligibleOnly ? (
-                  <>
-                    <TableCell className="text-sm">
-                      {p.freeSlots} of {capacityOf(p)}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      <LastRound value={p.lastRound} />
-                    </TableCell>
-                  </>
+                  <TableCell className="text-sm">
+                    {p.freeSlots} of {capacityOf(p)}
+                  </TableCell>
+                ) : null}
+                {narrow ? (
+                  <TableCell className="text-sm">
+                    <LastRound value={p.lastRound} />
+                  </TableCell>
                 ) : null}
               </TableRow>
             ))}
