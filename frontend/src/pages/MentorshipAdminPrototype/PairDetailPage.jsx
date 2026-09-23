@@ -1,9 +1,9 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import MeetingLogTable from "@/pages/MentorshipAdminPrototype/MeetingLogTable";
 import {
   ACTION_LABELS,
   ACTOR_NAMES,
-  MEETING_TAG_LABELS,
   NOTE_KIND,
   NOTE_LABELS,
 } from "@/pages/MentorshipAdminPrototype/mockData";
@@ -41,6 +41,7 @@ const PairDetailPage = ({
   onBack,
   onAddNote,
   onRaise,
+  onSaveMeetings,
 }) => {
   if (!pair) return null;
   const writable = can("mentorship.admin.write");
@@ -79,48 +80,18 @@ const PairDetailPage = ({
         ) : null}
       </header>
 
-      <Block
-        title="Meeting log"
-        right={
-          writable ? (
-            <Button size="sm" variant="outline">
-              Add a meeting
-            </Button>
-          ) : null
-        }
-      >
-        {meetings.length === 0 ? (
-          <p className="text-sm text-slate-500">No meetings recorded yet.</p>
-        ) : (
-          <ul className="divide-y divide-slate-100 text-sm">
-            {meetings.map((m) => (
-              <li key={m.meetingId} className="flex flex-wrap gap-3 py-2">
-                <span className="w-24 shrink-0">{m.date}</span>
-                <span className="w-32 shrink-0 text-slate-600">
-                  {m.start}–{m.end}
-                </span>
-                <span className="w-24 shrink-0">
-                  {m.completed ? "Held" : "Not held"}
-                </span>
-                <span className="flex-1 space-x-1">
-                  {m.tags.map((t) => (
-                    <Badge key={t} variant="outline">
-                      {MEETING_TAG_LABELS[t]}
-                    </Badge>
-                  ))}
-                </span>
-                {writable ? (
-                  <Button size="sm" variant="ghost">
-                    Edit
-                  </Button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
+      <Block title="Meeting log">
+        <MeetingLogTable
+          roundVersion={writable ? round?.version : null}
+          mentorName={pair.mentorName}
+          menteeName={pair.menteeName}
+          meetings={meetings}
+          onSave={onSaveMeetings}
+        />
         <p className="mt-2 text-xs text-slate-500">
-          Meetings live here rather than on either person&apos;s page: a mentor
-          carrying two mentees has two logs, not one.
+          This is the console&apos;s existing meeting log, moved out of its
+          dialog. Meetings live here rather than on either person&apos;s page: a
+          mentor carrying two mentees has two logs, not one.
         </p>
       </Block>
 

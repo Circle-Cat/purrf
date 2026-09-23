@@ -62,6 +62,7 @@ export const INITIAL_ROUNDS = [
   {
     id: 7,
     name: "Mentorship 2026 Fall",
+    version: "v2",
     requiredMeetings: 5,
     status: "active",
     timeline: {
@@ -82,6 +83,7 @@ export const INITIAL_ROUNDS = [
   {
     id: 6,
     name: "Mentorship 2025 Summer",
+    version: "v1",
     requiredMeetings: 7,
     status: "closed",
     timeline: {
@@ -132,6 +134,7 @@ export const INITIAL_PARTICIPANTS = [
     role: "mentor",
     identity: "internal",
     approvalStatus: "matched",
+    maxPartners: 3,
     onboardingDone: true,
     lastRound: { kind: "count", completed: 5, required: 5 },
     midtermReminderAt: null,
@@ -158,8 +161,21 @@ export const INITIAL_PARTICIPANTS = [
     role: "mentee",
     identity: "internal",
     approvalStatus: "signed_up",
-    onboardingDone: false,
+    onboardingDone: true,
     lastRound: { kind: "unmatched" },
+    midtermReminderAt: null,
+  },
+  {
+    participantId: "p-ivy-7",
+    userId: 3110,
+    roundId: 7,
+    name: "Hu, Ivy",
+    email: "ivy@example.com",
+    role: "mentee",
+    identity: "external",
+    approvalStatus: "signed_up",
+    onboardingDone: false,
+    lastRound: { kind: "first-time" },
     midtermReminderAt: null,
   },
   {
@@ -184,6 +200,7 @@ export const INITIAL_PARTICIPANTS = [
     role: "mentor",
     identity: "internal",
     approvalStatus: "matched",
+    maxPartners: 2,
     onboardingDone: true,
     lastRound: { kind: "count", completed: 4, required: 5 },
     midtermReminderAt: "2026-09-18",
@@ -295,42 +312,72 @@ export const INITIAL_PAIRS = [
   },
 ];
 
+/** A meeting a few days out, so the log always has one still to come. */
+const upcoming = (() => {
+  const start = new Date(Date.now() + 5 * 24 * 3600 * 1000);
+  start.setUTCHours(17, 0, 0, 0);
+  const end = new Date(start.getTime() + 3600 * 1000);
+  return { startDatetime: start.toISOString(), endDatetime: end.toISOString() };
+})();
+
+/**
+ * Meetings in the shape the console's meeting log already reads: UTC
+ * datetimes (shown in Pacific time), a completion flag, and the attendance
+ * tags in `note`.
+ */
 export const INITIAL_MEETINGS = [
   {
     meetingId: "m-1",
     pairId: 502,
-    date: "2026-09-14",
-    start: "10:00",
-    end: "11:00",
-    completed: true,
-    tags: [],
+    startDatetime: "2026-08-30T17:00:00Z",
+    endDatetime: "2026-08-30T18:00:00Z",
+    createDatetime: "2026-08-24T02:11:00Z",
+    isCompleted: false,
+    note: ["mentee_absent"],
   },
   {
     meetingId: "m-2",
     pairId: 502,
-    date: "2026-09-07",
-    start: "10:00",
-    end: "10:20",
-    completed: true,
-    tags: ["insufficient_duration"],
+    startDatetime: "2026-09-07T17:00:00Z",
+    endDatetime: "2026-09-07T17:20:00Z",
+    createDatetime: "2026-09-01T16:40:00Z",
+    isCompleted: true,
+    note: ["insufficient_duration"],
   },
   {
     meetingId: "m-3",
     pairId: 502,
-    date: "2026-08-30",
-    start: "10:00",
-    end: "11:00",
-    completed: false,
-    tags: ["mentee_absent"],
+    startDatetime: "2026-09-14T17:00:00Z",
+    endDatetime: "2026-09-14T18:00:00Z",
+    createDatetime: "2026-09-08T19:05:00Z",
+    isCompleted: true,
+    note: [],
   },
   {
     meetingId: "m-4",
+    pairId: 502,
+    ...upcoming,
+    createDatetime: "2026-09-15T20:30:00Z",
+    isCompleted: false,
+    note: [],
+  },
+  {
+    meetingId: "m-5",
     pairId: 503,
-    date: "2026-09-10",
-    start: "09:00",
-    end: "10:00",
-    completed: true,
-    tags: [],
+    startDatetime: "2026-09-10T16:00:00Z",
+    endDatetime: "2026-09-10T17:00:00Z",
+    createDatetime: "2026-09-04T03:12:00Z",
+    isCompleted: true,
+    note: [],
+  },
+  {
+    meetingId: "m-6",
+    pairId: 490,
+    startDatetime: "2025-06-02T17:00:00Z",
+    endDatetime: "2025-06-02T18:00:00Z",
+    createDatetime: "2025-05-28T01:00:00Z",
+    isCompleted: true,
+    note: [],
   },
 ];
 
@@ -567,13 +614,3 @@ export const EMAIL_TEMPLATES = [
 export const TEMPLATE_LABELS = Object.fromEntries(
   EMAIL_TEMPLATES.map((t) => [t.key, t.label]),
 );
-
-export const MEETING_TAG_LABELS = {
-  insufficient_duration: "Too short",
-  unknown_absent: "Someone absent",
-  mentor_absent: "Mentor absent",
-  mentee_absent: "Mentee absent",
-  unknown_late: "Someone late",
-  mentor_late: "Mentor late",
-  mentee_late: "Mentee late",
-};

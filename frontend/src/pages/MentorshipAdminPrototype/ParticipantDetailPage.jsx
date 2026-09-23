@@ -310,11 +310,19 @@ const ParticipantDetailPage = ({
                 {participant.approvalStatus}
               </span>
               <span className="flex-1 text-slate-600">
-                {pair
-                  ? pair.mentorId === participant.userId
-                    ? pair.menteeName
-                    : pair.mentorName
-                  : "—"}
+                {pair ? (
+                  <button
+                    type="button"
+                    className="underline-offset-2 hover:underline"
+                    onClick={() => onOpenPair(pair.pairId)}
+                  >
+                    {pair.mentorId === participant.userId
+                      ? pair.menteeName
+                      : pair.mentorName}
+                  </button>
+                ) : (
+                  "—"
+                )}
               </span>
               <span className="w-16 shrink-0 text-right text-slate-600">
                 {pair ? `${pair.completed}/${pair.required}` : "—"}

@@ -39,7 +39,18 @@ which Purrf never sees, so their timeline holds only the notes about it.
 
 **Meetings belong to a pairing, not a person.** They are on the pair page. A
 mentor carrying two mentees has two meeting logs, and flattening them onto one
-page would invent a number that does not exist.
+page would invent a number that does not exist. The log itself is the console's
+existing meeting log — same columns, three-state status, name-substituted
+attendance tags, batch Edit mode — moved out of its dialog, not redrawn.
+There is no "add a meeting": the console cannot create one today, and moving
+the log is not the place to start.
+
+**Matching has its own pool.** The *Matching pool* tab lists only people who
+can go into a run now: onboarding done, not withdrawn, and at least one free
+slot. A matched mentee with an active pair, or a mentor at their cap, is not
+there. A mentor with a place left is, and goes in with the slots left, not
+their cap. "Meetings last round" lives only on this tab — it is a signal for
+choosing who to match and means nothing the rest of the round.
 
 ## Try this
 
@@ -73,7 +84,8 @@ the pair it is about would never reach it.
 
 - The matching run and review screen. That work is waiting on the export
   format the algorithm side needs.
-- The export button. What the algorithm side wants from it is still being
-  agreed, so it is left out rather than drawn in a shape that may change.
+- What the export file contains. *Export for matching* shows who goes in and
+  with how many slots; the format is still being agreed with the algorithm
+  side.
 - Anything that talks to a server. Sending an email opens the composer and
   closes it; nothing is delivered.

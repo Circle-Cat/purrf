@@ -1,5 +1,11 @@
 import { beforeEach, describe, it, expect } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import MentorshipAdminPrototype from "@/pages/MentorshipAdminPrototype";
 
 /** The permission chips are their own labelled group; card buttons are not. */
@@ -36,10 +42,8 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(screen.getByText("Pending approvals")).toBeInTheDocument();
     expect(screen.getByText(/2 waiting/)).toBeInTheDocument();
 
-    // The four states of "meetings last round" are four different answers, and
-    // only one of them is the number zero.
-    expect(screen.getAllByText("First time").length).toBeGreaterThan(0);
-    expect(screen.getByText("Not matched")).toBeInTheDocument();
+    // "Meetings last round" only means something while choosing who to match.
+    expect(screen.queryByText("Meetings last round")).not.toBeInTheDocument();
 
     // Bob carries two mentees: two rows here, one on the person axis.
     fireEvent.click(screen.getByRole("button", { name: "Pairs" }));
@@ -200,7 +204,8 @@ describe("MentorshipAdminPrototype smoke", () => {
       target: { value: "Checked with Jasmine." },
     });
     fireEvent.click(screen.getByRole("button", { name: "Send for approval" }));
-    expect(screen.getAllByText("signed_up")).toHaveLength(2);
+    // Alice and Dana, plus Ivy who was not selected.
+    expect(screen.getAllByText("signed_up")).toHaveLength(3);
 
     fireEvent.click(
       within(pendingItem("Checked with Jasmine.")).getByRole("button", {
@@ -208,6 +213,7 @@ describe("MentorshipAdminPrototype smoke", () => {
       }),
     );
     expect(screen.getAllByText("un_matched")).toHaveLength(2);
+    expect(screen.getAllByText("signed_up")).toHaveLength(1);
   });
 
   it("keeps emails and notes on one timeline, and Refresh pulls replies in", () => {
@@ -250,5 +256,77 @@ describe("MentorshipAdminPrototype smoke", () => {
     fireEvent.click(screen.getByRole("button", { name: "Ma, Erin" }));
     expect(screen.getByText("Email sent")).toBeInTheDocument();
     expect(screen.getByText("Mid-term reminder")).toBeInTheDocument();
+  });
+
+  it("pools only people with a free slot, and exports mentors with what they have left", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(screen.getByRole("button", { name: "Matching pool" }));
+
+    expect(screen.getByText("Meetings last round")).toBeInTheDocument();
+    const poolRow = (name) =>
+      screen
+        .getAllByRole("row")
+        .find((row) => within(row).queryByRole("button", { name }));
+
+    // Matched with an active pair: no free slot, so not offered again.
+    expect(poolRow("Wang, Cara")).toBeUndefined();
+    expect(poolRow("Ma, Erin")).toBeUndefined();
+    // Onboarding not done.
+    expect(poolRow("Hu, Ivy")).toBeUndefined();
+    // Matched, but a slot is still open.
+    expect(within(poolRow("Liu, Bob")).getByText("1 of 3")).toBeInTheDocument();
+    expect(within(poolRow("Guo, Fay")).getByText("2 of 2")).toBeInTheDocument();
+    // The four states still read as four answers here.
+    expect(
+      within(poolRow("Chen, Alice")).getByText("First time"),
+    ).toBeInTheDocument();
+    expect(
+      within(poolRow("Wu, Dana")).getByText("Not matched"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(poolRow("Liu, Bob")).getByRole("checkbox"));
+    expect(
+      screen.getByRole("button", { name: "Export for matching · 1" }),
+    ).toBeDisabled();
+    fireEvent.click(within(poolRow("Chen, Alice")).getByRole("checkbox"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Export for matching · 2" }),
+    );
+    expect(
+      screen.getByText(/Liu, Bob goes in with 1 slot, not 3/),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the existing meeting log on the pair page, editable only in a v2 round", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(screen.getByRole("button", { name: "Pairs" }));
+    fireEvent.click(pairRow("Liu, Bob", "Ma, Erin"));
+
+    expect(screen.getByText("Ma, Erin absent")).toBeInTheDocument();
+    expect(screen.getByText("Insufficient duration")).toBeInTheDocument();
+    expect(screen.getByText("Scheduled")).toBeInTheDocument();
+    expect(screen.getByText("Incomplete")).toBeInTheDocument();
+    expect(screen.getByText(/America\/Los_Angeles/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select meeting 1 for deletion" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Delete \(1\)/ }));
+    expect(screen.getByText("Delete meetings?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm changes" }));
+    return waitFor(() =>
+      expect(screen.queryByText("Ma, Erin absent")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("leaves a v1 round's meeting log read-only", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(screen.getByRole("button", { name: "Wang, Cara" }));
+    fireEvent.click(screen.getByRole("button", { name: "Wu, Dana" }));
+    expect(screen.getByText("Meeting log")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
   });
 });

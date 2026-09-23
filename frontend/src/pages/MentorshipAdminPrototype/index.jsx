@@ -101,7 +101,7 @@ const MentorshipAdminPrototype = () => {
   const [rounds, setRounds] = useState(INITIAL_ROUNDS);
   const [participants, setParticipants] = useState(INITIAL_PARTICIPANTS);
   const [pairs, setPairs] = useState(INITIAL_PAIRS);
-  const [meetings] = useState(INITIAL_MEETINGS);
+  const [meetings, setMeetings] = useState(INITIAL_MEETINGS);
   const [notes, setNotes] = useState(INITIAL_NOTES);
   const [requests, setRequests] = useState(INITIAL_REQUESTS);
   const [emails, setEmails] = useState(INITIAL_EMAILS);
@@ -465,6 +465,37 @@ const MentorshipAdminPrototype = () => {
     [mailbox],
   );
 
+  /**
+   * The meeting log's batch save. The pair's completed count moves with it,
+   * as the backend recomputes it from the same rows.
+   */
+  const saveMeetings = useCallback(
+    async (pairId, { updates, deletes }) => {
+      const before = meetings.filter((m) => m.pairId === pairId);
+      const after = before
+        .filter((m) => !deletes.includes(m.meetingId))
+        .map((m) => {
+          const patch = updates.find((u) => u.meetingId === m.meetingId);
+          return patch ? { ...m, ...patch, meetingId: m.meetingId } : m;
+        });
+      const delta =
+        after.filter((m) => m.isCompleted).length -
+        before.filter((m) => m.isCompleted).length;
+      setMeetings((all) => [
+        ...all.filter((m) => m.pairId !== pairId),
+        ...after,
+      ]);
+      if (delta !== 0) {
+        setPairs((all) =>
+          all.map((p) =>
+            p.pairId === pairId ? { ...p, completed: p.completed + delta } : p,
+          ),
+        );
+      }
+    },
+    [meetings],
+  );
+
   const saveRound = useCallback((draft) => {
     setRounds((all) =>
       all.some((r) => r.id === draft.id)
@@ -544,7 +575,10 @@ const MentorshipAdminPrototype = () => {
         <PairDetailPage
           pair={pair}
           round={rounds.find((r) => r.id === pair.roundId)}
-          meetings={meetings.filter((m) => m.pairId === pair.pairId)}
+          meetings={meetings
+            .filter((m) => m.pairId === pair.pairId)
+            .sort((a, b) => a.startDatetime.localeCompare(b.startDatetime))}
+          onSaveMeetings={(batch) => saveMeetings(pair.pairId, batch)}
           notes={notes.filter((n) => n.pairId === pair.pairId)}
           requests={requests.filter(
             (r) =>
