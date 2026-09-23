@@ -1,10 +1,18 @@
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   ACTOR_NAMES,
   NOTE_KIND,
   NOTE_LABELS,
+  TEMPLATE_LABELS,
 } from "@/pages/MentorshipAdminPrototype/mockData";
+
+const TIMELINE_FILTERS = [
+  { key: "all", label: "All" },
+  { key: "note", label: "Notes only" },
+  { key: "email", label: "Emails only" },
+];
 
 const Block = ({ title, right, children }) => (
   <section className="border-t border-slate-200 px-5 py-4">
@@ -51,11 +59,44 @@ const NoteRow = ({ note }) => {
 };
 
 /**
+ * One email on the timeline — a message Purrf sent, or a reply pulled back in.
+ *
+ * The template name leads because it answers the question people come here
+ * with ("did she get the mid-term reminder?"); the body is only a glimpse.
+ */
+const EmailRow = ({ email, personName }) => (
+  <li className="flex gap-3 py-2">
+    <span className="w-40 shrink-0 text-xs">
+      <Badge variant="outline">
+        {email.direction === "out" ? "Email sent" : "Reply"}
+      </Badge>
+    </span>
+    <span className="w-40 shrink-0 text-xs text-slate-500">
+      {email.direction === "out"
+        ? ACTOR_NAMES[email.sentBy]
+        : `From ${personName}`}{" "}
+      · {email.at}
+    </span>
+    <span className="flex-1 text-sm text-slate-700">
+      <span className="font-medium">
+        {email.direction === "in" ? "Re: " : ""}
+        {TEMPLATE_LABELS[email.templateKey]}
+      </span>
+      <span className="ml-2 text-slate-500">{email.body}</span>
+    </span>
+  </li>
+);
+
+/**
  * ParticipantDetailPage
  *
  * Everything that belongs to a *person*: how this round is going for them,
- * their note timeline, every round they have taken part in, and the feedback
- * they wrote.
+ * their timeline, every round they have taken part in, and the feedback they
+ * wrote.
+ *
+ * The timeline is notes and emails together, newest first. "What has happened
+ * with her" is one question; answering it from two lists means interleaving
+ * them by date in your head.
  *
  * Meetings are deliberately not here. A mentor carrying two mentees has two
  * meeting logs, and flattening them onto one page would invent a number that
@@ -69,6 +110,8 @@ const ParticipantDetailPage = ({
   participants,
   pairs,
   notes,
+  emails,
+  onRefreshEmails,
   feedback,
   can,
   backLabel,
@@ -78,6 +121,8 @@ const ParticipantDetailPage = ({
   onRaise,
   onCompose,
 }) => {
+  const [filter, setFilter] = useState("all");
+  const [syncMessage, setSyncMessage] = useState(null);
   if (!person) return null;
 
   const round = rounds.find((r) => r.id === person.roundId);
@@ -103,7 +148,23 @@ const ParticipantDetailPage = ({
       ),
     );
 
-  const myNotes = notes.filter((n) => n.participantId === person.participantId);
+  const timeline = [
+    ...notes
+      .filter((n) => n.participantId === person.participantId)
+      .map((n) => ({ kind: "note", at: n.createdAt, item: n })),
+    ...emails.map((e) => ({ kind: "email", at: e.at, item: e })),
+  ]
+    .filter((entry) => filter === "all" || entry.kind === filter)
+    .sort((a, b) => b.at.localeCompare(a.at));
+
+  const refresh = () => {
+    const count = onRefreshEmails();
+    setSyncMessage(
+      count === 0
+        ? "Checked the mailbox — no new replies."
+        : `Checked the mailbox — ${count} new ${count === 1 ? "reply" : "replies"}.`,
+    );
+  };
   const writable = can("mentorship.admin.write");
 
   return (
@@ -174,24 +235,67 @@ const ParticipantDetailPage = ({
       </Block>
 
       <Block
-        title="Notes"
+        title="Timeline"
         right={
-          writable ? (
-            <Button size="sm" variant="outline" onClick={onAddNote}>
-              Add a note
+          <div className="flex gap-2">
+            <Button size="sm" variant="ghost" onClick={refresh}>
+              Refresh emails
             </Button>
-          ) : null
+            {writable ? (
+              <Button size="sm" variant="outline" onClick={onAddNote}>
+                Add a note
+              </Button>
+            ) : null}
+          </div>
         }
       >
-        {myNotes.length === 0 ? (
+        <div
+          role="group"
+          aria-label="Timeline filter"
+          className="mb-2 flex gap-1"
+        >
+          {TIMELINE_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              aria-pressed={filter === f.key}
+              onClick={() => setFilter(f.key)}
+              className={`rounded-md px-2 py-0.5 text-xs ${
+                filter === f.key
+                  ? "bg-slate-900 text-white"
+                  : "text-slate-500 hover:bg-slate-100"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        {syncMessage ? (
+          <p className="mb-2 text-xs text-slate-500">{syncMessage}</p>
+        ) : null}
+        {timeline.length === 0 ? (
           <p className="text-sm text-slate-500">Nothing recorded yet.</p>
         ) : (
           <ul className="divide-y divide-slate-100">
-            {myNotes.map((n) => (
-              <NoteRow key={n.noteId} note={n} />
-            ))}
+            {timeline.map(({ kind, item }) =>
+              kind === "note" ? (
+                <NoteRow key={item.noteId} note={item} />
+              ) : (
+                <EmailRow
+                  key={item.messageId}
+                  email={item}
+                  personName={person.name}
+                />
+              ),
+            )}
           </ul>
         )}
+        {person.identity === "internal" ? (
+          <p className="mt-2 text-xs text-slate-500">
+            Reminders to internal members go out on Teams, which Purrf does not
+            see — they show up here only as the notes written about them.
+          </p>
+        ) : null}
       </Block>
 
       <Block title="Participation history">

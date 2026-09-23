@@ -31,6 +31,12 @@ never "pair feedback". On Cara's page this is what Cara wrote about a partner,
 not what a partner wrote about Cara. A participant never sees what was written
 about them; an admin does, because red flags have no other source.
 
+**Emails and notes are one timeline.** On a participant's page, every message
+Purrf sent and every reply pulled back in sits between the notes, newest
+first, with a filter for either kind. There is no separate "an email went out"
+note — the email itself is the entry. Internal members are reminded on Teams,
+which Purrf never sees, so their timeline holds only the notes about it.
+
 **Meetings belong to a pairing, not a person.** They are on the pair page. A
 mentor carrying two mentees has two meeting logs, and flattening them onto one
 page would invent a number that does not exist.
@@ -50,6 +56,10 @@ the page changes shape between them:
 
 Then select two rows on the *Pairs* tab and look at the send button: two pairs
 is four people. A count of selected rows would be a lie there.
+
+On Cara's page press *Refresh emails*: a reply that was waiting in the mailbox
+comes in. Send a mid-term reminder to a pair from the *Pairs* tab and the
+mentee's cell stamps itself; the manual mark is still there for Teams.
 
 Filter the *Pairs* tab, open a pair, and press back: the same tab and the same
 filter come back, because they live in the URL. The link in the address bar

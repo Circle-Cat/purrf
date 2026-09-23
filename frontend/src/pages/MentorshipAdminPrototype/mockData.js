@@ -381,15 +381,6 @@ export const INITIAL_NOTES = [
     createdAt: "2026-09-20",
   },
   {
-    noteId: "n-2",
-    participantId: "p-cara-7",
-    pairId: null,
-    tag: "midterm_reminder",
-    body: "Sent on Teams. No reply yet.",
-    authorId: 2001,
-    createdAt: "2026-09-18",
-  },
-  {
     noteId: "n-3",
     participantId: "p-cara-7",
     pairId: null,
@@ -444,6 +435,74 @@ export const INITIAL_REQUESTS = [
     raisedBy: 2001,
     createdAt: "2026-09-21",
     status: "pending",
+  },
+];
+
+/**
+ * Every email in and out, one entry per message.
+ *
+ * They sit on the same timeline as the notes: "what happened with her" is one
+ * question, and splitting it across two blocks makes the reader interleave
+ * them by date in their head. Internal members are reminded on Teams, which
+ * Purrf never sees, so for them the timeline holds only notes.
+ */
+export const INITIAL_EMAILS = [
+  {
+    messageId: "e-1",
+    threadId: "t-cara-fc",
+    participantId: "p-cara-7",
+    direction: "out",
+    templateKey: "mentorship_first_contact_reminder",
+    body: "Our records show you have not yet contacted your mentor. The deadline is 2026-09-19.",
+    sentBy: 2001,
+    at: "2026-09-10",
+  },
+  {
+    messageId: "e-2",
+    threadId: "t-cara-fc",
+    participantId: "p-cara-7",
+    direction: "in",
+    templateKey: "mentorship_first_contact_reminder",
+    body: "Thanks — I have emailed Bob and copied the outreach address.",
+    at: "2026-09-11",
+  },
+  {
+    messageId: "e-3",
+    threadId: "t-cara-mt",
+    participantId: "p-cara-7",
+    direction: "out",
+    templateKey: "mentorship_midterm_reminder",
+    body: "You have logged 0 of 5 meetings for this round. Please sign in to Purrf and record any meetings you have already held.",
+    sentBy: 2001,
+    at: "2026-09-18",
+  },
+  {
+    messageId: "e-4",
+    threadId: "t-alice-ob",
+    participantId: "p-alice-7",
+    direction: "out",
+    templateKey: "mentorship_onboarding_reminder",
+    body: "Your onboarding course is still open. It needs to be finished before matching.",
+    sentBy: 2001,
+    at: "2026-09-05",
+  },
+];
+
+/**
+ * Replies that are sitting in the mailbox but not yet pulled in.
+ *
+ * Pressing Refresh on the timeline brings them over — the manual fallback for
+ * "I want to see it now, not when the push arrives".
+ */
+export const MAILBOX_REPLIES = [
+  {
+    messageId: "e-5",
+    threadId: "t-cara-mt",
+    participantId: "p-cara-7",
+    direction: "in",
+    templateKey: "mentorship_midterm_reminder",
+    body: "Sorry — we met twice but I forgot to log it. Will do it tonight.",
+    at: "2026-09-22",
   },
 ];
 
@@ -504,6 +563,10 @@ export const EMAIL_TEMPLATES = [
   { key: "mentorship_feedback_invite", label: "Feedback invitation" },
   { key: "mentorship_free_text", label: "Free text" },
 ];
+
+export const TEMPLATE_LABELS = Object.fromEntries(
+  EMAIL_TEMPLATES.map((t) => [t.key, t.label]),
+);
 
 export const MEETING_TAG_LABELS = {
   insufficient_duration: "Too short",

@@ -11,6 +11,7 @@ import {
   ALL_PERMISSIONS,
   CURRENT_USER,
   DEFAULT_PERMISSIONS,
+  INITIAL_EMAILS,
   INITIAL_FEEDBACK,
   INITIAL_MEETINGS,
   INITIAL_NOTES,
@@ -18,6 +19,7 @@ import {
   INITIAL_PARTICIPANTS,
   INITIAL_REQUESTS,
   INITIAL_ROUNDS,
+  MAILBOX_REPLIES,
   NON_PARTICIPANTS,
 } from "@/pages/MentorshipAdminPrototype/mockData";
 
@@ -102,6 +104,8 @@ const MentorshipAdminPrototype = () => {
   const [meetings] = useState(INITIAL_MEETINGS);
   const [notes, setNotes] = useState(INITIAL_NOTES);
   const [requests, setRequests] = useState(INITIAL_REQUESTS);
+  const [emails, setEmails] = useState(INITIAL_EMAILS);
+  const [mailbox, setMailbox] = useState(MAILBOX_REPLIES);
 
   const [noteTarget, setNoteTarget] = useState(null);
   const [requestTarget, setRequestTarget] = useState(null);
@@ -418,6 +422,49 @@ const MentorshipAdminPrototype = () => {
     [addNote],
   );
 
+  /**
+   * Sending writes one message per recipient onto their own timeline — there
+   * is no separate "an email went out" note to keep in step with it.
+   *
+   * A mid-term reminder sent from here stamps the mentee's cell by itself;
+   * the manual mark stays for the Teams half and for anything sent elsewhere.
+   */
+  const sendEmails = useCallback(({ templateKey, messages }) => {
+    setEmails((all) => [
+      ...messages.map(({ participantId, body }) => ({
+        messageId: newId("e"),
+        threadId: newId("t"),
+        participantId,
+        direction: "out",
+        templateKey,
+        body,
+        sentBy: CURRENT_USER.userId,
+        at: TODAY,
+      })),
+      ...all,
+    ]);
+    if (templateKey !== "mentorship_midterm_reminder") return;
+    const ids = messages.map((m) => m.participantId);
+    setParticipants((all) =>
+      all.map((p) =>
+        ids.includes(p.participantId) && p.role === "mentee"
+          ? { ...p, midtermReminderAt: TODAY }
+          : p,
+      ),
+    );
+  }, []);
+
+  /** Pulls this person's waiting replies in; returns how many arrived. */
+  const refreshEmails = useCallback(
+    (participantId) => {
+      const arrived = mailbox.filter((m) => m.participantId === participantId);
+      setMailbox((all) => all.filter((m) => m.participantId !== participantId));
+      setEmails((all) => [...arrived, ...all]);
+      return arrived.length;
+    },
+    [mailbox],
+  );
+
   const saveRound = useCallback((draft) => {
     setRounds((all) =>
       all.some((r) => r.id === draft.id)
@@ -453,6 +500,10 @@ const MentorshipAdminPrototype = () => {
           participants={participants}
           pairs={pairs}
           notes={notes}
+          emails={emails.filter(
+            (e) => e.participantId === person.participantId,
+          )}
+          onRefreshEmails={() => refreshEmails(person.participantId)}
           feedback={INITIAL_FEEDBACK}
           can={can}
           backLabel={backLabel}
@@ -475,7 +526,13 @@ const MentorshipAdminPrototype = () => {
               })),
             })
           }
-          onCompose={() => setComposeTarget({ recipients: [person.name] })}
+          onCompose={() =>
+            setComposeTarget({
+              recipients: [
+                { participantId: person.participantId, name: person.name },
+              ],
+            })
+          }
         />
       );
     }
@@ -625,6 +682,10 @@ const MentorshipAdminPrototype = () => {
       <ComposeDialog
         target={composeTarget}
         onClose={() => setComposeTarget(null)}
+        onSend={(payload) => {
+          sendEmails(payload);
+          setComposeTarget(null);
+        }}
       />
       <RoundModal
         round={roundModal}

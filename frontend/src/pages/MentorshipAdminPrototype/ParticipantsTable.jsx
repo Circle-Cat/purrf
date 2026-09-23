@@ -427,8 +427,18 @@ const ParticipantsTable = ({
             onClick={() =>
               onCompose(
                 tab === "pairs"
-                  ? selectedPairs.flatMap((p) => [p.mentorName, p.menteeName])
-                  : selectedPeople.map((p) => p.name),
+                  ? selectedPairs.flatMap((p) =>
+                      [participantOf(p.mentorId), participantOf(p.menteeId)]
+                        .filter(Boolean)
+                        .map(({ participantId, name }) => ({
+                          participantId,
+                          name,
+                        })),
+                    )
+                  : selectedPeople.map(({ participantId, name }) => ({
+                      participantId,
+                      name,
+                    })),
               )
             }
           >

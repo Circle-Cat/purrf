@@ -39,14 +39,17 @@ const fallback = (name) =>
  * only show one of them. Saying whose it is stops the sender assuming everyone
  * gets the text on screen.
  *
+ * `target.recipients` are `{ participantId, name }`. Each one gets their own
+ * message, which lands on their own timeline.
+ *
  * @returns {JSX.Element|null}
  */
-const ComposeDialog = ({ target, onClose }) => {
+const ComposeDialog = ({ target, onClose, onSend }) => {
   const [template, setTemplate] = useState("mentorship_midterm_reminder");
   if (!target) return null;
 
   const recipients = target.recipients ?? [];
-  const first = recipients[0] ?? "there";
+  const first = recipients[0]?.name ?? "there";
   const render = PREVIEW[template] ?? fallback;
 
   return (
@@ -59,7 +62,9 @@ const ComposeDialog = ({ target, onClose }) => {
           </DialogTitle>
         </DialogHeader>
 
-        <p className="text-xs text-slate-500">{recipients.join(" · ")}</p>
+        <p className="text-xs text-slate-500">
+          {recipients.map((r) => r.name).join(" · ")}
+        </p>
 
         <label className="mt-2 text-xs text-slate-500">Template</label>
         <Select value={template} onValueChange={setTemplate}>
@@ -87,7 +92,19 @@ const ComposeDialog = ({ target, onClose }) => {
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={onClose}>Send {recipients.length}</Button>
+          <Button
+            onClick={() =>
+              onSend({
+                templateKey: template,
+                messages: recipients.map((r) => ({
+                  participantId: r.participantId,
+                  body: render(r.name),
+                })),
+              })
+            }
+          >
+            Send {recipients.length}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

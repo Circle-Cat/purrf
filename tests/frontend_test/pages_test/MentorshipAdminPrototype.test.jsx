@@ -48,7 +48,7 @@ describe("MentorshipAdminPrototype smoke", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Participants" }));
     fireEvent.click(screen.getByRole("button", { name: "Wang, Cara" }));
-    expect(screen.getByText("Notes")).toBeInTheDocument();
+    expect(screen.getByText("Timeline")).toBeInTheDocument();
     expect(screen.getByText("Participation history")).toBeInTheDocument();
 
     // Feedback always names whose opinion it is.
@@ -208,5 +208,47 @@ describe("MentorshipAdminPrototype smoke", () => {
       }),
     );
     expect(screen.getAllByText("un_matched")).toHaveLength(2);
+  });
+
+  it("keeps emails and notes on one timeline, and Refresh pulls replies in", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(screen.getByRole("button", { name: "Wang, Cara" }));
+
+    expect(screen.getAllByText("Email sent").length).toBeGreaterThan(0);
+    expect(screen.getByText("Reply")).toBeInTheDocument();
+    expect(screen.getByText(/Called her/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Emails only" }));
+    expect(screen.queryByText(/Called her/)).not.toBeInTheDocument();
+
+    expect(screen.queryByText(/we met twice/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh emails" }));
+    expect(screen.getByText(/1 new reply/)).toBeInTheDocument();
+    expect(screen.getByText(/we met twice/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh emails" }));
+    expect(screen.getByText(/no new replies/)).toBeInTheDocument();
+  });
+
+  it("puts a sent mid-term reminder on each timeline and stamps the mentee's cell", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(screen.getByRole("button", { name: "Pairs" }));
+
+    fireEvent.click(
+      within(pairRow("Liu, Bob", "Ma, Erin")).getByRole("checkbox"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send email · 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send 2" }));
+
+    expect(
+      within(pairRow("Liu, Bob", "Ma, Erin")).getByText("2026-09-22"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(pairRow("Liu, Bob", "Ma, Erin"));
+    fireEvent.click(screen.getByRole("button", { name: "← Pairs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Participants" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ma, Erin" }));
+    expect(screen.getByText("Email sent")).toBeInTheDocument();
+    expect(screen.getByText("Mid-term reminder")).toBeInTheDocument();
   });
 });
