@@ -75,7 +75,7 @@ const PairSection = ({
         {isMentee ? (
           <button
             type="button"
-            disabled={!writable}
+            disabled={!writable || pair.status !== "active"}
             onClick={onMarkFirstContact}
             aria-label={
               pair.firstContactConfirmedAt

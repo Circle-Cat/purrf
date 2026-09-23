@@ -16,6 +16,14 @@ import {
   simulateRun,
 } from "@/pages/MentorshipAdminPrototype/matching";
 import {
+  BLOCKER_TEXT,
+  POOL_STATUSES,
+  activePairsOf,
+  freeSlotsOf,
+  matchingBlocker,
+} from "@/pages/MentorshipAdminPrototype/eligibility";
+import {
+  ACCOUNT_STATES,
   ACTOR_NAMES,
   ADMISSION_NOTIFICATIONS,
   ALL_PERMISSIONS,
@@ -44,19 +52,23 @@ const HASH_ROOT = "mentorship";
 
 let nextId = 1;
 const newId = (prefix) => `${prefix}-${nextId++}`;
+// Request ids are numbers of their own, carried on from the mock ones.
+let nextRequestId = Math.max(...INITIAL_REQUESTS.map((r) => r.requestId)) + 1;
 
 /**
  * Where the reader is, read from the URL hash.
  *
  * The Pages bundle has no router, so the hash stands in for the real routes:
- * `#mentorship/participants/:id?pair=…` (a person, with one of their pairs
- * open), `#mentorship/pairs/:id` (an older pair link, which opens the
- * mentee's page on that pair),
- * `#mentorship/people/:userId/:roundId` for someone not registered,
- * `#mentorship/matching/:roundId` for a round's matching run, and
- * `#mentorship?tab=…&q=…` for the list. The list's tab, round and filters live
- * in the query so that opening a detail page and coming back lands on the same
- * filtered list — the one cost of making details full pages instead of drawers.
+ * `#mentorship/participants/:userId?round=…&pair=…` for a person in a round —
+ * registered or not, the same page — with one of their pairs open;
+ * `#mentorship/matching/:roundId` for a round's matching run; and
+ * `#mentorship?q=…` for the list. The list's round and filters live in the
+ * query so that opening a detail page and coming back lands on the same
+ * filtered list — the one cost of making details full pages instead of
+ * drawers.
+ *
+ * Older links still open: `participants/:participantId`, `people/:userId/:roundId`
+ * and `pairs/:pairId` (the mentee's page, on that pair).
  */
 const parseLocation = () => {
   const [path, search = ""] = window.location.hash.replace(/^#/, "").split("?");
@@ -65,6 +77,18 @@ const parseLocation = () => {
   const timeline = query.timeline ?? null;
   const pair = query.pair ? Number(query.pair) : null;
   if (root === HASH_ROOT && kind === "participants" && id) {
+    if (/^\d+$/.test(id)) {
+      return {
+        view: {
+          kind: "person",
+          userId: Number(id),
+          roundId: Number(query.round ?? CURRENT_ROUND_ID),
+          timeline,
+          pair,
+        },
+        query,
+      };
+    }
     return {
       view: {
         kind: "participant",
@@ -82,6 +106,7 @@ const parseLocation = () => {
         userId: Number(id),
         roundId: Number(extra),
         timeline,
+        pair,
       },
       query,
     };
@@ -96,25 +121,41 @@ const parseLocation = () => {
 };
 
 const toHash = (view, query) => {
-  const params = new URLSearchParams(
-    Object.fromEntries(
-      [
-        ["timeline", view.timeline],
-        ["pair", view.pair],
-      ].filter(([, v]) => v),
-    ),
-  ).toString();
-  const timeline = params ? `?${params}` : "";
-  if (view.kind === "participant") {
-    return `#${HASH_ROOT}/participants/${encodeURIComponent(view.participantId)}${timeline}`;
-  }
   if (view.kind === "person") {
-    return `#${HASH_ROOT}/people/${view.userId}/${view.roundId}${timeline}`;
+    const params = new URLSearchParams(
+      Object.fromEntries(
+        [
+          ["round", view.roundId],
+          ["pair", view.pair],
+          ["timeline", view.timeline],
+        ].filter(([, v]) => v),
+      ),
+    ).toString();
+    return `#${HASH_ROOT}/participants/${view.userId}?${params}`;
   }
   if (view.kind === "matching") return `#${HASH_ROOT}/matching/${view.roundId}`;
-  if (view.kind === "pair") return `#${HASH_ROOT}/pairs/${view.pairId}`;
   const search = new URLSearchParams(query).toString();
   return `#${HASH_ROOT}${search ? `?${search}` : ""}`;
+};
+
+/**
+ * The list's filters, remembered for this tab so that Back from a detail page
+ * opened by a refresh or a shared link still lands on the list it came from.
+ */
+const LIST_KEY = "mentorship-prototype-list";
+const rememberList = (query) => {
+  try {
+    window.sessionStorage.setItem(LIST_KEY, JSON.stringify(query));
+  } catch {
+    // Storage can be unavailable; Back then opens the plain list.
+  }
+};
+const rememberedList = () => {
+  try {
+    return JSON.parse(window.sessionStorage.getItem(LIST_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
 };
 
 /** Drops empty and default values so a shared link carries only real choices. */
@@ -133,8 +174,8 @@ const cleanQuery = (query) =>
  * Three things here are the design rather than decoration, and each is hard to
  * convey in a document:
  *
- *   1. A mentor with two mentees is one row on the person axis and two on the
- *      pair axis. That is the whole reason the search is split in two.
+ *   1. A mentor with two mentees is one row, with one line per pair inside
+ *      it, and one page with a section per pair.
  *   2. Marking someone "no show" is not writing a note — it raises a request,
  *      and the note only appears once somebody with the approve permission
  *      decides it. Toggle the permissions in the header to watch the same
@@ -150,8 +191,9 @@ const MentorshipAdminPrototype = () => {
   const viewerName = ACTOR_NAMES[viewerId];
   const [location, setLocation] = useState(parseLocation);
   const [listQuery, setListQuery] = useState(() =>
-    location.view.kind === "management" ? location.query : {},
+    location.view.kind === "management" ? location.query : rememberedList(),
   );
+  useEffect(() => rememberList(listQuery), [listQuery]);
 
   const [rounds, setRounds] = useState(INITIAL_ROUNDS);
   const [participants, setParticipants] = useState(INITIAL_PARTICIPANTS);
@@ -161,7 +203,14 @@ const MentorshipAdminPrototype = () => {
   const [requests, setRequests] = useState(INITIAL_REQUESTS);
   const [emails, setEmails] = useState(INITIAL_EMAILS);
   const [matchRuns, setMatchRuns] = useState({});
+  // Every run that was published, kept after a later run replaces it.
+  const [publishedRuns, setPublishedRuns] = useState([]);
   const [mailbox, setMailbox] = useState(MAILBOX_REPLIES);
+  const [accountStates, setAccountStates] = useState(ACCOUNT_STATES);
+  const accountOf = useCallback(
+    (userId) => accountStates[userId] ?? { isActive: true, isBlocked: false },
+    [accountStates],
+  );
 
   const [noteTarget, setNoteTarget] = useState(null);
   const [requestTarget, setRequestTarget] = useState(null);
@@ -263,6 +312,7 @@ const MentorshipAdminPrototype = () => {
       roundId: targetRoundId,
       participantId,
       participantIds,
+      userId,
       pairId,
       noteId,
       runId,
@@ -272,12 +322,13 @@ const MentorshipAdminPrototype = () => {
     }) => {
       setRequests((all) => [
         {
-          requestId: Number(`9${nextId++}`.padEnd(4, "0")),
+          requestId: nextRequestId++,
           action,
           roundId: targetRoundId,
           targetLabel,
           participantId: participantId ?? null,
           participantIds: participantIds ?? null,
+          userId: userId ?? null,
           pairId: pairId ?? null,
           noteId: noteId ?? null,
           runId: runId ?? null,
@@ -320,9 +371,9 @@ const MentorshipAdminPrototype = () => {
   }, [notes, revokedNoteIds, participants]);
 
   /**
-   * Registrations with a standing exemption from the onboarding requirement.
-   * Kept apart from the flags: an exemption lets someone in, a flag is a
-   * judgement against them. Revoking one takes the person back out.
+   * Registrations with a standing exemption from the history check for their
+   * round's matching. Kept apart from the flags: an exemption lets someone
+   * in, a flag is a judgement against them. Revoking one takes them back out.
    */
   const exemptParticipantIds = useMemo(
     () =>
@@ -374,48 +425,89 @@ const MentorshipAdminPrototype = () => {
     [requests],
   );
 
-  /**
-   * Deciding is where the approval becomes real: the state change, the note
-   * and the decision are one step. Splitting them would leave a window where
-   * a request reads "approved" and nothing has happened.
-   *
-   * Anyone holding the approve permission may decide, whoever the request
-   * was sent to — but not the person who raised it. Approving re-checks the
-   * world first: a request that no longer makes sense is invalidated, not
-   * applied.
-   */
   const updateRun = (forRound, change) =>
     setMatchRuns((all) => ({ ...all, [forRound]: change(all[forRound]) }));
 
+  const nameOfUser = (userId) =>
+    participants.find((p) => p.userId === userId)?.name ??
+    ACTOR_NAMES[userId] ??
+    `User ${userId}`;
+
+  const issuesOf = (person) =>
+    historyIssuesOf(person, participants, pairs, rounds, notes, revokedNoteIds);
+
+  /** The same eligibility rule the list uses, read against the world as it is now. */
+  const blockerOf = (person) =>
+    matchingBlocker(person, {
+      pairs,
+      account: accountOf(person.userId),
+      exempt: exemptParticipantIds.has(person.participantId),
+      historyIssues: issuesOf(person),
+    });
+
   /**
-   * Publishing writes the pairs, marks both sides matched, and marks everyone
-   * else who went into the run unmatched — once. The approval that leads here
-   * is where the unmatched list is seen and confirmed.
+   * Why a run's result cannot be published as it stands today, beyond what the
+   * review page already checks. Days can pass between running and publishing:
+   * someone given a partner may have withdrawn, been blocked, or filled their
+   * slots in the meantime.
+   */
+  const peopleProblemsOf = (run, draft) => {
+    const forRound = run.roundId;
+    const rows = effectiveRows(run, draft).filter((r) => r.mentorId);
+    const given = {};
+    rows.forEach((r) => {
+      given[r.mentorId] = (given[r.mentorId] ?? 0) + 1;
+      given[r.menteeId] = 1;
+    });
+    return Object.entries(given).flatMap(([id, count]) => {
+      const userId = Number(id);
+      const person = participants.find(
+        (p) => p.userId === userId && p.roundId === forRound,
+      );
+      if (!person) return [`${nameOfUser(userId)} is no longer registered.`];
+      const blocker = blockerOf(person);
+      if (blocker && blocker !== "full") {
+        return [`${person.name} ${BLOCKER_TEXT[blocker]}.`];
+      }
+      const free = freeSlotsOf(person, pairs);
+      return free < count
+        ? [
+            `${person.name} is given ${count} but has ${free} slot${free === 1 ? "" : "s"} left now.`,
+          ]
+        : [];
+    });
+  };
+
+  /**
+   * Publishing writes the pairs and marks both sides matched. Everyone else
+   * who went into the run and still has no active pair is marked unmatched;
+   * someone who already had a pair this round keeps their status, and someone
+   * who has withdrawn since is left alone.
+   *
+   * The first publish of a round stamps its matching as completed.
    */
   const publishRun = (forRound) => {
     const run = matchRuns[forRound];
     const target = rounds.find((r) => r.id === forRound);
     const finalRows = effectiveRows(run, run.draft).filter((r) => r.mentorId);
     const firstPairId = Math.max(...pairs.map((p) => p.pairId)) + 1;
-    setPairs((all) => [
-      ...all,
-      ...finalRows.map((r, i) => ({
-        pairId: firstPairId + i,
-        roundId: forRound,
-        mentorId: r.mentorId,
-        menteeId: r.menteeId,
-        mentorName: nameOfUser(r.mentorId),
-        menteeName: nameOfUser(r.menteeId),
-        status: "active",
-        firstContactConfirmedAt: null,
-        completed: 0,
-        required: target.requiredMeetings,
-      })),
-    ]);
+    const created = finalRows.map((r, i) => ({
+      pairId: firstPairId + i,
+      roundId: forRound,
+      mentorId: r.mentorId,
+      menteeId: r.menteeId,
+      mentorName: nameOfUser(r.mentorId),
+      menteeName: nameOfUser(r.menteeId),
+      status: "active",
+      firstContactConfirmedAt: null,
+      completed: 0,
+      required: target.requiredMeetings,
+    }));
+    const pairsAfter = [...pairs, ...created];
+    setPairs(pairsAfter);
     const matchedIds = new Set(
       finalRows.flatMap((r) => [r.mentorId, r.menteeId]),
     );
-    // Everyone who went into the run and came out without a partner.
     const inRun = new Set([
       ...run.mentors.map((m) => m.userId),
       ...run.mentees.map((m) => m.userId),
@@ -423,165 +515,279 @@ const MentorshipAdminPrototype = () => {
     setParticipants((all) =>
       all.map((p) => {
         if (p.roundId !== forRound || !inRun.has(p.userId)) return p;
-        return {
-          ...p,
-          approvalStatus: matchedIds.has(p.userId) ? "matched" : "un_matched",
-        };
+        if (matchedIds.has(p.userId))
+          return { ...p, approvalStatus: "matched" };
+        if (
+          POOL_STATUSES.includes(p.approvalStatus) &&
+          activePairsOf(p, pairsAfter).length === 0
+        ) {
+          return { ...p, approvalStatus: "un_matched" };
+        }
+        return p;
       }),
     );
-    updateRun(forRound, (r) => ({ ...r, status: "published" }));
+    updateRun(forRound, (r) => ({
+      ...r,
+      status: "published",
+      publishedAt: TODAY,
+    }));
+    setPublishedRuns((all) => [
+      { ...run, status: "published", publishedAt: TODAY },
+      ...all,
+    ]);
+    if (!target.matchingCompletedAt) {
+      setRounds((all) =>
+        all.map((r) =>
+          r.id === forRound ? { ...r, matchingCompletedAt: TODAY } : r,
+        ),
+      );
+    }
   };
 
-  const nameOfUser = (userId) =>
-    participants.find((p) => p.userId === userId)?.name ?? `User ${userId}`;
-
-  const decideRequest = (requestId, approved, decisionNote) => {
-    {
-      const request = requests.find((r) => r.requestId === requestId);
-      if (!request || request.raisedBy === viewerId) return;
-
-      const run =
-        request.action === "publish_matching"
-          ? matchRuns[request.roundId]
-          : null;
-      const stale =
-        approved &&
-        ((request.action === "publish_matching" &&
-          (!run ||
-            run.runId !== request.runId ||
-            run.status !== "succeeded" ||
-            problemsOf(run, run.draft, nameOfUser).length > 0)) ||
-          (request.action === "revoke_flag" &&
-            revokedNoteIds.has(request.noteId)) ||
-          (request.action === "withdraw" &&
-            participants.find((p) => p.participantId === request.participantId)
-              ?.approvalStatus === "withdrawn"));
-      if (stale) {
-        setRequests((all) =>
-          all.map((r) =>
-            r.requestId === requestId
-              ? {
-                  ...r,
-                  status: "invalidated",
-                  decidedBy: viewerId,
-                  decidedAt: TODAY,
-                }
-              : r,
-          ),
-        );
-        return;
+  /**
+   * Why an approval can no longer be applied, or null when it still can.
+   *
+   * Every action is re-read against the world as it is now. A request that
+   * no longer makes sense is marked invalidated with this reason, which is
+   * shown wherever the request is — never dropped in silence.
+   */
+  const staleReasonOf = (request) => {
+    const person = request.participantId
+      ? participants.find((p) => p.participantId === request.participantId)
+      : null;
+    const pair = request.pairId
+      ? pairs.find((p) => p.pairId === request.pairId)
+      : null;
+    switch (request.action) {
+      case "publish_matching": {
+        const run = matchRuns[request.roundId];
+        if (!run || run.runId !== request.runId) {
+          return "A newer matching run has replaced this one.";
+        }
+        if (run.status !== "succeeded") return `The run is ${run.status}.`;
+        const problems = [
+          ...problemsOf(run, run.draft, nameOfUser),
+          ...peopleProblemsOf(run, run.draft),
+        ];
+        return problems.length ? problems.join(" ") : null;
       }
-
-      // Withdrawing takes the person's pairs with them, whichever pair the
-      // request was raised from.
-      const withdrawing =
-        approved && request.action === "withdraw"
-          ? participants.find((p) => p.participantId === request.participantId)
+      case "revoke_flag":
+        return revokedNoteIds.has(request.noteId)
+          ? "This flag has already been revoked."
           : null;
-      const affectedPairIds = withdrawing
-        ? pairs
-            .filter(
-              (p) =>
-                p.roundId === withdrawing.roundId &&
-                p.status === "active" &&
-                (p.mentorId === withdrawing.userId ||
-                  p.menteeId === withdrawing.userId),
-            )
-            .map((p) => p.pairId)
-        : [];
+      case "withdraw":
+      case "mark_no_show":
+      case "mark_red_flag":
+        return person?.approvalStatus === "withdrawn"
+          ? `${person.name} has already withdrawn.`
+          : null;
+      case "change_partner":
+        return pair && pair.status !== "active"
+          ? "This pair has already ended."
+          : null;
+      case "exempt_matching": {
+        const round = rounds.find((r) => r.id === person?.roundId);
+        if (!person) return null;
+        if (exemptParticipantIds.has(person.participantId)) {
+          return `${person.name} is already exempted for this round.`;
+        }
+        if (issuesOf(person).length === 0) {
+          return `${person.name}'s history no longer needs an exemption.`;
+        }
+        return TODAY > (round?.timeline.matchNotificationAt ?? "")
+          ? "This round's matching has closed."
+          : null;
+      }
+      case "block_account":
+        return accountOf(request.userId).isBlocked
+          ? `${request.targetLabel} is already blocked.`
+          : null;
+      default:
+        return null;
+    }
+  };
 
+  /**
+   * Deciding is where the approval becomes real: the state change, the note
+   * and the decision are one step. Splitting them would leave a window where
+   * a request reads "approved" and nothing has happened.
+   *
+   * Anyone holding the approve permission may decide, whoever the request
+   * was sent to — but not the person who raised it. Approving re-checks the
+   * world first: a request that no longer makes sense is invalidated, with
+   * its reason, not applied.
+   */
+  const decideRequest = (requestId, approved, decisionNote) => {
+    const request = requests.find((r) => r.requestId === requestId);
+    if (!request || request.raisedBy === viewerId) return;
+
+    const staleReason = approved ? staleReasonOf(request) : null;
+    if (staleReason) {
       setRequests((all) =>
         all.map((r) =>
           r.requestId === requestId
             ? {
                 ...r,
-                status: approved ? "approved" : "rejected",
+                status: "invalidated",
+                invalidReason: staleReason,
                 decidedBy: viewerId,
                 decidedAt: TODAY,
-                decisionNote,
-                affectedPairIds,
               }
             : r,
         ),
       );
+      return;
+    }
 
-      if (!approved) return;
+    // Withdrawing takes the person's pairs with them, whichever pair the
+    // request was raised from; a partner change ends the one pair it names.
+    const withdrawing =
+      approved && request.action === "withdraw"
+        ? participants.find((p) => p.participantId === request.participantId)
+        : null;
+    const affectedPairIds = withdrawing
+      ? activePairsOf(withdrawing, pairs).map((p) => p.pairId)
+      : approved && request.action === "change_partner"
+        ? [request.pairId]
+        : [];
 
-      const tagOf = {
-        mark_no_show: "no_show",
-        mark_red_flag: "red_flag",
-        change_partner: "partner_change_request",
-        withdraw: "status_change",
-        confirm_unmatched: "status_change",
-        exempt_matching: "matching_exemption",
-      };
-      const body = `${request.reason} — raised by ${
-        ACTOR_NAMES[request.raisedBy]
-      }, approved by ${viewerName}.${decisionNote ? ` ${decisionNote}` : ""}`;
+    setRequests((all) =>
+      all.map((r) =>
+        r.requestId === requestId
+          ? {
+              ...r,
+              status: approved ? "approved" : "rejected",
+              decidedBy: viewerId,
+              decidedAt: TODAY,
+              decisionNote,
+              affectedPairIds,
+            }
+          : r,
+      ),
+    );
 
-      if (request.action === "publish_matching") {
-        publishRun(request.roundId);
-        return;
-      }
+    if (!approved) return;
 
-      if (request.action === "revoke_flag") {
-        const flag = notes.find((n) => n.noteId === request.noteId);
-        addNote({
-          participantId: request.participantId,
-          pairId: flag?.pairId,
-          tag: "status_change",
-          body: `Revoked the ${NOTE_LABELS[flag?.tag] ?? "flag"} of ${
-            flag?.createdAt
-          }. ${body}`,
-          revokesNoteId: request.noteId,
-        });
-        return;
-      }
+    const tagOf = {
+      mark_no_show: "no_show",
+      mark_red_flag: "red_flag",
+      change_partner: "partner_change_request",
+      withdraw: "status_change",
+      exempt_matching: "matching_exemption",
+    };
+    const body = `${request.reason} — raised by ${
+      ACTOR_NAMES[request.raisedBy]
+    }, approved by ${viewerName}.${decisionNote ? ` ${decisionNote}` : ""}`;
 
-      if (request.action === "confirm_unmatched") {
-        request.participantIds.forEach((participantId) =>
-          addNote({
-            participantId,
-            tag: tagOf.confirm_unmatched,
-            body: `signed_up → un_matched. ${body}`,
-          }),
-        );
-        setParticipants((all) =>
-          all.map((p) =>
-            request.participantIds.includes(p.participantId)
-              ? { ...p, approvalStatus: "un_matched" }
-              : p,
-          ),
-        );
-        return;
-      }
+    if (request.action === "publish_matching") {
+      publishRun(request.roundId);
+      return;
+    }
 
+    if (request.action === "revoke_flag") {
+      const flag = notes.find((n) => n.noteId === request.noteId);
       addNote({
         participantId: request.participantId,
-        pairId:
-          request.pairId ??
-          (affectedPairIds.length === 1 ? affectedPairIds[0] : null),
-        tag: tagOf[request.action],
-        body,
+        pairId: flag?.pairId,
+        tag: "status_change",
+        body: `Revoked the ${NOTE_LABELS[flag?.tag] ?? "flag"} of ${
+          flag?.createdAt
+        }. ${body}`,
+        revokesNoteId: request.noteId,
       });
-
-      if (withdrawing) {
-        setParticipants((all) =>
-          all.map((p) =>
-            p.participantId === withdrawing.participantId
-              ? { ...p, approvalStatus: "withdrawn" }
-              : p,
-          ),
-        );
-        setPairs((all) =>
-          all.map((p) =>
-            affectedPairIds.includes(p.pairId)
-              ? { ...p, status: "inactive" }
-              : p,
-          ),
-        );
-      }
+      return;
     }
+
+    if (request.action === "block_account") {
+      blockAccount(request, body);
+      return;
+    }
+
+    addNote({
+      participantId: request.participantId,
+      pairId:
+        request.pairId ??
+        (affectedPairIds.length === 1 ? affectedPairIds[0] : null),
+      tag: tagOf[request.action],
+      body:
+        request.action === "change_partner"
+          ? `Pair ended for a partner change. ${body}`
+          : body,
+    });
+
+    if (withdrawing) {
+      setParticipants((all) =>
+        all.map((p) =>
+          p.participantId === withdrawing.participantId
+            ? { ...p, approvalStatus: "withdrawn" }
+            : p,
+        ),
+      );
+    }
+    if (affectedPairIds.length) {
+      setPairs((all) =>
+        all.map((p) =>
+          affectedPairIds.includes(p.pairId) ? { ...p, status: "inactive" } : p,
+        ),
+      );
+    }
+  };
+
+  /**
+   * An approved block, as the blacklist linkage (⑩) has it reach mentorship:
+   * the account is locked out and every active pair the person is in ends,
+   * with a note on each side saying why. Their registrations are left as
+   * they are — lifting the block later does not bring any of it back.
+   */
+  const blockAccount = (request, body) => {
+    const userId = request.userId;
+    setAccountStates((all) => ({
+      ...all,
+      [userId]: { ...accountOf(userId), isBlocked: true },
+    }));
+    const ending = pairs.filter(
+      (p) =>
+        p.status === "active" &&
+        (p.mentorId === userId || p.menteeId === userId),
+    );
+    setPairs((all) =>
+      all.map((p) =>
+        ending.some((e) => e.pairId === p.pairId)
+          ? { ...p, status: "inactive" }
+          : p,
+      ),
+    );
+    setNotes((all) => [
+      ...ending.flatMap((p) =>
+        [p.mentorId, p.menteeId].map((who) => ({
+          noteId: newId("n"),
+          userId: who,
+          roundId: p.roundId,
+          pairId: p.pairId,
+          tag: "status_change",
+          body: `Pair ended: ${request.targetLabel} was blocked. ${body}`,
+          authorId: viewerId,
+          createdAt: TODAY,
+          revokesNoteId: null,
+        })),
+      ),
+      ...(ending.length
+        ? []
+        : [
+            {
+              noteId: newId("n"),
+              userId,
+              roundId: request.roundId,
+              pairId: null,
+              tag: "status_change",
+              body: `Blocked from Purrf. ${body}`,
+              authorId: viewerId,
+              createdAt: TODAY,
+              revokesNoteId: null,
+            },
+          ]),
+      ...all,
+    ]);
   };
 
   const menteeParticipantOf = useCallback(
@@ -622,9 +828,17 @@ const MentorshipAdminPrototype = () => {
     (pairId, field) => {
       const pair = pairs.find((p) => p.pairId === pairId);
       if (!pair) return;
+      if (pair.status !== "active") return;
       const mentee = menteeParticipantOf(pair);
       if (pair.firstContactConfirmedAt) {
+        // Taking a mark back is a correction, and it is kept on the record.
         applyMark(pairId, field, false);
+        addNote({
+          participantId: mentee?.participantId,
+          pairId,
+          tag: null,
+          body: `First contact mark of ${pair.firstContactConfirmedAt} cleared.`,
+        });
         return;
       }
       setNoteTarget({
@@ -632,10 +846,10 @@ const MentorshipAdminPrototype = () => {
         pairId,
         mark: field,
         title: `First contact confirmed — ${pair.mentorName} ↔ ${pair.menteeName}`,
-        fixedTag: "status_change",
+        fixedTag: "first_contact",
       });
     },
-    [pairs, menteeParticipantOf, applyMark],
+    [pairs, menteeParticipantOf, applyMark, addNote],
   );
 
   /**
@@ -665,21 +879,26 @@ const MentorshipAdminPrototype = () => {
   const sendEmails = useCallback(
     ({ templateKey, messages }) => {
       setEmails((all) => [
-        ...messages.map(({ participantId, userId, body }) => ({
-          messageId: newId("e"),
-          threadId: newId("t"),
-          userId:
-            userId ??
-            participants.find((p) => p.participantId === participantId)?.userId,
-          roundId:
-            participants.find((p) => p.participantId === participantId)
-              ?.roundId ?? roundId,
-          direction: "out",
-          templateKey,
-          body,
-          sentBy: viewerId,
-          at: TODAY,
-        })),
+        ...messages.map(
+          ({ participantId, userId, roundId: onRound, body }) => ({
+            messageId: newId("e"),
+            threadId: newId("t"),
+            userId:
+              userId ??
+              participants.find((p) => p.participantId === participantId)
+                ?.userId,
+            roundId:
+              onRound ??
+              participants.find((p) => p.participantId === participantId)
+                ?.roundId ??
+              roundId,
+            direction: "out",
+            templateKey,
+            body,
+            sentBy: viewerId,
+            at: TODAY,
+          }),
+        ),
         ...all,
       ]);
     },
@@ -747,6 +966,7 @@ const MentorshipAdminPrototype = () => {
         ...all,
         [roundId]: {
           runId: `r${roundId}-${TODAY.replaceAll("-", "")}-${nextId++}`,
+          roundId,
           status: "running",
           startedAt: `${TODAY} 10:02`,
           triggeredBy: viewerId,
@@ -772,9 +992,10 @@ const MentorshipAdminPrototype = () => {
     updateRun(forRound, (run) => ({ ...run, draft }));
 
   /**
-   * Publishing is an approval like any other decision with consequences. The
-   * request names the run, so approving an older run after a new one has
-   * replaced it invalidates rather than publishes.
+   * A round's first publish is an approval like any other decision with
+   * consequences. The request names the run, so approving an older run after
+   * a new one has replaced it invalidates rather than publishes. A later,
+   * supplemental run publishes straight from its page.
    */
   const requestPublish = (forRound) => {
     const run = matchRuns[forRound];
@@ -886,9 +1107,6 @@ const MentorshipAdminPrototype = () => {
     };
   };
 
-  const issuesOf = (person) =>
-    historyIssuesOf(person, participants, pairs, rounds, notes, revokedNoteIds);
-
   const pairLabel = (p) => `${p.mentorName} ↔ ${p.menteeName}`;
   const backLabel = "← Participants";
 
@@ -971,9 +1189,13 @@ const MentorshipAdminPrototype = () => {
           revokedNoteIds={revokedNoteIds}
           requests={requests.filter(
             (r) =>
-              r.status === "pending" &&
-              (r.participantId === person.participantId ||
-                r.participantIds?.includes(person.participantId)),
+              ["pending", "invalidated"].includes(r.status) &&
+              ((person.participantId != null &&
+                (r.participantId === person.participantId ||
+                  r.participantIds?.includes(person.participantId))) ||
+                (r.pairId != null &&
+                  personPairs.some((p) => p.pairId === r.pairId)) ||
+                (r.action === "block_account" && r.userId === person.userId)),
           )}
           viewerId={viewerId}
           onCancelRequest={cancelRequest}
@@ -992,9 +1214,17 @@ const MentorshipAdminPrototype = () => {
           can={can}
           backLabel={backLabel}
           onBack={backToList}
-          onOpenPair={(participantId, pairId) =>
-            navigate({ kind: "participant", participantId, pair: pairId })
-          }
+          onOpenPair={(participantId, pairId) => {
+            const other = participants.find(
+              (p) => p.participantId === participantId,
+            );
+            navigate({
+              kind: "person",
+              userId: other.userId,
+              roundId: other.roundId,
+              pair: pairId,
+            });
+          }}
           onAddNote={() =>
             setNoteTarget(
               person.participantId
@@ -1022,9 +1252,20 @@ const MentorshipAdminPrototype = () => {
                 {
                   participantId: person.participantId,
                   userId: person.userId,
+                  roundId: person.roundId,
                   name: person.name,
                 },
               ],
+            })
+          }
+          blocked={accountOf(person.userId).isBlocked}
+          onRequestBlock={() =>
+            setRequestTarget({
+              roundId: person.roundId,
+              participantId: person.participantId,
+              userId: person.userId,
+              targetLabel: person.name,
+              actions: ["block_account"],
             })
           }
         />
@@ -1038,15 +1279,26 @@ const MentorshipAdminPrototype = () => {
         <MatchingPage
           round={target}
           run={matchRuns[forRound] ?? null}
-          nameOf={(userId) =>
-            participants.find((p) => p.userId === userId)?.name ??
-            `User ${userId}`
+          nameOf={nameOfUser}
+          checkPeople={(draft) =>
+            matchRuns[forRound]
+              ? peopleProblemsOf(matchRuns[forRound], draft)
+              : []
           }
+          earlierRuns={publishedRuns.filter(
+            (r) =>
+              r.roundId === forRound && r.runId !== matchRuns[forRound]?.runId,
+          )}
+          supplemental={publishedRuns.some(
+            (r) =>
+              r.roundId === forRound && r.runId !== matchRuns[forRound]?.runId,
+          )}
           can={can}
           onBack={backToList}
           onFinish={() => finishRun(forRound)}
           onSaveDraft={(draft) => saveDraft(forRound, draft)}
           onRequestPublish={() => requestPublish(forRound)}
+          onPublish={() => publishRun(forRound)}
           publishRequest={
             requests.find(
               (r) =>
@@ -1081,11 +1333,20 @@ const MentorshipAdminPrototype = () => {
         viewerId={viewerId}
         flagsByParticipant={flagsByParticipant}
         exemptParticipantIds={exemptParticipantIds}
+        accountOf={accountOf}
         can={can}
         onDecide={decideRequest}
-        onOpenParticipant={(participantId, timeline) =>
-          navigate({ kind: "participant", participantId, timeline })
-        }
+        onOpenParticipant={(participantId, timeline) => {
+          const who = participants.find(
+            (p) => p.participantId === participantId,
+          );
+          navigate({
+            kind: "person",
+            userId: who.userId,
+            roundId: who.roundId,
+            timeline,
+          });
+        }}
         onMarkCell={markCell}
         onCompose={(recipients, defaultTemplate) =>
           setComposeTarget({ recipients, defaultTemplate })
@@ -1095,24 +1356,20 @@ const MentorshipAdminPrototype = () => {
         onOpenPerson={(userId, timeline) =>
           navigate({ kind: "person", userId, roundId: round.id, timeline })
         }
-        onConfirmUnmatched={(people) =>
-          setRequestTarget({
-            roundId: round.id,
-            participantIds: people.map((p) => p.participantId),
-            targetLabel: `${people.length} ${
-              people.length === 1 ? "person" : "people"
-            } — ${people.map((p) => p.name).join("; ")}`,
-            actions: ["confirm_unmatched"],
-          })
-        }
         onEditRound={(r) => setRoundModal(r ?? { timeline: {} })}
         matchRun={matchRuns[round.id] ?? null}
+        roundClosed={round.status === "closed"}
         matchingOpen={TODAY <= (round.timeline.matchNotificationAt ?? "")}
+        unregisteredOpen={
+          (round.timeline.promotionStartAt ?? "") <= TODAY &&
+          TODAY <= (round.timeline.feedbackDeadlineAt ?? "")
+        }
         onRunMatching={(people) => {
           startRun(people);
           navigate({ kind: "matching", roundId: round.id });
         }}
         onOpenMatching={() => navigate({ kind: "matching", roundId: round.id })}
+        feedback={INITIAL_FEEDBACK}
       />
     );
   };
@@ -1165,11 +1422,13 @@ const MentorshipAdminPrototype = () => {
       </header>
 
       <main className="mx-auto max-w-6xl px-6 py-6">
-        {can("mentorship.admin.read") || can("mentorship.approve") ? (
+        {can("mentorship.admin.read") ||
+        can("mentorship.admin.write") ||
+        can("mentorship.approve") ? (
           body()
         ) : (
           <p className="rounded-md border border-slate-200 bg-white p-6 text-sm text-slate-600">
-            You need the read or approve permission to see this page.
+            You need the read, write or approve permission to see this page.
           </p>
         )}
       </main>

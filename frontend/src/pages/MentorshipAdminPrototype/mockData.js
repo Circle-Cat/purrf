@@ -5,11 +5,11 @@
  * feedback quote here is invented. The set is chosen to cover each combination
  * the console has to render rather than to look like a realistic roster:
  *
- *   - a mentor carrying two mentees (one row on the person axis, two on pairs)
+ *   - a mentor carrying two mentees (one row, two lines in its Pair column)
  *   - all four states of "meetings last round": first time, unmatched, 0, n/m
  *   - a pair that has made first contact and one that has not
  *   - an ended pair, so `inactive` renders somewhere
- *   - someone admitted but not yet registered, so the Non-participants tab
+ *   - someone admitted but not yet registered, so the Not registered filter
  *     has a row
  *   - notes of all three kinds: written, decided-by-approval, system
  */
@@ -767,6 +767,7 @@ export const NOTE_KIND = {
   feedback_invite: "recorded",
   round_invitation: "recorded",
   final_followup: "recorded",
+  first_contact: "recorded",
 };
 
 export const NOTE_LABELS = {
@@ -784,6 +785,7 @@ export const NOTE_LABELS = {
   admission_notice: "Admission & onboarding",
   match_result_notice: "Match result",
   feedback_invite: "Feedback invitation",
+  first_contact: "First contact confirmed",
 };
 
 /** Tags an admin may write directly. The rest go through an approval. */
@@ -843,7 +845,7 @@ export const INITIAL_NOTES = [
     roundId: 7,
     pairId: null,
     tag: "status_change",
-    body: "signed_up → matched. Raised by Jiang, Goose. Approved by Wang, Jasmine.",
+    body: "signed_up → matched when the Fall matching run was published.",
     authorId: 2002,
     createdAt: "2026-09-15",
   },
@@ -856,16 +858,6 @@ export const INITIAL_NOTES = [
     body: "Called her. She says she will start next week.",
     authorId: 2001,
     createdAt: "2026-09-12",
-  },
-  {
-    noteId: "n-5",
-    userId: 3105,
-    roundId: 7,
-    pairId: 502,
-    tag: "partner_change_request",
-    body: "Mentee asked to change partner: schedules no longer overlap after her team move.",
-    authorId: 2001,
-    createdAt: "2026-09-20",
   },
 ];
 
@@ -892,7 +884,7 @@ export const INITIAL_REQUESTS = [
     participantId: "p-dana-7",
     pairId: null,
     reason:
-      "Five days past the first-contact deadline. No reply on email or Teams.",
+      "Missed both mentor briefings and has not answered email or Teams since.",
     raisedBy: 2003,
     reviewerId: 2001,
     createdAt: "2026-09-21",
@@ -992,11 +984,6 @@ export const APPROVAL_ACTIONS = [
   { key: "mark_no_show", label: "Mark as no show", target: "person" },
   { key: "mark_red_flag", label: "Raise a red flag", target: "person" },
   { key: "change_partner", label: "Request a partner change", target: "pair" },
-  {
-    key: "confirm_unmatched",
-    label: "Confirm as unmatched",
-    target: "batch",
-  },
   { key: "revoke_flag", label: "Revoke a flag", target: "note" },
   {
     key: "publish_matching",
@@ -1008,6 +995,7 @@ export const APPROVAL_ACTIONS = [
     label: "Exempt from the history check",
     target: "person",
   },
+  { key: "block_account", label: "Block from Purrf", target: "person" },
 ];
 
 export const ACTION_LABELS = Object.fromEntries(
@@ -1023,6 +1011,18 @@ export const ACTION_LABELS = Object.fromEntries(
  * ever sees what their own partner wrote about them.
  */
 export const INITIAL_FEEDBACK = {
+  "p-dana-6": {
+    programRating: 5,
+    mostValuable: "Watching a mentee go from stuck to shipping.",
+    challenges: "None worth mentioning.",
+    partnerFeedback: [
+      {
+        partnerName: "Wang, Cara",
+        rating: 5,
+        text: "Came prepared to every session.",
+      },
+    ],
+  },
   "p-cara-6": {
     programRating: 4,
     mostValuable:

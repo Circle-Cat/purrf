@@ -120,9 +120,9 @@ const EmailRow = ({ email, personName }) => (
  * with her" is one question; answering it from two lists means interleaving
  * them by date in your head.
  *
- * Meetings are deliberately not here. A mentor carrying two mentees has two
- * meeting logs, and flattening them onto one page would invent a number that
- * does not exist. The count links to the pair instead.
+ * Each pair this person is in this round is a section of its own, with its
+ * meeting log. A mentor carrying two mentees has two sections and two logs:
+ * adding them up would invent a number that does not exist.
  *
  * @returns {JSX.Element}
  */
@@ -159,6 +159,8 @@ const ParticipantDetailPage = ({
   onAddPairNote,
   onRaisePair,
   onMarkFirstContact,
+  blocked = false,
+  onRequestBlock,
 }) => {
   const [filter, setFilter] = useState(initialTimeline ?? "all");
   // The pair that was clicked to get here opens; otherwise the first does.
@@ -198,11 +200,16 @@ const ParticipantDetailPage = ({
     .map((p) => ({
       participant: p,
       round: rounds.find((r) => r.id === p.roundId),
-      pair: pairs.find(
-        (x) =>
-          x.roundId === p.roundId &&
-          (x.mentorId === p.userId || x.menteeId === p.userId),
-      ),
+      pairs: pairs
+        .filter(
+          (x) =>
+            x.roundId === p.roundId &&
+            (x.mentorId === p.userId || x.menteeId === p.userId),
+        )
+        .sort(
+          (a, b) =>
+            Number(b.status === "active") - Number(a.status === "active"),
+        ),
     }))
     .sort((a, b) =>
       (b.round?.timeline.meetingsCompletionDeadlineAt ?? "").localeCompare(
@@ -260,6 +267,11 @@ const ParticipantDetailPage = ({
                   Change status / flag
                 </Button>
               ) : null}
+              {blocked ? null : (
+                <Button size="sm" variant="outline" onClick={onRequestBlock}>
+                  Block from Purrf
+                </Button>
+              )}
             </div>
           ) : null
         }
@@ -341,27 +353,49 @@ const ParticipantDetailPage = ({
         ))}
       </Block>
 
-      {requests.length > 0 ? (
+      {requests.some((r) => r.status === "pending") ? (
         <Block title="Waiting on a decision">
           <ul className="divide-y divide-slate-100 text-sm">
-            {requests.map((r) => (
-              <li key={r.requestId} className="flex flex-wrap gap-3 py-2">
-                <span className="flex-1">
-                  {ACTION_LABELS[r.action]} — raised by{" "}
-                  {r.raisedBy === viewerId ? "you" : ACTOR_NAMES[r.raisedBy]} ·
-                  sent to {ACTOR_NAMES[r.reviewerId]}
-                </span>
-                {r.raisedBy === viewerId ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => onCancelRequest(r.requestId)}
-                  >
-                    Withdraw
-                  </Button>
-                ) : null}
-              </li>
-            ))}
+            {requests
+              .filter((r) => r.status === "pending")
+              .map((r) => (
+                <li key={r.requestId} className="flex flex-wrap gap-3 py-2">
+                  <span className="flex-1">
+                    {ACTION_LABELS[r.action]}
+                    {r.targetLabel && r.targetLabel !== person.name
+                      ? ` (${r.targetLabel})`
+                      : ""}{" "}
+                    — raised by{" "}
+                    {r.raisedBy === viewerId ? "you" : ACTOR_NAMES[r.raisedBy]}{" "}
+                    · sent to {ACTOR_NAMES[r.reviewerId]}
+                  </span>
+                  {r.raisedBy === viewerId ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => onCancelRequest(r.requestId)}
+                    >
+                      Withdraw
+                    </Button>
+                  ) : null}
+                </li>
+              ))}
+          </ul>
+        </Block>
+      ) : null}
+
+      {requests.some((r) => r.status === "invalidated") ? (
+        <Block title="Not applied">
+          <ul className="divide-y divide-slate-100 text-sm">
+            {requests
+              .filter((r) => r.status === "invalidated")
+              .map((r) => (
+                <li key={r.requestId} className="py-2">
+                  {ACTION_LABELS[r.action]} — approved by{" "}
+                  {ACTOR_NAMES[r.decidedBy]} on {r.decidedAt}, but not applied:{" "}
+                  <span className="text-amber-900">{r.invalidReason}</span>
+                </li>
+              ))}
           </ul>
         </Block>
       ) : null}
@@ -437,7 +471,7 @@ const ParticipantDetailPage = ({
 
       <Block title="Participation history">
         <ul className="divide-y divide-slate-100 text-sm">
-          {history.map(({ participant, round: r, pair }) => (
+          {history.map(({ participant, round: r, pairs: theirs }) => (
             <li key={participant.participantId} className="flex gap-4 py-2">
               <span className="w-56 shrink-0">{r?.name}</span>
               <span className="w-20 shrink-0 text-slate-600">
@@ -446,26 +480,30 @@ const ParticipantDetailPage = ({
               <span className="w-28 shrink-0 text-slate-600">
                 {participant.approvalStatus}
               </span>
-              <span className="flex-1 text-slate-600">
-                {pair ? (
-                  <button
-                    type="button"
-                    className="underline-offset-2 hover:underline"
-                    onClick={() =>
-                      onOpenPair(participant.participantId, pair.pairId)
-                    }
-                  >
-                    {pair.mentorId === participant.userId
-                      ? pair.menteeName
-                      : pair.mentorName}
-                  </button>
-                ) : (
-                  "—"
-                )}
-              </span>
-              <span className="w-16 shrink-0 text-right text-slate-600">
-                {pair ? `${pair.completed}/${pair.required}` : "—"}
-              </span>
+              <ul className="flex-1 space-y-0.5 text-slate-600">
+                {theirs.length === 0 ? <li>—</li> : null}
+                {theirs.map((pair) => (
+                  <li key={pair.pairId} className="flex gap-4">
+                    <button
+                      type="button"
+                      className={`flex-1 text-left underline-offset-2 hover:underline ${
+                        pair.status === "active" ? "" : "text-slate-400"
+                      }`}
+                      onClick={() =>
+                        onOpenPair(participant.participantId, pair.pairId)
+                      }
+                    >
+                      {pair.mentorId === participant.userId
+                        ? pair.menteeName
+                        : pair.mentorName}
+                      {pair.status === "active" ? "" : " · ended"}
+                    </button>
+                    <span className="w-16 shrink-0 text-right">
+                      {pair.completed}/{pair.required}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </li>
           ))}
         </ul>

@@ -121,6 +121,21 @@ const RoundModal = ({ round, onClose, onSave }) => {
 
   if (!round) return null;
 
+  // Everything later reads these: the history check needs every round's end
+  // date, and the exemption window closes on the matching date.
+  const missing = [
+    ...(form.name.trim() ? [] : ["Round name"]),
+    ...(form.requiredMeetings > 0 ? [] : ["Required meetings"]),
+    ...PHASES.flatMap((p) => [
+      ...(p.adminRequired && !form.timeline[p.admin.key]
+        ? [p.admin.label]
+        : []),
+      ...p.deadlines
+        .filter((d) => d.required && !form.timeline[d.key])
+        .map((d) => d.label),
+    ]),
+  ];
+
   const setDate = (key, value) =>
     setForm((f) => ({ ...f, timeline: { ...f.timeline, [key]: value } }));
 
@@ -210,7 +225,15 @@ const RoundModal = ({ round, onClose, onSave }) => {
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={() => onSave({ ...form, id: round.id })}>
+          {missing.length > 0 ? (
+            <span className="mr-auto self-center text-xs text-amber-800">
+              Still needed: {missing.join(", ")}
+            </span>
+          ) : null}
+          <Button
+            disabled={missing.length > 0}
+            onClick={() => onSave({ ...form, id: round.id })}
+          >
             Save
           </Button>
         </DialogFooter>

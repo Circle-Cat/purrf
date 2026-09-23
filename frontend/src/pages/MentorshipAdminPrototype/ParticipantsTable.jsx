@@ -29,21 +29,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { NOTE_LABELS } from "@/pages/MentorshipAdminPrototype/mockData";
 import {
-  RECORDED_TAGS,
-  NOTE_LABELS,
-  accountStateOf,
-} from "@/pages/MentorshipAdminPrototype/mockData";
-
-/**
- * Statuses that can go into a run. `un_matched` is included: being confirmed
- * as not matched in one run does not rule someone out of the next.
- */
-const POOL_STATUSES = ["signed_up", "matched", "un_matched"];
-
-/** A mentee always takes one mentor; a mentor takes up to their own cap. */
-const capacityOf = (person) =>
-  person.role === "mentor" ? (person.maxPartners ?? 1) : 1;
+  capacityOf,
+  freeSlotsOf,
+  matchingBlocker,
+} from "@/pages/MentorshipAdminPrototype/eligibility";
 
 /**
  * How many meetings someone held in the latest round they took part in
@@ -70,16 +61,13 @@ const LastRound = ({ value }) => (
 /**
  * ParticipantsTable
  *
- * The person axis and the pair axis, as two tabs of one card.
+ * One row per person registered for the round, with their pairs inside the
+ * row: Bob Liu carries two mentees and is still one row, with one line per
+ * pair in the Pair column.
  *
- * Bob Liu carries two mentees. He is one row under Participants and two rows
- * under Pairs, and that difference is the reason the two axes exist at all: a
- * question about a person ("has she registered?") and a question about a
- * pairing ("have they met yet?") cannot be answered by the same row.
- *
- * The tab and every filter come from `query`, which is the URL. Open the third
- * person on a filtered list, come back, and the list is still filtered — the
- * selection is the one thing that deliberately does not survive.
+ * Every filter comes from `query`, which is the URL. Open the third person on
+ * a filtered list, come back, and the list is still filtered — the selection
+ * is the one thing that deliberately does not survive.
  *
  * @returns {JSX.Element}
  */
@@ -95,12 +83,14 @@ const ParticipantsTable = ({
   onMarkCell,
   onCompose,
   onBulkMark,
-  onConfirmUnmatched,
   flagsByParticipant = {},
   exemptParticipantIds = new Set(),
+  accountOf,
   matchRun = null,
+  roundClosed = false,
   onRunMatching,
   matchingOpen = false,
+  unregisteredOpen = false,
   notes = [],
   notifications = [],
   emails = [],
@@ -133,9 +123,11 @@ const ParticipantsTable = ({
           emailState
       : true;
   };
-  const unregisteredOnly = query.filter === "unregistered";
+  // Only while the round is running, from recruitment to its end: that is
+  // when an invitation or a reminder can still bring someone in.
+  const unregisteredOnly = unregisteredOpen && query.filter === "unregistered";
   const [selected, setSelected] = useState([]);
-  const [bulkTag, setBulkTag] = useState(RECORDED_TAGS[3]);
+  const [bulkTag, setBulkTag] = useState("midterm_reminder");
   const [unregisteredTag, setUnregisteredTag] = useState("round_invitation");
 
   const writable = can("mentorship.admin.write");
@@ -143,85 +135,53 @@ const ParticipantsTable = ({
   const needle = term.trim().toLowerCase();
 
   /**
-   * Who can go into a matching run right now.
+   * Who can go into a matching run right now — the rule is in eligibility.js,
+   * shared with the re-check made when a run is published.
    *
-   * Registered this round, onboarding done, not withdrawn, and a free slot.
    * Unmatched people are in. A matched person is in only while they have a
    * free slot — a mentor with three places and two mentees, or anyone whose
    * pair has ended. A matched mentee with an active pair, or a mentor at
    * their cap, is out: sending them would offer places that do not exist.
-   *
-   * This is a filter on the person axis rather than a table of its own: the
-   * people are the same people, and the rule has to be enforced where the
-   * list is assembled anyway.
    */
-  const activePairsOf = (userId) =>
-    pairs.filter(
-      (p) =>
-        p.status === "active" &&
-        (p.mentorId === userId || p.menteeId === userId),
-    ).length;
-  const withSlots = participants.map((p) => ({
-    ...p,
-    freeSlots: capacityOf(p) - activePairsOf(p.userId),
-  }));
-  const isBlocked = (p) => accountStateOf(p.userId).isBlocked;
-  const isDeactivated = (p) => !accountStateOf(p.userId).isActive;
-  const isExempt = (p) => exemptParticipantIds.has(p.participantId);
-  const needsExemption = (p) =>
-    (p.historyIssues ?? []).length > 0 && !isExempt(p);
-  /**
-   * Blocked and deactivated accounts never go in. Training has to be done —
-   * there is no exemption for it. A past that needs looking at (a mentee short
-   * of the meetings in their latest round, a no show there, a red flag ever)
-   * keeps someone out until an exemption is approved for this round; an
-   * exemption stands in for that and nothing else.
-   */
-  const inPool = (p) =>
-    !isBlocked(p) &&
-    !isDeactivated(p) &&
-    p.onboardingDone &&
-    !needsExemption(p) &&
-    POOL_STATUSES.includes(p.approvalStatus) &&
-    p.freeSlots > 0;
-  const waitingOnExemption = withSlots.filter(
-    (p) =>
-      needsExemption(p) &&
-      !isBlocked(p) &&
-      !isDeactivated(p) &&
-      p.onboardingDone &&
-      POOL_STATUSES.includes(p.approvalStatus) &&
-      p.freeSlots > 0,
-  );
+  const withSlots = participants.map((p) => {
+    const blocker = matchingBlocker(p, {
+      pairs,
+      account: accountOf(p.userId),
+      exempt: exemptParticipantIds.has(p.participantId),
+      historyIssues: p.historyIssues ?? [],
+    });
+    return { ...p, freeSlots: freeSlotsOf(p, pairs), blocker };
+  });
+  const inPool = (p) => p.blocker === null;
+  const count = (reason) =>
+    withSlots.filter((p) => p.blocker === reason).length;
   const leftOut = {
-    blocked: withSlots.filter((p) => isBlocked(p) || isDeactivated(p)).length,
-    full: withSlots.filter(
-      (p) =>
-        !isBlocked(p) && p.approvalStatus === "matched" && p.freeSlots <= 0,
-    ).length,
-    onboarding: withSlots.filter(
-      (p) =>
-        !p.onboardingDone &&
-        !isBlocked(p) &&
-        !isDeactivated(p) &&
-        POOL_STATUSES.includes(p.approvalStatus),
-    ).length,
-    other: withSlots.filter(
-      (p) => !isBlocked(p) && !POOL_STATUSES.includes(p.approvalStatus),
-    ).length,
+    blocked: count("blocked") + count("deactivated"),
+    full: count("full"),
+    onboarding: count("training"),
+    other: count("status"),
   };
+
+  // The ordinary filters — search, role, identity, training, notification —
+  // narrow the Needs exemption list and its count the same way they narrow
+  // every other list, so the number on the button is the number it opens.
+  const passesBasics = (p) =>
+    (role === "all" || p.role === role) &&
+    (identity === "all" || p.identity === identity) &&
+    (onboarding === "all" || (onboarding === "done") === p.onboardingDone) &&
+    passesEmail(p) &&
+    (!needle ||
+      p.name.toLowerCase().includes(needle) ||
+      p.email.toLowerCase().includes(needle));
+  const waitingOnExemption = withSlots.filter(
+    (p) => p.blocker === "history" && passesBasics(p),
+  );
 
   const rows = withSlots.filter(
     (p) =>
       (!eligibleOnly || inPool(p)) &&
-      (!exemptionOnly || waitingOnExemption.includes(p)) &&
-      (role === "all" || p.role === role) &&
-      (identity === "all" || p.identity === identity) &&
-      (onboarding === "all" || (onboarding === "done") === p.onboardingDone) &&
-      passesEmail(p) &&
-      (!needle ||
-        p.name.toLowerCase().includes(needle) ||
-        p.email.toLowerCase().includes(needle)),
+      (!exemptionOnly || p.blocker === "history") &&
+      passesBasics(p),
   );
 
   const running = matchRun?.status === "running";
@@ -230,12 +190,25 @@ const ParticipantsTable = ({
   );
   const runReady =
     !running &&
+    !roundClosed &&
     runChosen.some((p) => p.role === "mentor") &&
     runChosen.some((p) => p.role === "mentee");
 
+  /**
+   * The registered and the unregistered are offered different notifications.
+   * Crossing between them drops a notification filter the other side has no
+   * such step for, rather than keep narrowing by something the control can
+   * no longer show.
+   */
   const setFilter = (next) => {
     setSelected([]);
-    onQueryChange({ filter: query.filter === next ? "" : next });
+    const filter = query.filter === next ? "" : next;
+    const steps = stepsFor(filter !== "unregistered");
+    const keepEmail = steps.some((s) => s.key === emailStep);
+    onQueryChange({
+      filter,
+      ...(keepEmail ? {} : { email: "", emailState: "" }),
+    });
   };
 
   const nonParticipantRows = nonParticipants.filter(
@@ -255,10 +228,11 @@ const ParticipantsTable = ({
   const selectedPeople = participants.filter((p) =>
     selected.includes(p.participantId),
   );
-  /** Only someone still waiting to be matched can be confirmed as unmatched. */
-  const unmatchable = selectedPeople.filter(
-    (p) => p.approvalStatus === "signed_up",
-  );
+  const pressed = {
+    eligible: eligibleOnly,
+    needs_exemption: exemptionOnly,
+    unregistered: unregisteredOnly,
+  };
 
   return (
     <>
@@ -338,21 +312,28 @@ const ParticipantsTable = ({
                   ? "Registered people whose past needs an exemption before they can be matched"
                   : `Only until this round's matching closes (${round.timeline.matchNotificationAt})`,
               },
-              { key: "unregistered", label: "Not registered for this round" },
+              {
+                key: "unregistered",
+                label: "Not registered for this round",
+                disabled: !unregisteredOpen,
+                title: unregisteredOpen
+                  ? undefined
+                  : "Only while the round is running, from recruitment to its end",
+              },
             ].map((f) => (
               <button
                 key={f.key}
                 type="button"
-                aria-pressed={query.filter === f.key}
+                aria-pressed={pressed[f.key]}
                 disabled={f.disabled}
                 title={f.title}
                 onClick={() => setFilter(f.key)}
                 className={`h-8 rounded-md border px-3 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                   f.urgent
-                    ? query.filter === f.key
+                    ? pressed[f.key]
                       ? "border-amber-600 bg-amber-600 font-medium text-white"
                       : "border-amber-400 bg-amber-100 font-medium text-amber-900 hover:bg-amber-200"
-                    : query.filter === f.key
+                    : pressed[f.key]
                       ? "border-slate-900 bg-slate-900 text-white"
                       : "border-slate-300 text-slate-600 hover:bg-slate-100"
                 }`}
@@ -364,7 +345,10 @@ const ParticipantsTable = ({
         ) : null}
       </div>
 
-      {tab === "participants" && !query.filter && nonParticipants.length > 0 ? (
+      {tab === "participants" &&
+      !query.filter &&
+      unregisteredOpen &&
+      nonParticipants.length > 0 ? (
         <p className="mb-2 text-xs text-slate-500">
           {nonParticipants.length} people in the programme have not registered
           for {round.name}.{" "}
@@ -422,7 +406,7 @@ const ParticipantsTable = ({
                     </TableCell>
                     <TableCell className="text-sm">{p.identity}</TableCell>
                     <TableCell>
-                      <AccountStateChips {...accountStateOf(p.userId)} />
+                      <AccountStateChips {...accountOf(p.userId)} />
                     </TableCell>
                     <TableCell>
                       <EmailDots
@@ -539,7 +523,7 @@ const ParticipantsTable = ({
                       </div>
                     </TableCell>
                     <TableCell>
-                      <AccountStateChips {...accountStateOf(p.userId)} />
+                      <AccountStateChips {...accountOf(p.userId)} />
                     </TableCell>
                   </>
                 )}
@@ -678,13 +662,11 @@ const ParticipantsTable = ({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {RECORDED_TAGS.filter((t) => t !== "round_invitation").map(
-                  (t) => (
-                    <SelectItem key={t} value={t}>
-                      {NOTE_LABELS[t]}
-                    </SelectItem>
-                  ),
-                )}
+                {stepsFor(true).map(({ tag: t }) => (
+                  <SelectItem key={t} value={t}>
+                    {NOTE_LABELS[t]}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Button
@@ -703,11 +685,13 @@ const ParticipantsTable = ({
               size="sm"
               disabled={!runReady}
               title={
-                running
-                  ? "A run is already going in this round"
-                  : runReady
-                    ? "Each mentor goes in with the slots they have left, not their cap"
-                    : "A run needs at least one mentor and one mentee"
+                roundClosed
+                  ? "This round is closed"
+                  : running
+                    ? "A run is already going in this round"
+                    : runReady
+                      ? "Each mentor goes in with the slots they have left, not their cap"
+                      : "A run needs at least one mentor and one mentee"
               }
               onClick={() => {
                 onRunMatching(runChosen);
@@ -715,20 +699,6 @@ const ParticipantsTable = ({
               }}
             >
               Run matching · {runChosen.length}
-            </Button>
-          ) : null}
-          {tab === "participants" ? (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={unmatchable.length === 0}
-              title="Only people still signed up can be confirmed as unmatched"
-              onClick={() => {
-                onConfirmUnmatched(unmatchable);
-                setSelected([]);
-              }}
-            >
-              Confirm as unmatched · {unmatchable.length}
             </Button>
           ) : null}
           <span className="text-xs text-slate-500">

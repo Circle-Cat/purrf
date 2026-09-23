@@ -62,7 +62,7 @@ const NoteDialog = ({ target, onClose, onSave }) => {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Plain note</SelectItem>
-                {RECORDED_TAGS.map((t) => (
+                {RECORDED_TAGS.filter((t) => t !== "first_contact").map((t) => (
                   <SelectItem key={t} value={t}>
                     {NOTE_LABELS[t]}
                   </SelectItem>

@@ -41,9 +41,10 @@ const fallback = (name) =>
  * only show one of them. Saying whose it is stops the sender assuming everyone
  * gets the text on screen.
  *
- * `target.recipients` are `{ participantId, userId, name }` — someone not yet
- * registered has a user id and no participant id. Each one gets their own
- * message, anchored on the person and the round.
+ * `target.recipients` are `{ participantId, userId, roundId, name }` — someone
+ * not yet registered has a user id and no participant id, and names the round
+ * the message belongs to. Each one gets their own message, anchored on the
+ * person and the round.
  *
  * @returns {JSX.Element|null}
  */
@@ -104,6 +105,7 @@ const ComposeDialog = ({ target, onClose, onSend }) => {
                 messages: recipients.map((r) => ({
                   participantId: r.participantId,
                   userId: r.userId,
+                  roundId: r.roundId,
                   body: render(r.name),
                 })),
               })

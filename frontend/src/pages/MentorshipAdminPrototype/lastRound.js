@@ -6,6 +6,7 @@
  *
  *   first-time  — no registration in any earlier round
  *   unmatched   — registered, never paired
+ *   withdrawn   — with no pairs: they left before being matched
  *   withdrawn   — they left part way; each pair's count where they stopped
  *   played      — each pair's count; a pair that ended early is flagged,
  *                 which is how a partner leaving shows up on this side
@@ -37,7 +38,11 @@ export const lastRoundOf = (person, participants, pairs, rounds) => {
       p.roundId === last.roundId &&
       (p.mentorId === person.userId || p.menteeId === person.userId),
   );
-  if (theirs.length === 0) return { kind: "unmatched", roundName };
+  if (theirs.length === 0) {
+    return last.approvalStatus === "withdrawn"
+      ? { kind: "withdrawn", roundName, pairs: [] }
+      : { kind: "unmatched", roundName };
+  }
 
   return {
     kind: last.approvalStatus === "withdrawn" ? "withdrawn" : "played",
@@ -55,6 +60,9 @@ export const lastRoundOf = (person, participants, pairs, rounds) => {
 export const describeLastRound = (value) => {
   if (value.kind === "first-time") return "First time";
   if (value.kind === "unmatched") return `${value.roundName} · Not matched`;
+  if (value.kind === "withdrawn" && value.pairs.length === 0) {
+    return `${value.roundName} · Withdrawn before matching`;
+  }
   const counts = value.pairs
     .map((p) => {
       if (p.unknown) return "Unknown";
@@ -71,8 +79,9 @@ export const describeLastRound = (value) => {
  *
  * Their most recent earlier round — not the round just before this one —
  * decides two things: for a mentee, whether they reached the meetings it
- * required (withdrawing counts as not; a pair ended by the partner does not
- * count against them; no meeting data is not held against anyone), and for
+ * required (withdrawing counts as not, before being matched too; a pair ended
+ * by the partner does not count against them; no meeting data is not held
+ * against anyone), and for
  * anyone, a no show recorded in it. A red flag counts from any round. Revoked
  * flags never count. Someone who never took part has nothing to exempt.
  *
@@ -122,6 +131,12 @@ export const historyIssuesOf = (
   }
 
   if (person.role === "mentee") {
+    const theirs = pairs.filter(
+      (p) => p.roundId === last.roundId && p.menteeId === person.userId,
+    );
+    if (theirs.length === 0 && last.approvalStatus === "withdrawn") {
+      issues.push(`Withdrew before matching in ${where}`);
+    }
     pairs
       .filter((p) => p.roundId === last.roundId && p.menteeId === person.userId)
       .forEach((p) => {

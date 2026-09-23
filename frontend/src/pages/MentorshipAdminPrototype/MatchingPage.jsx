@@ -84,11 +84,15 @@ const cell = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
  * colleague's saved draft; the matcher's own reason is kept beside the edit
  * so the difference can be handed back to the algorithm side.
  *
- * Publishing is an approval: asking locks the result so what is approved is
- * what gets published, and approving re-checks it before writing the pairs,
- * once. Everyone who went into the run and has no partner in the result —
- * mentor or mentee — is marked unmatched at that moment; the approval is
- * where that list is seen and confirmed.
+ * A round's first publish is an approval: asking locks the result so what is
+ * approved is what gets published, and approving re-checks it before writing
+ * the pairs, once. A supplemental run — any run after the round already has a
+ * published one — publishes from here without one. Either way the people in
+ * it are re-checked against today (withdrawn, blocked, slots filled since),
+ * and everyone who went in and still has no pair this round is marked
+ * unmatched; someone already in a pair keeps their status.
+ *
+ * Runs that were published stay listed after a newer run replaces them.
  *
  * @returns {JSX.Element}
  */
@@ -96,11 +100,15 @@ const MatchingPage = ({
   round,
   run,
   nameOf,
+  checkPeople = () => [],
+  earlierRuns = [],
+  supplemental = false,
   can,
   onBack,
   onFinish,
   onSaveDraft,
   onRequestPublish,
+  onPublish,
   publishRequest,
   viewerId,
   onCancelRequest,
@@ -115,6 +123,21 @@ const MatchingPage = ({
   const writable = can("mentorship.admin.write");
   // Edits not yet saved: menteeId → patch, or null for "back to the matcher".
   const [unsaved, setUnsaved] = useState({});
+
+  const earlier =
+    earlierRuns.length > 0 ? (
+      <div className="border-t border-slate-200 px-5 py-3 text-xs text-slate-500">
+        <p className="font-medium text-slate-600">Earlier published runs</p>
+        <ul>
+          {earlierRuns.map((r) => (
+            <li key={r.runId}>
+              {r.runId} · published {r.publishedAt} ·{" "}
+              {effectiveRows(r, r.draft).filter((x) => x.mentorId).length} pairs
+            </li>
+          ))}
+        </ul>
+      </div>
+    ) : null;
 
   if (!run) {
     return (
@@ -143,7 +166,10 @@ const MatchingPage = ({
     if (r.mentorId) acc[r.mentorId] = (acc[r.mentorId] ?? 0) + 1;
     return acc;
   }, {});
-  const problems = problemsOf(run, working, nameOf);
+  const problems =
+    run.status === "succeeded"
+      ? [...problemsOf(run, working, nameOf), ...checkPeople(working)]
+      : [];
 
   /**
    * One edit to one row. Moving a mentee to another mentor clears a reason
@@ -239,8 +265,8 @@ const MatchingPage = ({
               <>
                 Without a partner: {unpaired.map(nameOf).join(", ")}.{" "}
                 {published
-                  ? "They were marked unmatched when the result was published."
-                  : "Publishing will mark them unmatched."}
+                  ? "Those with no pair this round were marked unmatched when the result was published."
+                  : "Publishing marks them unmatched, unless they already have a pair this round."}
               </>
             ) : null}
           </div>
@@ -441,16 +467,27 @@ const MatchingPage = ({
                   >
                     Discard changes
                   </Button>
-                  <Button
-                    size="sm"
-                    disabled={!editable || hasUnsaved || problems.length > 0}
-                    title={
-                      hasUnsaved ? "Save the draft before asking" : undefined
-                    }
-                    onClick={onRequestPublish}
-                  >
-                    Request publishing
-                  </Button>
+                  {supplemental ? (
+                    <Button
+                      size="sm"
+                      disabled={!editable || hasUnsaved || problems.length > 0}
+                      title="A supplemental run: the round already has a published result, so this needs no approval"
+                      onClick={onPublish}
+                    >
+                      Publish supplemental matches
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      disabled={!editable || hasUnsaved || problems.length > 0}
+                      title={
+                        hasUnsaved ? "Save the draft before asking" : undefined
+                      }
+                      onClick={onRequestPublish}
+                    >
+                      Request publishing
+                    </Button>
+                  )}
                   {hasUnsaved ? (
                     <span className="text-xs text-amber-800">
                       Unsaved changes — save the draft before asking to publish.
@@ -469,6 +506,7 @@ const MatchingPage = ({
           </footer>
         </>
       )}
+      {earlier}
     </div>
   );
 };
