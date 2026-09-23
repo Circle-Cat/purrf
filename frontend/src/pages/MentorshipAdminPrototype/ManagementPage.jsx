@@ -275,8 +275,6 @@ const ManagementPage = ({
   onOpenParticipant,
   onMarkCell,
   onCompose,
-  onBulkMark,
-  onBulkMarkUnregistered,
   onOpenPerson,
   onEditRound,
   matchRun,
@@ -369,8 +367,6 @@ const ManagementPage = ({
               onOpenParticipant={onOpenParticipant}
               onMarkCell={onMarkCell}
               onCompose={onCompose}
-              onBulkMark={onBulkMark}
-              onBulkMarkUnregistered={onBulkMarkUnregistered}
               onOpenPerson={onOpenPerson}
               matchRun={matchRun}
               matchingOpen={matchingOpen}

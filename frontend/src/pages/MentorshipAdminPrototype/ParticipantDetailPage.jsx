@@ -161,6 +161,7 @@ const ParticipantDetailPage = ({
   onMarkFirstContact,
   blocked = false,
   onRequestBlock,
+  onMarkNotified,
 }) => {
   const [filter, setFilter] = useState(initialTimeline ?? "all");
   // The pair that was clicked to get here opens; otherwise the first does.
@@ -408,9 +409,14 @@ const ParticipantDetailPage = ({
               Refresh emails
             </Button>
             {writable ? (
-              <Button size="sm" variant="outline" onClick={onAddNote}>
-                Add a note
-              </Button>
+              <>
+                <Button size="sm" variant="outline" onClick={onMarkNotified}>
+                  Mark as notified
+                </Button>
+                <Button size="sm" variant="outline" onClick={onAddNote}>
+                  Add a note
+                </Button>
+              </>
             ) : null}
           </div>
         }

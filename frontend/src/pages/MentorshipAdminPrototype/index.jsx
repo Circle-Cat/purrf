@@ -15,6 +15,7 @@ import {
   problemsOf,
   simulateRun,
 } from "@/pages/MentorshipAdminPrototype/matching";
+import { stepsFor } from "@/pages/MentorshipAdminPrototype/emailStatus";
 import {
   BLOCKER_TEXT,
   POOL_STATUSES,
@@ -853,25 +854,6 @@ const MentorshipAdminPrototype = () => {
   );
 
   /**
-   * Marking many people at once, after notifying them some other way. The
-   * note is the mark: the Notifications column reads it.
-   */
-  const bulkMark = useCallback(
-    (participantIds, tag) =>
-      participantIds.forEach((participantId) =>
-        addNote({ participantId, tag, body: "" }),
-      ),
-    [addNote],
-  );
-
-  /** The same, for people not registered for the round: notes still land. */
-  const bulkMarkUnregistered = useCallback(
-    (userIds, tag) =>
-      userIds.forEach((userId) => addNote({ userId, roundId, tag, body: "" })),
-    [addNote, roundId],
-  );
-
-  /**
    * Sending writes one message per recipient onto their own timeline — there
    * is no separate "an email went out" note to keep in step with it, and
    * every "has this gone out" answer is read from these messages.
@@ -1232,6 +1214,15 @@ const MentorshipAdminPrototype = () => {
                 : { userId: person.userId, roundId: person.roundId },
             )
           }
+          onMarkNotified={() =>
+            setNoteTarget({
+              ...(person.participantId
+                ? { participantId: person.participantId }
+                : { userId: person.userId, roundId: person.roundId }),
+              title: `Mark as notified — ${person.name}`,
+              notifySteps: stepsFor(person.participantId != null),
+            })
+          }
           onRaise={() =>
             setRequestTarget({
               roundId: person.roundId,
@@ -1351,8 +1342,6 @@ const MentorshipAdminPrototype = () => {
         onCompose={(recipients, defaultTemplate) =>
           setComposeTarget({ recipients, defaultTemplate })
         }
-        onBulkMark={bulkMark}
-        onBulkMarkUnregistered={bulkMarkUnregistered}
         onOpenPerson={(userId, timeline) =>
           navigate({ kind: "person", userId, roundId: round.id, timeline })
         }

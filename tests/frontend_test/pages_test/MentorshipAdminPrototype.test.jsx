@@ -251,7 +251,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     ).toBeNull();
   });
 
-  it("asks for an optional note before marking first contact, and bulk marks count as notified", () => {
+  it("asks for an optional note before marking first contact, and marks a notification on the person's page", () => {
     render(<MentorshipAdminPrototype />);
 
     // First contact sits on the mentee's row: it is the mentee who reaches out.
@@ -278,8 +278,28 @@ describe("MentorshipAdminPrototype smoke", () => {
       }),
     ).toBeNull();
 
+    // The list can send email to many at once, but marking one sent some
+    // other way happens on the person's page, with a note of how.
     fireEvent.click(within(personRow("Ma, Erin")).getByRole("checkbox"));
+    expect(
+      screen.queryByRole("button", { name: "Mark as notified" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Ma, Erin" }));
     fireEvent.click(screen.getByRole("button", { name: "Mark as notified" }));
+    const dialog = screen.getByRole("dialog");
+    const confirm = within(dialog).getByRole("button", {
+      name: "Mark as notified",
+    });
+    fireEvent.change(within(dialog).getByLabelText("Which notification"), {
+      target: { value: "midterm_reminder" },
+    });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(within(dialog).getByPlaceholderText(/Sent on Teams/), {
+      target: { value: "Sent on Teams on 9/22." },
+    });
+    fireEvent.click(confirm);
+    expect(screen.getByText("Sent on Teams on 9/22.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
     expect(
       within(personRow("Ma, Erin")).getByRole("button", {
         name: "Mid-term reminder: notified manually 2026-09-22",
@@ -605,8 +625,8 @@ describe("MentorshipAdminPrototype smoke", () => {
     );
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Park, Min" }));
     expect(
-      screen.getByRole("button", { name: "Mark as notified" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "Mark as notified" }),
+    ).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Send email · 2" }));
     expect(
       within(screen.getByRole("dialog")).getByText("New round invitation"),
@@ -650,15 +670,24 @@ describe("MentorshipAdminPrototype smoke", () => {
     render(<MentorshipAdminPrototype />);
     fireEvent.click(screen.getByRole("button", { name: "Show them" }));
 
-    // In bulk, after inviting on Teams.
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select Park, Min" }));
-    fireEvent.click(screen.getByRole("button", { name: "Mark as notified" }));
-
     fireEvent.click(screen.getByRole("button", { name: "Park, Min" }));
     expect(window.location.hash).toContain("participants/3111?round=7");
     expect(
       screen.getByText(/Not registered for this round/),
     ).toBeInTheDocument();
+
+    // Invited on Teams: marked from his page, with how it went out.
+    fireEvent.click(screen.getByRole("button", { name: "Mark as notified" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Which notification"), {
+      target: { value: "round_invitation" },
+    });
+    fireEvent.change(within(dialog).getByPlaceholderText(/Sent on Teams/), {
+      target: { value: "Invited on Teams." },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Mark as notified" }),
+    );
     expect(screen.getByText("Round invitation")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Change status / flag" }),

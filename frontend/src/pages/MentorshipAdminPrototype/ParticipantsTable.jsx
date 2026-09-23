@@ -82,7 +82,6 @@ const ParticipantsTable = ({
   onOpenParticipant,
   onMarkCell,
   onCompose,
-  onBulkMark,
   flagsByParticipant = {},
   exemptParticipantIds = new Set(),
   accountOf,
@@ -93,7 +92,6 @@ const ParticipantsTable = ({
   notes = [],
   notifications = [],
   emails = [],
-  onBulkMarkUnregistered,
   onOpenPerson,
 }) => {
   // One table since the pair axis was folded into it; kept as a name so the
@@ -126,8 +124,6 @@ const ParticipantsTable = ({
   };
   const unregisteredOnly = roundRunning && query.filter === "unregistered";
   const [selected, setSelected] = useState([]);
-  const [bulkTag, setBulkTag] = useState("midterm_reminder");
-  const [unregisteredTag, setUnregisteredTag] = useState("round_invitation");
 
   const writable = can("mentorship.admin.write");
 
@@ -600,43 +596,9 @@ const ParticipantsTable = ({
           >
             Send email · {selected.length}
           </Button>
-          <div className="flex items-center gap-2">
-            <Select value={unregisteredTag} onValueChange={setUnregisteredTag}>
-              <SelectTrigger className="h-8 w-52 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {[
-                  "round_invitation",
-                  "admission_notice",
-                  "onboarding_reminder",
-                ].map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {NOTE_LABELS[t]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                onBulkMarkUnregistered(
-                  nonParticipantRows
-                    .filter((p) => selected.includes(`u${p.userId}`))
-                    .map((p) => p.userId),
-                  unregisteredTag,
-                );
-                setSelected([]);
-              }}
-            >
-              Mark as notified
-            </Button>
-          </div>
           <span className="text-xs text-slate-500">
-            For invitations and reminders sent on Teams. The note is kept
-            against the person and this round, so it is on their timeline if
-            they register.
+            Invited some other way, such as on Teams? Mark each person on their
+            own page, with a note of how it was sent.
           </span>
         </div>
       ) : null}
@@ -661,30 +623,6 @@ const ParticipantsTable = ({
           >
             Send email · {selected.length}
           </Button>
-          <div className="flex items-center gap-2">
-            <Select value={bulkTag} onValueChange={setBulkTag}>
-              <SelectTrigger className="h-8 w-52 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {stepsFor(true).map(({ tag: t }) => (
-                  <SelectItem key={t} value={t}>
-                    {NOTE_LABELS[t]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                onBulkMark(selected, bulkTag);
-                setSelected([]);
-              }}
-            >
-              Mark as notified
-            </Button>
-          </div>
           {tab === "participants" && eligibleOnly ? (
             <Button
               size="sm"
@@ -705,8 +643,8 @@ const ParticipantsTable = ({
             </Button>
           ) : null}
           <span className="text-xs text-slate-500">
-            Reminders to internal members go out on Teams, which Purrf cannot
-            send — so they are marked here after the fact, in one go.
+            Notified some other way, such as on Teams? Mark each person on their
+            own page, with a note of how it was sent.
           </span>
         </div>
       ) : null}
