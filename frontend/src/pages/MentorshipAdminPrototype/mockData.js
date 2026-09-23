@@ -320,6 +320,20 @@ export const NEVER_REGISTERED = [
   },
 ];
 
+/**
+ * Account state, per person rather than per round — the same two flags the
+ * accounts console shows. They are independent: an account can be blocked and
+ * deactivated at once. Anyone missing here is active and not blocked.
+ */
+export const ACCOUNT_STATES = {
+  3107: { isActive: true, isBlocked: true },
+  3109: { isActive: false, isBlocked: false },
+  3110: { isActive: false, isBlocked: true },
+};
+
+export const accountStateOf = (userId) =>
+  ACCOUNT_STATES[userId] ?? { isActive: true, isBlocked: false };
+
 export const INITIAL_PAIRS = [
   {
     pairId: 501,

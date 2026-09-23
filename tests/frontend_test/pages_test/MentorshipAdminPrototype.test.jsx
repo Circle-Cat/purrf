@@ -551,4 +551,27 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(screen.getByText("Participation history")).toBeInTheDocument();
     expect(screen.getByText("Mentorship 2025 Summer")).toBeInTheDocument();
   });
+
+  it("shows each person's account state beside their round status", () => {
+    render(<MentorshipAdminPrototype />);
+    expect(screen.getByText("Account")).toBeInTheDocument();
+    const rowOf = (name) =>
+      screen.getAllByRole("row").find((row) => within(row).queryByText(name));
+
+    expect(within(rowOf("Liu, Bob")).getByText("Active")).toBeInTheDocument();
+    expect(
+      within(rowOf("Shen, Gina")).getByText("Blocked"),
+    ).toBeInTheDocument();
+    expect(within(rowOf("Shen, Gina")).queryByText("Active")).toBeNull();
+    // Independent flags: both at once.
+    expect(within(rowOf("Hu, Ivy")).getByText("Blocked")).toBeInTheDocument();
+    expect(
+      within(rowOf("Hu, Ivy")).getByText("Deactivated"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show them" }));
+    expect(
+      within(rowOf("Rossi, Lia")).getByText("Deactivated"),
+    ).toBeInTheDocument();
+  });
 });

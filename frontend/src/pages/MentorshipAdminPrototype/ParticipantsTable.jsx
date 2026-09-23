@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import FlagBadges from "@/pages/MentorshipAdminPrototype/FlagBadges";
+import AccountStateChips from "@/pages/MentorshipAdminPrototype/AccountStateChips";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,7 @@ import {
   RECORDED_TAGS,
   NOTE_LABELS,
   TEMPLATE_LABELS,
+  accountStateOf,
 } from "@/pages/MentorshipAdminPrototype/mockData";
 
 const TABS = [
@@ -411,6 +413,7 @@ const ParticipantsTable = ({
                 <TableHead className="w-8" />
                 <TableHead>Name</TableHead>
                 <TableHead>Int / ext</TableHead>
+                <TableHead>Account</TableHead>
                 <TableHead>Mentor onboarding</TableHead>
                 <TableHead>Mentee onboarding</TableHead>
                 <TableHead>Last took part</TableHead>
@@ -440,6 +443,9 @@ const ParticipantsTable = ({
                       <div className="text-xs text-slate-500">{p.email}</div>
                     </TableCell>
                     <TableCell className="text-sm">{p.identity}</TableCell>
+                    <TableCell>
+                      <AccountStateChips {...accountStateOf(p.userId)} />
+                    </TableCell>
                     <TableCell className="text-sm">
                       {p.mentorOnboarding ?? "—"}
                     </TableCell>
@@ -480,6 +486,7 @@ const ParticipantsTable = ({
               <TableHead>Role</TableHead>
               <TableHead>Int / ext</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Account</TableHead>
               <TableHead>Onboarding</TableHead>
               {eligibleOnly ? (
                 <>
@@ -513,6 +520,9 @@ const ParticipantsTable = ({
                 <TableCell>
                   <Badge variant="secondary">{p.approvalStatus}</Badge>
                   <FlagBadges flags={flagsByParticipant[p.participantId]} />
+                </TableCell>
+                <TableCell>
+                  <AccountStateChips {...accountStateOf(p.userId)} />
                 </TableCell>
                 <TableCell className="text-sm">
                   {p.onboardingDone ? "Done" : "Not done"}
