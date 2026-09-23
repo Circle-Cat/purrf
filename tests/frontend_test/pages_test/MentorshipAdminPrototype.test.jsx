@@ -863,6 +863,15 @@ describe("MentorshipAdminPrototype smoke", () => {
   it("shows where each person's emails stand, one dot per email of the round", () => {
     render(<MentorshipAdminPrototype />);
     expect(screen.getByText("Emails")).toBeInTheDocument();
+    // How far each person has got, in words, above the dots.
+    const cara = screen
+      .getAllByRole("row")
+      .find((r) => within(r).queryByRole("button", { name: "Wang, Cara" }));
+    expect(within(cara).getByText("Mid-term reminder")).toBeInTheDocument();
+    const alice = screen
+      .getAllByRole("row")
+      .find((r) => within(r).queryByRole("button", { name: "Chen, Alice" }));
+    expect(within(alice).getByText(/1 failed/)).toBeInTheDocument();
     const rowOf = (name) =>
       screen
         .getAllByRole("row")

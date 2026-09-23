@@ -12,7 +12,7 @@ export const EMAIL_STEPS = [
   {
     key: "round_recruitment",
     label: "New round invitation",
-    short: "Invite",
+    short: "Inv",
     templates: ["mentorship_round_recruitment"],
     tag: "round_invitation",
     registered: false,
@@ -23,7 +23,7 @@ export const EMAIL_STEPS = [
     // only for sending it again by hand.
     key: "admission",
     label: "Admission & onboarding",
-    short: "Admitted",
+    short: "Adm",
     templates: ["mentorship_onboarding_invite"],
     tag: null,
     automatic: "mentorship_admitted",
@@ -32,7 +32,7 @@ export const EMAIL_STEPS = [
   {
     key: "onboarding_reminder",
     label: "Onboarding reminder",
-    short: "Onbd rem",
+    short: "Rem",
     templates: ["mentorship_onboarding_reminder"],
     tag: "onboarding_reminder",
     registered: null,
@@ -40,7 +40,7 @@ export const EMAIL_STEPS = [
   {
     key: "match_result",
     label: "Match result",
-    short: "Result",
+    short: "Res",
     templates: [
       "mentorship_match_result_matched",
       "mentorship_match_result_unmatched",
@@ -51,7 +51,7 @@ export const EMAIL_STEPS = [
   {
     key: "first_contact_reminder",
     label: "First contact reminder",
-    short: "Contact",
+    short: "Con",
     templates: ["mentorship_first_contact_reminder"],
     tag: "first_contact_reminder",
     registered: true,
@@ -59,7 +59,7 @@ export const EMAIL_STEPS = [
   {
     key: "mentor_check_in",
     label: "Mentor check-in",
-    short: "Check-in",
+    short: "Chk",
     templates: ["mentorship_mentor_check_in"],
     tag: "mentor_check_in",
     registered: true,
@@ -67,7 +67,7 @@ export const EMAIL_STEPS = [
   {
     key: "midterm_reminder",
     label: "Mid-term reminder",
-    short: "Mid-term",
+    short: "Mid",
     templates: ["mentorship_midterm_reminder"],
     tag: "midterm_reminder",
     registered: true,
@@ -75,7 +75,7 @@ export const EMAIL_STEPS = [
   {
     key: "final_followup",
     label: "Final follow-up",
-    short: "Final",
+    short: "Fin",
     templates: ["mentorship_final_followup"],
     tag: "final_followup",
     registered: true,
@@ -83,7 +83,7 @@ export const EMAIL_STEPS = [
   {
     key: "feedback_invite",
     label: "Feedback invitation",
-    short: "Feedback",
+    short: "Fb",
     templates: ["mentorship_feedback_invite"],
     tag: null,
     registered: true,

@@ -2,7 +2,9 @@ import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import FlagBadges from "@/pages/MentorshipAdminPrototype/FlagBadges";
 import AccountStateChips from "@/pages/MentorshipAdminPrototype/AccountStateChips";
-import EmailDots from "@/pages/MentorshipAdminPrototype/EmailDots";
+import EmailDots, {
+  EmailDotsHeader,
+} from "@/pages/MentorshipAdminPrototype/EmailDots";
 import {
   EMAIL_STATES,
   EMAIL_STEPS,
@@ -482,7 +484,9 @@ const ParticipantsTable = ({
                 <TableHead>Name</TableHead>
                 <TableHead>Int / ext</TableHead>
                 <TableHead>Account</TableHead>
-                <TableHead>Emails</TableHead>
+                <TableHead>
+                  <EmailDotsHeader registered={false} />
+                </TableHead>
                 <TableHead>Mentor onboarding</TableHead>
                 <TableHead>Mentee onboarding</TableHead>
                 <TableHead>Last took part</TableHead>
@@ -573,7 +577,9 @@ const ParticipantsTable = ({
               <TableHead>Int / ext</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Account</TableHead>
-              <TableHead>Emails</TableHead>
+              <TableHead>
+                <EmailDotsHeader registered />
+              </TableHead>
               <TableHead>Onboarding</TableHead>
               {eligibleOnly ? (
                 <>

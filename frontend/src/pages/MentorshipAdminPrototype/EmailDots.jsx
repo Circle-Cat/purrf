@@ -10,28 +10,54 @@ const LOOK = {
   not_sent: "border border-slate-300 text-slate-400",
 };
 
+/** Every dot sits in a slot this wide, so the header's labels line up. */
+const SLOT = "w-8 shrink-0 text-center";
+
+const how = (s) =>
+  s.channel === "teams"
+    ? " on Teams"
+    : s.channel === "auto"
+      ? " automatically"
+      : "";
+
 const describe = (step, s) => {
   if (s.state === "not_sent") return `${step.label}: not sent`;
   if (s.state === "failed") return `${step.label}: failed on ${s.at}`;
   if (s.state === "replied") return `${step.label}: replied ${s.at}`;
-  const how =
-    s.channel === "teams"
-      ? " on Teams"
-      : s.channel === "auto"
-        ? " automatically"
-        : "";
-  return `${step.label}: sent${how} ${s.at}`;
+  return `${step.label}: sent${how(s)} ${s.at}`;
 };
+
+/**
+ * The column header: one short label above each dot, in the same slots.
+ *
+ * @param {{registered: boolean}} props
+ * @returns {JSX.Element}
+ */
+export const EmailDotsHeader = ({ registered }) => (
+  <span className="block">
+    <span className="block">Emails</span>
+    <span className="flex text-[10px] font-normal text-slate-500">
+      {stepsFor(registered).map((step) => (
+        <span key={step.key} className={SLOT} title={step.label}>
+          {step.short}
+        </span>
+      ))}
+    </span>
+  </span>
+);
 
 /**
  * EmailDots
  *
- * One dot per email of the round, in the order they go out, so a row says
- * at a glance how far someone's correspondence has got. Each dot names its
- * email and state; "T" marks one sent on Teams, which counts as sent. Pressing
- * a dot opens the person's timeline showing emails only.
+ * Two lines. The first says how far someone's correspondence has got — the
+ * latest email that went out, and when — and whether anything failed, so a
+ * glance down the column answers "where are we with each person". The second
+ * is one dot per email of the round, in order, under the header's labels:
+ * that is where to see which one is missing. "T" marks an email sent on
+ * Teams, which counts as sent; "!" one that failed. Pressing a dot opens the
+ * person's timeline showing emails only.
  *
- * @param {{person: {userId: number, roundId: number}, registered: boolean, emails: object[], notes: object[], onOpen: () => void}} props
+ * @param {{person: {userId: number, roundId: number}, registered: boolean, emails: object[], notes: object[], notifications: object[], onOpen: () => void}} props
  * @returns {JSX.Element}
  */
 const EmailDots = ({
@@ -41,25 +67,58 @@ const EmailDots = ({
   notes,
   notifications,
   onOpen,
-}) => (
-  <span className="inline-flex flex-wrap gap-1">
-    {stepsFor(registered).map((step) => {
-      const s = stepState(step, person, emails, notes, notifications);
-      const text = describe(step, s);
-      return (
-        <button
-          key={step.key}
-          type="button"
-          aria-label={text}
-          title={text}
-          onClick={onOpen}
-          className={`flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] leading-none ${LOOK[s.state]}`}
-        >
-          {s.channel === "teams" ? "T" : s.state === "failed" ? "!" : ""}
-        </button>
-      );
-    })}
-  </span>
-);
+}) => {
+  const steps = stepsFor(registered).map((step) => ({
+    step,
+    s: stepState(step, person, emails, notes, notifications),
+  }));
+  const gone = steps.filter(
+    ({ s }) => s.state === "sent" || s.state === "replied",
+  );
+  // The latest by date; on the same day, the one later in the round.
+  const latest = gone.reduce(
+    (best, cur) => (!best || cur.s.at >= best.s.at ? cur : best),
+    null,
+  );
+  const failed = steps.filter(({ s }) => s.state === "failed").length;
+
+  return (
+    <span className="block">
+      <span className="block text-xs">
+        {latest ? (
+          <>
+            <span className="font-medium">{latest.step.label}</span> ·{" "}
+            {latest.s.at}
+            {latest.s.channel === "teams" ? " (Teams)" : ""}
+            {latest.s.state === "replied" ? " · replied" : ""}
+          </>
+        ) : (
+          <span className="text-slate-400">Nothing sent yet</span>
+        )}
+        {failed > 0 ? (
+          <span className="ml-2 text-amber-800">⚠ {failed} failed</span>
+        ) : null}
+      </span>
+      <span className="mt-1 flex">
+        {steps.map(({ step, s }) => {
+          const text = describe(step, s);
+          return (
+            <span key={step.key} className={SLOT}>
+              <button
+                type="button"
+                aria-label={text}
+                title={text}
+                onClick={onOpen}
+                className={`mx-auto flex h-5 w-5 items-center justify-center rounded-full text-[10px] leading-none ${LOOK[s.state]}`}
+              >
+                {s.channel === "teams" ? "T" : s.state === "failed" ? "!" : ""}
+              </button>
+            </span>
+          );
+        })}
+      </span>
+    </span>
+  );
+};
 
 export default EmailDots;
