@@ -507,6 +507,24 @@ const ParticipantDetailPage = ({
         ) : null}
       </Block>
 
+      {can("mentorship.feedback.read") ? (
+        <Block title="Feedback">
+          {feedback[person.participantId] ? (
+            renderFeedback(feedback[person.participantId])
+          ) : (
+            <p className="text-sm text-slate-500">
+              Nothing submitted for this round yet. Earlier rounds&apos;
+              feedback is under each round in the participation history.
+            </p>
+          )}
+          <p className="mt-1 text-xs text-slate-500">
+            The label always says whose opinion this is. On this page it is what{" "}
+            {person.name} wrote about a partner — never what a partner wrote
+            about {person.name}, which nobody but an admin ever sees.
+          </p>
+        </Block>
+      ) : null}
+
       <Block title="Participation history">
         {history.length === 0 ? (
           <p className="text-sm text-slate-500">
@@ -613,24 +631,6 @@ const ParticipantDetailPage = ({
           in time order.
         </p>
       </Block>
-
-      {can("mentorship.feedback.read") ? (
-        <Block title="Feedback">
-          {feedback[person.participantId] ? (
-            renderFeedback(feedback[person.participantId])
-          ) : (
-            <p className="text-sm text-slate-500">
-              Nothing submitted for this round yet. Earlier rounds&apos;
-              feedback is under each round in the participation history.
-            </p>
-          )}
-          <p className="mt-1 text-xs text-slate-500">
-            The label always says whose opinion this is. On this page it is what{" "}
-            {person.name} wrote about a partner — never what a partner wrote
-            about {person.name}, which nobody but an admin ever sees.
-          </p>
-        </Block>
-      ) : null}
     </div>
   );
 };
