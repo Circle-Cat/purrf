@@ -203,7 +203,8 @@ const ParticipantDetailPage = ({
     .sort(
       (a, b) => Number(b.status === "active") - Number(a.status === "active"),
     );
-  const history = participants
+  const endOf = (r) => r?.timeline.meetingsCompletionDeadlineAt ?? "";
+  const everyRound = participants
     .filter((p) => p.userId === person.userId)
     .map((p) => ({
       participant: p,
@@ -219,11 +220,12 @@ const ParticipantDetailPage = ({
             Number(b.status === "active") - Number(a.status === "active"),
         ),
     }))
-    .sort((a, b) =>
-      (b.round?.timeline.meetingsCompletionDeadlineAt ?? "").localeCompare(
-        a.round?.timeline.meetingsCompletionDeadlineAt ?? "",
-      ),
-    );
+    .sort((a, b) => endOf(b.round).localeCompare(endOf(a.round)));
+  // Only rounds that ended before the one on this page: this round is the
+  // page itself, and a later one is not "history" from here.
+  const history = everyRound.filter(
+    (h) => endOf(h.round) && endOf(h.round) < endOf(round),
+  );
 
   const registered = person.participantId != null;
 
@@ -479,6 +481,11 @@ const ParticipantDetailPage = ({
       </Block>
 
       <Block title="Participation history">
+        {history.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            No earlier rounds — this is the first time they have taken part.
+          </p>
+        ) : null}
         <ul className="divide-y divide-slate-100 text-sm">
           {history.map(({ participant, round: r, pairs: theirs }) => (
             <li key={participant.participantId} className="flex gap-4 py-2">
@@ -524,12 +531,12 @@ const ParticipantDetailPage = ({
 
       {can("mentorship.feedback.read") ? (
         <Block title="Feedback">
-          {history.filter(
+          {everyRound.filter(
             ({ participant }) => feedback[participant.participantId],
           ).length === 0 ? (
             <p className="text-sm text-slate-500">Nothing submitted yet.</p>
           ) : (
-            history
+            everyRound
               .filter(({ participant }) => feedback[participant.participantId])
               .map(({ participant, round: r }) => {
                 const f = feedback[participant.participantId];

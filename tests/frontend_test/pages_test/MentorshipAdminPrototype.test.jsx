@@ -401,6 +401,22 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(screen.queryByText("No show")).toBeNull();
   });
 
+  it("lists only earlier rounds under participation history", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(screen.getByRole("button", { name: "Cara Wang" }));
+    const history = screen
+      .getByText("Participation history")
+      .closest("section");
+    expect(
+      within(history).getByText("Mentorship 2025 Summer"),
+    ).toBeInTheDocument();
+    expect(within(history).queryByText("Mentorship 2026 Fall")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
+    fireEvent.click(screen.getByRole("button", { name: "Alice Chen" }));
+    expect(screen.getByText(/No earlier rounds/)).toBeInTheDocument();
+  });
+
   it("shows a failed send as failed on the timeline, not as sent", () => {
     render(<MentorshipAdminPrototype />);
     fireEvent.click(screen.getByRole("button", { name: "Alice Chen" }));
