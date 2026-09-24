@@ -7,10 +7,13 @@ vi.mock("@/api/mentorshipApi", () => ({
   getAllMentorshipRounds: vi.fn(),
 }));
 
+// Latest first, as the API returns them. The ids are out of time order the
+// way they are on prod: round 1 is 2026 Spring, round 5 the 2024 pilot.
 const TEST_ROUNDS = [
-  { id: 1, name: "Spring 2025" },
-  { id: 3, name: "Spring 2026" },
-  { id: 2, name: "Fall 2025" },
+  { id: 7, name: "Mentorship 2026 Fall" },
+  { id: 1, name: "Mentorship 2026 Spring" },
+  { id: 2, name: "Mentorship 2025 Fall" },
+  { id: 5, name: "Mentorship 2024 Pilot" },
 ];
 
 describe("useParticipantSearchRounds", () => {
@@ -18,12 +21,12 @@ describe("useParticipantSearchRounds", () => {
     vi.clearAllMocks();
   });
 
-  it("fetches rounds on mount, sorted by id descending", async () => {
+  it("fetches rounds on mount and keeps the order the API returns", async () => {
     getAllMentorshipRounds.mockResolvedValue({ data: TEST_ROUNDS });
     const { result } = renderHook(() => useParticipantSearchRounds());
 
-    await waitFor(() => expect(result.current).toHaveLength(3));
-    expect(result.current.map((r) => r.id)).toEqual([3, 2, 1]);
+    await waitFor(() => expect(result.current).toHaveLength(4));
+    expect(result.current.map((r) => r.id)).toEqual([7, 1, 2, 5]);
     expect(getAllMentorshipRounds).toHaveBeenCalledWith();
   });
 
