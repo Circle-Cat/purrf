@@ -29,6 +29,7 @@ const ProfileCard = ({ title, name, userId }) => {
     <section className="flex-1 rounded-md border border-slate-200 p-3">
       <p className="text-xs uppercase tracking-wide text-slate-400">{title}</p>
       <p className="text-sm font-semibold">{name}</p>
+      <p className="text-xs text-slate-500">ID {userId}</p>
       {profile ? (
         <>
           <p className="text-xs text-slate-500">{profile.headline}</p>
@@ -120,6 +121,8 @@ const MatchingPage = ({
       all.includes(id) ? all.filter((x) => x !== id) : [...all, id],
     );
   const writable = can("mentorship.admin.write");
+  // Names with their user id, so two people with one name cannot be mixed up.
+  const labelOf = (userId) => `${nameOf(userId)} (ID ${userId})`;
   // Edits not yet saved: menteeId → patch, or null for "back to the matcher".
   const [unsaved, setUnsaved] = useState({});
 
@@ -199,9 +202,12 @@ const MatchingPage = ({
 
   const csv = [
     [
+      "mentee id",
       "mentee",
+      "matcher mentor id",
       "matcher mentor",
       "matcher reason",
+      "final mentor id",
       "final mentor",
       "final reason",
     ]
@@ -210,9 +216,12 @@ const MatchingPage = ({
     ...run.rows.map((row) => {
       const final = effective.find((r) => r.menteeId === row.menteeId);
       return [
+        row.menteeId,
         nameOf(row.menteeId),
+        row.mentorId ?? "",
         row.mentorId ? nameOf(row.mentorId) : "",
         row.reason,
+        final.mentorId ?? "",
         final.mentorId ? nameOf(final.mentorId) : "",
         final.reason,
       ]
@@ -262,7 +271,7 @@ const MatchingPage = ({
             mentees matched.{" "}
             {unpaired.length > 0 ? (
               <>
-                Without a partner: {unpaired.map(nameOf).join(", ")}.{" "}
+                Without a partner: {unpaired.map(labelOf).join(", ")}.{" "}
                 {published
                   ? "Those with no pair this round were marked unmatched when the result was published."
                   : "Publishing marks them unmatched, unless they already have a pair this round."}
@@ -279,9 +288,23 @@ const MatchingPage = ({
                   onClick={() => toggle(r.menteeId)}
                   className="flex w-full flex-wrap items-center gap-3 text-left text-sm"
                 >
-                  <span className="w-40 font-medium">{nameOf(r.menteeId)}</span>
-                  <span className="w-40">
-                    {r.mentorId ? `→ ${nameOf(r.mentorId)}` : "No mentor"}
+                  <span className="w-44">
+                    <span className="font-medium">{nameOf(r.menteeId)}</span>{" "}
+                    <span className="text-xs text-slate-500">
+                      ID {r.menteeId}
+                    </span>
+                  </span>
+                  <span className="w-44">
+                    {r.mentorId ? (
+                      <>
+                        → {nameOf(r.mentorId)}{" "}
+                        <span className="text-xs text-slate-500">
+                          ID {r.mentorId}
+                        </span>
+                      </>
+                    ) : (
+                      "No mentor"
+                    )}
                   </span>
                   <Badge variant="outline">
                     {r.edited
@@ -343,7 +366,7 @@ const MatchingPage = ({
                           (r.mentorId === m.userId ? 1 : 0);
                         return (
                           <option key={m.userId} value={m.userId}>
-                            {nameOf(m.userId)} — {slotsOf[m.userId] - used} of{" "}
+                            {labelOf(m.userId)} — {slotsOf[m.userId] - used} of{" "}
                             {slotsOf[m.userId]} slots free
                             {candidate
                               ? ` · candidate, ${candidate.score}`
@@ -391,7 +414,7 @@ const MatchingPage = ({
                             );
                             return `${
                               original.mentorId
-                                ? nameOf(original.mentorId)
+                                ? labelOf(original.mentorId)
                                 : "No mentor"
                             } — ${original.reason || "no reason"}`;
                           })()}

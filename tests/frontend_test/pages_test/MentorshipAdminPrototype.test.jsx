@@ -1256,6 +1256,26 @@ describe("MentorshipAdminPrototype smoke", () => {
     ).toBeDisabled();
   });
 
+  it("names everyone on the review page with their user id", () => {
+    render(<MentorshipAdminPrototype />);
+    startRun();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Simulate the run finishing/ }),
+    );
+    const row = screen.getByRole("button", { name: /^Alice Chen/ });
+    expect(within(row).getByText("ID 3101")).toBeInTheDocument();
+    fireEvent.click(row);
+    // The mentor choices carry ids, so two people with one name stay apart.
+    const choices = within(screen.getByLabelText("Mentor for Alice Chen"))
+      .getAllByRole("option")
+      .map((o) => o.textContent);
+    expect(choices.some((c) => c.startsWith("Bob Liu (ID 3102) — "))).toBe(
+      true,
+    );
+    // And both profile cards.
+    expect(screen.getAllByText(/^ID 310\d$/).length).toBeGreaterThanOrEqual(3);
+  });
+
   it("reviews a result with both résumés, lets pairs and reasons be changed, then publishes", () => {
     render(<MentorshipAdminPrototype />);
     startRun();
