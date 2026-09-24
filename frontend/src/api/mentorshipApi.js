@@ -11,6 +11,15 @@ export const getAllMentorshipRounds = (needDetails = false) =>
   });
 
 /**
+ * Fetch which rounds the Personal Dashboard acts on right now: the
+ * registration round and whether it is open, whether its matching result is
+ * viewable, whether any round is in its feedback phase, and the default
+ * round to show. Evaluated on the server's clock.
+ */
+export const getMentorshipRoundSlots = () =>
+  request.get(API_ENDPOINTS.MENTORSHIP_ROUND_SLOTS);
+
+/**
  * Create or update a mentorship round (admin only).
  * @param {object} data - Round form data to submit.
  */

@@ -143,10 +143,12 @@ class RegistrationService:
 
         # Registration closes with onboarding, for both roles. The
         # application deadlines belong to recruiting and do not gate it.
+        # Closed from the deadline itself on, as in
+        # get_open_registration_round.
         registration_deadline = round_entity.onboarding_deadline_at
         register_time = datetime.now(timezone.utc)
 
-        if register_time > registration_deadline:
+        if register_time >= registration_deadline:
             self.logger.error(
                 "[RegistrationService] registration failed for round %s. Current time %s is past deadline %s.",
                 round_id,

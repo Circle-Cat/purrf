@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.mentorship_enums import MentorshipEvent, ParticipantRole
@@ -60,10 +62,8 @@ class MentorshipAdmissionService:
         ):
             return
 
-        open_round = (
-            await self.mentorship_round_repository.get_open_mentor_registration_round(
-                session
-            )
+        open_round = await self.mentorship_round_repository.get_open_registration_round(
+            session, datetime.now(timezone.utc)
         )
         registration_deadline = (
             open_round.onboarding_deadline_at if open_round else None

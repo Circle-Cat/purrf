@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from backend.dto.rounds_dto import RoundsDto, TimelineDto
 from backend.dto.preference_dto import (
     SpecificIndustryDto,
@@ -16,10 +18,36 @@ from backend.entity.mentorship_round_participants_entity import (
 )
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.common.mentorship_enums import (
+    RoundStatus,
     MeetingNoteTag,
     MeetingSource,
     ParticipantRole,
 )
+
+
+def round_status(r: MentorshipRoundEntity, now: datetime) -> RoundStatus | None:
+    """Where a round's meeting window stands at ``now``.
+
+    The window opens at ``match_notification_at`` (``promotion_start_at``
+    when a round has none) and closes at ``meetings_completion_deadline_at``,
+    both inclusive. A round missing the bound a status needs has none.
+
+    Args:
+        r (MentorshipRoundEntity): The round.
+        now (datetime): The aware instant to evaluate at.
+
+    Returns:
+        RoundStatus | None: The round's status, or None.
+    """
+    start = r.match_notification_at or r.promotion_start_at
+    end = r.meetings_completion_deadline_at
+    if start and end and start <= now <= end:
+        return RoundStatus.ACTIVE
+    if start and now < start:
+        return RoundStatus.UPCOMING
+    if end and now > end:
+        return RoundStatus.COMPLETED
+    return None
 
 
 class MentorshipMapper:
@@ -31,9 +59,15 @@ class MentorshipMapper:
         self,
         rounds: list[MentorshipRoundEntity],
         pair_stats: dict[int, dict] | None = None,
+        now: datetime | None = None,
     ) -> list[RoundsDto]:
-        """Maps a list of MentorshipRoundEntity objects to a list of RoundsDto objects."""
+        """Maps a list of MentorshipRoundEntity objects to a list of RoundsDto objects.
+
+        Each round's status is evaluated at ``now``, the current time when
+        omitted.
+        """
         pair_stats = pair_stats or {}
+        now = now or datetime.now(timezone.utc)
         return [
             RoundsDto(
                 id=r.round_id,
@@ -50,6 +84,7 @@ class MentorshipMapper:
                 expectations=r.expectations,
                 required_meetings=r.required_meetings,
                 timeline=self._map_timeline(r),
+                status=round_status(r, now),
             )
             for r in rounds
         ]

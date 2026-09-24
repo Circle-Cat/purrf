@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useMentorshipData } from "@/pages/PersonalDashboard/hooks/useMentorshipData";
 import {
   getAllMentorshipRounds,
+  getMentorshipRoundSlots,
   getMyMentorshipRegistration,
   getMyMentorshipPartners,
   postMyMentorshipRegistration,
@@ -13,14 +14,11 @@ import {
 } from "@/api/mentorshipApi";
 import { getMyMentorshipMeetingsV2 } from "@/api/meetingApi";
 import { getMyProfile } from "@/api/profileApi";
-import {
-  calculateMentorshipSlots,
-  calculateRoundStatus,
-} from "@/pages/PersonalDashboard/utils/mentorshipRounds";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 
 vi.mock("@/api/mentorshipApi", () => ({
   getAllMentorshipRounds: vi.fn(),
+  getMentorshipRoundSlots: vi.fn(),
   getMyMentorshipPartners: vi.fn(),
   getMyMentorshipRegistration: vi.fn(),
   postMyMentorshipRegistration: vi.fn(),
@@ -37,10 +35,27 @@ vi.mock("@/api/profileApi", () => ({
 const mockProfileTimezone = (timezone = "America/Los_Angeles") =>
   getMyProfile.mockResolvedValue({ data: { profile: { user: { timezone } } } });
 
-vi.mock("@/pages/PersonalDashboard/utils/mentorshipRounds", () => ({
-  calculateMentorshipSlots: vi.fn(),
-  calculateRoundStatus: vi.fn(),
-}));
+const EMPTY_SLOTS = {
+  registrationRoundId: null,
+  registrationRoundName: null,
+  registrationDeadlineAt: null,
+  isRegistrationOpen: false,
+  canViewMatch: false,
+  isFeedbackEnabled: false,
+  activeRoundId: null,
+};
+let currentSlots = EMPTY_SLOTS;
+
+/** Answer the slots endpoint with `overrides` on top of what is set so far. */
+const mockSlots = (overrides) => {
+  currentSlots = { ...currentSlots, ...overrides };
+  getMentorshipRoundSlots.mockResolvedValue({ data: currentSlots });
+};
+
+beforeEach(() => {
+  currentSlots = EMPTY_SLOTS;
+  mockSlots({});
+});
 
 vi.mock("@/hooks/useFeatureFlags", () => ({
   useFeatureFlags: vi.fn(),
@@ -51,17 +66,13 @@ describe("useMentorshipData Hook", () => {
     vi.clearAllMocks();
     mockProfileTimezone();
     useFeatureFlags.mockReturnValue({ "create-google-meeting": false });
-    calculateRoundStatus.mockReturnValue({
-      sortedRounds: [],
-      activeRoundId: null,
-    });
   });
 
   it("should fetch match results if the user is registered", async () => {
     // 1. Setup Rounds and Slots
     getAllMentorshipRounds.mockResolvedValue({ data: [{ id: "round-1" }] });
-    calculateMentorshipSlots.mockReturnValue({
-      regRoundId: "round-1",
+    mockSlots({
+      registrationRoundId: "round-1",
       canViewMatch: true,
     });
 
@@ -92,7 +103,7 @@ describe("useMentorshipData Hook", () => {
 
   it("should NOT fetch match results if the user is not registered", async () => {
     getAllMentorshipRounds.mockResolvedValue({ data: [{ id: "round-1" }] });
-    calculateMentorshipSlots.mockReturnValue({ regRoundId: "round-1" });
+    mockSlots({ registrationRoundId: "round-1" });
 
     // User is NOT registered
     const mockRegData = { id: "reg-123", isRegistered: false };
@@ -112,7 +123,7 @@ describe("useMentorshipData Hook", () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     getAllMentorshipRounds.mockResolvedValue({ data: [{ id: "round-1" }] });
-    calculateMentorshipSlots.mockReturnValue({ regRoundId: "round-1" });
+    mockSlots({ registrationRoundId: "round-1" });
 
     // Registration succeeds
     getMyMentorshipRegistration.mockResolvedValue({
@@ -144,10 +155,10 @@ describe("useMentorshipData Hook", () => {
     getAllMentorshipRounds.mockResolvedValue({ data: mockRounds });
 
     const mockStatus = {
-      regRoundId: "round-1",
+      registrationRoundId: "round-1",
       isFeedbackEnabled: false,
     };
-    calculateMentorshipSlots.mockReturnValue(mockStatus);
+    mockSlots(mockStatus);
 
     const mockRegData = { id: "reg-123", status: "SUBMITTED" };
     getMyMentorshipRegistration.mockResolvedValue({ data: mockRegData });
@@ -166,10 +177,42 @@ describe("useMentorshipData Hook", () => {
     expect(getMyMentorshipRegistration).toHaveBeenCalledWith("round-1");
   });
 
+  it("takes the slots, the round order and the default round from the server", async () => {
+    // Listed as the server ordered them, which is not id order.
+    const rounds = [
+      { id: "round-2", name: "Later" },
+      { id: "round-1", name: "Earlier" },
+    ];
+    getAllMentorshipRounds.mockResolvedValue({ data: rounds });
+    mockSlots({
+      registrationRoundId: "round-2",
+      registrationRoundName: "Later",
+      canViewMatch: true,
+      isFeedbackEnabled: true,
+      activeRoundId: "round-1",
+    });
+    getMyMentorshipRegistration.mockResolvedValue({
+      data: { isRegistered: false },
+    });
+    getMyMentorshipPartners.mockResolvedValue({ data: [] });
+    getMyMentorshipMeetingLog.mockResolvedValue({ data: { meetingInfo: [] } });
+
+    const { result } = renderHook(() => useMentorshipData());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(getMentorshipRoundSlots).toHaveBeenCalledTimes(1);
+    expect(result.current.regRoundId).toBe("round-2");
+    expect(result.current.matchResultRoundName).toBe("Later");
+    expect(result.current.canViewMatch).toBe(true);
+    expect(result.current.isFeedbackEnabled).toBe(true);
+    expect(result.current.selectedRoundId).toBe("round-1");
+    expect(result.current.roundSelectionData.sortedRounds).toEqual(rounds);
+  });
+
   it("should not call getMyMentorshipRegistration when regRoundId is null", async () => {
     getAllMentorshipRounds.mockResolvedValue({ data: [] });
-    calculateMentorshipSlots.mockReturnValue({
-      regRoundId: null,
+    mockSlots({
+      registrationRoundId: null,
     });
 
     const { result } = renderHook(() => useMentorshipData());
@@ -184,7 +227,7 @@ describe("useMentorshipData Hook", () => {
     const mockPartners = [{ name: "Mentor A" }];
     getMyMentorshipPartners.mockResolvedValue({ data: mockPartners });
     getAllMentorshipRounds.mockResolvedValue({ data: [] });
-    calculateMentorshipSlots.mockReturnValue({});
+    mockSlots({});
 
     const { result } = renderHook(() => useMentorshipData());
 
@@ -215,10 +258,10 @@ describe("useMentorshipData Hook", () => {
   it("should refresh registration data successfully when regRoundId exists", async () => {
     // Initialize data: simulate an active registration round
     const mockStatus = {
-      regRoundId: "round-999",
+      registrationRoundId: "round-999",
     };
     getAllMentorshipRounds.mockResolvedValue({ data: [{ id: "round-999" }] });
-    calculateMentorshipSlots.mockReturnValue(mockStatus);
+    mockSlots(mockStatus);
 
     // Initial data retrieval
     getMyMentorshipRegistration.mockResolvedValueOnce({
@@ -248,7 +291,7 @@ describe("useMentorshipData Hook", () => {
   it("should not call API if regRoundId is missing during refresh", async () => {
     // Simulate scenario where there is no active round
     getAllMentorshipRounds.mockResolvedValue({ data: [] });
-    calculateMentorshipSlots.mockReturnValue({ regRoundId: null });
+    mockSlots({ registrationRoundId: null });
 
     const { result } = renderHook(() => useMentorshipData());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -270,7 +313,7 @@ describe("useMentorshipData Hook", () => {
 
     // Simulate environment: with a round ID
     getAllMentorshipRounds.mockResolvedValue({ data: [{ id: "round-1" }] });
-    calculateMentorshipSlots.mockReturnValue({ regRoundId: "round-1" });
+    mockSlots({ registrationRoundId: "round-1" });
     getMyMentorshipRegistration.mockResolvedValueOnce({ data: {} }); // Initial load success
 
     const { result } = renderHook(() => useMentorshipData());
@@ -357,10 +400,6 @@ describe("saveRegistration", () => {
     vi.clearAllMocks();
     mockProfileTimezone();
     useFeatureFlags.mockReturnValue({ "create-google-meeting": false });
-    calculateRoundStatus.mockReturnValue({
-      sortedRounds: [],
-      activeRoundId: null,
-    });
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(MOCK_TODAY));
   });
@@ -369,20 +408,21 @@ describe("saveRegistration", () => {
     vi.useRealTimers();
   });
 
-  it("should return early and not trigger API when saveRegistration is called while registration is closed", async () => {
+  it("should return early and not trigger API when the server reports registration closed", async () => {
     getAllMentorshipRounds.mockResolvedValue({
       data: [
         {
           id: "round-1",
-          timeline: {
-            mentorApplicationDeadlineAt: "2026-02-01T00:00:00Z", // after MOCK_TODAY
-            menteeApplicationDeadlineAt: "2026-02-01T00:00:00Z", // after MOCK_TODAY
-            onboardingDeadlineAt: "2026-01-01T00:00:00Z", // before MOCK_TODAY
-          },
+          // Still open by the browser's clock; the server's verdict wins.
+          timeline: { onboardingDeadlineAt: "2026-02-01T00:00:00Z" },
         },
       ],
     });
-    calculateMentorshipSlots.mockReturnValue({ regRoundId: "round-1" });
+    mockSlots({
+      registrationRoundId: "round-1",
+      registrationDeadlineAt: "2026-02-01T00:00:00Z",
+      isRegistrationOpen: false,
+    });
     getMyMentorshipRegistration.mockResolvedValue({
       data: { isRegistered: false, roundPreferences: null },
     });
@@ -401,20 +441,21 @@ describe("saveRegistration", () => {
     expect(postMyMentorshipRegistration).not.toHaveBeenCalled();
   });
 
-  it("should call postMyMentorshipRegistration when saveRegistration is called while registration is open", async () => {
+  it("should call postMyMentorshipRegistration when the server reports registration open", async () => {
     getAllMentorshipRounds.mockResolvedValue({
       data: [
         {
           id: "round-1",
-          timeline: {
-            mentorApplicationDeadlineAt: "2026-01-01T00:00:00Z", // before MOCK_TODAY
-            menteeApplicationDeadlineAt: "2026-01-01T00:00:00Z", // before MOCK_TODAY
-            onboardingDeadlineAt: "2026-02-01T00:00:00Z", // after MOCK_TODAY
-          },
+          // Already closed by the browser's clock; the server's verdict wins.
+          timeline: { onboardingDeadlineAt: "2026-01-01T00:00:00Z" },
         },
       ],
     });
-    calculateMentorshipSlots.mockReturnValue({ regRoundId: "round-1" });
+    mockSlots({
+      registrationRoundId: "round-1",
+      registrationDeadlineAt: "2026-01-01T00:00:00Z",
+      isRegistrationOpen: true,
+    });
     getMyMentorshipRegistration.mockResolvedValue({
       data: { isRegistered: false, roundPreferences: null },
     });
@@ -439,17 +480,12 @@ describe("saveRegistration", () => {
   // A save is gated on the role the payload actually names -- not on
   // whether anything is open.
   it("refuses a save for a role the user holds no admission for", async () => {
-    getAllMentorshipRounds.mockResolvedValue({
-      data: [
-        {
-          id: "round-1",
-          timeline: {
-            onboardingDeadlineAt: "2026-02-01T00:00:00Z", // open
-          },
-        },
-      ],
+    getAllMentorshipRounds.mockResolvedValue({ data: [{ id: "round-1" }] });
+    mockSlots({
+      registrationRoundId: "round-1",
+      registrationDeadlineAt: "2026-02-01T00:00:00Z",
+      isRegistrationOpen: true,
     });
-    calculateMentorshipSlots.mockReturnValue({ regRoundId: "round-1" });
     getMyMentorshipRegistration.mockResolvedValue({
       data: { isRegistered: false, roundPreferences: null },
     });
@@ -469,17 +505,12 @@ describe("saveRegistration", () => {
   });
 
   it("refuses a save whose payload names no role at all", async () => {
-    getAllMentorshipRounds.mockResolvedValue({
-      data: [
-        {
-          id: "round-1",
-          timeline: {
-            onboardingDeadlineAt: "2026-02-01T00:00:00Z",
-          },
-        },
-      ],
+    getAllMentorshipRounds.mockResolvedValue({ data: [{ id: "round-1" }] });
+    mockSlots({
+      registrationRoundId: "round-1",
+      registrationDeadlineAt: "2026-02-01T00:00:00Z",
+      isRegistrationOpen: true,
     });
-    calculateMentorshipSlots.mockReturnValue({ regRoundId: "round-1" });
     getMyMentorshipRegistration.mockResolvedValue({
       data: { isRegistered: false, roundPreferences: null },
     });
@@ -503,35 +534,32 @@ describe("registration entries by role", () => {
   const FUTURE = "2026-02-01T00:00:00Z";
 
   /**
-   * A round whose application deadlines disagree with its onboarding
-   * deadline, so the assertion can only pass if the hook gated on the
-   * onboarding deadline.
+   * A round the server reports as open or closed with `deadline`. The
+   * round's own onboarding date says the opposite by the browser's clock,
+   * so the assertion can only pass if the hook took the server's verdict.
    */
-  const mockRoundWith = ({ onboarding, application }) => {
+  const mockRoundWith = ({ deadline, open }) => {
     getAllMentorshipRounds.mockResolvedValue({
       data: [
         {
           id: "round-1",
           name: "2026 Fall",
-          timeline: {
-            mentorApplicationDeadlineAt: application,
-            menteeApplicationDeadlineAt: application,
-            onboardingDeadlineAt: onboarding,
-          },
+          timeline: { onboardingDeadlineAt: open ? PAST : FUTURE },
         },
       ],
     });
-    calculateMentorshipSlots.mockReturnValue({ regRoundId: "round-1" });
+    mockSlots({
+      registrationRoundId: "round-1",
+      registrationRoundName: "2026 Fall",
+      registrationDeadlineAt: deadline,
+      isRegistrationOpen: open,
+    });
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockProfileTimezone();
     useFeatureFlags.mockReturnValue({ "create-google-meeting": false });
-    calculateRoundStatus.mockReturnValue({
-      sortedRounds: [],
-      activeRoundId: null,
-    });
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(MOCK_TODAY));
     // A first-time registrant: registered for nothing, and the role-less
@@ -545,8 +573,8 @@ describe("registration entries by role", () => {
     vi.useRealTimers();
   });
 
-  it("offers one entry per eligible role, each gated on the onboarding deadline", async () => {
-    mockRoundWith({ onboarding: FUTURE, application: PAST });
+  it("offers one entry per eligible role, each gated on the server's verdict", async () => {
+    mockRoundWith({ deadline: FUTURE, open: true });
 
     const { result } = renderHook(() =>
       useMentorshipData({
@@ -564,7 +592,7 @@ describe("registration entries by role", () => {
   });
 
   it("offers a single entry to a single-admission participant", async () => {
-    mockRoundWith({ onboarding: FUTURE, application: PAST });
+    mockRoundWith({ deadline: FUTURE, open: true });
 
     const { result } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentee"] }),
@@ -577,7 +605,7 @@ describe("registration entries by role", () => {
   });
 
   it("offers nothing to someone holding no admission", async () => {
-    mockRoundWith({ onboarding: FUTURE, application: FUTURE });
+    mockRoundWith({ deadline: FUTURE, open: true });
 
     const { result } = renderHook(() => useMentorshipData());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -587,7 +615,7 @@ describe("registration entries by role", () => {
   });
 
   it("collapses to the registered role once the user has registered", async () => {
-    mockRoundWith({ onboarding: FUTURE, application: FUTURE });
+    mockRoundWith({ deadline: FUTURE, open: true });
     getMyMentorshipRegistration.mockResolvedValue({
       data: {
         isRegistered: true,
@@ -608,7 +636,7 @@ describe("registration entries by role", () => {
 
   // A settled role stays reachable read-only after its window shuts.
   it("keeps the registered role's entry after its deadline has passed", async () => {
-    mockRoundWith({ onboarding: PAST, application: FUTURE });
+    mockRoundWith({ deadline: PAST, open: false });
     getMyMentorshipRegistration.mockResolvedValue({
       data: {
         isRegistered: true,
@@ -628,7 +656,7 @@ describe("registration entries by role", () => {
   });
 
   it("asks about the round without naming a role", async () => {
-    mockRoundWith({ onboarding: FUTURE, application: FUTURE });
+    mockRoundWith({ deadline: FUTURE, open: true });
 
     const { result } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentor", "mentee"] }),
@@ -638,8 +666,8 @@ describe("registration entries by role", () => {
     expect(getMyMentorshipRegistration).toHaveBeenCalledWith("round-1");
   });
 
-  it("keeps registration open for a mentor past the application deadline", async () => {
-    mockRoundWith({ onboarding: FUTURE, application: PAST });
+  it("reports registration open for a mentor when the server does", async () => {
+    mockRoundWith({ deadline: FUTURE, open: true });
 
     const { result } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentor"] }),
@@ -649,8 +677,8 @@ describe("registration entries by role", () => {
     expect(result.current.isRegistrationOpen).toBe(true);
   });
 
-  it("keeps registration open for a mentee past the application deadline", async () => {
-    mockRoundWith({ onboarding: FUTURE, application: PAST });
+  it("reports registration open for a mentee when the server does", async () => {
+    mockRoundWith({ deadline: FUTURE, open: true });
 
     const { result } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentee"] }),
@@ -660,8 +688,8 @@ describe("registration entries by role", () => {
     expect(result.current.isRegistrationOpen).toBe(true);
   });
 
-  it("closes registration once the onboarding deadline has passed", async () => {
-    mockRoundWith({ onboarding: PAST, application: FUTURE });
+  it("reports registration closed when the server does", async () => {
+    mockRoundWith({ deadline: PAST, open: false });
 
     const { result } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentor"] }),
@@ -672,7 +700,7 @@ describe("registration entries by role", () => {
   });
 
   it("exposes the deadline and round name the reminder names", async () => {
-    mockRoundWith({ onboarding: FUTURE, application: PAST });
+    mockRoundWith({ deadline: FUTURE, open: true });
 
     const { result } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentor"] }),
@@ -685,7 +713,7 @@ describe("registration entries by role", () => {
 
   it("reports no deadline when no round is in a registration slot", async () => {
     getAllMentorshipRounds.mockResolvedValue({ data: [] });
-    calculateMentorshipSlots.mockReturnValue({ regRoundId: null });
+    mockSlots({ registrationRoundId: null });
 
     const { result } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentor"] }),
@@ -698,7 +726,7 @@ describe("registration entries by role", () => {
   });
 
   it("fetches one role's prefill on demand", async () => {
-    mockRoundWith({ onboarding: FUTURE, application: FUTURE });
+    mockRoundWith({ deadline: FUTURE, open: true });
     const { result } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentor", "mentee"] }),
     );
@@ -724,7 +752,7 @@ describe("registration entries by role", () => {
 
   it("returns nothing from loadRegistrationForRole when no round takes registrations", async () => {
     getAllMentorshipRounds.mockResolvedValue({ data: [] });
-    calculateMentorshipSlots.mockReturnValue({ regRoundId: null });
+    mockSlots({ registrationRoundId: null });
 
     const { result } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentor"] }),
@@ -745,7 +773,7 @@ describe("registration entries by role", () => {
   // banner keeps offering the other role's button, and pressing it
   // unmounts the dialog it just opened.
   it("collapses the entries as soon as a save settles the role", async () => {
-    mockRoundWith({ onboarding: FUTURE, application: FUTURE });
+    mockRoundWith({ deadline: FUTURE, open: true });
     postMyMentorshipRegistration.mockResolvedValue({
       data: {
         isRegistered: true,
@@ -772,7 +800,7 @@ describe("registration entries by role", () => {
   });
 
   it("hands the saved registration back to the caller", async () => {
-    mockRoundWith({ onboarding: FUTURE, application: FUTURE });
+    mockRoundWith({ deadline: FUTURE, open: true });
     const saved = {
       data: {
         isRegistered: true,
@@ -801,7 +829,7 @@ describe("registration entries by role", () => {
   // changes, so an unstable one refetches and overwrites what the user is
   // typing on every parent render.
   it("hands out the same loadRegistrationForRole across renders", async () => {
-    mockRoundWith({ onboarding: FUTURE, application: FUTURE });
+    mockRoundWith({ deadline: FUTURE, open: true });
 
     const { result, rerender } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentor", "mentee"] }),
@@ -821,7 +849,7 @@ describe("registration entries by role", () => {
   // Refreshing after a save settles the round's role, so the other role's
   // entry must stop being offered without waiting for a full reload.
   it("collapses the entries when a refresh reports a new registration", async () => {
-    mockRoundWith({ onboarding: FUTURE, application: FUTURE });
+    mockRoundWith({ deadline: FUTURE, open: true });
 
     const { result } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentor", "mentee"] }),
@@ -854,11 +882,8 @@ describe("refreshMeetings", () => {
     mockProfileTimezone();
     useFeatureFlags.mockReturnValue({ "create-google-meeting": false });
     getAllMentorshipRounds.mockResolvedValue({ data: [mockRound] });
-    calculateMentorshipSlots.mockReturnValue({ regRoundId: null });
-    calculateRoundStatus.mockReturnValue({
-      sortedRounds: [mockRound],
-      activeRoundId: "round-1",
-    });
+    mockSlots({ registrationRoundId: null });
+    mockSlots({ activeRoundId: "round-1" });
   });
 
   it("should build partnerMeetingOverview with merged meeting data", async () => {
@@ -1074,10 +1099,7 @@ describe("refreshMeetings", () => {
   it("ignores a stale round's late response after switching rounds", async () => {
     const round1 = { id: "round-1", name: "R1", requiredMeetings: 5 };
     const round2 = { id: "round-2", name: "R2", requiredMeetings: 5 };
-    calculateRoundStatus.mockReturnValue({
-      sortedRounds: [round1, round2],
-      activeRoundId: "round-1",
-    });
+    mockSlots({ activeRoundId: "round-1" });
     getAllMentorshipRounds.mockResolvedValue({ data: [round1, round2] });
     getMyMentorshipMeetingLog.mockResolvedValue({ data: { meetingInfo: [] } });
 
@@ -1113,10 +1135,7 @@ describe("refreshMeetings", () => {
 
   it("clears loading state after a StrictMode remount", async () => {
     const round1 = { id: "round-1", name: "R1", requiredMeetings: 5 };
-    calculateRoundStatus.mockReturnValue({
-      sortedRounds: [round1],
-      activeRoundId: "round-1",
-    });
+    mockSlots({ activeRoundId: "round-1" });
     getAllMentorshipRounds.mockResolvedValue({ data: [round1] });
     getMyMentorshipMeetingLog.mockResolvedValue({ data: { meetingInfo: [] } });
     getMyMentorshipPartners.mockResolvedValue({
@@ -1142,11 +1161,8 @@ describe("handleRoundChange", () => {
     mockProfileTimezone();
     useFeatureFlags.mockReturnValue({ "create-google-meeting": false });
     getAllMentorshipRounds.mockResolvedValue({ data: [mockRound] });
-    calculateMentorshipSlots.mockReturnValue({ regRoundId: null });
-    calculateRoundStatus.mockReturnValue({
-      sortedRounds: [mockRound],
-      activeRoundId: "round-1",
-    });
+    mockSlots({ registrationRoundId: null });
+    mockSlots({ activeRoundId: "round-1" });
     getMyMentorshipMeetingLog.mockResolvedValue({ data: { meetingInfo: [] } });
     getMyMentorshipPartners.mockResolvedValue({ data: [] });
   });

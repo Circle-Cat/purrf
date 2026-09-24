@@ -59,6 +59,14 @@ class MentorshipEvent(StrEnum):
     MENTOR_ADMITTED = "mentorship.mentor_admitted"
 
 
+class RoundStatus(str, Enum):
+    """Where a round's meeting window stands relative to now."""
+
+    ACTIVE = "active"
+    UPCOMING = "upcoming"
+    COMPLETED = "completed"
+
+
 class ParticipantRole(Enum):
     MENTOR = "mentor"
     MENTEE = "mentee"

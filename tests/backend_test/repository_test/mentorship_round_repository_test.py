@@ -40,33 +40,68 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         ]
 
     async def test_get_all_rounds(self):
-        """Test retrieve all mentorship round entities"""
+        """Test retrieve all mentorship round entities, latest meetings
+        deadline first."""
         await self.insert_entities(self.rounds)
 
         rounds = await self.repo.get_all_rounds(self.session)
 
-        self.assertEqual(len(rounds), len(self.rounds))
+        expected = [self.rounds[1], self.rounds[0]]
+        self.assertEqual(len(rounds), len(expected))
 
-        for i, round_entity in enumerate(rounds):
-            self.assertEqual(round_entity.name, self.rounds[i].name)
+        for round_entity, expected_round in zip(rounds, expected):
+            self.assertEqual(round_entity.name, expected_round.name)
             self.assertAlmostEqual(
-                round_entity.mentee_average_score, self.rounds[i].mentee_average_score
+                round_entity.mentee_average_score, expected_round.mentee_average_score
             )
             self.assertAlmostEqual(
-                round_entity.mentor_average_score, self.rounds[i].mentor_average_score
+                round_entity.mentor_average_score, expected_round.mentor_average_score
             )
-            self.assertEqual(round_entity.expectations, self.rounds[i].expectations)
+            self.assertEqual(round_entity.expectations, expected_round.expectations)
             self.assertEqual(
                 round_entity.onboarding_deadline_at,
-                self.rounds[i].onboarding_deadline_at,
+                expected_round.onboarding_deadline_at,
             )
             self.assertEqual(
                 round_entity.meetings_completion_deadline_at,
-                self.rounds[i].meetings_completion_deadline_at,
+                expected_round.meetings_completion_deadline_at,
             )
             self.assertEqual(
-                round_entity.required_meetings, self.rounds[i].required_meetings
+                round_entity.required_meetings, expected_round.required_meetings
             )
+
+    async def test_get_all_rounds_orders_by_meetings_deadline_then_created(self):
+        """Latest meetings deadline first, rounds without one last, and ties
+        broken by the newest created_datetime. The ids follow neither order,
+        and the two ties break in opposite id directions, so neither id
+        order nor insertion order can pass."""
+
+        def _round(round_id, meetings_deadline, created):
+            return MentorshipRoundEntity(
+                round_id=round_id,
+                name=f"round-{round_id}",
+                required_meetings=5,
+                onboarding_deadline_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                meetings_completion_deadline_at=meetings_deadline,
+                created_datetime=created,
+            )
+
+        june = datetime(2026, 6, 30, tzinfo=timezone.utc)
+        await self.insert_entities([
+            _round(9003, None, datetime(2025, 1, 1, tzinfo=timezone.utc)),
+            _round(9001, june, datetime(2025, 5, 1, tzinfo=timezone.utc)),
+            _round(9004, None, datetime(2025, 3, 1, tzinfo=timezone.utc)),
+            _round(9005, june, datetime(2025, 2, 1, tzinfo=timezone.utc)),
+            _round(
+                9002,
+                datetime(2026, 12, 31, tzinfo=timezone.utc),
+                datetime(2025, 4, 1, tzinfo=timezone.utc),
+            ),
+        ])
+
+        rounds = await self.repo.get_all_rounds(self.session)
+
+        self.assertEqual([r.round_id for r in rounds], [9002, 9001, 9005, 9004, 9003])
 
     async def test_get_all_rounds_empty(self):
         """Test retrieve an empty list when no mentorship rounds exist."""
@@ -518,8 +553,8 @@ class TestMentorShipRoundRepository(BaseRepositoryTestLib):
         )
 
 
-class TestGetOpenMentorRegistrationRound(BaseRepositoryTestLib):
-    """The round a newly admitted mentor should be pointed at."""
+class TestGetOpenRegistrationRound(BaseRepositoryTestLib):
+    """The round open for registration at a given instant."""
 
     # Before self.now, so these fixtures vary only the deadlines.
     PROMOTION_STARTED = datetime(2026, 8, 1, 7, 0, tzinfo=timezone.utc)
@@ -546,11 +581,7 @@ class TestGetOpenMentorRegistrationRound(BaseRepositoryTestLib):
         )
 
     async def _select(self):
-        with patch(
-            "backend.repository.mentorship_round_repository.datetime"
-        ) as mock_datetime:
-            mock_datetime.now.return_value = self.now
-            return await self.repo.get_open_mentor_registration_round(self.session)
+        return await self.repo.get_open_registration_round(self.session, self.now)
 
     async def test_returns_the_round_closing_soonest(self):
         """Two windows open at once: the one whose onboarding deadline is
@@ -567,6 +598,28 @@ class TestGetOpenMentorRegistrationRound(BaseRepositoryTestLib):
             onboarding_deadline_at=datetime(2026, 9, 30, 23, 59, tzinfo=timezone.utc),
         )
         await self.insert_entities([later, sooner])
+
+        selected = await self._select()
+
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected.name, "2026 Fall")
+
+    async def test_closing_soonest_wins_over_latest_promoted(self):
+        """While windows overlap, the round closing soonest wins even though
+        another open round started promoting more recently, so the
+        latest-promoted rule would pick the other one."""
+        await self.insert_entities([
+            self._round(
+                "2027 Spring",
+                promotion_start_at=datetime(2026, 8, 10, tzinfo=timezone.utc),
+                onboarding_deadline_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
+            ),
+            self._round(
+                "2026 Fall",
+                promotion_start_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+                onboarding_deadline_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+            ),
+        ])
 
         selected = await self._select()
 
@@ -607,15 +660,44 @@ class TestGetOpenMentorRegistrationRound(BaseRepositoryTestLib):
 
         self.assertIsNone(await self._select())
 
-    async def test_ignores_rounds_whose_promotion_has_not_started(self):
-        """The deadline alone does not mean a mentor can act.
+    async def test_closed_at_the_onboarding_deadline_itself(self):
+        """The deadline instant is already closed."""
+        await self.insert_entities([
+            self._round("2026 Fall", onboarding_deadline_at=self.now)
+        ])
 
-        Registration only surfaces on the Personal Dashboard once promotion
-        has started (``currentRegRound`` in mentorshipRounds.js requires it),
-        so a round in the gap between admission and promotion has nothing for
-        the mentor to open. Pointing them at it would send them to an empty
-        dashboard.
-        """
+        self.assertIsNone(await self._select())
+
+    async def test_open_one_microsecond_before_the_onboarding_deadline(self):
+        await self.insert_entities([
+            self._round(
+                "2026 Fall",
+                onboarding_deadline_at=self.now + timedelta(microseconds=1),
+            )
+        ])
+
+        selected = await self._select()
+
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected.name, "2026 Fall")
+
+    async def test_open_from_the_promotion_start_itself(self):
+        await self.insert_entities([
+            self._round(
+                "2026 Fall",
+                promotion_start_at=self.now,
+                onboarding_deadline_at=datetime(2026, 9, 30, tzinfo=timezone.utc),
+            )
+        ])
+
+        selected = await self._select()
+
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected.name, "2026 Fall")
+
+    async def test_ignores_rounds_whose_promotion_has_not_started(self):
+        """The deadline alone does not open registration: a round in the gap
+        between admission and promotion has nothing to register for yet."""
         await self.insert_entities([
             self._round(
                 "2026 Fall",
@@ -629,7 +711,7 @@ class TestGetOpenMentorRegistrationRound(BaseRepositoryTestLib):
     async def test_prefers_the_soonest_deadline_among_promoted_rounds(self):
         """Ordering is by deadline, but only rounds already promoting are
         candidates -- a sooner deadline that has not started promoting yet
-        must not shadow the round the mentor can actually register for."""
+        must not shadow the round that can actually be registered for."""
         await self.insert_entities([
             self._round(
                 "2026 Fall",
@@ -648,8 +730,6 @@ class TestGetOpenMentorRegistrationRound(BaseRepositoryTestLib):
         self.assertEqual(selected.name, "2026 Summer")
 
     async def test_ignores_rounds_without_a_promotion_start(self):
-        """A round missing the field is invalid to the dashboard too --
-        mentorshipRounds.js filters it out before any slot is computed."""
         await self.insert_entities([
             self._round(
                 "2026 Fall",
@@ -660,8 +740,226 @@ class TestGetOpenMentorRegistrationRound(BaseRepositoryTestLib):
 
         self.assertIsNone(await self._select())
 
+    async def test_open_round_is_independent_of_a_round_in_feedback(self):
+        """A round in its feedback phase and a round open for registration
+        coexist: each query reports its own round."""
+        await self.insert_entities([
+            MentorshipRoundEntity(
+                name="2026 Spring",
+                required_meetings=5,
+                promotion_start_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                onboarding_deadline_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+                meetings_completion_deadline_at=datetime(
+                    2026, 8, 1, tzinfo=timezone.utc
+                ),
+                feedback_deadline_at=datetime(2026, 8, 30, tzinfo=timezone.utc),
+            ),
+            self._round(
+                "2026 Fall",
+                onboarding_deadline_at=datetime(2026, 8, 25, tzinfo=timezone.utc),
+            ),
+        ])
+
+        selected = await self._select()
+
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected.name, "2026 Fall")
+        self.assertTrue(await self.repo.has_round_in_feedback(self.session, self.now))
+
     async def test_returns_none_when_no_round_qualifies(self):
         self.assertIsNone(await self._select())
+
+
+class TestGetLatestPromotedRound(BaseRepositoryTestLib):
+    """The most recently promoted round, kept viewable once registration
+    has closed."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.repo = MentorshipRoundRepository()
+        self.now = datetime(2026, 8, 15, tzinfo=timezone.utc)
+
+    def _round(
+        self,
+        name: str,
+        promotion_start_at: datetime | None,
+        onboarding_deadline_at: datetime,
+    ) -> MentorshipRoundEntity:
+        return MentorshipRoundEntity(
+            name=name,
+            required_meetings=5,
+            promotion_start_at=promotion_start_at,
+            onboarding_deadline_at=onboarding_deadline_at,
+        )
+
+    async def _select(self):
+        return await self.repo.get_latest_promoted_round(self.session, self.now)
+
+    async def test_picks_the_latest_promotion_start_among_started_rounds(self):
+        """The expected round is neither first nor last inserted, and its
+        onboarding deadline is neither the earliest nor the latest, so id
+        order or a deadline order would pick another round. The rounds not
+        yet promoted, or never, would win if they were not excluded."""
+        await self.insert_entities([
+            self._round(
+                "2026 Spring",
+                datetime(2026, 1, 1, tzinfo=timezone.utc),
+                datetime(2026, 12, 1, tzinfo=timezone.utc),
+            ),
+            self._round(
+                "2026 Fall",
+                datetime(2026, 7, 1, tzinfo=timezone.utc),
+                datetime(2026, 8, 1, tzinfo=timezone.utc),
+            ),
+            self._round(
+                "2027 Spring",
+                datetime(2026, 8, 20, tzinfo=timezone.utc),
+                datetime(2026, 9, 30, tzinfo=timezone.utc),
+            ),
+            self._round(
+                "Unscheduled",
+                None,
+                datetime(2026, 7, 15, tzinfo=timezone.utc),
+            ),
+            self._round(
+                "2026 Summer",
+                datetime(2026, 3, 1, tzinfo=timezone.utc),
+                datetime(2026, 3, 20, tzinfo=timezone.utc),
+            ),
+        ])
+
+        selected = await self._select()
+
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected.name, "2026 Fall")
+
+    async def test_returns_a_round_whose_registration_has_closed(self):
+        await self.insert_entities([
+            self._round(
+                "2026 Fall",
+                datetime(2026, 7, 1, tzinfo=timezone.utc),
+                datetime(2026, 8, 1, tzinfo=timezone.utc),
+            )
+        ])
+
+        selected = await self._select()
+
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected.name, "2026 Fall")
+
+    async def test_includes_a_round_promoted_at_now_itself(self):
+        await self.insert_entities([
+            self._round(
+                "2026 Fall",
+                self.now,
+                datetime(2026, 9, 30, tzinfo=timezone.utc),
+            )
+        ])
+
+        selected = await self._select()
+
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected.name, "2026 Fall")
+
+    async def test_returns_none_when_no_round_has_started_promotion(self):
+        await self.insert_entities([
+            self._round(
+                "2027 Spring",
+                self.now + timedelta(microseconds=1),
+                datetime(2026, 9, 30, tzinfo=timezone.utc),
+            ),
+            self._round(
+                "Unscheduled",
+                None,
+                datetime(2026, 7, 15, tzinfo=timezone.utc),
+            ),
+        ])
+
+        self.assertIsNone(await self._select())
+
+    async def test_returns_none_when_no_rounds_exist(self):
+        self.assertIsNone(await self._select())
+
+
+class TestHasRoundInFeedback(BaseRepositoryTestLib):
+    """Whether any promoted round sits between its meetings deadline and
+    its feedback deadline."""
+
+    MEETINGS_DEADLINE = datetime(2026, 8, 1, 6, 59, 59, tzinfo=timezone.utc)
+    FEEDBACK_DEADLINE = datetime(2026, 8, 20, 6, 59, 59, tzinfo=timezone.utc)
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.repo = MentorshipRoundRepository()
+
+    async def _seed(
+        self,
+        *,
+        promotion_start_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+        meetings_completion_deadline_at=MEETINGS_DEADLINE,
+        feedback_deadline_at=FEEDBACK_DEADLINE,
+    ):
+        await self.insert_entities([
+            MentorshipRoundEntity(
+                name="2026 Spring",
+                required_meetings=5,
+                promotion_start_at=promotion_start_at,
+                onboarding_deadline_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+                meetings_completion_deadline_at=meetings_completion_deadline_at,
+                feedback_deadline_at=feedback_deadline_at,
+            )
+        ])
+
+    async def test_bounds_are_inclusive_on_both_ends(self):
+        await self._seed()
+        micro = timedelta(microseconds=1)
+        cases = (
+            (self.MEETINGS_DEADLINE - micro, False),
+            (self.MEETINGS_DEADLINE, True),
+            (datetime(2026, 8, 10, tzinfo=timezone.utc), True),
+            (self.FEEDBACK_DEADLINE, True),
+            (self.FEEDBACK_DEADLINE + micro, False),
+        )
+
+        for now, expected in cases:
+            with self.subTest(now=now):
+                self.assertEqual(
+                    await self.repo.has_round_in_feedback(self.session, now), expected
+                )
+
+    async def test_false_without_a_feedback_deadline(self):
+        await self._seed(feedback_deadline_at=None)
+
+        self.assertFalse(
+            await self.repo.has_round_in_feedback(
+                self.session, datetime(2026, 8, 10, tzinfo=timezone.utc)
+            )
+        )
+
+    async def test_false_without_a_promotion_start(self):
+        await self._seed(promotion_start_at=None)
+
+        self.assertFalse(
+            await self.repo.has_round_in_feedback(
+                self.session, datetime(2026, 8, 10, tzinfo=timezone.utc)
+            )
+        )
+
+    async def test_false_without_a_meetings_deadline(self):
+        await self._seed(meetings_completion_deadline_at=None)
+
+        self.assertFalse(
+            await self.repo.has_round_in_feedback(
+                self.session, datetime(2026, 8, 10, tzinfo=timezone.utc)
+            )
+        )
+
+    async def test_false_when_no_rounds_exist(self):
+        self.assertFalse(
+            await self.repo.has_round_in_feedback(
+                self.session, datetime(2026, 8, 10, tzinfo=timezone.utc)
+            )
+        )
 
 
 if __name__ == "__main__":

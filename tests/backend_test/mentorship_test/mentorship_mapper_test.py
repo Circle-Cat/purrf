@@ -1,6 +1,6 @@
 import unittest
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from backend.dto.preference_dto import (
     SpecificIndustryDto,
@@ -19,8 +19,9 @@ from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
-from backend.mentorship.mentorship_mapper import MentorshipMapper
+from backend.mentorship.mentorship_mapper import MentorshipMapper, round_status
 from backend.common.mentorship_enums import (
+    RoundStatus,
     CommunicationMethod,
     ParticipantRole,
     PairStatus,
@@ -894,6 +895,158 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertTrue(dto.is_completed)
         self.assertEqual(dto.note, [MeetingNoteTag.MENTOR_LATE])
         self.assertEqual(dto.create_datetime, "2026-05-05T09:55:00")
+
+
+class TestRoundStatus(unittest.TestCase):
+    """round_status places a round's meeting window relative to now."""
+
+    NOW = datetime(2026, 3, 18, 12, 0, tzinfo=timezone.utc)
+    MICRO = timedelta(microseconds=1)
+
+    def _round(
+        self,
+        round_id=1,
+        promotion_start_at=None,
+        match_notification_at=None,
+        meetings_completion_deadline_at=None,
+    ) -> MentorshipRoundEntity:
+        return MentorshipRoundEntity(
+            round_id=round_id,
+            name=f"round-{round_id}",
+            required_meetings=5,
+            onboarding_deadline_at=datetime(2026, 1, 20, tzinfo=timezone.utc),
+            promotion_start_at=promotion_start_at,
+            match_notification_at=match_notification_at,
+            meetings_completion_deadline_at=meetings_completion_deadline_at,
+        )
+
+    def test_active_inside_the_window(self):
+        r = self._round(
+            match_notification_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            meetings_completion_deadline_at=datetime(2026, 12, 31, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(round_status(r, self.NOW), RoundStatus.ACTIVE)
+
+    def test_active_on_both_bounds(self):
+        r = self._round(
+            match_notification_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            meetings_completion_deadline_at=datetime(2026, 12, 31, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(round_status(r, r.match_notification_at), RoundStatus.ACTIVE)
+        self.assertEqual(
+            round_status(r, r.meetings_completion_deadline_at), RoundStatus.ACTIVE
+        )
+
+    def test_upcoming_just_before_the_start(self):
+        r = self._round(
+            match_notification_at=self.NOW + self.MICRO,
+            meetings_completion_deadline_at=datetime(2026, 12, 31, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(round_status(r, self.NOW), RoundStatus.UPCOMING)
+
+    def test_completed_just_after_the_end(self):
+        r = self._round(
+            match_notification_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            meetings_completion_deadline_at=self.NOW - self.MICRO,
+        )
+
+        self.assertEqual(round_status(r, self.NOW), RoundStatus.COMPLETED)
+
+    def test_falls_back_to_promotion_start_without_a_match_notification(self):
+        r = self._round(
+            promotion_start_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            meetings_completion_deadline_at=datetime(2026, 12, 31, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(round_status(r, self.NOW), RoundStatus.ACTIVE)
+        self.assertEqual(
+            round_status(r, r.promotion_start_at - self.MICRO), RoundStatus.UPCOMING
+        )
+
+    def test_match_notification_takes_precedence_over_promotion_start(self):
+        """Promotion has started but matching has not, so the window has not
+        opened; reading promotion_start_at would call it active."""
+        r = self._round(
+            promotion_start_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            match_notification_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+            meetings_completion_deadline_at=datetime(2026, 12, 31, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(round_status(r, self.NOW), RoundStatus.UPCOMING)
+
+    def test_upcoming_with_only_a_future_start(self):
+        r = self._round(match_notification_at=datetime(2026, 4, 1, tzinfo=timezone.utc))
+
+        self.assertEqual(round_status(r, self.NOW), RoundStatus.UPCOMING)
+
+    def test_completed_with_only_a_past_end(self):
+        r = self._round(
+            meetings_completion_deadline_at=datetime(2026, 3, 1, tzinfo=timezone.utc)
+        )
+
+        self.assertEqual(round_status(r, self.NOW), RoundStatus.COMPLETED)
+
+    def test_none_when_the_bound_a_status_needs_is_missing(self):
+        cases = {
+            "no bounds": self._round(),
+            "started, no end": self._round(
+                match_notification_at=datetime(2026, 1, 1, tzinfo=timezone.utc)
+            ),
+            "end ahead, no start": self._round(
+                meetings_completion_deadline_at=datetime(
+                    2026, 12, 31, tzinfo=timezone.utc
+                )
+            ),
+        }
+
+        for label, r in cases.items():
+            with self.subTest(label):
+                self.assertIsNone(round_status(r, self.NOW))
+
+    def test_map_to_rounds_dto_evaluates_status_at_the_given_now(self):
+        rounds = [
+            self._round(
+                round_id=1,
+                match_notification_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                meetings_completion_deadline_at=datetime(
+                    2026, 12, 31, tzinfo=timezone.utc
+                ),
+            ),
+            self._round(
+                round_id=2,
+                promotion_start_at=datetime(2026, 5, 1, tzinfo=timezone.utc),
+                meetings_completion_deadline_at=datetime(
+                    2026, 12, 31, tzinfo=timezone.utc
+                ),
+            ),
+            self._round(
+                round_id=3,
+                meetings_completion_deadline_at=datetime(
+                    2026, 2, 1, tzinfo=timezone.utc
+                ),
+            ),
+            self._round(round_id=4),
+        ]
+
+        dtos = MentorshipMapper().map_to_rounds_dto(rounds, now=self.NOW)
+
+        self.assertEqual(
+            [(d.id, d.status) for d in dtos],
+            [
+                (1, RoundStatus.ACTIVE),
+                (2, RoundStatus.UPCOMING),
+                (3, RoundStatus.COMPLETED),
+                (4, None),
+            ],
+        )
+
+        later = MentorshipMapper().map_to_rounds_dto(
+            rounds[:1], now=datetime(2027, 1, 1, tzinfo=timezone.utc)
+        )
+        self.assertEqual(later[0].status, RoundStatus.COMPLETED)
 
 
 if __name__ == "__main__":
