@@ -1,6 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, AsyncMock
+from pydantic import ValidationError
 from backend.mentorship.rounds_service import RoundsService
 from backend.dto.rounds_dto import RoundsDto
 from backend.dto.rounds_create_dto import TimelineCreateDto
@@ -118,8 +119,6 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
         self._use_real_mapper()
         new_round = RoundsCreateDto(
             name="2026-spring",
-            mentee_average_score=4.5,
-            mentor_average_score=5.0,
             expectations="Expectations text",
             timeline=self.timeline_data,
             required_meetings=5,
@@ -141,8 +140,8 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.id, 1)
         self.assertEqual(result.name, "2026-spring")
-        self.assertEqual(result.mentee_average_score, 4.5)
-        self.assertEqual(result.mentor_average_score, 5.0)
+        self.assertIsNone(result.mentee_average_score)
+        self.assertIsNone(result.mentor_average_score)
         self.assertEqual(result.expectations, "Expectations text")
         self.assertEqual(result.required_meetings, 5)
         self.assertEqual(
@@ -192,8 +191,6 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
         updated_round = RoundsCreateDto(
             id=1,
             name="Updated Round",
-            mentee_average_score=4.0,
-            mentor_average_score=4.8,
             expectations="Updated expectations",
             timeline=timeline,
             required_meetings=3,
@@ -210,8 +207,11 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.id, 1)
         self.assertEqual(result.name, "Updated Round")
-        self.assertEqual(result.mentee_average_score, 4.0)
-        self.assertEqual(result.mentor_average_score, 4.8)
+        # Saving the round keeps the averages feedback produced.
+        self.assertEqual(existing_round.mentee_average_score, 3.5)
+        self.assertEqual(existing_round.mentor_average_score, 4.0)
+        self.assertEqual(result.mentee_average_score, 3.5)
+        self.assertEqual(result.mentor_average_score, 4.0)
         self.assertEqual(result.expectations, "Updated expectations")
         self.assertEqual(result.required_meetings, 3)
         self.assertEqual(result.timeline.feedback_start_at, stored_feedback_start)
@@ -225,8 +225,6 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
         not_found_round = RoundsCreateDto(
             id=999,
             name="Non-existent Round",
-            mentee_average_score=4.5,
-            mentor_average_score=5.0,
             expectations="Expectations text",
             timeline=self.timeline_data,
             required_meetings=5,
@@ -236,6 +234,18 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ValueError, msg="Round with given ID does not exist."):
             await self.service.upsert_rounds(self.mock_session, not_found_round)
+
+    def test_round_request_cannot_carry_average_scores(self):
+        """The averages are derived from feedback, so a request naming one
+        is rejected rather than silently written."""
+        for field in ("mentee_average_score", "mentor_average_score"):
+            with self.subTest(field=field), self.assertRaises(ValidationError):
+                RoundsCreateDto(
+                    name="2026-spring",
+                    timeline=self.timeline_data,
+                    required_meetings=5,
+                    **{field: 4.5},
+                )
 
 
 if __name__ == "__main__":

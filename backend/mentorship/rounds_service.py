@@ -83,8 +83,9 @@ class RoundsService:
                 raise ValueError("Round with given ID does not exist.")
 
         round.name = data.name
-        round.mentee_average_score = data.mentee_average_score
-        round.mentor_average_score = data.mentor_average_score
+        # The two average scores are not taken from the request: they are
+        # derived from submitted feedback (ParticipationService), and the round
+        # form never sends them, so copying them would clear them on every edit.
         round.expectations = data.expectations
         # Only the dates the caller sent are written: an omitted one keeps its
         # stored value, an explicit null clears it.
