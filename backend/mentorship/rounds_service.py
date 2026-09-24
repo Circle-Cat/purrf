@@ -86,18 +86,13 @@ class RoundsService:
         round.mentee_average_score = data.mentee_average_score
         round.mentor_average_score = data.mentor_average_score
         round.expectations = data.expectations
-        round.description = data.timeline.model_dump(mode="json", exclude_none=True)
+        # Only the dates the caller sent are written: an omitted one keeps its
+        # stored value, an explicit null clears it.
+        for field in data.timeline.model_fields_set:
+            setattr(round, field, getattr(data.timeline, field))
         round.required_meetings = data.required_meetings
 
         round = await self.mentorship_round_repository.upsert_round(session, round)
         await session.commit()
 
-        return RoundsDto(
-            id=round.round_id,
-            name=round.name,
-            mentee_average_score=round.mentee_average_score,
-            mentor_average_score=round.mentor_average_score,
-            expectations=round.expectations,
-            required_meetings=round.required_meetings,
-            timeline=data.timeline,
-        )
+        return self.mentorship_mapper.map_to_rounds_dto([round])[0]

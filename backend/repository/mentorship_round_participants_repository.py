@@ -20,7 +20,7 @@ from backend.common.mentorship_enums import (
 from backend.common.recruiting_enums import ApplicationStage, JobKind
 from backend.dto.participant_search_row_dto import ParticipantSearchRow
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
-from sqlalchemy import TIMESTAMP, Float, case, cast, func, select, and_, or_, not_
+from sqlalchemy import Float, case, cast, func, select, and_, or_, not_
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -81,18 +81,9 @@ class MentorshipRoundParticipantsRepository:
             )
             .where(
                 MentorshipRoundParticipantsEntity.user_id == user_id,
-                MentorshipRoundEntity.description[
-                    "meetings_completion_deadline_at"
-                ].astext.isnot(None),
+                MentorshipRoundEntity.meetings_completion_deadline_at.isnot(None),
             )
-            .order_by(
-                cast(
-                    MentorshipRoundEntity.description[
-                        "meetings_completion_deadline_at"
-                    ].astext,
-                    TIMESTAMP(timezone=True),
-                ).desc()
-            )
+            .order_by(MentorshipRoundEntity.meetings_completion_deadline_at.desc())
             .limit(1)
         )
 
@@ -133,18 +124,9 @@ class MentorshipRoundParticipantsRepository:
             .where(
                 MentorshipRoundParticipantsEntity.user_id == user_id,
                 MentorshipRoundParticipantsEntity.participant_role == participant_role,
-                MentorshipRoundEntity.description[
-                    "meetings_completion_deadline_at"
-                ].astext.isnot(None),
+                MentorshipRoundEntity.meetings_completion_deadline_at.isnot(None),
             )
-            .order_by(
-                cast(
-                    MentorshipRoundEntity.description[
-                        "meetings_completion_deadline_at"
-                    ].astext,
-                    TIMESTAMP(timezone=True),
-                ).desc()
-            )
+            .order_by(MentorshipRoundEntity.meetings_completion_deadline_at.desc())
             .limit(1)
         )
 

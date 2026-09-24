@@ -375,8 +375,9 @@ describe("saveRegistration", () => {
         {
           id: "round-1",
           timeline: {
-            mentorApplicationDeadlineAt: "2026-01-01T00:00:00Z", // before MOCK_TODAY
-            menteeApplicationDeadlineAt: "2026-01-01T00:00:00Z", // before MOCK_TODAY
+            mentorApplicationDeadlineAt: "2026-02-01T00:00:00Z", // after MOCK_TODAY
+            menteeApplicationDeadlineAt: "2026-02-01T00:00:00Z", // after MOCK_TODAY
+            onboardingDeadlineAt: "2026-01-01T00:00:00Z", // before MOCK_TODAY
           },
         },
       ],
@@ -406,8 +407,9 @@ describe("saveRegistration", () => {
         {
           id: "round-1",
           timeline: {
-            mentorApplicationDeadlineAt: "2026-02-01T00:00:00Z", // after MOCK_TODAY
-            menteeApplicationDeadlineAt: "2026-02-01T00:00:00Z", // after MOCK_TODAY
+            mentorApplicationDeadlineAt: "2026-01-01T00:00:00Z", // before MOCK_TODAY
+            menteeApplicationDeadlineAt: "2026-01-01T00:00:00Z", // before MOCK_TODAY
+            onboardingDeadlineAt: "2026-02-01T00:00:00Z", // after MOCK_TODAY
           },
         },
       ],
@@ -434,16 +436,15 @@ describe("saveRegistration", () => {
     );
   });
 
-  // Each role has its own window, so a save is gated on the window of the
-  // role the payload actually names -- not on whether anything is open.
-  it("refuses a save for a role whose own window has closed", async () => {
+  // A save is gated on the role the payload actually names -- not on
+  // whether anything is open.
+  it("refuses a save for a role the user holds no admission for", async () => {
     getAllMentorshipRounds.mockResolvedValue({
       data: [
         {
           id: "round-1",
           timeline: {
-            mentorApplicationDeadlineAt: "2026-01-01T00:00:00Z", // closed
-            menteeApplicationDeadlineAt: "2026-02-01T00:00:00Z", // open
+            onboardingDeadlineAt: "2026-02-01T00:00:00Z", // open
           },
         },
       ],
@@ -454,7 +455,7 @@ describe("saveRegistration", () => {
     });
 
     const { result } = renderHook(() =>
-      useMentorshipData({ hiredMentorshipRoles: ["mentor", "mentee"] }),
+      useMentorshipData({ hiredMentorshipRoles: ["mentee"] }),
     );
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -473,8 +474,7 @@ describe("saveRegistration", () => {
         {
           id: "round-1",
           timeline: {
-            mentorApplicationDeadlineAt: "2026-02-01T00:00:00Z",
-            menteeApplicationDeadlineAt: "2026-02-01T00:00:00Z",
+            onboardingDeadlineAt: "2026-02-01T00:00:00Z",
           },
         },
       ],
@@ -501,21 +501,22 @@ describe("registration entries by role", () => {
   const MOCK_TODAY = "2026-01-15T00:00:00Z";
   const PAST = "2026-01-01T00:00:00Z";
   const FUTURE = "2026-02-01T00:00:00Z";
-  const LATER = "2026-03-01T00:00:00Z";
 
   /**
-   * A round whose two role deadlines disagree, so the assertion can only
-   * pass if the hook read the right one for each role.
+   * A round whose application deadlines disagree with its onboarding
+   * deadline, so the assertion can only pass if the hook gated on the
+   * onboarding deadline.
    */
-  const mockRoundWith = ({ mentor, mentee }) => {
+  const mockRoundWith = ({ onboarding, application }) => {
     getAllMentorshipRounds.mockResolvedValue({
       data: [
         {
           id: "round-1",
           name: "2026 Fall",
           timeline: {
-            mentorApplicationDeadlineAt: mentor,
-            menteeApplicationDeadlineAt: mentee,
+            mentorApplicationDeadlineAt: application,
+            menteeApplicationDeadlineAt: application,
+            onboardingDeadlineAt: onboarding,
           },
         },
       ],
@@ -544,8 +545,8 @@ describe("registration entries by role", () => {
     vi.useRealTimers();
   });
 
-  it("offers one entry per eligible role, each gated on its own deadline", async () => {
-    mockRoundWith({ mentor: FUTURE, mentee: PAST });
+  it("offers one entry per eligible role, each gated on the onboarding deadline", async () => {
+    mockRoundWith({ onboarding: FUTURE, application: PAST });
 
     const { result } = renderHook(() =>
       useMentorshipData({
@@ -557,13 +558,13 @@ describe("registration entries by role", () => {
 
     expect(result.current.registrationEntries).toEqual([
       { role: "mentor", deadlineAt: FUTURE, isOpen: true },
-      { role: "mentee", deadlineAt: PAST, isOpen: false },
+      { role: "mentee", deadlineAt: FUTURE, isOpen: true },
     ]);
     expect(result.current.registeredRole).toBeNull();
   });
 
   it("offers a single entry to a single-admission participant", async () => {
-    mockRoundWith({ mentor: PAST, mentee: FUTURE });
+    mockRoundWith({ onboarding: FUTURE, application: PAST });
 
     const { result } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentee"] }),
@@ -576,7 +577,7 @@ describe("registration entries by role", () => {
   });
 
   it("offers nothing to someone holding no admission", async () => {
-    mockRoundWith({ mentor: FUTURE, mentee: FUTURE });
+    mockRoundWith({ onboarding: FUTURE, application: FUTURE });
 
     const { result } = renderHook(() => useMentorshipData());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -586,7 +587,7 @@ describe("registration entries by role", () => {
   });
 
   it("collapses to the registered role once the user has registered", async () => {
-    mockRoundWith({ mentor: FUTURE, mentee: FUTURE });
+    mockRoundWith({ onboarding: FUTURE, application: FUTURE });
     getMyMentorshipRegistration.mockResolvedValue({
       data: {
         isRegistered: true,
@@ -607,7 +608,7 @@ describe("registration entries by role", () => {
 
   // A settled role stays reachable read-only after its window shuts.
   it("keeps the registered role's entry after its deadline has passed", async () => {
-    mockRoundWith({ mentor: FUTURE, mentee: PAST });
+    mockRoundWith({ onboarding: PAST, application: FUTURE });
     getMyMentorshipRegistration.mockResolvedValue({
       data: {
         isRegistered: true,
@@ -627,7 +628,7 @@ describe("registration entries by role", () => {
   });
 
   it("asks about the round without naming a role", async () => {
-    mockRoundWith({ mentor: FUTURE, mentee: FUTURE });
+    mockRoundWith({ onboarding: FUTURE, application: FUTURE });
 
     const { result } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentor", "mentee"] }),
@@ -637,8 +638,8 @@ describe("registration entries by role", () => {
     expect(getMyMentorshipRegistration).toHaveBeenCalledWith("round-1");
   });
 
-  it("measures a first-time mentor against the mentor deadline", async () => {
-    mockRoundWith({ mentor: FUTURE, mentee: PAST });
+  it("keeps registration open for a mentor past the application deadline", async () => {
+    mockRoundWith({ onboarding: FUTURE, application: PAST });
 
     const { result } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentor"] }),
@@ -648,8 +649,8 @@ describe("registration entries by role", () => {
     expect(result.current.isRegistrationOpen).toBe(true);
   });
 
-  it("measures a first-time mentee against the mentee deadline", async () => {
-    mockRoundWith({ mentor: PAST, mentee: FUTURE });
+  it("keeps registration open for a mentee past the application deadline", async () => {
+    mockRoundWith({ onboarding: FUTURE, application: PAST });
 
     const { result } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentee"] }),
@@ -659,8 +660,8 @@ describe("registration entries by role", () => {
     expect(result.current.isRegistrationOpen).toBe(true);
   });
 
-  it("closes registration for a mentor once the mentor deadline has passed", async () => {
-    mockRoundWith({ mentor: PAST, mentee: FUTURE });
+  it("closes registration once the onboarding deadline has passed", async () => {
+    mockRoundWith({ onboarding: PAST, application: FUTURE });
 
     const { result } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentor"] }),
@@ -671,7 +672,7 @@ describe("registration entries by role", () => {
   });
 
   it("exposes the deadline and round name the reminder names", async () => {
-    mockRoundWith({ mentor: FUTURE, mentee: PAST });
+    mockRoundWith({ onboarding: FUTURE, application: PAST });
 
     const { result } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentor"] }),
@@ -680,20 +681,6 @@ describe("registration entries by role", () => {
 
     expect(result.current.registrationDeadlineAt).toBe(FUTURE);
     expect(result.current.regRoundName).toBe("2026 Fall");
-  });
-
-  // The reminder names one date, so with two windows still open it names
-  // the one that runs out first.
-  it("names the earliest still-open window when both roles are open", async () => {
-    mockRoundWith({ mentor: LATER, mentee: FUTURE });
-
-    const { result } = renderHook(() =>
-      useMentorshipData({ hiredMentorshipRoles: ["mentor", "mentee"] }),
-    );
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-    expect(result.current.isRegistrationOpen).toBe(true);
-    expect(result.current.registrationDeadlineAt).toBe(FUTURE);
   });
 
   it("reports no deadline when no round is in a registration slot", async () => {
@@ -711,7 +698,7 @@ describe("registration entries by role", () => {
   });
 
   it("fetches one role's prefill on demand", async () => {
-    mockRoundWith({ mentor: FUTURE, mentee: FUTURE });
+    mockRoundWith({ onboarding: FUTURE, application: FUTURE });
     const { result } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentor", "mentee"] }),
     );
@@ -758,7 +745,7 @@ describe("registration entries by role", () => {
   // banner keeps offering the other role's button, and pressing it
   // unmounts the dialog it just opened.
   it("collapses the entries as soon as a save settles the role", async () => {
-    mockRoundWith({ mentor: FUTURE, mentee: FUTURE });
+    mockRoundWith({ onboarding: FUTURE, application: FUTURE });
     postMyMentorshipRegistration.mockResolvedValue({
       data: {
         isRegistered: true,
@@ -785,7 +772,7 @@ describe("registration entries by role", () => {
   });
 
   it("hands the saved registration back to the caller", async () => {
-    mockRoundWith({ mentor: FUTURE, mentee: FUTURE });
+    mockRoundWith({ onboarding: FUTURE, application: FUTURE });
     const saved = {
       data: {
         isRegistered: true,
@@ -814,7 +801,7 @@ describe("registration entries by role", () => {
   // changes, so an unstable one refetches and overwrites what the user is
   // typing on every parent render.
   it("hands out the same loadRegistrationForRole across renders", async () => {
-    mockRoundWith({ mentor: FUTURE, mentee: FUTURE });
+    mockRoundWith({ onboarding: FUTURE, application: FUTURE });
 
     const { result, rerender } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentor", "mentee"] }),
@@ -834,7 +821,7 @@ describe("registration entries by role", () => {
   // Refreshing after a save settles the round's role, so the other role's
   // entry must stop being offered without waiting for a full reload.
   it("collapses the entries when a refresh reports a new registration", async () => {
-    mockRoundWith({ mentor: FUTURE, mentee: FUTURE });
+    mockRoundWith({ onboarding: FUTURE, application: FUTURE });
 
     const { result } = renderHook(() =>
       useMentorshipData({ hiredMentorshipRoles: ["mentor", "mentee"] }),

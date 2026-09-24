@@ -13,7 +13,6 @@ import {
   calculateMentorshipSlots,
   calculateRoundStatus,
 } from "@/pages/PersonalDashboard/utils/mentorshipRounds";
-import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { useRequestGuard } from "@/hooks/useRequestGuard";
@@ -39,8 +38,8 @@ const DEFAULT_TIMEZONE = "America/Los_Angeles";
  *
  * @param {{enabled?: boolean, hiredMentorshipRoles?: Array<"mentor"|"mentee">}} params -
  *   `hiredMentorshipRoles` lists every role the user's admissions qualify
- *   them to register under. A round carries one deadline per role, so each
- *   of them is measured against its own.
+ *   them to register under. Every role's registration closes at the round's
+ *   onboarding deadline.
  * @returns {{
  *   regRoundId: string | null,
  *   regRoundName: string,
@@ -191,20 +190,14 @@ export const useMentorshipData = ({
             (r) => r.id?.toString() === status.regRoundId?.toString(),
           );
           setRegRoundName(regRound?.name ?? "");
+          // Registration closes with onboarding, for both roles.
+          const deadlineAt = regRound?.timeline?.onboardingDeadlineAt ?? null;
           setRoleEntries(
-            eligibleRoles.map((role) => {
-              const deadlineAt =
-                regRound?.timeline?.[
-                  role === MentorshipParticipantRoles.MENTOR
-                    ? "mentorApplicationDeadlineAt"
-                    : "menteeApplicationDeadlineAt"
-                ] ?? null;
-              return {
-                role,
-                deadlineAt,
-                isOpen: Boolean(deadlineAt) && now < deadlineAt,
-              };
-            }),
+            eligibleRoles.map((role) => ({
+              role,
+              deadlineAt,
+              isOpen: Boolean(deadlineAt) && now < deadlineAt,
+            })),
           );
 
           if (regData && regData.isRegistered) {
@@ -243,8 +236,8 @@ export const useMentorshipData = ({
 
   // A registration settles the round's role, so the role it names is the
   // only entry left to act on -- read-only once its window has shut. The
-  // fallback keeps that read-only view reachable even if the round no
-  // longer carries a deadline for the settled role.
+  // fallback keeps that read-only view reachable even when the settled role
+  // is not among the roles the user's admissions list.
   const registeredRole = registration?.isRegistered
     ? (registration?.roundPreferences?.participantRole ?? null)
     : null;
@@ -258,12 +251,8 @@ export const useMentorshipData = ({
       ]
     : roleEntries;
 
-  // The registration reminder names a single date, so with more than one
-  // window still open it speaks about the one that runs out first.
   const activeEntry =
-    registrationEntries
-      .filter((entry) => entry.isOpen)
-      .sort((a, b) => a.deadlineAt.localeCompare(b.deadlineAt))[0] ??
+    registrationEntries.find((entry) => entry.isOpen) ??
     registrationEntries[0] ??
     null;
   const registrationDeadlineAt = activeEntry?.deadlineAt ?? null;
@@ -343,8 +332,8 @@ export const useMentorshipData = ({
    * @returns {Promise<any> | undefined} API response when saved, or undefined if not allowed.
    */
   const saveRegistration = async (data) => {
-    // Gated on the window of the role being registered, not on whether
-    // anything is open: the two roles close on their own deadlines.
+    // Gated on the entry of the role being registered: a role the user
+    // holds no admission for has none.
     const role = data?.roundPreferences?.participantRole;
     const entry = registrationEntries.find((e) => e.role === role);
     if (!roundStatus.regRoundId || !entry?.isOpen) return;

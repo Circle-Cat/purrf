@@ -1,5 +1,5 @@
 import { render, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import PersonalDashboard from "@/pages/PersonalDashboard";
 import { useAuth } from "@/context/auth";
@@ -38,13 +38,18 @@ vi.mock(
   "@/pages/PersonalDashboard/components/MentorshipParticipantsCard",
   () => ({ default: () => <div data-testid="mock-participants-card" /> }),
 );
+// Past the application deadlines, before the onboarding deadline: the round
+// is still open for registration. Pinned so the fixture does not expire.
+const MOCK_TODAY = "2026-09-10T00:00:00Z";
+
 const OPEN_ROUND = {
   id: 7,
   name: "2026 Fall",
   timeline: {
     promotionStartAt: "2026-08-01T00:00:00Z",
-    mentorApplicationDeadlineAt: "2026-09-30T06:59:59Z",
-    menteeApplicationDeadlineAt: "2026-09-30T06:59:59Z",
+    mentorApplicationDeadlineAt: "2026-08-26T06:59:59Z",
+    menteeApplicationDeadlineAt: "2026-08-26T06:59:59Z",
+    onboardingDeadlineAt: "2026-09-30T06:59:59Z",
     meetingsCompletionDeadlineAt: "2026-12-01T00:00:00Z",
     feedbackDeadlineAt: "2026-12-15T00:00:00Z",
   },
@@ -57,6 +62,8 @@ describe("PersonalDashboard registration reminder wiring", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(MOCK_TODAY));
     vi.spyOn(reminderToast, "showReminderToast").mockImplementation(() => {});
 
     useAuth.mockReturnValue({ permissions: [] });
@@ -98,6 +105,10 @@ describe("PersonalDashboard registration reminder wiring", () => {
     mentorshipApi.getMyMentorshipMeetingLog.mockResolvedValue({ data: {} });
     mentorshipApi.getMyMentorshipMatchResult.mockResolvedValue({ data: null });
     meetingApi.getMyMentorshipMeetingsV2.mockResolvedValue({ data: {} });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("never announces a closed registration while a round is open", async () => {

@@ -41,7 +41,11 @@ class TestMentorshipMeetingRepository(BaseRepositoryTestLib):
         Returns:
             MentorshipPairsEntity: The seeded pair.
         """
-        round_ = MentorshipRoundEntity(name="round", required_meetings=5)
+        round_ = MentorshipRoundEntity(
+            name="round",
+            required_meetings=5,
+            onboarding_deadline_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
         mentor = _make_user()
         mentee = _make_user()
         await self.insert_entities([round_, mentor, mentee])

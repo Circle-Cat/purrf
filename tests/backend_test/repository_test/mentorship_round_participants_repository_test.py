@@ -60,10 +60,10 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
                 mentee_average_score=4.3,
                 mentor_average_score=4.5,
                 expectations="improving mentee's ability",
-                description={
-                    "goal": "basic skills",
-                    "meetings_completion_deadline_at": "2025-06-30T00:00:00+00:00",
-                },
+                onboarding_deadline_at=datetime(2025, 2, 15, tzinfo=timezone.utc),
+                meetings_completion_deadline_at=datetime(
+                    2025, 6, 30, tzinfo=timezone.utc
+                ),
                 required_meetings=5,
             ),
             MentorshipRoundEntity(
@@ -71,10 +71,10 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
                 mentee_average_score=4.8,
                 mentor_average_score=4.6,
                 expectations="guiding career development paths",
-                description={
-                    "goal": "career planning",
-                    "meetings_completion_deadline_at": "2025-12-31T00:00:00+00:00",
-                },
+                onboarding_deadline_at=datetime(2025, 8, 15, tzinfo=timezone.utc),
+                meetings_completion_deadline_at=datetime(
+                    2025, 12, 31, tzinfo=timezone.utc
+                ),
                 required_meetings=5,
             ),
         ]
@@ -265,6 +265,43 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         )
         self.assertIsNotNone(result)
         self.assertEqual(result.round_id, self.rounds[1].round_id)
+
+    async def test_get_recent_participant_orders_by_the_meetings_deadline(self):
+        """Recency is the meetings completion deadline alone: a round created
+        later, or with a later onboarding deadline, does not win on that, and
+        a round with no meetings deadline is never picked."""
+        earlier_meetings = MentorshipRoundEntity(
+            name="2025-winter",
+            required_meetings=5,
+            onboarding_deadline_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            meetings_completion_deadline_at=datetime(2025, 3, 31, tzinfo=timezone.utc),
+        )
+        no_meetings_deadline = MentorshipRoundEntity(
+            name="2026-draft",
+            required_meetings=5,
+            onboarding_deadline_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        )
+        await self.insert_entities([earlier_meetings, no_meetings_deadline])
+        await self.insert_entities([
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=round_.round_id,
+                participant_role=ParticipantRole.MENTEE,
+            )
+            for round_ in (self.rounds[0], earlier_meetings, no_meetings_deadline)
+        ])
+
+        result = await self.repo.get_recent_participant_by_user_id(
+            self.session, user_id=self.user.user_id
+        )
+        by_role = await self.repo.get_recent_participant_by_user_id_and_role(
+            self.session,
+            user_id=self.user.user_id,
+            participant_role=ParticipantRole.MENTEE,
+        )
+
+        self.assertEqual(result.round_id, self.rounds[0].round_id)
+        self.assertEqual(by_role.round_id, self.rounds[0].round_id)
 
     async def test_get_recent_participant_by_user_id_and_role_none_when_no_match(self):
         """Returns None when the user has participation but not in the role."""
@@ -1052,8 +1089,14 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         self.assertNotEqual(first_page[0].user_id, second_page[0].user_id)
 
     async def test_list_distinct_user_roles_dedupes_across_rounds(self):
-        round_a = MentorshipRoundEntity(name="Round A")
-        round_b = MentorshipRoundEntity(name="Round B")
+        round_a = MentorshipRoundEntity(
+            name="Round A",
+            onboarding_deadline_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        round_b = MentorshipRoundEntity(
+            name="Round B",
+            onboarding_deadline_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        )
         mentee_user = UsersEntity(
             first_name="Bob",
             last_name="Mentee",

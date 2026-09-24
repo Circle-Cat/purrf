@@ -65,7 +65,10 @@ class MentorshipAdmissionService:
                 session
             )
         )
-        description = (open_round.description or {}) if open_round else {}
+        registration_deadline = (
+            open_round.onboarding_deadline_at if open_round else None
+        )
+        match_notification = open_round.match_notification_at if open_round else None
 
         await record_event(
             session,
@@ -83,17 +86,16 @@ class MentorshipAdmissionService:
                 "mentorshipRole": ParticipantRole.MENTOR.value,
                 "roundId": open_round.round_id if open_round else None,
                 "roundName": open_round.name if open_round else None,
-                # The two timestamps are carried as the raw strings found in
-                # the JSONB, not parsed and re-serialised: their two writers
-                # disagree on format, and the renderer owns the one tolerant
-                # parse. Snapshotted rather than looked up at render time
-                # because a redelivery hours later may find a different round
-                # open, or none, and two deliveries of one admission must not
-                # say different things.
-                "registrationDeadlineAt": description.get(
-                    "mentor_application_deadline_at"
+                # Snapshotted rather than looked up at render time because a
+                # redelivery hours later may find a different round open, or
+                # none, and two deliveries of one admission must not say
+                # different things.
+                "registrationDeadlineAt": (
+                    registration_deadline.isoformat() if registration_deadline else None
                 ),
-                "matchNotificationAt": description.get("match_notification_at"),
+                "matchNotificationAt": (
+                    match_notification.isoformat() if match_notification else None
+                ),
             },
         )
         self.logger.info(

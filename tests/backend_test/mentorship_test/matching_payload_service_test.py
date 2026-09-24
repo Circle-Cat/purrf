@@ -39,7 +39,11 @@ class MatchingPayloadServiceTest(BaseRepositoryTestLib):
         )
 
     async def _round(self, name="2026 Autumn"):
-        entity = MentorshipRoundEntity(name=name, required_meetings=5, description={})
+        entity = MentorshipRoundEntity(
+            name=name,
+            required_meetings=5,
+            onboarding_deadline_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+        )
         await self.insert_entities([entity])
         return entity
 

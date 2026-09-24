@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from dateutil.parser import isoparse
 from dateutil.relativedelta import relativedelta
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.matches_dto import MatchesDto
@@ -427,21 +426,15 @@ class ParticipationService:
         round_entity = await self.mentorship_round_repository.get_by_round_id(
             session, round_id
         )
-        timeline = getattr(round_entity, "description", None) or {}
-
-        raw = timeline.get("feedback_deadline_at")
-        offset = relativedelta()
-        if not raw:
-            raw = timeline.get("meetings_completion_deadline_at")
-            offset = relativedelta(months=1)
-        if not raw:
+        if round_entity is None:
             return None
-
-        closes_at = isoparse(raw) + offset
-        # Timelines predating timezone-aware storage are recorded in UTC.
-        if closes_at.tzinfo is None:
-            closes_at = closes_at.replace(tzinfo=timezone.utc)
-        return closes_at
+        if round_entity.feedback_deadline_at is not None:
+            return round_entity.feedback_deadline_at
+        if round_entity.meetings_completion_deadline_at is not None:
+            return round_entity.meetings_completion_deadline_at + relativedelta(
+                months=1
+            )
+        return None
 
     async def _assert_feedback_open(self, session: AsyncSession, round_id: int) -> None:
         """

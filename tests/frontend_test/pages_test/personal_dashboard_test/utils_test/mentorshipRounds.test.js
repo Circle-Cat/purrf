@@ -71,8 +71,7 @@ describe("calculateMentorshipSlots", () => {
         name: "Summer 2023",
         timeline: {
           promotionStartAt: "2023-05-01T00:00:00Z",
-          mentorApplicationDeadlineAt: "2023-05-20T00:00:00Z",
-          menteeApplicationDeadlineAt: "2023-05-20T00:00:00Z",
+          onboardingDeadlineAt: "2023-05-20T00:00:00Z",
           matchNotificationAt: "2023-06-01T00:00:00Z", // 10-15 is after this
           feedbackDeadlineAt: "2023-12-01T00:00:00Z", // 10-15 is before this
         },
@@ -82,8 +81,7 @@ describe("calculateMentorshipSlots", () => {
         name: "Autumn 2023",
         timeline: {
           promotionStartAt: "2023-10-01T00:00:00Z",
-          mentorApplicationDeadlineAt: "2023-10-30T00:00:00Z", // still open
-          menteeApplicationDeadlineAt: "2023-10-30T00:00:00Z",
+          onboardingDeadlineAt: "2023-10-30T00:00:00Z", // still open
           matchNotificationAt: "2023-11-05T00:00:00Z", // not announced yet
           feedbackDeadlineAt: "2024-03-01T00:00:00Z",
         },
@@ -105,8 +103,7 @@ describe("calculateMentorshipSlots", () => {
         name: "Autumn 2023",
         timeline: {
           promotionStartAt: "2023-08-01T00:00:00Z",
-          mentorApplicationDeadlineAt: "2023-09-01T00:00:00Z", // closed
-          menteeApplicationDeadlineAt: "2023-09-01T00:00:00Z",
+          onboardingDeadlineAt: "2023-09-01T00:00:00Z", // closed
           matchNotificationAt: "2023-10-01T00:00:00Z", // 10-15 is after this
           feedbackDeadlineAt: "2023-12-01T00:00:00Z",
         },
@@ -119,14 +116,25 @@ describe("calculateMentorshipSlots", () => {
     expect(result.canViewMatch).toBe(true);
   });
 
-  it("should correctly identify a round that is currently open for registration", () => {
+  it("should keep registration open until the onboarding deadline, past the application deadlines", () => {
     const rounds = [
       {
         id: "round-1",
         timeline: {
           promotionStartAt: "2023-10-01T07:59:59Z",
-          mentorApplicationDeadlineAt: "2023-10-20T07:59:59Z", // Today (10-15) is within this range
-          menteeApplicationDeadlineAt: "2023-10-20T07:59:59Z",
+          mentorApplicationDeadlineAt: "2023-10-05T07:59:59Z", // passed
+          menteeApplicationDeadlineAt: "2023-10-05T07:59:59Z", // passed
+          onboardingDeadlineAt: "2023-10-20T07:59:59Z", // Today (10-15) is before this
+        },
+      },
+      {
+        // Promoted more recently, so it sorts first, but onboarding has closed.
+        id: "round-closed",
+        timeline: {
+          promotionStartAt: "2023-10-02T07:59:59Z",
+          mentorApplicationDeadlineAt: "2023-10-30T07:59:59Z",
+          menteeApplicationDeadlineAt: "2023-10-30T07:59:59Z",
+          onboardingDeadlineAt: "2023-10-12T07:59:59Z",
         },
       },
     ];
@@ -151,14 +159,13 @@ describe("calculateMentorshipSlots", () => {
     expect(result.isFeedbackEnabled).toBe(true);
   });
 
-  it("should use lastStartedRound as regRoundId fallback when both application deadlines have passed", () => {
+  it("should use lastStartedRound as regRoundId fallback when the onboarding deadline has passed", () => {
     const rounds = [
       {
         id: "round-closed",
         timeline: {
           promotionStartAt: "2023-09-01T07:59:59Z",
-          mentorApplicationDeadlineAt: "2023-10-01T07:59:59Z", // Today (10-15) is past the deadline
-          menteeApplicationDeadlineAt: "2023-10-01T07:59:59Z",
+          onboardingDeadlineAt: "2023-10-01T07:59:59Z", // Today (10-15) is past the deadline
         },
       },
     ];
@@ -173,16 +180,14 @@ describe("calculateMentorshipSlots", () => {
         id: "round-older",
         timeline: {
           promotionStartAt: "2023-01-01T07:59:59Z",
-          mentorApplicationDeadlineAt: "2023-01-10T07:59:59Z",
-          menteeApplicationDeadlineAt: "2023-01-10T07:59:59Z",
+          onboardingDeadlineAt: "2023-01-10T07:59:59Z",
         },
       },
       {
         id: "round-newer",
         timeline: {
           promotionStartAt: "2023-09-01T07:59:59Z",
-          mentorApplicationDeadlineAt: "2023-09-10T07:59:59Z",
-          menteeApplicationDeadlineAt: "2023-09-10T07:59:59Z",
+          onboardingDeadlineAt: "2023-09-10T07:59:59Z",
         },
       },
     ];
@@ -199,8 +204,7 @@ describe("calculateMentorshipSlots", () => {
         id: "valid",
         timeline: {
           promotionStartAt: "2023-10-01T07:59:59Z",
-          mentorApplicationDeadlineAt: "2023-10-20T07:59:59Z",
-          menteeApplicationDeadlineAt: "2023-10-20T07:59:59Z",
+          onboardingDeadlineAt: "2023-10-20T07:59:59Z",
         },
       },
     ];
@@ -215,8 +219,7 @@ describe("calculateMentorshipSlots", () => {
         id: "active-reg",
         timeline: {
           promotionStartAt: "2023-10-10T07:59:59Z",
-          mentorApplicationDeadlineAt: "2023-10-25T07:59:59Z",
-          menteeApplicationDeadlineAt: "2023-10-25T07:59:59Z",
+          onboardingDeadlineAt: "2023-10-25T07:59:59Z",
         },
       },
       {
