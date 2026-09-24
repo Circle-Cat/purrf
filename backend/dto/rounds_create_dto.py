@@ -19,8 +19,6 @@ class TimelineCreateDto(BaseRequestDto):
 class RoundsCreateDto(BaseRequestDto):
     id: int | None = None
     name: str
-    mentee_average_score: float | None = None
-    mentor_average_score: float | None = None
     expectations: str | None = None
     timeline: TimelineCreateDto
     required_meetings: int
