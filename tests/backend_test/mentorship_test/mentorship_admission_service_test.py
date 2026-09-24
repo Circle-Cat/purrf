@@ -36,9 +36,10 @@ from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
 
-# Offsets from now, not fixed dates: `get_open_mentor_registration_round`
-# compares these against the real wall clock, so a hard-coded deadline stops
-# being open the moment it passes and takes this file red with it.
+# Offsets from now, not fixed dates: the admission service asks
+# `get_open_registration_round` about the real wall clock, so a hard-coded
+# deadline stops being open the moment it passes and takes this file red
+# with it.
 _NOW = datetime.now(timezone.utc).replace(microsecond=0)
 
 

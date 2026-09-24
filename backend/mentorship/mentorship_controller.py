@@ -1,6 +1,6 @@
 from http import HTTPStatus
 from fastapi import APIRouter
-from backend.dto.rounds_dto import RoundsDto
+from backend.dto.rounds_dto import RoundSlotsDto, RoundsDto
 from backend.dto.rounds_create_dto import RoundsCreateDto
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.meeting_dto import MeetingDto
@@ -15,6 +15,7 @@ from backend.common.mentorship_enums import ParticipantRole
 from backend.utils.permission_decorators import authenticate
 from backend.common.api_endpoints import (
     MENTORSHIP_ROUNDS_ENDPOINT,
+    MENTORSHIP_ROUND_SLOTS_ENDPOINT,
     MENTORSHIP_ROUNDS_REGISTRATION_ENDPOINT,
     MENTORSHIP_PARTNERS_ENDPOINT,
     MENTORSHIP_MATCH_RESULT_ENDPOINT,
@@ -68,6 +69,13 @@ class MentorshipController:
         self.router.add_api_route(
             MENTORSHIP_ROUNDS_ENDPOINT,
             endpoint=authenticate()(self.get_all_rounds),
+            methods=["GET"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ROUND_SLOTS_ENDPOINT,
+            endpoint=authenticate()(self.get_round_slots),
             methods=["GET"],
             response_model=None,
         )
@@ -279,6 +287,24 @@ class MentorshipController:
         return api_response(
             message="Successfully fetched all mentorship rounds.",
             data=rounds,
+        )
+
+    async def get_round_slots(self, current_user: UserContextDto):
+        """
+        Retrieve the rounds the Personal Dashboard acts on right now.
+
+        Args:
+            current_user (UserContextDto): The authenticated user context.
+
+        Return:
+            API response containing a RoundSlotsDto.
+        """
+        async with self.database.session() as session:
+            slots: RoundSlotsDto = await self.rounds_service.get_round_slots(session)
+
+        return api_response(
+            message="Successfully fetched mentorship round slots.",
+            data=slots,
         )
 
     async def get_partners_for_user(

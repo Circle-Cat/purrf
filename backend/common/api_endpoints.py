@@ -57,6 +57,7 @@ MY_SUMMARY_ENDPOINT = "/summary/me"
 MY_PROFILE_ENDPOINT = "/profiles/me"
 
 MENTORSHIP_ROUNDS_ENDPOINT = "/mentorship/rounds"
+MENTORSHIP_ROUND_SLOTS_ENDPOINT = "/mentorship/rounds/slots"
 MENTORSHIP_ROUNDS_REGISTRATION_ENDPOINT = "/mentorship/rounds/{round_id}/registration"
 MENTORSHIP_MATCH_RESULT_ENDPOINT = "/mentorship/rounds/{round_id}/matches"
 MENTORSHIP_PARTNERS_ENDPOINT = "/mentorship/partners/me"
