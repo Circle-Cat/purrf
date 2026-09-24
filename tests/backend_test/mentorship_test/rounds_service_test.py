@@ -6,6 +6,7 @@ from backend.dto.rounds_dto import RoundsDto
 from backend.dto.rounds_create_dto import TimelineCreateDto
 from backend.dto.rounds_create_dto import RoundsCreateDto
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
+from backend.mentorship.mentorship_mapper import MentorshipMapper
 
 
 class TestRoundsService(unittest.IsolatedAsyncioTestCase):
@@ -33,9 +34,11 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
                 2026, 1, 16, 7, 59, 59, tzinfo=timezone.utc
             ),
             mentee_application_deadline_at=datetime(
-                2026, 1, 16, 7, 59, 59, tzinfo=timezone.utc
+                2026, 1, 18, 7, 59, 59, tzinfo=timezone.utc
             ),
-            matching_completed_at=datetime(2026, 2, 1, 7, 59, 59, tzinfo=timezone.utc),
+            onboarding_deadline_at=datetime(
+                2026, 1, 25, 7, 59, 59, tzinfo=timezone.utc
+            ),
             match_notification_at=datetime(2026, 2, 3, 7, 59, 59, tzinfo=timezone.utc),
             meetings_completion_deadline_at=datetime(
                 2026, 5, 26, 6, 59, 59, tzinfo=timezone.utc
@@ -43,9 +46,16 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
             feedback_deadline_at=datetime(2026, 6, 11, 6, 59, 59, tzinfo=timezone.utc),
         )
 
-    def _timeline_to_dict(self, timeline: TimelineCreateDto) -> dict:
-        """Help to convert timeline to dict format."""
-        return timeline.model_dump(mode="json", by_alias=False, exclude_none=True)
+    def _use_real_mapper(self):
+        """upsert_rounds builds its response through the mapper; a real one
+        makes the response reflect what was written onto the entity."""
+        self.service.mentorship_mapper = MentorshipMapper()
+
+    def _assert_timeline_written(self, entity, timeline: TimelineCreateDto):
+        for field in timeline.model_fields_set:
+            self.assertEqual(
+                getattr(entity, field), getattr(timeline, field), msg=field
+            )
 
     async def test_get_all_rounds_with_details(self):
         """Test get all rounds with participant and meeting counts."""
@@ -103,7 +113,9 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
         self.mock_pairs_repo.get_pair_stats.assert_not_awaited()
 
     async def test_upsert_rounds_create(self):
-        """Test creating a new mentorship round."""
+        """Test creating a new round writes each timeline date onto its own
+        column and returns a DTO read back from the stored entity."""
+        self._use_real_mapper()
         new_round = RoundsCreateDto(
             name="2026-spring",
             mentee_average_score=4.5,
@@ -113,80 +125,100 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
             required_meetings=5,
         )
 
-        mock_entity = MentorshipRoundEntity(
-            round_id=1,
-            name=new_round.name,
-            mentee_average_score=new_round.mentee_average_score,
-            mentor_average_score=new_round.mentor_average_score,
-            expectations=new_round.expectations,
-            description=new_round.timeline.to_db_dict(),
-            required_meetings=new_round.required_meetings,
-        )
+        async def assign_id(session, entity):
+            entity.round_id = 1
+            return entity
 
-        self.mock_repo.upsert_round = AsyncMock(return_value=mock_entity)
+        self.mock_repo.upsert_round = AsyncMock(side_effect=assign_id)
 
         result = await self.service.upsert_rounds(self.mock_session, new_round)
 
-        self.assertIsNotNone(result)
-        self.assertEqual(result.id, mock_entity.round_id)
-        self.assertEqual(result.name, mock_entity.name)
-        self.assertEqual(result.mentee_average_score, mock_entity.mentee_average_score)
-        self.assertEqual(result.mentor_average_score, mock_entity.mentor_average_score)
-        self.assertEqual(result.expectations, mock_entity.expectations)
+        stored = self.mock_repo.upsert_round.await_args.args[1]
+        self._assert_timeline_written(stored, self.timeline_data)
+        self.assertIsNone(stored.description)
+        self.assertIsNone(stored.onboarding_notification_at)
+        self.mock_session.commit.assert_awaited_once()
+
+        self.assertEqual(result.id, 1)
+        self.assertEqual(result.name, "2026-spring")
+        self.assertEqual(result.mentee_average_score, 4.5)
+        self.assertEqual(result.mentor_average_score, 5.0)
+        self.assertEqual(result.expectations, "Expectations text")
+        self.assertEqual(result.required_meetings, 5)
         self.assertEqual(
-            self._timeline_to_dict(result.timeline), mock_entity.description
+            result.timeline.onboarding_deadline_at,
+            self.timeline_data.onboarding_deadline_at,
         )
-        self.assertEqual(result.required_meetings, mock_entity.required_meetings)
+        self.assertEqual(
+            result.timeline.mentee_application_deadline_at,
+            self.timeline_data.mentee_application_deadline_at,
+        )
+        self.assertEqual(
+            result.timeline.feedback_deadline_at,
+            self.timeline_data.feedback_deadline_at,
+        )
 
     async def test_upsert_rounds_update(self):
-        """Test updating an existing mentorship round."""
-
-        updated_round = RoundsCreateDto(
-            id=1,
-            name="Updated Round",
-            mentee_average_score=4.0,
-            mentor_average_score=4.8,
-            expectations="Updated expectations",
-            timeline=self.timeline_data,
-            required_meetings=3,
-        )
-
+        """Test updating an existing round: an omitted optional date keeps
+        its stored value, an explicit null clears it, and the response is
+        read from the entity rather than echoed from the request."""
+        self._use_real_mapper()
+        stored_feedback_start = datetime(2026, 6, 1, 0, 0, 0, tzinfo=timezone.utc)
         existing_round = MentorshipRoundEntity(
             round_id=1,
             name="Existing Round",
             mentee_average_score=3.5,
             mentor_average_score=4.0,
             expectations="Old expectations",
-            description={"goal": "improving skills"},
             required_meetings=5,
+            promotion_start_at=datetime(2025, 11, 1, tzinfo=timezone.utc),
+            mentor_application_deadline_at=datetime(2025, 12, 1, tzinfo=timezone.utc),
+            mentee_application_deadline_at=datetime(2025, 12, 3, tzinfo=timezone.utc),
+            onboarding_deadline_at=datetime(2025, 12, 10, tzinfo=timezone.utc),
+            match_notification_at=datetime(2026, 1, 5, tzinfo=timezone.utc),
+            meetings_completion_deadline_at=datetime(2026, 5, 1, tzinfo=timezone.utc),
+            meeting_log_reminder_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            feedback_start_at=stored_feedback_start,
+            feedback_deadline_at=datetime(2026, 6, 20, tzinfo=timezone.utc),
         )
-
         self.mock_repo.get_by_round_id.return_value = existing_round
-
-        updated_entity = MentorshipRoundEntity(
-            round_id=existing_round.round_id,
-            name=updated_round.name,
-            mentee_average_score=updated_round.mentee_average_score,
-            mentor_average_score=updated_round.mentor_average_score,
-            expectations=updated_round.expectations,
-            description=updated_round.timeline.to_db_dict(),
-            required_meetings=updated_round.required_meetings,
+        self.mock_repo.upsert_round = AsyncMock(
+            side_effect=lambda session, entity: entity
         )
 
-        self.mock_repo.upsert_round = AsyncMock(return_value=updated_entity)
+        timeline = self.timeline_data.model_copy()
+        timeline.meeting_log_reminder_at = None
+        self.assertNotIn("feedback_start_at", timeline.model_fields_set)
+        updated_round = RoundsCreateDto(
+            id=1,
+            name="Updated Round",
+            mentee_average_score=4.0,
+            mentor_average_score=4.8,
+            expectations="Updated expectations",
+            timeline=timeline,
+            required_meetings=3,
+        )
 
         result = await self.service.upsert_rounds(self.mock_session, updated_round)
 
-        self.assertIsNotNone(result)
-        self.assertEqual(result.id, existing_round.round_id)
+        self.mock_repo.upsert_round.assert_awaited_once_with(
+            self.mock_session, existing_round
+        )
+        self._assert_timeline_written(existing_round, timeline)
+        self.assertEqual(existing_round.feedback_start_at, stored_feedback_start)
+        self.assertIsNone(existing_round.meeting_log_reminder_at)
+
+        self.assertEqual(result.id, 1)
         self.assertEqual(result.name, "Updated Round")
         self.assertEqual(result.mentee_average_score, 4.0)
         self.assertEqual(result.mentor_average_score, 4.8)
         self.assertEqual(result.expectations, "Updated expectations")
-        self.assertEqual(
-            self._timeline_to_dict(result.timeline), updated_entity.description
-        )
         self.assertEqual(result.required_meetings, 3)
+        self.assertEqual(result.timeline.feedback_start_at, stored_feedback_start)
+        self.assertIsNone(result.timeline.meeting_log_reminder_at)
+        self.assertEqual(
+            result.timeline.onboarding_deadline_at, timeline.onboarding_deadline_at
+        )
 
     async def test_upsert_rounds_not_found(self):
         """Test handling of updating a non-existent mentorship round."""

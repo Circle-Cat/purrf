@@ -49,33 +49,33 @@ class MentorshipMapper:
                 mentor_average_score=r.mentor_average_score,
                 expectations=r.expectations,
                 required_meetings=r.required_meetings,
-                timeline=self._map_timeline(r.description) if r.description else None,
+                timeline=self._map_timeline(r),
             )
             for r in rounds
         ]
 
-    def _map_timeline(self, d: dict) -> TimelineDto:
+    def _map_timeline(self, r: MentorshipRoundEntity) -> TimelineDto:
         """
-        Maps a dictionary containing timeline data to a TimelineDto.
+        Maps a round's timeline columns to a TimelineDto.
 
         Args:
-            d (dict): A dictionary containing timeline-related datetime fields.
+            r (MentorshipRoundEntity): The round whose timeline to map.
 
         Returns:
-            TimelineDto: A TimelineDto populated with the corresponding timeline values.
+            TimelineDto: The round's timeline dates.
         """
         return TimelineDto(
-            promotion_start_at=d.get("promotion_start_at"),
-            mentor_application_deadline_at=d.get("mentor_application_deadline_at"),
-            mentee_application_deadline_at=d.get("mentee_application_deadline_at"),
-            training_notification_at=d.get("training_notification_at"),
-            training_deadline_at=d.get("training_deadline_at"),
-            matching_completed_at=d.get("matching_completed_at"),
-            match_notification_at=d.get("match_notification_at"),
-            meeting_log_reminder_at=d.get("meeting_log_reminder_at"),
-            meetings_completion_deadline_at=d.get("meetings_completion_deadline_at"),
-            feedback_start_at=d.get("feedback_start_at"),
-            feedback_deadline_at=d.get("feedback_deadline_at"),
+            promotion_start_at=r.promotion_start_at,
+            mentor_application_deadline_at=r.mentor_application_deadline_at,
+            mentee_application_deadline_at=r.mentee_application_deadline_at,
+            onboarding_notification_at=r.onboarding_notification_at,
+            onboarding_deadline_at=r.onboarding_deadline_at,
+            match_notification_at=r.match_notification_at,
+            first_meeting_deadline_at=r.first_meeting_deadline_at,
+            meeting_log_reminder_at=r.meeting_log_reminder_at,
+            meetings_completion_deadline_at=r.meetings_completion_deadline_at,
+            feedback_start_at=r.feedback_start_at,
+            feedback_deadline_at=r.feedback_deadline_at,
         )
 
     def map_to_global_preferences_dto(

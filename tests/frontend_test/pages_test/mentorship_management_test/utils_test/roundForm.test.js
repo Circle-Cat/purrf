@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   validateForm,
   EMPTY_FORM,
+  FLATTENED_TIMELINE_FIELDS,
+  buildUpsertPayload,
+  getSeasonDefaults,
 } from "@/pages/MentorshipManagement/utils/roundForm";
 
 const BASE_FORM = {
@@ -11,6 +14,7 @@ const BASE_FORM = {
   promotionStartAt: new Date(2025, 11, 18),
   mentorApplicationDeadlineAt: new Date(2025, 11, 25),
   menteeApplicationDeadlineAt: new Date(2025, 11, 25),
+  onboardingDeadlineAt: new Date(2026, 1, 9),
   matchNotificationAt: new Date(2026, 1, 12),
   meetingsCompletionDeadlineAt: new Date(2026, 3, 30),
 };
@@ -29,6 +33,7 @@ describe("validateForm", () => {
     "promotionStartAt",
     "mentorApplicationDeadlineAt",
     "menteeApplicationDeadlineAt",
+    "onboardingDeadlineAt",
     "matchNotificationAt",
     "meetingsCompletionDeadlineAt",
   ])("requires %s", (field) => {
@@ -105,38 +110,92 @@ describe("validateForm", () => {
       menteeApplicationDeadlineAt: new Date(2026, 0, 20),
     },
   ])(
-    "uses the latest sign-up deadline as the lower bound for training",
+    "uses the latest sign-up deadline as the lower bound for onboarding",
     (overrides) => {
       const invalid = validateForm({
         ...BASE_FORM,
         ...overrides,
-        trainingNotificationAt: new Date(2026, 0, 15),
+        onboardingNotificationAt: new Date(2026, 0, 15),
       });
-      expect(invalid.trainingNotificationAt).toBeDefined();
+      expect(invalid.onboardingNotificationAt).toBeDefined();
 
       const valid = validateForm({
         ...BASE_FORM,
         ...overrides,
-        trainingNotificationAt: new Date(2026, 0, 21),
+        onboardingNotificationAt: new Date(2026, 0, 21),
       });
-      expect(valid).toEqual({}); // Training notification is valid once it exceeds the high watermark.
+      expect(valid).toEqual({}); // Onboarding notification is valid once it exceeds the high watermark.
     },
   );
 
-  it("rejects trainingDeadlineAt before its effective ancestor when trainingNotificationAt is empty", () => {
+  it("rejects onboardingDeadlineAt before its effective ancestor when onboardingNotificationAt is empty", () => {
     const errors = validateForm({
       ...BASE_FORM,
-      trainingNotificationAt: null,
-      trainingDeadlineAt: new Date(2025, 0, 1),
+      onboardingNotificationAt: null,
+      onboardingDeadlineAt: new Date(2025, 0, 1),
     });
-    expect(errors.trainingDeadlineAt).toBeTruthy();
+    expect(errors.onboardingDeadlineAt).toBeTruthy();
   });
 
   it("skips order check when the current field is empty", () => {
     const errors = validateForm({
       ...BASE_FORM,
-      trainingDeadlineAt: null,
+      onboardingNotificationAt: null,
     });
-    expect(errors.trainingDeadlineAt).toBeUndefined();
+    expect(errors.onboardingNotificationAt).toBeUndefined();
   });
+
+  it("rejects firstMeetingDeadlineAt before matchNotificationAt", () => {
+    const errors = validateForm({
+      ...BASE_FORM,
+      firstMeetingDeadlineAt: new Date(2026, 1, 11),
+    });
+    expect(errors.firstMeetingDeadlineAt).toMatch(/Matching Admin Action/);
+  });
+});
+
+describe("timeline fields", () => {
+  it("puts the first-contact deadline on firstMeetingDeadlineAt", () => {
+    const keys = FLATTENED_TIMELINE_FIELDS.map(({ key }) => key);
+    expect(keys).toContain("firstMeetingDeadlineAt");
+    expect(keys).toContain("onboardingNotificationAt");
+    expect(keys).toContain("onboardingDeadlineAt");
+    expect(keys).not.toContain("matchingCompletedAt");
+    expect(keys).not.toContain("trainingNotificationAt");
+    expect(keys).not.toContain("trainingDeadlineAt");
+  });
+
+  it("sends every form date under its own key", () => {
+    const payload = buildUpsertPayload({
+      ...BASE_FORM,
+      onboardingNotificationAt: new Date(2026, 1, 2),
+      firstMeetingDeadlineAt: new Date(2026, 1, 26),
+    });
+    expect(payload.timeline.onboardingNotificationAt).toBe(
+      "2026-02-03T07:59:59Z",
+    );
+    expect(payload.timeline.onboardingDeadlineAt).toBe("2026-02-10T07:59:59Z");
+    expect(payload.timeline.firstMeetingDeadlineAt).toBe(
+      "2026-02-27T07:59:59Z",
+    );
+    expect(payload.timeline).not.toHaveProperty("matchingCompletedAt");
+  });
+
+  it.each([
+    ["Spring", 2026, [1, 9], [1, 26]],
+    ["Summer", 2026, [4, 9], [4, 26]],
+    ["Fall", 2026, [8, 9], [8, 26]],
+  ])(
+    "keeps the %s preset's onboarding and first-contact dates",
+    (season, year, [onbMonth, onbDay], [firstMonth, firstDay]) => {
+      const defaults = getSeasonDefaults(season, year);
+      expect(defaults.onboardingDeadlineAt).toEqual(
+        new Date(year, onbMonth, onbDay),
+      );
+      expect(defaults.firstMeetingDeadlineAt).toEqual(
+        new Date(year, firstMonth, firstDay),
+      );
+      expect(defaults).not.toHaveProperty("matchingCompletedAt");
+    },
+  );
 });

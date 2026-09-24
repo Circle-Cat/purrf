@@ -6,10 +6,10 @@ class TimelineDto(BaseDto):
     promotion_start_at: datetime | None = None
     mentor_application_deadline_at: datetime | None = None
     mentee_application_deadline_at: datetime | None = None
-    training_notification_at: datetime | None = None
-    training_deadline_at: datetime | None = None
+    onboarding_notification_at: datetime | None = None
+    onboarding_deadline_at: datetime
     match_notification_at: datetime | None = None
-    matching_completed_at: datetime | None = None
+    first_meeting_deadline_at: datetime | None = None
     meeting_log_reminder_at: datetime | None = None
     meetings_completion_deadline_at: datetime | None = None
     feedback_start_at: datetime | None = None

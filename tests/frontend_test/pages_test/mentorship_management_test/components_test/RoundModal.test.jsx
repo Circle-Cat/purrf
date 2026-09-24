@@ -21,6 +21,7 @@ const fullEditRound = {
     promotionStartAt: "2025-12-19T07:59:59Z", // 2025-12-18 PT
     mentorApplicationDeadlineAt: "2025-12-26T07:59:59Z", // 2025-12-25 PT
     menteeApplicationDeadlineAt: "2025-12-26T07:59:59Z", // 2025-12-25 PT
+    onboardingDeadlineAt: "2026-02-10T07:59:59Z", // 2026-02-09 PT
     matchNotificationAt: "2026-02-13T07:59:59Z", // 2026-02-12 PT
     meetingsCompletionDeadlineAt: "2026-05-01T06:59:59Z", // 2026-04-30 PT
   },
