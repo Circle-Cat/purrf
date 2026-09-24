@@ -112,6 +112,29 @@ export const INITIAL_ROUNDS = [
     },
     matchingCompletedAt: "2025-05-11",
   },
+  {
+    // Dana Wu was red-flagged here, exempted for 2025 Summer and came through
+    // it cleanly, so 2026 Fall does not ask for that exemption again.
+    id: 5,
+    name: "Mentorship 2024 Fall",
+    version: "v1",
+    requiredMeetings: 5,
+    status: "closed",
+    timeline: {
+      promotionStartAt: "2024-08-18",
+      mentorApplicationDeadlineAt: "2024-08-25",
+      menteeApplicationDeadlineAt: "2024-08-25",
+      onboardingNotificationAt: "2024-09-02",
+      onboardingDeadlineAt: "2024-09-09",
+      matchNotificationAt: "2024-09-12",
+      firstMeetingDeadlineAt: "2024-09-19",
+      meetingLogReminderAt: "2024-11-02",
+      meetingsCompletionDeadlineAt: "2024-11-30",
+      feedbackStartAt: "2024-12-02",
+      feedbackDeadlineAt: "2024-12-09",
+    },
+    matchingCompletedAt: "2024-09-11",
+  },
 ];
 
 /**
@@ -285,6 +308,29 @@ export const INITIAL_PARTICIPANTS = [
   // Dana mentored Cara to the end, Bob was not matched, Fay withdrew part
   // way, and Gina's pair ended with her.
   {
+    participantId: "p-dana-5",
+    userId: 3104,
+    roundId: 5,
+    name: "Dana Wu",
+    email: "dana@circlecat.org",
+    role: "mentor",
+    identity: "internal",
+    approvalStatus: "matched",
+    maxPartners: 1,
+    onboardingDone: true,
+  },
+  {
+    participantId: "p-rui-5",
+    userId: 3190,
+    roundId: 5,
+    name: "Rui Tan",
+    email: "rui@example.com",
+    role: "mentee",
+    identity: "external",
+    approvalStatus: "matched",
+    onboardingDone: true,
+  },
+  {
     participantId: "p-dana-6",
     userId: 3104,
     roundId: 6,
@@ -358,6 +404,8 @@ export const HIRED_APPLICATIONS = [
   { userId: 3105, role: "mentee" },
   { userId: 3108, role: "mentee" },
   { userId: 3109, role: "mentor" },
+  // Admitted twice: one row on the Not registered list, a line per role.
+  { userId: 3109, role: "mentee" },
   { userId: 3110, role: "mentee" },
   { userId: 3113, role: "mentee" },
 ];
@@ -380,6 +428,7 @@ export const ONBOARDING_TRAININGS = [
   { userId: 3107, role: "mentee", status: "done" },
   { userId: 3108, role: "mentee", status: "in_progress" },
   { userId: 3109, role: "mentor", status: "done" },
+  { userId: 3109, role: "mentee", status: "to_do" },
   { userId: 3110, role: "mentee", status: "in_progress" },
   { userId: 3111, role: "mentor", status: "done" },
   { userId: 3112, role: "mentor", status: "in_progress" },
@@ -639,6 +688,18 @@ export const INITIAL_PAIRS = [
     required: 5,
   },
   {
+    pairId: 480,
+    roundId: 5,
+    mentorId: 3104,
+    menteeId: 3190,
+    mentorName: "Dana Wu",
+    menteeName: "Rui Tan",
+    status: "active",
+    firstContactConfirmedAt: "2024-09-16",
+    completed: 5,
+    required: 5,
+  },
+  {
     pairId: 490,
     roundId: 6,
     mentorId: 3104,
@@ -799,6 +860,26 @@ export const RECORDED_TAGS = Object.keys(NOTE_KIND).filter(
  * them, and when they do register that note is already on their timeline.
  */
 export const INITIAL_NOTES = [
+  {
+    noteId: "n-20",
+    userId: 3104,
+    roundId: 5,
+    pairId: 480,
+    tag: "red_flag",
+    body: "Cancelled three sessions within an hour of the start time.",
+    authorId: 2002,
+    createdAt: "2024-10-20",
+  },
+  {
+    noteId: "n-21",
+    userId: 3104,
+    roundId: 6,
+    pairId: null,
+    tag: "matching_exemption",
+    body: "Talked it through; will give notice from now on.",
+    authorId: 2002,
+    createdAt: "2025-05-10",
+  },
   {
     noteId: "n-8",
     userId: 3115,

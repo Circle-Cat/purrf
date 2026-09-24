@@ -46,6 +46,30 @@ import {
  * matched" are never shown as 0, which would sort a newcomer to the top of
  * the chase list.
  */
+/** How far an onboarding course has got, for someone not yet registered. */
+const COURSE_LABEL = {
+  done: "Done",
+  in_progress: "In progress",
+  to_do: "Not started",
+};
+
+/**
+ * A cell with one line per role, in the same order in every such cell, so
+ * the lines of a two-role person read across the row.
+ *
+ * @param {object} props
+ * @param {Array<object>} props.byRole - The person's per-role facts.
+ * @param {(r: object) => React.ReactNode} props.show - What to show for one role.
+ * @returns {JSX.Element}
+ */
+const PerRole = ({ byRole, show }) => (
+  <TableCell className="text-sm">
+    {byRole.length === 0
+      ? "—"
+      : byRole.map((r) => <div key={r.role}>{show(r)}</div>)}
+  </TableCell>
+);
+
 const LastRound = ({ value }) => (
   <span
     className={
@@ -101,6 +125,18 @@ const ParticipantsTable = ({
   const role = query.role ?? "all";
   const identity = query.identity ?? "all";
   const onboarding = query.onboarding ?? "all";
+  const account = query.account ?? "all";
+  /**
+   * Blocked and deactivated are independent flags, so a person blocked and
+   * deactivated at once turns up under both; Active is neither.
+   */
+  const passesAccount = (userId) => {
+    if (account === "all") return true;
+    const { isActive, isBlocked } = accountOf(userId);
+    if (account === "blocked") return isBlocked;
+    if (account === "deactivated") return !isActive;
+    return isActive && !isBlocked;
+  };
   // Matching and the unregistered list only mean something while the round
   // runs, from recruitment to its end; a past round offers neither.
   const eligibleOnly = roundRunning && query.filter === "eligible";
@@ -128,6 +164,19 @@ const ParticipantsTable = ({
   const writable = can("mentorship.admin.write");
 
   const needle = term.trim().toLowerCase();
+  /**
+   * All digits is a user id and must match it exactly — "31" finding 3101
+   * and 3110 is how the wrong person gets picked. Anything else is a part of
+   * a name or email.
+   */
+  const matchesSearch = (p) => {
+    if (!needle) return true;
+    if (/^\d+$/.test(needle)) return String(p.userId) === needle;
+    return (
+      p.name.toLowerCase().includes(needle) ||
+      p.email.toLowerCase().includes(needle)
+    );
+  };
 
   /**
    * Who can go into a matching run right now — the rule is in eligibility.js,
@@ -164,10 +213,9 @@ const ParticipantsTable = ({
     (role === "all" || p.role === role) &&
     (identity === "all" || p.identity === identity) &&
     (onboarding === "all" || (onboarding === "done") === p.onboardingDone) &&
+    passesAccount(p.userId) &&
     passesEmail(p) &&
-    (!needle ||
-      p.name.toLowerCase().includes(needle) ||
-      p.email.toLowerCase().includes(needle));
+    matchesSearch(p);
   const waitingOnExemption = withSlots.filter(
     (p) => p.blocker === "history" && passesBasics(p),
   );
@@ -205,13 +253,26 @@ const ParticipantsTable = ({
     });
   };
 
+  /**
+   * Role and Training on the not-registered list read the admitted roles: a
+   * person passes when one of their roles matches, and Training is judged on
+   * that role's course.
+   */
+  const passesRoleAndTraining = (p) => {
+    const lines = p.byRole.filter((r) => role === "all" || r.role === role);
+    if (lines.length === 0) return false;
+    if (onboarding === "all") return true;
+    return lines.some(
+      (r) => (r.training === "done") === (onboarding === "done"),
+    );
+  };
   const nonParticipantRows = nonParticipants.filter(
     (p) =>
+      passesRoleAndTraining(p) &&
       (identity === "all" || p.identity === identity) &&
+      passesAccount(p.userId) &&
       passesEmail({ userId: p.userId, roundId: round.id }) &&
-      (!needle ||
-        p.name.toLowerCase().includes(needle) ||
-        p.email.toLowerCase().includes(needle)),
+      matchesSearch(p),
   );
 
   const toggle = (id) =>
@@ -234,7 +295,7 @@ const ParticipantsTable = ({
         <Input
           value={term}
           onChange={(e) => onQueryChange({ q: e.target.value })}
-          placeholder="Search name or email"
+          placeholder="Search name, email or ID"
           className="h-8 w-56 text-sm"
         />
         {tab === "participants" ? (
@@ -265,6 +326,20 @@ const ParticipantsTable = ({
                 <SelectItem value="external">External</SelectItem>
               </SelectContent>
             </Select>
+            <Select
+              value={account}
+              onValueChange={(v) => onQueryChange({ account: v })}
+            >
+              <SelectTrigger className="h-8 w-36 text-xs">
+                <SelectValue placeholder="Account" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Any account</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="blocked">Blocked</SelectItem>
+                <SelectItem value="deactivated">Deactivated</SelectItem>
+              </SelectContent>
+            </Select>
           </>
         ) : null}
         {tab === "participants" ? (
@@ -289,9 +364,11 @@ const ParticipantsTable = ({
               onChange={onQueryChange}
             />
             {[
+              // In the order a person moves through them: register, clear
+              // their past, then go into a run.
               {
-                key: "eligible",
-                label: "Eligible for matching",
+                key: "unregistered",
+                label: "Not registered for this round",
                 disabled: !roundRunning,
                 title: roundRunning
                   ? undefined
@@ -314,8 +391,8 @@ const ParticipantsTable = ({
                   : `Only until this round's matching closes (${round.timeline.matchNotificationAt})`,
               },
               {
-                key: "unregistered",
-                label: "Not registered for this round",
+                key: "eligible",
+                label: "Eligible for matching",
                 disabled: !roundRunning,
                 title: roundRunning
                   ? undefined
@@ -346,23 +423,6 @@ const ParticipantsTable = ({
         ) : null}
       </div>
 
-      {tab === "participants" &&
-      !query.filter &&
-      roundRunning &&
-      nonParticipants.length > 0 ? (
-        <p className="mb-2 text-xs text-slate-500">
-          {nonParticipants.length} people in the programme have not registered
-          for {round.name}.{" "}
-          <button
-            type="button"
-            className="font-medium text-slate-700 underline underline-offset-2"
-            onClick={() => setFilter("unregistered")}
-          >
-            Show them
-          </button>
-        </p>
-      ) : null}
-
       {tab === "participants" && unregisteredOnly ? (
         <>
           <p className="mb-2 text-xs text-slate-500">
@@ -376,61 +436,64 @@ const ParticipantsTable = ({
               <TableRow>
                 <TableHead className="w-8" />
                 <TableHead>Name</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Training</TableHead>
                 <TableHead>Int / ext</TableHead>
                 <TableHead>Account</TableHead>
                 <TableHead>Notifications</TableHead>
-                <TableHead>Mentor training</TableHead>
-                <TableHead>Mentee training</TableHead>
-                <TableHead>Last took part</TableHead>
+                <TableHead>Rounds taken part</TableHead>
+                <TableHead>Last round</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {nonParticipantRows.map((p) => {
-                return (
-                  <TableRow key={p.userId}>
-                    <TableCell>
-                      <Checkbox
-                        aria-label={`Select ${p.name}`}
-                        checked={selected.includes(`u${p.userId}`)}
-                        onCheckedChange={() => toggle(`u${p.userId}`)}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <button
-                        type="button"
-                        className="text-left font-medium underline-offset-2 hover:underline"
-                        onClick={() => onOpenPerson(p.userId)}
-                      >
-                        {p.name}
-                      </button>
-                      <div className="text-xs text-slate-500">{p.email}</div>
-                    </TableCell>
-                    <TableCell className="text-sm">{p.identity}</TableCell>
-                    <TableCell>
-                      <AccountStateChips {...accountOf(p.userId)} />
-                    </TableCell>
-                    <TableCell>
-                      <EmailDots
-                        person={{ userId: p.userId, roundId: round.id }}
-                        registered={false}
-                        emails={emails}
-                        notes={notes}
-                        notifications={notifications}
-                        onOpen={() => onOpenPerson(p.userId, "email")}
-                      />
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {p.mentorOnboarding ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {p.menteeOnboarding ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {p.lastTookPart ?? "Never"}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+              {nonParticipantRows.map((p) => (
+                <TableRow key={p.userId}>
+                  <TableCell>
+                    <Checkbox
+                      aria-label={`Select ${p.name}`}
+                      checked={selected.includes(`u${p.userId}`)}
+                      onCheckedChange={() => toggle(`u${p.userId}`)}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <button
+                      type="button"
+                      className="text-left font-medium underline-offset-2 hover:underline"
+                      onClick={() => onOpenPerson(p.userId)}
+                    >
+                      {p.name}
+                    </button>
+                    <div className="text-xs text-slate-500">
+                      ID {p.userId} · {p.email}
+                    </div>
+                  </TableCell>
+                  {/* One row per person, so one email each; a person admitted
+                      as both roles gets a line per role in Role and Training, side by side. */}
+                  <PerRole byRole={p.byRole} show={(r) => r.role} />
+                  <PerRole
+                    byRole={p.byRole}
+                    show={(r) => COURSE_LABEL[r.training] ?? "No course"}
+                  />
+                  <TableCell className="text-sm">{p.identity}</TableCell>
+                  <TableCell>
+                    <AccountStateChips {...accountOf(p.userId)} />
+                  </TableCell>
+                  <TableCell>
+                    <EmailDots
+                      person={{ userId: p.userId, roundId: round.id }}
+                      registered={false}
+                      emails={emails}
+                      notes={notes}
+                      notifications={notifications}
+                      onOpen={() => onOpenPerson(p.userId, "email")}
+                    />
+                  </TableCell>
+                  <TableCell className="text-sm">{p.roundsTakenPart}</TableCell>
+                  <TableCell className="text-sm">
+                    {p.lastTookPart ?? "Never"}
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </>
@@ -463,6 +526,7 @@ const ParticipantsTable = ({
               <TableHead className="w-8" />
               <TableHead>Name</TableHead>
               <TableHead>Role</TableHead>
+              {narrow ? null : <TableHead>Training</TableHead>}
               {exemptionOnly ? <TableHead>Why</TableHead> : null}
               {narrow ? null : (
                 <>
@@ -472,12 +536,7 @@ const ParticipantsTable = ({
                 </>
               )}
               {exemptionOnly ? null : <TableHead>Pair</TableHead>}
-              {narrow ? null : (
-                <>
-                  <TableHead>Notifications</TableHead>
-                  <TableHead>Training</TableHead>
-                </>
-              )}
+              {narrow ? null : <TableHead>Notifications</TableHead>}
               {eligibleOnly ? <TableHead>Free slots</TableHead> : null}
               {narrow ? <TableHead>Meetings last round</TableHead> : null}
             </TableRow>
@@ -499,9 +558,16 @@ const ParticipantsTable = ({
                   >
                     {p.name}
                   </button>
-                  <div className="text-xs text-slate-500">{p.email}</div>
+                  <div className="text-xs text-slate-500">
+                    ID {p.userId} · {p.email}
+                  </div>
                 </TableCell>
                 <TableCell className="text-sm">{p.role}</TableCell>
+                {narrow ? null : (
+                  <TableCell className="text-sm">
+                    {p.onboardingDone ? "Done" : "Not done"}
+                  </TableCell>
+                )}
                 {exemptionOnly ? (
                   <TableCell className="text-xs text-amber-900">
                     <ul className="space-y-0.5">
@@ -541,23 +607,16 @@ const ParticipantsTable = ({
                   </TableCell>
                 )}
                 {narrow ? null : (
-                  <>
-                    <TableCell>
-                      <EmailDots
-                        person={p}
-                        registered
-                        emails={emails}
-                        notes={notes}
-                        notifications={notifications}
-                        onOpen={() =>
-                          onOpenParticipant(p.participantId, "email")
-                        }
-                      />
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {p.onboardingDone ? "Done" : "Not done"}
-                    </TableCell>
-                  </>
+                  <TableCell>
+                    <EmailDots
+                      person={p}
+                      registered
+                      emails={emails}
+                      notes={notes}
+                      notifications={notifications}
+                      onOpen={() => onOpenParticipant(p.participantId, "email")}
+                    />
+                  </TableCell>
                 )}
                 {eligibleOnly ? (
                   <TableCell className="text-sm">
@@ -610,19 +669,23 @@ const ParticipantsTable = ({
           <span className="text-sm">
             <strong>{selected.length} people</strong> selected
           </span>
-          <Button
-            size="sm"
-            onClick={() =>
-              onCompose(
-                selectedPeople.map(({ participantId, name }) => ({
-                  participantId,
-                  name,
-                })),
-              )
-            }
-          >
-            Send email · {selected.length}
-          </Button>
+          {/* The matching pool is for choosing who goes into a run; emails
+              are sent from the other lists. */}
+          {eligibleOnly ? null : (
+            <Button
+              size="sm"
+              onClick={() =>
+                onCompose(
+                  selectedPeople.map(({ participantId, name }) => ({
+                    participantId,
+                    name,
+                  })),
+                )
+              }
+            >
+              Send email · {selected.length}
+            </Button>
+          )}
           {tab === "participants" && eligibleOnly ? (
             <Button
               size="sm"
@@ -642,10 +705,12 @@ const ParticipantsTable = ({
               Run matching · {runChosen.length}
             </Button>
           ) : null}
-          <span className="text-xs text-slate-500">
-            Notified some other way, such as on Teams? Mark each person on their
-            own page, with a note of how it was sent.
-          </span>
+          {eligibleOnly ? null : (
+            <span className="text-xs text-slate-500">
+              Notified some other way, such as on Teams? Mark each person on
+              their own page, with a note of how it was sent.
+            </span>
+          )}
         </div>
       ) : null}
     </>

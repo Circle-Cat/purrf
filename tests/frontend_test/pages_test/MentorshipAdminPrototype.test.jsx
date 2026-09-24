@@ -9,9 +9,11 @@ import {
 import MentorshipAdminPrototype from "@/pages/MentorshipAdminPrototype";
 import {
   describeLastRound,
+  historyIssuesOf,
   lastRoundOf,
 } from "@/pages/MentorshipAdminPrototype/lastRound";
 import {
+  INITIAL_NOTES,
   INITIAL_PAIRS,
   INITIAL_PARTICIPANTS,
   INITIAL_ROUNDS,
@@ -122,6 +124,249 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(screen.getByText("Meeting log")).toBeInTheDocument();
   });
 
+  it("keeps feedback off the console home, behind the rounds table", () => {
+    render(<MentorshipAdminPrototype />);
+    expect(screen.queryByText(/^Feedback — /)).toBeNull();
+  });
+
+  describe("an exemption proved out in a later round", () => {
+    const dana7 = INITIAL_PARTICIPANTS.find(
+      (p) => p.participantId === "p-dana-7",
+    );
+    const issues = (notes, pairs = INITIAL_PAIRS) =>
+      historyIssuesOf(
+        dana7,
+        INITIAL_PARTICIPANTS,
+        pairs,
+        INITIAL_ROUNDS,
+        notes,
+        new Set(),
+      );
+    const note = (noteId, roundId, tag) => ({
+      noteId,
+      userId: 3104,
+      roundId,
+      pairId: null,
+      tag,
+      body: "",
+      authorId: 2002,
+      createdAt: "2025-06-01",
+    });
+
+    it("clears the red flag it covered", () => {
+      // Red-flagged in 2024 Fall, exempted for 2025 Summer, 7/7 there.
+      expect(issues(INITIAL_NOTES)).toEqual([]);
+    });
+
+    it("does not clear it without the exemption", () => {
+      expect(
+        issues(INITIAL_NOTES.filter((n) => n.tag !== "matching_exemption")),
+      ).toEqual(["Red flag in Mentorship 2024 Fall"]);
+    });
+
+    it("does not clear it when the exempted round went wrong again", () => {
+      expect(issues([...INITIAL_NOTES, note("n-x", 6, "no_show")])).toEqual([
+        "Red flag in Mentorship 2024 Fall",
+        "No show in Mentorship 2025 Summer",
+      ]);
+      expect(issues([...INITIAL_NOTES, note("n-y", 6, "red_flag")])).toEqual([
+        "Red flag in Mentorship 2024 Fall",
+        "Red flag in Mentorship 2025 Summer",
+      ]);
+    });
+
+    it("does not clear a red flag from after the exempted round", () => {
+      // Proved out in 2025 Summer; a new flag in 2026 Fall still counts.
+      const later = { ...dana7, roundId: 8 };
+      const rounds = [
+        ...INITIAL_ROUNDS,
+        {
+          id: 8,
+          name: "Mentorship 2027 Spring",
+          timeline: { meetingsCompletionDeadlineAt: "2027-05-31" },
+        },
+      ];
+      expect(
+        historyIssuesOf(
+          later,
+          INITIAL_PARTICIPANTS,
+          INITIAL_PAIRS,
+          rounds,
+          [...INITIAL_NOTES, note("n-z", 7, "red_flag")],
+          new Set(),
+        ),
+      ).toContain("Red flag in Mentorship 2026 Fall");
+    });
+
+    it("does not clear it for an exempted round they were never matched in", () => {
+      expect(
+        issues(
+          INITIAL_NOTES,
+          INITIAL_PAIRS.filter((p) => p.pairId !== 490),
+        ),
+      ).toEqual(["Red flag in Mentorship 2024 Fall"]);
+    });
+  });
+
+  it("keeps the old flag on the record, with the exemption beside it", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(screen.getByRole("button", { name: "Dana Wu" }));
+    const rowOf = (name) =>
+      screen.getByRole("button", { name: new RegExp(name) }).closest("li");
+    expect(
+      within(rowOf("Mentorship 2024 Fall")).getByText(/Red flag/),
+    ).toBeInTheDocument();
+    expect(
+      within(rowOf("Mentorship 2025 Summer")).getByText("Exempted"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Needs an exemption before being matched this round"),
+    ).toBeNull();
+  });
+
+  it("shows the user id beside every name, and finds a person by it exactly", () => {
+    render(<MentorshipAdminPrototype />);
+    const dana = screen
+      .getAllByRole("row")
+      .find((r) => within(r).queryByRole("button", { name: "Dana Wu" }));
+    expect(within(dana).getByText(/^ID 3104 · /)).toBeInTheDocument();
+
+    const search = screen.getByPlaceholderText("Search name, email or ID");
+    fireEvent.change(search, { target: { value: "3104" } });
+    const names = () =>
+      screen
+        .getAllByRole("row")
+        .map((r) => within(r).queryAllByRole("button")[0]?.textContent)
+        .filter((n) => n && n !== "Round Name");
+    expect(screen.getByRole("button", { name: "Dana Wu" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Alice Chen" })).toBeNull();
+    // A part of an id is not a match: 310 would otherwise find everyone.
+    fireEvent.change(search, { target: { value: "310" } });
+    expect(screen.queryByRole("button", { name: "Dana Wu" })).toBeNull();
+    expect(names()).not.toContain("Alice Chen");
+
+    fireEvent.click(screen.getByRole("button", { name: /^Not registered/ }));
+    fireEvent.change(search, { target: { value: "3108" } });
+    expect(
+      screen.getByRole("button", { name: "Kwame Osei" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Min Park" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Kwame Osei" }));
+    expect(screen.getByText(/^ID 3108 · /)).toBeInTheDocument();
+  });
+
+  it("applies Role on the not-registered list, by admitted role", () => {
+    window.history.replaceState(
+      null,
+      "",
+      "#mentorship?filter=unregistered&role=mentor",
+    );
+    render(<MentorshipAdminPrototype />);
+    // Min took part as a mentor; Lia was admitted as both.
+    expect(
+      screen.getByRole("button", { name: "Min Park" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Lia Rossi" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Kwame Osei" })).toBeNull();
+  });
+
+  it("says so when a feedback link names no round", () => {
+    window.history.replaceState(null, "", "#mentorship/feedback/99");
+    render(<MentorshipAdminPrototype />);
+    expect(screen.getByText("No such round.")).toBeInTheDocument();
+    expect(screen.queryByText(/^Feedback — /)).toBeNull();
+  });
+
+  it("orders the three filters the way a person moves through them", () => {
+    render(<MentorshipAdminPrototype />);
+    const labels = [
+      "Not registered for this round",
+      /^Needs exemption/,
+      "Eligible for matching",
+    ].map((name) => screen.getByRole("button", { name }));
+    labels.reduce((prev, next) => {
+      expect(
+        prev.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      return next;
+    });
+  });
+
+  it("lays the rounds table out as main does, with a feedback column", () => {
+    render(<MentorshipAdminPrototype />);
+    const table = screen
+      .getByRole("button", { name: "Mentorship 2025 Summer" })
+      .closest("table");
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((h) => h.textContent),
+    ).toEqual([
+      "Round Name",
+      "Participants",
+      "Required Meetings",
+      "Mentor Rating",
+      "Mentee Rating",
+      "Average Meetings Per Pair",
+      "Feedback",
+      "Action",
+    ]);
+    const summer = within(table)
+      .getByRole("button", { name: "Mentorship 2025 Summer" })
+      .closest("tr");
+    // Dana (mentor) rated 5 and Cara (mentee) 4; two more owe theirs.
+    expect(within(summer).getByText("5.00")).toBeInTheDocument();
+    expect(within(summer).getByText("4.00")).toBeInTheDocument();
+    expect(within(summer).getByText("2 of 4 sent")).toBeInTheDocument();
+    expect(screen.getByText(/^Total Completed Rounds: 2$/)).toBeInTheDocument();
+
+    fireEvent.click(
+      within(summer).getByRole("button", {
+        name: "Feedback for Mentorship 2025 Summer",
+      }),
+    );
+    expect(window.location.hash).toContain("feedback/6");
+    expect(
+      screen.getByRole("heading", {
+        name: "Feedback — Mentorship 2025 Summer",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Cara Wang's feedback about Dana Wu:", { exact: false }),
+    ).toBeInTheDocument();
+
+    // Who still owes it, in one click.
+    fireEvent.click(screen.getByLabelText("Not sent only"));
+    expect(screen.queryByRole("button", { name: "Cara Wang" })).toBeNull();
+    expect(screen.getAllByText("Not sent").length).toBeGreaterThan(0);
+
+    // A name opens that person's page on that round.
+    fireEvent.click(
+      screen
+        .getAllByRole("button", { name: /\w+ \w+/ })
+        .find((b) => b.closest("tbody")),
+    );
+    expect(window.location.hash).toContain("round=6");
+  });
+
+  it("hides the feedback column, and opens rounds read-only, without the grants", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(chip("Feedback"));
+    expect(screen.queryByRole("columnheader", { name: "Feedback" })).toBeNull();
+    fireEvent.click(chip("Write"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "View Mentorship 2026 Fall" }),
+    );
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("View round")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Save" })).toBeNull();
+    // Read-only means the fields too, not just a missing button.
+    expect(within(dialog).getAllByRole("textbox")[0]).toBeDisabled();
+  });
+
   it("drops whole blocks rather than greying them out when a grant is missing", () => {
     render(<MentorshipAdminPrototype />);
 
@@ -161,7 +406,7 @@ describe("MentorshipAdminPrototype smoke", () => {
   it("comes back from a detail page to the same filter", () => {
     render(<MentorshipAdminPrototype />);
 
-    fireEvent.change(screen.getByPlaceholderText("Search name or email"), {
+    fireEvent.change(screen.getByPlaceholderText("Search name, email or ID"), {
       target: { value: "Bob" },
     });
     expect(screen.queryByRole("button", { name: "Cara Wang" })).toBeNull();
@@ -171,7 +416,7 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(screen.getByText("Meeting log")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "← Participants" }));
-    expect(screen.getByPlaceholderText("Search name or email")).toHaveValue(
+    expect(screen.getByPlaceholderText("Search name, email or ID")).toHaveValue(
       "Bob",
     );
     expect(screen.queryByRole("button", { name: "Cara Wang" })).toBeNull();
@@ -703,12 +948,12 @@ describe("MentorshipAdminPrototype smoke", () => {
       screen.queryByRole("button", { name: "Non-participants" }),
     ).not.toBeInTheDocument();
 
-    expect(
-      screen.getByText(
-        /3 people in the programme have not registered for Mentorship 2026 Fall/,
-      ),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Show them" }));
+    // No count-and-link above the table: the filter is the one way in.
+    expect(screen.queryByText(/have not registered for/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show them" })).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Not registered for this round" }),
+    );
     expect(window.location.hash).toContain("filter=unregistered");
 
     // Took part last summer, not signed up again: exactly who an invitation is for.
@@ -742,7 +987,9 @@ describe("MentorshipAdminPrototype smoke", () => {
 
   it("lists who has not registered only while the round is running", () => {
     render(<MentorshipAdminPrototype />);
-    fireEvent.click(screen.getByRole("button", { name: "Show them" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Not registered for this round" }),
+    );
     const rowOf = (name) =>
       screen.getAllByRole("row").find((row) => within(row).queryByText(name));
     // Took part last summer and not this autumn.
@@ -751,10 +998,33 @@ describe("MentorshipAdminPrototype smoke", () => {
     ).toBeInTheDocument();
     // Registered this autumn, so not on the list.
     expect(rowOf("Alice Chen")).toBeUndefined();
-    // Training comes from the course rows.
-    expect(
-      within(rowOf("Kwame Osei")).getByText("in_progress"),
-    ).toBeInTheDocument();
+    // Training comes from the course rows; the role from the admission.
+    const kwame = rowOf("Kwame Osei");
+    expect(within(kwame).getByText("In progress")).toBeInTheDocument();
+    expect(within(kwame).getByText("mentee")).toBeInTheDocument();
+    // Counted from registrations: one earlier round for Min, none for Kwame.
+    const cells = (row) =>
+      within(row)
+        .getAllByRole("cell")
+        .map((c) => c.textContent);
+    const roundsColumn = within(kwame.closest("table"))
+      .getAllByRole("columnheader")
+      .findIndex((h) => h.textContent === "Rounds taken part");
+    expect(cells(rowOf("Min Park"))[roundsColumn]).toBe("1");
+    expect(cells(kwame)[roundsColumn]).toBe("0");
+    // Admitted twice: still one row, so one email; a line per role.
+    const lia = screen
+      .getAllByRole("row")
+      .filter((row) => within(row).queryByText("Lia Rossi"));
+    expect(lia).toHaveLength(1);
+    const liaCells = within(lia[0]).getAllByRole("cell");
+    const lines = (cell) =>
+      [...cell.querySelectorAll("div")].map((d) => d.textContent);
+    expect(lines(liaCells[2])).toEqual(["mentor", "mentee"]);
+    expect(lines(liaCells[3])).toEqual(["Done", "Not started"]);
+    // Taking part is the person's, not the role's: one value, not a line each.
+    expect(liaCells[7].textContent).toBe("0");
+    expect(liaCells[8].textContent).toBe("Never");
 
     // A finished round has nobody left to invite: the filter is off, and
     // switching to it drops the list.
@@ -764,13 +1034,14 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(
       screen.getByRole("button", { name: "Not registered for this round" }),
     ).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "Show them" })).toBeNull();
     expect(rowOf("Kwame Osei")).toBeUndefined();
   });
 
   it("lets notes be written about someone who has not registered", () => {
     render(<MentorshipAdminPrototype />);
-    fireEvent.click(screen.getByRole("button", { name: "Show them" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Not registered for this round" }),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Min Park" }));
     expect(window.location.hash).toContain("participants/3111?round=7");
@@ -826,7 +1097,9 @@ describe("MentorshipAdminPrototype smoke", () => {
       within(rowOf("Ivy Hu")).getByText("Deactivated"),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Show them" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Not registered for this round" }),
+    );
     // Independent flags: both at once.
     expect(
       within(rowOf("Lia Rossi")).getByText("Deactivated"),
@@ -940,6 +1213,21 @@ describe("MentorshipAdminPrototype smoke", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Run matching · 4" }));
   };
+
+  it("offers only a matching run, not an email, from the matching pool", () => {
+    render(<MentorshipAdminPrototype />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Eligible for matching" }),
+    );
+    const row = screen
+      .getAllByRole("row")
+      .find((r) => within(r).queryByRole("button", { name: "Bob Liu" }));
+    fireEvent.click(within(row).getByRole("checkbox"));
+    expect(
+      screen.getByRole("button", { name: "Run matching · 1" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Send email/ })).toBeNull();
+  });
 
   it("runs matching on the chosen people, and holds the round while it runs", () => {
     render(<MentorshipAdminPrototype />);
@@ -1371,6 +1659,27 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(screen.queryByRole("button", { name: "Cara Wang" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Gina Shen" })).toBeNull();
     expect(screen.getByRole("button", { name: "Erin Ma" })).toBeInTheDocument();
+  });
+
+  it("filters by account state, from a link", () => {
+    window.history.replaceState(null, "", "#mentorship?account=deactivated");
+    render(<MentorshipAdminPrototype />);
+    expect(screen.getByRole("button", { name: "Ivy Hu" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Alice Chen" })).toBeNull();
+  });
+
+  it("filters the not-registered list by account state too", () => {
+    window.history.replaceState(
+      null,
+      "",
+      "#mentorship?filter=unregistered&account=blocked",
+    );
+    render(<MentorshipAdminPrototype />);
+    // Blocked and deactivated at once: she counts as blocked.
+    expect(
+      screen.getByRole("button", { name: "Lia Rossi" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Kwame Osei" })).toBeNull();
   });
 
   it("picks a notification first, then its state, in one control", async () => {

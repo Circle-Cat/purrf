@@ -6,6 +6,7 @@ import RaiseRequestDialog from "@/pages/MentorshipAdminPrototype/RaiseRequestDia
 import ComposeDialog from "@/pages/MentorshipAdminPrototype/ComposeDialog";
 import RoundModal from "@/pages/MentorshipAdminPrototype/RoundModal";
 import MatchingPage from "@/pages/MentorshipAdminPrototype/MatchingPage";
+import FeedbackPage from "@/pages/MentorshipAdminPrototype/FeedbackPage";
 import {
   historyIssuesOf,
   lastRoundOf,
@@ -62,7 +63,8 @@ let nextRequestId = Math.max(...INITIAL_REQUESTS.map((r) => r.requestId)) + 1;
  * The Pages bundle has no router, so the hash stands in for the real routes:
  * `#mentorship/participants/:userId?round=…&pair=…` for a person in a round —
  * registered or not, the same page — with one of their pairs open;
- * `#mentorship/matching/:roundId` for a round's matching run; and
+ * `#mentorship/matching/:roundId` for a round's matching run;
+ * `#mentorship/feedback/:roundId` for everyone's feedback in a round; and
  * `#mentorship?q=…` for the list. The list's round and filters live in the
  * query so that opening a detail page and coming back lands on the same
  * filtered list — the one cost of making details full pages instead of
@@ -115,6 +117,9 @@ const parseLocation = () => {
   if (root === HASH_ROOT && kind === "matching" && id) {
     return { view: { kind: "matching", roundId: Number(id) }, query };
   }
+  if (root === HASH_ROOT && kind === "feedback" && id) {
+    return { view: { kind: "feedback", roundId: Number(id) }, query };
+  }
   if (root === HASH_ROOT && kind === "pairs" && id) {
     return { view: { kind: "pair", pairId: Number(id) }, query };
   }
@@ -135,6 +140,7 @@ const toHash = (view, query) => {
     return `#${HASH_ROOT}/participants/${view.userId}?${params}`;
   }
   if (view.kind === "matching") return `#${HASH_ROOT}/matching/${view.roundId}`;
+  if (view.kind === "feedback") return `#${HASH_ROOT}/feedback/${view.roundId}`;
   const search = new URLSearchParams(query).toString();
   return `#${HASH_ROOT}${search ? `?${search}` : ""}`;
 };
@@ -1047,13 +1053,32 @@ const MentorshipAdminPrototype = () => {
       .map((userId) => {
         const last = lastRowOf(userId);
         const who = last ?? NEVER_REGISTERED.find((p) => p.userId === userId);
+        const rows = participants.filter((p) => p.userId === userId);
+        // What they were admitted as. Someone from the historical backfill
+        // has no admission, so their past roles stand in for one. A course
+        // alone does not make someone a mentor or mentee.
+        const admitted = ["mentor", "mentee"].filter((role) =>
+          HIRED_APPLICATIONS.some(
+            (a) => a.userId === userId && a.role === role,
+          ),
+        );
+        const roles = admitted.length
+          ? admitted
+          : ["mentor", "mentee"].filter((role) =>
+              rows.some((p) => p.role === role),
+            );
         return {
           userId,
           name: who?.name,
           email: who?.email,
           identity: who?.identity,
-          mentorOnboarding: courseOf(userId, "mentor"),
-          menteeOnboarding: courseOf(userId, "mentee"),
+          // A line per role for the course; taking part is counted for the
+          // person, whichever role they took.
+          byRole: roles.map((role) => ({
+            role,
+            training: courseOf(userId, role),
+          })),
+          roundsTakenPart: new Set(rows.map((p) => p.roundId)).size,
           lastTookPart: last
             ? (rounds.find((r) => r.id === last.roundId)?.name ?? null)
             : null,
@@ -1243,6 +1268,40 @@ const MentorshipAdminPrototype = () => {
       );
     }
 
+    if (view.kind === "feedback") {
+      const target = rounds.find((r) => r.id === view.roundId);
+      // A link to a round that does not exist says so, rather than showing
+      // some other round's people under its address.
+      if (!target) {
+        return (
+          <div className="rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm">
+            <p>No such round.</p>
+            <button
+              type="button"
+              className="mt-2 underline underline-offset-2"
+              onClick={backToList}
+            >
+              Back to the list
+            </button>
+          </div>
+        );
+      }
+      return (
+        <FeedbackPage
+          round={target}
+          participants={participants}
+          pairs={pairs}
+          feedback={INITIAL_FEEDBACK}
+          accountOf={accountOf}
+          can={can}
+          onBack={backToList}
+          onOpenPerson={(userId) =>
+            navigate({ kind: "person", userId, roundId: target.id })
+          }
+        />
+      );
+    }
+
     if (view.kind === "matching") {
       const forRound = view.roundId;
       const target = rounds.find((r) => r.id === forRound) ?? round;
@@ -1330,6 +1389,7 @@ const MentorshipAdminPrototype = () => {
         }}
         onOpenMatching={() => navigate({ kind: "matching", roundId: round.id })}
         feedback={INITIAL_FEEDBACK}
+        onOpenFeedback={(id) => navigate({ kind: "feedback", roundId: id })}
       />
     );
   };
@@ -1455,6 +1515,7 @@ const MentorshipAdminPrototype = () => {
         round={roundModal}
         onClose={() => setRoundModal(null)}
         onSave={saveRound}
+        readOnly={!can("mentorship.admin.write")}
       />
     </div>
   );

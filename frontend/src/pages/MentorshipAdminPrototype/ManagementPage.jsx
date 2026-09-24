@@ -10,6 +10,10 @@ import {
 } from "@/components/ui/select";
 import ParticipantsTable from "@/pages/MentorshipAdminPrototype/ParticipantsTable";
 import {
+  feedbackOwedBy,
+  roundFigures,
+} from "@/pages/MentorshipAdminPrototype/feedback";
+import {
   ACTION_LABELS,
   ACTOR_NAMES,
 } from "@/pages/MentorshipAdminPrototype/mockData";
@@ -147,104 +151,139 @@ const ApprovalsCard = ({ requests, viewerId, onDecide }) => {
   );
 };
 
+const formatRating = (value) => (value != null ? value.toFixed(2) : "—");
+
 /**
- * This round's feedback: who has sent it, who still owes it, and how the
- * programme was rated.
+ * The rounds table, in the shape main's "Mentorship Round Management" card
+ * already has — same columns, same footer — plus a Feedback column for
+ * whoever may read feedback. The round name also picks the round the rest of
+ * the page is about.
  *
- * "Owes it" is counted over the people who actually took part and still
- * qualify — in a pair this round, not withdrawn, not blocked. Counting every
- * registration would show a list of people who were never asked.
+ * @param {object} props
+ * @param {Array<object>} props.rounds
+ * @param {number} props.roundId - The round the page is on.
+ * @param {Array<object>} props.participants - Every round's rows.
+ * @param {Array<object>} props.pairs - Every round's pairs.
+ * @param {Object<string, object>} props.feedback - Keyed by participant id.
+ * @param {Function} props.accountOf
+ * @param {Function} props.onSelectRound
+ * @param {Function} props.onEditRound
+ * @param {Function} props.onOpenFeedback
+ * @param {Function} props.can
+ * @returns {JSX.Element}
  */
-const FeedbackCard = ({ round, participants, pairs, feedback, accountOf }) => {
-  const owed = participants.filter(
-    (p) =>
-      p.roundId === round.id &&
-      p.approvalStatus !== "withdrawn" &&
-      !accountOf(p.userId).isBlocked &&
-      pairs.some(
-        (x) =>
-          x.roundId === round.id &&
-          (x.mentorId === p.userId || x.menteeId === p.userId),
-      ),
-  );
-  const sent = owed.filter((p) => feedback[p.participantId]);
-  const missing = owed.filter((p) => !feedback[p.participantId]);
-  const ratings = sent.map((p) => feedback[p.participantId].programRating);
-  const average = ratings.length
-    ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1)
-    : null;
+const RoundsCard = ({
+  rounds,
+  roundId,
+  participants,
+  pairs,
+  feedback,
+  accountOf,
+  onSelectRound,
+  onEditRound,
+  onOpenFeedback,
+  can,
+}) => {
+  const writable = can("mentorship.admin.write");
+  const feedbackReadable = can("mentorship.feedback.read");
+  const rows = rounds.map((r) => {
+    const owed = feedbackOwedBy(r, participants, pairs, accountOf);
+    return {
+      round: r,
+      figures: roundFigures(r, participants, pairs, feedback),
+      owed: owed.length,
+      sent: owed.filter((p) => feedback[p.participantId]).length,
+    };
+  });
+  const totals = {
+    completedRounds: rounds.filter((r) => r.status === "closed").length,
+    participants: rows.reduce((s, r) => s + r.figures.matchedParticipants, 0),
+    meetings: rows.reduce((s, r) => s + r.figures.completedMeetings, 0),
+  };
+  const th = "px-3 py-2 text-left text-xs font-medium text-slate-500";
+  const td = "px-3 py-2 text-sm";
   return (
     <Card
-      title={`Feedback — ${round.name}`}
+      title="Mentorship Round Management"
       right={
-        <span className="text-xs text-slate-500">
-          {sent.length} of {owed.length} sent
-          {average ? ` · programme rated ${average}/5` : ""}
-        </span>
+        writable ? (
+          <Button size="sm" onClick={() => onEditRound(null)}>
+            Create New Round
+          </Button>
+        ) : null
       }
     >
-      {owed.length === 0 ? (
-        <p className="text-sm text-slate-500">
-          Nobody in a pair this round yet.
-        </p>
-      ) : missing.length === 0 ? (
-        <p className="text-sm text-slate-500">Everyone has sent theirs.</p>
-      ) : (
-        <p className="text-sm text-slate-700">
-          <span className="text-slate-500">Not sent yet: </span>
-          {missing.map((p) => p.name).join(" · ")}
-        </p>
-      )}
-      <p className="mt-1 text-xs text-slate-500">
-        Counted over people in a pair this round who have not withdrawn and are
-        not blocked. What each person wrote is on their own page.
-      </p>
+      <table className="w-full">
+        <thead className="border-b border-slate-200">
+          <tr>
+            <th className={th}>Round Name</th>
+            <th className={th}>Participants</th>
+            <th className={th}>Required Meetings</th>
+            <th className={th}>Mentor Rating</th>
+            <th className={th}>Mentee Rating</th>
+            <th className={th}>Average Meetings Per Pair</th>
+            {feedbackReadable ? <th className={th}>Feedback</th> : null}
+            <th className={th}>Action</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {rows.map(({ round: r, figures, owed, sent }) => (
+            <tr key={r.id} className={r.id === roundId ? "bg-slate-50" : ""}>
+              <td className={td}>
+                <button
+                  type="button"
+                  aria-pressed={r.id === roundId}
+                  onClick={() => onSelectRound(r.id)}
+                  className={`text-left font-medium ${
+                    r.id === roundId ? "text-slate-900" : "text-slate-500"
+                  }`}
+                >
+                  {r.name}
+                </button>
+              </td>
+              <td className={td}>{figures.matchedParticipants}</td>
+              <td className={td}>{r.requiredMeetings} times</td>
+              <td className={td}>{formatRating(figures.mentorRating)}</td>
+              <td className={td}>{formatRating(figures.menteeRating)}</td>
+              <td className={td}>
+                {figures.avgMeetingsPerPair != null
+                  ? figures.avgMeetingsPerPair.toFixed(1)
+                  : "—"}
+              </td>
+              {feedbackReadable ? (
+                <td className={td}>
+                  <button
+                    type="button"
+                    className="underline underline-offset-2"
+                    aria-label={`Feedback for ${r.name}`}
+                    onClick={() => onOpenFeedback(r.id)}
+                  >
+                    {sent} of {owed} sent
+                  </button>
+                </td>
+              ) : null}
+              <td className={td}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label={writable ? `Edit ${r.name}` : `View ${r.name}`}
+                  onClick={() => onEditRound(r)}
+                >
+                  {writable ? "Edit" : "View"}
+                </Button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="mt-2 flex flex-wrap gap-6 border-t border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+        <span>Total Completed Rounds: {totals.completedRounds}</span>
+        <span>Total Participants: {totals.participants}</span>
+        <span>Total Meetings: {totals.meetings}</span>
+      </div>
     </Card>
   );
 };
-
-const RoundsCard = ({ rounds, roundId, onSelectRound, onEditRound, can }) => (
-  <Card
-    title="Rounds"
-    right={
-      can("mentorship.admin.write") ? (
-        <Button size="sm" onClick={() => onEditRound(null)}>
-          New round
-        </Button>
-      ) : null
-    }
-  >
-    <ul className="divide-y divide-slate-200">
-      {rounds.map((r) => (
-        <li key={r.id} className="flex flex-wrap items-center gap-3 py-2">
-          <button
-            type="button"
-            onClick={() => onSelectRound(r.id)}
-            className={`text-sm font-medium ${
-              r.id === roundId ? "text-slate-900" : "text-slate-500"
-            }`}
-          >
-            {r.name}
-          </button>
-          <span className="text-xs text-slate-500">
-            Onboarding / registration deadline {r.timeline.onboardingDeadlineAt}{" "}
-            · {r.requiredMeetings} meetings required
-          </span>
-          {can("mentorship.admin.write") ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="ml-auto"
-              onClick={() => onEditRound(r)}
-            >
-              Edit
-            </Button>
-          ) : null}
-        </li>
-      ))}
-    </ul>
-  </Card>
-);
 
 /**
  * ManagementPage
@@ -283,6 +322,7 @@ const ManagementPage = ({
   roundRunning,
   onOpenMatching,
   feedback,
+  onOpenFeedback,
 }) => {
   // The time-limited filters belong to the round they were opened on; a
   // different round starts without them, and without the old selection.
@@ -309,8 +349,13 @@ const ManagementPage = ({
           <RoundsCard
             rounds={rounds}
             roundId={round.id}
+            participants={participants}
+            pairs={pairs}
+            feedback={feedback}
+            accountOf={accountOf}
             onSelectRound={onSelectRound}
             onEditRound={onEditRound}
+            onOpenFeedback={onOpenFeedback}
             can={can}
           />
 
@@ -374,16 +419,6 @@ const ManagementPage = ({
               onRunMatching={onRunMatching}
             />
           </Card>
-
-          {can("mentorship.feedback.read") ? (
-            <FeedbackCard
-              round={round}
-              participants={participants}
-              pairs={pairs}
-              feedback={feedback}
-              accountOf={accountOf}
-            />
-          ) : null}
         </>
       ) : null}
     </>

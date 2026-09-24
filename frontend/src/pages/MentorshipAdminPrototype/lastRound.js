@@ -81,9 +81,14 @@ export const describeLastRound = (value) => {
  * decides two things: for a mentee, whether they reached the meetings it
  * required (withdrawing counts as not, before being matched too; a pair ended
  * by the partner does not count against them; no meeting data is not held
- * against anyone), and for
- * anyone, a no show recorded in it. A red flag counts from any round. Revoked
- * flags never count. Someone who never took part has nothing to exempt.
+ * against anyone), and for anyone, a no show recorded in it. Revoked flags
+ * never count. Someone who never took part has nothing to exempt.
+ *
+ * A red flag counts from any round — until an exemption has been proved out:
+ * exempted for a round, took part in it, and came through it with none of
+ * the problems above. From then on flags from before that round stay on the
+ * record but no longer need exempting again. A new problem after it needs a
+ * new exemption.
  *
  * @returns {string[]} One reason per problem, empty when there is none.
  */
@@ -96,58 +101,77 @@ export const historyIssuesOf = (
   revokedNoteIds,
 ) => {
   const nameOf = (roundId) => rounds.find((r) => r.id === roundId)?.name ?? "";
-  const standing = (n) => !revokedNoteIds.has(n.noteId);
-  const issues = notes
-    .filter(
-      (n) => n.userId === person.userId && n.tag === "red_flag" && standing(n),
-    )
-    .map((n) => `Red flag in ${nameOf(n.roundId)}`);
-
   const endOf = (roundId) =>
     rounds.find((r) => r.id === roundId)?.timeline
       .meetingsCompletionDeadlineAt ?? "";
+  const standing = (n) => !revokedNoteIds.has(n.noteId);
+  const hasNote = (roundId, tag) =>
+    notes.some(
+      (n) =>
+        n.userId === person.userId &&
+        n.roundId === roundId &&
+        n.tag === tag &&
+        standing(n),
+    );
   const now = endOf(person.roundId);
-  const last = participants
+  const earlier = participants
     .filter(
       (p) =>
         p.userId === person.userId &&
         endOf(p.roundId) &&
         endOf(p.roundId) < now,
     )
-    .sort((a, b) => endOf(b.roundId).localeCompare(endOf(a.roundId)))[0];
-  if (!last) return issues;
+    .sort((a, b) => endOf(b.roundId).localeCompare(endOf(a.roundId)));
 
-  const where = nameOf(last.roundId);
-  if (
-    notes.some(
+  /** What went wrong in one earlier round, apart from a red flag. */
+  const problemsIn = (row, role) => {
+    const where = nameOf(row.roundId);
+    const found = [];
+    if (hasNote(row.roundId, "no_show")) found.push(`No show in ${where}`);
+    if (role !== "mentee") return found;
+    const theirs = pairs.filter(
+      (p) => p.roundId === row.roundId && p.menteeId === person.userId,
+    );
+    if (theirs.length === 0 && row.approvalStatus === "withdrawn") {
+      found.push(`Withdrew before matching in ${where}`);
+    }
+    theirs.forEach((p) => {
+      if (p.completed == null) return;
+      const n = `${p.completed}/${p.required}`;
+      if (row.approvalStatus === "withdrawn") {
+        found.push(`Withdrew at ${n} in ${where}`);
+      } else if (p.completed < p.required && p.status === "active") {
+        found.push(`Met ${n} in ${where}`);
+      }
+    });
+    return found;
+  };
+
+  // The latest round an exemption was proved out in, if any.
+  const provedOut = earlier.find(
+    (row) =>
+      hasNote(row.roundId, "matching_exemption") &&
+      pairs.some(
+        (p) =>
+          p.roundId === row.roundId &&
+          (p.mentorId === person.userId || p.menteeId === person.userId),
+      ) &&
+      !hasNote(row.roundId, "red_flag") &&
+      problemsIn(row, row.role).length === 0,
+  );
+  const clearedUpTo = provedOut ? endOf(provedOut.roundId) : "";
+
+  const issues = notes
+    .filter(
       (n) =>
         n.userId === person.userId &&
-        n.roundId === last.roundId &&
-        n.tag === "no_show" &&
-        standing(n),
+        n.tag === "red_flag" &&
+        standing(n) &&
+        (!clearedUpTo || endOf(n.roundId) > clearedUpTo),
     )
-  ) {
-    issues.push(`No show in ${where}`);
-  }
+    .map((n) => `Red flag in ${nameOf(n.roundId)}`);
 
-  if (person.role === "mentee") {
-    const theirs = pairs.filter(
-      (p) => p.roundId === last.roundId && p.menteeId === person.userId,
-    );
-    if (theirs.length === 0 && last.approvalStatus === "withdrawn") {
-      issues.push(`Withdrew before matching in ${where}`);
-    }
-    pairs
-      .filter((p) => p.roundId === last.roundId && p.menteeId === person.userId)
-      .forEach((p) => {
-        if (p.completed == null) return;
-        const n = `${p.completed}/${p.required}`;
-        if (last.approvalStatus === "withdrawn") {
-          issues.push(`Withdrew at ${n} in ${where}`);
-        } else if (p.completed < p.required && p.status === "active") {
-          issues.push(`Met ${n} in ${where}`);
-        }
-      });
-  }
-  return issues;
+  const last = earlier[0];
+  if (!last) return issues;
+  return [...issues, ...problemsIn(last, person.role)];
 };

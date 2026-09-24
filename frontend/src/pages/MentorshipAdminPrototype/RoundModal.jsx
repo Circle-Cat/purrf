@@ -107,7 +107,7 @@ const EMPTY = {
  *
  * @returns {JSX.Element|null}
  */
-const RoundModal = ({ round, onClose, onSave }) => {
+const RoundModal = ({ round, onClose, onSave, readOnly = false }) => {
   const [form, setForm] = useState(EMPTY);
 
   useEffect(() => {
@@ -143,72 +143,80 @@ const RoundModal = ({ round, onClose, onSave }) => {
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{round.id ? "Edit round" : "New round"}</DialogTitle>
+          <DialogTitle>
+            {readOnly ? "View round" : round.id ? "Edit round" : "New round"}
+          </DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-wrap gap-3">
-          <div className="flex-1">
-            <label className="text-xs text-slate-500">Round name</label>
-            <Input
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-            />
-          </div>
-          <div className="w-40">
-            <label className="text-xs text-slate-500">Required meetings</label>
-            <Input
-              type="number"
-              value={form.requiredMeetings}
-              onChange={(e) =>
-                setForm({ ...form, requiredMeetings: Number(e.target.value) })
-              }
-            />
-          </div>
-        </div>
-
-        <div className="mt-3 overflow-hidden rounded-md border border-slate-200">
-          <div className="grid grid-cols-[7rem_1fr_1fr] gap-px bg-slate-200 text-xs font-medium">
-            <div className="bg-slate-50 px-3 py-2">Phase</div>
-            <div className="bg-slate-50 px-3 py-2">Admin action</div>
-            <div className="bg-slate-50 px-3 py-2">Participant deadline</div>
-          </div>
-          {PHASES.map((p) => (
-            <div
-              key={p.phase}
-              className="grid grid-cols-[7rem_1fr_1fr] gap-px border-t border-slate-200 bg-slate-200"
-            >
-              <div className="bg-white px-3 py-3 text-sm">{p.phase}</div>
-              <div className="bg-white px-3 py-3">
-                <label className="text-xs text-slate-500">
-                  {p.admin.label}
-                  {p.adminRequired ? " *" : ""}
-                </label>
-                <Input
-                  type="date"
-                  className="mt-1 h-8 text-sm"
-                  value={form.timeline[p.admin.key] ?? ""}
-                  onChange={(e) => setDate(p.admin.key, e.target.value)}
-                />
-              </div>
-              <div className="space-y-2 bg-white px-3 py-3">
-                {p.deadlines.map((d) => (
-                  <div key={d.key}>
-                    <label className="text-xs text-slate-500">
-                      {d.label}
-                      {d.required ? " *" : ""}
-                    </label>
-                    <Input
-                      type="date"
-                      className="mt-1 h-8 text-sm"
-                      value={form.timeline[d.key] ?? ""}
-                      onChange={(e) => setDate(d.key, e.target.value)}
-                    />
-                  </div>
-                ))}
-              </div>
+        {/* Without write access the same form opens as a record, as main's
+            eye icon does: every field disabled, no Save. */}
+        <fieldset disabled={readOnly} className="contents">
+          <div className="flex flex-wrap gap-3">
+            <div className="flex-1">
+              <label className="text-xs text-slate-500">Round name</label>
+              <Input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
             </div>
-          ))}
-        </div>
+            <div className="w-40">
+              <label className="text-xs text-slate-500">
+                Required meetings
+              </label>
+              <Input
+                type="number"
+                value={form.requiredMeetings}
+                onChange={(e) =>
+                  setForm({ ...form, requiredMeetings: Number(e.target.value) })
+                }
+              />
+            </div>
+          </div>
+
+          <div className="mt-3 overflow-hidden rounded-md border border-slate-200">
+            <div className="grid grid-cols-[7rem_1fr_1fr] gap-px bg-slate-200 text-xs font-medium">
+              <div className="bg-slate-50 px-3 py-2">Phase</div>
+              <div className="bg-slate-50 px-3 py-2">Admin action</div>
+              <div className="bg-slate-50 px-3 py-2">Participant deadline</div>
+            </div>
+            {PHASES.map((p) => (
+              <div
+                key={p.phase}
+                className="grid grid-cols-[7rem_1fr_1fr] gap-px border-t border-slate-200 bg-slate-200"
+              >
+                <div className="bg-white px-3 py-3 text-sm">{p.phase}</div>
+                <div className="bg-white px-3 py-3">
+                  <label className="text-xs text-slate-500">
+                    {p.admin.label}
+                    {p.adminRequired ? " *" : ""}
+                  </label>
+                  <Input
+                    type="date"
+                    className="mt-1 h-8 text-sm"
+                    value={form.timeline[p.admin.key] ?? ""}
+                    onChange={(e) => setDate(p.admin.key, e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2 bg-white px-3 py-3">
+                  {p.deadlines.map((d) => (
+                    <div key={d.key}>
+                      <label className="text-xs text-slate-500">
+                        {d.label}
+                        {d.required ? " *" : ""}
+                      </label>
+                      <Input
+                        type="date"
+                        className="mt-1 h-8 text-sm"
+                        value={form.timeline[d.key] ?? ""}
+                        onChange={(e) => setDate(d.key, e.target.value)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </fieldset>
 
         <p className="text-xs text-slate-500">
           Dates in the Admin action column are prompts, not schedules. Nothing
@@ -223,19 +231,21 @@ const RoundModal = ({ round, onClose, onSave }) => {
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            Cancel
+            {readOnly ? "Close" : "Cancel"}
           </Button>
-          {missing.length > 0 ? (
+          {readOnly ? null : missing.length > 0 ? (
             <span className="mr-auto self-center text-xs text-amber-800">
               Still needed: {missing.join(", ")}
             </span>
           ) : null}
-          <Button
-            disabled={missing.length > 0}
-            onClick={() => onSave({ ...form, id: round.id })}
-          >
-            Save
-          </Button>
+          {readOnly ? null : (
+            <Button
+              disabled={missing.length > 0}
+              onClick={() => onSave({ ...form, id: round.id })}
+            >
+              Save
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -293,6 +293,15 @@ const ParticipantDetailPage = ({
   };
   // An earlier round is a record: it can be read, not changed.
   const writable = can("mentorship.admin.write") && !readOnly;
+  /** Whether a standing exemption let them into one round's matching. */
+  const exemptedIn = (roundId) =>
+    notes.some(
+      (n) =>
+        n.userId === person.userId &&
+        n.roundId === roundId &&
+        n.tag === "matching_exemption" &&
+        !revokedNoteIds.has(n.noteId),
+    );
   /** Flags that still stand from one round, as `{tag: count}`. */
   const flagsIn = (roundId) => {
     const out = {};
@@ -320,7 +329,7 @@ const ParticipantDetailPage = ({
         <div>
           <h2 className="text-base font-semibold">{person.name}</h2>
           <p className="text-xs text-slate-500">
-            {[person.role, person.identity, person.email]
+            {[`ID ${person.userId}`, person.role, person.identity, person.email]
               .filter(Boolean)
               .join(" · ")}
           </p>
@@ -553,6 +562,13 @@ const ParticipantDetailPage = ({
                       {expanded ? "▾" : "▸"} {r?.name}
                     </button>
                     <FlagBadges flags={flagsIn(participant.roundId)} />
+                    {/* The flags stay on the record; an exemption for the
+                        round sits beside them rather than replacing them. */}
+                    {exemptedIn(participant.roundId) ? (
+                      <span className="ml-1 inline-flex rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800">
+                        Exempted
+                      </span>
+                    ) : null}
                   </span>
                   <span className="w-20 shrink-0 text-slate-600">
                     {participant.role}
