@@ -1,7 +1,12 @@
 from datetime import datetime, timezone
 
 from backend.common.mentorship_enums import RoundStatus
-from backend.mentorship.mentorship_mapper import MentorshipMapper, round_status
+from backend.mentorship.mentorship_mapper import MentorshipMapper
+from backend.mentorship.round_windows import (
+    is_feedback_editable,
+    is_feedback_open,
+    round_status,
+)
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from backend.repository.mentorship_pairs_repository import MentorshipPairsRepository
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
@@ -91,12 +96,17 @@ class RoundsService:
             <= registration_round.feedback_deadline_at
         )
 
+        rounds = await repo.get_all_rounds(session)
+        # Only promoted rounds count, as for the registration round.
+        is_feedback_enabled = any(
+            r.promotion_start_at is not None
+            and is_feedback_open(r, now)
+            and is_feedback_editable(r, now)
+            for r in rounds
+        )
         # get_all_rounds lists the latest meetings deadline first, so the
         # first match is the most recent round in that status.
-        statuses = [
-            (r.round_id, round_status(r, now))
-            for r in await repo.get_all_rounds(session)
-        ]
+        statuses = [(r.round_id, round_status(r, now)) for r in rounds]
         active_round_id = next(
             (rid for rid, status in statuses if status == RoundStatus.ACTIVE),
             None,
@@ -121,7 +131,7 @@ class RoundsService:
             ),
             is_registration_open=open_round is not None,
             can_view_match=can_view_match,
-            is_feedback_enabled=await repo.has_round_in_feedback(session, now),
+            is_feedback_enabled=is_feedback_enabled,
             active_round_id=active_round_id,
         )
 

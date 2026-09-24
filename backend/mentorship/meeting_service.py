@@ -26,6 +26,10 @@ from backend.dto.google_meeting_delete_response_dto import (
     GoogleMeetingDeleteResponseDto,
 )
 from backend.common.exceptions import MeetingGoneError
+from backend.mentorship.round_windows import (
+    is_meeting_log_open,
+    meeting_log_closes_at,
+)
 
 # Mirrors the recruiting wording for the same situation: the row and the
 # Calendar event have diverged, and the way out is cancel-then-rebook.
@@ -44,6 +48,7 @@ class MeetingService:
         meeting_scheduling_service,
         mentorship_calendar_id,
         mentorship_meeting_repository,
+        mentorship_round_repository,
     ):
         """
         Args:
@@ -58,12 +63,15 @@ class MeetingService:
             mentorship_meeting_repository: Data access for individual
                 mentorship meeting rows (``mentorship_meeting`` table), the
                 replacement for ``mentorship_pairs.meeting_log``.
+            mentorship_round_repository: Round data access, for the logging
+                cutoff.
         """
         self.logger = logger
         self.mentorship_pairs_repository = mentorship_pairs_repository
         self.mentorship_mapper = mentorship_mapper
         self.users_repository = users_repository
         self.meeting_scheduling_service = meeting_scheduling_service
+        self.mentorship_round_repository = mentorship_round_repository
         self.mentorship_calendar_id = mentorship_calendar_id
         self.mentorship_meeting_repository = mentorship_meeting_repository
 
@@ -193,6 +201,20 @@ class MeetingService:
             raise ValueError(
                 "The current user is not actively matched as a mentee with this partner in this round."
             )
+
+        round_entity = await self.mentorship_round_repository.get_by_round_id(
+            session, data.round_id
+        )
+        if round_entity is not None and not is_meeting_log_open(
+            round_entity, datetime.now(dt_timezone.utc)
+        ):
+            self.logger.warning(
+                "[MeetingService] Upsert refused for mentee_id=%s: logging for round_id=%s closed at %s",
+                current_user.user_id,
+                data.round_id,
+                meeting_log_closes_at(round_entity).isoformat(),
+            )
+            raise ValueError("Logging meetings for this round has closed.")
 
         # Conflict-check against this pair's existing MANUAL meetings only --
         # matching the old behavior, which compared only against

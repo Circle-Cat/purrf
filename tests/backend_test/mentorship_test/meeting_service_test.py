@@ -1,8 +1,8 @@
 import copy
 import unittest
 import uuid
-from datetime import date, datetime, timezone
-from unittest.mock import MagicMock, AsyncMock
+from datetime import date, datetime, timedelta, timezone
+from unittest.mock import MagicMock, AsyncMock, patch
 
 from backend.mentorship.meeting_service import MeetingService
 from backend.dto.user_context_dto import UserContextDto
@@ -14,6 +14,7 @@ from backend.dto.google_meeting_response_detail_dto import (
 from backend.entity.users_entity import UsersEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
+from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.common.mentorship_enums import MeetingSource, PairStatus
 from backend.common.permissions import Permission
 from backend.common.exceptions import MeetingGoneError
@@ -40,6 +41,16 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.mock_meeting_repo.recalculate_completed_count = AsyncMock()
 
         self.mock_meeting_scheduling_service = AsyncMock()
+        self.mock_round_repo = MagicMock()
+        # A round with no meetings deadline leaves logging open.
+        self.mock_round_repo.get_by_round_id = AsyncMock(
+            return_value=MentorshipRoundEntity(
+                round_id=10,
+                name="2026 Spring",
+                required_meetings=5,
+                onboarding_deadline_at=datetime(2026, 2, 10, tzinfo=timezone.utc),
+            )
+        )
         self.meeting_service = MeetingService(
             logger=self.mock_logger,
             mentorship_pairs_repository=self.mock_pairs_repo,
@@ -48,6 +59,7 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
             meeting_scheduling_service=self.mock_meeting_scheduling_service,
             mentorship_calendar_id="cal-mentorship",
             mentorship_meeting_repository=self.mock_meeting_repo,
+            mentorship_round_repository=self.mock_round_repo,
         )
 
         self.user_id = 1
@@ -395,6 +407,103 @@ class TestMeetingServiceV1(unittest.IsolatedAsyncioTestCase):
         self.mock_meeting_repo.recalculate_completed_count.assert_not_awaited()
         self.mock_session.commit.assert_not_awaited()
 
+    MEETINGS_DEADLINE = datetime(2025, 10, 31, 6, 59, 59, tzinfo=timezone.utc)
+    LOG_CLOSES_AT = datetime(2025, 11, 1, 6, 59, 59, tzinfo=timezone.utc)
+
+    def _with_meetings_deadline(self, deadline):
+        """A round whose other dates all differ from the logging cutoff."""
+        self.mock_round_repo.get_by_round_id.return_value = MentorshipRoundEntity(
+            round_id=self.round_id,
+            name="2025 Fall",
+            required_meetings=5,
+            onboarding_deadline_at=datetime(2025, 8, 10, tzinfo=timezone.utc),
+            meeting_log_reminder_at=datetime(2025, 9, 20, tzinfo=timezone.utc),
+            meetings_completion_deadline_at=deadline,
+            feedback_start_at=datetime(2025, 11, 5, tzinfo=timezone.utc),
+            feedback_deadline_at=datetime(2025, 11, 20, tzinfo=timezone.utc),
+        )
+
+    async def _log_at(self, now):
+        self.mock_pairs_repo.get_active_pair_by_mentee_and_mentor.return_value = (
+            self.mock_pair_entity
+        )
+        self.mock_meeting_repo.get_meetings_by_pair.side_effect = [[], []]
+        self.mock_meeting_repo.recalculate_completed_count.return_value = 4
+        payload = MeetingCreateDto(
+            round_id=self.round_id,
+            partner_id=self.partner_id,
+            start_datetime=datetime(2025, 10, 30, 14, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2025, 10, 30, 15, 0, tzinfo=timezone.utc),
+            is_completed=True,
+        )
+        with patch("backend.mentorship.meeting_service.datetime") as mock_dt:
+            mock_dt.now.return_value = now
+            return await self.meeting_service.upsert_meetings(
+                self.mock_session, self.user_context, payload
+            )
+
+    async def test_upsert_meetings_accepted_at_the_logging_cutoff(self):
+        """Logging stays open a day past the meetings deadline, inclusive."""
+        self._with_meetings_deadline(self.MEETINGS_DEADLINE)
+
+        await self._log_at(self.LOG_CLOSES_AT)
+
+        self.mock_meeting_repo.insert_meeting.assert_awaited_once()
+        self.mock_session.commit.assert_awaited_once()
+        self.mock_round_repo.get_by_round_id.assert_awaited_once_with(
+            self.mock_session, self.round_id
+        )
+
+    async def test_upsert_meetings_rejected_just_after_the_logging_cutoff(self):
+        self._with_meetings_deadline(self.MEETINGS_DEADLINE)
+
+        with self.assertRaisesRegex(
+            ValueError, "^Logging meetings for this round has closed.$"
+        ):
+            await self._log_at(self.LOG_CLOSES_AT + timedelta(microseconds=1))
+
+        self.mock_meeting_repo.insert_meeting.assert_not_awaited()
+        self.mock_meeting_repo.recalculate_completed_count.assert_not_awaited()
+        self.assertEqual(self.mock_pair_entity.completed_count, 3)
+        self.mock_session.commit.assert_not_awaited()
+
+    async def test_upsert_meetings_accepted_without_a_meetings_deadline(self):
+        self._with_meetings_deadline(None)
+
+        await self._log_at(datetime(2030, 1, 1, tzinfo=timezone.utc))
+
+        self.mock_meeting_repo.insert_meeting.assert_awaited_once()
+
+    async def test_upsert_meetings_accepted_when_the_round_is_missing(self):
+        self.mock_round_repo.get_by_round_id.return_value = None
+
+        await self._log_at(datetime(2030, 1, 1, tzinfo=timezone.utc))
+
+        self.mock_meeting_repo.insert_meeting.assert_awaited_once()
+
+    async def test_upsert_meetings_checks_the_pair_before_the_round(self):
+        """A user with no active pair gets the pair error even when logging
+        for the round has closed."""
+        self._with_meetings_deadline(self.MEETINGS_DEADLINE)
+        self.mock_pairs_repo.get_active_pair_by_mentee_and_mentor.return_value = None
+        payload = MeetingCreateDto(
+            round_id=self.round_id,
+            partner_id=self.partner_id,
+            start_datetime=datetime(2025, 10, 30, 14, 0, tzinfo=timezone.utc),
+            end_datetime=datetime(2025, 10, 30, 15, 0, tzinfo=timezone.utc),
+            is_completed=True,
+        )
+
+        with patch("backend.mentorship.meeting_service.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2030, 1, 1, tzinfo=timezone.utc)
+            with self.assertRaisesRegex(ValueError, "not actively matched"):
+                await self.meeting_service.upsert_meetings(
+                    self.mock_session, self.user_context, payload
+                )
+
+        self.mock_round_repo.get_by_round_id.assert_not_awaited()
+        self.mock_meeting_repo.insert_meeting.assert_not_awaited()
+
     async def test_upsert_meetings_requires_partner_id(self):
         """The v1 payload cannot omit the partner: without it the request
         cannot say which pair the meeting belongs to."""
@@ -457,6 +566,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             meeting_scheduling_service=self.mock_meeting_scheduling_service,
             mentorship_calendar_id="cal-mentorship",
             mentorship_meeting_repository=self.mock_meeting_repo,
+            mentorship_round_repository=MagicMock(),
         )
 
         self.mock_current_user = MagicMock()
@@ -503,6 +613,7 @@ class TestMeetingServiceV2(unittest.IsolatedAsyncioTestCase):
             meeting_scheduling_service=self.mock_meeting_scheduling_service,
             mentorship_calendar_id="cal-mentorship",
             mentorship_meeting_repository=self.mock_meeting_repo,
+            mentorship_round_repository=MagicMock(),
         )
 
         self.user_id = 1
@@ -1318,6 +1429,7 @@ class TestMeetingServiceReschedule(unittest.IsolatedAsyncioTestCase):
             meeting_scheduling_service=self.mock_meeting_scheduling_service,
             mentorship_calendar_id="cal-mentorship",
             mentorship_meeting_repository=self.mock_meeting_repo,
+            mentorship_round_repository=MagicMock(),
         )
 
         self.user_context = MagicMock(spec=UserContextDto, user_id=1)

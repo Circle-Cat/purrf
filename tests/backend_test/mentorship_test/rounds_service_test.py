@@ -258,7 +258,6 @@ class TestGetRoundSlots(unittest.IsolatedAsyncioTestCase):
         self.mock_repo = MagicMock()
         self.mock_repo.get_open_registration_round = AsyncMock(return_value=None)
         self.mock_repo.get_latest_promoted_round = AsyncMock(return_value=None)
-        self.mock_repo.has_round_in_feedback = AsyncMock(return_value=False)
         self.mock_repo.get_all_rounds = AsyncMock(return_value=[])
         self.mock_session = AsyncMock()
 
@@ -429,18 +428,92 @@ class TestGetRoundSlots(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(slots.is_registration_open)
         self.assertTrue(slots.can_view_match)
 
-    async def test_feedback_enabled_comes_from_the_repository(self):
-        for enabled in (True, False):
-            with self.subTest(enabled=enabled):
-                self.mock_repo.has_round_in_feedback.reset_mock()
-                self.mock_repo.has_round_in_feedback.return_value = enabled
+    # NOW (08-15) is after the reminder and the derived opening (08-01) but
+    # before the meetings deadline and feedback_start_at. The derived close
+    # (10-01) is after the feedback deadline.
+    REMINDER = datetime(2026, 8, 10, tzinfo=timezone.utc)
+    MEETINGS = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    FEEDBACK_START = datetime(2026, 9, 5, tzinfo=timezone.utc)
+    FEEDBACK_DEADLINE = datetime(2026, 9, 20, tzinfo=timezone.utc)
+    DERIVED_CLOSE = datetime(2026, 10, 1, tzinfo=timezone.utc)
 
-                slots = await self._slots()
+    def _in_feedback(self, round_id, **overrides):
+        dates = dict(
+            promotion_start_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            onboarding_deadline_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+            match_notification_at=datetime(2026, 4, 15, tzinfo=timezone.utc),
+            meeting_log_reminder_at=self.REMINDER,
+            meetings_completion_deadline_at=self.MEETINGS,
+            feedback_start_at=self.FEEDBACK_START,
+            feedback_deadline_at=self.FEEDBACK_DEADLINE,
+        )
+        dates.update(overrides)
+        return self._round(round_id, **dates)
 
-                self.assertEqual(slots.is_feedback_enabled, enabled)
-                self.mock_repo.has_round_in_feedback.assert_awaited_once_with(
-                    self.mock_session, self.NOW
-                )
+    async def _feedback_enabled_at(self, now, rounds) -> bool:
+        self.mock_repo.get_all_rounds.return_value = rounds
+        with patch("backend.mentorship.rounds_service.datetime") as mock_dt:
+            mock_dt.now.return_value = now
+            slots = await self._slots()
+        return slots.is_feedback_enabled
+
+    async def test_feedback_enabled_before_the_meetings_deadline(self):
+        """The window opens at the reminder, while meetings are still running."""
+        self.assertLess(self.NOW, self.MEETINGS)
+
+        self.assertTrue(
+            await self._feedback_enabled_at(self.NOW, [self._in_feedback(1)])
+        )
+
+    async def test_feedback_enabled_bounds_are_inclusive(self):
+        r = self._in_feedback(1)
+        cases = (
+            (self.REMINDER - self.MICRO, False),
+            (self.REMINDER, True),
+            (self.FEEDBACK_DEADLINE, True),
+            (self.FEEDBACK_DEADLINE + self.MICRO, False),
+        )
+
+        for now, expected in cases:
+            with self.subTest(now=now):
+                self.assertEqual(await self._feedback_enabled_at(now, [r]), expected)
+
+    async def test_feedback_enabled_without_a_feedback_deadline(self):
+        """The close falls back to a month past the meetings deadline."""
+        r = self._in_feedback(1, feedback_deadline_at=None)
+
+        self.assertTrue(
+            await self._feedback_enabled_at(self.FEEDBACK_DEADLINE + self.MICRO, [r])
+        )
+        self.assertTrue(await self._feedback_enabled_at(self.DERIVED_CLOSE, [r]))
+        self.assertFalse(
+            await self._feedback_enabled_at(self.DERIVED_CLOSE + self.MICRO, [r])
+        )
+
+    async def test_feedback_not_enabled_for_an_unpromoted_round(self):
+        r = self._in_feedback(1, promotion_start_at=None)
+
+        self.assertFalse(await self._feedback_enabled_at(self.NOW, [r]))
+
+    async def test_feedback_enabled_by_any_round(self):
+        """A closed round listed first does not hide an open one after it."""
+        closed = self._in_feedback(
+            1,
+            meeting_log_reminder_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            meetings_completion_deadline_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+            feedback_start_at=datetime(2026, 4, 5, tzinfo=timezone.utc),
+            feedback_deadline_at=datetime(2026, 5, 1, tzinfo=timezone.utc),
+        )
+        unpromoted = self._in_feedback(2, promotion_start_at=None)
+
+        self.assertFalse(
+            await self._feedback_enabled_at(self.NOW, [closed, unpromoted])
+        )
+        self.assertTrue(
+            await self._feedback_enabled_at(
+                self.NOW, [closed, unpromoted, self._in_feedback(3)]
+            )
+        )
 
     async def test_feedback_and_registration_are_reported_together(self):
         self.mock_repo.get_open_registration_round.return_value = self._round(
@@ -448,7 +521,7 @@ class TestGetRoundSlots(unittest.IsolatedAsyncioTestCase):
             promotion_start_at=datetime(2026, 8, 10, tzinfo=timezone.utc),
             onboarding_deadline_at=datetime(2026, 8, 25, tzinfo=timezone.utc),
         )
-        self.mock_repo.has_round_in_feedback.return_value = True
+        self.mock_repo.get_all_rounds.return_value = [self._in_feedback(30)]
 
         slots = await self._slots()
 

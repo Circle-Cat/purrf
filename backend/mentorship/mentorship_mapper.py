@@ -17,37 +17,18 @@ from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
+from backend.mentorship.round_windows import (
+    feedback_window,
+    is_feedback_editable,
+    is_feedback_open,
+    is_meeting_log_open,
+    round_status,
+)
 from backend.common.mentorship_enums import (
-    RoundStatus,
     MeetingNoteTag,
     MeetingSource,
     ParticipantRole,
 )
-
-
-def round_status(r: MentorshipRoundEntity, now: datetime) -> RoundStatus | None:
-    """Where a round's meeting window stands at ``now``.
-
-    The window opens at ``match_notification_at`` (``promotion_start_at``
-    when a round has none) and closes at ``meetings_completion_deadline_at``,
-    both inclusive. A round missing the bound a status needs has none.
-
-    Args:
-        r (MentorshipRoundEntity): The round.
-        now (datetime): The aware instant to evaluate at.
-
-    Returns:
-        RoundStatus | None: The round's status, or None.
-    """
-    start = r.match_notification_at or r.promotion_start_at
-    end = r.meetings_completion_deadline_at
-    if start and end and start <= now <= end:
-        return RoundStatus.ACTIVE
-    if start and now < start:
-        return RoundStatus.UPCOMING
-    if end and now > end:
-        return RoundStatus.COMPLETED
-    return None
 
 
 class MentorshipMapper:
@@ -63,31 +44,40 @@ class MentorshipMapper:
     ) -> list[RoundsDto]:
         """Maps a list of MentorshipRoundEntity objects to a list of RoundsDto objects.
 
-        Each round's status is evaluated at ``now``, the current time when
-        omitted.
+        Each round's status and windows are evaluated at ``now``, the current
+        time when omitted.
         """
         pair_stats = pair_stats or {}
         now = now or datetime.now(timezone.utc)
-        return [
-            RoundsDto(
-                id=r.round_id,
-                name=r.name,
-                active_pairs=pair_stats.get(r.round_id, {}).get("active_pairs"),
-                matched_participants=pair_stats.get(r.round_id, {}).get(
-                    "matched_participants"
-                ),
-                total_completed_meetings=pair_stats.get(r.round_id, {}).get(
-                    "total_completed_meetings"
-                ),
-                mentee_average_score=r.mentee_average_score,
-                mentor_average_score=r.mentor_average_score,
-                expectations=r.expectations,
-                required_meetings=r.required_meetings,
-                timeline=self._map_timeline(r),
-                status=round_status(r, now),
-            )
-            for r in rounds
-        ]
+        return [self._map_round(r, pair_stats, now) for r in rounds]
+
+    def _map_round(
+        self, r: MentorshipRoundEntity, pair_stats: dict[int, dict], now: datetime
+    ) -> RoundsDto:
+        """Maps one round, its status and windows evaluated at ``now``."""
+        window = feedback_window(r)
+        return RoundsDto(
+            id=r.round_id,
+            name=r.name,
+            active_pairs=pair_stats.get(r.round_id, {}).get("active_pairs"),
+            matched_participants=pair_stats.get(r.round_id, {}).get(
+                "matched_participants"
+            ),
+            total_completed_meetings=pair_stats.get(r.round_id, {}).get(
+                "total_completed_meetings"
+            ),
+            mentee_average_score=r.mentee_average_score,
+            mentor_average_score=r.mentor_average_score,
+            expectations=r.expectations,
+            required_meetings=r.required_meetings,
+            timeline=self._map_timeline(r),
+            status=round_status(r, now),
+            feedback_opens_at=window.opens_at,
+            feedback_closes_at=window.closes_at,
+            is_feedback_open=is_feedback_open(r, now),
+            is_feedback_editable=is_feedback_editable(r, now),
+            is_meeting_log_open=is_meeting_log_open(r, now),
+        )
 
     def _map_timeline(self, r: MentorshipRoundEntity) -> TimelineDto:
         """

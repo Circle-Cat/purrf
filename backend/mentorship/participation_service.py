@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
-from dateutil.relativedelta import relativedelta
 from backend.dto.partner_dto import PartnerDto
+from backend.mentorship.round_windows import feedback_window
 from backend.dto.matches_dto import MatchesDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.registration_dto import RoundPreferencesDto
@@ -404,51 +404,36 @@ class ParticipationService:
             partner_feedback=partner_feedback,
         )
 
-    async def _feedback_closes_at(
-        self, session: AsyncSession, round_id: int
-    ) -> datetime | None:
-        """
-        Resolve the moment feedback stops being editable for a round.
-
-        `feedback_deadline_at` is optional in the round form, so it falls back to
-        a month past the (required) meetings deadline -- the same rule the
-        dashboard uses to decide when to stop offering the form. A round with
-        neither date configured has no cutoff at all rather than an immediate
-        one, so a half-filled timeline cannot lock participants out.
-
-        Args:
-            session (AsyncSession): Active async database session.
-            round_id (int): The mentorship round ID.
-
-        Returns:
-            datetime | None: The UTC cutoff, or None when the round sets no dates.
-        """
-        round_entity = await self.mentorship_round_repository.get_by_round_id(
-            session, round_id
-        )
-        if round_entity is None:
-            return None
-        if round_entity.feedback_deadline_at is not None:
-            return round_entity.feedback_deadline_at
-        if round_entity.meetings_completion_deadline_at is not None:
-            return round_entity.meetings_completion_deadline_at + relativedelta(
-                months=1
-            )
-        return None
-
     async def _assert_feedback_open(self, session: AsyncSession, round_id: int) -> None:
         """
-        Reject writes once the round's feedback window has closed.
+        Reject writes outside the round's feedback window.
+
+        The window is ``round_windows.feedback_window``, the same one the
+        round list reports to the participant card. A bound the round's
+        timeline cannot supply does not restrict.
 
         Args:
             session (AsyncSession): Active async database session.
             round_id (int): The mentorship round ID.
 
         Raises:
-            ValueError: If the round's feedback window has already closed.
+            ValueError: If the window has not opened yet or has already closed.
         """
-        closes_at = await self._feedback_closes_at(session=session, round_id=round_id)
-        if closes_at and datetime.now(timezone.utc) > closes_at:
+        round_entity = await self.mentorship_round_repository.get_by_round_id(
+            session, round_id
+        )
+        if round_entity is None:
+            return
+        opens_at, closes_at = feedback_window(round_entity)
+        now = datetime.now(timezone.utc)
+        if opens_at and now < opens_at:
+            self.logger.warning(
+                "[ParticipationService] feedback window not open yet for round_id=%s, opens_at=%s",
+                round_id,
+                opens_at.isoformat(),
+            )
+            raise ValueError("Feedback for this round has not opened yet.")
+        if closes_at and now > closes_at:
             self.logger.warning(
                 "[ParticipationService] feedback window closed for round_id=%s, closed_at=%s",
                 round_id,
@@ -481,7 +466,8 @@ class ParticipationService:
 
         Raises:
             ValueError: If the user has no participant record for this round, or
-                if the round's feedback window has already closed.
+                if the round's feedback window has not opened yet or has
+                already closed.
         """
 
         self.logger.debug(

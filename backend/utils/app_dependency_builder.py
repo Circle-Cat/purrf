@@ -671,6 +671,7 @@ class AppDependencyBuilder:
             meeting_scheduling_service=self.meeting_scheduling_service,
             mentorship_calendar_id=mentorship_calendar_id,
             mentorship_meeting_repository=self.mentorship_meeting_repository,
+            mentorship_round_repository=self.mentorship_round_repository,
         )
         self.meet_attendance_service = MeetAttendanceService(
             logger=self.logger,

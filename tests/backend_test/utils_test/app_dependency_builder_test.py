@@ -607,6 +607,7 @@ class TestAppDependencyBuilder(TestCase):
             meeting_scheduling_service=mock_meeting_scheduling_service_cls.return_value,
             mentorship_calendar_id="cal-mentorship",
             mentorship_meeting_repository=mock_mentorship_meeting_repo_cls.return_value,
+            mentorship_round_repository=mock_mentorship_round_repository_cls.return_value,
         )
 
         mock_fast_app_factory_cls.assert_called_once_with(
