@@ -1,7 +1,7 @@
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from datetime import datetime, timedelta, timezone
 from typing import NamedTuple
-from sqlalchemy import exists, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -171,28 +171,6 @@ class MentorshipRoundRepository:
             .limit(1)
         )
         return result.scalar_one_or_none()
-
-    async def has_round_in_feedback(self, session: AsyncSession, now: datetime) -> bool:
-        """Whether any promoted round is between its meetings deadline and
-        its feedback deadline, both inclusive, at ``now``.
-
-        Args:
-            session (AsyncSession): The active async database session.
-            now (datetime): The aware instant to evaluate at.
-
-        Returns:
-            bool: True when at least one round is in its feedback phase.
-        """
-        result = await session.execute(
-            select(
-                exists().where(
-                    MentorshipRoundEntity.promotion_start_at.isnot(None),
-                    MentorshipRoundEntity.meetings_completion_deadline_at <= now,
-                    MentorshipRoundEntity.feedback_deadline_at >= now,
-                )
-            )
-        )
-        return bool(result.scalar())
 
     async def update_mentee_average_score(
         self, session: AsyncSession, round_id: int, value: float | None

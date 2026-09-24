@@ -740,9 +740,9 @@ class TestGetOpenRegistrationRound(BaseRepositoryTestLib):
 
         self.assertIsNone(await self._select())
 
-    async def test_open_round_is_independent_of_a_round_in_feedback(self):
-        """A round in its feedback phase and a round open for registration
-        coexist: each query reports its own round."""
+    async def test_a_round_in_feedback_does_not_displace_the_open_round(self):
+        """A round in its feedback phase does not displace the round open
+        for registration."""
         await self.insert_entities([
             MentorshipRoundEntity(
                 name="2026 Spring",
@@ -764,7 +764,6 @@ class TestGetOpenRegistrationRound(BaseRepositoryTestLib):
 
         self.assertIsNotNone(selected)
         self.assertEqual(selected.name, "2026 Fall")
-        self.assertTrue(await self.repo.has_round_in_feedback(self.session, self.now))
 
     async def test_returns_none_when_no_round_qualifies(self):
         self.assertIsNone(await self._select())
@@ -879,87 +878,6 @@ class TestGetLatestPromotedRound(BaseRepositoryTestLib):
 
     async def test_returns_none_when_no_rounds_exist(self):
         self.assertIsNone(await self._select())
-
-
-class TestHasRoundInFeedback(BaseRepositoryTestLib):
-    """Whether any promoted round sits between its meetings deadline and
-    its feedback deadline."""
-
-    MEETINGS_DEADLINE = datetime(2026, 8, 1, 6, 59, 59, tzinfo=timezone.utc)
-    FEEDBACK_DEADLINE = datetime(2026, 8, 20, 6, 59, 59, tzinfo=timezone.utc)
-
-    async def asyncSetUp(self):
-        await super().asyncSetUp()
-        self.repo = MentorshipRoundRepository()
-
-    async def _seed(
-        self,
-        *,
-        promotion_start_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
-        meetings_completion_deadline_at=MEETINGS_DEADLINE,
-        feedback_deadline_at=FEEDBACK_DEADLINE,
-    ):
-        await self.insert_entities([
-            MentorshipRoundEntity(
-                name="2026 Spring",
-                required_meetings=5,
-                promotion_start_at=promotion_start_at,
-                onboarding_deadline_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
-                meetings_completion_deadline_at=meetings_completion_deadline_at,
-                feedback_deadline_at=feedback_deadline_at,
-            )
-        ])
-
-    async def test_bounds_are_inclusive_on_both_ends(self):
-        await self._seed()
-        micro = timedelta(microseconds=1)
-        cases = (
-            (self.MEETINGS_DEADLINE - micro, False),
-            (self.MEETINGS_DEADLINE, True),
-            (datetime(2026, 8, 10, tzinfo=timezone.utc), True),
-            (self.FEEDBACK_DEADLINE, True),
-            (self.FEEDBACK_DEADLINE + micro, False),
-        )
-
-        for now, expected in cases:
-            with self.subTest(now=now):
-                self.assertEqual(
-                    await self.repo.has_round_in_feedback(self.session, now), expected
-                )
-
-    async def test_false_without_a_feedback_deadline(self):
-        await self._seed(feedback_deadline_at=None)
-
-        self.assertFalse(
-            await self.repo.has_round_in_feedback(
-                self.session, datetime(2026, 8, 10, tzinfo=timezone.utc)
-            )
-        )
-
-    async def test_false_without_a_promotion_start(self):
-        await self._seed(promotion_start_at=None)
-
-        self.assertFalse(
-            await self.repo.has_round_in_feedback(
-                self.session, datetime(2026, 8, 10, tzinfo=timezone.utc)
-            )
-        )
-
-    async def test_false_without_a_meetings_deadline(self):
-        await self._seed(meetings_completion_deadline_at=None)
-
-        self.assertFalse(
-            await self.repo.has_round_in_feedback(
-                self.session, datetime(2026, 8, 10, tzinfo=timezone.utc)
-            )
-        )
-
-    async def test_false_when_no_rounds_exist(self):
-        self.assertFalse(
-            await self.repo.has_round_in_feedback(
-                self.session, datetime(2026, 8, 10, tzinfo=timezone.utc)
-            )
-        )
 
 
 if __name__ == "__main__":

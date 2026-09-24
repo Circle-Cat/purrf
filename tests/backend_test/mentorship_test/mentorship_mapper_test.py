@@ -19,7 +19,7 @@ from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
-from backend.mentorship.mentorship_mapper import MentorshipMapper, round_status
+from backend.mentorship.mentorship_mapper import MentorshipMapper
 from backend.common.mentorship_enums import (
     RoundStatus,
     CommunicationMethod,
@@ -897,8 +897,8 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertEqual(dto.create_datetime, "2026-05-05T09:55:00")
 
 
-class TestRoundStatus(unittest.TestCase):
-    """round_status places a round's meeting window relative to now."""
+class TestMapToRoundsDtoAtNow(unittest.TestCase):
+    """map_to_rounds_dto evaluates each round's status and windows at now."""
 
     NOW = datetime(2026, 3, 18, 12, 0, tzinfo=timezone.utc)
     MICRO = timedelta(microseconds=1)
@@ -909,6 +909,7 @@ class TestRoundStatus(unittest.TestCase):
         promotion_start_at=None,
         match_notification_at=None,
         meetings_completion_deadline_at=None,
+        **dates,
     ) -> MentorshipRoundEntity:
         return MentorshipRoundEntity(
             round_id=round_id,
@@ -918,93 +919,8 @@ class TestRoundStatus(unittest.TestCase):
             promotion_start_at=promotion_start_at,
             match_notification_at=match_notification_at,
             meetings_completion_deadline_at=meetings_completion_deadline_at,
+            **dates,
         )
-
-    def test_active_inside_the_window(self):
-        r = self._round(
-            match_notification_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-            meetings_completion_deadline_at=datetime(2026, 12, 31, tzinfo=timezone.utc),
-        )
-
-        self.assertEqual(round_status(r, self.NOW), RoundStatus.ACTIVE)
-
-    def test_active_on_both_bounds(self):
-        r = self._round(
-            match_notification_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-            meetings_completion_deadline_at=datetime(2026, 12, 31, tzinfo=timezone.utc),
-        )
-
-        self.assertEqual(round_status(r, r.match_notification_at), RoundStatus.ACTIVE)
-        self.assertEqual(
-            round_status(r, r.meetings_completion_deadline_at), RoundStatus.ACTIVE
-        )
-
-    def test_upcoming_just_before_the_start(self):
-        r = self._round(
-            match_notification_at=self.NOW + self.MICRO,
-            meetings_completion_deadline_at=datetime(2026, 12, 31, tzinfo=timezone.utc),
-        )
-
-        self.assertEqual(round_status(r, self.NOW), RoundStatus.UPCOMING)
-
-    def test_completed_just_after_the_end(self):
-        r = self._round(
-            match_notification_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-            meetings_completion_deadline_at=self.NOW - self.MICRO,
-        )
-
-        self.assertEqual(round_status(r, self.NOW), RoundStatus.COMPLETED)
-
-    def test_falls_back_to_promotion_start_without_a_match_notification(self):
-        r = self._round(
-            promotion_start_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-            meetings_completion_deadline_at=datetime(2026, 12, 31, tzinfo=timezone.utc),
-        )
-
-        self.assertEqual(round_status(r, self.NOW), RoundStatus.ACTIVE)
-        self.assertEqual(
-            round_status(r, r.promotion_start_at - self.MICRO), RoundStatus.UPCOMING
-        )
-
-    def test_match_notification_takes_precedence_over_promotion_start(self):
-        """Promotion has started but matching has not, so the window has not
-        opened; reading promotion_start_at would call it active."""
-        r = self._round(
-            promotion_start_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-            match_notification_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
-            meetings_completion_deadline_at=datetime(2026, 12, 31, tzinfo=timezone.utc),
-        )
-
-        self.assertEqual(round_status(r, self.NOW), RoundStatus.UPCOMING)
-
-    def test_upcoming_with_only_a_future_start(self):
-        r = self._round(match_notification_at=datetime(2026, 4, 1, tzinfo=timezone.utc))
-
-        self.assertEqual(round_status(r, self.NOW), RoundStatus.UPCOMING)
-
-    def test_completed_with_only_a_past_end(self):
-        r = self._round(
-            meetings_completion_deadline_at=datetime(2026, 3, 1, tzinfo=timezone.utc)
-        )
-
-        self.assertEqual(round_status(r, self.NOW), RoundStatus.COMPLETED)
-
-    def test_none_when_the_bound_a_status_needs_is_missing(self):
-        cases = {
-            "no bounds": self._round(),
-            "started, no end": self._round(
-                match_notification_at=datetime(2026, 1, 1, tzinfo=timezone.utc)
-            ),
-            "end ahead, no start": self._round(
-                meetings_completion_deadline_at=datetime(
-                    2026, 12, 31, tzinfo=timezone.utc
-                )
-            ),
-        }
-
-        for label, r in cases.items():
-            with self.subTest(label):
-                self.assertIsNone(round_status(r, self.NOW))
 
     def test_map_to_rounds_dto_evaluates_status_at_the_given_now(self):
         rounds = [
@@ -1047,6 +963,91 @@ class TestRoundStatus(unittest.TestCase):
             rounds[:1], now=datetime(2027, 1, 1, tzinfo=timezone.utc)
         )
         self.assertEqual(later[0].status, RoundStatus.COMPLETED)
+
+    def test_map_to_rounds_dto_reports_the_windows_at_the_given_now(self):
+        """Every date on each round is distinct, and the round before its
+        opening has its derived opening and feedback_start_at already
+        behind now, so reading either as the opening would call it open."""
+
+        def at(month, day):
+            return datetime(2026, month, day, 6, 59, 59, tzinfo=timezone.utc)
+
+        rounds = [
+            self._round(
+                round_id=1,
+                meeting_log_reminder_at=at(3, 1),
+                meetings_completion_deadline_at=at(3, 25),
+                feedback_start_at=at(3, 28),
+                feedback_deadline_at=at(4, 10),
+            ),
+            self._round(
+                round_id=2,
+                meeting_log_reminder_at=at(1, 10),
+                meetings_completion_deadline_at=at(2, 1),
+                feedback_start_at=at(2, 5),
+                feedback_deadline_at=at(2, 20),
+            ),
+            self._round(
+                round_id=3,
+                meeting_log_reminder_at=at(4, 1),
+                meetings_completion_deadline_at=at(4, 10),
+                feedback_start_at=at(3, 15),
+            ),
+            self._round(round_id=4),
+        ]
+
+        dtos = MentorshipMapper().map_to_rounds_dto(rounds, now=self.NOW)
+
+        self.assertEqual(
+            [
+                (
+                    d.id,
+                    d.feedback_opens_at,
+                    d.feedback_closes_at,
+                    d.is_feedback_open,
+                    d.is_feedback_editable,
+                    d.is_meeting_log_open,
+                )
+                for d in dtos
+            ],
+            [
+                (1, at(3, 1), at(4, 10), True, True, True),
+                (2, at(1, 10), at(2, 20), True, False, False),
+                (3, at(4, 1), at(5, 10), False, False, True),
+                (4, None, None, False, True, True),
+            ],
+        )
+
+    def test_map_to_rounds_dto_windows_follow_now(self):
+        r = self._round(
+            meeting_log_reminder_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            meetings_completion_deadline_at=datetime(2026, 3, 25, tzinfo=timezone.utc),
+            feedback_deadline_at=datetime(2026, 4, 10, tzinfo=timezone.utc),
+        )
+        cases = (
+            (r.meeting_log_reminder_at - self.MICRO, False, False, True),
+            (r.meeting_log_reminder_at, True, True, True),
+            (
+                datetime(2026, 3, 26, tzinfo=timezone.utc) + self.MICRO,
+                True,
+                True,
+                False,
+            ),
+            (r.feedback_deadline_at + self.MICRO, True, False, False),
+        )
+
+        for now, is_open, editable, log_open in cases:
+            with self.subTest(now=now):
+                dto = MentorshipMapper().map_to_rounds_dto([r], now=now)[0]
+
+                self.assertEqual(
+                    (
+                        dto.is_feedback_open,
+                        dto.is_feedback_editable,
+                        dto.is_meeting_log_open,
+                    ),
+                    (is_open, editable, log_open),
+                )
 
 
 if __name__ == "__main__":
