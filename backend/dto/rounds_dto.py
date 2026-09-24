@@ -29,6 +29,13 @@ class RoundsDto(BaseDto):
     required_meetings: int
     timeline: TimelineDto | None = None
     status: RoundStatus | None = None
+    # Derived from the timeline by backend/mentorship/round_windows.py and
+    # evaluated on the server's clock when the list was read.
+    feedback_opens_at: datetime | None = None
+    feedback_closes_at: datetime | None = None
+    is_feedback_open: bool = False
+    is_feedback_editable: bool = False
+    is_meeting_log_open: bool = False
 
 
 class RoundSlotsDto(BaseDto):
