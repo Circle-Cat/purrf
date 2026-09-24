@@ -1,4 +1,4 @@
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.dto.user_context_dto import UserContextDto
@@ -87,7 +87,7 @@ class RegistrationService:
         2. Validates the submitted participant role: rejects one the user was
             never admitted into, and one that disagrees with an existing
             registration row for this round.
-        3. Checks if the application deadline has passed. If the round is still open, updates both
+        3. Checks if the round's onboarding deadline has passed. If the round is still open, updates both
             global and round-specific preferences for user.
         4. Stamps the onboarding training deadline on first registration, via
             `OnboardingTrainingService.ensure_onboarding_training`.
@@ -141,34 +141,20 @@ class RegistrationService:
                 f"{existing.participant_role.value}."
             )
 
-        description = round_entity.description or {}
-        if participant_role == ParticipantRole.MENTOR:
-            raw_deadline = description.get("mentor_application_deadline_at")
-        else:
-            raw_deadline = description.get("mentee_application_deadline_at")
-
-        if not raw_deadline:
-            self.logger.error(
-                "[RegistrationService] round %s missing application deadline for role %s.",
-                round_id,
-                participant_role,
-            )
-            raise ValueError(
-                f"Round {round_id} missing application deadline for role {participant_role}."
-            )
-
-        application_deadline = datetime.fromisoformat(raw_deadline)
+        # Registration closes with onboarding, for both roles. The
+        # application deadlines belong to recruiting and do not gate it.
+        registration_deadline = round_entity.onboarding_deadline_at
         register_time = datetime.now(timezone.utc)
 
-        if register_time > application_deadline:
+        if register_time > registration_deadline:
             self.logger.error(
                 "[RegistrationService] registration failed for round %s. Current time %s is past deadline %s.",
                 round_id,
                 register_time,
-                application_deadline,
+                registration_deadline,
             )
             raise ValueError(
-                f"Registration period has ended at {application_deadline}."
+                f"Registration period has ended at {registration_deadline}."
             )
 
         global_pref = await self._update_skill_and_industry_preferences(
@@ -197,7 +183,7 @@ class RegistrationService:
                 session=session,
                 user_id=user_context.user_id,
                 category=category,
-                deadline=application_deadline + timedelta(days=2),
+                deadline=registration_deadline,
             )
         )
 

@@ -65,8 +65,7 @@ export const calculateMentorshipSlots = (allRounds) => {
   const currentRegRound = sorted.find(
     (r) =>
       now >= r.timeline.promotionStartAt &&
-      (now < r.timeline.mentorApplicationDeadlineAt ||
-        now < r.timeline.menteeApplicationDeadlineAt),
+      now < r.timeline.onboardingDeadlineAt,
   );
 
   const lastStartedRound = sorted.find(
