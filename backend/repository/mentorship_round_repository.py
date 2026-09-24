@@ -1,7 +1,7 @@
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from datetime import datetime, timedelta, timezone
 from typing import NamedTuple
-from sqlalchemy import select, update
+from sqlalchemy import exists, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -41,10 +41,15 @@ class MentorshipRoundRepository:
             session (AsyncSession): The active async database session.
 
         Returns:
-            list[MentorshipRoundEntity]: A list of all matching MentorshipRound.
-                                        Returns an empty list if no records are found.
+            list[MentorshipRoundEntity]: Every round, latest meetings deadline
+                first; rounds without one come last, newest created first.
         """
-        result = await session.execute(select(MentorshipRoundEntity))
+        result = await session.execute(
+            select(MentorshipRoundEntity).order_by(
+                MentorshipRoundEntity.meetings_completion_deadline_at.desc().nulls_last(),
+                MentorshipRoundEntity.created_datetime.desc(),
+            )
+        )
 
         return result.scalars().all()
 
@@ -109,45 +114,85 @@ class MentorshipRoundRepository:
         )
         return [RunningRoundWindow(*row) for row in result.all()]
 
-    async def get_open_mentor_registration_round(
-        self, session: AsyncSession
+    async def get_open_registration_round(
+        self, session: AsyncSession, now: datetime
     ) -> MentorshipRoundEntity | None:
-        """The round a mentor admitted right now should register for.
+        """The round open for registration at ``now``.
 
         A round qualifies only while it is open on BOTH ends: promotion has
         started and registration, which closes at ``onboarding_deadline_at``
-        for mentors and mentees alike, has not. Of those, the one
-        closing soonest wins, so a mentor admitted while two windows overlap
-        is pointed at the one about to close rather than an arbitrary match.
-
-        The promotion bound is not decoration. Registration surfaces on the
-        Personal Dashboard only once ``promotion_start_at`` has passed --
-        ``currentRegRound`` in mentorshipRounds.js requires it, and the
-        banner renders nothing without it. A round whose deadline is open but
-        whose promotion has not started would send an admitted mentor to a
-        dashboard with nothing on it. Rounds missing the field entirely drop
-        out here for the same reason the dashboard filters them out: they are
-        not something a mentor can act on.
+        for mentors and mentees alike, has not. Of those, the one closing
+        soonest wins, so while two windows overlap everyone -- the Personal
+        Dashboard and the admission email alike -- is pointed at the one
+        about to close.
 
         Returns None when no window is open. That is a normal state, not an
         error: the program is not always recruiting.
 
         Args:
             session (AsyncSession): The active async database session.
+            now (datetime): The aware instant to evaluate at.
 
         Returns:
             MentorshipRoundEntity | None: The round closing soonest, or None.
         """
-        now_utc = datetime.now(timezone.utc)
-        promotion_start = MentorshipRoundEntity.promotion_start_at
         deadline = MentorshipRoundEntity.onboarding_deadline_at
         result = await session.execute(
             select(MentorshipRoundEntity)
-            .where(promotion_start <= now_utc, deadline > now_utc)
-            .order_by(deadline.asc())
+            .where(MentorshipRoundEntity.promotion_start_at <= now, deadline > now)
+            .order_by(deadline.asc(), MentorshipRoundEntity.created_datetime.desc())
             .limit(1)
         )
         return result.scalar_one_or_none()
+
+    async def get_latest_promoted_round(
+        self, session: AsyncSession, now: datetime
+    ) -> MentorshipRoundEntity | None:
+        """The round whose promotion started most recently, as of ``now``.
+
+        The dashboard falls back to it once no round is open for
+        registration, to keep the last round viewable.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            now (datetime): The aware instant to evaluate at.
+
+        Returns:
+            MentorshipRoundEntity | None: That round, or None when no round
+                has started promotion.
+        """
+        result = await session.execute(
+            select(MentorshipRoundEntity)
+            .where(MentorshipRoundEntity.promotion_start_at <= now)
+            .order_by(
+                MentorshipRoundEntity.promotion_start_at.desc(),
+                MentorshipRoundEntity.created_datetime.desc(),
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def has_round_in_feedback(self, session: AsyncSession, now: datetime) -> bool:
+        """Whether any promoted round is between its meetings deadline and
+        its feedback deadline, both inclusive, at ``now``.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            now (datetime): The aware instant to evaluate at.
+
+        Returns:
+            bool: True when at least one round is in its feedback phase.
+        """
+        result = await session.execute(
+            select(
+                exists().where(
+                    MentorshipRoundEntity.promotion_start_at.isnot(None),
+                    MentorshipRoundEntity.meetings_completion_deadline_at <= now,
+                    MentorshipRoundEntity.feedback_deadline_at >= now,
+                )
+            )
+        )
+        return bool(result.scalar())
 
     async def update_mentee_average_score(
         self, session: AsyncSession, round_id: int, value: float | None

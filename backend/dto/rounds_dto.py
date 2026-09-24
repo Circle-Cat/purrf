@@ -1,4 +1,5 @@
 from datetime import datetime
+from backend.common.mentorship_enums import RoundStatus
 from backend.dto.base_dto import BaseDto
 
 
@@ -27,3 +28,21 @@ class RoundsDto(BaseDto):
     expectations: str | None = None
     required_meetings: int
     timeline: TimelineDto | None = None
+    status: RoundStatus | None = None
+
+
+class RoundSlotsDto(BaseDto):
+    """Which rounds the Personal Dashboard acts on, as of the server's clock.
+
+    ``registration_round_id`` is the round open for registration or, when
+    none is, the most recently promoted one, kept viewable. The matching
+    result always speaks about that same round.
+    """
+
+    registration_round_id: int | None = None
+    registration_round_name: str | None = None
+    registration_deadline_at: datetime | None = None
+    is_registration_open: bool = False
+    can_view_match: bool = False
+    is_feedback_enabled: bool = False
+    active_round_id: int | None = None

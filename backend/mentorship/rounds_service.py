@@ -1,8 +1,11 @@
-from backend.mentorship.mentorship_mapper import MentorshipMapper
+from datetime import datetime, timezone
+
+from backend.common.mentorship_enums import RoundStatus
+from backend.mentorship.mentorship_mapper import MentorshipMapper, round_status
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from backend.repository.mentorship_pairs_repository import MentorshipPairsRepository
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
-from backend.dto.rounds_dto import RoundsDto
+from backend.dto.rounds_dto import RoundSlotsDto, RoundsDto
 from backend.dto.rounds_create_dto import RoundsCreateDto
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,6 +59,71 @@ class RoundsService:
         pair_stats = await self.mentorship_pairs_repository.get_pair_stats(session)
 
         return self.mentorship_mapper.map_to_rounds_dto(all_round_entities, pair_stats)
+
+    async def get_round_slots(self, session: AsyncSession) -> RoundSlotsDto:
+        """
+        Resolve which rounds the Personal Dashboard acts on right now.
+
+        Everything is evaluated against one server-side instant, so the
+        dashboard, registration and the admission email agree on which round
+        is open and whether it still is.
+
+        Args:
+            session (AsyncSession): Active database async session.
+
+        Returns:
+            RoundSlotsDto: The registration, matching, feedback and default
+                round slots.
+        """
+        now = datetime.now(timezone.utc)
+        repo = self.mentorship_round_repository
+
+        open_round = await repo.get_open_registration_round(session, now)
+        registration_round = open_round or await repo.get_latest_promoted_round(
+            session, now
+        )
+        can_view_match = bool(
+            registration_round
+            and registration_round.match_notification_at
+            and registration_round.feedback_deadline_at
+            and registration_round.match_notification_at
+            <= now
+            <= registration_round.feedback_deadline_at
+        )
+
+        # get_all_rounds lists the latest meetings deadline first, so the
+        # first match is the most recent round in that status.
+        statuses = [
+            (r.round_id, round_status(r, now))
+            for r in await repo.get_all_rounds(session)
+        ]
+        active_round_id = next(
+            (rid for rid, status in statuses if status == RoundStatus.ACTIVE),
+            None,
+        )
+        if active_round_id is None:
+            active_round_id = next(
+                (rid for rid, status in statuses if status == RoundStatus.UPCOMING),
+                None,
+            )
+
+        return RoundSlotsDto(
+            registration_round_id=(
+                registration_round.round_id if registration_round else None
+            ),
+            registration_round_name=(
+                registration_round.name if registration_round else None
+            ),
+            registration_deadline_at=(
+                registration_round.onboarding_deadline_at
+                if registration_round
+                else None
+            ),
+            is_registration_open=open_round is not None,
+            can_view_match=can_view_match,
+            is_feedback_enabled=await repo.has_round_in_feedback(session, now),
+            active_round_id=active_round_id,
+        )
 
     async def upsert_rounds(
         self, session: AsyncSession, data: RoundsCreateDto

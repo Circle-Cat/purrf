@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 from backend.mentorship.registration_service import RegistrationService
 from backend.dto.registration_create_dto import (
@@ -478,6 +478,38 @@ class TestRegistrationService(unittest.IsolatedAsyncioTestCase):
 
         self.mock_session.commit.assert_not_awaited()
         self.mock_onboarding_training_service.ensure_onboarding_training.assert_not_awaited()
+
+    async def test_registration_rejected_at_the_onboarding_deadline_itself(self):
+        """Test: The deadline instant is already closed, for both roles."""
+        self.mock_dt.now.return_value = self.onboarding_deadline
+        self.mock_round_repo.get_by_round_id.return_value = self._round()
+
+        for role in (ParticipantRole.MENTOR, ParticipantRole.MENTEE):
+            with self.subTest(role=role):
+                self.sample_dto.round_preferences.participant_role = role
+
+                with self.assertRaisesRegex(ValueError, "has ended at 2026-04-27"):
+                    await self._register()
+
+        self.mock_session.commit.assert_not_awaited()
+        self.mock_onboarding_training_service.ensure_onboarding_training.assert_not_awaited()
+
+    async def test_registration_accepted_one_microsecond_before_the_deadline(self):
+        """Test: Still open one microsecond before the onboarding deadline."""
+        self.mock_dt.now.return_value = self.onboarding_deadline - timedelta(
+            microseconds=1
+        )
+        self.mock_round_repo.get_by_round_id.return_value = self._round()
+
+        for role in (ParticipantRole.MENTOR, ParticipantRole.MENTEE):
+            with self.subTest(role=role):
+                self.mock_session.commit.reset_mock()
+                self.sample_dto.round_preferences.participant_role = role
+
+                result = await self._register()
+
+                self.assertIsInstance(result, RegistrationDto)
+                self.mock_session.commit.assert_awaited_once()
 
     async def test_update_registration_info_never_overwrites_the_submitted_role(self):
         """Test: The role persisted is the one submitted, not any role
