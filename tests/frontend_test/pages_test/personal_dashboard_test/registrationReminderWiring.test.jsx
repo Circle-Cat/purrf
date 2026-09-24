@@ -38,8 +38,8 @@ vi.mock(
   "@/pages/PersonalDashboard/components/MentorshipParticipantsCard",
   () => ({ default: () => <div data-testid="mock-participants-card" /> }),
 );
-// Past the application deadlines, before the onboarding deadline: the round
-// is still open for registration. Pinned so the fixture does not expire.
+// Before the round's registration deadline. Pinned so the fixture's dates
+// never expire against the real clock.
 const MOCK_TODAY = "2026-09-10T00:00:00Z";
 
 const OPEN_ROUND = {
@@ -98,6 +98,17 @@ describe("PersonalDashboard registration reminder wiring", () => {
     mentorshipApi.getAllMentorshipRounds.mockResolvedValue({
       data: [OPEN_ROUND],
     });
+    mentorshipApi.getMentorshipRoundSlots.mockResolvedValue({
+      data: {
+        registrationRoundId: OPEN_ROUND.id,
+        registrationRoundName: OPEN_ROUND.name,
+        registrationDeadlineAt: OPEN_ROUND.timeline.onboardingDeadlineAt,
+        isRegistrationOpen: true,
+        canViewMatch: false,
+        isFeedbackEnabled: false,
+        activeRoundId: null,
+      },
+    });
     mentorshipApi.getMyMentorshipRegistration.mockResolvedValue({
       data: { isRegistered: false },
     });
@@ -127,6 +138,17 @@ describe("PersonalDashboard registration reminder wiring", () => {
 
   it("still says so when registration really has not opened", async () => {
     mentorshipApi.getAllMentorshipRounds.mockResolvedValue({ data: [] });
+    mentorshipApi.getMentorshipRoundSlots.mockResolvedValue({
+      data: {
+        registrationRoundId: null,
+        registrationRoundName: null,
+        registrationDeadlineAt: null,
+        isRegistrationOpen: false,
+        canViewMatch: false,
+        isFeedbackEnabled: false,
+        activeRoundId: null,
+      },
+    });
 
     render(<PersonalDashboard />);
 

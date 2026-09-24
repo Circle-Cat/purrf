@@ -1,5 +1,6 @@
 import {
   getAllMentorshipRounds,
+  getMentorshipRoundSlots,
   getMyMentorshipPartners,
   getMyMentorshipRegistration,
   postMyMentorshipRegistration,
@@ -9,10 +10,6 @@ import {
 import { getMyMentorshipMeetingsV2 } from "@/api/meetingApi";
 import { getMyProfile } from "@/api/profileApi";
 
-import {
-  calculateMentorshipSlots,
-  calculateRoundStatus,
-} from "@/pages/PersonalDashboard/utils/mentorshipRounds";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { useRequestGuard } from "@/hooks/useRequestGuard";
@@ -70,9 +67,8 @@ export const useMentorshipData = ({
     matchResultRoundName: "",
     canViewMatch: false,
   });
-  // One entry per role the user may register under, each carrying that
-  // role's own deadline: a round can be closed to mentors and still open
-  // to mentees.
+  // One entry per role the user may register under. They share the round's
+  // registration deadline, but the role a registration settles is kept.
   const [roleEntries, setRoleEntries] = useState([]);
   const [regRoundName, setRegRoundName] = useState("");
   const [matchResult, setMatchResult] = useState(null);
@@ -169,10 +165,20 @@ export const useMentorshipData = ({
 
     const fetchData = async () => {
       try {
-        const now = new Date().toISOString();
-        const { data: rounds } = await getAllMentorshipRounds();
+        // The server decides which round is current and whether it is
+        // open, on its own clock; the round list only supplies the rounds
+        // to show, already ordered and carrying their status.
+        const [{ data: rounds }, { data: slots }] = await Promise.all([
+          getAllMentorshipRounds(),
+          getMentorshipRoundSlots(),
+        ]);
 
-        const status = calculateMentorshipSlots(rounds);
+        const status = {
+          regRoundId: slots?.registrationRoundId ?? null,
+          isFeedbackEnabled: Boolean(slots?.isFeedbackEnabled),
+          matchResultRoundName: slots?.registrationRoundName ?? "",
+          canViewMatch: Boolean(slots?.canViewMatch),
+        };
         setRoundStatus(status);
 
         // If there is an actionable round, fetch the user's registration data
@@ -186,18 +192,11 @@ export const useMentorshipData = ({
           );
           setRegistration(regData);
 
-          const regRound = rounds.find(
-            (r) => r.id?.toString() === status.regRoundId?.toString(),
-          );
-          setRegRoundName(regRound?.name ?? "");
-          // Registration closes with onboarding, for both roles.
-          const deadlineAt = regRound?.timeline?.onboardingDeadlineAt ?? null;
+          setRegRoundName(slots.registrationRoundName ?? "");
+          const deadlineAt = slots.registrationDeadlineAt ?? null;
+          const isOpen = Boolean(slots.isRegistrationOpen);
           setRoleEntries(
-            eligibleRoles.map((role) => ({
-              role,
-              deadlineAt,
-              isOpen: Boolean(deadlineAt) && now < deadlineAt,
-            })),
+            eligibleRoles.map((role) => ({ role, deadlineAt, isOpen })),
           );
 
           if (regData && regData.isRegistered) {
@@ -214,7 +213,10 @@ export const useMentorshipData = ({
           }
         }
 
-        const selectionData = calculateRoundStatus(rounds);
+        const selectionData = {
+          sortedRounds: rounds ?? [],
+          activeRoundId: slots?.activeRoundId ?? null,
+        };
         setRoundSelectionData(selectionData);
 
         if (selectionData.activeRoundId) {
