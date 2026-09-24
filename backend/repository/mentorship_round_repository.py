@@ -1,7 +1,7 @@
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from datetime import datetime, timedelta, timezone
 from typing import NamedTuple
-from sqlalchemy import TIMESTAMP, cast, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -15,12 +15,7 @@ class RunningRoundWindow(NamedTuple):
     or a meeting scheduled after the deadline would be swept in by the very
     allowance meant to catch meetings scheduled before it.
 
-    Both are timezone-aware: they are cast to TIMESTAMP(timezone=True) in SQL
-    rather than parsed in Python, because the two writers of these JSONB
-    fields disagree on format -- one emits ISO with an offset, the other a
-    bare YYYY-MM-DD date. Postgres accepts both; ``isoparse`` returns a naive
-    datetime for the latter, which would raise on any comparison with an aware
-    one. Do not parse these strings in Python anywhere.
+    Both are timezone-aware.
     """
 
     round_id: int
@@ -101,21 +96,12 @@ class MentorshipRoundRepository:
                 ascending. Empty when no window is open.
         """
         now_utc = datetime.now(timezone.utc)
-        # Equivalent to `window_end + grace >= now_utc`, computed as a
-        # subtraction of two plain Python datetimes instead: adding `grace`
-        # to the cast SQL column loses its TIMESTAMP WITH TIME ZONE typing
-        # under asyncpg, which then binds `now_utc` as a naive TIMESTAMP and
-        # raises on the tz-aware/naive comparison. This is arithmetic on our
-        # own `now_utc` and `grace` values, not parsing of the JSONB fields.
+        # Equivalent to `window_end + grace >= now_utc`, computed on the
+        # Python side so the column is compared against a plain aware
+        # datetime rather than an interval expression.
         selection_cutoff = now_utc - grace
-        window_start = cast(
-            MentorshipRoundEntity.description["match_notification_at"].astext,
-            TIMESTAMP(timezone=True),
-        )
-        window_end = cast(
-            MentorshipRoundEntity.description["meetings_completion_deadline_at"].astext,
-            TIMESTAMP(timezone=True),
-        )
+        window_start = MentorshipRoundEntity.match_notification_at
+        window_end = MentorshipRoundEntity.meetings_completion_deadline_at
         result = await session.execute(
             select(MentorshipRoundEntity.round_id, window_start, window_end)
             .where(window_start <= now_utc, window_end >= selection_cutoff)
@@ -129,7 +115,8 @@ class MentorshipRoundRepository:
         """The round a mentor admitted right now should register for.
 
         A round qualifies only while it is open on BOTH ends: promotion has
-        started and the mentor deadline has not passed. Of those, the one
+        started and registration, which closes at ``onboarding_deadline_at``
+        for mentors and mentees alike, has not. Of those, the one
         closing soonest wins, so a mentor admitted while two windows overlap
         is pointed at the one about to close rather than an arbitrary match.
 
@@ -145,12 +132,6 @@ class MentorshipRoundRepository:
         Returns None when no window is open. That is a normal state, not an
         error: the program is not always recruiting.
 
-        Both bounds are cast to timestamps in SQL rather than parsed in
-        Python, for the reason ``RunningRoundWindow``'s docstring gives --
-        the writers of these JSONB fields disagree on format. Rounds carrying
-        the one-off import's bare ``YYYY-MM-DD`` are historical and their
-        deadlines long past, so they can never win this comparison.
-
         Args:
             session (AsyncSession): The active async database session.
 
@@ -158,14 +139,8 @@ class MentorshipRoundRepository:
             MentorshipRoundEntity | None: The round closing soonest, or None.
         """
         now_utc = datetime.now(timezone.utc)
-        promotion_start = cast(
-            MentorshipRoundEntity.description["promotion_start_at"].astext,
-            TIMESTAMP(timezone=True),
-        )
-        deadline = cast(
-            MentorshipRoundEntity.description["mentor_application_deadline_at"].astext,
-            TIMESTAMP(timezone=True),
-        )
+        promotion_start = MentorshipRoundEntity.promotion_start_at
+        deadline = MentorshipRoundEntity.onboarding_deadline_at
         result = await session.execute(
             select(MentorshipRoundEntity)
             .where(promotion_start <= now_utc, deadline > now_utc)

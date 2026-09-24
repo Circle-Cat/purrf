@@ -61,14 +61,17 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
             MentorshipRoundEntity(
                 name="2025-spring",
                 required_meetings=5,
+                onboarding_deadline_at=datetime(2025, 2, 15, tzinfo=timezone.utc),
             ),
             MentorshipRoundEntity(
                 name="2025-fall",
                 required_meetings=5,
+                onboarding_deadline_at=datetime(2025, 8, 15, tzinfo=timezone.utc),
             ),
             MentorshipRoundEntity(
                 name="2026-spring",
                 required_meetings=5,
+                onboarding_deadline_at=datetime(2026, 2, 15, tzinfo=timezone.utc),
             ),
         ]
 
@@ -282,7 +285,11 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         ordering by id alone would put the partner who is gone above the
         current one.
         """
-        later_round = MentorshipRoundEntity(name="2026-fall", required_meetings=5)
+        later_round = MentorshipRoundEntity(
+            name="2026-fall",
+            required_meetings=5,
+            onboarding_deadline_at=datetime(2026, 8, 15, tzinfo=timezone.utc),
+        )
         await self.insert_entities([later_round])
         ended = MentorshipPairsEntity(
             round_id=later_round.round_id,
@@ -684,7 +691,11 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
 
     async def test_get_pair_stats_empty(self):
         """Returns an empty dict when there are no active pairs for a round."""
-        empty_round = MentorshipRoundEntity(name="empty-round", required_meetings=5)
+        empty_round = MentorshipRoundEntity(
+            name="empty-round",
+            required_meetings=5,
+            onboarding_deadline_at=datetime(2026, 8, 15, tzinfo=timezone.utc),
+        )
         await self.insert_entities([empty_round])
 
         result = await self.repo.get_pair_stats(self.session)

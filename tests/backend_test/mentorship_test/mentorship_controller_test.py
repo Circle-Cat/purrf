@@ -84,7 +84,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
             promotion_start_at=date(2025, 12, 1),
             mentor_application_deadline_at=date(2026, 1, 15),
             mentee_application_deadline_at=date(2026, 1, 15),
-            matching_completed_at=date(2026, 1, 31),
+            onboarding_deadline_at=date(2026, 1, 22),
             match_notification_at=date(2026, 2, 2),
             meetings_completion_deadline_at=date(2026, 5, 25),
             feedback_deadline_at=date(2026, 6, 10),
