@@ -303,8 +303,6 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         """Test creating a new mentorship round."""
         payload = RoundsCreateDto(
             name="2026-spring",
-            mentee_average_score=4.5,
-            mentor_average_score=5.0,
             expectations="Expectations text",
             timeline=self.timeline_data,
             required_meetings=5,
@@ -329,8 +327,6 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         """Test handling errors when updating or creating a mentorship round."""
         payload = RoundsCreateDto(
             name="2026-spring",
-            mentee_average_score=4.5,
-            mentor_average_score=5.0,
             expectations="Expectations text",
             timeline=self.timeline_data,
             required_meetings=5,
