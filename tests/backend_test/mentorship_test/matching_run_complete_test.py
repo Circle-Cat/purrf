@@ -116,6 +116,53 @@ class MatchingRunCompleteTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.record_event.assert_not_awaited()
 
+    async def test_a_finished_run_gives_its_round_back(self):
+        await self.controller.complete(_request())
+
+        # The lock's six hours are for a run that dies working; this one is
+        # over after one.
+        self.storage.release_round.assert_called_once_with(7, "r7-x-y")
+
+    async def test_the_round_is_given_back_before_the_announcement(self):
+        order = []
+        self.storage.release_round.side_effect = lambda *a: order.append("release")
+        self.record_event.side_effect = lambda *a, **k: order.append("announce")
+
+        await self.controller.complete(_request())
+
+        # A failure announcing answers 500, which the job does not retry.
+        self.assertEqual(order, ["release", "announce"])
+
+    async def test_a_retry_after_the_announcement_still_gives_the_round_back(self):
+        # A crash between announcing and releasing leaves only this path.
+        self.storage.already_notified.return_value = True
+
+        await self.controller.complete(_request())
+
+        self.storage.release_round.assert_called_once_with(7, "r7-x-y")
+
+    async def test_an_unusable_result_gives_the_round_back_too(self):
+        self.storage.read_run_result.side_effect = ValueError("incomplete")
+
+        await self.controller.complete(_request())
+
+        self.storage.release_round.assert_called_once_with(7, "r7-x-y")
+
+    async def test_a_run_still_writing_keeps_its_round(self):
+        self.storage.read_run_result.return_value = None
+
+        await self.controller.complete(_request())
+
+        # The job is still working; a second run now would overlap it.
+        self.storage.release_round.assert_not_called()
+
+    async def test_a_run_whose_envelope_is_gone_releases_nothing(self):
+        self.storage.read_meta.return_value = None
+
+        await self.controller.complete(_request())
+
+        self.storage.release_round.assert_not_called()
+
     async def test_a_run_that_has_not_reported_yet_asks_to_be_retried(self):
         # The job said it finished before its own last write landed.
         self.storage.read_run_result.return_value = None

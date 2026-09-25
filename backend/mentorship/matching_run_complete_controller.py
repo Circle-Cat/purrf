@@ -116,13 +116,6 @@ class MatchingRunCompleteController:
             self.logger.warning("[MatchingRunComplete] unreadable body; accepting")
             return Response(status_code=HTTPStatus.OK)
 
-        if self.matching_storage.already_notified(run_id):
-            self.logger.info(
-                "[MatchingRunComplete] run=%s already announced; nothing to do",
-                run_id,
-            )
-            return Response(status_code=HTTPStatus.OK)
-
         meta = self.matching_storage.read_meta(run_id)
         if meta is None:
             # Either the run expired or the job named one that was never
@@ -130,6 +123,16 @@ class MatchingRunCompleteController:
             # tell: who started it is what the envelope carries.
             self.logger.warning(
                 "[MatchingRunComplete] run=%s has no envelope; accepting", run_id
+            )
+            return Response(status_code=HTTPStatus.OK)
+
+        if self.matching_storage.already_notified(run_id):
+            # Released here too: a crash between the announcement and the
+            # release would otherwise hold the round until the lock expires.
+            self.matching_storage.release_round(meta.round_id, run_id)
+            self.logger.info(
+                "[MatchingRunComplete] run=%s already announced; nothing to do",
+                run_id,
             )
             return Response(status_code=HTTPStatus.OK)
 
@@ -161,6 +164,12 @@ class MatchingRunCompleteController:
                 "menteeCount": result.mentee_count,
                 "mentorCount": self.matching_storage.mentor_count(run_id),
             }
+
+        # The run is over either way, so the round is free for the next one.
+        # Before the announcement, because a failure sending it answers 500,
+        # which the job does not retry, and the lock would then sit out its
+        # six hours on a run that ended long ago.
+        self.matching_storage.release_round(meta.round_id, run_id)
 
         async with self.database.session() as session:
             round_entity = await self.mentorship_round_repository.get_by_round_id(

@@ -107,12 +107,13 @@ class MatchingStorage:
         return self.redis_client.get(round_lock_key(round_id))
 
     def release_round(self, round_id: int, run_id: str) -> None:
-        """Give the round's lock back, for a run that never started.
+        """Give the round's lock back, for a run that never started or is over.
 
         The six-hour expiry covers a run that dies while working. It does not
         cover a run that fails before the job is even triggered -- selecting the
         wrong people would otherwise lock the round out for the rest of the
-        afternoon over a mistake nobody had to wait for.
+        afternoon over a mistake nobody had to wait for -- nor one that finished
+        in an hour and would hold the round for five more.
 
         Deletes only this run's own lock, so a delete arriving after the expiry
         cannot take a later run's turn away.
