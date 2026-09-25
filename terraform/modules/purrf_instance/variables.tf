@@ -202,6 +202,12 @@ variable "matcher_image_tag" {
   default     = ""
 }
 
+variable "matcher_llm_stub" {
+  description = "Run the matcher with no LLM: it writes fake scores and marks its output +llm-stub, and the LLM key secret gets a placeholder so the job can be created without a real key. For wiring the pipeline end to end; turn off before a real round, after adding the real key by hand."
+  type        = bool
+  default     = false
+}
+
 variable "matcher_llm_concurrency" {
   description = "How many scoring calls the matcher has in flight at once."
   type        = number

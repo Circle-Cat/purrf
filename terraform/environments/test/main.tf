@@ -52,5 +52,6 @@ module "purrf_instance" {
   # to an image pushed to the shared repository is what creates the job.
   enable_matcher    = true
   matcher_image_tag = "llm-stub"
+  matcher_llm_stub  = true
 }
 

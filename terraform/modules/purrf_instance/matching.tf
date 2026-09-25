@@ -87,6 +87,18 @@ resource "google_secret_manager_secret" "matcher_llm_api_key" {
   depends_on = [google_project_service.matcher]
 }
 
+# A real key is added by hand with `gcloud secrets versions add` so it never
+# reaches the state file. In stub mode no LLM is called, but the job still
+# resolves the secret's latest version when it is created, so a placeholder is
+# written here. It is not a key and is safe in state. Turning stub mode off
+# destroys this version: add the real key by hand first.
+resource "google_secret_manager_secret_version" "matcher_llm_api_key_placeholder" {
+  count = var.enable_matcher && var.matcher_llm_stub ? 1 : 0
+
+  secret      = google_secret_manager_secret.matcher_llm_api_key[0].id
+  secret_data = "unused-in-stub-mode"
+}
+
 resource "google_cloud_run_v2_job" "matcher" {
   count = local.matcher_job_enabled ? 1 : 0
 
@@ -171,6 +183,16 @@ resource "google_cloud_run_v2_job" "matcher" {
             }
           }
         }
+
+        # The matcher calls no LLM and writes fake scores, and its output says
+        # so: matcher_version carries +llm-stub.
+        dynamic "env" {
+          for_each = var.matcher_llm_stub ? ["1"] : []
+          content {
+            name  = "MATCHER_LLM_STUB"
+            value = env.value
+          }
+        }
       }
     }
   }
@@ -178,6 +200,7 @@ resource "google_cloud_run_v2_job" "matcher" {
   depends_on = [
     google_project_service.matcher,
     google_artifact_registry_repository_iam_member.matcher_image_pull,
+    google_secret_manager_secret_version.matcher_llm_api_key_placeholder,
   ]
 }
 
