@@ -129,6 +129,10 @@ NOTIFICATION_TOPIC = "NOTIFICATION_TOPIC"
 # NOTIFICATION_TOPIC does: the route refuses every request instead, rather than
 # crash-looping the whole API over one variable.
 NOTIFICATION_PUSHER_SUBS = "NOTIFICATION_PUSHER_SUBS"
+# Numeric unique_id of the matcher job's service account. Its token is what
+# the completion callback carries; an email can be recycled onto a new
+# account, a unique_id cannot.
+MATCHER_JOB_SUBS = "MATCHER_JOB_SUBS"
 
 
 # Every origin the app itself answers on, comma-separated, e.g.

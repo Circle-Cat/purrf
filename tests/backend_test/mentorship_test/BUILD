@@ -152,3 +152,12 @@ py_test(
         "@pypi//requests",
     ],
 )
+
+py_test(
+    name = "matching_run_complete_test",
+    srcs = ["matching_run_complete_test.py"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/mentorship",
+    ],
+)

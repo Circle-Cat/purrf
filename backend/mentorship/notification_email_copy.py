@@ -1,4 +1,4 @@
-"""Subject + HTML body for the mentorship admission email.
+"""Subject + HTML body for the mentorship emails.
 
 Separate from ``recruiting/notification_email_copy.py`` because the audience
 is: this is the first notification Purrf sends to someone outside the
@@ -12,8 +12,16 @@ Dashboard" is the label verbatim from ``navItems`` in
 ``frontend/src/components/layout/Sidebar.jsx`` -- a reader who goes looking
 for a menu with any other name finds nothing.
 
-Both variants share a subject line so that someone admitted more than once
-keeps one mail thread. It is a constant, so nothing person-written reaches
+Two audiences now live here. The admission bodies below are written for
+someone outside the company; ``matching_run_*`` is written for the
+administrator who started a run, and departs from the rules in two ways that
+the audience earns: the round's name reaches the subject, because results from
+two different rounds threading together is worse than an administrator-written
+string in a header, and no destination is named because there is no screen to
+review a result on yet.
+
+Both admission variants share a subject line so that someone admitted more
+than once keeps one mail thread. It is a constant, so nothing person-written reaches
 a subject here; the two values that do reach a body -- the recipient's own
 name and the round's name -- are HTML-escaped, the same rule the recruiting
 copy and ``user_identity/notification_renderers`` follow.
@@ -137,4 +145,82 @@ def mentor_admitted_without_round(display_name: str) -> tuple[str, str]:
         "successfully.</p>"
         "<p>We will be in touch soon with the next steps!</p>"
         f"{_FOOTER}",
+    )
+
+
+def _run_round(round_name: str | None) -> str:
+    """ "for Mentorship 2026 Fall", or nothing when the round has no usable name."""
+    if round_name and round_name.strip():
+        return f" for {html.escape(round_name.strip())}"
+    return ""
+
+
+def _minutes(seconds: int | None) -> str:
+    """ "and took 48 minutes", or nothing when the timestamps did not parse.
+
+    A run that reports impossible timestamps should drop the sentence rather
+    than tell an administrator it finished in -3 minutes.
+    """
+    if seconds is None or seconds <= 0:
+        return ""
+    minutes = max(1, round(seconds / 60))
+    return f" and took {minutes} minute{'' if minutes == 1 else 's'}"
+
+
+def matching_run_succeeded(
+    round_name: str | None,
+    mentee_count: int,
+    mentor_count: int,
+    seconds: int | None,
+) -> tuple[str, str]:
+    """The email an administrator gets when their run produced results.
+
+    Args:
+        round_name (str | None): The round's name, possibly blank.
+        mentee_count (int): Mentees the run scored.
+        mentor_count (int): Mentors they were scored against.
+        seconds (int | None): How long it took, if the timestamps parsed.
+
+    Returns:
+        tuple[str, str]: Subject and HTML body.
+    """
+    round_phrase = _run_round(round_name)
+    return (
+        f"Mentorship matching has finished{round_phrase}",
+        "<p>Hello,</p>"
+        f"<p>The matching run you started{round_phrase} has finished.</p>"
+        f"<p>It scored {mentee_count} mentees against {mentor_count} mentors"
+        f"{_minutes(seconds)}.</p>"
+        # Said plainly because the email arrives an hour after the button was
+        # pressed, which is long enough to assume the pairings are live.
+        "<p>Nothing has been published yet. No pairing exists until somebody "
+        "reviews these results and applies them.</p>" + _FOOTER,
+    )
+
+
+def matching_run_failed(round_name: str | None, error: str | None) -> tuple[str, str]:
+    """The email an administrator gets when their run stopped early.
+
+    The design only called for a completion notice, but somebody who waited an
+    hour needs the failure more than the success.
+
+    Args:
+        round_name (str | None): The round's name, possibly blank.
+        error (str | None): What the matcher reported, if anything.
+
+    Returns:
+        tuple[str, str]: Subject and HTML body.
+    """
+    round_phrase = _run_round(round_name)
+    reported = (
+        f"<p><code>{html.escape(error.strip())}</code></p>"
+        if error and error.strip()
+        else "<p>It did not say why.</p>"
+    )
+    return (
+        f"Mentorship matching did not finish{round_phrase}",
+        "<p>Hello,</p>"
+        f"<p>The matching run you started{round_phrase} stopped before it "
+        "produced results.</p>" + reported + "<p>Nothing was changed. Starting "
+        "a new run for this round is safe.</p>" + _FOOTER,
     )

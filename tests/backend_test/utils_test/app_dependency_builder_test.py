@@ -624,6 +624,7 @@ class TestAppDependencyBuilder(TestCase):
             profile_controller=mock_profile_controller_cls.return_value,
             mentorship_controller=mock_mentorship_controller_cls.return_value,
             mentorship_admin_controller=mock_mentorship_admin_controller_cls.return_value,
+            matching_run_complete_controller=builder.matching_run_complete_controller,
             email_management_controller=mock_email_management_controller_cls.return_value,
             permission_admin_controller=mock_permission_admin_controller_cls.return_value,
             user_account_controller=ANY,
