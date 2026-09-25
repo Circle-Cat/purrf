@@ -12,13 +12,17 @@
 # only mean copying it. It is built and pushed by hand this round, which is why
 # the tag is an explicit variable.
 
+# Left on when the matcher is removed. Every environment shares purrf-452300,
+# and Cloud Functions gen 2 runs on Cloud Run, so disabling either API on
+# destroy would take it away from staging and prod too.
 resource "google_project_service" "matcher" {
   for_each = var.enable_matcher ? toset([
     "run.googleapis.com",
     "secretmanager.googleapis.com",
   ]) : toset([])
 
-  service = each.value
+  service            = each.value
+  disable_on_destroy = false
 }
 
 # A Cloud Run job pulls its image as the project's Cloud Run service agent, not
