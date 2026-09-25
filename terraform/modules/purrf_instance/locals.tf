@@ -41,10 +41,14 @@ locals {
 }
 
 locals {
-  # Mentorship matcher. The registry has to exist and hold an image before a
-  # job can point at one, so the job trails the rest of the matcher resources
-  # by one apply: provision with enable_matcher, push the image, then set
-  # matcher_image_tag.
+  # Mentorship matcher. The image repository is shared by every environment
+  # and is not managed here (see matching.tf).
+  matcher_image_project    = "k8s-dev-437501"
+  matcher_image_location   = "us-west1"
+  matcher_image_repository = "purrf-matcher"
+
+  # Cloud Run rejects a job whose image does not exist, so the job waits for a
+  # tag that names one.
   matcher_job_enabled = var.enable_matcher && var.matcher_image_tag != ""
 }
 

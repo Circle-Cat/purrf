@@ -191,13 +191,13 @@ variable "interview_calendar_id" {
 }
 
 variable "enable_matcher" {
-  description = "Provision the mentorship matcher: its Artifact Registry repository, secrets, service account and Cloud Run job. Off by default while the pipeline is being brought up on test."
+  description = "Provision the mentorship matcher: its secrets, service account, image pull access and Cloud Run job. Off by default while the pipeline is being brought up on test."
   type        = bool
   default     = false
 }
 
 variable "matcher_image_tag" {
-  description = "Tag of the matcher image in this environment's Artifact Registry repository. Explicit rather than a floating tag such as main: a run has to be traceable to the code that produced it. Empty leaves the job uncreated, which is what the first apply needs -- Cloud Run rejects a job whose image does not exist yet."
+  description = "Tag of the matcher image in the shared us-west1-docker.pkg.dev/k8s-dev-437501/purrf-matcher repository. Explicit rather than a floating tag such as main: a run has to be traceable to the code that produced it. Empty leaves the job uncreated -- Cloud Run rejects a job whose image does not exist."
   type        = string
   default     = ""
 }

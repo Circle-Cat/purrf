@@ -6,12 +6,14 @@
 #
 # Cloud Run has no imagePullSecrets, so it cannot pull the private
 # purrf-matcher image from GitHub Container Registry the way the backend does on
-# GKE. The image has to live in Artifact Registry; this round it is built and
-# pushed by hand, which is why the tag is an explicit variable.
+# GKE. The image lives in one Artifact Registry repository in k8s-dev-437501,
+# beside the backend's own images, and every environment pulls from it: the
+# same image is what runs everywhere, so a repository per environment would
+# only mean copying it. It is built and pushed by hand this round, which is why
+# the tag is an explicit variable.
 
 resource "google_project_service" "matcher" {
   for_each = var.enable_matcher ? toset([
-    "artifactregistry.googleapis.com",
     "run.googleapis.com",
     "secretmanager.googleapis.com",
   ]) : toset([])
@@ -19,14 +21,17 @@ resource "google_project_service" "matcher" {
   service = each.value
 }
 
-resource "google_artifact_registry_repository" "matcher" {
+# A Cloud Run job pulls its image as the project's Cloud Run service agent, not
+# as the job's own service account, and that agent has no access to another
+# project's registry until it is granted here. Bound on the one repository.
+resource "google_artifact_registry_repository_iam_member" "matcher_image_pull" {
   count = var.enable_matcher ? 1 : 0
 
-  repository_id = "${local.name_prefix}-matcher"
-  location      = var.gcp_region
-  format        = "DOCKER"
-  description   = "Images for the mentorship matcher job."
-  labels        = local.common_labels
+  project    = local.matcher_image_project
+  location   = local.matcher_image_location
+  repository = local.matcher_image_repository
+  role       = "roles/artifactregistry.reader"
+  member     = "serviceAccount:service-${data.google_project.main_gcp_project_data.number}@serverless-robot-prod.iam.gserviceaccount.com"
 
   depends_on = [google_project_service.matcher]
 }
@@ -99,7 +104,7 @@ resource "google_cloud_run_v2_job" "matcher" {
       timeout     = "21600s"
 
       containers {
-        image = "${var.gcp_region}-docker.pkg.dev/${var.gcp_project_id}/${google_artifact_registry_repository.matcher[0].repository_id}/purrf-matcher:${var.matcher_image_tag}"
+        image = "${local.matcher_image_location}-docker.pkg.dev/${local.matcher_image_project}/${local.matcher_image_repository}/purrf-matcher:${var.matcher_image_tag}"
 
         resources {
           limits = {
@@ -166,7 +171,10 @@ resource "google_cloud_run_v2_job" "matcher" {
     }
   }
 
-  depends_on = [google_project_service.matcher]
+  depends_on = [
+    google_project_service.matcher,
+    google_artifact_registry_repository_iam_member.matcher_image_pull,
+  ]
 }
 
 resource "google_secret_manager_secret_iam_member" "matcher_redis_password_job_access" {
