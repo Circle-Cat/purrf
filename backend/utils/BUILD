@@ -118,6 +118,7 @@ py_library(
         "//backend/common:json_schema_validator",
         "//backend/common:launchdarkly_client",
         "//backend/common:logger",
+        "//backend/common:matching_job_client",
         "//backend/common:microsoft_graph_service_client",
         "//backend/common:redis_client",
         "//backend/communication",

@@ -142,3 +142,13 @@ py_test(
         "//tests/backend_test/repository_test:base_repository_test_lib",
     ],
 )
+
+py_test(
+    name = "matching_run_test",
+    srcs = ["matching_run_test.py"],
+    deps = [
+        "//backend/common:matching_job_client",
+        "//backend/mentorship",
+        "@pypi//requests",
+    ],
+)

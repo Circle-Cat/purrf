@@ -202,3 +202,11 @@ py_test(
         "//backend/common:wall_clock",
     ],
 )
+
+py_test(
+    name = "matching_job_client_test",
+    srcs = ["matching_job_client_test.py"],
+    deps = [
+        "//backend/common:matching_job_client",
+    ],
+)
