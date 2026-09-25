@@ -60,6 +60,18 @@ class TestLaunchDarklyService(TestCase):
             "view-personal-summary", self.user, False
         )
 
+    def test_is_matching_run_enabled(self):
+        self.ld_client.variation.return_value = True
+
+        result = self.service.is_matching_run_enabled(self.user)
+
+        self.assertTrue(result)
+        # The False is the point: a run costs an hour of a paid job, so an
+        # unreachable LaunchDarkly has to leave the button shut.
+        self.ld_client.variation.assert_called_once_with(
+            "matching-run", self.user, False
+        )
+
 
 if __name__ == "__main__":
     main()
