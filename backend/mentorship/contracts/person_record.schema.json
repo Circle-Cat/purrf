@@ -214,6 +214,7 @@
     "max_partners": {
       "anyOf": [
         {
+          "minimum": 1,
           "type": "integer"
         },
         {

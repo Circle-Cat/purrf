@@ -324,12 +324,22 @@ class MatchingPayloadServiceTest(BaseRepositoryTestLib):
         self.assertEqual(payload.mentees[0].mentorship_rounds_completed, 1)
 
     async def test_the_round_being_matched_is_not_counted_as_experience(self):
-        round_entity, mentor, mentee = await self._minimal_round()
-        await self._preference(mentee, specific_industry={})
+        round_entity = await self._round()
+        mentor = await self._user(first="Grace", last="Hopper")
+        mentee = await self._user(first="Alan", last="Turing")
+        # Room for a second mentee, so the pair below does not fill him up.
+        await self._participant(
+            mentor, round_entity, ParticipantRole.MENTOR, max_partners=2
+        )
+        await self._participant(mentee, round_entity, ParticipantRole.MENTEE)
         await self._pair_with_meetings(round_entity, mentor, mentee, completed=True)
+        # The paired mentee already has her mentor, so another one is matched.
+        other = await self._user(first="Edsger", last="Dijkstra")
+        await self._participant(other, round_entity, ParticipantRole.MENTEE)
+        await self._preference(other, specific_industry={})
 
         payload = await self.service.build_matching_payload(
-            self.session, round_entity.round_id, [mentor.user_id, mentee.user_id]
+            self.session, round_entity.round_id, [mentor.user_id, other.user_id]
         )
 
         self.assertEqual(payload.mentors[0].mentorship_rounds_participated, 0)
@@ -347,6 +357,118 @@ class MatchingPayloadServiceTest(BaseRepositoryTestLib):
                 [mentor.user_id, mentee.user_id, stranger.user_id],
             )
         self.assertIn(str(stranger.user_id), str(caught.exception))
+
+    async def _rematch_round(self):
+        """A round where one mentor already holds a pair and one does not.
+
+        The two caps differ from each other and from what either has left, so
+        sending the cap, or reading one mentor's pairs as the other's, shows.
+        """
+        round_entity = await self._round()
+        busy = await self._user(first="Grace", last="Hopper")
+        idle = await self._user(first="Barbara", last="Liskov")
+        paired = await self._user(first="Alan", last="Turing")
+        waiting = await self._user(first="Edsger", last="Dijkstra")
+        await self._participant(
+            busy, round_entity, ParticipantRole.MENTOR, max_partners=3
+        )
+        await self._participant(
+            idle, round_entity, ParticipantRole.MENTOR, max_partners=2
+        )
+        await self._participant(paired, round_entity, ParticipantRole.MENTEE)
+        await self._participant(waiting, round_entity, ParticipantRole.MENTEE)
+        await self._preference(waiting, specific_industry={})
+        await self._pair_with_meetings(round_entity, busy, paired, completed=False)
+        return round_entity, busy, idle, paired, waiting
+
+    async def test_a_mentor_carries_the_room_left_rather_than_the_cap(self):
+        round_entity, busy, idle, _, waiting = await self._rematch_round()
+
+        payload = await self.service.build_matching_payload(
+            self.session,
+            round_entity.round_id,
+            [busy.user_id, idle.user_id, waiting.user_id],
+        )
+
+        slots = {p.user_id: p.max_partners for p in payload.mentors}
+        self.assertEqual(slots, {str(busy.user_id): 2, str(idle.user_id): 2})
+
+    async def test_pairs_in_another_round_leave_the_room_alone(self):
+        round_entity, _, idle, _, waiting = await self._rematch_round()
+        other_round = await self._round(name="2026 Spring")
+        stranger = await self._user(first="Donald", last="Knuth")
+        await self._pair_with_meetings(other_round, idle, stranger, completed=True)
+
+        payload = await self.service.build_matching_payload(
+            self.session,
+            round_entity.round_id,
+            [idle.user_id, waiting.user_id],
+        )
+
+        self.assertEqual(payload.mentors[0].max_partners, 2)
+
+    async def test_an_inactive_pair_frees_its_slot(self):
+        round_entity, busy, _, _, waiting = await self._rematch_round()
+        await self.session.execute(
+            MentorshipPairsEntity.__table__.update()
+            .where(MentorshipPairsEntity.mentor_id == busy.user_id)
+            .values(status=PairStatus.INACTIVE)
+        )
+
+        payload = await self.service.build_matching_payload(
+            self.session,
+            round_entity.round_id,
+            [busy.user_id, waiting.user_id],
+        )
+
+        self.assertEqual(payload.mentors[0].max_partners, 3)
+
+    async def test_a_mentor_with_no_room_left_is_refused_by_name(self):
+        round_entity, busy, idle, _, waiting = await self._rematch_round()
+        await self._pair_with_meetings(round_entity, busy, waiting, completed=False)
+        third = await self._user(first="Frances", last="Allen")
+        await self._participant(third, round_entity, ParticipantRole.MENTEE)
+        await self._preference(third, specific_industry={})
+        fourth = await self._user(first="John", last="Backus")
+        await self._pair_with_meetings(round_entity, busy, fourth, completed=False)
+
+        # The matcher reads 0 as 1, so sending him would hand him a fourth.
+        with self.assertRaises(ValueError) as caught:
+            await self.service.build_matching_payload(
+                self.session,
+                round_entity.round_id,
+                [busy.user_id, idle.user_id, third.user_id],
+            )
+        self.assertIn(str(busy.user_id), str(caught.exception))
+        self.assertNotIn(str(idle.user_id), str(caught.exception))
+
+    async def test_a_mentee_who_already_has_a_mentor_is_refused_by_name(self):
+        round_entity, _, idle, paired, waiting = await self._rematch_round()
+
+        # She takes one mentor and has one; the matcher would give her another.
+        with self.assertRaises(ValueError) as caught:
+            await self.service.build_matching_payload(
+                self.session,
+                round_entity.round_id,
+                [idle.user_id, paired.user_id, waiting.user_id],
+            )
+        self.assertIn(str(paired.user_id), str(caught.exception))
+        self.assertNotIn(str(waiting.user_id), str(caught.exception))
+
+    async def test_a_mentee_whose_pair_ended_can_be_matched_again(self):
+        round_entity, busy, idle, paired, _ = await self._rematch_round()
+        await self.session.execute(
+            MentorshipPairsEntity.__table__.update()
+            .where(MentorshipPairsEntity.mentor_id == busy.user_id)
+            .values(status=PairStatus.INACTIVE)
+        )
+        await self._preference(paired, specific_industry={})
+
+        payload = await self.service.build_matching_payload(
+            self.session, round_entity.round_id, [idle.user_id, paired.user_id]
+        )
+
+        self.assertEqual([p.user_id for p in payload.mentees], [str(paired.user_id)])
 
     async def test_rejects_a_selection_missing_a_whole_side(self):
         round_entity, mentor, _ = await self._minimal_round()

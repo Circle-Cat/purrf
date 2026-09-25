@@ -122,8 +122,12 @@ class PersonRecord(_Strict):
     # Mentee only: the registration form asks this of mentees and not of mentors.
     specific_industry: dict[str, bool] | None = None
 
-    # Mentor only, and checked below rather than only said here.
-    max_partners: int | None = None
+    # Mentor only, and checked below rather than only said here. How many more
+    # mentees this run may give them: their cap less the pairs they already
+    # hold in the round, so a mentor back in the pool for a rematch is not
+    # filled up again from scratch. Never below 1 -- the matcher reads 0 as 1,
+    # so a mentor with no room left is refused before the payload is built.
+    max_partners: int | None = Field(default=None, ge=1)
     career_transition: (
         Literal["none_cs_background", "via_cs_masters", "via_work_experience"] | None
     ) = None
