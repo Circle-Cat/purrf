@@ -157,3 +157,40 @@ async def _render_mentor_admitted(session: AsyncSession, event: EventEntity):
         _format_deadline(deadline, zone),
         _format_matching_date(matching, zone),
     )
+
+
+def _elapsed(started_at: str | None, finished_at: str | None) -> int | None:
+    """Seconds between two reported instants, or None when they do not parse.
+
+    The matcher reports both; neither is trusted to be an instant, because a
+    body that says a run took -3 minutes reads as our bug rather than its
+    clock's.
+    """
+    started, finished = _instant(started_at), _instant(finished_at)
+    if started is None or finished is None:
+        return None
+    return int((finished - started).total_seconds())
+
+
+@register_render(MentorshipEvent.MATCHING_RUN_COMPLETED)
+async def _render_matching_run_completed(session: AsyncSession, event: EventEntity):
+    """What the administrator who started a run is told about how it went.
+
+    Everything rendered comes from ``event.details``, snapshotted when the
+    callback arrived. The run's own Redis keys expire, and an email explaining
+    a run has to keep making sense after they do.
+    """
+    del session
+    details = event.details
+    round_name = details.get("roundName")
+    seconds = _elapsed(details.get("startedAt"), details.get("finishedAt"))
+
+    if details.get("status") == "failed":
+        return copy.matching_run_failed(round_name, details.get("error"))
+
+    return copy.matching_run_succeeded(
+        round_name,
+        int(details.get("menteeCount") or 0),
+        int(details.get("mentorCount") or 0),
+        seconds,
+    )

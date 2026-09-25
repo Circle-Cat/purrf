@@ -43,3 +43,37 @@ async def _admitted_applicant(session: AsyncSession, event: EventEntity) -> set[
     """
     application = await _application_repository.get_by_id(session, event.subject_id)
     return set() if application is None else {application.user_id}
+
+
+@register_recipients(
+    MentorshipEvent.MATCHING_RUN_COMPLETED, subject_type="mentorship_round"
+)
+async def _run_starter(session: AsyncSession, event: EventEntity) -> set[int]:
+    """Whoever started the run, and nobody else.
+
+    Read from the event's own details rather than looked up: nothing outside
+    the run records who asked for it, and by the time this resolves, the run's
+    Redis keys are not this function's to reach -- a resolver is handed a
+    session and an event, which is the shape that keeps every domain's
+    recipients answerable from the database.
+
+    Safe only because the event is recorded with ``actor_id=None``.
+    ``record_event`` discards the actor from the recipients, and the actor
+    here would be the very person being told.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        event (EventEntity): The completion event; its subject is the round.
+
+    Returns:
+        set[int]: The starter's user id, or empty when the run carried none --
+            a run started by a tool rather than a person has nobody to tell.
+    """
+    del session
+    raw = event.details.get("triggeredByUserId")
+    if raw is None:
+        return set()
+    try:
+        return {int(raw)}
+    except (TypeError, ValueError):
+        return set()
