@@ -3,9 +3,13 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import TimeOffCard from "@/pages/PersonalDashboard/components/TimeOffCard";
+import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
 import * as api from "@/api/leaveApi";
 
 vi.mock("@/api/leaveApi");
+vi.mock("@/pages/Leave/hooks/useLeaveEnabled", () => ({
+  useLeaveEnabled: vi.fn(() => true),
+}));
 
 const envelope = (data) => ({ success: true, message: "ok", data });
 
@@ -170,5 +174,18 @@ describe("TimeOffCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Balance history" }));
 
     expect(screen.getByText("Balance history page")).toBeInTheDocument();
+  });
+
+  it("hides balance history button when leave is disabled", async () => {
+    useLeaveEnabled.mockReturnValue(false);
+
+    renderCard();
+    await waitFor(() =>
+      expect(screen.getByText("Time off")).toBeInTheDocument(),
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Balance history" }),
+    ).not.toBeInTheDocument();
   });
 });

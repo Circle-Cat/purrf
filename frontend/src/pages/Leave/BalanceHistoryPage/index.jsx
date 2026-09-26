@@ -1,54 +1,34 @@
-import { useEffect, useState } from "react";
-
-import { getMyLeaveLedger } from "@/api/leaveApi";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Navigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { useLeaveStanding } from "@/pages/Leave/hooks/useLeaveStanding";
-import {
-  formatBusinessDate,
-  LEAVE_CALENDAR_ZONE_LABEL,
-} from "@/pages/Leave/utils/leaveDates";
-
-const ENTRY_TYPE_LABELS = {
-  weekly_accrual: "Weekly Accrual",
-  leave_deduction: "Leave Deduction",
-  level_change: "Level Change",
-  manual_adjustment: "Manual Adjustment",
-  exchange_credit: "Exchange Credit",
-  carryover_forfeit: "Carryover Forfeit",
-};
+import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import { useMyLeaveLedger } from "@/pages/Leave/hooks/useMyLeaveLedger";
+import BalanceHistoryRow from "@/pages/Leave/BalanceHistoryPage/components/BalanceHistoryRow";
+import { LEAVE_CALENDAR_ZONE_LABEL } from "@/pages/Leave/utils/leaveDates";
 
 export default function BalanceHistoryPage() {
-  const { isCovered, isLoading: isStandingLoading } = useLeaveStanding();
-  const [ledgerData, setLedgerData] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const isEnabled = useLeaveEnabled();
 
-  useEffect(() => {
-    if (isCovered) {
-      getMyLeaveLedger()
-        .then((res) => {
-          setLedgerData(res.data || res);
-        })
-        .catch((err) => {
-          setError(err.message || "Failed to load balance history");
-        })
-        .finally(() => {
-          setIsLoading(false);
-        });
-    } else {
-      setIsLoading(false);
-    }
-  }, [isCovered]);
+  const { isCovered, isLoading: isStandingLoading } = useLeaveStanding({
+    enabled: isEnabled,
+  });
 
-  if (isStandingLoading || isLoading) {
+  const {
+    data: ledgerData,
+    isLoading: isLedgerLoading,
+    loadError,
+    load,
+  } = useMyLeaveLedger({
+    enabled: isEnabled && isCovered,
+  });
+
+  if (!isEnabled) {
+    return <Navigate to={ROUTE_PATHS.PERSONAL_DASHBOARD} replace />;
+  }
+
+  if (isStandingLoading) {
     return (
       <div className="p-6 text-sm text-muted-foreground">
         Loading balance history...
@@ -64,78 +44,67 @@ export default function BalanceHistoryPage() {
     );
   }
 
-  if (error) {
-    return <div className="p-6 text-sm text-rose-600">Error: {error}</div>;
+  if (isLedgerLoading) {
+    return (
+      <div className="p-6 text-sm text-muted-foreground">
+        Loading balance history...
+      </div>
+    );
   }
 
-  const balanceHours = ledgerData?.balanceHours ?? "0.00";
+  if (loadError) {
+    return (
+      <div className="flex flex-col items-start gap-3 p-6">
+        <p className="text-sm text-muted-foreground">
+          Failed to load balance history.
+        </p>
+        <Button variant="link" onClick={() => load()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  const balanceHours = Number(ledgerData?.balanceHours ?? 0).toFixed(2);
   const entries = ledgerData?.entries ?? [];
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
+    <div className="space-y-5">
+      {/* Heading + timezone (outside the card) */}
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <h2 className="m-0 text-lg font-bold">Balance history</h2>
+        <span className="text-sm text-muted-foreground">
+          {LEAVE_CALENDAR_ZONE_LABEL}
+        </span>
+      </div>
+
+      <p className="text-sm text-muted-foreground">
+        Entries are only ever added — a correction is a new line, never an edit
+        to an old one.
+      </p>
+
       <Card className="border-gray-200 shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-xl font-semibold">
-            Balance History
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-baseline gap-2">
-            <span className="text-sm font-medium text-muted-foreground">
-              Current Balance:
-            </span>
-            <span className="text-3xl font-bold tabular-nums">
-              {balanceHours} h
-            </span>
+        {entries.length === 0 ? (
+          <div className="p-6 text-center text-sm text-muted-foreground">
+            No balance history entries found.
           </div>
-        </CardContent>
-      </Card>
+        ) : (
+          <>
+            <ul className="divide-y divide-gray-100">
+              {entries.map((entry, index) => (
+                <BalanceHistoryRow key={entry.id ?? index} entry={entry} />
+              ))}
+            </ul>
 
-      <Card className="border-gray-200 shadow-sm">
-        <CardContent className="p-0">
-          {entries.length === 0 ? (
-            <div className="p-6 text-center text-sm text-muted-foreground">
-              No balance history entries found.
+            <div className="flex justify-between border-t border-gray-200 py-3 px-4 sm:px-6 font-bold">
+              <span className="text-sm">Total on record</span>
+              <span className="text-sm font-mono tabular-nums">
+                {balanceHours} h
+              </span>
             </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Effective Date</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead className="text-right">Hours</TableHead>
-                  <TableHead>Note</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {entries.map((entry, index) => {
-                  const displayType =
-                    ENTRY_TYPE_LABELS[entry.entryType] || entry.entryType;
-
-                  return (
-                    <TableRow key={index}>
-                      <TableCell className="font-mono text-xs">
-                        {formatBusinessDate(entry.effectiveDate)}
-                      </TableCell>
-                      <TableCell className="text-sm">{displayType}</TableCell>
-                      <TableCell className="text-right font-mono text-sm tabular-nums">
-                        {entry.hours}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {entry.note || "—"}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
+          </>
+        )}
       </Card>
-
-      <footer className="text-right text-xs text-muted-foreground">
-        {LEAVE_CALENDAR_ZONE_LABEL}
-      </footer>
     </div>
   );
 }

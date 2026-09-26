@@ -7,6 +7,7 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import CompanyHolidaysDialog from "@/pages/Leave/components/CompanyHolidaysDialog";
 import FileLeaveDialog from "@/pages/Leave/components/FileLeaveDialog";
 import { useMyLeaveRequests } from "@/pages/Leave/hooks/useMyLeaveRequests";
+import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
 
 /**
  * One figure in the card.
@@ -56,6 +57,7 @@ const Stat = ({ label, hours, hint, isRed = false }) => (
  */
 const TimeOffCard = ({ availableHours, pendingHours, usedHours }) => {
   const navigate = useNavigate();
+  const isEnabled = useLeaveEnabled();
   const { requests, isSaving, saveError, file } = useMyLeaveRequests();
   const [isFiling, setIsFiling] = useState(false);
   const [isViewingHolidays, setIsViewingHolidays] = useState(false);
@@ -106,12 +108,14 @@ const TimeOffCard = ({ availableHours, pendingHours, usedHours }) => {
           >
             My requests
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => navigate(ROUTE_PATHS.LEAVE_BALANCE_HISTORY)}
-          >
-            Balance history
-          </Button>
+          {isEnabled && (
+            <Button
+              variant="outline"
+              onClick={() => navigate(ROUTE_PATHS.LEAVE_BALANCE_HISTORY)}
+            >
+              Balance history
+            </Button>
+          )}
         </div>
       </CardContent>
 
