@@ -372,6 +372,55 @@ describe("NotificationBell", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  // -- the matching-run line ---------------------------------------------
+  //
+  // Written under subject_type "mentorship_round", so everything it says comes
+  // from details. Before this case existed the admin who started a run saw a
+  // blank row that still counted towards the unread badge.
+
+  const runRow = (details) => ({
+    id: 5,
+    eventType: "mentorship.matching_run_completed",
+    jobTitle: "",
+    applicantName: "",
+    subjectName: "",
+    actorName: null,
+    createdAt: "2026-09-26T00:00:00Z",
+    details: {
+      roundName: "Mentorship 2026 Fall",
+      status: "succeeded",
+      ...details,
+    },
+  });
+
+  it("tells the admin their matching run finished", async () => {
+    await openWith(runRow({}));
+
+    expect(
+      screen.getByText(
+        "The matching run you started for Mentorship 2026 Fall has finished",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the admin their matching run did not finish", async () => {
+    await openWith(runRow({ status: "failed", error: "PayloadError" }));
+
+    expect(
+      screen.getByText(
+        "The matching run you started for Mentorship 2026 Fall did not finish",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves the round out rather than naming a blank one", async () => {
+    await openWith(runRow({ roundName: "   " }));
+
+    expect(
+      screen.getByText("The matching run you started has finished"),
+    ).toBeInTheDocument();
+  });
 });
 
 const MENTION = {
