@@ -143,7 +143,8 @@ export default {
    *
    * The origin's status code is returned unchanged: Pub/Sub decides whether
    * to ack or redeliver from it alone, so swallowing an error here would
-   * silently drop the message.
+   * silently drop the message. A redirect is the one exception -- it never
+   * comes from the backend, so it answers 502 rather than pass as delivered.
    *
    * The path is resolved after the caller is verified, not before: an
    * untrusted caller gets the same 403 whatever it asks for, so probing this
@@ -151,7 +152,7 @@ export default {
    *
    * @param {Request} request Incoming push request.
    * @param {object} env Worker environment bindings.
-   * @returns {Promise<Response>} 403, 404, or whatever the origin answered.
+   * @returns {Promise<Response>} 403, 404, 502, or whatever the origin answered.
    */
   async fetch(request, env) {
     const authorization = request.headers.get("authorization") ?? "";
@@ -182,7 +183,18 @@ export default {
         authorization,
       },
       body: await request.text(),
+      // The backend never redirects. Access does, to a login page, for any
+      // path its service-token application does not list -- and following
+      // that would report the login page's 200 as a delivery.
+      redirect: "manual",
     });
+
+    if (origin.status >= 300 && origin.status < 400) {
+      console.error(
+        `pubsub-gateway: origin redirected ${originPath} to ${origin.headers.get("location")} -- is the path missing from the Access application?`,
+      );
+      return new Response(null, { status: 502 });
+    }
 
     return new Response(origin.body, { status: origin.status });
   },
