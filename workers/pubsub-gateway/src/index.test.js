@@ -51,7 +51,7 @@ async function makeToken(overrides = {}) {
 
 function environment() {
   return {
-    ORIGIN_URL: "https://api.purrf.io/api/notifications/deliver",
+    ORIGIN_BASE: "https://api.purrf.io",
     ALLOWED_SUBS: "111476081826269898524",
     EXPECTED_AUDIENCE: "purrf",
     CF_ACCESS_CLIENT_ID: "client-id",
@@ -60,8 +60,8 @@ function environment() {
   };
 }
 
-function request(token) {
-  return new Request("https://hook.purrf.io/notify", {
+function request(token, path = "/notify") {
+  return new Request(`https://hook.purrf.io${path}`, {
     method: "POST",
     headers: token ? { authorization: `Bearer ${token}` } : {},
     body: JSON.stringify({ message: { data: "e30=" } }),
@@ -113,6 +113,68 @@ describe("pubsub gateway", () => {
     expect(forwarded[1].headers.authorization).toBe(`Bearer ${token}`);
   });
 
+  it("sends the push to the endpoint the path is mapped to", async () => {
+    const fetchMock = stubFetch(new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await worker.fetch(request(await makeToken()), environment());
+
+    const forwarded = fetchMock.mock.calls.find(([input]) =>
+      (typeof input === "string" ? input : input.url).includes("api.purrf.io"),
+    );
+    // The path Pub/Sub is configured with, and the backend route behind it.
+    expect(forwarded[0]).toBe("https://api.purrf.io/api/notifications/deliver");
+  });
+
+  it("carries the matcher's completion callback to its own endpoint", async () => {
+    const fetchMock = stubFetch(new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await worker.fetch(
+      request(await makeToken(), "/mentorship/match-runs/complete"),
+      environment(),
+    );
+
+    const forwarded = fetchMock.mock.calls.find(([input]) =>
+      (typeof input === "string" ? input : input.url).includes("api.purrf.io"),
+    );
+    expect(forwarded[0]).toBe(
+      "https://api.purrf.io/api/mentorship/match-runs/complete",
+    );
+  });
+
+  it("answers 404 for a path no route names, without touching the origin", async () => {
+    const fetchMock = stubFetch(new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await worker.fetch(
+      request(await makeToken(), "/whatever"),
+      environment(),
+    );
+
+    expect(response.status).toBe(404);
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        (typeof input === "string" ? input : input.url).includes(
+          "api.purrf.io",
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it("gives an untrusted caller 403 whatever path it asks for", async () => {
+    // Otherwise a 404 here and a 403 there would map which endpoints exist.
+    const fetchMock = stubFetch(new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await worker.fetch(
+      request(undefined, "/whatever"),
+      environment(),
+    );
+
+    expect(response.status).toBe(403);
+  });
+
   it("passes the origin status straight back so Pub/Sub sees the truth", async () => {
     vi.stubGlobal("fetch", stubFetch(new Response("", { status: 503 })));
     const response = await worker.fetch(
@@ -120,6 +182,29 @@ describe("pubsub gateway", () => {
       environment(),
     );
     expect(response.status).toBe(503);
+  });
+
+  it("answers 502 when the origin redirects rather than following it", async () => {
+    // What Access does to a path its service-token application does not
+    // cover: following it would hand the caller the login page's 200.
+    const fetchMock = stubFetch(
+      new Response(null, {
+        status: 302,
+        headers: { location: "https://circlecat.cloudflareaccess.com/login" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await worker.fetch(
+      request(await makeToken(), "/mentorship/match-runs/complete"),
+      environment(),
+    );
+
+    expect(response.status).toBe(502);
+    const forwarded = fetchMock.mock.calls.find(([input]) =>
+      (typeof input === "string" ? input : input.url).includes("api.purrf.io"),
+    );
+    expect(forwarded[1].redirect).toBe("manual");
   });
 
   it.each([

@@ -20,7 +20,7 @@ import {
  *
  * Two audiences share this switch. Every recruiting line is written from
  * staff's point of view, about someone else ("{actor} moved {applicant}");
- * the mentorship line below is written to the person it happened to. Match
+ * the mentorship lines below are written to the person they are about. Match
  * the case you are adding, not the surrounding voice.
  */
 const describe = (n) => {
@@ -32,6 +32,15 @@ const describe = (n) => {
   switch (n.eventType) {
     case "mentorship.mentor_admitted":
       return `You were admitted to ${n.jobTitle}`;
+    // Told to the admin who started the run. The round is a mentorship round,
+    // not a posting, so the name comes from details and jobTitle is blank.
+    case "mentorship.matching_run_completed": {
+      const round = n.details?.roundName?.trim();
+      const started = `The matching run you started${round ? ` for ${round}` : ""}`;
+      return n.details?.status === "failed"
+        ? `${started} did not finish`
+        : `${started} has finished`;
+    }
     case "recruiting.reassigned":
       return `${actor} assigned you to evaluate ${n.applicantName} — ${n.jobTitle}`;
     case "recruiting.auto_assigned":

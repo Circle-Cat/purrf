@@ -16,6 +16,12 @@ py_test(
 )
 
 py_test(
+    name = "round_windows_test",
+    srcs = ["round_windows_test.py"],
+    deps = ["//backend/mentorship"],
+)
+
+py_test(
     name = "rounds_service_test",
     srcs = ["rounds_service_test.py"],
     deps = ["//backend/mentorship"],
@@ -134,5 +140,33 @@ py_test(
         "//backend/mentorship",
         "//backend/repository:repositories",
         "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "matching_run_test",
+    srcs = ["matching_run_test.py"],
+    deps = [
+        "//backend/common:matching_job_client",
+        "//backend/mentorship",
+        "@pypi//requests",
+    ],
+)
+
+py_test(
+    name = "matching_run_complete_test",
+    srcs = ["matching_run_complete_test.py"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "matching_run_read_test",
+    srcs = ["matching_run_read_test.py"],
+    deps = [
+        "//backend/common:mentorship_enums",
+        "//backend/mentorship",
     ],
 )

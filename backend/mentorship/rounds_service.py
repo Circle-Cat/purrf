@@ -1,8 +1,16 @@
+from datetime import datetime, timezone
+
+from backend.common.mentorship_enums import RoundStatus
 from backend.mentorship.mentorship_mapper import MentorshipMapper
+from backend.mentorship.round_windows import (
+    is_feedback_editable,
+    is_feedback_open,
+    round_status,
+)
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from backend.repository.mentorship_pairs_repository import MentorshipPairsRepository
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
-from backend.dto.rounds_dto import RoundsDto
+from backend.dto.rounds_dto import RoundSlotsDto, RoundsDto
 from backend.dto.rounds_create_dto import RoundsCreateDto
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,6 +65,76 @@ class RoundsService:
 
         return self.mentorship_mapper.map_to_rounds_dto(all_round_entities, pair_stats)
 
+    async def get_round_slots(self, session: AsyncSession) -> RoundSlotsDto:
+        """
+        Resolve which rounds the Personal Dashboard acts on right now.
+
+        Everything is evaluated against one server-side instant, so the
+        dashboard, registration and the admission email agree on which round
+        is open and whether it still is.
+
+        Args:
+            session (AsyncSession): Active database async session.
+
+        Returns:
+            RoundSlotsDto: The registration, matching, feedback and default
+                round slots.
+        """
+        now = datetime.now(timezone.utc)
+        repo = self.mentorship_round_repository
+
+        open_round = await repo.get_open_registration_round(session, now)
+        registration_round = open_round or await repo.get_latest_promoted_round(
+            session, now
+        )
+        can_view_match = bool(
+            registration_round
+            and registration_round.match_notification_at
+            and registration_round.feedback_deadline_at
+            and registration_round.match_notification_at
+            <= now
+            <= registration_round.feedback_deadline_at
+        )
+
+        rounds = await repo.get_all_rounds(session)
+        # Only promoted rounds count, as for the registration round.
+        is_feedback_enabled = any(
+            r.promotion_start_at is not None
+            and is_feedback_open(r, now)
+            and is_feedback_editable(r, now)
+            for r in rounds
+        )
+        # get_all_rounds lists the latest meetings deadline first, so the
+        # first match is the most recent round in that status.
+        statuses = [(r.round_id, round_status(r, now)) for r in rounds]
+        active_round_id = next(
+            (rid for rid, status in statuses if status == RoundStatus.ACTIVE),
+            None,
+        )
+        if active_round_id is None:
+            active_round_id = next(
+                (rid for rid, status in statuses if status == RoundStatus.UPCOMING),
+                None,
+            )
+
+        return RoundSlotsDto(
+            registration_round_id=(
+                registration_round.round_id if registration_round else None
+            ),
+            registration_round_name=(
+                registration_round.name if registration_round else None
+            ),
+            registration_deadline_at=(
+                registration_round.onboarding_deadline_at
+                if registration_round
+                else None
+            ),
+            is_registration_open=open_round is not None,
+            can_view_match=can_view_match,
+            is_feedback_enabled=is_feedback_enabled,
+            active_round_id=active_round_id,
+        )
+
     async def upsert_rounds(
         self, session: AsyncSession, data: RoundsCreateDto
     ) -> RoundsDto:
@@ -83,21 +161,17 @@ class RoundsService:
                 raise ValueError("Round with given ID does not exist.")
 
         round.name = data.name
-        round.mentee_average_score = data.mentee_average_score
-        round.mentor_average_score = data.mentor_average_score
+        # The two average scores are not taken from the request: they are
+        # derived from submitted feedback (ParticipationService), and the round
+        # form never sends them, so copying them would clear them on every edit.
         round.expectations = data.expectations
-        round.description = data.timeline.model_dump(mode="json", exclude_none=True)
+        # Only the dates the caller sent are written: an omitted one keeps its
+        # stored value, an explicit null clears it.
+        for field in data.timeline.model_fields_set:
+            setattr(round, field, getattr(data.timeline, field))
         round.required_meetings = data.required_meetings
 
         round = await self.mentorship_round_repository.upsert_round(session, round)
         await session.commit()
 
-        return RoundsDto(
-            id=round.round_id,
-            name=round.name,
-            mentee_average_score=round.mentee_average_score,
-            mentor_average_score=round.mentor_average_score,
-            expectations=round.expectations,
-            required_meetings=round.required_meetings,
-            timeline=data.timeline,
-        )
+        return self.mentorship_mapper.map_to_rounds_dto([round])[0]

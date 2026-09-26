@@ -36,23 +36,26 @@ from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
 
-# Offsets from now, not fixed dates: `get_open_mentor_registration_round`
-# compares these against the real wall clock, so a hard-coded deadline stops
-# being open the moment it passes and takes this file red with it.
+# Offsets from now, not fixed dates: the admission service asks
+# `get_open_registration_round` about the real wall clock, so a hard-coded
+# deadline stops being open the moment it passes and takes this file red
+# with it.
 _NOW = datetime.now(timezone.utc).replace(microsecond=0)
 
 
-def _at(days: int) -> str:
-    """A round timestamp `days` from now, in the shape the admin API writes
-    into the round's JSONB description -- stored and asserted verbatim."""
-    return (_NOW + timedelta(days=days)).isoformat()
+def _at(days: int) -> datetime:
+    return _NOW + timedelta(days=days)
 
 
 _PROMOTION = _at(-20)
-_DEADLINE = _at(40)
+# Already passed: the mentor application deadline belongs to recruiting and
+# neither keeps a round from being open nor is the date the email promises.
+_MENTOR_APPLICATION_DEADLINE = _at(-3)
+_ONBOARDING_DEADLINE = _at(40)
 _MATCHING = _at(55)
-# Open too, but closing before `_DEADLINE`, so it is the one to register for.
-_SOONER_DEADLINE = _at(5)
+# Open too, but closing before `_ONBOARDING_DEADLINE`, so it is the one to
+# register for.
+_SOONER_ONBOARDING_DEADLINE = _at(5)
 
 
 class MentorshipAdmissionServiceTest(BaseRepositoryTestLib):
@@ -108,11 +111,10 @@ class MentorshipAdmissionServiceTest(BaseRepositoryTestLib):
         round_entity = MentorshipRoundEntity(
             name=name,
             required_meetings=5,
-            description={
-                "promotion_start_at": _PROMOTION,
-                "mentor_application_deadline_at": _DEADLINE,
-                "match_notification_at": _MATCHING,
-            },
+            promotion_start_at=_PROMOTION,
+            mentor_application_deadline_at=_MENTOR_APPLICATION_DEADLINE,
+            onboarding_deadline_at=_ONBOARDING_DEADLINE,
+            match_notification_at=_MATCHING,
         )
         await self.insert_entities([round_entity])
         return round_entity
@@ -189,10 +191,11 @@ class MentorshipAdmissionServiceTest(BaseRepositoryTestLib):
         (event,) = await self._events()
         self.assertIsNone(event.actor_id)
 
-    async def test_the_open_round_is_snapshotted_verbatim(self):
-        """Stored as found, not parsed and re-serialised: the renderer owns
-        the one tolerant parse, and a redelivery must render what admission
-        saw rather than whichever round is open by then."""
+    async def test_the_open_round_is_snapshotted(self):
+        """The registration deadline promised is the onboarding deadline, not
+        the mentor application deadline, and both dates are stored at
+        admission so a redelivery renders what admission saw rather than
+        whichever round is open by then."""
         round_entity = await self._open_round()
 
         await self._admit()
@@ -204,21 +207,22 @@ class MentorshipAdmissionServiceTest(BaseRepositoryTestLib):
                 "mentorshipRole": "mentor",
                 "roundId": round_entity.round_id,
                 "roundName": "2026 Fall",
-                "registrationDeadlineAt": _DEADLINE,
-                "matchNotificationAt": _MATCHING,
+                "registrationDeadlineAt": _ONBOARDING_DEADLINE.isoformat(),
+                "matchNotificationAt": _MATCHING.isoformat(),
             },
         )
 
     async def test_the_round_closing_soonest_wins(self):
+        """Soonest by onboarding deadline; its mentor application deadline
+        is the later of the two, so ordering by that would pick the other."""
         await self._open_round(name="2027 Spring")
         soonest = MentorshipRoundEntity(
             name="2026 Fall",
             required_meetings=5,
-            description={
-                "promotion_start_at": _PROMOTION,
-                "mentor_application_deadline_at": _SOONER_DEADLINE,
-                "match_notification_at": _MATCHING,
-            },
+            promotion_start_at=_PROMOTION,
+            mentor_application_deadline_at=_at(-1),
+            onboarding_deadline_at=_SOONER_ONBOARDING_DEADLINE,
+            match_notification_at=_MATCHING,
         )
         await self.insert_entities([soonest])
 

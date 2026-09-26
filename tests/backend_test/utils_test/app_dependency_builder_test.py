@@ -568,6 +568,9 @@ class TestAppDependencyBuilder(TestCase):
         )
         mock_mentorship_admin_controller_cls.assert_called_once_with(
             mentorship_admin_service=mock_mentorship_admin_service_cls.return_value,
+            matching_run_service=builder.matching_run_service,
+            matching_run_read_service=builder.matching_run_read_service,
+            launchdarkly_service=builder.launchdarkly_service,
             database=mock_database_cls.return_value,
         )
         mock_rounds_service_cls.assert_called_once_with(
@@ -607,6 +610,7 @@ class TestAppDependencyBuilder(TestCase):
             meeting_scheduling_service=mock_meeting_scheduling_service_cls.return_value,
             mentorship_calendar_id="cal-mentorship",
             mentorship_meeting_repository=mock_mentorship_meeting_repo_cls.return_value,
+            mentorship_round_repository=mock_mentorship_round_repository_cls.return_value,
         )
 
         mock_fast_app_factory_cls.assert_called_once_with(
@@ -621,6 +625,7 @@ class TestAppDependencyBuilder(TestCase):
             profile_controller=mock_profile_controller_cls.return_value,
             mentorship_controller=mock_mentorship_controller_cls.return_value,
             mentorship_admin_controller=mock_mentorship_admin_controller_cls.return_value,
+            matching_run_complete_controller=builder.matching_run_complete_controller,
             email_management_controller=mock_email_management_controller_cls.return_value,
             permission_admin_controller=mock_permission_admin_controller_cls.return_value,
             user_account_controller=ANY,

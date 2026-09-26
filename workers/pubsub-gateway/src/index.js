@@ -8,7 +8,20 @@
  * forwards, carrying the service token Pub/Sub could not.
  *
  * It is a door, not a handler. It never parses the notification payload.
+ *
+ * A door with a fixed list of rooms: ROUTES is the only place that says which
+ * backend endpoints are reachable through it. A caller holding a valid token
+ * still cannot reach anything that is not named here, so adding a caller and
+ * widening what callers can touch stay separate decisions.
  */
+
+/** Public path -> backend path. Anything absent is not reachable from outside. */
+const ROUTES = new Map([
+  // Pub/Sub push. The paths differ because this one predates the table.
+  ["/notify", "/api/notifications/deliver"],
+  // The matcher job, reporting that a run finished.
+  ["/mentorship/match-runs/complete", "/api/mentorship/match-runs/complete"],
+]);
 
 const JWKS_CACHE_TTL_SECONDS = 3600;
 const GOOGLE_ISSUERS = new Set([
@@ -130,11 +143,16 @@ export default {
    *
    * The origin's status code is returned unchanged: Pub/Sub decides whether
    * to ack or redeliver from it alone, so swallowing an error here would
-   * silently drop the message.
+   * silently drop the message. A redirect is the one exception -- it never
+   * comes from the backend, so it answers 502 rather than pass as delivered.
+   *
+   * The path is resolved after the caller is verified, not before: an
+   * untrusted caller gets the same 403 whatever it asks for, so probing this
+   * Worker cannot map which endpoints exist behind it.
    *
    * @param {Request} request Incoming push request.
    * @param {object} env Worker environment bindings.
-   * @returns {Promise<Response>} 403, or whatever the origin answered.
+   * @returns {Promise<Response>} 403, 404, 502, or whatever the origin answered.
    */
   async fetch(request, env) {
     const authorization = request.headers.get("authorization") ?? "";
@@ -146,7 +164,15 @@ export default {
       return new Response(null, { status: 403 });
     }
 
-    const origin = await fetch(env.ORIGIN_URL, {
+    const originPath = ROUTES.get(new URL(request.url).pathname);
+    if (!originPath) {
+      console.error(
+        `pubsub-gateway: no route for ${new URL(request.url).pathname}`,
+      );
+      return new Response(null, { status: 404 });
+    }
+
+    const origin = await fetch(`${env.ORIGIN_BASE}${originPath}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -157,7 +183,18 @@ export default {
         authorization,
       },
       body: await request.text(),
+      // The backend never redirects. Access does, to a login page, for any
+      // path its service-token application does not list -- and following
+      // that would report the login page's 200 as a delivery.
+      redirect: "manual",
     });
+
+    if (origin.status >= 300 && origin.status < 400) {
+      console.error(
+        `pubsub-gateway: origin redirected ${originPath} to ${origin.headers.get("location")} -- is the path missing from the Access application?`,
+      );
+      return new Response(null, { status: 502 });
+    }
 
     return new Response(origin.body, { status: origin.status });
   },

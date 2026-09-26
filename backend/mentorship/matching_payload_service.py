@@ -6,6 +6,7 @@ question that belongs with whoever assembles that list.
 """
 
 import secrets
+from collections import Counter
 from datetime import datetime, timezone
 from typing import NamedTuple
 
@@ -144,6 +145,8 @@ class MatchingPayloadService:
 
         Raises:
             ValueError: A requested user is not a participant of this round,
+                a requested mentor already holds as many active pairs in it as
+                they take, a requested mentee already has an active pair in it,
                 or the selection has no mentor or no mentee.
         """
         requested = list(dict.fromkeys(participant_ids))
@@ -174,10 +177,34 @@ class MatchingPayloadService:
             for user_id in user_ids
         }
 
+        active_pairs = await self.mentorship_pairs_repository.get_active_pairs_by_round(
+            session, round_id
+        )
+        held = Counter(pair.mentor_id for pair in active_pairs)
+        paired_mentees = {pair.mentee_id for pair in active_pairs}
+
         mentors: list[PersonRecord] = []
         mentees: list[PersonRecord] = []
+        full: list[int] = []
+        already_paired: list[int] = []
         for user, participant, experience, preference in rows:
             is_mentor = participant.participant_role == ParticipantRole.MENTOR
+            open_slots = None
+            if not is_mentor and user.user_id in paired_mentees:
+                # A mentee takes one mentor, and the matcher has no idea she
+                # already has one: sending her would give her a second.
+                already_paired.append(user.user_id)
+                continue
+            if is_mentor:
+                cap = (
+                    participant.max_partners
+                    if participant.max_partners is not None
+                    else 1
+                )
+                open_slots = cap - held[user.user_id]
+                if open_slots < 1:
+                    full.append(user.user_id)
+                    continue
             record = self._person(
                 user,
                 participant,
@@ -185,8 +212,21 @@ class MatchingPayloadService:
                 preference,
                 is_mentor=is_mentor,
                 round_counts=round_counts[user.user_id],
+                open_slots=open_slots,
             )
             (mentors if is_mentor else mentees).append(record)
+
+        if full:
+            # Sending them with no room would not keep them out: the matcher
+            # reads 0 as 1 and would give each one more mentee.
+            raise ValueError(
+                f"Mentors {full} already have as many mentees as they take in "
+                f"round {round_id}."
+            )
+        if already_paired:
+            raise ValueError(
+                f"Mentees {already_paired} already have a mentor in round {round_id}."
+            )
 
         if not mentors or not mentees:
             raise ValueError(
@@ -244,8 +284,13 @@ class MatchingPayloadService:
         *,
         is_mentor: bool,
         round_counts: tuple[int, int],
+        open_slots: int | None,
     ) -> PersonRecord:
-        """Turn one set of rows into a contract record."""
+        """Turn one set of rows into a contract record.
+
+        ``open_slots`` is what a mentor can still take in this round, and is
+        what travels as ``max_partners``; None for a mentee.
+        """
         survey = (preference.profile_survey or {}) if preference else {}
         common = {
             "role": "mentor" if is_mentor else "mentee",
@@ -277,11 +322,7 @@ class MatchingPayloadService:
         if is_mentor:
             return PersonRecord(
                 **common,
-                max_partners=(
-                    participant.max_partners
-                    if participant.max_partners is not None
-                    else 1
-                ),
+                max_partners=open_slots,
                 career_transition=mapped_code_or_none(
                     survey.get("career_transition"), CAREER_TRANSITION_MAP
                 ),

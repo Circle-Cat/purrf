@@ -1,7 +1,7 @@
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from datetime import datetime, timedelta, timezone
 from typing import NamedTuple
-from sqlalchemy import TIMESTAMP, cast, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -15,12 +15,7 @@ class RunningRoundWindow(NamedTuple):
     or a meeting scheduled after the deadline would be swept in by the very
     allowance meant to catch meetings scheduled before it.
 
-    Both are timezone-aware: they are cast to TIMESTAMP(timezone=True) in SQL
-    rather than parsed in Python, because the two writers of these JSONB
-    fields disagree on format -- one emits ISO with an offset, the other a
-    bare YYYY-MM-DD date. Postgres accepts both; ``isoparse`` returns a naive
-    datetime for the latter, which would raise on any comparison with an aware
-    one. Do not parse these strings in Python anywhere.
+    Both are timezone-aware.
     """
 
     round_id: int
@@ -46,10 +41,15 @@ class MentorshipRoundRepository:
             session (AsyncSession): The active async database session.
 
         Returns:
-            list[MentorshipRoundEntity]: A list of all matching MentorshipRound.
-                                        Returns an empty list if no records are found.
+            list[MentorshipRoundEntity]: Every round, latest meetings deadline
+                first; rounds without one come last, newest created first.
         """
-        result = await session.execute(select(MentorshipRoundEntity))
+        result = await session.execute(
+            select(MentorshipRoundEntity).order_by(
+                MentorshipRoundEntity.meetings_completion_deadline_at.desc().nulls_last(),
+                MentorshipRoundEntity.created_datetime.desc(),
+            )
+        )
 
         return result.scalars().all()
 
@@ -101,21 +101,12 @@ class MentorshipRoundRepository:
                 ascending. Empty when no window is open.
         """
         now_utc = datetime.now(timezone.utc)
-        # Equivalent to `window_end + grace >= now_utc`, computed as a
-        # subtraction of two plain Python datetimes instead: adding `grace`
-        # to the cast SQL column loses its TIMESTAMP WITH TIME ZONE typing
-        # under asyncpg, which then binds `now_utc` as a naive TIMESTAMP and
-        # raises on the tz-aware/naive comparison. This is arithmetic on our
-        # own `now_utc` and `grace` values, not parsing of the JSONB fields.
+        # Equivalent to `window_end + grace >= now_utc`, computed on the
+        # Python side so the column is compared against a plain aware
+        # datetime rather than an interval expression.
         selection_cutoff = now_utc - grace
-        window_start = cast(
-            MentorshipRoundEntity.description["match_notification_at"].astext,
-            TIMESTAMP(timezone=True),
-        )
-        window_end = cast(
-            MentorshipRoundEntity.description["meetings_completion_deadline_at"].astext,
-            TIMESTAMP(timezone=True),
-        )
+        window_start = MentorshipRoundEntity.match_notification_at
+        window_end = MentorshipRoundEntity.meetings_completion_deadline_at
         result = await session.execute(
             select(MentorshipRoundEntity.round_id, window_start, window_end)
             .where(window_start <= now_utc, window_end >= selection_cutoff)
@@ -123,53 +114,60 @@ class MentorshipRoundRepository:
         )
         return [RunningRoundWindow(*row) for row in result.all()]
 
-    async def get_open_mentor_registration_round(
-        self, session: AsyncSession
+    async def get_open_registration_round(
+        self, session: AsyncSession, now: datetime
     ) -> MentorshipRoundEntity | None:
-        """The round a mentor admitted right now should register for.
+        """The round open for registration at ``now``.
 
         A round qualifies only while it is open on BOTH ends: promotion has
-        started and the mentor deadline has not passed. Of those, the one
-        closing soonest wins, so a mentor admitted while two windows overlap
-        is pointed at the one about to close rather than an arbitrary match.
-
-        The promotion bound is not decoration. Registration surfaces on the
-        Personal Dashboard only once ``promotion_start_at`` has passed --
-        ``currentRegRound`` in mentorshipRounds.js requires it, and the
-        banner renders nothing without it. A round whose deadline is open but
-        whose promotion has not started would send an admitted mentor to a
-        dashboard with nothing on it. Rounds missing the field entirely drop
-        out here for the same reason the dashboard filters them out: they are
-        not something a mentor can act on.
+        started and registration, which closes at ``onboarding_deadline_at``
+        for mentors and mentees alike, has not. Of those, the one closing
+        soonest wins, so while two windows overlap everyone -- the Personal
+        Dashboard and the admission email alike -- is pointed at the one
+        about to close.
 
         Returns None when no window is open. That is a normal state, not an
         error: the program is not always recruiting.
 
-        Both bounds are cast to timestamps in SQL rather than parsed in
-        Python, for the reason ``RunningRoundWindow``'s docstring gives --
-        the writers of these JSONB fields disagree on format. Rounds carrying
-        the one-off import's bare ``YYYY-MM-DD`` are historical and their
-        deadlines long past, so they can never win this comparison.
-
         Args:
             session (AsyncSession): The active async database session.
+            now (datetime): The aware instant to evaluate at.
 
         Returns:
             MentorshipRoundEntity | None: The round closing soonest, or None.
         """
-        now_utc = datetime.now(timezone.utc)
-        promotion_start = cast(
-            MentorshipRoundEntity.description["promotion_start_at"].astext,
-            TIMESTAMP(timezone=True),
-        )
-        deadline = cast(
-            MentorshipRoundEntity.description["mentor_application_deadline_at"].astext,
-            TIMESTAMP(timezone=True),
-        )
+        deadline = MentorshipRoundEntity.onboarding_deadline_at
         result = await session.execute(
             select(MentorshipRoundEntity)
-            .where(promotion_start <= now_utc, deadline > now_utc)
-            .order_by(deadline.asc())
+            .where(MentorshipRoundEntity.promotion_start_at <= now, deadline > now)
+            .order_by(deadline.asc(), MentorshipRoundEntity.created_datetime.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_latest_promoted_round(
+        self, session: AsyncSession, now: datetime
+    ) -> MentorshipRoundEntity | None:
+        """The round whose promotion started most recently, as of ``now``.
+
+        The dashboard falls back to it once no round is open for
+        registration, to keep the last round viewable.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            now (datetime): The aware instant to evaluate at.
+
+        Returns:
+            MentorshipRoundEntity | None: That round, or None when no round
+                has started promotion.
+        """
+        result = await session.execute(
+            select(MentorshipRoundEntity)
+            .where(MentorshipRoundEntity.promotion_start_at <= now)
+            .order_by(
+                MentorshipRoundEntity.promotion_start_at.desc(),
+                MentorshipRoundEntity.created_datetime.desc(),
+            )
             .limit(1)
         )
         return result.scalar_one_or_none()

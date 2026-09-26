@@ -43,6 +43,13 @@ export default defineConfig(({ command }) => {
   }
 
   return {
+    // Under `bazel run`, vite's default cacheDir resolves into
+    // execroot/_main/node_modules/.vite, which every bazel command wipes,
+    // leaving the browser with 504 Outdated Optimize Dep. Keep it in the
+    // workspace's ignored node_modules instead.
+    cacheDir: process.env.BUILD_WORKSPACE_DIRECTORY
+      ? path.join(process.env.BUILD_WORKSPACE_DIRECTORY, "node_modules/.vite")
+      : undefined,
     plugins: [
       react({
         jsxRuntime: "automatic",

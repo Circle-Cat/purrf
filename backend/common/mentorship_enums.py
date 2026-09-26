@@ -57,6 +57,34 @@ class MentorshipEvent(StrEnum):
     """
 
     MENTOR_ADMITTED = "mentorship.mentor_admitted"
+    MATCHING_RUN_COMPLETED = "mentorship.matching_run_completed"
+
+
+class RoundStatus(str, Enum):
+    """Where a round's meeting window stands relative to now."""
+
+    ACTIVE = "active"
+    UPCOMING = "upcoming"
+    COMPLETED = "completed"
+
+
+class MatchingRunStatus(StrEnum):
+    """What a round's most recent matching run can be showing an admin.
+
+    Five states rather than a boolean and a progress figure. The matcher scores
+    and assigns over the whole cohort before it writes anything, so there is no
+    moment at which some fraction of the work is done and readable -- "running"
+    is everything up to the last write.
+    """
+
+    NEVER_RUN = "never_run"
+    RUNNING = "running"
+    FAILED = "failed"
+    # Reported as succeeded, but the result does not hold one row per mentee.
+    # Its own state because it is neither a run to review nor one the matcher
+    # calls failed, and publishing it would mark the missing people unmatched.
+    UNUSABLE = "unusable"
+    SUCCEEDED = "succeeded"
 
 
 class ParticipantRole(Enum):

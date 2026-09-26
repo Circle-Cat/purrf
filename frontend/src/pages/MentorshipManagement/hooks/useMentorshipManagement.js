@@ -3,14 +3,13 @@ import {
   getAllMentorshipRounds,
   upsertMentorshipRound,
 } from "@/api/mentorshipApi";
-import { calculateRoundStatus } from "@/pages/PersonalDashboard/utils/mentorshipRounds";
 
 /**
  * Hook for the Mentorship Admin Dashboard.
  *
  * Fetches all rounds with per-round pair stats (active pairs, matched
- * participants, total completed meetings), derives sorted rounds and status
- * labels, computes footer totals (completed rounds, total matched participants,
+ * participants, total completed meetings), already ordered and carrying their
+ * status from the backend, computes footer totals (completed rounds, total matched participants,
  * total completed meetings), and manages the create/edit round modal state.
  */
 export const useMentorshipManagement = (canReadRounds = true) => {
@@ -43,7 +42,9 @@ export const useMentorshipManagement = (canReadRounds = true) => {
     refreshRounds();
   }, [refreshRounds]);
 
-  const { sortedRounds } = calculateRoundStatus(rounds);
+  // The backend lists rounds latest meetings deadline first, each carrying
+  // its status.
+  const sortedRounds = rounds;
 
   const totals = {
     totalCompletedRounds: sortedRounds.filter((r) => r.status === "completed")

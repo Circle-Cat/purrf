@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import MagicMock, AsyncMock, patch
 from http import HTTPStatus
 from datetime import date, timedelta
-from backend.dto.rounds_dto import RoundsDto
+from backend.dto.rounds_dto import RoundSlotsDto, RoundsDto
 from backend.dto.rounds_create_dto import TimelineCreateDto
 from backend.dto.rounds_create_dto import RoundsCreateDto
 from backend.dto.partner_dto import PartnerDto
@@ -15,7 +15,10 @@ from backend.dto.feedback_create_dto import FeedbackCreateDto
 from backend.dto.feedback_dto import FeedbackDto
 from backend.common.permissions import Permission
 from backend.common.mentorship_enums import ParticipantRole
-from backend.common.api_endpoints import MEET_ATTENDANCE_SYNC_ENDPOINT
+from backend.common.api_endpoints import (
+    MEET_ATTENDANCE_SYNC_ENDPOINT,
+    MENTORSHIP_ROUND_SLOTS_ENDPOINT,
+)
 from backend.mentorship.mentorship_controller import MentorshipController
 
 
@@ -24,6 +27,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         self.mock_rounds_service = MagicMock()
         self.mock_rounds_service.get_all_rounds = AsyncMock()
         self.mock_rounds_service.upsert_rounds = AsyncMock()
+        self.mock_rounds_service.get_round_slots = AsyncMock()
 
         self.mock_participation_service = MagicMock()
         self.mock_participation_service.get_partners_for_user = AsyncMock()
@@ -84,7 +88,7 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
             promotion_start_at=date(2025, 12, 1),
             mentor_application_deadline_at=date(2026, 1, 15),
             mentee_application_deadline_at=date(2026, 1, 15),
-            matching_completed_at=date(2026, 1, 31),
+            onboarding_deadline_at=date(2026, 1, 22),
             match_notification_at=date(2026, 2, 2),
             meetings_completion_deadline_at=date(2026, 5, 25),
             feedback_deadline_at=date(2026, 6, 10),
@@ -140,6 +144,29 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(response["data"], mock_data)
+
+    async def test_get_round_slots(self):
+        """Test the slots come straight from the service, with no permission
+        check beyond authentication."""
+        mock_user = MagicMock(spec=UserContextDto)
+        slots = RoundSlotsDto(
+            registration_round_id=7,
+            registration_round_name="2026 Fall",
+            is_registration_open=True,
+            active_round_id=6,
+        )
+        self.mock_rounds_service.get_round_slots.return_value = slots
+
+        response = await self.controller.get_round_slots(current_user=mock_user)
+
+        mock_user.has_permission.assert_not_called()
+        self.mock_rounds_service.get_round_slots.assert_awaited_once_with(
+            self.mock_session
+        )
+        self.mock_api_response.assert_called_once_with(
+            message="Successfully fetched mentorship round slots.", data=slots
+        )
+        self.assertIs(response["data"], slots)
 
     async def test_get_all_rounds_empty(self):
         """Test return an empty list when no rounds exist."""
@@ -303,8 +330,6 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         """Test creating a new mentorship round."""
         payload = RoundsCreateDto(
             name="2026-spring",
-            mentee_average_score=4.5,
-            mentor_average_score=5.0,
             expectations="Expectations text",
             timeline=self.timeline_data,
             required_meetings=5,
@@ -329,8 +354,6 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
         """Test handling errors when updating or creating a mentorship round."""
         payload = RoundsCreateDto(
             name="2026-spring",
-            mentee_average_score=4.5,
-            mentor_average_score=5.0,
             expectations="Expectations text",
             timeline=self.timeline_data,
             required_meetings=5,
@@ -783,6 +806,17 @@ class TestMentorshipController(unittest.IsolatedAsyncioTestCase):
             self._endpoint_permissions(sync_route.endpoint),
             [Permission.SYSTEM_SYNC],
         )
+
+    def test_round_slots_route_is_open_to_any_authenticated_user(self):
+        routes = [
+            route
+            for route in self.controller.router.routes
+            if route.path == MENTORSHIP_ROUND_SLOTS_ENDPOINT
+        ]
+
+        self.assertEqual(len(routes), 1)
+        self.assertEqual(routes[0].methods, {"GET"})
+        self.assertIsNone(self._endpoint_permissions(routes[0].endpoint))
 
 
 if __name__ == "__main__":

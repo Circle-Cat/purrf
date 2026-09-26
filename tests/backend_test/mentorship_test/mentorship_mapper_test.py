@@ -1,6 +1,6 @@
 import unittest
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from backend.dto.preference_dto import (
     SpecificIndustryDto,
@@ -21,6 +21,7 @@ from backend.entity.mentorship_round_participants_entity import (
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.mentorship.mentorship_mapper import MentorshipMapper
 from backend.common.mentorship_enums import (
+    RoundStatus,
     CommunicationMethod,
     ParticipantRole,
     PairStatus,
@@ -37,32 +38,60 @@ class TestMentorshipMapper(unittest.TestCase):
         self.now = datetime.now(timezone.utc)
         self.mapper = MentorshipMapper()
 
+        # All eleven distinct, so a column read into the wrong field fails.
         self.test_dates = {
-            "promotion_start_at": "2025-07-02T06:59:59Z",
-            "mentor_application_deadline_at": "2025-07-16T06:59:59Z",
-            "mentee_application_deadline_at": "2025-07-14T06:59:59Z",
-            "training_notification_at": "2025-07-18T06:59:59Z",
-            "training_deadline_at": "2025-07-25T06:59:59Z",
-            "matching_completed_at": "2025-08-06T06:59:59Z",
-            "match_notification_at": "2025-08-07T06:59:59Z",
-            "meeting_log_reminder_at": "2025-09-01T06:59:59Z",
-            "meetings_completion_deadline_at": "2025-11-21T07:59:59Z",
-            "feedback_start_at": "2025-11-22T07:59:59Z",
-            "feedback_deadline_at": "2025-11-23T07:59:59Z",
+            "promotion_start_at": datetime(2025, 7, 2, 6, 59, 59, tzinfo=timezone.utc),
+            "mentor_application_deadline_at": datetime(
+                2025, 7, 16, 6, 59, 59, tzinfo=timezone.utc
+            ),
+            "mentee_application_deadline_at": datetime(
+                2025, 7, 14, 6, 59, 59, tzinfo=timezone.utc
+            ),
+            "onboarding_notification_at": datetime(
+                2025, 7, 18, 6, 59, 59, tzinfo=timezone.utc
+            ),
+            "onboarding_deadline_at": datetime(
+                2025, 7, 25, 6, 59, 59, tzinfo=timezone.utc
+            ),
+            "match_notification_at": datetime(
+                2025, 8, 7, 6, 59, 59, tzinfo=timezone.utc
+            ),
+            "first_meeting_deadline_at": datetime(
+                2025, 8, 21, 6, 59, 59, tzinfo=timezone.utc
+            ),
+            "meeting_log_reminder_at": datetime(
+                2025, 9, 1, 6, 59, 59, tzinfo=timezone.utc
+            ),
+            "meetings_completion_deadline_at": datetime(
+                2025, 11, 21, 7, 59, 59, tzinfo=timezone.utc
+            ),
+            "feedback_start_at": datetime(2025, 11, 22, 7, 59, 59, tzinfo=timezone.utc),
+            "feedback_deadline_at": datetime(
+                2025, 11, 23, 7, 59, 59, tzinfo=timezone.utc
+            ),
         }
+        self.sparse_onboarding_deadline = datetime(
+            2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc
+        )
 
         self.mentorship_round_entities = [
             MentorshipRoundEntity(
                 round_id=1,
                 name="Spring-2025",
-                description=self.test_dates,
                 required_meetings=4,
+                **self.test_dates,
             ),
             MentorshipRoundEntity(
-                round_id=2, name="Summer-2025", description={}, required_meetings=5
+                round_id=2,
+                name="Summer-2025",
+                required_meetings=5,
+                onboarding_deadline_at=self.sparse_onboarding_deadline,
             ),
             MentorshipRoundEntity(
-                round_id=3, name="Spring-2026", description=None, required_meetings=5
+                round_id=3,
+                name="Spring-2026",
+                required_meetings=5,
+                onboarding_deadline_at=self.sparse_onboarding_deadline,
             ),
         ]
 
@@ -199,9 +228,9 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertEqual(dto.name, "Spring-2025")
         self.assertEqual(dto.required_meetings, 4)
 
-        expected_timeline = TimelineDto(**self.test_dates)
         self.assertIsNotNone(dto.timeline)
-        self.assertEqual(dto.timeline, expected_timeline)
+        for field, value in self.test_dates.items():
+            self.assertEqual(getattr(dto.timeline, field), value, msg=field)
 
         self.assertEqual(dtos[0].active_pairs, 5)
         self.assertEqual(dtos[0].matched_participants, 10)
@@ -212,6 +241,26 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertIsNone(dtos[2].active_pairs)
         self.assertIsNone(dtos[2].matched_participants)
         self.assertIsNone(dtos[2].total_completed_meetings)
+
+    def test_timeline_dto_fields_are_exactly_the_round_columns(self):
+        """TimelineDto carries one field per timeline column and nothing
+        else, so a renamed or dropped date cannot linger in the API."""
+        self.assertEqual(set(TimelineDto.model_fields), set(self.test_dates))
+        for field in self.test_dates:
+            self.assertIn(field, MentorshipRoundEntity.__table__.columns)
+
+    def test_map_to_rounds_dto_with_sparse_timeline(self):
+        """A round with only its required onboarding deadline still gets a
+        timeline, with every other date None."""
+        dto = self.mapper.map_to_rounds_dto(self.mentorship_round_entities[1:2])[0]
+
+        self.assertIsNotNone(dto.timeline)
+        self.assertEqual(
+            dto.timeline.onboarding_deadline_at, self.sparse_onboarding_deadline
+        )
+        for field in self.test_dates:
+            if field != "onboarding_deadline_at":
+                self.assertIsNone(getattr(dto.timeline, field), msg=field)
 
     def test_map_to_global_preferences_dto_success(self):
         """Test mapping preference entity to global preferences dto correctly."""
@@ -846,6 +895,159 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertTrue(dto.is_completed)
         self.assertEqual(dto.note, [MeetingNoteTag.MENTOR_LATE])
         self.assertEqual(dto.create_datetime, "2026-05-05T09:55:00")
+
+
+class TestMapToRoundsDtoAtNow(unittest.TestCase):
+    """map_to_rounds_dto evaluates each round's status and windows at now."""
+
+    NOW = datetime(2026, 3, 18, 12, 0, tzinfo=timezone.utc)
+    MICRO = timedelta(microseconds=1)
+
+    def _round(
+        self,
+        round_id=1,
+        promotion_start_at=None,
+        match_notification_at=None,
+        meetings_completion_deadline_at=None,
+        **dates,
+    ) -> MentorshipRoundEntity:
+        return MentorshipRoundEntity(
+            round_id=round_id,
+            name=f"round-{round_id}",
+            required_meetings=5,
+            onboarding_deadline_at=datetime(2026, 1, 20, tzinfo=timezone.utc),
+            promotion_start_at=promotion_start_at,
+            match_notification_at=match_notification_at,
+            meetings_completion_deadline_at=meetings_completion_deadline_at,
+            **dates,
+        )
+
+    def test_map_to_rounds_dto_evaluates_status_at_the_given_now(self):
+        rounds = [
+            self._round(
+                round_id=1,
+                match_notification_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                meetings_completion_deadline_at=datetime(
+                    2026, 12, 31, tzinfo=timezone.utc
+                ),
+            ),
+            self._round(
+                round_id=2,
+                promotion_start_at=datetime(2026, 5, 1, tzinfo=timezone.utc),
+                meetings_completion_deadline_at=datetime(
+                    2026, 12, 31, tzinfo=timezone.utc
+                ),
+            ),
+            self._round(
+                round_id=3,
+                meetings_completion_deadline_at=datetime(
+                    2026, 2, 1, tzinfo=timezone.utc
+                ),
+            ),
+            self._round(round_id=4),
+        ]
+
+        dtos = MentorshipMapper().map_to_rounds_dto(rounds, now=self.NOW)
+
+        self.assertEqual(
+            [(d.id, d.status) for d in dtos],
+            [
+                (1, RoundStatus.ACTIVE),
+                (2, RoundStatus.UPCOMING),
+                (3, RoundStatus.COMPLETED),
+                (4, None),
+            ],
+        )
+
+        later = MentorshipMapper().map_to_rounds_dto(
+            rounds[:1], now=datetime(2027, 1, 1, tzinfo=timezone.utc)
+        )
+        self.assertEqual(later[0].status, RoundStatus.COMPLETED)
+
+    def test_map_to_rounds_dto_reports_the_windows_at_the_given_now(self):
+        """Every date on each round is distinct, and the round before its
+        opening has its derived opening and feedback_start_at already
+        behind now, so reading either as the opening would call it open."""
+
+        def at(month, day):
+            return datetime(2026, month, day, 6, 59, 59, tzinfo=timezone.utc)
+
+        rounds = [
+            self._round(
+                round_id=1,
+                meeting_log_reminder_at=at(3, 1),
+                meetings_completion_deadline_at=at(3, 25),
+                feedback_start_at=at(3, 28),
+                feedback_deadline_at=at(4, 10),
+            ),
+            self._round(
+                round_id=2,
+                meeting_log_reminder_at=at(1, 10),
+                meetings_completion_deadline_at=at(2, 1),
+                feedback_start_at=at(2, 5),
+                feedback_deadline_at=at(2, 20),
+            ),
+            self._round(
+                round_id=3,
+                meeting_log_reminder_at=at(4, 1),
+                meetings_completion_deadline_at=at(4, 10),
+                feedback_start_at=at(3, 15),
+            ),
+            self._round(round_id=4),
+        ]
+
+        dtos = MentorshipMapper().map_to_rounds_dto(rounds, now=self.NOW)
+
+        self.assertEqual(
+            [
+                (
+                    d.id,
+                    d.feedback_opens_at,
+                    d.feedback_closes_at,
+                    d.is_feedback_open,
+                    d.is_feedback_editable,
+                    d.is_meeting_log_open,
+                )
+                for d in dtos
+            ],
+            [
+                (1, at(3, 1), at(4, 10), True, True, True),
+                (2, at(1, 10), at(2, 20), True, False, False),
+                (3, at(4, 1), at(5, 10), False, False, True),
+                (4, None, None, False, True, True),
+            ],
+        )
+
+    def test_map_to_rounds_dto_windows_follow_now(self):
+        r = self._round(
+            meeting_log_reminder_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+            meetings_completion_deadline_at=datetime(2026, 3, 25, tzinfo=timezone.utc),
+            feedback_deadline_at=datetime(2026, 4, 10, tzinfo=timezone.utc),
+        )
+        cases = (
+            (r.meeting_log_reminder_at - self.MICRO, False, False, True),
+            (r.meeting_log_reminder_at, True, True, True),
+            (
+                datetime(2026, 3, 26, tzinfo=timezone.utc) + self.MICRO,
+                True,
+                True,
+                False,
+            ),
+            (r.feedback_deadline_at + self.MICRO, True, False, False),
+        )
+
+        for now, is_open, editable, log_open in cases:
+            with self.subTest(now=now):
+                dto = MentorshipMapper().map_to_rounds_dto([r], now=now)[0]
+
+                self.assertEqual(
+                    (
+                        dto.is_feedback_open,
+                        dto.is_feedback_editable,
+                        dto.is_meeting_log_open,
+                    ),
+                    (is_open, editable, log_open),
+                )
 
 
 if __name__ == "__main__":

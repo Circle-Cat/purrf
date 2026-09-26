@@ -1,5 +1,5 @@
 import { render, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import PersonalDashboard from "@/pages/PersonalDashboard";
 import { useAuth } from "@/context/auth";
@@ -38,13 +38,18 @@ vi.mock(
   "@/pages/PersonalDashboard/components/MentorshipParticipantsCard",
   () => ({ default: () => <div data-testid="mock-participants-card" /> }),
 );
+// Before the round's registration deadline. Pinned so the fixture's dates
+// never expire against the real clock.
+const MOCK_TODAY = "2026-09-10T00:00:00Z";
+
 const OPEN_ROUND = {
   id: 7,
   name: "2026 Fall",
   timeline: {
     promotionStartAt: "2026-08-01T00:00:00Z",
-    mentorApplicationDeadlineAt: "2026-09-30T06:59:59Z",
-    menteeApplicationDeadlineAt: "2026-09-30T06:59:59Z",
+    mentorApplicationDeadlineAt: "2026-08-26T06:59:59Z",
+    menteeApplicationDeadlineAt: "2026-08-26T06:59:59Z",
+    onboardingDeadlineAt: "2026-09-30T06:59:59Z",
     meetingsCompletionDeadlineAt: "2026-12-01T00:00:00Z",
     feedbackDeadlineAt: "2026-12-15T00:00:00Z",
   },
@@ -57,6 +62,8 @@ describe("PersonalDashboard registration reminder wiring", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(MOCK_TODAY));
     vi.spyOn(reminderToast, "showReminderToast").mockImplementation(() => {});
 
     useAuth.mockReturnValue({ permissions: [] });
@@ -91,6 +98,17 @@ describe("PersonalDashboard registration reminder wiring", () => {
     mentorshipApi.getAllMentorshipRounds.mockResolvedValue({
       data: [OPEN_ROUND],
     });
+    mentorshipApi.getMentorshipRoundSlots.mockResolvedValue({
+      data: {
+        registrationRoundId: OPEN_ROUND.id,
+        registrationRoundName: OPEN_ROUND.name,
+        registrationDeadlineAt: OPEN_ROUND.timeline.onboardingDeadlineAt,
+        isRegistrationOpen: true,
+        canViewMatch: false,
+        isFeedbackEnabled: false,
+        activeRoundId: null,
+      },
+    });
     mentorshipApi.getMyMentorshipRegistration.mockResolvedValue({
       data: { isRegistered: false },
     });
@@ -98,6 +116,10 @@ describe("PersonalDashboard registration reminder wiring", () => {
     mentorshipApi.getMyMentorshipMeetingLog.mockResolvedValue({ data: {} });
     mentorshipApi.getMyMentorshipMatchResult.mockResolvedValue({ data: null });
     meetingApi.getMyMentorshipMeetingsV2.mockResolvedValue({ data: {} });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("never announces a closed registration while a round is open", async () => {
@@ -116,6 +138,17 @@ describe("PersonalDashboard registration reminder wiring", () => {
 
   it("still says so when registration really has not opened", async () => {
     mentorshipApi.getAllMentorshipRounds.mockResolvedValue({ data: [] });
+    mentorshipApi.getMentorshipRoundSlots.mockResolvedValue({
+      data: {
+        registrationRoundId: null,
+        registrationRoundName: null,
+        registrationDeadlineAt: null,
+        isRegistrationOpen: false,
+        canViewMatch: false,
+        isFeedbackEnabled: false,
+        activeRoundId: null,
+      },
+    });
 
     render(<PersonalDashboard />);
 

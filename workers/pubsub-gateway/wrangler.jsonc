@@ -6,13 +6,17 @@
   // environment below repeats the two that do not vary. Leaving them at the
   // top level alone would deploy a Worker with no expected audience, which
   // rejects every caller, and no JWKS url, which cannot verify one.
+  //
+  // ORIGIN_BASE is an origin, not an endpoint: which backend path a request
+  // reaches is decided by the route table in src/index.js, so adding an
+  // endpoint does not mean adding a variable to all three environments.
   "env": {
     "test": {
       "routes": [{ "pattern": "test-hook.purrf.io/*", "zone_name": "purrf.io" }],
       "vars": {
         "EXPECTED_AUDIENCE": "purrf",
         "JWKS_URL": "https://www.googleapis.com/oauth2/v3/certs",
-        "ORIGIN_URL": "https://test-api.purrf.io/api/notifications/deliver"
+        "ORIGIN_BASE": "https://test-api.purrf.io"
       }
     },
     "staging": {
@@ -20,7 +24,7 @@
       "vars": {
         "EXPECTED_AUDIENCE": "purrf",
         "JWKS_URL": "https://www.googleapis.com/oauth2/v3/certs",
-        "ORIGIN_URL": "https://staging-api.purrf.io/api/notifications/deliver"
+        "ORIGIN_BASE": "https://staging-api.purrf.io"
       }
     },
     "prod": {
@@ -28,7 +32,7 @@
       "vars": {
         "EXPECTED_AUDIENCE": "purrf",
         "JWKS_URL": "https://www.googleapis.com/oauth2/v3/certs",
-        "ORIGIN_URL": "https://api.purrf.io/api/notifications/deliver"
+        "ORIGIN_BASE": "https://api.purrf.io"
       }
     }
   }

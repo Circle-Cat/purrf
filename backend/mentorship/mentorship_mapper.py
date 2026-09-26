@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from backend.dto.rounds_dto import RoundsDto, TimelineDto
 from backend.dto.preference_dto import (
     SpecificIndustryDto,
@@ -15,6 +17,13 @@ from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
+from backend.mentorship.round_windows import (
+    feedback_window,
+    is_feedback_editable,
+    is_feedback_open,
+    is_meeting_log_open,
+    round_status,
+)
 from backend.common.mentorship_enums import (
     MeetingNoteTag,
     MeetingSource,
@@ -31,51 +40,67 @@ class MentorshipMapper:
         self,
         rounds: list[MentorshipRoundEntity],
         pair_stats: dict[int, dict] | None = None,
+        now: datetime | None = None,
     ) -> list[RoundsDto]:
-        """Maps a list of MentorshipRoundEntity objects to a list of RoundsDto objects."""
-        pair_stats = pair_stats or {}
-        return [
-            RoundsDto(
-                id=r.round_id,
-                name=r.name,
-                active_pairs=pair_stats.get(r.round_id, {}).get("active_pairs"),
-                matched_participants=pair_stats.get(r.round_id, {}).get(
-                    "matched_participants"
-                ),
-                total_completed_meetings=pair_stats.get(r.round_id, {}).get(
-                    "total_completed_meetings"
-                ),
-                mentee_average_score=r.mentee_average_score,
-                mentor_average_score=r.mentor_average_score,
-                expectations=r.expectations,
-                required_meetings=r.required_meetings,
-                timeline=self._map_timeline(r.description) if r.description else None,
-            )
-            for r in rounds
-        ]
+        """Maps a list of MentorshipRoundEntity objects to a list of RoundsDto objects.
 
-    def _map_timeline(self, d: dict) -> TimelineDto:
+        Each round's status and windows are evaluated at ``now``, the current
+        time when omitted.
         """
-        Maps a dictionary containing timeline data to a TimelineDto.
+        pair_stats = pair_stats or {}
+        now = now or datetime.now(timezone.utc)
+        return [self._map_round(r, pair_stats, now) for r in rounds]
+
+    def _map_round(
+        self, r: MentorshipRoundEntity, pair_stats: dict[int, dict], now: datetime
+    ) -> RoundsDto:
+        """Maps one round, its status and windows evaluated at ``now``."""
+        window = feedback_window(r)
+        return RoundsDto(
+            id=r.round_id,
+            name=r.name,
+            active_pairs=pair_stats.get(r.round_id, {}).get("active_pairs"),
+            matched_participants=pair_stats.get(r.round_id, {}).get(
+                "matched_participants"
+            ),
+            total_completed_meetings=pair_stats.get(r.round_id, {}).get(
+                "total_completed_meetings"
+            ),
+            mentee_average_score=r.mentee_average_score,
+            mentor_average_score=r.mentor_average_score,
+            expectations=r.expectations,
+            required_meetings=r.required_meetings,
+            timeline=self._map_timeline(r),
+            status=round_status(r, now),
+            feedback_opens_at=window.opens_at,
+            feedback_closes_at=window.closes_at,
+            is_feedback_open=is_feedback_open(r, now),
+            is_feedback_editable=is_feedback_editable(r, now),
+            is_meeting_log_open=is_meeting_log_open(r, now),
+        )
+
+    def _map_timeline(self, r: MentorshipRoundEntity) -> TimelineDto:
+        """
+        Maps a round's timeline columns to a TimelineDto.
 
         Args:
-            d (dict): A dictionary containing timeline-related datetime fields.
+            r (MentorshipRoundEntity): The round whose timeline to map.
 
         Returns:
-            TimelineDto: A TimelineDto populated with the corresponding timeline values.
+            TimelineDto: The round's timeline dates.
         """
         return TimelineDto(
-            promotion_start_at=d.get("promotion_start_at"),
-            mentor_application_deadline_at=d.get("mentor_application_deadline_at"),
-            mentee_application_deadline_at=d.get("mentee_application_deadline_at"),
-            training_notification_at=d.get("training_notification_at"),
-            training_deadline_at=d.get("training_deadline_at"),
-            matching_completed_at=d.get("matching_completed_at"),
-            match_notification_at=d.get("match_notification_at"),
-            meeting_log_reminder_at=d.get("meeting_log_reminder_at"),
-            meetings_completion_deadline_at=d.get("meetings_completion_deadline_at"),
-            feedback_start_at=d.get("feedback_start_at"),
-            feedback_deadline_at=d.get("feedback_deadline_at"),
+            promotion_start_at=r.promotion_start_at,
+            mentor_application_deadline_at=r.mentor_application_deadline_at,
+            mentee_application_deadline_at=r.mentee_application_deadline_at,
+            onboarding_notification_at=r.onboarding_notification_at,
+            onboarding_deadline_at=r.onboarding_deadline_at,
+            match_notification_at=r.match_notification_at,
+            first_meeting_deadline_at=r.first_meeting_deadline_at,
+            meeting_log_reminder_at=r.meeting_log_reminder_at,
+            meetings_completion_deadline_at=r.meetings_completion_deadline_at,
+            feedback_start_at=r.feedback_start_at,
+            feedback_deadline_at=r.feedback_deadline_at,
         )
 
     def map_to_global_preferences_dto(

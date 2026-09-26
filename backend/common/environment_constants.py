@@ -129,6 +129,10 @@ NOTIFICATION_TOPIC = "NOTIFICATION_TOPIC"
 # NOTIFICATION_TOPIC does: the route refuses every request instead, rather than
 # crash-looping the whole API over one variable.
 NOTIFICATION_PUSHER_SUBS = "NOTIFICATION_PUSHER_SUBS"
+# Numeric unique_id of the matcher job's service account. Its token is what
+# the completion callback carries; an email can be recycled onto a new
+# account, a unique_id cannot.
+MATCHER_JOB_SUBS = "MATCHER_JOB_SUBS"
 
 
 # Every origin the app itself answers on, comma-separated, e.g.
@@ -143,5 +147,9 @@ APP_ORIGINS = "APP_ORIGINS"
 # absent in local development; the code that needs them raises when used rather
 # than at startup, so the app still boots.
 TRAINING_BUCKET = "TRAINING_BUCKET"
+
+# The whole resource name -- projects/<p>/locations/<l>/jobs/<j> -- rather than
+# three variables that only mean anything together.
+MATCHER_JOB_RESOURCE = "MATCHER_JOB_RESOURCE"
 TRAINING_CONTENT_HOST = "TRAINING_CONTENT_HOST"
 TRAINING_TOKEN_SIGNING_KEY = "TRAINING_TOKEN_SIGNING_KEY"

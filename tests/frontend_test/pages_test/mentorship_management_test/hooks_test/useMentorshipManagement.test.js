@@ -5,15 +5,10 @@ import {
   getAllMentorshipRounds,
   upsertMentorshipRound,
 } from "@/api/mentorshipApi";
-import { calculateRoundStatus } from "@/pages/PersonalDashboard/utils/mentorshipRounds";
 
 vi.mock("@/api/mentorshipApi", () => ({
   getAllMentorshipRounds: vi.fn(),
   upsertMentorshipRound: vi.fn(),
-}));
-
-vi.mock("@/pages/PersonalDashboard/utils/mentorshipRounds", () => ({
-  calculateRoundStatus: vi.fn(),
 }));
 
 const makeTestRound = (overrides = {}) => ({
@@ -32,7 +27,6 @@ const makeTestRound = (overrides = {}) => ({
 describe("useMentorshipManagement", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    calculateRoundStatus.mockReturnValue({ sortedRounds: [] });
   });
 
   it("fetches rounds with needDetails=true and resolves loading", async () => {
@@ -55,33 +49,34 @@ describe("useMentorshipManagement", () => {
     expect(result.current.sortedRounds).toEqual([]);
   });
 
-  it("passes rounds through calculateRoundStatus and computes totals correctly", async () => {
+  it("keeps the server's order and status and computes totals correctly", async () => {
     const rounds = [
       makeTestRound({
+        id: 3,
+        status: "active",
+        matchedParticipants: 0,
+        totalCompletedMeetings: 0,
+      }),
+      makeTestRound({
         id: 1,
+        status: "completed",
         matchedParticipants: 52,
         totalCompletedMeetings: 93,
       }),
       makeTestRound({
         id: 2,
+        status: "completed",
         matchedParticipants: 50,
         totalCompletedMeetings: 99,
       }),
     ];
     getAllMentorshipRounds.mockResolvedValue({ data: rounds });
-    calculateRoundStatus.mockReturnValue({
-      sortedRounds: [
-        makeTestRound({ id: 1, status: "completed" }),
-        makeTestRound({ id: 2, status: "completed" }),
-        makeTestRound({ id: 3, status: "active" }),
-      ],
-    });
 
     const { result } = renderHook(() => useMentorshipManagement());
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    expect(calculateRoundStatus).toHaveBeenCalledWith(rounds);
+    expect(result.current.sortedRounds).toEqual(rounds);
     expect(result.current.totals.totalCompletedRounds).toBe(2);
     expect(result.current.totals.totalParticipants).toBe(102);
     expect(result.current.totals.totalMeetings).toBe(192);
@@ -95,7 +90,6 @@ describe("useMentorshipManagement", () => {
       }),
     ];
     getAllMentorshipRounds.mockResolvedValue({ data: rounds });
-    calculateRoundStatus.mockReturnValue({ sortedRounds: rounds });
 
     const { result } = renderHook(() => useMentorshipManagement());
 

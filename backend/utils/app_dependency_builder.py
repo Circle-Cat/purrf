@@ -8,6 +8,7 @@ from backend.service.google_service import GoogleService
 from backend.common.microsoft_graph_service_client import MicrosoftGraphServiceClient
 from backend.common.json_schema_validator import JsonSchemaValidator
 from backend.common.gerrit_client import GerritClient
+from backend.common.matching_job_client import MatchingJobClient
 from backend.service.microsoft_service import MicrosoftService
 from backend.notification_management.microsoft_chat_subscription_service import (
     MicrosoftChatSubscriptionService,
@@ -76,6 +77,7 @@ from backend.common.environment_constants import (
     JIRA_USER,
     MENTORSHIP_CALENDAR_ID,
     INTERVIEW_CALENDAR_ID,
+    MATCHER_JOB_SUBS,
     NOTIFICATION_PUSHER_SUBS,
     NOTIFICATION_TOPIC,
     USER_EMAIL,
@@ -170,6 +172,7 @@ from backend.notification_management.delivery_controller import (
 from backend.common.environment_constants import (
     RESUME_BUCKET,
     APP_ORIGINS,
+    MATCHER_JOB_RESOURCE,
     TRAINING_BUCKET,
     TRAINING_CONTENT_HOST,
     TRAINING_TOKEN_SIGNING_KEY,
@@ -211,6 +214,16 @@ from backend.repository.preferences_repository import PreferencesRepository
 from backend.mentorship.mentorship_mapper import MentorshipMapper
 from backend.mentorship.mentorship_controller import MentorshipController
 from backend.mentorship.mentorship_admin_service import MentorshipAdminService
+from backend.mentorship.matching_payload_service import MatchingPayloadService
+from backend.mentorship.matching_run_read_service import MatchingRunReadService
+from backend.mentorship.matching_run_service import MatchingRunService
+from backend.mentorship.matching_run_complete_controller import (
+    MatchingRunCompleteController,
+)
+from backend.mentorship.matching_run_complete_service import (
+    MatchingRunCompleteService,
+)
+from backend.mentorship.matching_storage import MatchingStorage
 from backend.mentorship.mentorship_admin_controller import MentorshipAdminController
 from backend.mentorship.rounds_service import RoundsService
 from backend.mentorship.participation_service import ParticipationService
@@ -277,6 +290,11 @@ class AppDependencyBuilder:
         notification_pusher_subs = frozenset(
             sub.strip()
             for sub in (os.getenv(NOTIFICATION_PUSHER_SUBS) or "").split(",")
+            if sub.strip()
+        )
+        matcher_job_subs = frozenset(
+            sub.strip()
+            for sub in (os.getenv(MATCHER_JOB_SUBS) or "").split(",")
             if sub.strip()
         )
 
@@ -671,6 +689,7 @@ class AppDependencyBuilder:
             meeting_scheduling_service=self.meeting_scheduling_service,
             mentorship_calendar_id=mentorship_calendar_id,
             mentorship_meeting_repository=self.mentorship_meeting_repository,
+            mentorship_round_repository=self.mentorship_round_repository,
         )
         self.meet_attendance_service = MeetAttendanceService(
             logger=self.logger,
@@ -703,8 +722,47 @@ class AppDependencyBuilder:
             logger=self.logger,
             mentorship_meeting_repository=self.mentorship_meeting_repository,
         )
+        # Nothing here needs self.database, so it is safe this early; the
+        # matching run service takes a session per call like the rest.
+        self.matching_payload_service = MatchingPayloadService(
+            mentorship_round_participants_repository=self.mentorship_round_participants_repo,
+            mentorship_pairs_repository=self.mentorship_pairs_repository,
+            logger=self.logger,
+        )
+        self.matching_storage = MatchingStorage(
+            redis_client=self.redis_client, logger=self.logger
+        )
+        self.matching_job_client = MatchingJobClient(
+            os.getenv(MATCHER_JOB_RESOURCE), logger=self.logger
+        )
+        self.matching_run_service = MatchingRunService(
+            matching_payload_service=self.matching_payload_service,
+            matching_storage=self.matching_storage,
+            matching_job_client=self.matching_job_client,
+            logger=self.logger,
+        )
+        self.matching_run_read_service = MatchingRunReadService(
+            matching_storage=self.matching_storage,
+            mentorship_pairs_repository=self.mentorship_pairs_repository,
+            users_repository=self.users_repository,
+            logger=self.logger,
+        )
+        self.matching_run_complete_service = MatchingRunCompleteService(
+            logger=self.logger,
+            auth_service=self.authentication_service,
+            matcher_job_subs=matcher_job_subs,
+            matching_storage=self.matching_storage,
+            mentorship_round_repository=self.mentorship_round_repository,
+        )
+        self.matching_run_complete_controller = MatchingRunCompleteController(
+            matching_run_complete_service=self.matching_run_complete_service,
+            database=self.database,
+        )
         self.mentorship_admin_controller = MentorshipAdminController(
             mentorship_admin_service=self.mentorship_admin_service,
+            matching_run_service=self.matching_run_service,
+            matching_run_read_service=self.matching_run_read_service,
+            launchdarkly_service=self.launchdarkly_service,
             database=self.database,
         )
         self.experience_repository = ExperienceRepository()
@@ -1111,6 +1169,7 @@ class AppDependencyBuilder:
             profile_controller=self.profile_controller,
             mentorship_controller=self.mentorship_controller,
             mentorship_admin_controller=self.mentorship_admin_controller,
+            matching_run_complete_controller=self.matching_run_complete_controller,
             email_management_controller=self.email_management_controller,
             permission_admin_controller=self.permission_admin_controller,
             user_account_controller=self.user_account_controller,

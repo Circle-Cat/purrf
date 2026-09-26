@@ -89,3 +89,7 @@ output "readonly_connection_uris" {
 output "notification_pusher_sub" {
   value = module.purrf_instance.notification_pusher_sub
 }
+
+output "matcher_job_sub" {
+  value = module.purrf_instance.matcher_job_sub
+}
