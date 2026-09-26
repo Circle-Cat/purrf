@@ -366,6 +366,28 @@ class MentorshipPairsRepository:
 
         return result.scalars().all()
 
+    async def has_pairs_for_round(self, session: AsyncSession, round_id: int) -> bool:
+        """
+        Report whether a round's pairs have been written at all.
+
+        Deliberately unfiltered by status: this answers "was this round's result
+        published", and a pair that has since been ended was still published.
+        Nothing records when a matching run was applied, so the presence of the
+        rows it would have written is what says so.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            round_id (int): The mentorship round ID.
+
+        Returns:
+            bool: True when the round has at least one pair, of any status.
+        """
+        result = await session.execute(
+            select(exists().where(MentorshipPairsEntity.round_id == round_id))
+        )
+
+        return bool(result.scalar())
+
     async def count_completed_rounds(
         self, session: AsyncSession, user_ids: list[int], exclude_round_id: int
     ) -> dict[int, int]:

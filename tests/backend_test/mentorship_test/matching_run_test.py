@@ -53,6 +53,9 @@ class _FakeRedis:
     def hlen(self, key):
         return len(self.hashes.get(key, {}))
 
+    def hgetall(self, key):
+        return dict(self.hashes.get(key, {}))
+
 
 def _person(user_id, size=32):
     person = MagicMock()
@@ -217,6 +220,21 @@ class MatchingStorageTest(unittest.TestCase):
         result = self.storage.read_run_result("r7-x-y")
 
         self.assertEqual(result.status, "failed")
+
+    def test_every_mentee_s_result_reads_back_under_its_own_id(self):
+        self.redis.hashes["match:r7-x-y:out"] = {
+            "e0": json.dumps({
+                "mentor_id": "m1",
+                "score": 71,
+                "match_type": "hungarian",
+            }),
+            "e1": json.dumps({"mentor_id": None}),
+        }
+
+        results = self.storage.read_all_results("r7-x-y")
+
+        self.assertEqual(results["e0"].mentor_id, "m1")
+        self.assertIsNone(results["e1"].mentor_id)
 
 
 class MatchingRunServiceTest(unittest.IsolatedAsyncioTestCase):

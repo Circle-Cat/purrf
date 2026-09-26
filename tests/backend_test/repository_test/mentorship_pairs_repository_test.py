@@ -774,6 +774,56 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
 
         self.assertEqual(result[self.rounds[0].round_id]["total_completed_meetings"], 3)
 
+    async def test_a_round_that_was_published_has_pairs(self):
+        published = await self.repo.has_pairs_for_round(
+            self.session, self.rounds[0].round_id
+        )
+
+        self.assertTrue(published)
+
+    async def test_a_round_whose_only_pair_ended_still_counts_as_published(self):
+        # Holds the rule rather than driving it: the query has no status filter
+        # today, and this fails the moment somebody adds one. A pair that was
+        # ended was still published, and publishing twice is what that guards.
+        ended_round = MentorshipRoundEntity(
+            name="2026-ended",
+            required_meetings=5,
+            onboarding_deadline_at=datetime(2026, 8, 15, tzinfo=timezone.utc),
+        )
+        await self.insert_entities([ended_round])
+        await self.insert_entities([
+            MentorshipPairsEntity(
+                round_id=ended_round.round_id,
+                mentor_id=self.users[0].user_id,
+                mentee_id=self.users[1].user_id,
+                completed_count=0,
+                status=PairStatus.INACTIVE,
+                mentor_action_status=MentorActionStatus.CONFIRMED,
+                mentee_action_status=MenteeActionStatus.CONFIRMED,
+                recommendation_reason="",
+            )
+        ])
+
+        published = await self.repo.has_pairs_for_round(
+            self.session, ended_round.round_id
+        )
+
+        self.assertTrue(published)
+
+    async def test_a_round_that_was_never_published_has_none(self):
+        unmatched_round = MentorshipRoundEntity(
+            name="2026-fall",
+            required_meetings=5,
+            onboarding_deadline_at=datetime(2026, 8, 15, tzinfo=timezone.utc),
+        )
+        await self.insert_entities([unmatched_round])
+
+        published = await self.repo.has_pairs_for_round(
+            self.session, unmatched_round.round_id
+        )
+
+        self.assertFalse(published)
+
 
 if __name__ == "__main__":
     unittest.main()

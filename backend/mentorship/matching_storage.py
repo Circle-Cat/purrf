@@ -19,7 +19,11 @@ outlive several days of review. One key cannot do both.
 """
 
 from backend.common.constants import THREE_MONTHS_IN_SECONDS
-from backend.mentorship.matching_contract import MatchingMeta, MatchingRunResult
+from backend.mentorship.matching_contract import (
+    MatchingMeta,
+    MatchingRunResult,
+    MenteeResult,
+)
 
 # Matches the job's own timeout, so a run that dies without releasing the lock
 # frees its round by itself and nobody has to abandon it by hand.
@@ -252,3 +256,23 @@ class MatchingStorage:
                 f"{result.mentee_count} reported, {expected} mentees sent."
             )
         return result
+
+    def read_all_results(self, run_id: str) -> dict[str, MenteeResult]:
+        """Return the run's whole result, keyed by mentee id.
+
+        The contract version is not checked here. ``read_run_result`` checks it
+        once, on the value that carries it, and a mentee row has no version of
+        its own -- so this is read after that call has passed, never instead of
+        it.
+
+        Args:
+            run_id (str): Identifies the run.
+
+        Returns:
+            dict[str, MenteeResult]: Every mentee the matcher wrote, including
+                those it could not place. Empty when the run wrote nothing.
+        """
+        return {
+            mentee_id: MenteeResult.model_validate_json(raw)
+            for mentee_id, raw in self.redis_client.hgetall(out_key(run_id)).items()
+        }
