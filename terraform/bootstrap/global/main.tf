@@ -878,6 +878,11 @@ resource "cloudflare_zero_trust_access_service_token" "notification_gateway_test
 # purrf application rather than another policy on it: Cloudflare matches the
 # most specific application, so this one governs the delivery route alone and
 # leaves the application covering the rest of the host untouched.
+#
+# Every backend path in the gateway Worker's route table has to be listed here.
+# One that is not falls to the host-wide application, which answers the service
+# token with a redirect to a login page -- and the Worker follows it and reports
+# the login page's 200, so the caller believes it was delivered.
 
 resource "cloudflare_zero_trust_access_application" "notification_delivery_test" {
   account_id = local.cloudflare_account_id
@@ -885,6 +890,8 @@ resource "cloudflare_zero_trust_access_application" "notification_delivery_test"
   type       = "self_hosted"
   destinations = [
     { type = "public", uri = "${local.environments.test.api_host}/api/notifications/deliver" },
+    # Only test runs the matcher job.
+    { type = "public", uri = "${local.environments.test.api_host}/api/mentorship/match-runs/complete" },
   ]
   # A machine endpoint: nobody should find it in the App Launcher.
   app_launcher_visible = false
