@@ -86,7 +86,19 @@ resource "kubernetes_secret" "purrf_app" {
     # The service accounts whose tokens the delivery route accepts.
     NOTIFICATION_PUSHER_SUBS = google_service_account.notification_pusher.unique_id
 
+    # The service accounts whose tokens the matching completion route accepts.
+    # Asserted by the backend as well as the Worker: a request that arrives by
+    # some other path carries nothing either of them will take.
+    MATCHER_JOB_SUBS = var.enable_matcher ? google_service_account.matcher_job[0].unique_id : ""
+
     GOOGLE_SERVICE_ACCOUNT_SUBS = data.google_service_account.purrf_service.unique_id
+
+    # The job that reads a run. The full resource name, because that is what
+    # the Cloud Run REST call takes, and empty where no matcher is provisioned:
+    # the endpoint then refuses to start a run instead of reaching for
+    # something that is not there. A run's input needs no variable of its own --
+    # it goes to the Redis the backend is already configured for, above.
+    MATCHER_JOB_RESOURCE = local.matcher_job_enabled ? "projects/${var.gcp_project_id}/locations/${var.gcp_region}/jobs/${google_cloud_run_v2_job.matcher[0].name}" : ""
 
     # Every origin this environment answers on. The backend reads these only to
     # refuse a TRAINING_CONTENT_HOST that matches one of them. Course hosting
