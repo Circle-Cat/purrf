@@ -220,6 +220,9 @@ from backend.mentorship.matching_run_service import MatchingRunService
 from backend.mentorship.matching_run_complete_controller import (
     MatchingRunCompleteController,
 )
+from backend.mentorship.matching_run_complete_service import (
+    MatchingRunCompleteService,
+)
 from backend.mentorship.matching_storage import MatchingStorage
 from backend.mentorship.mentorship_admin_controller import MentorshipAdminController
 from backend.mentorship.rounds_service import RoundsService
@@ -744,12 +747,15 @@ class AppDependencyBuilder:
             users_repository=self.users_repository,
             logger=self.logger,
         )
-        self.matching_run_complete_controller = MatchingRunCompleteController(
+        self.matching_run_complete_service = MatchingRunCompleteService(
             logger=self.logger,
             auth_service=self.authentication_service,
             matcher_job_subs=matcher_job_subs,
             matching_storage=self.matching_storage,
             mentorship_round_repository=self.mentorship_round_repository,
+        )
+        self.matching_run_complete_controller = MatchingRunCompleteController(
+            matching_run_complete_service=self.matching_run_complete_service,
             database=self.database,
         )
         self.mentorship_admin_controller = MentorshipAdminController(
