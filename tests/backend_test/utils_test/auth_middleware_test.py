@@ -11,6 +11,7 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from backend.common.api_endpoints import (
+    MENTORSHIP_MATCH_RUN_COMPLETE,
     NOTIFICATION_DELIVER_ENDPOINT,
     TRAINING_CONTENT_ENDPOINT,
 )
@@ -575,6 +576,33 @@ class TestAuthMiddleware(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.text, "delivered")
+        self.mock_auth_service.authenticate_request.assert_not_called()
+        self.mock_database.session.assert_not_called()
+
+    def test_matcher_completion_callback_skips_authentication(self):
+        """The matcher job calls back with a Google OIDC token and no Auth0
+        session, like a Pub/Sub push, so the middleware must let it through.
+
+        The route asserts that token and the job's account itself. Left to the
+        middleware, every callback was answered 400 before it ran, and the
+        admin who started the run was never told it finished.
+        """
+        self.mock_auth_service.authenticate_request.side_effect = ValueError(
+            "Missing authentication credentials"
+        )
+        self.app.router.routes.append(
+            Route(
+                f"/api{MENTORSHIP_MATCH_RUN_COMPLETE}",
+                lambda request: PlainTextResponse("announced"),
+                methods=["POST"],
+            )
+        )
+
+        client = self._add_middleware()
+        response = client.post(f"/api{MENTORSHIP_MATCH_RUN_COMPLETE}", json={})
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.text, "announced")
         self.mock_auth_service.authenticate_request.assert_not_called()
         self.mock_database.session.assert_not_called()
 

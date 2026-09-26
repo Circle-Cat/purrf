@@ -5,7 +5,10 @@ from sqlalchemy.exc import IntegrityError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
-from backend.common.api_endpoints import NOTIFICATION_DELIVER_ENDPOINT
+from backend.common.api_endpoints import (
+    MENTORSHIP_MATCH_RUN_COMPLETE,
+    NOTIFICATION_DELIVER_ENDPOINT,
+)
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.identity_type import is_rowless_login
 from backend.common.permissions import (
@@ -26,7 +29,13 @@ _PERMISSION_BY_VALUE = {p.value: p for p in Permission}
 # every push with a 400 before the handler runs. Its guard is the Cloudflare
 # Worker that verifies that token, plus the Access Service Auth policy in front
 # of the origin -- the request cannot arrive without passing both.
-_UNAUTHENTICATED_PATHS = frozenset({f"/api{NOTIFICATION_DELIVER_ENDPOINT}"})
+#
+# The matcher job's completion callback arrives the same way, through the same
+# Worker, and its route asserts the Google token and the job's account itself.
+_UNAUTHENTICATED_PATHS = frozenset({
+    f"/api{NOTIFICATION_DELIVER_ENDPOINT}",
+    f"/api{MENTORSHIP_MATCH_RUN_COMPLETE}",
+})
 
 # Course files are requested by the course's own JavaScript, which cannot
 # present an Access JWT; a signature in the URL path stands in for one.
