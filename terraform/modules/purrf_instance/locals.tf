@@ -43,7 +43,7 @@ locals {
 locals {
   # Mentorship matcher. The image repository is shared by every environment
   # and is not managed here (see matching.tf).
-  matcher_image_project    = "k8s-dev-437501"
+  matcher_image_project    = var.gcp_project_id
   matcher_image_location   = "us-west1"
   matcher_image_repository = "purrf-matcher"
 

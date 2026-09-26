@@ -6,11 +6,14 @@
 #
 # Cloud Run has no imagePullSecrets, so it cannot pull the private
 # purrf-matcher image from GitHub Container Registry the way the backend does on
-# GKE. The image lives in one Artifact Registry repository in k8s-dev-437501,
-# beside the backend's own images, and every environment pulls from it: the
-# same image is what runs everywhere, so a repository per environment would
-# only mean copying it. It is built and pushed by hand this round, which is why
-# the tag is an explicit variable.
+# GKE. The image lives in one Artifact Registry repository in purrf-452300, the
+# project every environment's job runs in, and every environment pulls from it:
+# the same image is what runs everywhere, so a repository per environment would
+# only mean copying it. Being in the job's own project, it needs no grant --
+# the project's Cloud Run service agent can already pull from it. The
+# repository is created by hand once, not here, because this module runs once
+# per environment. The image is built and pushed by hand this round, which is
+# why the tag is an explicit variable.
 
 # Left on when the matcher is removed. Every environment shares purrf-452300,
 # and Cloud Functions gen 2 runs on Cloud Run, so disabling either API on
@@ -23,21 +26,6 @@ resource "google_project_service" "matcher" {
 
   service            = each.value
   disable_on_destroy = false
-}
-
-# A Cloud Run job pulls its image as the project's Cloud Run service agent, not
-# as the job's own service account, and that agent has no access to another
-# project's registry until it is granted here. Bound on the one repository.
-resource "google_artifact_registry_repository_iam_member" "matcher_image_pull" {
-  count = var.enable_matcher ? 1 : 0
-
-  project    = local.matcher_image_project
-  location   = local.matcher_image_location
-  repository = local.matcher_image_repository
-  role       = "roles/artifactregistry.reader"
-  member     = "serviceAccount:service-${data.google_project.main_gcp_project_data.number}@serverless-robot-prod.iam.gserviceaccount.com"
-
-  depends_on = [google_project_service.matcher]
 }
 
 resource "google_service_account" "matcher_job" {
@@ -199,7 +187,6 @@ resource "google_cloud_run_v2_job" "matcher" {
 
   depends_on = [
     google_project_service.matcher,
-    google_artifact_registry_repository_iam_member.matcher_image_pull,
     google_secret_manager_secret_version.matcher_llm_api_key_placeholder,
   ]
 }

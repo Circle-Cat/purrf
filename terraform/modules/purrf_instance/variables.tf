@@ -197,7 +197,7 @@ variable "enable_matcher" {
 }
 
 variable "matcher_image_tag" {
-  description = "Tag of the matcher image in the shared us-west1-docker.pkg.dev/k8s-dev-437501/purrf-matcher repository. Explicit rather than a floating tag such as main: a run has to be traceable to the code that produced it. Empty leaves the job uncreated -- Cloud Run rejects a job whose image does not exist."
+  description = "Tag of the matcher image in the shared purrf-matcher repository in the project's us-west1 Artifact Registry. Explicit rather than a floating tag such as main: a run has to be traceable to the code that produced it. Empty leaves the job uncreated -- Cloud Run rejects a job whose image does not exist."
   type        = string
   default     = ""
 }
