@@ -49,9 +49,10 @@ module "purrf_instance" {
   gmail_sender_notification = "notification-test@circlecat.org"
 
   # The matcher pipeline is brought up here first. Setting matcher_image_tag
-  # to an image pushed to the shared repository is what creates the job.
+  # to an image pushed to the shared repository is what creates the job. The
+  # tag is the purrf-matcher commit the image was built from.
   enable_matcher    = true
-  matcher_image_tag = "llm-stub"
+  matcher_image_tag = "a88afa5237a2aabfba6887ad025a33ceee54887b"
   matcher_llm_stub  = true
 }
 
