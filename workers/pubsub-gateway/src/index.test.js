@@ -184,6 +184,29 @@ describe("pubsub gateway", () => {
     expect(response.status).toBe(503);
   });
 
+  it("answers 502 when the origin redirects rather than following it", async () => {
+    // What Access does to a path its service-token application does not
+    // cover: following it would hand the caller the login page's 200.
+    const fetchMock = stubFetch(
+      new Response(null, {
+        status: 302,
+        headers: { location: "https://circlecat.cloudflareaccess.com/login" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await worker.fetch(
+      request(await makeToken(), "/mentorship/match-runs/complete"),
+      environment(),
+    );
+
+    expect(response.status).toBe(502);
+    const forwarded = fetchMock.mock.calls.find(([input]) =>
+      (typeof input === "string" ? input : input.url).includes("api.purrf.io"),
+    );
+    expect(forwarded[1].redirect).toBe("manual");
+  });
+
   it.each([
     ["a missing token", undefined],
     ["the wrong audience", { aud: "somebody-else" }],
