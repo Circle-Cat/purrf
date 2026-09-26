@@ -189,3 +189,27 @@ variable "interview_calendar_id" {
   description = "Secondary calendar under user_email that recruiting interview meetings are created on, patched on and deleted from. Same per-environment and ownership requirements as mentorship_calendar_id. Cancellation here is automation-driven (advance / reject / blacklist, and the blacklist sweep covers every application), so a shared calendar lets one environment delete another's real interviews in bulk."
   type        = string
 }
+
+variable "enable_matcher" {
+  description = "Provision the mentorship matcher: its secrets, service account, image pull access and Cloud Run job. Off by default while the pipeline is being brought up on test."
+  type        = bool
+  default     = false
+}
+
+variable "matcher_image_tag" {
+  description = "Tag of the matcher image in the shared purrf-matcher repository in the project's us-west1 Artifact Registry. Explicit rather than a floating tag such as main: a run has to be traceable to the code that produced it. Empty leaves the job uncreated -- Cloud Run rejects a job whose image does not exist."
+  type        = string
+  default     = ""
+}
+
+variable "matcher_llm_stub" {
+  description = "Run the matcher with no LLM: it writes fake scores and marks its output +llm-stub, and the LLM key secret gets a placeholder so the job can be created without a real key. For wiring the pipeline end to end; turn off before a real round, after adding the real key by hand."
+  type        = bool
+  default     = false
+}
+
+variable "matcher_llm_concurrency" {
+  description = "How many scoring calls the matcher has in flight at once."
+  type        = number
+  default     = 4
+}

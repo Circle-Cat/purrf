@@ -14,9 +14,20 @@
 #   CF_ACCESS_CLIENT_SECRET  <- .<env>.client_secret
 #
 # The Worker's third secret, ALLOWED_SUBS, comes from the other state -- the
-# push service account lives in the per-environment configuration:
+# service accounts allowed to call it live in the per-environment
+# configuration. It is a comma-separated list, so every caller's sub belongs in
+# it at once:
 #
 #   terraform -chdir=terraform/environments/<env> output notification_pusher_sub
+#   terraform -chdir=terraform/environments/<env> output matcher_job_sub
+#
+# ALLOWED_SUBS = "<notification_pusher_sub>,<matcher_job_sub>"
+#
+# Setting it to one of them alone is the failure to watch for: an empty
+# allow-list rejects everybody loudly, but a list holding only the matcher
+# stops notification delivery while the matcher keeps working, and nothing
+# reports it. matcher_job_sub is empty where no matcher is provisioned -- leave
+# it out there rather than appending a trailing comma.
 #
 # The token does not expire. Rotating one is a deliberate act: taint it,
 # re-run this configuration, read the new output, and update the Worker's

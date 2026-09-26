@@ -94,3 +94,7 @@ output "auth0_backend_management_m2m_client_secret" {
 output "notification_pusher_sub" {
   value = module.purrf_instance.notification_pusher_sub
 }
+
+output "matcher_job_sub" {
+  value = module.purrf_instance.matcher_job_sub
+}

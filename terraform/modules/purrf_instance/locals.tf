@@ -41,6 +41,18 @@ locals {
 }
 
 locals {
+  # Mentorship matcher. The image repository is shared by every environment
+  # and is not managed here (see matching.tf).
+  matcher_image_project    = var.gcp_project_id
+  matcher_image_location   = "us-west1"
+  matcher_image_repository = "purrf-matcher"
+
+  # Cloud Run rejects a job whose image does not exist, so the job waits for a
+  # tag that names one.
+  matcher_job_enabled = var.enable_matcher && var.matcher_image_tag != ""
+}
+
+locals {
   # Pub/Sub
   pubsub_names = [
     "chat-google-events",
