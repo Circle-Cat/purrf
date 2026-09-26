@@ -24,6 +24,7 @@ export const ROUTE_PATHS = {
   RECRUITING_MY_EVALUATIONS: "/recruiting/my-evaluations",
   RECRUITING_AUDIT: "/recruiting/audit",
   LEAVE_APPROVALS: "/leave/approvals",
+  LEAVE_BALANCE_HISTORY: "/leave/balance-history",
   LEAVE_REQUESTS: "/leave/requests",
   LEAVE_ADMIN: "/leave/admin",
   TRAINING_COURSE: (trainingId) => `/training/${trainingId}`,
