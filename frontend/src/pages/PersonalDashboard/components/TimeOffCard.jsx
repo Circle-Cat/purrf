@@ -7,6 +7,7 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import CompanyHolidaysDialog from "@/pages/Leave/components/CompanyHolidaysDialog";
 import FileLeaveDialog from "@/pages/Leave/components/FileLeaveDialog";
 import { useMyLeaveRequests } from "@/pages/Leave/hooks/useMyLeaveRequests";
+import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
 
 /**
  * One figure in the card.
@@ -74,6 +75,7 @@ const TimeOffCard = ({
   usedHours,
 }) => {
   const navigate = useNavigate();
+  const isEnabled = useLeaveEnabled();
   // Somebody outside the population has no requests to list, by definition.
   const { isSaving, saveError, file } = useMyLeaveRequests({
     enabled: isCovered,
@@ -139,12 +141,13 @@ const TimeOffCard = ({
               >
                 My requests
               </Button>
-          <Button
-            variant="outline"
-            onClick={() => navigate(ROUTE_PATHS.LEAVE_BALANCE_HISTORY)}
-          >
-            Balance history
-          </Button>
+          {isEnabled && (
+            <Button
+              variant="outline"
+              onClick={() => navigate(ROUTE_PATHS.LEAVE_BALANCE_HISTORY)}
+            >
+              Balance history
+            </Button>
               {approvals}
             </div>
           </>
@@ -156,7 +159,8 @@ const TimeOffCard = ({
             <div className="flex flex-wrap gap-2">
               {approvals}
               {holidays}
-            </div>
+              )}
+        </div>
           </>
         )}
       </CardContent>
