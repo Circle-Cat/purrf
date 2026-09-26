@@ -7,7 +7,7 @@ locals {
       beta_user_rule = {
         attribute = "email"
         op        = "in"
-        values    = ["yuji@u.circlecat.org", "yhuang@u.circlecat.org"]
+        values    = ["yuji@u.circlecat.org"]
       }
     }
     staging = {
@@ -17,7 +17,7 @@ locals {
       beta_user_rule = {
         attribute = "email"
         op        = "in"
-        values    = ["yuji@u.circlecat.org", "yhuang@u.circlecat.org"]
+        values    = ["yuji@u.circlecat.org"]
       }
     }
     production = {
