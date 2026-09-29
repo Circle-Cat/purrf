@@ -2,21 +2,38 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import Table from "@/components/common/Table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { unresolvedPersonLabel } from "@/pages/Recruiting/components/personLabel";
 import { useRoundFeedback } from "@/pages/MentorshipManagement/hooks/useRoundFeedback";
 
+// Answers run to 300 characters. Table cells stay on one line by default, so
+// the free-text columns wrap once they reach 20rem instead of stretching the
+// row. On a narrow screen the table scrolls sideways inside its card.
+const WRAP = "min-w-48 max-w-xs whitespace-normal break-words";
+
 // In the order the feedback form asks its questions, so the two about the
 // partner sit together.
 const COLUMNS = [
+  { header: "User ID", accessor: "userId" },
   { header: "Name", accessor: "name" },
   { header: "Role", accessor: "role" },
-  { header: "Most Valuable Aspects", accessor: "mostValuableAspects" },
-  { header: "Challenges", accessor: "challenges" },
+  {
+    header: "Most Valuable Aspects",
+    accessor: "mostValuableAspects",
+    wrap: true,
+  },
+  { header: "Challenges", accessor: "challenges", wrap: true },
   { header: "Program Rating", accessor: "programRating" },
   { header: "Rating of Partner", accessor: "partnerRating" },
-  { header: "Feedback About Partner", accessor: "partnerFeedback" },
+  { header: "Feedback About Partner", accessor: "partnerFeedback", wrap: true },
 ];
 
 // The ID goes beside the name, as everywhere in the console: two partners
@@ -37,22 +54,34 @@ const PartnerLines = ({ entries, render }) => {
     <div className="space-y-1">
       {lines.map((e, i) => (
         // Nothing on the write side stops a partner appearing twice.
-        <p key={`${e.partnerId}-${i}`}>
+        <div key={`${e.partnerId}-${i}`}>
           <span className="text-gray-500">{partnerLabel(e)}: </span>
           {render(e)}
-        </p>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+/** What someone wrote about each partner, each line wrapped. */
+const PartnerFeedbackLines = ({ entries }) => {
+  const lines = entries.filter((e) => e.feedback);
+  if (lines.length === 0) return "—";
+  return (
+    <div className="space-y-2">
+      {lines.map((e, i) => (
+        <div key={`${e.partnerId}-${i}`}>
+          <span className="text-gray-500">{partnerLabel(e)}: </span>
+          &ldquo;{e.feedback}&rdquo;
+        </div>
       ))}
     </div>
   );
 };
 
 const toRow = (p) => ({
-  name: (
-    <div>
-      <div className="font-medium">{p.name}</div>
-      <div className="text-xs text-gray-500">ID {p.userId}</div>
-    </div>
-  ),
+  userId: p.userId,
+  name: <span className="font-medium">{p.name}</span>,
   role: p.role ?? "—",
   mostValuableAspects: p.mostValuableAspects || "—",
   challenges: p.challenges || "—",
@@ -63,12 +92,7 @@ const toRow = (p) => ({
       render={(e) => (e.rating != null ? `${e.rating}/5` : null)}
     />
   ),
-  partnerFeedback: (
-    <PartnerLines
-      entries={p.partnerFeedback ?? []}
-      render={(e) => (e.feedback ? <>&ldquo;{e.feedback}&rdquo;</> : null)}
-    />
-  ),
+  partnerFeedback: <PartnerFeedbackLines entries={p.partnerFeedback ?? []} />,
 });
 
 /**
@@ -130,7 +154,36 @@ const RoundFeedbackPage = () => {
           </label>
         </div>
         {rows.length > 0 ? (
-          <Table columns={COLUMNS} data={rows.map(toRow)} />
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  {COLUMNS.map((col) => (
+                    <TableHead key={col.accessor}>{col.header}</TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((p) => {
+                  const row = toRow(p);
+                  return (
+                    <TableRow key={p.userId}>
+                      {COLUMNS.map((col) => (
+                        <TableCell
+                          key={col.accessor}
+                          className={
+                            col.wrap ? `${WRAP} align-top` : "align-top"
+                          }
+                        >
+                          {row[col.accessor]}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
         ) : (
           <div className="py-8 text-center text-gray-500">Nobody here.</div>
         )}

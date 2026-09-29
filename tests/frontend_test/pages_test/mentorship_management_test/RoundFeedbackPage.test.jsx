@@ -112,6 +112,7 @@ describe("RoundFeedbackPage", () => {
     expect(
       screen.getAllByRole("columnheader").map((h) => h.textContent),
     ).toEqual([
+      "User ID",
       "Name",
       "Role",
       "Most Valuable Aspects",
@@ -127,7 +128,8 @@ describe("RoundFeedbackPage", () => {
     await screen.findByText("Cara Wang");
 
     expect(cellsOf("Cara Wang")).toEqual([
-      "Cara WangID 3103",
+      "3103",
+      "Cara Wang",
       "mentee",
       "Career advice",
       "—",
@@ -135,14 +137,14 @@ describe("RoundFeedbackPage", () => {
       "Bob Liu (ID 3102): 2/5",
       "Bob Liu (ID 3102): “Often late”",
     ]);
-    expect(cellsOf("Bob Liu").slice(2)).toEqual([
+    expect(cellsOf("Bob Liu").slice(3)).toEqual([
       "—",
       "Scheduling",
       "5/5",
       "Cara Wang (ID 3103): 3/5User 3999: 1/5",
       "User 3999: “Stopped replying”",
     ]);
-    expect(cellsOf("Dan Ma").slice(1)).toEqual([
+    expect(cellsOf("Dan Ma").slice(2)).toEqual([
       "mentee",
       "—",
       "—",
@@ -150,6 +152,19 @@ describe("RoundFeedbackPage", () => {
       "—",
       "—",
     ]);
+  });
+
+  it("wraps long answers in place of stretching the row", async () => {
+    renderPage();
+    await screen.findByText("Cara Wang");
+
+    // Table cells are nowrap by default; the free-text cells undo it.
+    const cell = (text) => screen.getByText(text).closest("td");
+    expect(cell("Career advice")).toHaveClass("whitespace-normal");
+    expect(cell("Scheduling")).toHaveClass("whitespace-normal");
+    expect(cell(/Often late/)).toHaveClass("whitespace-normal");
+    // The rest stay on one line.
+    expect(cell("4/5")).not.toHaveClass("whitespace-normal");
   });
 
   it("narrows by role and to those who have not sent it", async () => {
