@@ -13,9 +13,14 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
  *   the board, carrying the job so their selection survives and the
  *   application id as `focus` so the board scrolls to and rings that card.
  * - Anyone else — in practice a pure current-stage assignee who reached this
- *   page without `?mode=evaluate` — gets no link. The board is gated on
- *   owner-or-`read.all`, so a link would only strand them on "You don't own
- *   any postings."
+ *   page without `?mode=evaluate` — gets no link. The board lists only the
+ *   jobs the viewer owns (or every job for `read.all`), so a link would only
+ *   strand them on "You don't own any postings."
+ *
+ * The board route admits `RECRUITING_BOARD_PERMISSIONS` (advance or
+ * `read.all`), so a `read.all` holder who follows this link gets through. An
+ * owner is assumed to hold advance; one who does not would still be turned
+ * away by the route guard.
  *
  * `jobId` comes from the detail payload's `application.jobId`, which is
  * present regardless of `canView` — deliberately not from the separate

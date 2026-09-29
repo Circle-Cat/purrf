@@ -14,6 +14,7 @@ export const PERMISSIONS = {
   RECRUITING_JOB_WRITE: "recruiting.job.write",
   RECRUITING_JOB_APPROVE: "recruiting.job.approve",
   RECRUITING_APPLICATION_ADVANCE: "recruiting.application.advance",
+  RECRUITING_APPLICATION_READ_ALL: "recruiting.application.read.all",
   RECRUITING_INTERVIEW_EVALUATE: "recruiting.interview.evaluate",
   RECRUITING_AUDIT_READ: "recruiting.audit.read",
   USER_ADMIN: "user.admin",
@@ -21,3 +22,19 @@ export const PERMISSIONS = {
   TRAINING_ADMIN_READ: "training.admin.read",
   TRAINING_ADMIN_WRITE: "training.admin.write",
 };
+
+/**
+ * Who may open the Applications Board, as an any-of list shared by the route
+ * guard and the sidebar entry so the two cannot drift.
+ *
+ * The board itself is read-only and its endpoints only need a login; which
+ * jobs it shows is decided server-side (owned jobs, or every job for a
+ * `read.all` holder). The deciding and scheduling actions live on the
+ * application detail page, gated there.
+ *
+ * @type {ReadonlyArray<string>}
+ */
+export const RECRUITING_BOARD_PERMISSIONS = Object.freeze([
+  PERMISSIONS.RECRUITING_APPLICATION_ADVANCE,
+  PERMISSIONS.RECRUITING_APPLICATION_READ_ALL,
+]);

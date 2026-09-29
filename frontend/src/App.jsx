@@ -42,7 +42,10 @@ import TrainingPreview from "@/pages/TrainingPreview";
 import AdminTraining from "@/pages/AdminTraining";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
-import { PERMISSIONS } from "@/constants/Permissions";
+import {
+  PERMISSIONS,
+  RECRUITING_BOARD_PERMISSIONS,
+} from "@/constants/Permissions";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -254,9 +257,7 @@ function App() {
                       path={ROUTE_PATHS.RECRUITING_BOARD}
                       element={
                         <ProtectedRoute
-                          requiredPermissions={[
-                            PERMISSIONS.RECRUITING_APPLICATION_ADVANCE,
-                          ]}
+                          requiredPermissions={RECRUITING_BOARD_PERMISSIONS}
                         >
                           <BoardPage />
                         </ProtectedRoute>
