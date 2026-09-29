@@ -19,8 +19,12 @@ const COLUMNS = [
   { header: "Feedback About Partner", accessor: "partnerFeedback" },
 ];
 
+// The ID goes beside the name, as everywhere in the console: two partners
+// can share a name.
 const partnerLabel = (entry) =>
-  entry.partnerName ?? unresolvedPersonLabel(entry.partnerId);
+  entry.partnerName
+    ? `${entry.partnerName} (ID ${entry.partnerId})`
+    : unresolvedPersonLabel(entry.partnerId);
 
 /**
  * One line per partner. What someone wrote about a partner sits on the
@@ -31,8 +35,9 @@ const PartnerLines = ({ entries, render }) => {
   if (lines.length === 0) return "—";
   return (
     <div className="space-y-1">
-      {lines.map((e) => (
-        <p key={e.partnerId}>
+      {lines.map((e, i) => (
+        // Nothing on the write side stops a partner appearing twice.
+        <p key={`${e.partnerId}-${i}`}>
           <span className="text-gray-500">{partnerLabel(e)}: </span>
           {render(e)}
         </p>

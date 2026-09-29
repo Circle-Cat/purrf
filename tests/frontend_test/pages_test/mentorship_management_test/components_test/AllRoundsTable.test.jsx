@@ -164,9 +164,18 @@ describe("AllRoundsTable", () => {
     });
 
     it("shows a dash, not a link, when nobody owes feedback", () => {
-      renderWithFeedback([makeTestRound({ feedbackOwed: 0, feedbackSent: 0 })]);
+      renderWithFeedback([
+        makeTestRound({
+          feedbackOwed: 0,
+          feedbackSent: 0,
+          mentorAverageScore: 4.5,
+          menteeAverageScore: 4.8,
+        }),
+      ]);
 
       expect(screen.queryByRole("link")).not.toBeInTheDocument();
+      // Every other cell has a value, so the one dash is the Feedback cell.
+      expect(screen.getAllByText("—")).toHaveLength(1);
     });
 
     it("leaves the column out without read permission", () => {

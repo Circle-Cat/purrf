@@ -132,14 +132,14 @@ describe("RoundFeedbackPage", () => {
       "Career advice",
       "—",
       "4/5",
-      "Bob Liu: 2/5",
-      "Bob Liu: “Often late”",
+      "Bob Liu (ID 3102): 2/5",
+      "Bob Liu (ID 3102): “Often late”",
     ]);
     expect(cellsOf("Bob Liu").slice(2)).toEqual([
       "—",
       "Scheduling",
       "5/5",
-      "Cara Wang: 3/5User 3999: 1/5",
+      "Cara Wang (ID 3103): 3/5User 3999: 1/5",
       "User 3999: “Stopped replying”",
     ]);
     expect(cellsOf("Dan Ma").slice(1)).toEqual([
