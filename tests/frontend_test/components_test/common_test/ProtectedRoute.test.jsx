@@ -3,10 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import ProtectedRoute from "@/components/common/ProtectedRoute";
 import { useAuth } from "@/context/auth";
-import {
-  PERMISSIONS,
-  RECRUITING_BOARD_PERMISSIONS,
-} from "@/constants/Permissions";
+import { PERMISSIONS } from "@/constants/Permissions";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 vi.mock("@/context/auth", () => ({
@@ -110,11 +107,16 @@ describe("ProtectedRoute Component", () => {
     expect(screen.queryByText("Access Denied Page")).not.toBeInTheDocument();
   });
 
+  const BOARD_PERMISSIONS = [
+    PERMISSIONS.RECRUITING_APPLICATION_ADVANCE,
+    PERMISSIONS.RECRUITING_APPLICATION_READ_ALL,
+  ];
+
   test("applications board admits a read.all holder who cannot advance", () => {
     renderWithRouter({
       ui: <div>Board Page</div>,
       userPermissions: ["recruiting.application.read.all"],
-      requiredPermissions: RECRUITING_BOARD_PERMISSIONS,
+      requiredPermissions: BOARD_PERMISSIONS,
     });
 
     expect(screen.getByText("Board Page")).toBeInTheDocument();
@@ -125,7 +127,7 @@ describe("ProtectedRoute Component", () => {
     renderWithRouter({
       ui: <div>Board Page</div>,
       userPermissions: ["recruiting.application.advance"],
-      requiredPermissions: RECRUITING_BOARD_PERMISSIONS,
+      requiredPermissions: BOARD_PERMISSIONS,
     });
 
     expect(screen.getByText("Board Page")).toBeInTheDocument();
@@ -135,7 +137,7 @@ describe("ProtectedRoute Component", () => {
     renderWithRouter({
       ui: <div>Board Page</div>,
       userPermissions: [PERMISSIONS.RECRUITING_JOB_READ],
-      requiredPermissions: RECRUITING_BOARD_PERMISSIONS,
+      requiredPermissions: BOARD_PERMISSIONS,
     });
 
     expect(screen.getByText("Access Denied Page")).toBeInTheDocument();

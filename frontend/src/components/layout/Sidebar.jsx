@@ -1,10 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/context/auth";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
-import {
-  PERMISSIONS,
-  RECRUITING_BOARD_PERMISSIONS,
-} from "@/constants/Permissions";
+import { PERMISSIONS } from "@/constants/Permissions";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 
@@ -82,7 +79,10 @@ const Sidebar = () => {
     {
       label: "Applications Board",
       to: ROUTE_PATHS.RECRUITING_BOARD,
-      permissions: RECRUITING_BOARD_PERMISSIONS,
+      permissions: [
+        PERMISSIONS.RECRUITING_APPLICATION_ADVANCE,
+        PERMISSIONS.RECRUITING_APPLICATION_READ_ALL,
+      ],
     },
     {
       label: "My Interview Evaluations",

@@ -17,11 +17,6 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
  *   jobs the viewer owns (or every job for `read.all`), so a link would only
  *   strand them on "You don't own any postings."
  *
- * The board route admits `RECRUITING_BOARD_PERMISSIONS` (advance or
- * `read.all`), so a `read.all` holder who follows this link gets through. An
- * owner is assumed to hold advance; one who does not would still be turned
- * away by the route guard.
- *
  * `jobId` comes from the detail payload's `application.jobId`, which is
  * present regardless of `canView` — deliberately not from the separate
  * `getJob` fetch, which only runs on the `canView` branch.
