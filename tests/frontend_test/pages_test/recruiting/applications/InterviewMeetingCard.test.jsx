@@ -199,4 +199,32 @@ describe("InterviewMeetingCard", () => {
       screen.queryByRole("button", { name: "Schedule meeting" }),
     ).toBeNull();
   });
+  it("keeps an owner's controls visible but closed when given a disabled hint", () => {
+    const hint = "Requires the recruiting advance permission";
+    const { rerender } = render(
+      <InterviewMeetingCard
+        interview={INTERVIEW}
+        round={1}
+        timezone={VIEWER_TZ}
+        disabledHint={hint}
+      />,
+    );
+    for (const name of ["Edit", "Cancel"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute("title", hint);
+    }
+
+    rerender(
+      <InterviewMeetingCard
+        interview={null}
+        round={1}
+        timezone={VIEWER_TZ}
+        disabledHint={hint}
+      />,
+    );
+    const schedule = screen.getByRole("button", { name: "Schedule meeting" });
+    expect(schedule).toBeDisabled();
+    expect(schedule).toHaveAttribute("title", hint);
+  });
 });

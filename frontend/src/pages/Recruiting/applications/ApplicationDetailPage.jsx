@@ -144,6 +144,10 @@ const REJECT_REASONS = [
   "Other",
 ];
 
+// Shown on every owner control the backend would refuse for lack of the
+// recruiting advance grant.
+const ADVANCE_GRANT_HINT = "Requires the recruiting advance permission";
+
 /**
  * Allowed sub_status values per pipeline stage, mirroring the backend's
  * SUB_STATUS_SETS (backend/recruiting/stage_machine.py). Stages absent here
@@ -195,8 +199,10 @@ const advanceTarget = (jobStages, stage, kind) => {
  * recruiter is not otherwise told: the first move off "pending" freezes the
  * candidate's submission, and nothing brings the edit back.
  *
+ * `disabledHint`, when set, disables every button and titles it with why.
+ *
  * @param {{stage: string, subStatus: string|null, disabled: boolean,
- *          evaluatedDisabled: boolean,
+ *          evaluatedDisabled: boolean, disabledHint?: string,
  *          onSelect: (value: string) => void}} props
  */
 const SubStatusSelector = ({
@@ -204,6 +210,7 @@ const SubStatusSelector = ({
   subStatus,
   disabled,
   evaluatedDisabled,
+  disabledHint,
   onSelect,
 }) => {
   const options = SUB_STATUS_SETS[stage];
@@ -222,11 +229,16 @@ const SubStatusSelector = ({
             size="sm"
             variant={isActive ? "default" : "outline"}
             aria-pressed={isActive}
-            disabled={disabled || (value === "evaluated" && evaluatedDisabled)}
+            disabled={
+              disabled ||
+              Boolean(disabledHint) ||
+              (value === "evaluated" && evaluatedDisabled)
+            }
             title={
-              value === "evaluated" && evaluatedDisabled
+              disabledHint ??
+              (value === "evaluated" && evaluatedDisabled
                 ? "Requires a confirmed evaluation for the current session"
-                : undefined
+                : undefined)
             }
             onClick={() => onSelect(value)}
           >
@@ -747,10 +759,12 @@ const EmailMessageBubble = ({ message, timezone }) => {
  * owner-only (`send_application_email` refuses `read.all`), while Refresh
  * triggers a Gmail sync that `read.all` may also run. The read-only reuse
  * inside an expanded other-application row turns both off, which drops the
- * toolbar entirely.
+ * toolbar entirely. `sendDisabledHint` keeps Send/Reply rendered but disabled
+ * and titled, for an owner who lacks the grant sending needs.
  *
  * @param {{conversation: {threads: object[]}|null, canSend: boolean,
- *          canRefresh?: boolean, onCompose?: () => void,
+ *          canRefresh?: boolean, sendDisabledHint?: string,
+ *          onCompose?: () => void,
  *          onReply?: (thread: object) => void, onRefresh?: () => void,
  *          refreshing?: boolean, timezone: string}} props
  */
@@ -758,6 +772,7 @@ const EmailsPanel = ({
   conversation,
   canSend,
   canRefresh = true,
+  sendDisabledHint,
   onCompose,
   onReply,
   onRefresh,
@@ -770,7 +785,13 @@ const EmailsPanel = ({
       {(canSend || canRefresh) && (
         <div className="flex items-center gap-2">
           {canSend && (
-            <Button type="button" size="sm" onClick={onCompose}>
+            <Button
+              type="button"
+              size="sm"
+              disabled={Boolean(sendDisabledHint)}
+              title={sendDisabledHint}
+              onClick={onCompose}
+            >
               Send email
             </Button>
           )}
@@ -802,6 +823,8 @@ const EmailsPanel = ({
                     type="button"
                     size="sm"
                     variant="outline"
+                    disabled={Boolean(sendDisabledHint)}
+                    title={sendDisabledHint}
                     onClick={() => onReply(thread)}
                   >
                     Reply
@@ -1076,9 +1099,10 @@ const OtherApplicationsSection = ({
  *   specifically, so a `read.all` viewer sees the same information an owner
  *   does but can't act on it: the sub-status buttons render disabled, the
  *   Reassign trigger and the whole "Operate" decision row (Request block/
- *   Reject/Advance) don't render at all. Request block is additionally gated
- *   on holding the recruiting advance grant, the same gate as the backend
- *   raise route: an owner without it sees the button disabled with a tooltip.
+ *   Reject/Advance) don't render at all. Every owner control is additionally
+ *   gated on holding the recruiting advance grant (`canOperate`), the same
+ *   gate as the backend routes behind them: an owner without it sees each one
+ *   disabled with a tooltip instead of a 403 after the click.
  *   The page is still narrower than the route, which has no ownership check --
  *   deliberately, since the evidence for a block lives on the posting you own.
  *   For an actual
@@ -1871,11 +1895,16 @@ const ApplicationDetailPage = () => {
     (detail.assigneeId != null
       ? unresolvedPersonLabel(detail.assigneeId)
       : null);
+  // Every write an owner makes here needs the same grant as raising a block.
+  const canOperate = detail.isOwner && canRequestBlock;
+  // Only an owner gets the hint: a read.all viewer never had these controls.
+  const operateHint =
+    detail.isOwner && !canOperate ? ADVANCE_GRANT_HINT : undefined;
   // Why the block button is closed, in the order the backend refuses: no
   // standing to ask, then nothing left to ask for, then a question already
   // asked. Undefined when it is live, which is what leaves the title off.
   const blockButtonHint = !canRequestBlock
-    ? "Requires the recruiting advance permission"
+    ? ADVANCE_GRANT_HINT
     : detail.applicantIsBlocked
       ? "This applicant is already blocked"
       : raisedBlockRequest
@@ -1941,6 +1970,7 @@ const ApplicationDetailPage = () => {
                 subStatus={detail.application.subStatus}
                 disabled={switchingSubStatus || !detail.isOwner}
                 evaluatedDisabled={!hasCurrentRoundEvaluation}
+                disabledHint={operateHint}
                 onSelect={handleSelectSubStatus}
               />
               {(assigneeName || canReassign) && (
@@ -1955,6 +1985,8 @@ const ApplicationDetailPage = () => {
                       type="button"
                       size="sm"
                       variant="outline"
+                      disabled={!canOperate}
+                      title={operateHint}
                       onClick={() => setReassignOpen(true)}
                     >
                       Reassign
@@ -1978,6 +2010,7 @@ const ApplicationDetailPage = () => {
                   isTerminal={isTerminalStage}
                   isOwner={detail.isOwner}
                   busy={interviewBusy}
+                  disabledHint={operateHint}
                   onSchedule={openScheduleInterview}
                   onEdit={openEditInterview}
                   onCancel={() => setCancelInterviewConfirmOpen(true)}
@@ -2018,6 +2051,8 @@ const ApplicationDetailPage = () => {
                   {isPipelineStage && (
                     <Button
                       variant="outline"
+                      disabled={!canOperate}
+                      title={operateHint}
                       onClick={() => {
                         setCancelUpcomingMeeting(true);
                         setRejectFormOpen(true);
@@ -2028,7 +2063,8 @@ const ApplicationDetailPage = () => {
                   )}
                   {canAdvanceRound ? (
                     <Button
-                      disabled={advancingRound}
+                      disabled={advancingRound || !canOperate}
+                      title={operateHint}
                       onClick={handleRoundAdvanceClick}
                     >
                       Advance to Session{" "}
@@ -2037,7 +2073,8 @@ const ApplicationDetailPage = () => {
                   ) : (
                     isPipelineStage && (
                       <Button
-                        disabled={advancing}
+                        disabled={advancing || !canOperate}
+                        title={operateHint}
                         onClick={handleStageAdvanceClick}
                       >
                         Advance to {stageLabel(next, job?.kind)}
@@ -2080,6 +2117,7 @@ const ApplicationDetailPage = () => {
                   <EmailsPanel
                     conversation={emails}
                     canSend={detail.isOwner}
+                    sendDisabledHint={operateHint}
                     onCompose={openCompose}
                     onReply={openReply}
                     onRefresh={handleRefreshEmails}
