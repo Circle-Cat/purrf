@@ -160,6 +160,34 @@ describe("Leave prototype — administrator ledger", () => {
   });
 });
 
+describe("Leave prototype — a balance is its ledger", () => {
+  it("shows each person's balance as the sum of their Ledger rows", async () => {
+    const user = userEvent.setup();
+    renderAdmin();
+    await user.click(screen.getByRole("tab", { name: "Balances" }));
+
+    for (const [name, userId] of [
+      ["Dana Whitfield", 1],
+      ["Wei Zhang", 5],
+      ["Sofia Almeida", 11],
+    ]) {
+      const sum = ORG_LEDGER.filter((row) => row.userId === userId).reduce(
+        (total, row) => total + row.hours,
+        0,
+      );
+      const row = screen.getByText(name).closest("tr");
+      expect(
+        within(row).getAllByText(`${sum.toFixed(2)}h`).length,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it("gives Dana the same rows on both views", () => {
+    const dana = ORG_LEDGER.filter((row) => row.userId === 1);
+    expect(dana.reduce((total, row) => total + row.hours, 0)).toBeCloseTo(42.2);
+  });
+});
+
 describe("Leave prototype — one row format for both ledgers", () => {
   it("names nobody on the employee's own history", async () => {
     const { default: LedgerPage } =

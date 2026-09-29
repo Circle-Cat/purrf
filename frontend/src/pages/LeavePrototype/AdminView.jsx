@@ -166,16 +166,6 @@ const AdminView = ({ adjustments, onAdjust }) => {
 
   const writeRows = (rows) => rows.forEach(onAdjust);
 
-  /** Session adjustments folded into the seeded balances. */
-  const balances = ORG_BALANCES.map((p) => ({
-    ...p,
-    balance:
-      p.balance +
-      adjustments
-        .filter((a) => a.personId === p.id)
-        .reduce((s, a) => s + a.hours, 0),
-  }));
-
   /** Adjustments written this session land in the ledger like any other row. */
   const ledgerRows = [
     ...ORG_LEDGER,
@@ -188,6 +178,14 @@ const AdminView = ({ adjustments, onAdjust }) => {
       note: a.note,
     })),
   ];
+
+  /** Each balance is the sum of that person's rows, so it matches the Ledger tab. */
+  const balances = ORG_BALANCES.map((p) => ({
+    ...p,
+    balance: ledgerRows
+      .filter((row) => row.userId === p.id)
+      .reduce((sum, row) => sum + row.hours, 0),
+  }));
 
   return (
     <div className="p-6 space-y-4 max-w-5xl">

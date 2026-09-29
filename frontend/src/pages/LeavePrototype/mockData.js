@@ -245,7 +245,9 @@ export const INITIAL_TEAM_REQUESTS = [
 ];
 
 /**
- * Org-wide balances for the Admin overview. `dataIssue` marks people the
+ * Org-wide people for the Admin overview. There is no balance here: the
+ * Balances tab sums each person's rows in ORG_LEDGER, so the total and the
+ * rows behind it cannot disagree. `dataIssue` marks people the
  * Azure sync could not fully resolve; `no_manager` is called out separately
  * because those people cannot submit any request at all.
  */
@@ -255,7 +257,6 @@ export const ORG_BALANCES = [
     name: "Dana Whitfield",
     level: "L3",
     manager: "Priya Raghavan",
-    balance: 42.2,
     pending: 0,
     dataIssue: null,
   },
@@ -264,7 +265,6 @@ export const ORG_BALANCES = [
     name: "Marcus Bell",
     level: "L2",
     manager: "Priya Raghavan",
-    balance: 12,
     pending: 24,
     dataIssue: null,
   },
@@ -273,7 +273,6 @@ export const ORG_BALANCES = [
     name: "Ines Okonkwo",
     level: "L4",
     manager: "Priya Raghavan",
-    balance: 88.25,
     pending: 8,
     dataIssue: null,
   },
@@ -282,7 +281,6 @@ export const ORG_BALANCES = [
     name: "Tobias Lund",
     level: "L3",
     manager: "Priya Raghavan",
-    balance: 51,
     pending: 0,
     dataIssue: null,
   },
@@ -291,7 +289,6 @@ export const ORG_BALANCES = [
     name: "Wei Zhang",
     level: "L2",
     manager: "Priya Raghavan",
-    balance: 33.75,
     pending: 0,
     dataIssue: null,
   },
@@ -300,7 +297,6 @@ export const ORG_BALANCES = [
     name: "Priya Raghavan",
     level: "L4",
     manager: "—",
-    balance: 104,
     pending: 0,
     dataIssue: "no_manager",
   },
@@ -309,7 +305,6 @@ export const ORG_BALANCES = [
     name: "Ravi Menon",
     level: null,
     manager: "Priya Raghavan",
-    balance: 0,
     pending: 0,
     dataIssue: "unparsable_title",
   },
@@ -318,7 +313,6 @@ export const ORG_BALANCES = [
     name: "Sofia Almeida",
     level: "L1",
     manager: "Priya Raghavan",
-    balance: 0,
     pending: 0,
     dataIssue: "missing_hire_date",
   },
@@ -374,8 +368,9 @@ const addDays = (iso, days) => {
 /**
  * Every ledger row in the company, as the administrator's Ledger tab reads it.
  *
- * Weekly accruals run on Mondays at the placeholder 96h a year (1.85h a
- * week); L1 and the unparsable title accrue nothing. Hannah Kim's accruals stop
+ * Dana Whitfield's rows are the Employee view's own ledger, so both views
+ * agree. Everybody else's weekly accruals run on Mondays at the placeholder
+ * 96h a year (1.85h a week); L1 and the unparsable title accrue nothing. Hannah Kim's accruals stop
  * when she leaves in July. Ids are handed out in the order the rows would
  * have been written, which is what breaks a tie between two rows on one day.
  */
@@ -384,9 +379,12 @@ const buildOrgLedger = () => {
   const add = (userId, entryType, hours, effectiveDate, note = null) =>
     rows.push({ userId, entryType, hours, effectiveDate, note });
 
+  for (const row of INITIAL_LEDGER) {
+    add(1, row.entryType, row.hours, row.effectiveDate, row.note || null);
+  }
+
   for (const [userId, hours] of [
-    [1, 46.5],
-    [2, 20],
+    [2, 2],
     [3, 72.5],
     [4, 38],
     [5, 12],
@@ -412,7 +410,7 @@ const buildOrgLedger = () => {
 
   for (let week = 0; week < 17; week += 1) {
     const monday = addDays("2026-06-01", week * 7);
-    for (const userId of [1, 2, 3, 4, 9]) {
+    for (const userId of [2, 3, 4, 9]) {
       add(userId, "weekly_accrual", 1.85, monday);
     }
     if (monday >= "2026-07-06") add(5, "weekly_accrual", 1.85, monday);
@@ -429,7 +427,6 @@ const buildOrgLedger = () => {
     "Paid leave 2026-06-16 → 2026-06-18",
   );
   add(4, "leave_deduction", -8, "2026-07-02", "Paid leave 2026-07-02");
-  add(1, "exchange_credit", 8, "2026-06-20", "Worked Midsummer Day");
   add(
     3,
     "leave_deduction",
@@ -452,13 +449,6 @@ const buildOrgLedger = () => {
     -16,
     "2026-09-01",
     "Paid leave 2026-09-01 → 2026-09-02",
-  );
-  add(
-    1,
-    "leave_deduction",
-    -16,
-    "2026-09-17",
-    "Paid leave 2026-09-17 → 2026-09-18",
   );
   add(
     2,
