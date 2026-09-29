@@ -112,6 +112,7 @@ describe("RoundFeedbackPage", () => {
     expect(
       screen.getAllByRole("columnheader").map((h) => h.textContent),
     ).toEqual([
+      "User ID",
       "Name",
       "Role",
       "Most Valuable Aspects",
@@ -127,7 +128,8 @@ describe("RoundFeedbackPage", () => {
     await screen.findByText("Cara Wang");
 
     expect(cellsOf("Cara Wang")).toEqual([
-      "Cara WangID 3103",
+      "3103",
+      "Cara Wang",
       "mentee",
       "Career advice",
       "—",
@@ -135,14 +137,14 @@ describe("RoundFeedbackPage", () => {
       "Bob Liu (ID 3102): 2/5",
       "Bob Liu (ID 3102): “Often late”",
     ]);
-    expect(cellsOf("Bob Liu").slice(2)).toEqual([
+    expect(cellsOf("Bob Liu").slice(3)).toEqual([
       "—",
       "Scheduling",
       "5/5",
       "Cara Wang (ID 3103): 3/5User 3999: 1/5",
       "User 3999: “Stopped replying”",
     ]);
-    expect(cellsOf("Dan Ma").slice(1)).toEqual([
+    expect(cellsOf("Dan Ma").slice(2)).toEqual([
       "mentee",
       "—",
       "—",
@@ -150,6 +152,22 @@ describe("RoundFeedbackPage", () => {
       "—",
       "—",
     ]);
+  });
+
+  it("shares the table width between columns and wraps inside them", async () => {
+    renderPage();
+    await screen.findByText("Cara Wang");
+
+    expect(screen.getByRole("table")).toHaveClass("table-fixed");
+    // The shares add up to the whole table.
+    const shares = screen
+      .getAllByRole("columnheader")
+      .map((h) => Number(h.className.match(/w-\[(\d+)%\]/)[1]));
+    expect(shares.reduce((a, b) => a + b, 0)).toBe(100);
+    // Cells are nowrap by default; here the answers wrap in their column.
+    expect(screen.getByText("Career advice").closest("td")).toHaveClass(
+      "whitespace-normal",
+    );
   });
 
   it("narrows by role and to those who have not sent it", async () => {

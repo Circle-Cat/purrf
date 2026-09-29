@@ -2,21 +2,43 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import Table from "@/components/common/Table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { unresolvedPersonLabel } from "@/pages/Recruiting/components/personLabel";
 import { useRoundFeedback } from "@/pages/MentorshipManagement/hooks/useRoundFeedback";
 
+// Columns take a share of the table's width and everything wraps inside its
+// column, so answers of up to 300 characters do not stretch the row. Below
+// the table's minimum width it scrolls sideways inside its card rather than
+// squeezing the columns. The shares add up to 100%.
+const CELL = "align-top whitespace-normal break-words";
+
 // In the order the feedback form asks its questions, so the two about the
 // partner sit together.
 const COLUMNS = [
-  { header: "Name", accessor: "name" },
-  { header: "Role", accessor: "role" },
-  { header: "Most Valuable Aspects", accessor: "mostValuableAspects" },
-  { header: "Challenges", accessor: "challenges" },
-  { header: "Program Rating", accessor: "programRating" },
-  { header: "Rating of Partner", accessor: "partnerRating" },
-  { header: "Feedback About Partner", accessor: "partnerFeedback" },
+  { header: "User ID", accessor: "userId", width: "w-[7%]" },
+  { header: "Name", accessor: "name", width: "w-[12%]" },
+  { header: "Role", accessor: "role", width: "w-[7%]" },
+  {
+    header: "Most Valuable Aspects",
+    accessor: "mostValuableAspects",
+    width: "w-[20%]",
+  },
+  { header: "Challenges", accessor: "challenges", width: "w-[20%]" },
+  { header: "Program Rating", accessor: "programRating", width: "w-[7%]" },
+  { header: "Rating of Partner", accessor: "partnerRating", width: "w-[7%]" },
+  {
+    header: "Feedback About Partner",
+    accessor: "partnerFeedback",
+    width: "w-[20%]",
+  },
 ];
 
 // The ID goes beside the name, as everywhere in the console: two partners
@@ -37,22 +59,34 @@ const PartnerLines = ({ entries, render }) => {
     <div className="space-y-1">
       {lines.map((e, i) => (
         // Nothing on the write side stops a partner appearing twice.
-        <p key={`${e.partnerId}-${i}`}>
+        <div key={`${e.partnerId}-${i}`}>
           <span className="text-gray-500">{partnerLabel(e)}: </span>
           {render(e)}
-        </p>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+/** What someone wrote about each partner, each line wrapped. */
+const PartnerFeedbackLines = ({ entries }) => {
+  const lines = entries.filter((e) => e.feedback);
+  if (lines.length === 0) return "—";
+  return (
+    <div className="space-y-2">
+      {lines.map((e, i) => (
+        <div key={`${e.partnerId}-${i}`}>
+          <span className="text-gray-500">{partnerLabel(e)}: </span>
+          &ldquo;{e.feedback}&rdquo;
+        </div>
       ))}
     </div>
   );
 };
 
 const toRow = (p) => ({
-  name: (
-    <div>
-      <div className="font-medium">{p.name}</div>
-      <div className="text-xs text-gray-500">ID {p.userId}</div>
-    </div>
-  ),
+  userId: p.userId,
+  name: <span className="font-medium">{p.name}</span>,
   role: p.role ?? "—",
   mostValuableAspects: p.mostValuableAspects || "—",
   challenges: p.challenges || "—",
@@ -63,12 +97,7 @@ const toRow = (p) => ({
       render={(e) => (e.rating != null ? `${e.rating}/5` : null)}
     />
   ),
-  partnerFeedback: (
-    <PartnerLines
-      entries={p.partnerFeedback ?? []}
-      render={(e) => (e.feedback ? <>&ldquo;{e.feedback}&rdquo;</> : null)}
-    />
-  ),
+  partnerFeedback: <PartnerFeedbackLines entries={p.partnerFeedback ?? []} />,
 });
 
 /**
@@ -130,7 +159,36 @@ const RoundFeedbackPage = () => {
           </label>
         </div>
         {rows.length > 0 ? (
-          <Table columns={COLUMNS} data={rows.map(toRow)} />
+          <div className="rounded-lg border">
+            <Table className="min-w-[960px] table-fixed">
+              <TableHeader>
+                <TableRow>
+                  {COLUMNS.map((col) => (
+                    <TableHead
+                      key={col.accessor}
+                      className={`${col.width} whitespace-normal`}
+                    >
+                      {col.header}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((p) => {
+                  const row = toRow(p);
+                  return (
+                    <TableRow key={p.userId}>
+                      {COLUMNS.map((col) => (
+                        <TableCell key={col.accessor} className={CELL}>
+                          {row[col.accessor]}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
         ) : (
           <div className="py-8 text-center text-gray-500">Nobody here.</div>
         )}
