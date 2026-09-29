@@ -7,20 +7,18 @@ import * as api from "@/api/leaveApi";
 vi.mock("@/api/leaveApi");
 
 const ledgerData = (overrides = {}) => ({
-  totalHours: "120.00",
+  balanceHours: "120.00",
   entries: [
     {
-      entryId: 1,
-      type: "accrual",
-      hours: "40.00",
       effectiveDate: "2026-01-01",
+      entryType: "accrual",
+      hours: "40.00",
       note: "Annual accrual",
     },
     {
-      entryId: 2,
-      type: "deduction",
-      hours: "8.00",
       effectiveDate: "2026-08-15",
+      entryType: "deduction",
+      hours: "8.00",
       note: "Paid leave",
     },
   ],
@@ -77,12 +75,14 @@ describe("useMyLeaveLedger", () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     api.getMyLeaveLedger.mockResolvedValueOnce(
-      envelope(ledgerData({ totalHours: "200.00" })),
+      envelope(ledgerData({ balanceHours: "200.00" })),
     );
 
     await result.current.load();
 
-    await waitFor(() => expect(result.current.data.totalHours).toBe("200.00"));
+    await waitFor(() =>
+      expect(result.current.data.balanceHours).toBe("200.00"),
+    );
     expect(api.getMyLeaveLedger).toHaveBeenCalledTimes(2);
   });
 

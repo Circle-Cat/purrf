@@ -141,13 +141,16 @@ const TimeOffCard = ({
               >
                 My requests
               </Button>
-          {isEnabled && (
-            <Button
-              variant="outline"
-              onClick={() => navigate(ROUTE_PATHS.LEAVE_BALANCE_HISTORY)}
-            >
-              Balance history
-            </Button>
+
+              {isEnabled && (
+                <Button
+                  variant="outline"
+                  onClick={() => navigate(ROUTE_PATHS.LEAVE_BALANCE_HISTORY)}
+                >
+                  Balance history
+                </Button>
+              )}
+
               {approvals}
             </div>
           </>
@@ -159,8 +162,7 @@ const TimeOffCard = ({
             <div className="flex flex-wrap gap-2">
               {approvals}
               {holidays}
-              )}
-        </div>
+            </div>
           </>
         )}
       </CardContent>

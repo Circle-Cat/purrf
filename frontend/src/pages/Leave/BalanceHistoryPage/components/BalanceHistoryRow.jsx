@@ -1,5 +1,5 @@
 import React from "react";
-import { ENTRY_TYPE_LABELS } from "@/constants/LeaveRequest"; // 请按你实际的常量路径导入
+import { ENTRY_TYPE_LABELS } from "@/constants/LeaveRequest";
 import { formatBusinessDate } from "@/pages/Leave/utils/leaveDates";
 
 /**

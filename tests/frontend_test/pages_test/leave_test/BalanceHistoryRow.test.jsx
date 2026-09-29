@@ -1,16 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import BalanceHistoryRow from "@/pages/Leave/BalanceHistoryPage/components/BalanceHistoryRow";
-
-vi.mock("@/constants/LeaveRequest", () => ({
-  ENTRY_TYPE_LABELS: {
-    accrual: "Annual accrual",
-    deduction: "Paid leave",
-    exchange: "Holiday exchange",
-    adjustment: "Manual adjustment",
-    carryover: "Carryover",
-  },
-}));
+import { ENTRY_TYPE_LABELS } from "@/constants/LeaveRequest";
 
 vi.mock("@/pages/Leave/utils/leaveDates", () => ({
   formatBusinessDate: vi.fn((date) => {
@@ -25,10 +16,10 @@ vi.mock("@/pages/Leave/utils/leaveDates", () => ({
 
 const entry = (overrides = {}) => ({
   entryId: 1,
-  entryType: "accrual",
+  entryType: "weekly_accrual",
   hours: "40.00",
   effectiveDate: "2026-01-01",
-  note: "Annual accrual for 2026",
+  note: "weekly accrual for 2026",
   ...overrides,
 });
 
@@ -36,7 +27,9 @@ describe("BalanceHistoryRow", () => {
   it("renders the entry type label the server mapped", () => {
     render(<BalanceHistoryRow entry={entry()} />);
 
-    expect(screen.getByText("Annual accrual")).toBeInTheDocument();
+    expect(
+      screen.getByText(ENTRY_TYPE_LABELS.weekly_accrual),
+    ).toBeInTheDocument();
   });
 
   it("falls back to raw entryType when no label mapping exists", () => {
@@ -48,14 +41,16 @@ describe("BalanceHistoryRow", () => {
   it("renders the note when provided", () => {
     render(<BalanceHistoryRow entry={entry()} />);
 
-    expect(screen.getByText("Annual accrual for 2026")).toBeInTheDocument();
+    expect(screen.getByText("weekly accrual for 2026")).toBeInTheDocument();
   });
 
   it("does not render a note paragraph when note is absent", () => {
     render(<BalanceHistoryRow entry={entry({ note: null })} />);
 
-    expect(screen.getByText("Annual accrual")).toBeInTheDocument();
-    expect(screen.queryByText(/Annual accrual for/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(ENTRY_TYPE_LABELS.weekly_accrual),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/weekly accrual for/)).not.toBeInTheDocument();
   });
 
   it("prefixes positive hours with a plus sign", () => {
@@ -135,34 +130,38 @@ describe("BalanceHistoryRow", () => {
     render(
       <BalanceHistoryRow
         entry={entry({
-          entryType: "deduction",
+          entryType: "leave_deduction",
           hours: "-8.00",
-          note: "Paid leave Aug 13-15",
+          note: "Leave taken Aug 13-15",
         })}
       />,
     );
 
-    expect(screen.getByText("Paid leave")).toBeInTheDocument();
+    expect(
+      screen.getByText(ENTRY_TYPE_LABELS.leave_deduction),
+    ).toBeInTheDocument();
     const signSpan = screen.getByText(
       (_, element) => element?.textContent?.trim() === "-8.00 h",
     );
     expect(signSpan).toBeInTheDocument();
     expect(signSpan).toHaveClass("text-rose-600");
-    expect(screen.getByText("Paid leave Aug 13-15")).toBeInTheDocument();
+    expect(screen.getByText("Leave taken Aug 13-15")).toBeInTheDocument();
   });
 
   it("renders exchange entries as positive credits", () => {
     render(
       <BalanceHistoryRow
         entry={entry({
-          entryType: "exchange",
+          entryType: "exchange_credit",
           hours: "16.00",
           note: "Swapped National Day",
         })}
       />,
     );
 
-    expect(screen.getByText("Holiday exchange")).toBeInTheDocument();
+    expect(
+      screen.getByText(ENTRY_TYPE_LABELS.exchange_credit),
+    ).toBeInTheDocument();
     expect(screen.getByText(/\+16\.00\s*h/)).toBeInTheDocument();
     expect(screen.getByText("Swapped National Day")).toBeInTheDocument();
   });

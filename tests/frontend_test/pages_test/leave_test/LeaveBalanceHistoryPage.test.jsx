@@ -3,7 +3,6 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 
 import BalanceHistoryPage from "@/pages/Leave/BalanceHistoryPage";
-import * as api from "@/api/leaveApi";
 import { useLeaveStanding } from "@/pages/Leave/hooks/useLeaveStanding";
 import { useMyLeaveLedger } from "@/pages/Leave/hooks/useMyLeaveLedger";
 import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
@@ -202,7 +201,10 @@ describe("BalanceHistoryPage", () => {
   });
 
   it("renders 'Leave isn't tracked for your account.' and no balance when isCovered is false", async () => {
-    useLeaveStanding.mockReturnValue({ isCovered: false, isLoading: false });
+    vi.mocked(useLeaveStanding).mockReturnValue({
+      isCovered: false,
+      isLoading: false,
+    });
 
     renderPage();
 
@@ -212,7 +214,10 @@ describe("BalanceHistoryPage", () => {
 
     expect(screen.queryByText(/0\.00 h/)).not.toBeInTheDocument();
     expect(screen.queryByText("Balance History")).not.toBeInTheDocument();
-    expect(api.getMyLeaveLedger).not.toHaveBeenCalled();
+
+    expect(useMyLeaveLedger).toHaveBeenCalledWith(
+      expect.objectContaining({ enabled: false }),
+    );
   });
 
   it("shows loading state while useLeaveStanding is loading", () => {
