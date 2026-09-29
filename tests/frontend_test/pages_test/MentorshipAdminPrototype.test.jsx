@@ -338,10 +338,27 @@ describe("MentorshipAdminPrototype smoke", () => {
       screen.getByText("Cara Wang's feedback about Dana Wu:", { exact: false }),
     ).toBeInTheDocument();
 
+    // Programme rating and the rating of the partner sit side by side; no
+    // Sent column, since a row with feedback already says it was sent.
+    const cara = screen
+      .getByRole("button", { name: "Cara Wang" })
+      .closest("tr");
+    const cells = within(cara)
+      .getAllByRole("cell")
+      .map((c) => c.textContent);
+    expect(cells.slice(2, 4)).toEqual(["4/5", "Dana Wu: 4/5"]);
+    expect(
+      screen.queryByRole("columnheader", { name: "Sent" }),
+    ).not.toBeInTheDocument();
+
     // Who still owes it, in one click.
     fireEvent.click(screen.getByLabelText("Not sent only"));
     expect(screen.queryByRole("button", { name: "Cara Wang" })).toBeNull();
-    expect(screen.getAllByText("Not sent").length).toBeGreaterThan(0);
+    expect(
+      screen
+        .getAllByRole("button", { name: /\w+ \w+/ })
+        .some((b) => b.closest("tbody")),
+    ).toBe(true);
 
     // A name opens that person's page on that round.
     fireEvent.click(
@@ -1816,5 +1833,25 @@ describe("Meetings last round", () => {
     expect(eligible).toBeDisabled();
     expect(eligible).toHaveAttribute("aria-pressed", "false");
     expect(screen.queryByText("Free slots")).toBeNull();
+  });
+  it("marks a pair whose synced meetings show an attendance issue, and only that line", () => {
+    render(<MentorshipAdminPrototype />);
+
+    // Bob Liu carries two mentees; only the pair with Erin Ma has flagged
+    // meetings, so only that line gets the mark.
+    const flagged = pairLine("Bob Liu", "Erin Ma");
+    const mark = within(flagged).getByRole("img", {
+      name: /^Attendance issues:/,
+    });
+    expect(mark).toHaveAccessibleName(
+      "Attendance issues: 2026-08-30: Erin Ma absent, 2026-09-07: Insufficient duration",
+    );
+    expect(
+      within(pairLine("Bob Liu", "Cara Wang")).queryByRole("img"),
+    ).not.toBeInTheDocument();
+
+    expect(flagged).toHaveClass("text-red-700");
+    expect(pairLine("Bob Liu", "Cara Wang")).not.toHaveClass("text-red-700");
+    expect(personRow("Bob Liu")).not.toHaveClass("bg-red-50");
   });
 });

@@ -1354,6 +1354,7 @@ const MentorshipAdminPrototype = () => {
         notes={notes}
         notifications={ADMISSION_NOTIFICATIONS}
         pairs={pairs}
+        meetings={meetings}
         requests={requests}
         viewerId={viewerId}
         flagsByParticipant={flagsByParticipant}

@@ -102,6 +102,7 @@ const ParticipantsTable = ({
   round,
   nonParticipants,
   pairs,
+  meetings = [],
   can,
   onOpenParticipant,
   onMarkCell,
@@ -599,6 +600,7 @@ const ParticipantsTable = ({
                     <PairCell
                       person={p}
                       pairs={pairs}
+                      meetings={meetings}
                       writable={writable}
                       onMarkFirstContact={(pairId) =>
                         onMarkCell(pairId, "firstContact")

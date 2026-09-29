@@ -304,6 +304,7 @@ const ManagementPage = ({
   notes,
   notifications,
   pairs,
+  meetings,
   requests,
   viewerId,
   flagsByParticipant,
@@ -402,6 +403,7 @@ const ManagementPage = ({
               participants={participants.filter((p) => p.roundId === round.id)}
               nonParticipants={nonParticipants}
               pairs={pairs.filter((p) => p.roundId === round.id)}
+              meetings={meetings}
               flagsByParticipant={flagsByParticipant}
               exemptParticipantIds={exemptParticipantIds}
               accountOf={accountOf}

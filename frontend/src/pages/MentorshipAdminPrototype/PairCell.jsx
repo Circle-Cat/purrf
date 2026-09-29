@@ -1,3 +1,5 @@
+import { attendanceIssuesOf } from "@/pages/MentorshipAdminPrototype/attendance";
+
 /**
  * PairCell
  *
@@ -11,13 +13,23 @@
  * name is not a link: the one way in is the person's own name, and their page
  * holds every pair they are in.
  *
+ * An active pair whose synced meetings show an attendance anomaly turns red,
+ * with a red mark between the partner's name and the count, and the anomalies in its tooltip. Only the
+ * pair's line changes, not the row: a mentor's other pairs stay as they are.
+ *
  * First contact is kept on the pair rather than the person so that a mentee
  * who changes partner starts again at "not yet" with the new mentor.
  *
- * @param {{person: object, pairs: object[], writable: boolean, onMarkFirstContact: (pairId: number) => void}} props
+ * @param {{person: object, pairs: object[], meetings: object[], writable: boolean, onMarkFirstContact: (pairId: number) => void}} props
  * @returns {JSX.Element}
  */
-const PairCell = ({ person, pairs, writable, onMarkFirstContact }) => {
+const PairCell = ({
+  person,
+  pairs,
+  meetings = [],
+  writable,
+  onMarkFirstContact,
+}) => {
   const mine = pairs
     .filter((p) => p.mentorId === person.userId || p.menteeId === person.userId)
     .sort(
@@ -32,15 +44,24 @@ const PairCell = ({ person, pairs, writable, onMarkFirstContact }) => {
         const partner = isMentee ? pair.mentorName : pair.menteeName;
         const contacted = pair.firstContactConfirmedAt;
         const ended = pair.status !== "active";
+        const issues = ended ? [] : attendanceIssuesOf(pair, meetings);
         return (
           <li
             key={pair.pairId}
             aria-label={`Pair ${pair.mentorName} and ${pair.menteeName}`}
             className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-xs ${
-              ended ? "text-slate-400" : ""
+              ended ? "text-slate-400" : issues.length ? "text-red-700" : ""
             }`}
           >
-            <span className={ended ? "" : "font-medium text-slate-800"}>
+            <span
+              className={
+                ended
+                  ? ""
+                  : issues.length
+                    ? "font-medium"
+                    : "font-medium text-slate-800"
+              }
+            >
               with {partner}
             </span>
             {ended ? (
@@ -48,7 +69,17 @@ const PairCell = ({ person, pairs, writable, onMarkFirstContact }) => {
                 Ended
               </span>
             ) : null}
-            <span className={ended ? "" : "text-slate-500"}>
+            {issues.length ? (
+              <span
+                role="img"
+                aria-label={`Attendance issues: ${issues.join(", ")}`}
+                title={issues.join("\n")}
+                className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white"
+              >
+                !
+              </span>
+            ) : null}
+            <span className={ended || issues.length ? "" : "text-slate-500"}>
               Meetings {pair.completed}/{pair.required}
             </span>
             {isMentee && !ended ? (

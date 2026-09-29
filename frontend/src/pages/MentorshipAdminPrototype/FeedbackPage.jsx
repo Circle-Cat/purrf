@@ -10,6 +10,11 @@ import { feedbackOwedBy } from "@/pages/MentorshipAdminPrototype/feedback";
  * wrote. The list is the people feedback is asked of (see `feedbackOwedBy`),
  * so "Not sent" means somebody who should have.
  *
+ * There is no Sent column: a row with feedback shows it, a row without is
+ * dashes. The rating someone gave their partner has a column of its own,
+ * beside the programme rating, and names the partner, since a mentor may
+ * have rated several.
+ *
  * What someone wrote about their partner is labelled "X's feedback about Y":
  * it sits on the writer's row, and nobody reads it as feedback *on* X.
  *
@@ -91,10 +96,6 @@ const FeedbackPage = ({
           />
           Not sent only
         </label>
-        <span className="text-xs text-slate-500">
-          Asked of everyone in a pair this round who has not withdrawn and is
-          not blocked.
-        </span>
       </div>
 
       <table className="w-full">
@@ -102,8 +103,8 @@ const FeedbackPage = ({
           <tr className="text-left text-xs font-medium text-slate-500">
             <th className="px-5 py-2">Name</th>
             <th className="px-3 py-2">Role</th>
-            <th className="px-3 py-2">Sent</th>
             <th className="px-3 py-2">Programme rating</th>
+            <th className="px-3 py-2">Rating of partner</th>
             <th className="px-3 py-2">Most valuable</th>
             <th className="px-3 py-2">Challenges</th>
             <th className="px-3 py-2">About their partner</th>
@@ -133,14 +134,19 @@ const FeedbackPage = ({
                   </td>
                   <td className="px-3 py-2">{p.role}</td>
                   <td className="px-3 py-2">
-                    {f ? (
-                      "Sent"
-                    ) : (
-                      <span className="text-amber-800">Not sent</span>
-                    )}
+                    {f?.programRating != null ? `${f.programRating}/5` : "—"}
                   </td>
                   <td className="px-3 py-2">
-                    {f?.programRating != null ? `${f.programRating}/5` : "—"}
+                    {f?.partnerFeedback?.length
+                      ? f.partnerFeedback.map((pf) => (
+                          <p key={pf.partnerName}>
+                            <span className="text-slate-500">
+                              {pf.partnerName}:{" "}
+                            </span>
+                            {pf.rating}/5
+                          </p>
+                        ))
+                      : "—"}
                   </td>
                   <td className="px-3 py-2 text-slate-700">
                     {f?.mostValuable ?? "—"}
@@ -149,17 +155,18 @@ const FeedbackPage = ({
                     {f?.challenges ?? "—"}
                   </td>
                   <td className="px-3 py-2 text-slate-700">
-                    {f?.partnerFeedback?.length
-                      ? f.partnerFeedback.map((pf) => (
-                          <p key={pf.partnerName}>
-                            <span className="text-slate-500">
-                              {p.name}&apos;s feedback about {pf.partnerName}
-                              :{" "}
-                            </span>
-                            {pf.rating}/5
-                            {pf.text ? <> — &ldquo;{pf.text}&rdquo;</> : null}
-                          </p>
-                        ))
+                    {f?.partnerFeedback?.some((pf) => pf.text)
+                      ? f.partnerFeedback
+                          .filter((pf) => pf.text)
+                          .map((pf) => (
+                            <p key={pf.partnerName}>
+                              <span className="text-slate-500">
+                                {p.name}&apos;s feedback about {pf.partnerName}
+                                :{" "}
+                              </span>
+                              &ldquo;{pf.text}&rdquo;
+                            </p>
+                          ))
                       : "—"}
                   </td>
                 </tr>
