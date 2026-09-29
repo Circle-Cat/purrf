@@ -369,11 +369,12 @@ describe("MentorshipAdminPrototype smoke", () => {
     expect(window.location.hash).toContain("round=6");
   });
 
-  it("hides the feedback column, and opens rounds read-only, without the grants", () => {
+  it("opens rounds read-only without write, feedback still showing", () => {
     render(<MentorshipAdminPrototype />);
-    fireEvent.click(chip("Feedback"));
-    expect(screen.queryByRole("columnheader", { name: "Feedback" })).toBeNull();
     fireEvent.click(chip("Write"));
+    expect(
+      screen.getByRole("columnheader", { name: "Feedback" }),
+    ).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: "View Mentorship 2026 Fall" }),
     );
@@ -390,12 +391,17 @@ describe("MentorshipAdminPrototype smoke", () => {
     fireEvent.click(chip("Approve"));
     expect(screen.queryByText("Pending approvals")).not.toBeInTheDocument();
 
-    fireEvent.click(chip("Feedback"));
     fireEvent.click(screen.getByRole("button", { name: "Cara Wang" }));
     fireEvent.click(
       screen.getByRole("button", { name: /Mentorship 2025 Summer/ }),
     );
     expect(screen.getByText("Meeting log — with Dana Wu")).toBeInTheDocument();
+    expect(screen.getByText(/feedback about/)).toBeInTheDocument();
+
+    // Someone who can only approve sees no feedback.
+    fireEvent.click(chip("Read"));
+    fireEvent.click(chip("Write"));
+    fireEvent.click(chip("Approve"));
     expect(screen.queryByText(/feedback about/)).not.toBeInTheDocument();
   });
 

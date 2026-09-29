@@ -516,7 +516,7 @@ const ParticipantDetailPage = ({
         ) : null}
       </Block>
 
-      {can("mentorship.feedback.read") ? (
+      {can("mentorship.admin.read") || can("mentorship.admin.write") ? (
         <Block title="Feedback">
           {feedback[person.participantId] ? (
             renderFeedback(feedback[person.participantId])
@@ -622,7 +622,8 @@ const ParticipantDetailPage = ({
                       Timeline
                     </p>
                     {renderTimeline(timelineOf(participant.roundId), null)}
-                    {can("mentorship.feedback.read") ? (
+                    {can("mentorship.admin.read") ||
+                    can("mentorship.admin.write") ? (
                       <>
                         <p className="mb-1 mt-3 text-xs font-medium text-slate-600">
                           Feedback

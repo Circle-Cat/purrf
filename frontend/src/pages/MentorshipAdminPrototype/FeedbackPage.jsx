@@ -42,14 +42,14 @@ const FeedbackPage = ({
   const [role, setRole] = useState("all");
   const [notSentOnly, setNotSentOnly] = useState(false);
 
-  if (!can("mentorship.feedback.read")) {
+  if (!can("mentorship.admin.read") && !can("mentorship.admin.write")) {
     return (
       <div className="rounded-lg border border-slate-200 bg-white px-5 py-4">
         <Button size="sm" variant="ghost" onClick={onBack}>
           ← Mentorship
         </Button>
         <p className="mt-3 text-sm text-slate-600">
-          Reading feedback needs the feedback-read permission.
+          Reading feedback needs the read or write permission.
         </p>
       </div>
     );

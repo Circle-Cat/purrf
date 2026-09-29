@@ -185,7 +185,9 @@ const RoundsCard = ({
   can,
 }) => {
   const writable = can("mentorship.admin.write");
-  const feedbackReadable = can("mentorship.feedback.read");
+  // Feedback is part of reading the console, not a grant of its own.
+  const feedbackReadable =
+    can("mentorship.admin.read") || can("mentorship.admin.write");
   const rows = rounds.map((r) => {
     const owed = feedbackOwedBy(r, participants, pairs, accountOf);
     return {

@@ -40,21 +40,19 @@ export const ACTOR_NAMES = {
  *
  * The prototype lets you toggle these, because the single hardest thing to
  * convey in writing is that three different people see three different pages:
- * the approver sees a card the admin does not, and feedback is a separate
- * grant from the rest of the console.
+ * the approver sees a card the admin does not, and someone who can only
+ * approve sees no feedback.
  */
 export const ALL_PERMISSIONS = [
   { key: "mentorship.admin.read", label: "Read" },
   { key: "mentorship.admin.write", label: "Write" },
   { key: "mentorship.approve", label: "Approve" },
-  { key: "mentorship.feedback.read", label: "Feedback" },
 ];
 
 export const DEFAULT_PERMISSIONS = [
   "mentorship.admin.read",
   "mentorship.admin.write",
   "mentorship.approve",
-  "mentorship.feedback.read",
 ];
 
 /**

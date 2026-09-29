@@ -86,15 +86,13 @@ closes.
 
 ## Try this
 
-Toggle the permission chips in the header. They are four separate grants and
+Toggle the permission chips in the header. They are three separate grants and
 the page changes shape between them:
 
 - Drop **Approve** — the pending card disappears entirely rather than greying
   out, and a request you raise just sits there.
-- Drop **Feedback** — the feedback block on a participant vanishes. It is a
-  separate grant because the read permission's holder count grows with
-  everyone who wants to watch progress, and private opinions about a colleague
-  should not grow with it.
+- Keep only **Approve** — the console opens for the pending card, but no
+  feedback shows: feedback goes with read (or write), not with approving.
 - Drop **Write** — everything is still readable and nothing can be changed.
 
 On Cara's page press _Refresh emails_: a reply that was waiting in the mailbox
