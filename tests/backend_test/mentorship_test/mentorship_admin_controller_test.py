@@ -15,6 +15,7 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         self.mock_admin_service = MagicMock()
         self.mock_admin_service.search_participants = AsyncMock()
         self.mock_admin_service.get_meeting_log = AsyncMock()
+        self.mock_admin_service.get_round_feedback = AsyncMock()
         self.mock_admin_service.apply_v2_meeting_batch = AsyncMock()
         self.mock_admin_service.stream_export_csv = MagicMock()
 
@@ -124,6 +125,31 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         self.mock_api_response.assert_called_once_with(
             message="Successfully retrieved meeting log.",
             data=mock_result,
+        )
+
+    async def test_get_round_feedback_delegates_to_service(self):
+        """Delegates to service by round and wraps the result in api_response."""
+        mock_result = MagicMock()
+        self.mock_admin_service.get_round_feedback.return_value = mock_result
+
+        await self.controller.get_round_feedback(round_id=7)
+
+        self.mock_admin_service.get_round_feedback.assert_awaited_once_with(
+            self.mock_session, 7
+        )
+        self.mock_api_response.assert_called_once_with(
+            message="Successfully retrieved round feedback.",
+            data=mock_result,
+        )
+
+    async def test_round_feedback_route_is_registered_under_the_round(self):
+        routes = {
+            (route.path, tuple(sorted(route.methods)))
+            for route in self.controller.router.routes
+        }
+
+        self.assertIn(
+            ("/mentorship/admin/rounds/{round_id}/feedback", ("GET",)), routes
         )
 
     async def test_update_meeting_log_delegates_to_service(self):

@@ -22,6 +22,8 @@ export const API_ENDPOINTS = {
   MENTORSHIP_ROUND_SLOTS: "/mentorship/rounds/slots",
   MENTORSHIP_ADMIN_PARTICIPANTS: "/mentorship/admin/participants",
   MENTORSHIP_ADMIN_PARTICIPANTS_EXPORT: "/mentorship/admin/participants/export",
+  MENTORSHIP_ADMIN_ROUND_FEEDBACK: (roundId) =>
+    `/mentorship/admin/rounds/${roundId}/feedback`,
   MENTORSHIP_ADMIN_PAIR_MEETINGS: (pairId) =>
     `/mentorship/admin/pairs/${pairId}/meetings`,
   MENTORSHIP_MEETINGS_ENDPOINT: "/mentorship/v1/meetings",

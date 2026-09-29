@@ -1654,5 +1654,133 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.meetings, [])
 
 
+def _feedback_user(user_id, first_name, last_name="Doe", preferred_name=None):
+    return MagicMock(
+        user_id=user_id,
+        first_name=first_name,
+        last_name=last_name,
+        preferred_name=preferred_name,
+    )
+
+
+def _feedback_participant(role, program_feedback=None, pair_feedback=None):
+    return MagicMock(
+        participant_role=role,
+        program_feedback=program_feedback,
+        pair_feedback=pair_feedback,
+    )
+
+
+class TestGetRoundFeedback(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.users_repo = MagicMock()
+        self.users_repo.get_all_by_ids = AsyncMock()
+        self.participants_repo = MagicMock()
+        self.participants_repo.get_feedback_owed_in_round = AsyncMock()
+        self.rounds_repo = MagicMock()
+        # `name` is MagicMock's own constructor argument, so it is set after.
+        round_entity = MagicMock(round_id=7)
+        round_entity.name = "2026 Fall"
+        self.rounds_repo.get_by_round_id = AsyncMock(return_value=round_entity)
+        self.session = AsyncMock()
+        self.service = MentorshipAdminService(
+            users_repository=self.users_repo,
+            participants_repository=self.participants_repo,
+            rounds_repository=self.rounds_repo,
+            training_repository=MagicMock(),
+            pairs_repository=MagicMock(),
+            mentorship_mapper=MagicMock(),
+            date_time_util=MagicMock(),
+            database=MagicMock(),
+            logger=MagicMock(),
+            mentorship_meeting_repository=MagicMock(),
+        )
+
+    async def test_maps_sent_and_unsent_rows_and_names_partners(self):
+        ann = _feedback_user(21, "Ann", preferred_name="Annie")
+        bob = _feedback_user(11, "Bob")
+        dan = _feedback_user(23, "Dan")
+        self.participants_repo.get_feedback_owed_in_round.return_value = [
+            (
+                _feedback_participant(
+                    ParticipantRole.MENTEE,
+                    {
+                        "most_valuable_aspects": "career advice",
+                        "challenges": "time zones",
+                        "program_rating": 4,
+                    },
+                    [{"partner_id": 11, "rating": 2, "feedback": "late often"}],
+                ),
+                ann,
+            ),
+            (
+                _feedback_participant(
+                    ParticipantRole.MENTOR,
+                    {"program_rating": 5},
+                    [
+                        {"partner_id": 21, "rating": 3, "feedback": None},
+                        {"partner_id": 99, "rating": 1},
+                    ],
+                ),
+                bob,
+            ),
+            (_feedback_participant(ParticipantRole.MENTEE), dan),
+        ]
+        # 99 no longer resolves to a user.
+        self.users_repo.get_all_by_ids.return_value = [ann, bob]
+
+        result = await self.service.get_round_feedback(self.session, 7)
+
+        self.rounds_repo.get_by_round_id.assert_awaited_once_with(self.session, 7)
+        self.participants_repo.get_feedback_owed_in_round.assert_awaited_once_with(
+            self.session, 7
+        )
+        self.assertEqual(
+            sorted(self.users_repo.get_all_by_ids.await_args.args[1]), [11, 21, 99]
+        )
+        self.assertEqual(
+            (result.round_id, result.round_name, result.owed, result.sent),
+            (7, "2026 Fall", 3, 2),
+        )
+
+        ann_row, bob_row, dan_row = result.participants
+        self.assertEqual(ann_row.user_id, 21)
+        self.assertEqual(ann_row.name, "Annie")
+        self.assertEqual(ann_row.role, ParticipantRole.MENTEE)
+        self.assertTrue(ann_row.has_submitted)
+        self.assertEqual(ann_row.most_valuable_aspects, "career advice")
+        self.assertEqual(ann_row.challenges, "time zones")
+        self.assertEqual(ann_row.program_rating, 4)
+        self.assertEqual(
+            [
+                (f.partner_id, f.partner_name, f.rating, f.feedback)
+                for f in ann_row.partner_feedback
+            ],
+            [(11, "Bob Doe", 2, "late often")],
+        )
+
+        self.assertEqual(bob_row.program_rating, 5)
+        self.assertIsNone(bob_row.most_valuable_aspects)
+        self.assertEqual(
+            [
+                (f.partner_id, f.partner_name, f.rating, f.feedback)
+                for f in bob_row.partner_feedback
+            ],
+            [(21, "Annie", 3, None), (99, None, 1, None)],
+        )
+
+        self.assertFalse(dan_row.has_submitted)
+        self.assertIsNone(dan_row.program_rating)
+        self.assertEqual(dan_row.partner_feedback, [])
+
+    async def test_unknown_round_raises(self):
+        self.rounds_repo.get_by_round_id.return_value = None
+
+        with self.assertRaises(ValueError):
+            await self.service.get_round_feedback(self.session, 404)
+
+        self.participants_repo.get_feedback_owed_in_round.assert_not_awaited()
+
+
 if __name__ == "__main__":
     unittest.main()

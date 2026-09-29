@@ -41,6 +41,7 @@ class MentorshipMapper:
         rounds: list[MentorshipRoundEntity],
         pair_stats: dict[int, dict] | None = None,
         now: datetime | None = None,
+        feedback_counts: dict[int, dict] | None = None,
     ) -> list[RoundsDto]:
         """Maps a list of MentorshipRoundEntity objects to a list of RoundsDto objects.
 
@@ -48,11 +49,16 @@ class MentorshipMapper:
         time when omitted.
         """
         pair_stats = pair_stats or {}
+        feedback_counts = feedback_counts or {}
         now = now or datetime.now(timezone.utc)
-        return [self._map_round(r, pair_stats, now) for r in rounds]
+        return [self._map_round(r, pair_stats, now, feedback_counts) for r in rounds]
 
     def _map_round(
-        self, r: MentorshipRoundEntity, pair_stats: dict[int, dict], now: datetime
+        self,
+        r: MentorshipRoundEntity,
+        pair_stats: dict[int, dict],
+        now: datetime,
+        feedback_counts: dict[int, dict],
     ) -> RoundsDto:
         """Maps one round, its status and windows evaluated at ``now``."""
         window = feedback_window(r)
@@ -66,6 +72,8 @@ class MentorshipMapper:
             total_completed_meetings=pair_stats.get(r.round_id, {}).get(
                 "total_completed_meetings"
             ),
+            feedback_owed=feedback_counts.get(r.round_id, {}).get("owed"),
+            feedback_sent=feedback_counts.get(r.round_id, {}).get("sent"),
             mentee_average_score=r.mentee_average_score,
             mentor_average_score=r.mentor_average_score,
             expectations=r.expectations,

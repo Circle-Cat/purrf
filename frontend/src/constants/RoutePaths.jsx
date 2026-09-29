@@ -6,6 +6,8 @@ export const ROUTE_PATHS = {
   PERSONAL_DASHBOARD: "/dashboard/me",
   ACCESS_DENIED: "/access-denied",
   MENTORSHIP_MANAGEMENT: "/mentorship-management",
+  MENTORSHIP_ROUND_FEEDBACK: (roundId) =>
+    `/mentorship-management/rounds/${roundId}/feedback`,
   VERIFY_REQUIRED: "/verify-required",
   SIGN_IN_SECURITY: "/settings/sign-in",
   ADMIN_USERS: "/admin/users",

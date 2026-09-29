@@ -14,6 +14,7 @@ from backend.common.api_endpoints import (
     MENTORSHIP_ADMIN_MATCH_RUNS,
     MENTORSHIP_ADMIN_MATCH_RUN,
     MENTORSHIP_ADMIN_MATCH_RUN_RESULTS,
+    MENTORSHIP_ADMIN_ROUND_FEEDBACK,
 )
 from backend.common.permissions import Permission
 from backend.utils.permission_decorators import authenticate
@@ -90,6 +91,15 @@ class MentorshipAdminController:
         )
 
         self.router.add_api_route(
+            MENTORSHIP_ADMIN_ROUND_FEEDBACK,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_READ])(
+                self.get_round_feedback
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
             MENTORSHIP_ADMIN_PARTICIPANTS_EXPORT,
             endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_READ])(
                 self.export_participants
@@ -155,6 +165,25 @@ class MentorshipAdminController:
             self.mentorship_admin_service.stream_export_csv(filters, expand_meetings),
             media_type="text/csv",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    async def get_round_feedback(self, round_id: int):
+        """
+        Retrieve a round's feedback: everyone it is asked of, sent or not.
+
+        Args:
+            round_id (int): The mentorship round ID.
+
+        Returns:
+            API response containing the round's feedback.
+        """
+        async with self.database.session() as session:
+            result = await self.mentorship_admin_service.get_round_feedback(
+                session, round_id
+            )
+        return api_response(
+            message="Successfully retrieved round feedback.",
+            data=result,
         )
 
     async def get_meeting_log(self, pair_id: int):
