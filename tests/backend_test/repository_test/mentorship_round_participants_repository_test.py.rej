@@ -1,0 +1,10 @@
+--- tests/backend_test/repository_test/mentorship_round_participants_repository_test.py
++++ tests/backend_test/repository_test/mentorship_round_participants_repository_test.py
+@@ -1229,7 +1229,6 @@
+         self.assertIsNone(rows[0].pair_id)
+         self.assertIsNone(rows[0].completed_count)
+ 
+-
+     async def _seed_feedback_round(self):
+         """
+         Round 0: the mentor (self.user) and Ann paired and going, Ben paired

@@ -17,6 +17,7 @@ import Profile from "@/pages/Profile";
 import AccessDenied from "@/pages/AccessDenied";
 import PersonalDashboard from "@/pages/PersonalDashboard";
 import MentorshipManagement from "@/pages/MentorshipManagement";
+import RoundFeedbackPage from "@/pages/MentorshipManagement/RoundFeedbackPage";
 import VerifyRequired from "@/pages/VerifyRequired";
 import SignInSecurity from "@/pages/SignInSecurity";
 import AdminPermissions from "@/pages/AdminPermissions";
@@ -144,6 +145,18 @@ function App() {
                           ]}
                         >
                           <MentorshipManagement />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.MENTORSHIP_ROUND_FEEDBACK(":roundId")}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.MENTORSHIP_ADMIN_READ,
+                          ]}
+                        >
+                          <RoundFeedbackPage />
                         </ProtectedRoute>
                       }
                     />

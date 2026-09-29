@@ -12,7 +12,7 @@ import { useMentorshipManagement } from "@/pages/MentorshipManagement/hooks/useM
  * RoundsManagementCard renders for either permission (basic round list needs
  * no backend permission at all; write-only users get create/edit affordances
  * but no per-round detail stats). ParticipantSearchCard requires
- * MENTORSHIP_ADMIN_READ.
+ * MENTORSHIP_ADMIN_READ, as does the rounds table's Feedback column.
  *
  * Route: /mentorship-management
  *
@@ -47,6 +47,7 @@ const MentorshipManagement = () => {
           closeModal={closeModal}
           saveRound={saveRound}
           canWriteRounds={canWrite}
+          canReadFeedback={canRead}
         />
       )}
       {canRead && <ParticipantSearchCard />}

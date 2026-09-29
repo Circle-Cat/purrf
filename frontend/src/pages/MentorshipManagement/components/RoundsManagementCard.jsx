@@ -17,6 +17,7 @@ import RoundModal from "@/pages/MentorshipManagement/components/RoundModal";
  *   closeModal: () => void,
  *   saveRound: (payload: Object) => Promise<void>,
  *   canWriteRounds: boolean, whether the user may create/edit rounds (MENTORSHIP_ADMIN_WRITE)
+ *   canReadFeedback: boolean, whether to show the Feedback column (MENTORSHIP_ADMIN_READ)
  * }} props
  */
 export default function RoundsManagementCard({
@@ -29,6 +30,7 @@ export default function RoundsManagementCard({
   closeModal,
   saveRound,
   canWriteRounds = true,
+  canReadFeedback = false,
 }) {
   return (
     <>
@@ -53,6 +55,7 @@ export default function RoundsManagementCard({
               totals={totals}
               onEdit={openEdit}
               canEdit={canWriteRounds}
+              canReadFeedback={canReadFeedback}
             />
           ) : (
             <div className="text-center py-8 text-gray-500">
