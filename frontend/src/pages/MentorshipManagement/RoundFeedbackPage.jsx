@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import {
@@ -113,6 +113,8 @@ const toRow = (p) => ({
  */
 const RoundFeedbackPage = () => {
   const { roundId } = useParams();
+  const location = useLocation();
+  const returnSearch = location.state?.returnSearch;
   const { feedback, isLoading, error } = useRoundFeedback(roundId);
   const [role, setRole] = useState("all");
   const [notSentOnly, setNotSentOnly] = useState(false);
@@ -200,7 +202,10 @@ const RoundFeedbackPage = () => {
     <Card className="border-gray-200">
       <CardHeader className="space-y-2">
         <Link
-          to={ROUTE_PATHS.MENTORSHIP_MANAGEMENT}
+          to={{
+            pathname: ROUTE_PATHS.MENTORSHIP_MANAGEMENT,
+            search: typeof returnSearch === "string" ? returnSearch : "",
+          }}
           className="flex w-fit items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
         >
           <ArrowLeft className="h-4 w-4" />
