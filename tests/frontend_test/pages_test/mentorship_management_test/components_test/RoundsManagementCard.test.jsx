@@ -137,6 +137,11 @@ describe("RoundsManagementCard", () => {
     expect(tableMock.mock.calls[0][0].canEdit).toBe(false);
   });
 
+  it("forwards canReadFeedback to AllRoundsTable", () => {
+    renderCard({ canReadFeedback: true });
+    expect(AllRoundsTable.mock.calls[0][0].canReadFeedback).toBe(true);
+  });
+
   it("passes readOnly=true to RoundModal when canWriteRounds is false", () => {
     renderCard({ canWriteRounds: false });
     expect(RoundModal.mock.lastCall[0]).toMatchObject({ readOnly: true });

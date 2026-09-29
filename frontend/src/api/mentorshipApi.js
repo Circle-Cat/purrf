@@ -181,6 +181,14 @@ export const getParticipantExportUrl = ({
 };
 
 /**
+ * Fetch a round's feedback for the admin console: everyone it is asked of,
+ * sent or not, with what each of them wrote.
+ * @param {number} roundId - The mentorship round's id.
+ */
+export const getRoundFeedback = (roundId) =>
+  request.get(API_ENDPOINTS.MENTORSHIP_ADMIN_ROUND_FEEDBACK(roundId));
+
+/**
  * Fetch the mentorship admin view of a pair's meeting log for the round.
  * @param {number} pairId - The mentorship pair's id.
  */

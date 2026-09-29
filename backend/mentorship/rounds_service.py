@@ -9,6 +9,9 @@ from backend.mentorship.round_windows import (
 )
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from backend.repository.mentorship_pairs_repository import MentorshipPairsRepository
+from backend.repository.mentorship_round_participants_repository import (
+    MentorshipRoundParticipantsRepository,
+)
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.dto.rounds_dto import RoundSlotsDto, RoundsDto
 from backend.dto.rounds_create_dto import RoundsCreateDto
@@ -24,6 +27,7 @@ class RoundsService:
         mentorship_round_repository: MentorshipRoundRepository,
         mentorship_mapper: MentorshipMapper,
         mentorship_pairs_repository: MentorshipPairsRepository,
+        mentorship_round_participants_repository: MentorshipRoundParticipantsRepository,
     ):
         """
         Initializes the RoundsService with required dependencies.
@@ -35,10 +39,16 @@ class RoundsService:
                 The mapper for converting database entities to DTOs.
             mentorship_pairs_repository (MentorshipPairsRepository):
                 The repository for round stats queries.
+            mentorship_round_participants_repository
+                (MentorshipRoundParticipantsRepository): The repository for
+                the per-round feedback counts.
         """
         self.mentorship_round_repository = mentorship_round_repository
         self.mentorship_mapper = mentorship_mapper
         self.mentorship_pairs_repository = mentorship_pairs_repository
+        self.mentorship_round_participants_repository = (
+            mentorship_round_participants_repository
+        )
 
     async def get_all_rounds(
         self, session: AsyncSession, include_details: bool = False
@@ -49,7 +59,8 @@ class RoundsService:
         Args:
             session (AsyncSession): Active database async session.
             include_details (bool): If True, populates matched_participants and
-                total_completed_meetings (for active pairs only) in each RoundsDto.
+                total_completed_meetings (for active pairs only), and the
+                feedback owed and sent, in each RoundsDto.
 
         Returns:
             list[RoundsDto]: A list of RoundsDto objects representing the mentorship rounds.
@@ -62,8 +73,13 @@ class RoundsService:
             return self.mentorship_mapper.map_to_rounds_dto(all_round_entities)
 
         pair_stats = await self.mentorship_pairs_repository.get_pair_stats(session)
+        feedback_counts = await self.mentorship_round_participants_repository.get_feedback_counts_by_round(
+            session
+        )
 
-        return self.mentorship_mapper.map_to_rounds_dto(all_round_entities, pair_stats)
+        return self.mentorship_mapper.map_to_rounds_dto(
+            all_round_entities, pair_stats, feedback_counts=feedback_counts
+        )
 
     async def get_round_slots(self, session: AsyncSession) -> RoundSlotsDto:
         """

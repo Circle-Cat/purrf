@@ -23,6 +23,10 @@ class RoundsDto(BaseDto):
     active_pairs: int | None = None
     matched_participants: int | None = None
     total_completed_meetings: int | None = None
+    # How many people this round's feedback is asked of, and how many sent it.
+    # Only filled when the list is read with details.
+    feedback_owed: int | None = None
+    feedback_sent: int | None = None
     mentee_average_score: float | None = None
     mentor_average_score: float | None = None
     expectations: str | None = None

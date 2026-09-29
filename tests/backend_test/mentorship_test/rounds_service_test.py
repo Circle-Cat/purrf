@@ -20,6 +20,9 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
         self.mock_pairs_repo = MagicMock()
         self.mock_pairs_repo.get_pair_stats = AsyncMock()
 
+        self.mock_participants_repo = MagicMock()
+        self.mock_participants_repo.get_feedback_counts_by_round = AsyncMock()
+
         self.mock_mapper = MagicMock()
         self.mock_session = AsyncMock()
 
@@ -27,6 +30,7 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
             mentorship_round_repository=self.mock_repo,
             mentorship_mapper=self.mock_mapper,
             mentorship_pairs_repository=self.mock_pairs_repo,
+            mentorship_round_participants_repository=self.mock_participants_repo,
         )
 
         self.timeline_data = TimelineCreateDto(
@@ -77,6 +81,10 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
 
         self.mock_repo.get_all_rounds.return_value = mock_mentorship_round_entities
         self.mock_pairs_repo.get_pair_stats.return_value = mock_pair_stats
+        mock_feedback_counts = {2: {"owed": 9, "sent": 4}}
+        self.mock_participants_repo.get_feedback_counts_by_round.return_value = (
+            mock_feedback_counts
+        )
         self.mock_mapper.map_to_rounds_dto.return_value = mock_rounds_dtos
 
         result = await self.service.get_all_rounds(
@@ -85,9 +93,13 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
 
         self.mock_repo.get_all_rounds.assert_awaited_once_with(self.mock_session)
         self.mock_pairs_repo.get_pair_stats.assert_awaited_once_with(self.mock_session)
+        self.mock_participants_repo.get_feedback_counts_by_round.assert_awaited_once_with(
+            self.mock_session
+        )
         self.mock_mapper.map_to_rounds_dto.assert_called_once_with(
             mock_mentorship_round_entities,
             mock_pair_stats,
+            feedback_counts=mock_feedback_counts,
         )
 
         self.assertEqual(result, mock_rounds_dtos)
@@ -112,6 +124,7 @@ class TestRoundsService(unittest.IsolatedAsyncioTestCase):
         await self.service.get_all_rounds(self.mock_session, include_details=False)
 
         self.mock_pairs_repo.get_pair_stats.assert_not_awaited()
+        self.mock_participants_repo.get_feedback_counts_by_round.assert_not_awaited()
 
     async def test_upsert_rounds_create(self):
         """Test creating a new round writes each timeline date onto its own
@@ -265,6 +278,7 @@ class TestGetRoundSlots(unittest.IsolatedAsyncioTestCase):
             mentorship_round_repository=self.mock_repo,
             mentorship_mapper=MentorshipMapper(),
             mentorship_pairs_repository=MagicMock(),
+            mentorship_round_participants_repository=MagicMock(),
         )
 
         self.datetime_patcher = patch("backend.mentorship.rounds_service.datetime")

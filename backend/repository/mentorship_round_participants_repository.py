@@ -20,7 +20,7 @@ from backend.common.mentorship_enums import (
 from backend.common.recruiting_enums import ApplicationStage, JobKind
 from backend.dto.participant_search_row_dto import ParticipantSearchRow
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
-from sqlalchemy import Float, case, cast, func, select, and_, or_, not_
+from sqlalchemy import Float, case, cast, exists, func, select, and_, or_, not_
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -228,6 +228,91 @@ class MentorshipRoundParticipantsRepository:
             )
         )
         return result.scalar_one_or_none()
+
+    def _feedback_owed_condition(self):
+        """
+        Who a round's feedback is asked of: anyone paired in that round, the
+        pair still going or ended.
+
+        Leaving part way or being blocked does not take someone off the list:
+        submitting is gated only on the feedback window, so what they sent
+        before leaving is still theirs to have sent.
+        """
+        return exists().where(
+            MentorshipPairsEntity.round_id
+            == MentorshipRoundParticipantsEntity.round_id,
+            or_(
+                MentorshipPairsEntity.mentor_id
+                == MentorshipRoundParticipantsEntity.user_id,
+                MentorshipPairsEntity.mentee_id
+                == MentorshipRoundParticipantsEntity.user_id,
+            ),
+        )
+
+    def _feedback_sent_condition(self):
+        """
+        Feedback counts as sent when ``program_feedback`` holds an object,
+        the same test the participant's own read uses for ``has_submitted``.
+        """
+        return (
+            func.jsonb_typeof(MentorshipRoundParticipantsEntity.program_feedback)
+            == "object"
+        )
+
+    async def get_feedback_counts_by_round(
+        self, session: AsyncSession
+    ) -> dict[int, dict]:
+        """
+        Count, per round, the people feedback is asked of and how many of them
+        have sent it.
+
+        Args:
+            session (AsyncSession): The active async database session.
+
+        Returns:
+            dict[int, dict]: Mapping of round_id to {"owed": int, "sent": int}.
+                Rounds nobody owes feedback for are absent.
+        """
+        result = await session.execute(
+            select(
+                MentorshipRoundParticipantsEntity.round_id,
+                func.count().label("owed"),
+                func.count().filter(self._feedback_sent_condition()).label("sent"),
+            )
+            .where(self._feedback_owed_condition())
+            .group_by(MentorshipRoundParticipantsEntity.round_id)
+        )
+        return {
+            row.round_id: {"owed": row.owed, "sent": row.sent} for row in result.all()
+        }
+
+    async def get_feedback_owed_in_round(
+        self, session: AsyncSession, round_id: int
+    ) -> list[tuple[MentorshipRoundParticipantsEntity, UsersEntity]]:
+        """
+        The participants a round's feedback is asked of, with their users.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            round_id (int): Mentorship round id.
+
+        Returns:
+            list[tuple[MentorshipRoundParticipantsEntity, UsersEntity]]: One
+                pair per participant, ordered by user id.
+        """
+        result = await session.execute(
+            select(MentorshipRoundParticipantsEntity, UsersEntity)
+            .join(
+                UsersEntity,
+                UsersEntity.user_id == MentorshipRoundParticipantsEntity.user_id,
+            )
+            .where(
+                MentorshipRoundParticipantsEntity.round_id == round_id,
+                self._feedback_owed_condition(),
+            )
+            .order_by(MentorshipRoundParticipantsEntity.user_id)
+        )
+        return [(row[0], row[1]) for row in result.all()]
 
     def _build_mentorship_eligibility_gate(self):
         """

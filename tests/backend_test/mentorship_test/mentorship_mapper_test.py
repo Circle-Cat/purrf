@@ -242,6 +242,19 @@ class TestMentorshipMapper(unittest.TestCase):
         self.assertIsNone(dtos[2].matched_participants)
         self.assertIsNone(dtos[2].total_completed_meetings)
 
+    def test_map_to_rounds_dto_with_feedback_counts(self):
+        """Each round carries its own feedback counts; a round with none
+        gets None for both."""
+        dtos = self.mapper.map_to_rounds_dto(
+            self.mentorship_round_entities,
+            feedback_counts={1: {"owed": 8, "sent": 3}, 2: {"owed": 5, "sent": 0}},
+        )
+
+        self.assertEqual((dtos[0].feedback_owed, dtos[0].feedback_sent), (8, 3))
+        self.assertEqual((dtos[1].feedback_owed, dtos[1].feedback_sent), (5, 0))
+        self.assertIsNone(dtos[2].feedback_owed)
+        self.assertIsNone(dtos[2].feedback_sent)
+
     def test_timeline_dto_fields_are_exactly_the_round_columns(self):
         """TimelineDto carries one field per timeline column and nothing
         else, so a renamed or dropped date cannot linger in the API."""

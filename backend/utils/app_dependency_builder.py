@@ -656,6 +656,7 @@ class AppDependencyBuilder:
             mentorship_round_repository=self.mentorship_round_repository,
             mentorship_mapper=self.mentorship_mapper,
             mentorship_pairs_repository=self.mentorship_pairs_repository,
+            mentorship_round_participants_repository=self.mentorship_round_participants_repo,
         )
         self.participation_service = ParticipationService(
             logger=self.logger,

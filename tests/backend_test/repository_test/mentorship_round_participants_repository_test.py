@@ -1229,6 +1229,112 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         self.assertIsNone(rows[0].pair_id)
         self.assertIsNone(rows[0].completed_count)
 
+    async def _seed_feedback_round(self):
+        """
+        Round 0: the mentor (self.user) and Ann paired and going, Ben paired
+        and ended; Cid registered but never paired; Dee paired then left
+        (rejected); Eve paired but blocked. Mentor and Ann sent feedback.
+        Round 1: Gus paired, not sent. Only Cid owes nothing: owed is 5/1
+        and sent 2/0 by round.
+        """
+        names = ["Ann", "Ben", "Cid", "Dee", "Eve", "Gus"]
+        users = {
+            n: self._make_user(first_name=n, email=f"{n.lower()}@example.com")
+            for n in names
+        }
+        users["Eve"].is_blocked = True
+        await self.insert_entities(list(users.values()))
+
+        r0, r1 = self.rounds[0].round_id, self.rounds[1].round_id
+        sent = {"program_rating": 4, "most_valuable_aspects": "x"}
+
+        def participant(user, round_id, role, status, feedback=None):
+            return MentorshipRoundParticipantsEntity(
+                user_id=user.user_id,
+                round_id=round_id,
+                participant_role=role,
+                approval_status=status,
+                program_feedback=feedback,
+            )
+
+        await self.insert_entities([
+            participant(
+                self.user, r0, ParticipantRole.MENTOR, ApprovalStatus.MATCHED, sent
+            ),
+            participant(
+                users["Ann"], r0, ParticipantRole.MENTEE, ApprovalStatus.MATCHED, sent
+            ),
+            participant(
+                users["Ben"], r0, ParticipantRole.MENTEE, ApprovalStatus.MATCHED
+            ),
+            participant(
+                users["Cid"], r0, ParticipantRole.MENTEE, ApprovalStatus.SIGNED_UP
+            ),
+            participant(
+                users["Dee"], r0, ParticipantRole.MENTEE, ApprovalStatus.REJECTED
+            ),
+            participant(
+                users["Eve"], r0, ParticipantRole.MENTEE, ApprovalStatus.MATCHED
+            ),
+            participant(
+                users["Gus"], r1, ParticipantRole.MENTEE, ApprovalStatus.MATCHED
+            ),
+        ])
+
+        def pair(round_id, mentee, status=PairStatus.ACTIVE):
+            return MentorshipPairsEntity(
+                round_id=round_id,
+                mentor_id=self.user.user_id,
+                mentee_id=mentee.user_id,
+                completed_count=0,
+                status=status,
+                mentor_action_status=MentorActionStatus.CONFIRMED,
+                mentee_action_status=MenteeActionStatus.CONFIRMED,
+                recommendation_reason="test",
+            )
+
+        await self.insert_entities([
+            pair(r0, users["Ann"]),
+            pair(r0, users["Ben"], PairStatus.INACTIVE),
+            pair(r0, users["Dee"], PairStatus.INACTIVE),
+            pair(r0, users["Eve"]),
+            pair(r1, users["Gus"]),
+        ])
+        return users
+
+    async def test_get_feedback_counts_by_round(self):
+        """Counts everyone paired in the round, left or blocked included."""
+        await self._seed_feedback_round()
+
+        result = await self.repo.get_feedback_counts_by_round(self.session)
+
+        self.assertEqual(
+            result,
+            {
+                self.rounds[0].round_id: {"owed": 5, "sent": 2},
+                self.rounds[1].round_id: {"owed": 1, "sent": 0},
+            },
+        )
+
+    async def test_get_feedback_owed_in_round(self):
+        """Returns the owed participants of that round only, with their users."""
+        users = await self._seed_feedback_round()
+
+        rows = await self.repo.get_feedback_owed_in_round(
+            self.session, self.rounds[0].round_id
+        )
+
+        self.assertEqual(
+            [user.user_id for _, user in rows],
+            sorted(
+                [self.user.user_id]
+                + [users[n].user_id for n in ("Ann", "Ben", "Dee", "Eve")]
+            ),
+        )
+        for participant, user in rows:
+            self.assertEqual(participant.user_id, user.user_id)
+            self.assertEqual(participant.round_id, self.rounds[0].round_id)
+
 
 if __name__ == "__main__":
     unittest.main()

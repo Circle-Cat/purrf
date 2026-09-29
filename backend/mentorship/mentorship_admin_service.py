@@ -7,6 +7,11 @@ from backend.dto.participant_search_dto import ParticipantRowDto, ParticipantSea
 from backend.dto.participant_search_row_dto import ParticipantSearchRow
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.admin_meeting_log_dto import AdminMeetingDto, AdminMeetingLogDto
+from backend.dto.round_feedback_dto import (
+    AdminPartnerFeedbackDto,
+    ParticipantFeedbackDto,
+    RoundFeedbackDto,
+)
 from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
 from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import (
@@ -577,6 +582,108 @@ class MentorshipAdminService:
             "end_datetime": meeting.end_datetime.isoformat(),
             "created_datetime": meeting.created_datetime.isoformat(),
         }
+
+    async def get_round_feedback(
+        self, session: AsyncSession, round_id: int
+    ) -> RoundFeedbackDto:
+        """
+        Everyone a round's feedback is asked of, with what each of them sent.
+
+        What someone wrote about a partner stays on the writer's row: it is
+        their view of the partner, not the partner's feedback.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            round_id (int): Mentorship round id.
+
+        Returns:
+            RoundFeedbackDto: The round, its counts, and one row per person.
+
+        Raises:
+            ValueError: The round does not exist.
+        """
+        round_entity = await self.rounds_repository.get_by_round_id(session, round_id)
+        if round_entity is None:
+            raise ValueError(f"Mentorship round {round_id} does not exist.")
+
+        owed = await self.participants_repository.get_feedback_owed_in_round(
+            session, round_id
+        )
+        partner_ids = {
+            entry["partner_id"]
+            for participant, _ in owed
+            for entry in self._pair_feedback_entries(participant)
+        }
+        partners = {
+            user.user_id: user
+            for user in await self.users_repository.get_all_by_ids(
+                session, list(partner_ids)
+            )
+        }
+
+        rows = [
+            self._participant_feedback(participant, user, partners)
+            for participant, user in owed
+        ]
+        return RoundFeedbackDto(
+            round_id=round_entity.round_id,
+            round_name=round_entity.name,
+            owed=len(rows),
+            sent=sum(row.has_submitted for row in rows),
+            participants=rows,
+        )
+
+    def _pair_feedback_entries(self, participant) -> list[dict]:
+        """The participant's partner entries that name a partner."""
+        entries = participant.pair_feedback
+        if not isinstance(entries, list):
+            return []
+        return [
+            e
+            for e in entries
+            if isinstance(e, dict) and e.get("partner_id") is not None
+        ]
+
+    def _participant_feedback(
+        self, participant, user, partners: dict
+    ) -> ParticipantFeedbackDto:
+        """Map one owed participant and their feedback, if any."""
+        program = participant.program_feedback
+        submitted = isinstance(program, dict)
+        program = program if submitted else {}
+
+        partner_feedback = []
+        for entry in self._pair_feedback_entries(participant):
+            partner = partners.get(entry["partner_id"])
+            partner_feedback.append(
+                AdminPartnerFeedbackDto(
+                    partner_id=entry["partner_id"],
+                    partner_name=user_display_name(
+                        first_name=partner.first_name,
+                        last_name=partner.last_name,
+                        preferred_name=partner.preferred_name,
+                    )
+                    if partner
+                    else None,
+                    rating=entry.get("rating"),
+                    feedback=entry.get("feedback"),
+                )
+            )
+
+        return ParticipantFeedbackDto(
+            user_id=user.user_id,
+            name=user_display_name(
+                first_name=user.first_name,
+                last_name=user.last_name,
+                preferred_name=user.preferred_name,
+            ),
+            role=participant.participant_role,
+            has_submitted=submitted,
+            most_valuable_aspects=program.get("most_valuable_aspects"),
+            challenges=program.get("challenges"),
+            program_rating=program.get("program_rating"),
+            partner_feedback=partner_feedback,
+        )
 
     async def get_meeting_log(
         self, session: AsyncSession, pair_id: int
