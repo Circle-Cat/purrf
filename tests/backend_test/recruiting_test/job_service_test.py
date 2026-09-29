@@ -618,6 +618,11 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             "ownerIds": [owner_id],
         }
 
+    def _qualify(self, job):
+        """Give the job a valid live pipeline whose owner is in the pool."""
+        job.pipeline_config = self._valid_pipeline(owner_id=2)
+        self._two_approvers()
+
     async def test_submit_draft_without_pipeline_stages_raises(self):
         """A posting whose pipeline has no stages cannot be submitted — every
         posting needs at least one human stage as a screening fallback."""
@@ -804,6 +809,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         """approve fetches the review FOR UPDATE so deciders serialise."""
         job = self._job(status=JobStatus.PENDING_REVIEW)
         self.repo.get_by_job_id.return_value = job
+        self._qualify(job)
         review = JobReviewEntity(
             review_id=50,
             job_id=job.job_id,
@@ -957,10 +963,11 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             "cooldownDays": None,
             "screenRules": None,
             "formSchema": {"a": 2},
-            "pipelineConfig": None,
+            "pipelineConfig": self._valid_pipeline(),
             "profileConfig": None,
         }
         self.repo.get_by_job_id.return_value = job
+        self._qualify(job)
         review = JobReviewEntity(
             review_id=5,
             job_id=job.job_id,
@@ -990,8 +997,9 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             form_schema={"a": 1},
             title="old",
         )
-        job.pending_payload = {"title": "x"}
+        job.pending_payload = {"title": "x", "pipelineConfig": self._valid_pipeline()}
         self.repo.get_by_job_id.return_value = job
+        self._qualify(job)
         review = JobReviewEntity(
             review_id=42,
             job_id=job.job_id,
@@ -1016,6 +1024,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         """Approving an INITIAL review publishes the draft."""
         job = self._job(status=JobStatus.PENDING_REVIEW)
         self.repo.get_by_job_id.return_value = job
+        self._qualify(job)
         review = JobReviewEntity(
             review_id=6,
             job_id=job.job_id,
@@ -1036,6 +1045,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         """approve logs a review_decided activity entry."""
         job = self._job(status=JobStatus.PENDING_REVIEW)
         self.repo.get_by_job_id.return_value = job
+        self._qualify(job)
         review = JobReviewEntity(
             job_id=job.job_id,
             submitted_by=5,
@@ -1118,6 +1128,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         """
         job = self._job(status=JobStatus.PENDING_REVIEW)
         self.repo.get_by_job_id.return_value = job
+        self._qualify(job)
         review = self._pending_review()
         self.review_repo.get_open_for_job.return_value = review
         self._two_approvers()
@@ -1138,6 +1149,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         """
         job = self._job(status=JobStatus.PENDING_REVIEW)
         self.repo.get_by_job_id.return_value = job
+        self._qualify(job)
         review = self._pending_review(submit_message="Please take a look")
         self.review_repo.get_open_for_job.return_value = review
         self._two_approvers()
@@ -1157,6 +1169,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         """
         job = self._job(status=JobStatus.PENDING_REVIEW)
         self.repo.get_by_job_id.return_value = job
+        self._qualify(job)
         review = self._pending_review()
         self.review_repo.get_open_for_job.return_value = review
         self._two_approvers()
@@ -1212,6 +1225,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         """
         job = self._job(status=JobStatus.PENDING_REVIEW)
         self.repo.get_by_job_id.return_value = job
+        self._qualify(job)
         review = self._pending_review()
         self.review_repo.get_open_for_job.return_value = review
         self._two_approvers()
@@ -1615,6 +1629,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
     async def test_request_reopen_closed_creates_review(self):
         """request_reopen from CLOSED creates a REOPEN review and sets PENDING_REOPEN."""
         job = self._job(status=JobStatus.CLOSED, was_published=True)
+        job.pipeline_config = self._valid_pipeline()
         self.repo.get_by_job_id.return_value = job
         self._two_approvers()
 
@@ -1649,6 +1664,156 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             await self.service.request_reopen(
                 self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
             )
+
+    # ---------------------------------------------------------------------------
+    # Owner re-check: every review kind but CLOSE
+    # ---------------------------------------------------------------------------
+
+    def _assert_nothing_written(self):
+        self.review_repo.create.assert_not_awaited()
+        self.repo.update_job.assert_not_awaited()
+        self.record_event.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    def _review_of(self, kind, *, review_id=60):
+        review = JobReviewEntity(
+            review_id=review_id,
+            job_id=1,
+            submitted_by=1,
+            reviewer_id=2,
+            status=JobReviewStatus.PENDING,
+            kind=kind,
+        )
+        self.review_repo.get.return_value = review
+        self.review_repo.get_open_for_job.return_value = review
+        return review
+
+    async def test_request_close_allows_blocked_live_owner(self):
+        """A close publishes nothing, so an owner who dropped out of the
+        holder pool must not trap the posting open."""
+        job = self._job(status=JobStatus.PUBLISHED, was_published=True)
+        job.pipeline_config = self._valid_pipeline(owner_id=8)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()  # pool is ids 2 and 3 — owner 8 no longer qualifies
+
+        result = await self.service.request_close(
+            self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
+        )
+
+        self.assertEqual(result.status, JobStatus.PENDING_CLOSE)
+
+    async def test_request_reopen_refuses_blocked_live_owner(self):
+        """A reopen republishes the live config, so a live owner who dropped
+        out of the holder pool stops the request."""
+        job = self._job(status=JobStatus.CLOSED, was_published=True)
+        job.pipeline_config = self._valid_pipeline(owner_id=8)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        with self.assertRaisesRegex(ValueError, r"owners \[8\] no longer qualify"):
+            await self.service.request_reopen(
+                self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
+            )
+        self.assertEqual(job.status, JobStatus.CLOSED)
+        self._assert_nothing_written()
+
+    async def test_request_reopen_refuses_blocked_staged_owner(self):
+        """Approving a reopen applies the staged edit, so a blocked owner in
+        the staged edit stops the request even when the live config is fine."""
+        job = self._job(status=JobStatus.CLOSED, was_published=True)
+        job.pipeline_config = self._valid_pipeline(owner_id=2)
+        job.pending_payload = {
+            "title": "new",
+            "pipelineConfig": self._valid_pipeline(8),
+        }
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+
+        with self.assertRaisesRegex(ValueError, r"owners \[8\] no longer qualify"):
+            await self.service.request_reopen(
+                self.session, job.job_id, reviewer_id=2, submitted_by=1, message=None
+            )
+        self.assertEqual(job.status, JobStatus.CLOSED)
+        self._assert_nothing_written()
+
+    async def _assert_approve_refused(self, job, kind):
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+        review = self._review_of(kind)
+        status_before = job.status
+
+        with self.assertRaisesRegex(ValueError, r"owners \[8\] no longer qualify"):
+            await self.service.approve(self.session, review.review_id, acting_user_id=2)
+
+        self.assertEqual(review.status, JobReviewStatus.PENDING)
+        self.assertIsNone(review.decided_at)
+        self.assertEqual(job.status, status_before)
+        self._assert_nothing_written()
+
+    async def test_approve_initial_refuses_blocked_owner(self):
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        job.pipeline_config = self._valid_pipeline(owner_id=8)
+        await self._assert_approve_refused(job, JobReviewKind.INITIAL)
+
+    async def test_approve_revision_refuses_blocked_staged_owner(self):
+        """Judged on the staged edit, which is what approval publishes."""
+        job = self._job(status=JobStatus.PUBLISHED_PENDING_REVISION)
+        job.pipeline_config = self._valid_pipeline(owner_id=2)
+        job.pending_payload = {
+            "title": "new",
+            "pipelineConfig": self._valid_pipeline(8),
+        }
+        await self._assert_approve_refused(job, JobReviewKind.REVISION)
+        self.assertIsNotNone(job.pending_payload)
+
+    async def test_approve_reopen_refuses_blocked_owner(self):
+        job = self._job(status=JobStatus.PENDING_REOPEN, was_published=True)
+        job.pipeline_config = self._valid_pipeline(owner_id=8)
+        await self._assert_approve_refused(job, JobReviewKind.REOPEN)
+
+    async def test_approve_close_allows_blocked_owner(self):
+        job = self._job(status=JobStatus.PENDING_CLOSE, was_published=True)
+        job.pipeline_config = self._valid_pipeline(owner_id=8)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+        review = self._review_of(JobReviewKind.CLOSE)
+
+        result = await self.service.approve(
+            self.session, review.review_id, acting_user_id=2
+        )
+
+        self.assertEqual(result.status, JobStatus.CLOSED)
+        self.assertEqual(review.status, JobReviewStatus.APPROVED)
+
+    async def test_reassign_review_refuses_blocked_owner(self):
+        """Moving a review that could never be approved would only park it
+        on someone else."""
+        job = self._job(status=JobStatus.PENDING_REVIEW)
+        job.pipeline_config = self._valid_pipeline(owner_id=8)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+        review = self._review_of(JobReviewKind.INITIAL)
+
+        with self.assertRaisesRegex(ValueError, r"owners \[8\] no longer qualify"):
+            await self.service.reassign_review(
+                self.session, job.job_id, acting_user_id=1, reviewer_id=3
+            )
+
+        self.assertEqual(review.reviewer_id, 2)
+        self._assert_nothing_written()
+
+    async def test_reassign_review_close_allows_blocked_owner(self):
+        job = self._job(status=JobStatus.PENDING_CLOSE, was_published=True)
+        job.pipeline_config = self._valid_pipeline(owner_id=8)
+        self.repo.get_by_job_id.return_value = job
+        self._two_approvers()
+        review = self._review_of(JobReviewKind.CLOSE)
+
+        await self.service.reassign_review(
+            self.session, job.job_id, acting_user_id=1, reviewer_id=3
+        )
+
+        self.assertEqual(review.reviewer_id, 3)
 
     # ---------------------------------------------------------------------------
     # approve — CLOSE and REOPEN kinds
@@ -1687,10 +1852,11 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             "cooldownDays": None,
             "screenRules": None,
             "formSchema": None,
-            "pipelineConfig": None,
+            "pipelineConfig": self._valid_pipeline(),
             "profileConfig": None,
         }
         self.repo.get_by_job_id.return_value = job
+        self._qualify(job)
         review = JobReviewEntity(
             review_id=11,
             job_id=job.job_id,
@@ -1716,6 +1882,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
             status=JobStatus.PENDING_REOPEN, was_published=True, title="old"
         )
         self.repo.get_by_job_id.return_value = job
+        self._qualify(job)
         review = JobReviewEntity(
             review_id=12,
             job_id=job.job_id,
@@ -1789,6 +1956,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         """Approving an INITIAL review marks the posting as was_published=True."""
         job = self._job(status=JobStatus.PENDING_REVIEW)
         self.repo.get_by_job_id.return_value = job
+        self._qualify(job)
         review = JobReviewEntity(
             review_id=30,
             job_id=job.job_id,
@@ -2124,6 +2292,7 @@ class TestJobService(unittest.IsolatedAsyncioTestCase):
         review.review_id = 100
         self.review_repo.get = AsyncMock(return_value=review)
         self.repo.get_by_job_id = AsyncMock(return_value=job)
+        self._qualify(job)
 
         await self.service.approve(self.session, review_id=100, acting_user_id=6)
 
