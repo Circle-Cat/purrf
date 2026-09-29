@@ -79,7 +79,10 @@ const Sidebar = () => {
     {
       label: "Applications Board",
       to: ROUTE_PATHS.RECRUITING_BOARD,
-      permissions: [PERMISSIONS.RECRUITING_APPLICATION_ADVANCE],
+      permissions: [
+        PERMISSIONS.RECRUITING_APPLICATION_ADVANCE,
+        PERMISSIONS.RECRUITING_APPLICATION_READ_ALL,
+      ],
     },
     {
       label: "My Interview Evaluations",

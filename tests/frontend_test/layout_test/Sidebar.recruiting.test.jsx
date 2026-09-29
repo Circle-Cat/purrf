@@ -72,4 +72,33 @@ describe("Sidebar recruiting entries", () => {
     );
     expect(screen.getByText("My Interview Evaluations")).toBeInTheDocument();
   });
+
+  it("shows Applications Board to a read.all holder who cannot advance", () => {
+    mockPermissions = ["recruiting.application.read.all"];
+    render(
+      <MemoryRouter>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Applications Board")).toBeInTheDocument();
+  });
+
+  it("shows Applications Board with recruiting.application.advance alone", () => {
+    mockPermissions = ["recruiting.application.advance"];
+    render(
+      <MemoryRouter>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Applications Board")).toBeInTheDocument();
+  });
+
+  it("hides Applications Board with neither advance nor read.all", () => {
+    render(
+      <MemoryRouter>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByText("Applications Board")).not.toBeInTheDocument();
+  });
 });
