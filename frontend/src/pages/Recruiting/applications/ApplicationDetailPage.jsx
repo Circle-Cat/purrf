@@ -1679,10 +1679,22 @@ const ApplicationDetailPage = () => {
     getBlockPreflight(detail.application.userId)
       .then(({ data }) => setBlockPreflight(data))
       .catch(() => setBlockPreflightError(true));
+    loadReviewerOptions();
+  };
+
+  // Read on every open, not once per page: the Reassign link can be reached
+  // straight from a request restored on load, without Request block having
+  // been clicked in this mount.
+  const loadReviewerOptions = () => {
     setReviewerOptionsFailed(false);
     getUserAdmins()
       .then(({ data }) => setReviewerOptions(data ?? []))
       .catch(() => setReviewerOptionsFailed(true));
+  };
+
+  const handleOpenReassignBlockRequest = () => {
+    setBlockReassignOpen(true);
+    loadReviewerOptions();
   };
 
   const handleConfirmBlockRequest = ({ reason, reviewerId }) => {
@@ -1997,7 +2009,7 @@ const ApplicationDetailPage = () => {
                       <Button
                         variant="link"
                         className="px-2"
-                        onClick={() => setBlockReassignOpen(true)}
+                        onClick={handleOpenReassignBlockRequest}
                       >
                         Reassign
                       </Button>
@@ -2235,6 +2247,7 @@ const ApplicationDetailPage = () => {
         currentUserId={user?.userId}
         targetUserId={detail.application.userId}
         holders={reviewerOptions}
+        holdersError={reviewerOptionsFailed}
         onConfirm={handleReassignBlockRequest}
         submitting={blockReassigning}
       />
