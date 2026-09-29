@@ -14,26 +14,31 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { unresolvedPersonLabel } from "@/pages/Recruiting/components/personLabel";
 import { useRoundFeedback } from "@/pages/MentorshipManagement/hooks/useRoundFeedback";
 
-// Answers run to 300 characters. Table cells stay on one line by default, so
-// the free-text columns wrap once they reach 20rem instead of stretching the
-// row. On a narrow screen the table scrolls sideways inside its card.
-const WRAP = "min-w-48 max-w-xs whitespace-normal break-words";
+// Columns take a share of the table's width and everything wraps inside its
+// column, so answers of up to 300 characters do not stretch the row. Below
+// the table's minimum width it scrolls sideways inside its card rather than
+// squeezing the columns. The shares add up to 100%.
+const CELL = "align-top whitespace-normal break-words";
 
 // In the order the feedback form asks its questions, so the two about the
 // partner sit together.
 const COLUMNS = [
-  { header: "User ID", accessor: "userId" },
-  { header: "Name", accessor: "name" },
-  { header: "Role", accessor: "role" },
+  { header: "User ID", accessor: "userId", width: "w-[7%]" },
+  { header: "Name", accessor: "name", width: "w-[12%]" },
+  { header: "Role", accessor: "role", width: "w-[7%]" },
   {
     header: "Most Valuable Aspects",
     accessor: "mostValuableAspects",
-    wrap: true,
+    width: "w-[20%]",
   },
-  { header: "Challenges", accessor: "challenges", wrap: true },
-  { header: "Program Rating", accessor: "programRating" },
-  { header: "Rating of Partner", accessor: "partnerRating" },
-  { header: "Feedback About Partner", accessor: "partnerFeedback", wrap: true },
+  { header: "Challenges", accessor: "challenges", width: "w-[20%]" },
+  { header: "Program Rating", accessor: "programRating", width: "w-[7%]" },
+  { header: "Rating of Partner", accessor: "partnerRating", width: "w-[7%]" },
+  {
+    header: "Feedback About Partner",
+    accessor: "partnerFeedback",
+    width: "w-[20%]",
+  },
 ];
 
 // The ID goes beside the name, as everywhere in the console: two partners
@@ -155,11 +160,16 @@ const RoundFeedbackPage = () => {
         </div>
         {rows.length > 0 ? (
           <div className="rounded-lg border">
-            <Table>
+            <Table className="min-w-[960px] table-fixed">
               <TableHeader>
                 <TableRow>
                   {COLUMNS.map((col) => (
-                    <TableHead key={col.accessor}>{col.header}</TableHead>
+                    <TableHead
+                      key={col.accessor}
+                      className={`${col.width} whitespace-normal`}
+                    >
+                      {col.header}
+                    </TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
@@ -169,12 +179,7 @@ const RoundFeedbackPage = () => {
                   return (
                     <TableRow key={p.userId}>
                       {COLUMNS.map((col) => (
-                        <TableCell
-                          key={col.accessor}
-                          className={
-                            col.wrap ? `${WRAP} align-top` : "align-top"
-                          }
-                        >
+                        <TableCell key={col.accessor} className={CELL}>
                           {row[col.accessor]}
                         </TableCell>
                       ))}
