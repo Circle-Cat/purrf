@@ -256,6 +256,7 @@ function App() {
                         <ProtectedRoute
                           requiredPermissions={[
                             PERMISSIONS.RECRUITING_APPLICATION_ADVANCE,
+                            PERMISSIONS.RECRUITING_APPLICATION_READ_ALL,
                           ]}
                         >
                           <BoardPage />

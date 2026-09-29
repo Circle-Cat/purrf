@@ -14,6 +14,7 @@ export const PERMISSIONS = {
   RECRUITING_JOB_WRITE: "recruiting.job.write",
   RECRUITING_JOB_APPROVE: "recruiting.job.approve",
   RECRUITING_APPLICATION_ADVANCE: "recruiting.application.advance",
+  RECRUITING_APPLICATION_READ_ALL: "recruiting.application.read.all",
   RECRUITING_INTERVIEW_EVALUATE: "recruiting.interview.evaluate",
   RECRUITING_AUDIT_READ: "recruiting.audit.read",
   USER_ADMIN: "user.admin",
