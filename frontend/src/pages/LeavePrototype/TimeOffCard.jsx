@@ -1,4 +1,10 @@
-import { CalendarDays, History, ListChecks, Plus } from "lucide-react";
+import {
+  CalendarDays,
+  History,
+  ListChecks,
+  Plus,
+  UserCheck,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -21,82 +27,120 @@ const Stat = ({ label, value, hint, tone = "text-slate-900" }) => (
 /**
  * TimeOffCard
  *
- * The leave module's whole presence on the personal dashboard: three figures
- * answering "what can I spend", and the four things anyone comes here to do.
+ * The leave module's whole presence on the personal dashboard, for two kinds of
+ * people who overlap: those the leave system covers, and those somebody has
+ * filed leave against.
  *
- * The card itself never grows — requesting and the holiday list open in
- * dialogs, and the two histories are pages of their own, because a dashboard
- * card that expands into a long list stops being a dashboard card.
+ * Covered people get the three figures answering "what can I spend" and the
+ * things they come here to do. An approver gets one more button, the way into
+ * the requests waiting on them. A manager outside the leave population still
+ * decides their reports' requests, so they get the card too — but only the
+ * Approvals button and the holiday list: 0.00h under Available would read as
+ * "my leave is zero", and filing would be refused.
+ *
+ * There is no "awaiting a decision" badge. Beside an Approvals button it would
+ * read as "waiting on you", and the viewer's own pending hours are already the
+ * Pending figure.
  *
  * @param {object} props
- * @param {number} props.available
- * @param {number} props.pending - hours held by requests awaiting a decision
- * @param {number} props.used
- * @param {number} props.pendingCount
- * @param {() => void} props.onRequest
+ * @param {boolean} props.isCovered
+ * @param {boolean} props.isApprover
+ * @param {number} [props.approvalsPendingCount] - requests waiting on the viewer
+ * @param {number} [props.available]
+ * @param {number} [props.pending] - hours held by the viewer's own undecided requests
+ * @param {number} [props.used]
+ * @param {() => void} [props.onRequest]
  * @param {() => void} props.onViewHolidays
- * @param {() => void} props.onViewRequests
- * @param {() => void} props.onViewLedger
- * @returns {JSX.Element}
+ * @param {() => void} [props.onViewRequests]
+ * @param {() => void} [props.onViewLedger]
+ * @param {() => void} [props.onViewApprovals]
+ * @returns {JSX.Element|null}
  */
 const TimeOffCard = ({
-  available,
-  pending,
-  used,
-  pendingCount,
+  isCovered,
+  isApprover,
+  approvalsPendingCount = 0,
+  available = 0,
+  pending = 0,
+  used = 0,
   onRequest,
   onViewHolidays,
   onViewRequests,
   onViewLedger,
-}) => (
-  <Card className="p-5 space-y-5">
-    <div className="flex items-start justify-between gap-4">
+  onViewApprovals,
+}) => {
+  if (!isCovered && !isApprover) return null;
+
+  const approvals = isApprover && (
+    <Button size="sm" variant="outline" onClick={onViewApprovals}>
+      <UserCheck size={15} />
+      {approvalsPendingCount > 0
+        ? `Approvals (${approvalsPendingCount})`
+        : "Approvals"}
+    </Button>
+  );
+  const holidays = (
+    <Button size="sm" variant="outline" onClick={onViewHolidays}>
+      <CalendarDays size={15} />
+      Company holidays
+    </Button>
+  );
+
+  return (
+    <Card className="p-5 space-y-5">
       <h2 className="text-sm font-semibold text-slate-900">Time off</h2>
-      {pendingCount > 0 && (
-        <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
-          {pendingCount} awaiting a decision
-        </span>
+
+      {isCovered ? (
+        <>
+          <div className="grid grid-cols-3 gap-6">
+            <Stat
+              label="Available"
+              value={`${available.toFixed(2)}h`}
+              hint={`${(available / 8).toFixed(1)} days`}
+              tone={available < 0 ? "text-rose-600" : "text-slate-900"}
+            />
+            <Stat
+              label="Pending"
+              value={`${pending.toFixed(2)}h`}
+              hint="Requested, not yet decided"
+            />
+            <Stat
+              label="Used"
+              value={`${used.toFixed(2)}h`}
+              hint="Approved and taken"
+            />
+          </div>
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button size="sm" onClick={onRequest}>
+              <Plus size={15} />
+              Request time off
+            </Button>
+            {holidays}
+            <Button size="sm" variant="outline" onClick={onViewRequests}>
+              <ListChecks size={15} />
+              My requests
+            </Button>
+            <Button size="sm" variant="outline" onClick={onViewLedger}>
+              <History size={15} />
+              Balance history
+            </Button>
+            {approvals}
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-slate-500">
+            Leave isn&apos;t tracked for your account.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {approvals}
+            {holidays}
+          </div>
+        </>
       )}
-    </div>
-
-    <div className="grid grid-cols-3 gap-6">
-      <Stat
-        label="Available"
-        value={`${available.toFixed(2)}h`}
-        hint={`${(available / 8).toFixed(1)} days`}
-        tone={available < 0 ? "text-rose-600" : "text-slate-900"}
-      />
-      <Stat
-        label="Pending"
-        value={`${pending.toFixed(2)}h`}
-        hint="Requested, not yet decided"
-      />
-      <Stat
-        label="Used"
-        value={`${used.toFixed(2)}h`}
-        hint="Approved and taken"
-      />
-    </div>
-
-    <div className="flex flex-wrap gap-2 pt-1">
-      <Button size="sm" onClick={onRequest}>
-        <Plus size={15} />
-        Request time off
-      </Button>
-      <Button size="sm" variant="outline" onClick={onViewHolidays}>
-        <CalendarDays size={15} />
-        Company holidays
-      </Button>
-      <Button size="sm" variant="outline" onClick={onViewRequests}>
-        <ListChecks size={15} />
-        My requests
-      </Button>
-      <Button size="sm" variant="outline" onClick={onViewLedger}>
-        <History size={15} />
-        Balance history
-      </Button>
-    </div>
-  </Card>
-);
+    </Card>
+  );
+};
 
 export default TimeOffCard;

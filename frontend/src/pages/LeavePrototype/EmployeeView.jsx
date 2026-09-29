@@ -56,10 +56,6 @@ const EmployeeView = ({
     .filter((r) => r.entryType === "leave_deduction")
     .reduce((s, r) => s + Math.abs(r.hours), 0);
 
-  const pendingCount = requests.filter((r) =>
-    ["pending", "cancel_pending"].includes(r.status),
-  ).length;
-
   /** Segments still ahead — a segment counts as upcoming until its last day. */
   const upcomingSegments = groupHolidays(COMPANY_HOLIDAYS).filter(
     (s) => s.end >= today(),
@@ -142,11 +138,14 @@ const EmployeeView = ({
         </p>
       </header>
 
+      {/* Dana decides nobody's leave, so there is no Approvals button. The
+          Manager view shows the card as her manager sees it. */}
       <TimeOffCard
+        isCovered
+        isApprover={false}
         available={available}
         pending={pending}
         used={used}
-        pendingCount={pendingCount}
         onRequest={() => setRequesting(true)}
         onViewHolidays={() => setShowingHolidays(true)}
         onViewRequests={() => setPage("requests")}

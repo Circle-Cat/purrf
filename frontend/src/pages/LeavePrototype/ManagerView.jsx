@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { AlertTriangle, Clock, Inbox } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Clock, Inbox } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import TimeOffCard from "@/pages/LeavePrototype/TimeOffCard";
 import { TYPE_LABEL } from "@/pages/LeavePrototype/leaveCalc";
+import { ORG_LEDGER } from "@/pages/LeavePrototype/mockData";
 
 /**
  * A pending request awaiting this manager's decision.
@@ -148,24 +150,37 @@ const RequestCard = ({ request: r, onApprove, onReject }) => {
   );
 };
 
+/** The manager in this prototype, and her own ledger for the covered case. */
+const MANAGER_ID = 9;
+const MANAGER_NAME = "Priya Raghavan";
+const managerRows = ORG_LEDGER.filter((row) => row.userId === MANAGER_ID);
+const MANAGER_BALANCE =
+  Math.round(managerRows.reduce((sum, row) => sum + row.hours, 0) * 100) / 100;
+const MANAGER_USED = managerRows
+  .filter((row) => row.entryType === "leave_deduction")
+  .reduce((sum, row) => sum - row.hours, 0);
+
 /**
- * ManagerView
- *
- * The queue of everything waiting on this manager. Approving or rejecting here
- * updates the same request objects the Employee view reads, so a decision made
- * on this page is visible on the employee's page immediately.
- *
- * There is no separate manager role or permission — whoever Azure lists as
- * someone's manager sees their requests here.
+ * The approval queue itself: everything waiting on this manager.
  *
  * @param {object} props
  * @param {Array<object>} props.queue
  * @param {(id: number) => void} props.onApprove
  * @param {(id: number, comment: string) => void} props.onReject
+ * @param {() => void} props.onBack
  * @returns {JSX.Element}
  */
-const ManagerView = ({ queue, onApprove, onReject }) => (
+const ApprovalsPage = ({ queue, onApprove, onReject, onBack }) => (
   <div className="p-6 space-y-4 max-w-4xl">
+    <button
+      type="button"
+      onClick={onBack}
+      className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-900 transition-colors"
+    >
+      <ArrowLeft size={15} />
+      Back to dashboard
+    </button>
+
     <header>
       <h1 className="text-xl font-semibold text-slate-900">Approvals</h1>
       <p className="text-sm text-slate-500 mt-0.5">
@@ -196,5 +211,97 @@ const ManagerView = ({ queue, onApprove, onReject }) => (
     )}
   </div>
 );
+
+/**
+ * ManagerView
+ *
+ * The manager's side, arranged the way it ships: the way in is a button on
+ * the Time off card on their personal dashboard, and the queue is a page of
+ * its own. Approving or rejecting there updates the same request objects the
+ * Employee view reads, so a decision is visible on the employee's page
+ * immediately.
+ *
+ * There is no separate manager role or permission — whoever Azure lists as
+ * someone's manager is an approver once somebody has filed against them. And
+ * an approver need not have leave of their own, so the dashboard can show the
+ * card either way: a covered manager sees her figures with Approvals beside
+ * them; one outside the leave population sees only Approvals and the holiday
+ * list.
+ *
+ * Only Approvals is wired here. Filing, the holiday list and the histories are
+ * the Employee view's, shown there for Dana.
+ *
+ * @param {object} props
+ * @param {Array<object>} props.queue
+ * @param {(id: number) => void} props.onApprove
+ * @param {(id: number, comment: string) => void} props.onReject
+ * @returns {JSX.Element}
+ */
+const ManagerView = ({ queue, onApprove, onReject }) => {
+  const [page, setPage] = useState("dashboard");
+  const [isCovered, setIsCovered] = useState(true);
+
+  if (page === "approvals") {
+    return (
+      <ApprovalsPage
+        queue={queue}
+        onApprove={onApprove}
+        onReject={onReject}
+        onBack={() => setPage("dashboard")}
+      />
+    );
+  }
+
+  const coverageOptions = [
+    { value: true, label: "Has leave of her own" },
+    { value: false, label: "Outside the leave population" },
+  ];
+
+  return (
+    <div className="p-6 space-y-4 max-w-4xl">
+      <header>
+        <h1 className="text-xl font-semibold text-slate-900">
+          Personal dashboard
+        </h1>
+        <p className="text-sm text-slate-500 mt-0.5">
+          {MANAGER_NAME} · manager of the Employee view&apos;s team
+        </p>
+      </header>
+
+      <div
+        role="radiogroup"
+        aria-label="Manager coverage"
+        className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-sm"
+      >
+        {coverageOptions.map((option) => (
+          <button
+            key={option.label}
+            type="button"
+            role="radio"
+            aria-checked={isCovered === option.value}
+            onClick={() => setIsCovered(option.value)}
+            className={`rounded-md px-3 py-1.5 transition-colors ${
+              isCovered === option.value
+                ? "bg-slate-800 text-white"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      <TimeOffCard
+        isCovered={isCovered}
+        isApprover
+        approvalsPendingCount={queue.length}
+        available={MANAGER_BALANCE}
+        pending={0}
+        used={MANAGER_USED}
+        onViewApprovals={() => setPage("approvals")}
+      />
+    </div>
+  );
+};
 
 export default ManagerView;

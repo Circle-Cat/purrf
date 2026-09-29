@@ -71,7 +71,7 @@ three screens.
 | View | Component | What it shows |
 |---|---|---|
 | Employee | `EmployeeView.jsx` | The personal-dashboard card and everything its buttons lead to |
-| Manager | `ManagerView.jsx` | Approval queue, each card showing the requester's balance *after* approval |
+| Manager | `ManagerView.jsx` | The manager's dashboard — Time off with an Approvals button, shown both with and without leave of her own — and the approval queue it opens, each card showing the requester's balance *after* approval |
 | Administrator | `AdminView.jsx` | Calendar entry, policy, data health, balances, manual adjustments, every ledger row filtered by person |
 
 The employee side is arranged the way it will ship: one card on the personal
