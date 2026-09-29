@@ -2578,6 +2578,75 @@ describe("ApplicationDetailPage — read.all non-owner view", () => {
   });
 });
 
+describe("ApplicationDetailPage — read.all non-owner comments", () => {
+  // The backend lets a read.all holder list, post and @-mention on any
+  // application's comments. Super admins hold read.all implicitly, so this is
+  // also what an admin who neither owns the job nor holds the stage sees.
+  beforeEach(() => {
+    authState.userId = 42;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: false,
+        canView: true,
+        assigneeId: ASSIGNEE_ID,
+      }),
+    });
+  });
+
+  it("reads and shows the comments others posted", async () => {
+    const user = userEvent.setup();
+    api.getApplicationComments.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          authorId: OWNER_ID,
+          authorName: "Owen Owner",
+          body: "Strong candidate.",
+          createdAt: "2026-07-07T12:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Comments" }));
+
+    expect(
+      await screen.findByText(/Owen Owner: Strong candidate\./),
+    ).toBeInTheDocument();
+    expect(api.getMentionableUsers).toHaveBeenCalledWith("101");
+  });
+
+  it("can post a comment", async () => {
+    const user = userEvent.setup();
+    api.postComment.mockResolvedValue({
+      data: {
+        id: 2,
+        authorId: 42,
+        authorName: "Rae Reader",
+        body: "Looks fine",
+        createdAt: "2026-07-07T13:00:00Z",
+        mentions: [],
+      },
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Comments" }));
+    await user.type(
+      screen.getByPlaceholderText("Add a comment…"),
+      "Looks fine",
+    );
+    await user.click(screen.getByRole("button", { name: "Post" }));
+
+    await waitFor(() =>
+      expect(api.postComment).toHaveBeenCalledWith("101", {
+        body: "Looks fine",
+      }),
+    );
+  });
+});
+
 describe("ApplicationDetailPage — candidate aggregation", () => {
   it("does not render the other-applications section when there are none", async () => {
     authState.userId = OWNER_ID;

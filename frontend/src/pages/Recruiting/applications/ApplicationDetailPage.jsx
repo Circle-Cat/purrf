@@ -1284,10 +1284,9 @@ const ApplicationDetailPage = () => {
           }
         }
         // Comments (and who can be @-mentioned in them) are readable by
-        // the owner AND the current-stage assignee (unlike job/pool/
-        // activity above, which stay owner-only) -- the one fetch here
-        // that must also run for an assignee-only viewer.
-        if (detailData.isOwner || detailData.assigneeId === currentUserId) {
+        // any canView viewer AND the current-stage assignee -- the one
+        // fetch here that must also run for an assignee-only viewer.
+        if (detailData.canView || detailData.assigneeId === currentUserId) {
           const [{ data: commentRows }, { data: mentionable }] =
             await Promise.all([
               getApplicationComments(applicationId),
