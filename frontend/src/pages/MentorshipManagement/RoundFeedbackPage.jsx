@@ -90,8 +90,7 @@ const RoundFeedbackPage = () => {
 
   const rows = (feedback?.participants ?? [])
     .filter((p) => role === "all" || p.role === role)
-    .filter((p) => !notSentOnly || !p.hasSubmitted)
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .filter((p) => !notSentOnly || !p.hasSubmitted);
 
   let body;
   if (isLoading) {
