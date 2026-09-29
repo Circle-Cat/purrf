@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
  *   backend refuses to send a request to its own target -- they would read
  *   their own sanction and could approve it.
  * @param {{userId: number, name: string}[]} props.holders Pickable reviewers.
+ * @param {boolean} [props.holdersError] The reviewer list could not be read.
  * @param {(reviewerId: number) => void} props.onConfirm Submit handler.
  * @param {boolean} props.submitting Disables the controls while in flight.
  */
@@ -36,6 +37,7 @@ const ReassignDialog = ({
   currentUserId,
   targetUserId,
   holders = [],
+  holdersError = false,
   onConfirm,
   submitting = false,
 }) => {
@@ -67,26 +69,33 @@ const ReassignDialog = ({
           The request stays open and nothing about it changes except who decides
           it. Both the old and the new reviewer are told.
         </p>
-        <div className="space-y-1">
-          <Label htmlFor="reassign-reviewer">Reviewer</Label>
-          <p className="text-xs text-slate-500">
-            The reviewer who has it now, you, and the person this is about are
-            all left out of this list.
+        {holdersError ? (
+          <p className="text-sm text-slate-500">
+            Couldn&apos;t load the reviewers to pick from. Close this and try
+            again.
           </p>
-          <select
-            id="reassign-reviewer"
-            className="w-full rounded-md border border-slate-300 p-2 text-sm"
-            value={reviewerId}
-            onChange={(e) => setReviewerId(e.target.value)}
-          >
-            <option value="">Select a reviewer…</option>
-            {options.map((h) => (
-              <option key={h.userId} value={h.userId}>
-                {h.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        ) : (
+          <div className="space-y-1">
+            <Label htmlFor="reassign-reviewer">Reviewer</Label>
+            <p className="text-xs text-slate-500">
+              The reviewer who has it now, you, and the person this is about are
+              all left out of this list.
+            </p>
+            <select
+              id="reassign-reviewer"
+              className="w-full rounded-md border border-slate-300 p-2 text-sm"
+              value={reviewerId}
+              onChange={(e) => setReviewerId(e.target.value)}
+            >
+              <option value="">Select a reviewer…</option>
+              {options.map((h) => (
+                <option key={h.userId} value={h.userId}>
+                  {h.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <DialogFooter>
           <Button
             variant="outline"

@@ -477,6 +477,53 @@ describe("Request block — an open request survives a reload", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("reads the reviewer list when Reassign is opened from a restored request", async () => {
+    // Request block was never clicked in this mount, so nothing else has read
+    // the holders: the dialog would otherwise open on an empty list and read
+    // as "the right people are missing".
+    const user = userEvent.setup();
+    adminApi.getRaisedBlockRequests.mockResolvedValue({
+      data: [requestDto(77, "Rita Reviewer")],
+    });
+    renderPage();
+    await waitLoaded();
+    const row = await requestRow();
+    expect(adminApi.getUserAdmins).not.toHaveBeenCalled();
+
+    await user.click(within(row).getByRole("button", { name: "Reassign" }));
+
+    const select = await within(
+      await screen.findByRole("dialog"),
+    ).findByLabelText("Reviewer");
+    await waitFor(() =>
+      expect(
+        within(select)
+          .getAllByRole("option")
+          .map((o) => o.textContent),
+      ).toContain("Sam Steward"),
+    );
+    expect(adminApi.getUserAdmins).toHaveBeenCalledTimes(1);
+  });
+
+  it("says the reviewers could not be read when that read fails", async () => {
+    const user = userEvent.setup();
+    adminApi.getRaisedBlockRequests.mockResolvedValue({
+      data: [requestDto(77, "Rita Reviewer")],
+    });
+    adminApi.getUserAdmins.mockRejectedValue(new Error("boom"));
+    renderPage();
+    await waitLoaded();
+    const row = await requestRow();
+
+    await user.click(within(row).getByRole("button", { name: "Reassign" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      await within(dialog).findByText(/Couldn't load the reviewers/),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("Reviewer")).not.toBeInTheDocument();
+  });
+
   it("says nothing when the read fails", async () => {
     // The operator did not ask for this read, so a failure is swallowed
     // rather than toasted at them. The page stays usable and the worst case
