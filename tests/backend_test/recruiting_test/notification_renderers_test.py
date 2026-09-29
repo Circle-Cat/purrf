@@ -87,6 +87,54 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
         self.assertEqual(subject, "New application: Ada Lovelace for Backend Engineer")
         self.assertIn("Recruiter screening stage", body)
 
+    async def test_application_submitted_names_the_auto_assignee(self):
+        """The assignee is a colleague, so their preferred name is used."""
+        candidate = _make_user("Ada", "Lovelace")
+        assignee = _make_user("Grace", "Hopper", preferred_name="<b>Amazing</b>")
+        await self.insert_entities([candidate, assignee])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        event = await self._make_event(
+            "recruiting.application_submitted",
+            "application",
+            application.application_id,
+            candidate,
+            details={
+                "stage": ApplicationStage.RECRUITER_SCREENING.value,
+                "autoAssigneeId": assignee.user_id,
+            },
+        )
+
+        _, body = await render_registry.render(self.session, event)
+
+        self.assertIn(
+            "It was assigned to &lt;b&gt;Amazing&lt;/b&gt; automatically", body
+        )
+
+    async def test_application_submitted_labels_an_unavailable_default_by_id(self):
+        """Only the id: the reason the default dropped out is not the
+        owners' to read, and a name would suggest the person is still there."""
+        candidate = _make_user("Ada", "Lovelace")
+        stale = _make_user("Grace", "Hopper")
+        await self.insert_entities([candidate, stale])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        event = await self._make_event(
+            "recruiting.application_submitted",
+            "application",
+            application.application_id,
+            candidate,
+            details={
+                "stage": ApplicationStage.RECRUITER_SCREENING.value,
+                "unavailableDefaultAssigneeId": stale.user_id,
+            },
+        )
+
+        _, body = await render_registry.render(self.session, event)
+
+        self.assertIn(f"(User {stale.user_id} — unavailable)", body)
+        self.assertNotIn("Grace", body)
+
     async def test_base_dto_resolves_the_candidate_primary_address(self):
         """The primary address wins over an older claim.
 
