@@ -372,6 +372,7 @@ export const ENTRY_LABEL = {
   manual_adjustment: "Adjustment by administrator",
   reversal: "Reversal",
   carryover_forfeit: "Carry-over cap",
+  level_change: "Level change",
 };
 
 /** Display label for each request status. */

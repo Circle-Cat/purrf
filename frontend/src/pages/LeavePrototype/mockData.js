@@ -342,3 +342,143 @@ export const DATA_ISSUE_LABELS = {
     severity: "warning",
   },
 };
+
+/** Rows per page on the administrator's Ledger tab, as the real endpoint pages. */
+export const LEDGER_PAGE_SIZE = 50;
+
+/**
+ * Who the Ledger tab can name. Everyone on the Balances tab, plus two who are
+ * not: somebody who has left (their rows stay in the ledger forever, but the
+ * person filter only lists who is paid now) and an account that no longer
+ * resolves, whose rows must still be shown.
+ */
+export const LEDGER_PEOPLE = {
+  1: { name: "Dana Whitfield", ldap: "dana.whitfield" },
+  2: { name: "Marcus Bell", ldap: "marcus.bell" },
+  3: { name: "Ines Okonkwo", ldap: "ines.okonkwo" },
+  4: { name: "Tobias Lund", ldap: "tobias.lund" },
+  5: { name: "Wei Zhang", ldap: "wei.zhang" },
+  9: { name: "Priya Raghavan", ldap: "priya.raghavan" },
+  10: { name: "Ravi Menon", ldap: "ravi.menon" },
+  11: { name: "Sofia Almeida", ldap: "sofia.almeida" },
+  12: { name: "Hannah Kim", ldap: "hannah.kim" },
+  14: { name: null, ldap: null },
+};
+
+/** `2026-06-01` plus n days, computed in UTC so no local zone can shift it. */
+const addDays = (iso, days) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+};
+
+/**
+ * Every ledger row in the company, as the administrator's Ledger tab reads it.
+ *
+ * Weekly accruals run on Mondays at the placeholder 96h a year (1.85h a
+ * week); L1 and the unparsable title accrue nothing. Hannah Kim's accruals stop
+ * when she leaves in July. Ids are handed out in the order the rows would
+ * have been written, which is what breaks a tie between two rows on one day.
+ */
+const buildOrgLedger = () => {
+  const rows = [];
+  const add = (userId, entryType, hours, effectiveDate, note = null) =>
+    rows.push({ userId, entryType, hours, effectiveDate, note });
+
+  for (const [userId, hours] of [
+    [1, 46.5],
+    [2, 20],
+    [3, 72.5],
+    [4, 38],
+    [5, 12],
+    [9, 80],
+    [10, 0.5],
+    [12, 16],
+  ]) {
+    add(
+      userId,
+      "manual_adjustment",
+      hours,
+      "2026-05-31",
+      "Carried over from the previous system at go-live.",
+    );
+  }
+  add(
+    3,
+    "carryover_forfeit",
+    -8.5,
+    "2026-05-31",
+    "Above the carry-over cap at go-live.",
+  );
+
+  for (let week = 0; week < 17; week += 1) {
+    const monday = addDays("2026-06-01", week * 7);
+    for (const userId of [1, 2, 3, 4, 9]) {
+      add(userId, "weekly_accrual", 1.85, monday);
+    }
+    if (monday >= "2026-07-06") add(5, "weekly_accrual", 1.85, monday);
+    if (monday <= "2026-07-13") add(12, "weekly_accrual", 1.85, monday);
+  }
+  // Promoted from L1 on the same Monday as an accrual: two rows on one day.
+  add(5, "level_change", 0, "2026-07-06", "L1 -> L2");
+
+  add(
+    2,
+    "leave_deduction",
+    -24,
+    "2026-06-16",
+    "Paid leave 2026-06-16 → 2026-06-18",
+  );
+  add(4, "leave_deduction", -8, "2026-07-02", "Paid leave 2026-07-02");
+  add(1, "exchange_credit", 8, "2026-06-20", "Worked Midsummer Day");
+  add(
+    3,
+    "leave_deduction",
+    -40,
+    "2026-08-03",
+    "Paid leave 2026-08-03 → 2026-08-09",
+  );
+  add(
+    12,
+    "leave_deduction",
+    -16,
+    "2026-07-08",
+    "Paid leave 2026-07-08 → 2026-07-09",
+  );
+  // An L1 has no entitlement and may still take paid leave: negative by design.
+  add(11, "leave_deduction", -8, "2026-08-21", "Paid leave 2026-08-21");
+  add(
+    9,
+    "leave_deduction",
+    -16,
+    "2026-09-01",
+    "Paid leave 2026-09-01 → 2026-09-02",
+  );
+  add(
+    1,
+    "leave_deduction",
+    -16,
+    "2026-09-17",
+    "Paid leave 2026-09-17 → 2026-09-18",
+  );
+  add(
+    2,
+    "manual_adjustment",
+    4,
+    "2026-09-08",
+    "Half day booked twice in July; one returned.",
+  );
+  add(
+    14,
+    "manual_adjustment",
+    10,
+    "2026-05-31",
+    "Carried over from the previous system at go-live.",
+  );
+  add(14, "leave_deduction", -8, "2026-06-10", "Paid leave 2026-06-10");
+
+  return rows
+    .sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate))
+    .map((row, index) => ({ leaveLedgerId: 1000 + index, ...row }));
+};
+
+export const ORG_LEDGER = buildOrgLedger();

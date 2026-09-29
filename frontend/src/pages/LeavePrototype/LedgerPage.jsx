@@ -1,6 +1,6 @@
 import { ArrowLeft } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { ENTRY_LABEL } from "@/pages/LeavePrototype/leaveCalc";
+import LedgerRow from "@/pages/LeavePrototype/LedgerRow";
 
 /**
  * LedgerPage
@@ -51,32 +51,7 @@ const LedgerPage = ({ ledger, balance, pending, available, onBack }) => {
       <Card className="p-5">
         <ul className="divide-y divide-slate-100">
           {history.map((row) => (
-            <li
-              key={row.id}
-              className="py-2.5 flex items-baseline justify-between gap-4"
-            >
-              <div className="min-w-0">
-                <span className="text-sm text-slate-800">
-                  {ENTRY_LABEL[row.entryType] ?? row.entryType}
-                </span>
-                {row.note && (
-                  <p className="text-xs text-slate-400 mt-0.5">{row.note}</p>
-                )}
-              </div>
-              <div className="shrink-0 text-right">
-                <span
-                  className={`text-sm font-medium tabular-nums ${
-                    row.hours < 0 ? "text-rose-600" : "text-emerald-700"
-                  }`}
-                >
-                  {row.hours > 0 ? "+" : ""}
-                  {row.hours.toFixed(2)}h
-                </span>
-                <p className="text-xs text-slate-400 tabular-nums">
-                  {row.effectiveDate}
-                </p>
-              </div>
-            </li>
+            <LedgerRow key={row.id} row={row} />
           ))}
         </ul>
 

@@ -14,10 +14,13 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CalendarAdmin from "@/pages/LeavePrototype/CalendarAdmin";
 import AdjustDialog from "@/pages/LeavePrototype/AdjustDialog";
+import OrgLedger, { EVERYONE } from "@/pages/LeavePrototype/OrgLedger";
 import {
   COMPANY_HOLIDAYS,
   DATA_ISSUE_LABELS,
+  LEDGER_PEOPLE,
   ORG_BALANCES,
+  ORG_LEDGER,
 } from "@/pages/LeavePrototype/mockData";
 
 /**
@@ -123,11 +126,14 @@ const DataHealth = ({ people }) => {
 /**
  * AdminView
  *
- * Everything behind the single new permission, in three places: the yearly
- * setup, everyone's balance, and the list of records Azure could not resolve.
+ * Everything behind the single new permission, in four places: the yearly
+ * setup, everyone's balance, every ledger row behind those balances, and the
+ * list of records Azure could not resolve.
  *
  * Adjusting a balance is not a section of its own — it opens from the person's
- * row, which is where you were when you decided to.
+ * row, which is where you were when you decided to. So does reading their
+ * history: a total cannot say why it is 33.54, and the question comes up while
+ * looking at the total.
  *
  * @param {object} props
  * @param {Array<object>} props.adjustments - manual rows written this session
@@ -137,6 +143,22 @@ const DataHealth = ({ people }) => {
 const AdminView = ({ adjustments, onAdjust }) => {
   const [adjusting, setAdjusting] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [tab, setTab] = useState("year");
+  const [ledgerPerson, setLedgerPerson] = useState(EVERYONE);
+  const [ledgerPage, setLedgerPage] = useState(1);
+
+  // The page goes back to 1 whenever the filter changes. Staying on page 7
+  // while switching to somebody with two pages would show an empty table that
+  // reads as "this person has no history".
+  const filterLedger = (personId) => {
+    setLedgerPerson(personId);
+    setLedgerPage(1);
+  };
+
+  const showHistory = (personId) => {
+    filterLedger(personId);
+    setTab("ledger");
+  };
 
   // One calendar, because the system covers one country. There is no
   // dimension to hold a second set of holidays against.
@@ -153,6 +175,19 @@ const AdminView = ({ adjustments, onAdjust }) => {
         .filter((a) => a.personId === p.id)
         .reduce((s, a) => s + a.hours, 0),
   }));
+
+  /** Adjustments written this session land in the ledger like any other row. */
+  const ledgerRows = [
+    ...ORG_LEDGER,
+    ...adjustments.map((a) => ({
+      leaveLedgerId: a.id,
+      userId: a.personId,
+      entryType: a.entryType,
+      hours: a.hours,
+      effectiveDate: a.effectiveDate,
+      note: a.note,
+    })),
+  ];
 
   return (
     <div className="p-6 space-y-4 max-w-5xl">
@@ -174,10 +209,11 @@ const AdminView = ({ adjustments, onAdjust }) => {
         onSubmit={writeRows}
       />
 
-      <Tabs defaultValue="year">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="year">Yearly setup</TabsTrigger>
           <TabsTrigger value="balances">Balances</TabsTrigger>
+          <TabsTrigger value="ledger">Ledger</TabsTrigger>
           <TabsTrigger value="health">Data health</TabsTrigger>
         </TabsList>
 
@@ -234,7 +270,14 @@ const AdminView = ({ adjustments, onAdjust }) => {
                     >
                       {(p.balance - p.pending).toFixed(2)}h
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right whitespace-nowrap">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => showHistory(p.id)}
+                      >
+                        View history
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -282,6 +325,18 @@ const AdminView = ({ adjustments, onAdjust }) => {
               </ul>
             </Card>
           )}
+        </TabsContent>
+
+        <TabsContent value="ledger" className="mt-4">
+          <OrgLedger
+            rows={ledgerRows}
+            people={LEDGER_PEOPLE}
+            filterOptions={ORG_BALANCES}
+            personId={ledgerPerson}
+            onPersonChange={filterLedger}
+            page={ledgerPage}
+            onPageChange={setLedgerPage}
+          />
         </TabsContent>
 
         <TabsContent value="health" className="mt-4">

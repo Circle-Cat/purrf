@@ -72,7 +72,7 @@ three screens.
 |---|---|---|
 | Employee | `EmployeeView.jsx` | The personal-dashboard card and everything its buttons lead to |
 | Manager | `ManagerView.jsx` | Approval queue, each card showing the requester's balance *after* approval |
-| Administrator | `AdminView.jsx` | Calendar entry, policy, data health, balances, manual adjustments |
+| Administrator | `AdminView.jsx` | Calendar entry, policy, data health, balances, manual adjustments, every ledger row filtered by person |
 
 The employee side is arranged the way it will ship: one card on the personal
 dashboard — three figures and four buttons, never growing — plus the places
@@ -138,6 +138,8 @@ prototype nothing.
 | `leaveCalc.js` | Working days, hour breakdown, advance notice, validation |
 | `mockData.js` | Placeholder policy, people, seeded ledger and requests |
 | `EmployeeView.jsx` / `ManagerView.jsx` / `AdminView.jsx` | The three views |
+| `OrgLedger.jsx` | Administrator → Ledger: every row in the company, one person filter, 50 a page |
+| `LedgerRow.jsx` | One ledger entry, shared by the employee's Balance history and the Ledger tab |
 
 `leaveCalc.js` holds a single definition of "working day", shared by deduction,
 advance notice, and the sick-leave threshold. The spec is explicit that a second
