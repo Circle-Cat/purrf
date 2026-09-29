@@ -154,17 +154,20 @@ describe("RoundFeedbackPage", () => {
     ]);
   });
 
-  it("wraps long answers in place of stretching the row", async () => {
+  it("shares the table width between columns and wraps inside them", async () => {
     renderPage();
     await screen.findByText("Cara Wang");
 
-    // Table cells are nowrap by default; the free-text cells undo it.
-    const cell = (text) => screen.getByText(text).closest("td");
-    expect(cell("Career advice")).toHaveClass("whitespace-normal");
-    expect(cell("Scheduling")).toHaveClass("whitespace-normal");
-    expect(cell(/Often late/)).toHaveClass("whitespace-normal");
-    // The rest stay on one line.
-    expect(cell("4/5")).not.toHaveClass("whitespace-normal");
+    expect(screen.getByRole("table")).toHaveClass("table-fixed");
+    // The shares add up to the whole table.
+    const shares = screen
+      .getAllByRole("columnheader")
+      .map((h) => Number(h.className.match(/w-\[(\d+)%\]/)[1]));
+    expect(shares.reduce((a, b) => a + b, 0)).toBe(100);
+    // Cells are nowrap by default; here the answers wrap in their column.
+    expect(screen.getByText("Career advice").closest("td")).toHaveClass(
+      "whitespace-normal",
+    );
   });
 
   it("narrows by role and to those who have not sent it", async () => {
