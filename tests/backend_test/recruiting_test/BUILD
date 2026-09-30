@@ -110,6 +110,7 @@ py_test(
     srcs = ["application_service_test.py"],
     deps = [
         "//backend/common:mentorship_enums",
+        "//backend/common:permissions",
         "//backend/common:recruiting_enums",
         "//backend/dto",
         "//backend/entity:entities",

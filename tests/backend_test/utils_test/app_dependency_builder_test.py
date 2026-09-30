@@ -917,6 +917,17 @@ class TestAppDependencyBuilder(TestCase):
             builder.board_service.notification_repository,
             builder.notification_repository,
         )
+        # One evaluator-eligibility rule: submit's default-assignee check and
+        # the board's manual-assignment validation must read the same object,
+        # so ApplicationAccess has to exist before ApplicationService is built.
+        self.assertIs(
+            builder.application_service.application_access,
+            builder.application_access,
+        )
+        self.assertIs(
+            builder.board_service.application_access,
+            builder.application_access,
+        )
 
         # The account console. BlockService is built after
         # interview_scheduling_service, not next to the permission controller:
