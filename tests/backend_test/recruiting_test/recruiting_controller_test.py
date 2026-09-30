@@ -1,7 +1,9 @@
 import unittest
 from http import HTTPStatus
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from backend.common.fast_api_response_wrapper import api_response
 from backend.common.permissions import Permission
 from backend.common.recruiting_enums import JobKind
 from backend.dto.job_dto import JobCreateDto
@@ -196,9 +198,9 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         )
 
     def test_job_authoring_helper_routes_accept_read_write_and_approve(self):
-        """approvers/interview-pool/job-owners are read-only lookups, so any
-        holder of RECRUITING_JOB_READ/WRITE/APPROVE should be able to load
-        them — not just RECRUITING_JOB_WRITE (job authors)."""
+        """approvers/job-owners are read-only lookups, so any holder of
+        RECRUITING_JOB_READ/WRITE/APPROVE should be able to load them — not
+        just RECRUITING_JOB_WRITE (job authors)."""
         routes_by_path = {route.path: route for route in self.controller.router.routes}
         expected = [
             Permission.RECRUITING_JOB_READ,
@@ -207,13 +209,67 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
         ]
         for path in (
             "/recruiting/approvers",
-            "/recruiting/interview-pool",
             "/recruiting/job-owners",
         ):
             with self.subTest(path=path):
                 route = routes_by_path[path]
                 self.assertIn("GET", route.methods)
                 self.assertEqual(self._endpoint_permissions(route.endpoint), expected)
+
+    def _interview_pool_route(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+        return routes_by_path["/recruiting/interview-pool"]
+
+    def _request_as(self, permissions):
+        user = UserContextDto(
+            sub="s",
+            primary_email="me@x.com",
+            user_id=42,
+            permissions=frozenset(permissions),
+        )
+        return SimpleNamespace(state=SimpleNamespace(user=user))
+
+    def test_interview_pool_route_accepts_job_permissions_and_read_all(self):
+        route = self._interview_pool_route()
+
+        self.assertIn("GET", route.methods)
+        self.assertEqual(
+            self._endpoint_permissions(route.endpoint),
+            [
+                Permission.RECRUITING_JOB_READ,
+                Permission.RECRUITING_JOB_WRITE,
+                Permission.RECRUITING_JOB_APPROVE,
+                Permission.RECRUITING_APPLICATION_READ_ALL,
+            ],
+        )
+
+    async def test_read_all_only_viewer_can_load_the_interview_pool(self):
+        """The application detail page loads the pool alongside the job for
+        every canView caller, so a read.all viewer with no job.* permission
+        must get the pool too, or the whole page fails to load."""
+        self.service.list_interview_pool = AsyncMock(return_value=["pool"])
+        route = self._interview_pool_route()
+
+        with patch(
+            "backend.recruiting.recruiting_controller.api_response", api_response
+        ):
+            response = await route.endpoint(
+                request=self._request_as({Permission.RECRUITING_APPLICATION_READ_ALL})
+            )
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.service.list_interview_pool.assert_awaited_once_with(self.session)
+
+    async def test_interview_pool_still_refuses_a_caller_without_permissions(self):
+        self.service.list_interview_pool = AsyncMock(return_value=["pool"])
+        route = self._interview_pool_route()
+
+        response = await route.endpoint(
+            request=self._request_as({Permission.RECRUITING_APPLICATION_ADVANCE})
+        )
+
+        self.assertEqual(response.status_code, HTTPStatus.FORBIDDEN)
+        self.service.list_interview_pool.assert_not_awaited()
 
     async def test_sync_recruiting_emails_returns_the_summary(self):
         summary = {"scanned": 3, "synced": 2, "failed": 1, "newMessages": 4}
