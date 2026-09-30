@@ -10,6 +10,7 @@ import {
   contactOf,
   formatTime,
   isArchived,
+  isUnassigned,
   needsReply,
   openBounceOf,
   personOf,
@@ -164,7 +165,9 @@ const ThreadDetail = ({
               {chip}
             </Badge>
           ) : (
-            <span className="text-slate-500">Unassigned</span>
+            isUnassigned(thread) && (
+              <span className="text-slate-500">Unassigned</span>
+            )
           )}
         </div>
       </header>

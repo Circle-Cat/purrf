@@ -73,7 +73,7 @@ describe("InboxPrototype", () => {
     );
 
     expect(chip("Needs reply")).toHaveTextContent("Needs reply (5)");
-    expect(chip("Unassigned")).toHaveTextContent("Unassigned (4)");
+    expect(chip("Unassigned")).toHaveTextContent("Unassigned (3)");
     const rows = () =>
       screen.getAllByRole("button", { name: /^Open thread / }).length;
     expect(rows()).toBe(8);
@@ -83,13 +83,13 @@ describe("InboxPrototype", () => {
     expect(listed("Requesting a different mentee")).not.toBeNull();
 
     toggle("Unassigned");
-    expect(rows()).toBe(3);
+    expect(rows()).toBe(2);
     expect(listed("Requesting a different mentee")).toBeNull();
     expect(listed("Thank you for the workshop")).toBeNull();
-    expect(listed("Interested in becoming a mentor")).not.toBeNull();
+    expect(listed("Can I still join the Fall round?")).not.toBeNull();
 
     toggle("Needs reply");
-    expect(rows()).toBe(4);
+    expect(rows()).toBe(3);
     expect(listed("Thank you for the workshop")).not.toBeNull();
   });
 
@@ -176,7 +176,7 @@ describe("InboxPrototype", () => {
     expect(titles()).toEqual(["Can I still join the Fall round?"]);
     // Counts ignore the search.
     expect(chip("Needs reply")).toHaveTextContent("Needs reply (5)");
-    expect(chip("Unassigned")).toHaveTextContent("Unassigned (4)");
+    expect(chip("Unassigned")).toHaveTextContent("Unassigned (3)");
 
     search("pairing");
     expect(titles()).toEqual([]);
@@ -190,7 +190,7 @@ describe("InboxPrototype", () => {
     expect(titles()).toEqual(["Partnership opportunity for your mentees"]);
   });
 
-  it("finds an unknown sender by the assigned person's name and #id", () => {
+  it("finds a sender with no matching user by the assigned person's name and #id", () => {
     render(<InboxPrototype />);
     const search = (value) =>
       fireEvent.change(screen.getByLabelText("Search threads"), {
@@ -304,7 +304,34 @@ describe("InboxPrototype", () => {
     expect(listed("Can I still join the Fall round?")).toBeNull();
   });
 
-  it("makes an unknown sender pick a person first", () => {
+  it("keeps a sender with no matching user out of Unassigned, but assignable by hand", () => {
+    render(<InboxPrototype />);
+    const row = rowOf("Interested in becoming a mentor");
+    expect(row).toHaveTextContent("No matching user");
+    expect(row).not.toHaveTextContent("Unassigned");
+    expect(row).toHaveTextContent("Needs reply");
+
+    expect(chip("Unassigned")).toHaveTextContent("Unassigned (3)");
+    toggle("Unassigned");
+    expect(listed("Interested in becoming a mentor")).toBeNull();
+    toggle("Unassigned");
+
+    openThread("Interested in becoming a mentor");
+    fireEvent.click(within(thread()).getByRole("button", { name: "Assign" }));
+    const dialog = within(screen.getByRole("dialog"));
+    fireEvent.change(dialog.getByLabelText("Search people"), {
+      target: { value: "1715" },
+    });
+    fireEvent.click(dialog.getByRole("button", { name: /Elena Petrova/ }));
+    fireEvent.click(dialog.getByRole("button", { name: "Assign" }));
+
+    expect(rowOf("Interested in becoming a mentor")).toHaveTextContent(
+      "Fall 2026 round",
+    );
+    expect(chip("Unassigned")).toHaveTextContent("Unassigned (3)");
+  });
+
+  it("makes a sender with no matching user pick a person first", () => {
     render(<InboxPrototype />);
     openThread("Interested in becoming a mentor");
     fireEvent.click(within(thread()).getByRole("button", { name: "Assign" }));

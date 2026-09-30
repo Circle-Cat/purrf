@@ -9,6 +9,7 @@ import {
   contactOf,
   byListOrder,
   isArchived,
+  isUnassigned,
   matchesSearch,
   needsReply,
   replyAliasOf,
@@ -18,7 +19,7 @@ import { INBOXES, INITIAL_THREADS, NOW } from "@/pages/InboxPrototype/mockData";
 /** Filter chips; selected ones combine with AND. */
 const FILTERS = [
   { key: "needsReply", label: "Needs reply", test: needsReply },
-  { key: "unassigned", label: "Unassigned", test: (t) => !t.assignment },
+  { key: "unassigned", label: "Unassigned", test: isUnassigned },
 ];
 
 /** `#inbox/recruiting` opens on the Recruiting inbox. */

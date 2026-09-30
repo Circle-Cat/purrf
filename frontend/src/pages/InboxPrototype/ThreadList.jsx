@@ -4,6 +4,7 @@ import {
   contactOf,
   formatTime,
   isArchived,
+  isUnassigned,
   needsReply,
   lastMessage,
   machineTagOf,
@@ -24,7 +25,7 @@ const TAG_STYLES = {
  * SenderName
  *
  * `Name · #id` for a sender the lookup resolves; the bare address plus an
- * `Unknown sender` badge otherwise.
+ * `No matching user` badge otherwise.
  *
  * @param {{email: string}} props
  * @returns {JSX.Element}
@@ -49,7 +50,7 @@ export const SenderName = ({ email }) => {
         variant="outline"
         className="border-amber-300 bg-amber-50 text-amber-800"
       >
-        Unknown sender
+        No matching user
       </Badge>
     </span>
   );
@@ -80,7 +81,7 @@ const ThreadList = ({ threads, selectedId, onOpen, emptyText }) => {
         const last = lastMessage(thread);
         const tags = [
           needsReply(thread) ? "Needs reply" : null,
-          thread.assignment ? null : "Unassigned",
+          isUnassigned(thread) ? "Unassigned" : null,
           machineTagOf(thread),
           isArchived(thread) ? "Archived" : null,
           thread.movedFrom

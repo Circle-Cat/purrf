@@ -33,7 +33,8 @@ Things to click:
   - _Needs reply_: the last human inbound message is newer than our last
     reply and newer than the archive time, whether or not the thread is
     assigned.
-  - _Unassigned_: not assigned yet, whether or not anyone replied.
+  - _Unassigned_: not assigned yet, whether or not anyone replied. Threads
+    from a sender whose address matches no user are left out (see below).
 
   Each row carries the same two words as tags when they apply. _Show archived_
   adds archived threads to the list. An archived thread never counts as
@@ -41,9 +42,9 @@ Things to click:
   on.
 
 - **Search** matches the thread's person by name and user ID (`1555` or
-  `#1555`), the raw sender address (unknown senders included) and the subject.
+  `#1555`), the raw sender address (including senders with no matching user) and the subject.
   The thread's person is the assignee if there is one, otherwise the user the
-  sender's address matches, so an unknown sender becomes findable by name once
+  sender's address matches, so a sender with no matching user becomes findable by name once
   assigned. A query that is only digits (optionally `#` first) is a user ID and must
   match exactly: `155` does not find #1555, and digits are not matched against
   name, email or subject. Other queries ignore case
@@ -63,8 +64,15 @@ Things to click:
   Assign button. The thread shows the alias change: the older outbound came
   from `recruiting@`, the newer one from `mentorship@`.
 - **Sender matching** uses primary and alternative emails. "Can I still join
-  the Fall round?" matches by alternative email. For an unknown sender you have
-  to pick the person before you can assign.
+  the Fall round?" matches by alternative email.
+- **No matching user.** When the sender's address matches no user, the row
+  says _No matching user_. Such threads don't get the Unassigned tag and aren't
+  counted by the Unassigned chip, because the normal flow is to reply and
+  Archive. Assign stays available, since the sender may be an existing user
+  writing from an address they never registered. Staff then pick the person
+  by hand, and after that the thread behaves like any other assigned thread.
+  If the person later adds that address to their account, their next email
+  from it matches automatically.
 - **Recruiting attaches to one application.** For Arjun Mehta, Backend Engineer
   attaches to #88 (In progress). For Sofia Ramirez, the only applications are
   rejected ones, so it attaches to the most recent, #57. Liam Novak has no

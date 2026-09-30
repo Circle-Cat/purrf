@@ -39,6 +39,14 @@ export const personOf = (thread) =>
     ? userById(thread.assignment.userId)
     : (matchSender(contactOf(thread))?.user ?? null);
 
+/**
+ * Waiting to be assigned. A sender whose address matches no user is not: the
+ * normal flow there is reply and Archive, though staff can still assign one
+ * by hand.
+ */
+export const isUnassigned = (thread) =>
+  !thread.assignment && matchSender(contactOf(thread)) !== null;
+
 const latest = (messages) =>
   messages.reduce((acc, m) => (!acc || m.at > acc.at ? m : acc), null);
 

@@ -155,7 +155,8 @@ const initialJob = (thread) => {
  * Assign a thread to a person, then to the context its inbox needs: a round
  * for Mentorship, a job (and so an application) for Recruiting, nothing more
  * for Inquiries. The person is prefilled when the sender's address matches a
- * user; an unknown sender has to be picked first.
+ * user; for a sender with no matching user, staff pick the person by hand
+ * (they may be an existing user writing from an unregistered address).
  *
  * Mounted fresh for each opening, so its state never leaks between threads.
  *
