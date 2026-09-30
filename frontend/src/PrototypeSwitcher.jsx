@@ -3,6 +3,7 @@ import RecruitingPrototype from "@/pages/RecruitingPrototype";
 import LeavePrototype from "@/pages/LeavePrototype";
 import UserAdminPrototype from "@/pages/UserAdminPrototype";
 import MentorshipAdminPrototype from "@/pages/MentorshipAdminPrototype";
+import InboxPrototype from "@/pages/InboxPrototype";
 
 /** The prototypes the static Pages bundle serves, in tab order. */
 const PROTOTYPES = [
@@ -18,6 +19,7 @@ const PROTOTYPES = [
     label: "Mentorship Admin",
     Component: MentorshipAdminPrototype,
   },
+  { hash: "inbox", label: "Inbox", Component: InboxPrototype },
 ];
 
 /**
