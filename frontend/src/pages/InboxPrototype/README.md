@@ -44,8 +44,10 @@ Things to click:
   `#1555`), the raw sender address (unknown senders included) and the subject.
   The thread's person is the assignee if there is one, otherwise the user the
   sender's address matches, so an unknown sender becomes findable by name once
-  assigned. It ignores case
-  and matches any part of the text. It combines with the chips and _Show
+  assigned. A query that is only digits (optionally `#` first) is a user ID and must
+  match exactly: `155` does not find #1555, and digits are not matched against
+  name, email or subject. Other queries ignore case
+  and match any part of the text. It combines with the chips and _Show
   archived_. The chip counts always cover every non-archived thread in the
   inbox and don't change with the search.
 

@@ -84,23 +84,22 @@ export const byListOrder = (a, b) => {
 };
 
 /**
- * Case-insensitive substring search over the thread's person (assignee, else
- * the matched sender) by name and user ID (with or without a leading `#`),
- * the raw sender address, and the subject.
+ * Search over a thread. A query that is only digits, optionally after one
+ * `#`, is a user ID: it matches only a thread whose person (assignee, else
+ * the matched sender) has exactly that ID. Any other query is a
+ * case-insensitive substring match on that person's name, the raw sender
+ * address and the subject.
  */
 export const matchesSearch = (thread, term) => {
   const needle = term.trim().toLowerCase();
   if (!needle) return true;
-  const email = contactOf(thread);
   const user = personOf(thread);
-  const id = needle.startsWith("#") ? needle.slice(1) : needle;
+  const idQuery = needle.match(/^#?(\d+)$/);
+  if (idQuery) return user ? String(user.userId) === idQuery[1] : false;
   return (
-    email.toLowerCase().includes(needle) ||
+    contactOf(thread).toLowerCase().includes(needle) ||
     thread.subject.toLowerCase().includes(needle) ||
-    (user
-      ? user.name.toLowerCase().includes(needle) ||
-        (id !== "" && String(user.userId).includes(id))
-      : false)
+    (user ? user.name.toLowerCase().includes(needle) : false)
   );
 };
 

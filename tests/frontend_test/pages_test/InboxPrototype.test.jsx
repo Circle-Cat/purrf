@@ -149,6 +149,15 @@ describe("InboxPrototype", () => {
     expect(titles()).toEqual(["Requesting a different mentee"]);
     search("1555");
     expect(titles()).toEqual(["Requesting a different mentee"]);
+    // IDs match exactly, never as a substring.
+    search("155");
+    expect(titles()).toEqual([]);
+    search("#155");
+    expect(titles()).toEqual([]);
+    // A digits-only query is an ID, not text: "2026" appears in a subject
+    // ("Fall 2026 pairing details") but matches nothing.
+    search("2026");
+    expect(titles()).toEqual([]);
 
     search("jordan.blake@");
     expect(titles()).toEqual(["Interested in becoming a mentor"]);
