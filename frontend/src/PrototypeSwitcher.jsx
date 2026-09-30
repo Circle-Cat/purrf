@@ -4,6 +4,7 @@ import LeavePrototype from "@/pages/LeavePrototype";
 import UserAdminPrototype from "@/pages/UserAdminPrototype";
 import MentorshipAdminPrototype from "@/pages/MentorshipAdminPrototype";
 import InboxPrototype from "@/pages/InboxPrototype";
+import EmailTemplatesPrototype from "@/pages/EmailTemplatesPrototype";
 
 /** The prototypes the static Pages bundle serves, in tab order. */
 const PROTOTYPES = [
@@ -20,6 +21,11 @@ const PROTOTYPES = [
     Component: MentorshipAdminPrototype,
   },
   { hash: "inbox", label: "Inbox", Component: InboxPrototype },
+  {
+    hash: "email-templates",
+    label: "Email templates",
+    Component: EmailTemplatesPrototype,
+  },
 ];
 
 /**
