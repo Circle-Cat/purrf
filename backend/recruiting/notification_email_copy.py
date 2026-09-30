@@ -277,6 +277,49 @@ def _job_review_rejected(dto, stage):
     )
 
 
+def unavailable_person_label(user_id: int) -> str:
+    """How copy names a person it must not name: ``User {id} — unavailable``.
+
+    Mirrors ``personLabel.js`` on the frontend (PUR-639): the id alone, with
+    no name and no reason, so the reader learns nothing about why the person
+    dropped out.
+
+    Args:
+        user_id (int): The person's user id.
+
+    Returns:
+        str: The label.
+    """
+    return f"User {user_id} — unavailable"
+
+
+def _default_assignee_line(dto) -> str:
+    """What became of the stage's default interviewer, or "" if none is set.
+
+    Args:
+        dto (_Escaped): The escaped view a template holds, carrying
+            auto_assignee_name (set when the default was assigned) and
+            unavailable_default_assignee_id (set when it could not be).
+
+    Returns:
+        str: One HTML paragraph, or "".
+    """
+    if dto.auto_assignee_name is not None:
+        return (
+            f"<p>It was assigned to {dto.auto_assignee_name} automatically, "
+            "the stage's default interviewer.</p>"
+        )
+    if dto.unavailable_default_assignee_id is not None:
+        label = unavailable_person_label(dto.unavailable_default_assignee_id)
+        return (
+            f"<p>The stage's default interviewer ({label}) can no longer be "
+            "assigned, so it is unassigned. Assign someone from the "
+            "Applications Board, and update the default on the posting so "
+            "later applications are not affected.</p>"
+        )
+    return ""
+
+
 @_html_body
 def _application_submitted(dto, stage):
     return (
@@ -286,7 +329,8 @@ def _application_submitted(dto, stage):
         "stage.</p>"
         f"{_candidate_line(dto)}"
         "<p>You're receiving this because you own this posting. Open the "
-        "Applications Board in Purrf to review it.</p>",
+        "Applications Board in Purrf to review it.</p>"
+        f"{_default_assignee_line(dto)}",
     )
 
 

@@ -840,7 +840,8 @@ class BoardService:
                 the explicit assignment for that card's
                 ``(stage, current_round)`` if one exists; otherwise, only at
                 round 1, the job's configured ``default_assignee_id`` for
-                that stage; otherwise None. Non-interview stages always get
+                that stage, if that person is still an active interview
+                evaluator; otherwise None. Non-interview stages always get
                 ``reviewer_name=None``.
         """
         default_by_stage: dict[ApplicationStage, int] = {}
@@ -865,6 +866,27 @@ class BoardService:
         assignment_by_key: dict[tuple[int, ApplicationStage, int], int] = {
             (a.application_id, a.stage, a.round): a.assignee_id for a in assignments
         }
+        needs_default = any(
+            application.stage in INTERVIEW_STAGES
+            and application.stage in default_by_stage
+            and application.current_round == 1
+            and (application.application_id, application.stage, 1)
+            not in assignment_by_key
+            for application, _ in rows
+        )
+        if needs_default:
+            # Read once for the page: a default who can no longer evaluate
+            # will never get the row, so the card must not name them.
+            evaluator_ids = await self.application_access.interview_evaluator_ids(
+                session
+            )
+            default_by_stage = {
+                stage: default_id
+                for stage, default_id in default_by_stage.items()
+                if default_id in evaluator_ids
+            }
+        else:
+            default_by_stage = {}
         name_ids = {a.assignee_id for a in assignments} | set(default_by_stage.values())
         reviewers = await self.users_repository.get_all_by_ids(session, list(name_ids))
         names_by_id = {u.user_id: display_name_of(u) for u in reviewers}
@@ -911,7 +933,8 @@ class BoardService:
         explicit assignment for that card's ``(stage, current_round)`` if
         one exists; otherwise, only at round 1 and only for
         recruiter_screening/behavioral, the job's configured
-        ``default_assignee_id`` for that stage; otherwise None. Non-interview
+        ``default_assignee_id`` for that stage if that person is still an
+        active interview evaluator; otherwise None. Non-interview
         stages always get ``reviewer_name=None``.
 
         Args:

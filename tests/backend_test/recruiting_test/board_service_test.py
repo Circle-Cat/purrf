@@ -1092,12 +1092,53 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.users_repo.get_all_by_ids = AsyncMock(
             return_value=[self._user(user_id=99, first="Default", last="Person")]
         )
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=99)]
+        )
 
         result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
 
         self.assertEqual(
             result["stages"]["recruiter_screening"]["items"][0].reviewer_name,
             "Default Person",
+        )
+
+    async def test_get_board_hides_a_default_who_can_no_longer_evaluate(self):
+        """A default outside the evaluator pool would never get the row, so
+        naming them on the card would promise an evaluation nobody owes."""
+        job = self._job(
+            job_id=1,
+            owner_ids=(2,),
+            stages=("recruiter_screening",),
+            default_assignees={"recruiter_screening": 99},
+        )
+        self.job_repo.get_by_job_id = AsyncMock(return_value=job)
+        first = self._application(
+            application_id=10, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        second = self._application(
+            application_id=11, stage=ApplicationStage.RECRUITER_SCREENING
+        )
+        self.app_repo.list_by_job = AsyncMock(
+            return_value=[
+                (first, self._user(user_id=3)),
+                (second, self._user(user_id=4)),
+            ]
+        )
+        self.users_repo.get_all_by_ids = AsyncMock(
+            return_value=[self._user(user_id=99, first="Default", last="Person")]
+        )
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            return_value=[self._user(user_id=42)]
+        )
+
+        result = await self.service.get_board(self.session, self._ctx(user_id=2), 1)
+
+        items = result["stages"]["recruiter_screening"]["items"]
+        self.assertEqual([card.reviewer_name for card in items], [None, None])
+        # One pool read for the page, not one per card.
+        self.user_permissions_repo.get_active_users_with_permission.assert_awaited_once_with(
+            self.session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
         )
 
     async def test_get_board_reviewer_none_when_no_assignment_and_no_default(self):

@@ -186,11 +186,27 @@ async def _render_application_submitted(session, event):
     They read differently to an owner though -- one is work waiting on the
     board, the other is already decided -- so the auto-hire marker in the
     details selects the copy.
+
+    A plain submission also says what became of the stage's default
+    interviewer: ``autoAssigneeId`` names who got it, and
+    ``unavailableDefaultAssigneeId`` says the default could not be assigned.
+    Both are optional, since a stage need not have a default.
     """
     dto = await _base_dto(session, event)
     stage = _stage(event.details)
     if "screenAutoHireRuleId" in event.details:
         return _with_footer(copy._application_auto_hired(dto, stage))
+    auto_assignee_id = event.details.get("autoAssigneeId")
+    dto.auto_assignee_name = None
+    if auto_assignee_id is not None:
+        # A row that no longer resolves still gets a handle, so the sentence
+        # never reads "assigned to  automatically".
+        dto.auto_assignee_name = (
+            await _actor_name(session, auto_assignee_id) or f"User {auto_assignee_id}"
+        )
+    dto.unavailable_default_assignee_id = event.details.get(
+        "unavailableDefaultAssigneeId"
+    )
     return _with_footer(copy._application_submitted(dto, stage))
 
 

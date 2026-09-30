@@ -6,6 +6,8 @@ from backend.common.mentorship_enums import ParticipantRole
 from backend.mentorship.mentorship_admission_service import (
     MentorshipAdmissionService,
 )
+from backend.common.permissions import Permission
+from backend.recruiting.application_access import ApplicationAccess
 from backend.recruiting.application_service import ApplicationService
 from backend.repository.notification_repository import NotificationRepository
 from backend.recruiting.recruiting_mapper import RecruitingMapper
@@ -102,6 +104,29 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         self.mentorship_admission_svc = create_autospec(
             MentorshipAdmissionService, instance=True
         )
+        # Who could be offered as an interviewer. User 5 is the default
+        # every pipeline fixture below configures and is eligible; the
+        # others each miss exactly one condition, so a check that read the
+        # wrong flag, or asked for the wrong permission, would let one
+        # through.
+        self.roster = [
+            self._person(5),
+            self._person(6, is_blocked=True),
+            self._person(7, is_active=False),
+            self._person(8, permissions=()),
+        ]
+        self.user_permissions_repo = MagicMock()
+        self.user_permissions_repo.get_active_users_with_permission = AsyncMock(
+            side_effect=self._active_holders
+        )
+        # Real ApplicationAccess, so the eligibility rule under test is the
+        # one validate_interview_assignee applies, not a copy of it.
+        self.application_access = ApplicationAccess(
+            self.app_repo,
+            self.job_repo,
+            self.assignment_repo,
+            self.user_permissions_repo,
+        )
         self.service = ApplicationService(
             self.app_repo,
             self.sub_repo,
@@ -112,7 +137,33 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
             self.notification_repo,
             self.user_emails_repo,
             self.mentorship_admission_svc,
+            self.application_access,
         )
+
+    @staticmethod
+    def _person(
+        user_id,
+        is_active=True,
+        is_blocked=False,
+        permissions=(Permission.RECRUITING_INTERVIEW_EVALUATE.value,),
+    ):
+        """A roster entry for the fake holder-pool query."""
+        return SimpleNamespace(
+            user_id=user_id,
+            is_active=is_active,
+            is_blocked=is_blocked,
+            permissions=set(permissions),
+        )
+
+    async def _active_holders(self, session, permission_name):
+        """Stands in for get_active_users_with_permission over ``self.roster``."""
+        return [
+            person
+            for person in self.roster
+            if person.is_active
+            and not person.is_blocked
+            and permission_name in person.permissions
+        ]
 
     def _notification_repository_double(self):
         """A notification repository whose writes are observable and ordered.
@@ -488,6 +539,97 @@ class TestApplicationService(unittest.IsolatedAsyncioTestCase):
         })
         await self.service.submit(self.session, self._ctx(), dto)
         self.assignment_repo.upsert.assert_not_awaited()
+
+    def _job_with_default(self, default_id):
+        """A posting whose entry stage names ``default_id`` as its default."""
+        return self._job(
+            pipeline_config={
+                "stages": [
+                    {"stage": "recruiter_screening", "defaultAssigneeId": default_id}
+                ],
+                "ownerIds": [9],
+            }
+        )
+
+    def _submitted_details(self):
+        """The details of the one application_submitted event submit wrote."""
+        calls = [
+            call
+            for call in self.record_event.await_args_list
+            if call.kwargs["event_type"] == "recruiting.application_submitted"
+        ]
+        self.assertEqual(len(calls), 1)
+        return calls[0].kwargs["details"]
+
+    def _event_types(self):
+        return [call.kwargs["event_type"] for call in self.record_event.await_args_list]
+
+    async def test_submit_names_the_auto_assignee_in_the_submitted_event(self):
+        self.job_repo.get_by_job_id = AsyncMock(return_value=self._job_with_default(5))
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assignment_repo.upsert.assert_awaited_once()
+        self.assertIn("recruiting.auto_assigned", self._event_types())
+        self.assertEqual(
+            self._submitted_details(),
+            {"stage": "recruiter_screening", "autoAssigneeId": 5},
+        )
+
+    async def test_submit_skips_a_default_assignee_who_can_no_longer_evaluate(self):
+        """Blocked, deactivated and permission-less defaults are all left
+        unassigned, and the owners are told which default was skipped."""
+        for default_id, why in ((6, "blocked"), (7, "deactivated"), (8, "no grant")):
+            with self.subTest(why=why):
+                self.record_event.reset_mock()
+                self.assignment_repo.upsert.reset_mock()
+                self.job_repo.get_by_job_id = AsyncMock(
+                    return_value=self._job_with_default(default_id)
+                )
+                dto = ApplicationSubmitDto.model_validate({
+                    "jobId": 1,
+                    "personal": REQUIRED_PERSONAL,
+                })
+
+                await self.service.submit(self.session, self._ctx(), dto)
+
+                self.assignment_repo.upsert.assert_not_awaited()
+                self.assertNotIn("recruiting.auto_assigned", self._event_types())
+                self.assertEqual(
+                    self._submitted_details(),
+                    {
+                        "stage": "recruiter_screening",
+                        "unavailableDefaultAssigneeId": default_id,
+                    },
+                )
+
+    async def test_submit_checks_the_interview_evaluate_holders(self):
+        self.job_repo.get_by_job_id = AsyncMock(return_value=self._job_with_default(5))
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        self.user_permissions_repo.get_active_users_with_permission.assert_awaited_once_with(
+            self.session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
+        )
+
+    async def test_submit_without_a_default_adds_no_assignee_keys(self):
+        dto = ApplicationSubmitDto.model_validate({
+            "jobId": 1,
+            "personal": REQUIRED_PERSONAL,
+        })
+
+        await self.service.submit(self.session, self._ctx(), dto)
+
+        self.assertEqual(self._submitted_details(), {"stage": "recruiter_screening"})
+        self.user_permissions_repo.get_active_users_with_permission.assert_not_awaited()
 
     async def test_submit_logs_application_submitted_activity(self):
         dto = ApplicationSubmitDto.model_validate({
@@ -2589,6 +2731,7 @@ class LockReasonTest(unittest.TestCase):
             notification_repository=MagicMock(),
             user_emails_repository=MagicMock(),
             mentorship_admission_service=MagicMock(),
+            application_access=MagicMock(),
         )
         self.job = JobEntity(
             kind=JobKind.EMPLOYMENT,

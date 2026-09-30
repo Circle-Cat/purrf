@@ -125,6 +125,25 @@ class ApplicationAccess:
             raise ValueError(f"application {application_id} not found")
         return application, job
 
+    async def interview_evaluator_ids(self, session: AsyncSession) -> set[int]:
+        """The users who may currently be assigned an interview evaluation.
+
+        The one pool behind every "can this person be the interviewer" check:
+        active, unblocked holders of
+        ``Permission.RECRUITING_INTERVIEW_EVALUATE``. Callers that check many
+        ids read it once and test membership themselves.
+
+        Args:
+            session (AsyncSession): Active database async session.
+
+        Returns:
+            set[int]: The eligible user ids.
+        """
+        pool = await self.user_permissions_repository.get_active_users_with_permission(
+            session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
+        )
+        return {u.user_id for u in pool}
+
     async def validate_interview_assignee(
         self, session: AsyncSession, assignee_id: int
     ) -> None:
@@ -138,10 +157,7 @@ class ApplicationAccess:
             ValueError: If ``assignee_id`` is not an active holder of
                 ``Permission.RECRUITING_INTERVIEW_EVALUATE``.
         """
-        pool = await self.user_permissions_repository.get_active_users_with_permission(
-            session, Permission.RECRUITING_INTERVIEW_EVALUATE.value
-        )
-        if assignee_id not in {u.user_id for u in pool}:
+        if assignee_id not in await self.interview_evaluator_ids(session):
             raise ValueError(
                 f"assignee {assignee_id} is not an active interview evaluator"
             )

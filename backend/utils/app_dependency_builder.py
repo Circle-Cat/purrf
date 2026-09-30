@@ -887,6 +887,15 @@ class AppDependencyBuilder:
         self.application_submission_repository = ApplicationSubmissionRepository()
         self.resume_storage = ResumeStorage(os.getenv(RESUME_BUCKET))
         self.evaluation_repository = EvaluationRepository()
+        # Shared owner/assignee gating + interview-evaluator validation, used
+        # by ApplicationService (default-assignee eligibility), BoardService
+        # (via its thin delegating methods) and InterviewSchedulingService.
+        self.application_access = ApplicationAccess(
+            self.application_repository,
+            self.job_repository,
+            self.application_assignment_repository,
+            self.user_permissions_repository,
+        )
         self.application_service = ApplicationService(
             self.application_repository,
             self.application_submission_repository,
@@ -897,6 +906,7 @@ class AppDependencyBuilder:
             self.notification_repository,
             self.user_emails_repository,
             self.mentorship_admission_service,
+            self.application_access,
         )
         self.application_controller = ApplicationController(
             self.application_service,
@@ -928,15 +938,6 @@ class AppDependencyBuilder:
             database=self.database,
         )
 
-        # Shared owner/assignee gating + interview-evaluator validation, used
-        # by both BoardService (via its thin delegating methods) and
-        # InterviewSchedulingService.
-        self.application_access = ApplicationAccess(
-            self.application_repository,
-            self.job_repository,
-            self.application_assignment_repository,
-            self.user_permissions_repository,
-        )
         # Built before BoardService, which delegates its ghost-meeting cleanup
         # (change_stage/set_round's `cancelInterview`) here. The dependency is
         # one-way: this service never calls back into BoardService.
