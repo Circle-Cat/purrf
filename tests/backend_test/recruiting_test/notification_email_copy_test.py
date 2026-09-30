@@ -29,6 +29,8 @@ def _dto(**overrides):
         reason="Not a fit",
         to_sub_status="scheduled",
         start_at=datetime(2026, 8, 5, 21, tzinfo=timezone.utc),
+        auto_assignee_name=None,
+        unavailable_default_assignee_id=None,
     )
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -154,6 +156,42 @@ class TestRender(unittest.TestCase):
         self.assertIn("waiting for review at the Recruiter screening stage", body)
         self.assertIn("because you own this posting", body)
         self.assertIn("Open the Applications Board in Purrf", body)
+
+    def test_application_submitted_names_the_auto_assignee(self):
+        _, body = notification_email_copy._application_submitted(
+            _dto(auto_assignee_name="Grace Hopper"),
+            ApplicationStage.RECRUITER_SCREENING,
+        )
+
+        self.assertIn(
+            "It was assigned to Grace Hopper automatically, the stage's default "
+            "interviewer.",
+            body,
+        )
+        self.assertNotIn("unavailable", body)
+
+    def test_application_submitted_says_the_default_could_not_be_assigned(self):
+        _, body = notification_email_copy._application_submitted(
+            _dto(unavailable_default_assignee_id=42),
+            ApplicationStage.RECRUITER_SCREENING,
+        )
+
+        self.assertIn(
+            "The stage's default interviewer (User 42 — unavailable) can no "
+            "longer be assigned, so it is unassigned. Assign someone from the "
+            "Applications Board, and update the default on the posting so later "
+            "applications are not affected.",
+            body,
+        )
+        self.assertNotIn("automatically", body)
+
+    def test_application_submitted_without_a_default_adds_nothing(self):
+        _, body = notification_email_copy._application_submitted(
+            _dto(), ApplicationStage.RECRUITER_SCREENING
+        )
+
+        self.assertNotIn("default interviewer", body)
+        self.assertTrue(body.endswith("Applications Board in Purrf to review it.</p>"))
 
     def test_application_auto_rejected_says_no_human_review(self):
         subject, body = notification_email_copy._application_auto_rejected(_dto(), None)
@@ -308,6 +346,15 @@ class TestEscaping(unittest.TestCase):
 
         self.assertIn(self._ESCAPED, body)
         self.assertNotIn("<script", body)
+
+    def test_an_auto_assignee_name_containing_markup_is_escaped_in_the_body(self):
+        subject, body = notification_email_copy._application_submitted(
+            _dto(auto_assignee_name=self._MARKUP), ApplicationStage.RECRUITER_SCREENING
+        )
+
+        self.assertIn(f"assigned to {self._ESCAPED} automatically", body)
+        self.assertNotIn("<script", body)
+        self.assertNotIn("script", subject)
 
     def test_an_actor_name_containing_markup_is_escaped_in_the_body(self):
         _, body = notification_email_copy._mentioned(

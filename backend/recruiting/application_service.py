@@ -64,6 +64,7 @@ class ApplicationService:
         notification_repository,
         user_emails_repository,
         mentorship_admission_service,
+        application_access,
     ):
         """
         Args:
@@ -87,6 +88,9 @@ class ApplicationService:
                 for a mentor, the admission email -- when an `auto_hire`
                 screen rule lands the submission directly on HIRED. Recruiting
                 does not decide which of those a posting owes.
+            application_access (ApplicationAccess): Decides whether a stage's
+                configured default assignee can still be assigned, by the
+                same rule a manual assignment is validated against.
         """
         self.application_repository = application_repository
         self.application_submission_repository = application_submission_repository
@@ -97,6 +101,7 @@ class ApplicationService:
         self.notification_repository = notification_repository
         self.user_emails_repository = user_emails_repository
         self.mentorship_admission_service = mentorship_admission_service
+        self.application_access = application_access
 
     @staticmethod
     def _today():
@@ -546,7 +551,7 @@ class ApplicationService:
             session, application.application_id, 1, None, dto, job
         )
 
-        await self._assign_default_if_configured(
+        default_assignment = await self._assign_default_if_configured(
             session, application, job, current_user
         )
 
@@ -581,7 +586,7 @@ class ApplicationService:
                 details={"reason": "screen_rule", "ruleId": screen_rule_id},
             )
         else:
-            details = {"stage": application.stage.value}
+            details = {"stage": application.stage.value, **default_assignment}
             if screen_action == "auto_hire":
                 details["screenAutoHireRuleId"] = screen_rule_id
             await record_event(
@@ -681,7 +686,7 @@ class ApplicationService:
 
     async def _assign_default_if_configured(
         self, session, application, job, current_user
-    ):
+    ) -> dict:
         """Materialize a stage's configured default assignee into a real row.
 
         A stage's ``defaultAssigneeId`` is only a board-display fallback
@@ -702,15 +707,27 @@ class ApplicationService:
         to the submitting candidate, only on the path where a row is
         actually materialized.
 
+        A default who is no longer an active, unblocked interview evaluator
+        is not assigned: the posting still names them, but the row would
+        hand an evaluation to someone who cannot sign in or evaluate. The
+        application is left unassigned and the outcome says so, so the
+        owners' notice can ask them to pick someone.
+
         Args:
             session (AsyncSession): Active database async session.
             application (ApplicationEntity): The just-landed application.
             job (JobEntity): Its posting, for pipeline_config lookup.
             current_user (UserContextDto): The submitting candidate, recorded
                 as the activity entry's actor.
+
+        Returns:
+            dict: The ``application_submitted`` details keys that describe
+                the outcome: ``{"autoAssigneeId": id}`` when the default was
+                assigned, ``{"unavailableDefaultAssigneeId": id}`` when it
+                could not be, and ``{}`` when nothing was attempted.
         """
         if application.stage not in INTERVIEW_STAGES:
-            return
+            return {}
         default_id = None
         for entry in (job.pipeline_config or {}).get("stages") or []:
             if (
@@ -720,10 +737,14 @@ class ApplicationService:
                 default_id = entry.get("defaultAssigneeId")
                 break
         if default_id is None:
-            return
+            return {}
         owner_ids = normalized_owner_ids(job.pipeline_config)
         if not owner_ids:
-            return
+            return {}
+        if default_id not in await self.application_access.interview_evaluator_ids(
+            session
+        ):
+            return {"unavailableDefaultAssigneeId": default_id}
         await self.application_assignment_repository.upsert(
             session,
             application.application_id,
@@ -747,6 +768,7 @@ class ApplicationService:
                 "round": application.current_round,
             },
         )
+        return {"autoAssigneeId": default_id}
 
     async def edit(
         self,

@@ -6,6 +6,8 @@ export const ROUTE_PATHS = {
   PERSONAL_DASHBOARD: "/dashboard/me",
   ACCESS_DENIED: "/access-denied",
   MENTORSHIP_MANAGEMENT: "/mentorship-management",
+  MENTORSHIP_ROUND_FEEDBACK: (roundId) =>
+    `/mentorship-management/rounds/${roundId}/feedback`,
   VERIFY_REQUIRED: "/verify-required",
   SIGN_IN_SECURITY: "/settings/sign-in",
   ADMIN_USERS: "/admin/users",
@@ -24,6 +26,7 @@ export const ROUTE_PATHS = {
   RECRUITING_MY_EVALUATIONS: "/recruiting/my-evaluations",
   RECRUITING_AUDIT: "/recruiting/audit",
   LEAVE_APPROVALS: "/leave/approvals",
+  LEAVE_BALANCE_HISTORY: "/leave/balance-history",
   LEAVE_REQUESTS: "/leave/requests",
   LEAVE_ADMIN: "/leave/admin",
   TRAINING_COURSE: (trainingId) => `/training/${trainingId}`,

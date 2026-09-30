@@ -7,6 +7,7 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import CompanyHolidaysDialog from "@/pages/Leave/components/CompanyHolidaysDialog";
 import FileLeaveDialog from "@/pages/Leave/components/FileLeaveDialog";
 import { useMyLeaveRequests } from "@/pages/Leave/hooks/useMyLeaveRequests";
+import { useLeaveEnabled } from "@/pages/Leave/hooks/useLeaveEnabled";
 
 /**
  * One figure in the card.
@@ -36,8 +37,16 @@ const Stat = ({ label, hours, hint, isRed = false }) => (
 /**
  * TimeOffCard
  *
- * The leave feature's whole presence on the personal dashboard: three figures
- * answering "what can I spend", and the things anyone comes here to do.
+ * The leave feature's whole presence on the personal dashboard, for two kinds
+ * of people who overlap: those the leave system covers, and those somebody has
+ * filed leave against.
+ *
+ * Covered people get three figures answering "what can I spend" and the things
+ * they come here to do. An approver gets one more button, the way into the
+ * requests waiting on them. A manager outside the leave population still
+ * decides their reports' requests, so they get the card too, but only that
+ * button and the holiday list: 0.00h under Available would read as "my leave is
+ * zero", and anything they filed would be refused.
  *
  * The card never grows. Requesting and the holiday list open in dialogs, and
  * the history is a page of its own, because a dashboard card that expands into
@@ -49,73 +58,124 @@ const Stat = ({ label, hours, hint, isRed = false }) => (
  * days for the hint.
  *
  * @param {{
+ *   isCovered: boolean,
+ *   isApprover: boolean,
+ *   approvalsPendingCount: number,
  *   availableHours: string|null,
  *   pendingHours: string|null,
  *   usedHours: string|null,
  * }} props
  */
-const TimeOffCard = ({ availableHours, pendingHours, usedHours }) => {
+const TimeOffCard = ({
+  isCovered,
+  isApprover,
+  approvalsPendingCount,
+  availableHours,
+  pendingHours,
+  usedHours,
+}) => {
   const navigate = useNavigate();
-  const { requests, isSaving, saveError, file } = useMyLeaveRequests();
+  const isEnabled = useLeaveEnabled();
+  // Somebody outside the population has no requests to list, by definition.
+  const { isSaving, saveError, file } = useMyLeaveRequests({
+    enabled: isCovered,
+  });
   const [isFiling, setIsFiling] = useState(false);
   const [isViewingHolidays, setIsViewingHolidays] = useState(false);
 
-  const pendingCount = requests.filter(
-    (row) => row.status === "pending",
-  ).length;
+  if (!isCovered && !isApprover) return null;
+
   const asDays = (hours) => `${(Number(hours) / 8).toFixed(1)} days`;
+
+  const approvals = isApprover && (
+    <Button
+      variant="outline"
+      onClick={() => navigate(ROUTE_PATHS.LEAVE_APPROVALS)}
+    >
+      {approvalsPendingCount > 0
+        ? `Approvals (${approvalsPendingCount})`
+        : "Approvals"}
+    </Button>
+  );
+  const holidays = (
+    <Button variant="outline" onClick={() => setIsViewingHolidays(true)}>
+      Company holidays
+    </Button>
+  );
 
   return (
     <Card className="border-gray-200 shadow-sm">
-      <CardHeader className="flex flex-row items-start justify-between gap-4">
+      <CardHeader>
         <CardTitle className="text-lg font-semibold">Time off</CardTitle>
-        {pendingCount > 0 && (
-          <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
-            {`${pendingCount} awaiting a decision`}
-          </span>
-        )}
       </CardHeader>
       <CardContent className="space-y-5">
-        <div className="grid grid-cols-3 gap-6">
-          <Stat
-            label="Available"
-            hours={availableHours ?? "0.00"}
-            hint={asDays(availableHours ?? 0)}
-            isRed={Number(availableHours) < 0}
-          />
-          <Stat
-            label="Pending"
-            hours={pendingHours ?? "0.00"}
-            hint="Requested, not yet decided"
-          />
-          <Stat
-            label="Used"
-            hours={usedHours ?? "0.00"}
-            hint="Approved and taken this year"
-          />
-        </div>
+        {isCovered ? (
+          <>
+            <div className="grid grid-cols-3 gap-6">
+              <Stat
+                label="Available"
+                hours={availableHours ?? "0.00"}
+                hint={asDays(availableHours ?? 0)}
+                isRed={Number(availableHours) < 0}
+              />
+              <Stat
+                label="Pending"
+                hours={pendingHours ?? "0.00"}
+                hint="Requested, not yet decided"
+              />
+              <Stat
+                label="Used"
+                hours={usedHours ?? "0.00"}
+                hint="Approved and taken this year"
+              />
+            </div>
 
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => setIsFiling(true)}>Request time off</Button>
-          <Button variant="outline" onClick={() => setIsViewingHolidays(true)}>
-            Company holidays
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => navigate(ROUTE_PATHS.LEAVE_REQUESTS)}
-          >
-            My requests
-          </Button>
-        </div>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => setIsFiling(true)}>
+                Request time off
+              </Button>
+              {holidays}
+              <Button
+                variant="outline"
+                onClick={() => navigate(ROUTE_PATHS.LEAVE_REQUESTS)}
+              >
+                My requests
+              </Button>
+
+              {isEnabled && (
+                <Button
+                  variant="outline"
+                  onClick={() => navigate(ROUTE_PATHS.LEAVE_BALANCE_HISTORY)}
+                >
+                  Balance history
+                </Button>
+              )}
+
+              {approvals}
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="m-0 text-sm text-muted-foreground">
+              Leave isn&apos;t tracked for your account.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {approvals}
+              {holidays}
+            </div>
+          </>
+        )}
       </CardContent>
 
-      <FileLeaveDialog
-        isOpen={isFiling}
-        isSaving={isSaving}
-        saveError={saveError}
-        onClose={() => setIsFiling(false)}
-        onSubmit={file}
-      />
+      {isCovered && (
+        <FileLeaveDialog
+          isOpen={isFiling}
+          isSaving={isSaving}
+          saveError={saveError}
+          onClose={() => setIsFiling(false)}
+          onSubmit={file}
+        />
+      )}
       <CompanyHolidaysDialog
         isOpen={isViewingHolidays}
         onClose={() => setIsViewingHolidays(false)}

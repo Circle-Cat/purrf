@@ -135,6 +135,7 @@ class RecruitingController:
                     Permission.RECRUITING_JOB_READ,
                     Permission.RECRUITING_JOB_WRITE,
                     Permission.RECRUITING_JOB_APPROVE,
+                    Permission.RECRUITING_APPLICATION_READ_ALL,
                 ]
             )(self.list_interview_pool),
             methods=["GET"],

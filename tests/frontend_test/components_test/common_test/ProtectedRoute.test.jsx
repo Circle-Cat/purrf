@@ -106,4 +106,41 @@ describe("ProtectedRoute Component", () => {
     expect(screen.getByText("Dashboard Page")).toBeInTheDocument();
     expect(screen.queryByText("Access Denied Page")).not.toBeInTheDocument();
   });
+
+  const BOARD_PERMISSIONS = [
+    PERMISSIONS.RECRUITING_APPLICATION_ADVANCE,
+    PERMISSIONS.RECRUITING_APPLICATION_READ_ALL,
+  ];
+
+  test("applications board admits a read.all holder who cannot advance", () => {
+    renderWithRouter({
+      ui: <div>Board Page</div>,
+      userPermissions: ["recruiting.application.read.all"],
+      requiredPermissions: BOARD_PERMISSIONS,
+    });
+
+    expect(screen.getByText("Board Page")).toBeInTheDocument();
+    expect(screen.queryByText("Access Denied Page")).not.toBeInTheDocument();
+  });
+
+  test("applications board admits recruiting.application.advance alone", () => {
+    renderWithRouter({
+      ui: <div>Board Page</div>,
+      userPermissions: ["recruiting.application.advance"],
+      requiredPermissions: BOARD_PERMISSIONS,
+    });
+
+    expect(screen.getByText("Board Page")).toBeInTheDocument();
+  });
+
+  test("applications board refuses a user with neither advance nor read.all", () => {
+    renderWithRouter({
+      ui: <div>Board Page</div>,
+      userPermissions: [PERMISSIONS.RECRUITING_JOB_READ],
+      requiredPermissions: BOARD_PERMISSIONS,
+    });
+
+    expect(screen.getByText("Access Denied Page")).toBeInTheDocument();
+    expect(screen.queryByText("Board Page")).not.toBeInTheDocument();
+  });
 });

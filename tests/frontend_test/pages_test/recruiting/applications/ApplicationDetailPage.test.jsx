@@ -1129,6 +1129,171 @@ describe("ApplicationDetailPage — operate row", () => {
   });
 });
 
+describe("ApplicationDetailPage — owner without the advance grant", () => {
+  // Every write on this page sits behind the advance grant at the route, so
+  // an owner who lost it keeps seeing the controls but cannot press them.
+  const HINT = "Requires the recruiting advance permission";
+
+  const expectClosed = (button) => {
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("title", HINT);
+  };
+
+  const THREAD = {
+    threadId: 1,
+    subject: "Interview Availability",
+    messages: [
+      {
+        messageId: 11,
+        direction: "outbound",
+        fromAddress: "recruiting@circlecat.org",
+        bodyHtml: "<p>Hello there</p>",
+        bodyText: "Hello there",
+        createdAt: "2026-07-23T00:00:00Z",
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    authState.userId = OWNER_ID;
+    authState.permissions = [];
+  });
+
+  it("disables sub-status, Reassign, Reject and Advance with the hint", async () => {
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expectClosed(screen.getByRole("button", { name: "Pending" }));
+    expectClosed(screen.getByRole("button", { name: "Evaluated" }));
+    expectClosed(screen.getByRole("button", { name: "Reassign" }));
+    expectClosed(screen.getByRole("button", { name: "Reject" }));
+    expectClosed(screen.getByRole("button", { name: "Advance to Behavioral" }));
+  });
+
+  it("disables the round advance with the hint", async () => {
+    api.getJob.mockResolvedValue({
+      data: {
+        ...JOB,
+        pipelineConfig: {
+          ...JOB.pipelineConfig,
+          stages: JOB.pipelineConfig.stages.map((s) =>
+            s.stage === "recruiter_screening" ? { ...s, rounds: 2 } : s,
+          ),
+        },
+      },
+    });
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        stage: "recruiter_screening",
+        currentRound: 1,
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expectClosed(screen.getByRole("button", { name: "Advance to Session 2" }));
+  });
+
+  it("disables Edit and Cancel on a booked interview", async () => {
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: true,
+        stage: "behavioral",
+        interview: INTERVIEW_FIXTURE,
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expectClosed(screen.getByRole("button", { name: "Edit" }));
+    expectClosed(screen.getByRole("button", { name: "Cancel" }));
+  });
+
+  it("disables Schedule meeting when nothing is booked", async () => {
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, stage: "behavioral" }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    expectClosed(screen.getByRole("button", { name: "Schedule meeting" }));
+  });
+
+  it("disables Send email and Reply and never asks for templates", async () => {
+    const user = userEvent.setup();
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true }),
+    });
+    api.getApplicationEmails.mockResolvedValue({
+      data: { defaultTo: "cand@x.com", threads: [THREAD] },
+    });
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+
+    const send = await screen.findByRole("button", { name: "Send email" });
+    expectClosed(send);
+    expectClosed(screen.getByRole("button", { name: "Reply" }));
+    fireEvent.click(send);
+    expect(api.getApplicationEmailTemplates).not.toHaveBeenCalled();
+  });
+
+  it("leaves every control live and untitled for an owner holding the grant", async () => {
+    const user = userEvent.setup();
+    authState.permissions = ["recruiting.application.advance"];
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationEmails.mockResolvedValue({
+      data: { defaultTo: "cand@x.com", threads: [THREAD] },
+    });
+    renderPage();
+    await waitLoaded();
+
+    for (const name of [
+      "Pending",
+      "Reassign",
+      "Reject",
+      "Advance to Behavioral",
+    ]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toBeEnabled();
+      expect(button).not.toHaveAttribute("title");
+    }
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+    for (const name of ["Send email", "Reply"]) {
+      const button = await screen.findByRole("button", { name });
+      expect(button).toBeEnabled();
+      expect(button).not.toHaveAttribute("title");
+    }
+  });
+
+  it("gives a read.all non-owner without the grant no hint and no extra controls", async () => {
+    authState.userId = 42;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: false,
+        canView: true,
+        assigneeId: ASSIGNEE_ID,
+      }),
+    });
+    renderPage();
+    await waitLoaded();
+
+    const pending = screen.getByRole("button", { name: "Pending" });
+    expect(pending).toBeDisabled();
+    expect(pending).not.toHaveAttribute("title");
+    expect(
+      screen.queryByRole("button", { name: "Reassign" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Operate:")).not.toBeInTheDocument();
+  });
+});
+
 describe("ApplicationDetailPage — reject dialog", () => {
   it("opens on a reason picker with Confirm reject disabled until a reason is chosen", async () => {
     const user = userEvent.setup();
@@ -2410,6 +2575,75 @@ describe("ApplicationDetailPage — read.all non-owner view", () => {
       screen.getByRole("tab", { name: "Evaluations" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Timeline" })).toBeInTheDocument();
+  });
+});
+
+describe("ApplicationDetailPage — read.all non-owner comments", () => {
+  // The backend lets a read.all holder list, post and @-mention on any
+  // application's comments. Super admins hold read.all implicitly, so this is
+  // also what an admin who neither owns the job nor holds the stage sees.
+  beforeEach(() => {
+    authState.userId = 42;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({
+        isOwner: false,
+        canView: true,
+        assigneeId: ASSIGNEE_ID,
+      }),
+    });
+  });
+
+  it("reads and shows the comments others posted", async () => {
+    const user = userEvent.setup();
+    api.getApplicationComments.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          authorId: OWNER_ID,
+          authorName: "Owen Owner",
+          body: "Strong candidate.",
+          createdAt: "2026-07-07T12:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Comments" }));
+
+    expect(
+      await screen.findByText(/Owen Owner: Strong candidate\./),
+    ).toBeInTheDocument();
+    expect(api.getMentionableUsers).toHaveBeenCalledWith("101");
+  });
+
+  it("can post a comment", async () => {
+    const user = userEvent.setup();
+    api.postComment.mockResolvedValue({
+      data: {
+        id: 2,
+        authorId: 42,
+        authorName: "Rae Reader",
+        body: "Looks fine",
+        createdAt: "2026-07-07T13:00:00Z",
+        mentions: [],
+      },
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Comments" }));
+    await user.type(
+      screen.getByPlaceholderText("Add a comment…"),
+      "Looks fine",
+    );
+    await user.click(screen.getByRole("button", { name: "Post" }));
+
+    await waitFor(() =>
+      expect(api.postComment).toHaveBeenCalledWith("101", {
+        body: "Looks fine",
+      }),
+    );
   });
 });
 

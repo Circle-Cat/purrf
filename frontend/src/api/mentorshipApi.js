@@ -99,10 +99,14 @@ export const postMyMentorshipFeedback = (roundId, data) =>
  * params — the backend binds this endpoint's filters via a Pydantic model
  * (`Depends()`) that only recognizes its camelCase aliases.
  *
- * @param {{userId?: number, name?: string, email?: string, matchedUser?: string,
+ * @param {{userId?: number, q?: string,
+ *          accountStatus?: "active"|"blocked"|"deactivated",
+ *          internal?: "internal"|"external",
  *          roundId?: number, participantRole?: string, approvalStatus?: string,
  *          onboardingStatus?: string, participationStatus?: "participant"|"non_participant",
  *          limit?: number, offset?: number, sortBy?: string, order?: "asc"|"desc"}} filters
+ *
+ * `q` matches name parts and any of the person's email addresses.
  *
  * sortBy/order are sent as sort_by/order because, unlike the other filters,
  * they are plain query parameters on the endpoint rather than fields on its
@@ -110,9 +114,9 @@ export const postMyMentorshipFeedback = (roundId, data) =>
  */
 export const searchParticipants = ({
   userId,
-  name,
-  email,
-  matchedUser,
+  q,
+  accountStatus,
+  internal,
   roundId,
   participantRole,
   approvalStatus,
@@ -126,9 +130,9 @@ export const searchParticipants = ({
   request.get(API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANTS, {
     params: {
       userId,
-      name,
-      email,
-      matchedUser,
+      q,
+      accountStatus,
+      internal,
       roundId,
       participantRole,
       approvalStatus,
@@ -142,43 +146,12 @@ export const searchParticipants = ({
   });
 
 /**
- * Build the downloadable URL for the participant/non-participant CSV export.
- * Returns a URL to navigate to (triggering a browser download), not a request.
- *
- * @param {{userId?: number, name?: string, email?: string, matchedUser?: string,
- *          roundId?: number, participantRole?: string, approvalStatus?: string,
- *          onboardingStatus?: string, participationStatus: "participant"|"non_participant",
- *          expandMeetings?: boolean}} filters
+ * Fetch a round's feedback for the admin console: everyone it is asked of,
+ * sent or not, with what each of them wrote.
+ * @param {number} roundId - The mentorship round's id.
  */
-export const getParticipantExportUrl = ({
-  userId,
-  name,
-  email,
-  matchedUser,
-  roundId,
-  participantRole,
-  approvalStatus,
-  onboardingStatus,
-  participationStatus,
-  expandMeetings,
-} = {}) => {
-  const params = {
-    userId,
-    name,
-    email,
-    matchedUser,
-    roundId,
-    participantRole,
-    approvalStatus,
-    onboardingStatus,
-    participationStatus,
-    expand_meetings: expandMeetings,
-  };
-  const query = new URLSearchParams(
-    Object.entries(params).filter(([, v]) => v !== undefined && v !== ""),
-  ).toString();
-  return `${request.defaults.baseURL}${API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANTS_EXPORT}?${query}`;
-};
+export const getRoundFeedback = (roundId) =>
+  request.get(API_ENDPOINTS.MENTORSHIP_ADMIN_ROUND_FEEDBACK(roundId));
 
 /**
  * Fetch the mentorship admin view of a pair's meeting log for the round.

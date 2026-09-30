@@ -16,7 +16,15 @@ vi.mock("@/context/auth", () => ({
 
 vi.mock("@/pages/MentorshipManagement/components/RoundsManagementCard", () => ({
   default: vi.fn(
-    ({ rounds, totals, isLoading, openCreate, openEdit, canWriteRounds }) => (
+    ({
+      rounds,
+      totals,
+      isLoading,
+      openCreate,
+      openEdit,
+      canWriteRounds,
+      canReadFeedback,
+    }) => (
       <div data-testid="mock-rounds-management-card">
         <span data-testid="rounds-count">{rounds.length}</span>
         <span data-testid="is-loading">{String(isLoading)}</span>
@@ -24,6 +32,7 @@ vi.mock("@/pages/MentorshipManagement/components/RoundsManagementCard", () => ({
           {totals?.totalCompletedRounds}
         </span>
         <span data-testid="can-write">{String(canWriteRounds)}</span>
+        <span data-testid="can-read-feedback">{String(canReadFeedback)}</span>
         <button onClick={openCreate}>Create</button>
         <button onClick={() => openEdit(rounds[0])}>Edit</button>
       </div>
@@ -121,6 +130,7 @@ describe("MentorshipManagement", () => {
       screen.getByTestId("mock-rounds-management-card"),
     ).toBeInTheDocument();
     expect(screen.getByTestId("can-write").textContent).toBe("false");
+    expect(screen.getByTestId("can-read-feedback").textContent).toBe("true");
   });
 
   it("renders ParticipantSearchCard when the user has admin-read permission", () => {
@@ -142,6 +152,8 @@ describe("MentorshipManagement", () => {
       screen.getByTestId("mock-rounds-management-card"),
     ).toBeInTheDocument();
     expect(screen.getByTestId("can-write").textContent).toBe("true");
+    // Feedback is read-only data: write alone does not show it.
+    expect(screen.getByTestId("can-read-feedback").textContent).toBe("false");
     expect(
       screen.queryByTestId("mock-participant-search-card"),
     ).not.toBeInTheDocument();

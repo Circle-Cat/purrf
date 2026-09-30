@@ -1,12 +1,15 @@
+import { Link, useLocation } from "react-router-dom";
 import { Eye, Pencil, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Table from "@/components/common/Table";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 /**
  * Displays all mentorship rounds in a table with summary stats.
  *
  * Columns: Round Name, Participants, Required Meetings, Mentor Rating,
- *          Mentee Rating, Average Meetings Per Pair, Action
+ *          Mentee Rating, Average Meetings Per Pair, Feedback (read only),
+ *          Action
  * Footer:  Total Completed Rounds | Total Participants | Total Meetings
  *
  * @param {{
@@ -14,6 +17,7 @@ import Table from "@/components/common/Table";
  *   totals: { totalCompletedRounds: number, totalParticipants: number, totalMeetings: number },
  *   onEdit: (round: Object) => void, round to edit
  *   canEdit: boolean, whether the user may edit rounds (MENTORSHIP_ADMIN_WRITE); controls icon (pencil or eye)
+ *   canReadFeedback: boolean, whether to show the Feedback column (MENTORSHIP_ADMIN_READ)
  * }} props
  */
 
@@ -33,15 +37,42 @@ const BASE_COLUMNS = [
   { header: "Average Meetings Per Pair", accessor: "avgMeetings" },
 ];
 
+const FEEDBACK_COLUMN = { header: "Feedback", accessor: "feedback" };
 const ACTION_COLUMN = { header: "Action", accessor: "action" };
+
+/**
+ * "x of y sent", linking to the round's feedback page; a dash when nobody
+ * owes feedback for the round.
+ */
+const FeedbackCell = ({ round }) => {
+  // The page's own query string holds the participant search; the feedback
+  // page's back link returns to it.
+  const { search } = useLocation();
+  if (!round.feedbackOwed) return "—";
+  return (
+    <Link
+      to={ROUTE_PATHS.MENTORSHIP_ROUND_FEEDBACK(round.id)}
+      state={{ returnSearch: search }}
+      aria-label={`Feedback for ${round.name}`}
+      className="text-blue-700 underline-offset-2 hover:underline"
+    >
+      {round.feedbackSent ?? 0} of {round.feedbackOwed} sent
+    </Link>
+  );
+};
 
 export default function AllRoundsTable({
   rounds,
   totals,
   onEdit,
   canEdit = true,
+  canReadFeedback = false,
 }) {
-  const columns = [...BASE_COLUMNS, ACTION_COLUMN];
+  const columns = [
+    ...BASE_COLUMNS,
+    ...(canReadFeedback ? [FEEDBACK_COLUMN] : []),
+    ACTION_COLUMN,
+  ];
 
   const data = rounds.map((round) => ({
     name: round.name,
@@ -59,6 +90,7 @@ export default function AllRoundsTable({
       round.totalCompletedMeetings,
       round.activePairs,
     ),
+    feedback: <FeedbackCell round={round} />,
     action: (
       <Button
         variant="ghost"

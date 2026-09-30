@@ -17,6 +17,7 @@ import Profile from "@/pages/Profile";
 import AccessDenied from "@/pages/AccessDenied";
 import PersonalDashboard from "@/pages/PersonalDashboard";
 import MentorshipManagement from "@/pages/MentorshipManagement";
+import RoundFeedbackPage from "@/pages/MentorshipManagement/RoundFeedbackPage";
 import VerifyRequired from "@/pages/VerifyRequired";
 import SignInSecurity from "@/pages/SignInSecurity";
 import AdminPermissions from "@/pages/AdminPermissions";
@@ -33,6 +34,7 @@ import ApplicationDetailPage from "@/pages/Recruiting/applications/ApplicationDe
 import MyEvaluations from "@/pages/Recruiting/MyEvaluations";
 import Audit from "@/pages/Recruiting/audit/Audit";
 import LeaveApprovalsPage from "@/pages/Leave/ApprovalsPage";
+import BalanceHistoryPage from "@/pages/Leave/BalanceHistoryPage";
 import LeaveRequestsPage from "@/pages/Leave/RequestsPage";
 import LeaveAdminPage from "@/pages/Leave/AdminPage";
 import TrainingCourse from "@/pages/TrainingCourse";
@@ -118,6 +120,10 @@ function App() {
                       element={<LeaveApprovalsPage />}
                     />
                     <Route
+                      path={ROUTE_PATHS.LEAVE_BALANCE_HISTORY}
+                      element={<BalanceHistoryPage />}
+                    />
+                    <Route
                       path={ROUTE_PATHS.LEAVE_REQUESTS}
                       element={<LeaveRequestsPage />}
                     />
@@ -144,6 +150,18 @@ function App() {
                           ]}
                         >
                           <MentorshipManagement />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.MENTORSHIP_ROUND_FEEDBACK(":roundId")}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.MENTORSHIP_ADMIN_READ,
+                          ]}
+                        >
+                          <RoundFeedbackPage />
                         </ProtectedRoute>
                       }
                     />
@@ -243,6 +261,7 @@ function App() {
                         <ProtectedRoute
                           requiredPermissions={[
                             PERMISSIONS.RECRUITING_APPLICATION_ADVANCE,
+                            PERMISSIONS.RECRUITING_APPLICATION_READ_ALL,
                           ]}
                         >
                           <BoardPage />

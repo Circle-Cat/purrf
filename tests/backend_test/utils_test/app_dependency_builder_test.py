@@ -561,8 +561,6 @@ class TestAppDependencyBuilder(TestCase):
             training_repository=mock_training_repo_cls.return_value,
             pairs_repository=mock_mentorship_pairs_repo_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
-            date_time_util=mock_date_time_util_cls.return_value,
-            database=mock_database_cls.return_value,
             logger=mock_logger,
             mentorship_meeting_repository=mock_mentorship_meeting_repo_cls.return_value,
         )
@@ -577,6 +575,7 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_round_repository=mock_mentorship_round_repository_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
             mentorship_pairs_repository=mock_mentorship_pairs_repo_cls.return_value,
+            mentorship_round_participants_repository=mock_mentorship_round_participants_repo_cls.return_value,
         )
         mock_participation_service_cls.assert_called_once_with(
             logger=mock_logger,
@@ -915,6 +914,17 @@ class TestAppDependencyBuilder(TestCase):
         self.assertIs(
             builder.board_service.notification_repository,
             builder.notification_repository,
+        )
+        # One evaluator-eligibility rule: submit's default-assignee check and
+        # the board's manual-assignment validation must read the same object,
+        # so ApplicationAccess has to exist before ApplicationService is built.
+        self.assertIs(
+            builder.application_service.application_access,
+            builder.application_access,
+        )
+        self.assertIs(
+            builder.board_service.application_access,
+            builder.application_access,
         )
 
         # The account console. BlockService is built after

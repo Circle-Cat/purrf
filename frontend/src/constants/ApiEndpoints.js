@@ -21,7 +21,8 @@ export const API_ENDPOINTS = {
   MENTORSHIP_ROUNDS: "/mentorship/rounds",
   MENTORSHIP_ROUND_SLOTS: "/mentorship/rounds/slots",
   MENTORSHIP_ADMIN_PARTICIPANTS: "/mentorship/admin/participants",
-  MENTORSHIP_ADMIN_PARTICIPANTS_EXPORT: "/mentorship/admin/participants/export",
+  MENTORSHIP_ADMIN_ROUND_FEEDBACK: (roundId) =>
+    `/mentorship/admin/rounds/${roundId}/feedback`,
   MENTORSHIP_ADMIN_PAIR_MEETINGS: (pairId) =>
     `/mentorship/admin/pairs/${pairId}/meetings`,
   MENTORSHIP_MEETINGS_ENDPOINT: "/mentorship/v1/meetings",
@@ -35,6 +36,7 @@ export const API_ENDPOINTS = {
   LEAVE_HOLIDAYS_YEAR: (year) => `/leave/holidays/${year}`,
   LEAVE_HOLIDAY_YEARS: "/leave/holiday-years",
   LEAVE_BALANCES: "/leave/balances",
+  LEAVE_ME_LEDGER: "/leave/me/ledger",
   LEAVE_ADJUSTMENTS: "/leave/adjustments",
   LEAVE_REQUEST_DECISION: (requestId) =>
     `/leave/requests/${requestId}/decision`,

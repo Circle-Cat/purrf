@@ -89,6 +89,8 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         email,
         preferred_name=None,
         is_active=True,
+        is_blocked=False,
+        is_internal=False,
     ):
         return UsersEntity(
             first_name=first_name,
@@ -98,6 +100,8 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             timezone_updated_at=datetime.now(timezone.utc),
             communication_channel=CommunicationMethod.EMAIL,
             is_active=is_active,
+            is_blocked=is_blocked,
+            is_internal=is_internal,
             updated_timestamp=datetime.now(timezone.utc),
         )
 
@@ -669,8 +673,8 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         self.assertNotIn(employment_hired_user.user_id, user_ids)
         self.assertNotIn(no_application_user.user_id, user_ids)
 
-    async def test_search_excludes_deactivated_users(self):
-        """Verify deactivated users are excluded even if they meet the mentorship gate."""
+    async def test_search_includes_deactivated_users(self):
+        """Deactivated users who meet the mentorship gate are listed, flagged."""
         inactive_user = self._make_user(
             first_name="Ina",
             last_name="Inactive",
@@ -684,8 +688,10 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             self.session, ParticipantSearchFilterDto(), limit=20, offset=0
         )
 
-        user_ids = {r.user_id for r in rows}
-        self.assertNotIn(inactive_user.user_id, user_ids)
+        by_id = {r.user_id: r for r in rows}
+        self.assertIn(inactive_user.user_id, by_id)
+        self.assertTrue(by_id[inactive_user.user_id].is_deactivated)
+        self.assertFalse(by_id[self.user.user_id].is_deactivated)
 
     async def test_search_filter_by_user_id(self):
         user2 = self._make_user(
@@ -703,59 +709,205 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         self.assertEqual(total, 1)
         self.assertEqual(rows[0].user_id, self.user.user_id)
 
-    async def test_search_filter_by_name(self):
-        """Verify name filtering matches first, last, and preferred names using
-        case-insensitive partial matching."""
-        alice = self.user
-        bob_jones = self._make_user(
-            first_name="Bob", last_name="Jones", email="bob@example.com"
+    async def test_search_user_id_outside_int32_matches_nothing(self):
+        for user_id in (2**31, 0, -1):
+            with self.subTest(user_id=user_id):
+                rows, total = await self.repo.search_participants_for_admin(
+                    self.session,
+                    ParticipantSearchFilterDto(user_id=user_id),
+                    limit=50,
+                    offset=0,
+                )
+
+                self.assertEqual(total, 0)
+                self.assertEqual(rows, [])
+
+    async def test_search_q_matches_first_last_and_preferred_name(self):
+        """q is a case-insensitive contains on each name part."""
+        first = self._make_user(
+            first_name="Quinlan", last_name="Adams", email="q1@example.com"
         )
-        rosalie_wu = self._make_user(
+        last = self._make_user(
+            first_name="Bea", last_name="McQuinn", email="q2@example.com"
+        )
+        preferred = self._make_user(
             first_name="Tina",
             last_name="Wu",
-            email="tina@example.com",
-            preferred_name="Rosalie Wu",
+            email="q3@example.com",
+            preferred_name="Quincy",
         )
-        await self.insert_entities([bob_jones, rosalie_wu])
-        await self._hire_for_activity(bob_jones)
-        await self._hire_for_activity(rosalie_wu)
+        unrelated = self._make_user(
+            first_name="Bob", last_name="Jones", email="bob@example.com"
+        )
+        await self.insert_entities([first, last, preferred, unrelated])
+        for user in (first, last, preferred, unrelated):
+            await self._hire_for_activity(user)
 
         rows, total = await self.repo.search_participants_for_admin(
             self.session,
-            ParticipantSearchFilterDto(name="ali"),
+            ParticipantSearchFilterDto(q="QUIN"),
             limit=50,
             offset=0,
         )
 
-        self.assertEqual(total, 2)
-        user_ids = {r.user_id for r in rows}
-        self.assertIn(alice.user_id, user_ids)
-        self.assertIn(rosalie_wu.user_id, user_ids)
-        self.assertNotIn(bob_jones.user_id, user_ids)
+        self.assertEqual(total, 3)
+        self.assertEqual(
+            {r.user_id for r in rows},
+            {first.user_id, last.user_id, preferred.user_id},
+        )
 
-    async def test_search_filter_by_email(self):
-        user2 = self._make_user(
+    async def test_search_q_matches_a_secondary_email_once(self):
+        """A non-primary address matches, case-insensitively, and a user with
+        several matching addresses still yields one row."""
+        bob = self._make_user(
             first_name="Bob", last_name="Jones", email="bob@example.com"
         )
-        await self.insert_entities([user2])
+        await self.insert_entities([bob])
+        await self._hire_for_activity(bob)
         await self.insert_entities([
             UserEmailsEntity(
                 user_id=self.user.user_id,
-                email="alice@work.com",
+                email="alice@home.org",
                 otp_confirmed=True,
                 is_primary=True,
-            )
+            ),
+            UserEmailsEntity(
+                user_id=self.user.user_id,
+                email="Alice.Backup@Work.com",
+                otp_confirmed=True,
+                is_primary=False,
+            ),
+            UserEmailsEntity(
+                user_id=self.user.user_id,
+                email="alice.old@work.com",
+                otp_confirmed=True,
+                is_primary=False,
+            ),
+            UserEmailsEntity(
+                user_id=bob.user_id,
+                email="bob@home.org",
+                otp_confirmed=True,
+                is_primary=True,
+            ),
         ])
 
         rows, total = await self.repo.search_participants_for_admin(
             self.session,
-            ParticipantSearchFilterDto(email="alice@work"),
+            ParticipantSearchFilterDto(q="@WORK.com"),
             limit=50,
             offset=0,
         )
 
         self.assertEqual(total, 1)
-        self.assertEqual(rows[0].user_id, self.user.user_id)
+        self.assertEqual([r.user_id for r in rows], [self.user.user_id])
+
+    async def test_search_filter_by_account_status(self):
+        """Each account status selects only its own user; blocked and
+        deactivated are read from different columns."""
+        blocked = self._make_user(
+            first_name="Bella",
+            last_name="Blocked",
+            email="b@example.com",
+            is_blocked=True,
+        )
+        deactivated = self._make_user(
+            first_name="Dora",
+            last_name="Deactivated",
+            email="d@example.com",
+            is_active=False,
+        )
+        await self.insert_entities([blocked, deactivated])
+        await self._hire_for_activity(blocked)
+        await self._hire_for_activity(deactivated)
+
+        expected = {
+            "active": {self.user.user_id},
+            "blocked": {blocked.user_id},
+            "deactivated": {deactivated.user_id},
+            None: {self.user.user_id, blocked.user_id, deactivated.user_id},
+        }
+        for status, user_ids in expected.items():
+            with self.subTest(account_status=status):
+                rows, total = await self.repo.search_participants_for_admin(
+                    self.session,
+                    ParticipantSearchFilterDto(account_status=status),
+                    limit=50,
+                    offset=0,
+                )
+
+                self.assertEqual({r.user_id for r in rows}, user_ids)
+                self.assertEqual(total, len(user_ids))
+
+        rows, _ = await self.repo.search_participants_for_admin(
+            self.session, ParticipantSearchFilterDto(), limit=50, offset=0
+        )
+        flags = {r.user_id: (r.is_blocked, r.is_deactivated) for r in rows}
+        self.assertEqual(
+            flags,
+            {
+                self.user.user_id: (False, False),
+                blocked.user_id: (True, False),
+                deactivated.user_id: (False, True),
+            },
+        )
+
+    async def test_search_blocked_and_deactivated_user_is_in_both_not_active(self):
+        both = self._make_user(
+            first_name="Bo",
+            last_name="Both",
+            email="both@example.com",
+            is_active=False,
+            is_blocked=True,
+        )
+        await self.insert_entities([both])
+        await self._hire_for_activity(both)
+
+        found = {}
+        for status in ("active", "blocked", "deactivated"):
+            rows, _ = await self.repo.search_participants_for_admin(
+                self.session,
+                ParticipantSearchFilterDto(account_status=status),
+                limit=50,
+                offset=0,
+            )
+            found[status] = both.user_id in {r.user_id for r in rows}
+
+        self.assertEqual(found, {"active": False, "blocked": True, "deactivated": True})
+
+    async def test_search_filter_by_internal(self):
+        staff = self._make_user(
+            first_name="Ivy",
+            last_name="Internal",
+            email="ivy@example.com",
+            is_internal=True,
+        )
+        await self.insert_entities([staff])
+        await self._hire_for_activity(staff)
+
+        expected = {
+            "internal": {staff.user_id},
+            "external": {self.user.user_id},
+            None: {staff.user_id, self.user.user_id},
+        }
+        for internal, user_ids in expected.items():
+            with self.subTest(internal=internal):
+                rows, total = await self.repo.search_participants_for_admin(
+                    self.session,
+                    ParticipantSearchFilterDto(internal=internal),
+                    limit=50,
+                    offset=0,
+                )
+
+                self.assertEqual({r.user_id for r in rows}, user_ids)
+                self.assertEqual(total, len(user_ids))
+
+        rows, _ = await self.repo.search_participants_for_admin(
+            self.session, ParticipantSearchFilterDto(), limit=50, offset=0
+        )
+        self.assertEqual(
+            {r.user_id: r.is_internal for r in rows},
+            {staff.user_id: True, self.user.user_id: False},
+        )
 
     async def test_search_filter_by_round_id(self):
         user2 = self._make_user(
@@ -884,48 +1036,6 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         self.assertEqual(total, 1)
         self.assertEqual(rows[0].user_id, user2.user_id)
 
-    async def test_search_filter_by_matched_user(self):
-        user2 = self._make_user(
-            first_name="Bob", last_name="Jones", email="bob@example.com"
-        )
-        await self.insert_entities([user2])
-        await self.insert_entities([
-            MentorshipRoundParticipantsEntity(
-                user_id=self.user.user_id,
-                round_id=self.rounds[0].round_id,
-                participant_role=ParticipantRole.MENTOR,
-                approval_status=ApprovalStatus.MATCHED,
-            ),
-            MentorshipRoundParticipantsEntity(
-                user_id=user2.user_id,
-                round_id=self.rounds[0].round_id,
-                participant_role=ParticipantRole.MENTEE,
-                approval_status=ApprovalStatus.MATCHED,
-            ),
-        ])
-        await self.insert_entities([
-            MentorshipPairsEntity(
-                round_id=self.rounds[0].round_id,
-                mentor_id=self.user.user_id,
-                mentee_id=user2.user_id,
-                completed_count=0,
-                status=PairStatus.ACTIVE,
-                mentor_action_status=MentorActionStatus.CONFIRMED,
-                mentee_action_status=MenteeActionStatus.CONFIRMED,
-                recommendation_reason="test",
-            )
-        ])
-
-        rows, total = await self.repo.search_participants_for_admin(
-            self.session,
-            ParticipantSearchFilterDto(matched_user="jones"),
-            limit=50,
-            offset=0,
-        )
-
-        self.assertEqual(total, 1)
-        self.assertEqual(rows[0].user_id, self.user.user_id)
-
     async def test_search_pagination(self):
         extra_users = [
             self._make_user(
@@ -1026,23 +1136,17 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
 
         row = rows[0]
         self.assertEqual(row.round_id, self.rounds[0].round_id)
-        self.assertEqual(row.pair_id, pair.pair_id)
         self.assertEqual(row.participant_role, ParticipantRole.MENTOR)
         self.assertEqual(row.approval_status, ApprovalStatus.MATCHED)
-        self.assertEqual(row.completed_count, 2)
-        self.assertEqual(row.mentor_id, self.user.user_id)
-        self.assertEqual(row.mentee_id, user2.user_id)
-        # Rows are one per pair, so whether that pair is still the live one is
-        # the row's own fact -- the approval status is the person's and repeats
-        # across their rows.
-        self.assertEqual(row.pair_status, PairStatus.ACTIVE)
+        (row_pair,) = row.pairs
+        self.assertEqual(row_pair.pair_id, pair.pair_id)
+        self.assertEqual(row_pair.completed_count, 2)
+        self.assertEqual(row_pair.mentor_id, self.user.user_id)
+        self.assertEqual(row_pair.mentee_id, user2.user_id)
+        self.assertEqual(row_pair.pair_status, PairStatus.ACTIVE)
 
-    async def test_search_participants_for_admin_reports_an_ended_pair(self):
-        """A participant with no pair at all reports no pair status.
-
-        The pair is outer-joined, so someone who was never paired still gets a
-        row; `pair_status` being None is how that row says so.
-        """
+    async def test_search_participant_without_a_pair_has_no_pairs(self):
+        """Someone who was never paired still gets a row, with no pairs."""
         await self.insert_entities([
             MentorshipRoundParticipantsEntity(
                 user_id=self.user.user_id,
@@ -1060,33 +1164,180 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         )
 
         self.assertEqual(len(rows), 1)
-        self.assertIsNone(rows[0].pair_id)
-        self.assertIsNone(rows[0].pair_status)
+        self.assertEqual(rows[0].pairs, [])
 
-    async def test_iter_search_participants_for_admin_respects_limit_and_offset(self):
-        """limit/offset paginate the same way search_participants_for_admin does."""
-        second_user = self._make_user(
-            first_name="Zoe", last_name="Zephyr", email="zoe@example.com"
-        )
-        await self.insert_entities([second_user])
-        await self._hire_for_activity(second_user)
+    async def _seed_mentor_with_two_mentees(self):
+        """
+        Round 0: self.user (Alice Admin) mentors Bea (active pair 901, two
+        completed meetings and one pending) and Cid (pair 902, ended, no
+        meetings). Pair ids are set far from the user ids so a pair id read
+        as a user id, or the reverse, cannot pass.
+        """
+        bea = self._make_user(first_name="Bea", last_name="Marlow", email="b@x.io")
+        cid = self._make_user(first_name="Cid", last_name="Nash", email="c@x.io")
+        await self.insert_entities([bea, cid])
+        for mentee in (bea, cid):
+            await self._hire_for_activity(mentee)
+        round_id = self.rounds[0].round_id
+        await self.insert_entities([
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=round_id,
+                participant_role=ParticipantRole.MENTOR,
+                approval_status=ApprovalStatus.MATCHED,
+            ),
+            *[
+                MentorshipRoundParticipantsEntity(
+                    user_id=mentee.user_id,
+                    round_id=round_id,
+                    participant_role=ParticipantRole.MENTEE,
+                    approval_status=ApprovalStatus.MATCHED,
+                )
+                for mentee in (bea, cid)
+            ],
+        ])
+        await self.insert_entities([
+            MentorshipPairsEntity(
+                pair_id=pair_id,
+                round_id=round_id,
+                mentor_id=self.user.user_id,
+                mentee_id=mentee.user_id,
+                completed_count=0,
+                status=status,
+                mentor_action_status=MentorActionStatus.CONFIRMED,
+                mentee_action_status=MenteeActionStatus.CONFIRMED,
+                recommendation_reason="test",
+            )
+            for pair_id, mentee, status in (
+                (901, bea, PairStatus.ACTIVE),
+                (902, cid, PairStatus.INACTIVE),
+            )
+        ])
+        now = datetime.now(timezone.utc)
+        await self.insert_entities([
+            MentorshipMeetingEntity(
+                meeting_id=f"two-mentees-{index}",
+                pair_id=901,
+                source=MeetingSource.MANUAL,
+                start_datetime=now,
+                end_datetime=now + timedelta(minutes=30),
+                is_completed=index < 2,
+                created_datetime=now,
+            )
+            for index in range(3)
+        ])
+        return bea, cid
 
-        all_rows = await self.repo.iter_search_participants_for_admin(
-            self.session, ParticipantSearchFilterDto(), limit=1000, offset=0
-        )
-        self.assertEqual(len(all_rows), 2)
+    async def test_search_mentor_with_two_mentees_is_one_row(self):
+        bea, cid = await self._seed_mentor_with_two_mentees()
 
-        first_page = await self.repo.iter_search_participants_for_admin(
-            self.session, ParticipantSearchFilterDto(), limit=1, offset=0
+        rows, total = await self.repo.search_participants_for_admin(
+            self.session,
+            ParticipantSearchFilterDto(round_id=self.rounds[0].round_id),
+            limit=50,
+            offset=0,
         )
-        second_page = await self.repo.iter_search_participants_for_admin(
-            self.session, ParticipantSearchFilterDto(), limit=1, offset=1
+
+        # Three people, two pairs: the count is of people.
+        self.assertEqual(total, 3)
+        self.assertEqual(
+            [r.user_id for r in rows],
+            [self.user.user_id, bea.user_id, cid.user_id],
         )
-        self.assertEqual(len(first_page), 1)
-        self.assertEqual(len(second_page), 1)
-        self.assertEqual(first_page[0].user_id, all_rows[0].user_id)
-        self.assertEqual(second_page[0].user_id, all_rows[1].user_id)
-        self.assertNotEqual(first_page[0].user_id, second_page[0].user_id)
+        mentor_row = rows[0]
+        self.assertEqual(
+            [
+                (p.pair_id, p.mentor_id, p.mentee_id, p.pair_status, p.completed_count)
+                for p in mentor_row.pairs
+            ],
+            [
+                (901, self.user.user_id, bea.user_id, PairStatus.ACTIVE, 2),
+                (902, self.user.user_id, cid.user_id, PairStatus.INACTIVE, 0),
+            ],
+        )
+        self.assertEqual([p.pair_id for p in rows[1].pairs], [901])
+        self.assertEqual([p.pair_id for p in rows[2].pairs], [902])
+
+    async def test_search_pages_by_participant_not_by_pair(self):
+        """A limit of 1 would have cut the mentor's rows in half when rows
+        were one per pair; now it is the mentor, with both pairs."""
+        bea, cid = await self._seed_mentor_with_two_mentees()
+        filters = ParticipantSearchFilterDto(round_id=self.rounds[0].round_id)
+
+        page_1, total = await self.repo.search_participants_for_admin(
+            self.session, filters, limit=1, offset=0
+        )
+        page_2, _ = await self.repo.search_participants_for_admin(
+            self.session, filters, limit=2, offset=1
+        )
+
+        self.assertEqual(total, 3)
+        self.assertEqual([r.user_id for r in page_1], [self.user.user_id])
+        self.assertEqual([p.pair_id for p in page_1[0].pairs], [901, 902])
+        self.assertEqual([r.user_id for r in page_2], [bea.user_id, cid.user_id])
+
+    async def test_search_sorted_by_user_id_is_still_one_row_per_participant(self):
+        await self._seed_mentor_with_two_mentees()
+
+        rows, total = await self.repo.search_participants_for_admin(
+            self.session,
+            ParticipantSearchFilterDto(round_id=self.rounds[0].round_id),
+            limit=50,
+            offset=0,
+            sort_by="user_id",
+            order="desc",
+        )
+
+        self.assertEqual(total, 3)
+        user_ids = [r.user_id for r in rows]
+        self.assertEqual(user_ids, sorted(set(user_ids), reverse=True))
+
+    async def test_search_person_in_two_rounds_gets_a_row_per_round(self):
+        """Without a round filter a person has one row per round, each
+        holding only that round's pairs."""
+        bea = self._make_user(first_name="Bea", last_name="Marlow", email="b@x.io")
+        dev = self._make_user(first_name="Dev", last_name="Okafor", email="d@x.io")
+        await self.insert_entities([bea, dev])
+        spring, fall = (r.round_id for r in self.rounds)
+        await self.insert_entities([
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=round_id,
+                participant_role=ParticipantRole.MENTOR,
+                approval_status=ApprovalStatus.MATCHED,
+            )
+            for round_id in (spring, fall)
+        ])
+        await self.insert_entities([
+            MentorshipPairsEntity(
+                pair_id=pair_id,
+                round_id=round_id,
+                mentor_id=self.user.user_id,
+                mentee_id=mentee.user_id,
+                completed_count=0,
+                status=PairStatus.ACTIVE,
+                mentor_action_status=MentorActionStatus.CONFIRMED,
+                mentee_action_status=MenteeActionStatus.CONFIRMED,
+                recommendation_reason="test",
+            )
+            for pair_id, round_id, mentee in (
+                (911, spring, bea),
+                (912, fall, dev),
+            )
+        ])
+
+        rows, total = await self.repo.search_participants_for_admin(
+            self.session,
+            ParticipantSearchFilterDto(user_id=self.user.user_id),
+            limit=50,
+            offset=0,
+        )
+
+        self.assertEqual(total, 2)
+        self.assertEqual(
+            [(r.round_id, [p.pair_id for p in r.pairs]) for r in rows],
+            [(spring, [911]), (fall, [912])],
+        )
 
     async def test_list_distinct_user_roles_dedupes_across_rounds(self):
         round_a = MentorshipRoundEntity(
@@ -1203,13 +1454,12 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         )
 
         row = next(r for r in rows if r.user_id == self.user.user_id)
-        self.assertEqual(row.completed_count, 2)
+        self.assertEqual([p.completed_count for p in row.pairs], [2])
 
-    async def test_search_completed_count_is_none_without_a_pair(self):
-        """A registered participant who was never paired has no meeting count
-        at all, which the row reports as None. A plain correlated COUNT would
-        say 0 here and quietly turn "never paired" into "paired, met nobody"
-        in the admin table and the CSV export."""
+    async def test_search_never_paired_has_no_pair_entry_at_all(self):
+        """A registered participant who was never paired has no pair entry,
+        so no meeting count either -- not a pair with 0, which would turn
+        "never paired" into "paired, met nobody" in the admin table."""
         await self.insert_entities([
             MentorshipRoundParticipantsEntity(
                 user_id=self.user.user_id,
@@ -1226,8 +1476,113 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             offset=0,
         )
 
-        self.assertIsNone(rows[0].pair_id)
-        self.assertIsNone(rows[0].completed_count)
+        self.assertEqual(rows[0].pairs, [])
+
+    async def _seed_feedback_round(self):
+        """
+        Round 0: the mentor (self.user) and Ann paired and going, Ben paired
+        and ended; Cid registered but never paired; Dee paired then left
+        (rejected); Eve paired but blocked. Mentor and Ann sent feedback.
+        Round 1: Gus paired, not sent. Only Cid owes nothing: owed is 5/1
+        and sent 2/0 by round.
+        """
+        names = ["Ann", "Ben", "Cid", "Dee", "Eve", "Gus"]
+        users = {
+            n: self._make_user(first_name=n, email=f"{n.lower()}@example.com")
+            for n in names
+        }
+        users["Eve"].is_blocked = True
+        await self.insert_entities(list(users.values()))
+
+        r0, r1 = self.rounds[0].round_id, self.rounds[1].round_id
+        sent = {"program_rating": 4, "most_valuable_aspects": "x"}
+
+        def participant(user, round_id, role, status, feedback=None):
+            return MentorshipRoundParticipantsEntity(
+                user_id=user.user_id,
+                round_id=round_id,
+                participant_role=role,
+                approval_status=status,
+                program_feedback=feedback,
+            )
+
+        await self.insert_entities([
+            participant(
+                self.user, r0, ParticipantRole.MENTOR, ApprovalStatus.MATCHED, sent
+            ),
+            participant(
+                users["Ann"], r0, ParticipantRole.MENTEE, ApprovalStatus.MATCHED, sent
+            ),
+            participant(
+                users["Ben"], r0, ParticipantRole.MENTEE, ApprovalStatus.MATCHED
+            ),
+            participant(
+                users["Cid"], r0, ParticipantRole.MENTEE, ApprovalStatus.SIGNED_UP
+            ),
+            participant(
+                users["Dee"], r0, ParticipantRole.MENTEE, ApprovalStatus.REJECTED
+            ),
+            participant(
+                users["Eve"], r0, ParticipantRole.MENTEE, ApprovalStatus.MATCHED
+            ),
+            participant(
+                users["Gus"], r1, ParticipantRole.MENTEE, ApprovalStatus.MATCHED
+            ),
+        ])
+
+        def pair(round_id, mentee, status=PairStatus.ACTIVE):
+            return MentorshipPairsEntity(
+                round_id=round_id,
+                mentor_id=self.user.user_id,
+                mentee_id=mentee.user_id,
+                completed_count=0,
+                status=status,
+                mentor_action_status=MentorActionStatus.CONFIRMED,
+                mentee_action_status=MenteeActionStatus.CONFIRMED,
+                recommendation_reason="test",
+            )
+
+        await self.insert_entities([
+            pair(r0, users["Ann"]),
+            pair(r0, users["Ben"], PairStatus.INACTIVE),
+            pair(r0, users["Dee"], PairStatus.INACTIVE),
+            pair(r0, users["Eve"]),
+            pair(r1, users["Gus"]),
+        ])
+        return users
+
+    async def test_get_feedback_counts_by_round(self):
+        """Counts everyone paired in the round, left or blocked included."""
+        await self._seed_feedback_round()
+
+        result = await self.repo.get_feedback_counts_by_round(self.session)
+
+        self.assertEqual(
+            result,
+            {
+                self.rounds[0].round_id: {"owed": 5, "sent": 2},
+                self.rounds[1].round_id: {"owed": 1, "sent": 0},
+            },
+        )
+
+    async def test_get_feedback_owed_in_round(self):
+        """Returns the owed participants of that round only, with their users."""
+        users = await self._seed_feedback_round()
+
+        rows = await self.repo.get_feedback_owed_in_round(
+            self.session, self.rounds[0].round_id
+        )
+
+        self.assertEqual(
+            [user.user_id for _, user in rows],
+            sorted(
+                [self.user.user_id]
+                + [users[n].user_id for n in ("Ann", "Ben", "Dee", "Eve")]
+            ),
+        )
+        for participant, user in rows:
+            self.assertEqual(participant.user_id, user.user_id)
+            self.assertEqual(participant.round_id, self.rounds[0].round_id)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,10 @@ from unittest.mock import MagicMock, AsyncMock
 from dateutil.parser import isoparse
 from backend.mentorship.mentorship_admin_service import MentorshipAdminService
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
-from backend.dto.participant_search_row_dto import ParticipantSearchRow
+from backend.dto.participant_search_row_dto import (
+    ParticipantSearchPairRow,
+    ParticipantSearchRow,
+)
 from backend.dto.admin_meeting_log_dto import AdminMeetingDto
 from backend.dto.v2_meeting_batch_update_dto import (
     V2MeetingBatchUpdateDto,
@@ -13,7 +16,6 @@ from backend.dto.v2_meeting_batch_update_dto import (
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import (
-    ApprovalStatus,
     MeetingNoteTag,
     MeetingSource,
     ParticipantRole,
@@ -27,22 +29,26 @@ def _make_row(**kwargs):
     row_fields = dict(
         user_id=1,
         round_id=None,
-        pair_id=None,
         participant_role=None,
         approval_status=None,
-        completed_count=None,
-        mentor_id=None,
-        mentee_id=None,
-        pair_status=None,
+        is_blocked=False,
+        is_deactivated=False,
+        is_internal=False,
     )
     row_fields.update(kwargs)
     return ParticipantSearchRow(**row_fields)
 
 
-async def _collect_csv(agen) -> str:
-    """Decodes with utf-8-sig to strip the leading UTF-8 BOM the export writes."""
-    chunks = [chunk async for chunk in agen]
-    return b"".join(chunks).decode("utf-8-sig")
+def _search_pair(
+    pair_id, mentor_id, mentee_id, pair_status=PairStatus.ACTIVE, completed_count=0
+):
+    return ParticipantSearchPairRow(
+        pair_id=pair_id,
+        mentor_id=mentor_id,
+        mentee_id=mentee_id,
+        pair_status=pair_status,
+        completed_count=completed_count,
+    )
 
 
 def _make_pair(mentor_id=1, mentee_id=2, pair_id=1):
@@ -96,7 +102,6 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
 
         self.mock_participants_repo = MagicMock()
         self.mock_participants_repo.search_participants_for_admin = AsyncMock()
-        self.mock_participants_repo.iter_search_participants_for_admin = AsyncMock()
 
         self.mock_rounds_repo = MagicMock()
         self.mock_rounds_repo.get_all_rounds = AsyncMock(return_value=[])
@@ -128,16 +133,6 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.mock_session = AsyncMock()
-        self.mock_database = MagicMock()
-        self.mock_database.session.return_value.__aenter__.return_value = (
-            self.mock_session
-        )
-        self.mock_database.session.return_value.__aexit__.return_value = None
-
-        self.mock_date_time_util = MagicMock()
-        self.mock_date_time_util.format_iso_utc_to_pt.side_effect = (
-            lambda iso, fmt="%Y-%m-%d %H:%M %Z": f"PT({iso})"
-        )
         self.mock_logger = MagicMock()
 
         self.service = MentorshipAdminService(
@@ -147,8 +142,6 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             training_repository=self.mock_training_repo,
             pairs_repository=self.mock_pairs_repo,
             mentorship_mapper=self.mock_mapper,
-            date_time_util=self.mock_date_time_util,
-            database=self.mock_database,
             logger=self.mock_logger,
             mentorship_meeting_repository=self.mock_meeting_repo,
         )
@@ -167,10 +160,48 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.mock_rounds_repo.get_all_rounds.assert_not_awaited()
         self.mock_training_repo.get_training_by_user_ids_and_categories.assert_not_awaited()
 
+    async def test_account_and_internal_flags_come_from_each_row(self):
+        """Each flag lands on its own field; one user per flag so a swapped
+        read cannot pass."""
+        self.mock_participants_repo.search_participants_for_admin.return_value = (
+            [
+                _make_row(user_id=1, is_blocked=True),
+                _make_row(user_id=2, is_deactivated=True),
+                _make_row(user_id=3, is_internal=True),
+            ],
+            3,
+        )
+        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
+            {
+                uid: MagicMock(
+                    user_id=uid, first_name="U", last_name="X", preferred_name=None
+                )
+                for uid in (1, 2, 3)
+            },
+            {},
+        )
+
+        result = await self.service.search_participants(
+            self.mock_session, ParticipantSearchFilterDto()
+        )
+
+        flags = {
+            r.user_id: (r.is_blocked, r.is_deactivated, r.is_internal)
+            for r in result.participant_rows
+        }
+        self.assertEqual(
+            flags,
+            {
+                1: (True, False, False),
+                2: (False, True, False),
+                3: (False, False, True),
+            },
+        )
+
     async def test_partner_ids_included_in_user_fetch(self):
         """users repo receives both the participant's and the partner's user_id."""
         self.mock_participants_repo.search_participants_for_admin.return_value = (
-            [_make_row(user_id=1, pair_id=5, mentor_id=1, mentee_id=2)],
+            [_make_row(user_id=1, pairs=[_search_pair(5, mentor_id=1, mentee_id=2)])],
             1,
         )
         self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
@@ -200,33 +231,34 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         _, called_ids = self.mock_users_repo.get_users_and_emails_by_ids.call_args[0]
         self.assertEqual(set(called_ids), {1, 2})
 
-    async def test_matched_user_carries_whether_the_pairing_is_live(self):
-        """A row whose pair has ended says so, so the table can mark it.
-
-        Rows are one per pair, so someone who changed mentor mid-round gets
-        two rows with the same approval status. Which mentor is the current
-        one is only answerable from the pair.
-        """
+    async def test_every_pair_of_a_participant_lands_on_their_one_row(self):
+        """Someone who changed mentor mid-round is one row holding both
+        pairs, in the repo's pair_id order, each with its own partner, its
+        own liveness and its own completed count."""
         self.mock_participants_repo.search_participants_for_admin.return_value = (
             [
                 _make_row(
                     user_id=1,
-                    pair_id=99,
-                    mentor_id=2,
-                    mentee_id=1,
                     participant_role=ParticipantRole.MENTEE,
-                    pair_status=PairStatus.INACTIVE,
-                ),
-                _make_row(
-                    user_id=1,
-                    pair_id=100,
-                    mentor_id=3,
-                    mentee_id=1,
-                    participant_role=ParticipantRole.MENTEE,
-                    pair_status=PairStatus.ACTIVE,
+                    pairs=[
+                        _search_pair(
+                            99,
+                            mentor_id=2,
+                            mentee_id=1,
+                            pair_status=PairStatus.INACTIVE,
+                            completed_count=3,
+                        ),
+                        _search_pair(
+                            100,
+                            mentor_id=3,
+                            mentee_id=1,
+                            pair_status=PairStatus.ACTIVE,
+                            completed_count=1,
+                        ),
+                    ],
                 ),
             ],
-            2,
+            1,
         )
         self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
             {
@@ -247,29 +279,62 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             self.mock_session, ParticipantSearchFilterDto()
         )
 
-        ended, live = result.participant_rows
-        self.assertEqual(ended.matched_user.id, 2)
-        self.assertFalse(ended.matched_user.is_active)
-        self.assertEqual(live.matched_user.id, 3)
-        self.assertTrue(live.matched_user.is_active)
+        (row,) = result.participant_rows
+        self.assertEqual(
+            [
+                (
+                    p.pair_id,
+                    p.partner.id,
+                    p.partner.is_active,
+                    p.completed_meeting_count,
+                )
+                for p in row.pairs
+            ],
+            [(99, 2, False, 3), (100, 3, True, 1)],
+        )
+        # The table reads these camelCase keys off the wire.
+        wire = result.model_dump(by_alias=True)["participantRows"][0]
+        self.assertNotIn("pairId", wire)
+        self.assertEqual(
+            {k: wire["pairs"][1][k] for k in ("pairId", "completedMeetingCount")},
+            {"pairId": 100, "completedMeetingCount": 1},
+        )
+        self.assertEqual(wire["pairs"][1]["partner"]["id"], 3)
 
-    async def test_matched_user_resolves_partner_correctly(self):
-        """matched_user always refers to the other participant in the pair."""
+    async def test_no_pairs_gives_an_empty_pair_list(self):
+        self.mock_participants_repo.search_participants_for_admin.return_value = (
+            [_make_row(user_id=1, participant_role=ParticipantRole.MENTEE)],
+            1,
+        )
+        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
+            {
+                1: MagicMock(
+                    user_id=1, first_name="U", last_name="X", preferred_name=None
+                )
+            },
+            {},
+        )
+        self.mock_training_repo.get_training_by_user_ids_and_categories.return_value = []
+
+        result = await self.service.search_participants(
+            self.mock_session, ParticipantSearchFilterDto()
+        )
+
+        self.assertEqual(result.participant_rows[0].pairs, [])
+
+    async def test_partner_resolves_to_the_other_side_of_the_pair(self):
+        """The partner is always the other participant in the pair."""
         self.mock_participants_repo.search_participants_for_admin.return_value = (
             [
                 _make_row(
                     user_id=1,
-                    pair_id=99,
-                    mentor_id=1,
-                    mentee_id=2,
                     participant_role=ParticipantRole.MENTOR,
+                    pairs=[_search_pair(99, mentor_id=1, mentee_id=2)],
                 ),
                 _make_row(
                     user_id=2,
-                    pair_id=99,
-                    mentor_id=1,
-                    mentee_id=2,
                     participant_role=ParticipantRole.MENTEE,
+                    pairs=[_search_pair(99, mentor_id=1, mentee_id=2)],
                 ),
             ],
             2,
@@ -299,8 +364,8 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         )
 
         rows = {r.user_id: r for r in result.participant_rows}
-        self.assertEqual(rows[1].matched_user.id, 2)
-        self.assertEqual(rows[2].matched_user.id, 1)
+        self.assertEqual(rows[1].pairs[0].partner.id, 2)
+        self.assertEqual(rows[2].pairs[0].partner.id, 1)
 
     async def test_onboarding_status_requires_done_training(self):
         """mentor/mentee_onboarding_status returns the raw TrainingStatus from the training record."""
@@ -563,761 +628,6 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn(MeetingNoteTag.MENTEE_ABSENT, result.meetings[0].note)
         self.assertIn(MeetingNoteTag.MENTOR_LATE, result.meetings[0].note)
-
-    def test_build_common_export_columns_sanitizes_formula_injection(self):
-        """Free-text fields starting with =, +, -, or @ get a leading single-quote
-        so spreadsheet software treats them as literal text, not formulas."""
-        row = _make_row(user_id=1)
-        users_map = {
-            1: MagicMock(
-                user_id=1,
-                first_name="=cmd|calc",
-                last_name="+SUM(A1)",
-                preferred_name="-1+1",
-            ),
-        }
-        emails_map = {
-            1: [
-                MagicMock(is_primary=True, email="@evil.com"),
-                MagicMock(is_primary=False, email="+alt@evil.com"),
-            ]
-        }
-
-        common = self.service._build_common_export_columns(row, users_map, emails_map)
-
-        self.assertEqual(common[1], "'=cmd|calc")  # first_name
-        self.assertEqual(common[2], "'+SUM(A1)")  # last_name
-        self.assertEqual(common[3], "'-1+1")  # preferred_name
-        self.assertEqual(common[4], "'@evil.com")  # primary_email
-        self.assertEqual(common[5], "'+alt@evil.com")  # alternative_emails joined
-
-    def test_build_common_export_columns_sanitizes_leading_whitespace(self):
-        """Sanitizes formula fields with leading whitespace while preserving the original value."""
-        row = _make_row(user_id=1)
-        users_map = {
-            1: MagicMock(
-                user_id=1, first_name=" =cmd|calc", last_name="Doe", preferred_name=None
-            )
-        }
-        emails_map = {1: []}
-
-        common = self.service._build_common_export_columns(row, users_map, emails_map)
-
-        self.assertEqual(common[1], "' =cmd|calc")
-
-    def test_build_common_export_columns_normal_and_none_values_unaffected(self):
-        """Values that don't start with a formula-trigger character (including
-        None) pass through unchanged."""
-        row = _make_row(user_id=1)
-        users_map = {
-            1: MagicMock(
-                user_id=1, first_name="Alice", last_name="Doe", preferred_name=None
-            )
-        }
-        emails_map = {1: [MagicMock(is_primary=True, email="alice@example.com")]}
-
-        common = self.service._build_common_export_columns(row, users_map, emails_map)
-
-        self.assertEqual(common, [1, "Alice", "Doe", None, "alice@example.com", ""])
-
-    def test_build_participant_export_columns_approval_status_raw_enum(self):
-        """Approval Status is the raw enum value for every status but one.
-
-        Only `rejected` is rewritten, and only when a pair says the person
-        took part -- see the two tests below.
-        """
-        row = _make_row(user_id=1, approval_status=ApprovalStatus.UN_MATCHED)
-
-        participant = self.service._build_participant_export_columns(
-            row, users_map={}, trainings_map={}, rounds_map={}
-        )
-
-        self.assertEqual(participant[2], "un_matched")
-
-    def test_build_participant_export_columns_names_a_leaver(self):
-        """`rejected` plus a pair in the round is someone who left, not someone
-        who was never accepted.
-
-        The two share one stored value, so the export says which it is rather
-        than making the reader cross-reference the Matched User column.
-        """
-        row = _make_row(
-            user_id=1,
-            pair_id=10,
-            mentor_id=1,
-            mentee_id=2,
-            approval_status=ApprovalStatus.REJECTED,
-            pair_status=PairStatus.INACTIVE,
-        )
-
-        participant = self.service._build_participant_export_columns(
-            row, users_map={}, trainings_map={}, rounds_map={}
-        )
-
-        self.assertEqual(participant[2], "ended")
-
-    def test_build_participant_export_columns_keeps_rejected_without_a_pair(self):
-        """No pair in the round means the application was turned down.
-
-        The data cannot tell this apart from someone who quit before being
-        paired, and reading it as "not accepted" is what the data says.
-        """
-        row = _make_row(user_id=1, approval_status=ApprovalStatus.REJECTED)
-
-        participant = self.service._build_participant_export_columns(
-            row, users_map={}, trainings_map={}, rounds_map={}
-        )
-
-        self.assertEqual(participant[2], "rejected")
-
-    def test_build_participant_export_columns_no_pair_leaves_matched_user_blank(self):
-        """A row with no pair_id has blank Matched User columns."""
-        row = _make_row()
-
-        participant = self.service._build_participant_export_columns(
-            row, users_map={}, trainings_map={}, rounds_map={}
-        )
-
-        self.assertEqual(participant, ["", "", "", "", "", ""])
-
-    def test_build_participant_export_columns_matched_name_formula_injection(self):
-        """The matched user's name is sanitized the same as any other free-text field."""
-        row = _make_row(
-            user_id=1,
-            pair_id=10,
-            mentor_id=1,
-            mentee_id=2,
-            participant_role=ParticipantRole.MENTOR,
-        )
-        users_map = {
-            2: MagicMock(
-                user_id=2,
-                first_name="=Mentee",
-                last_name="Smith",
-                preferred_name="@pref",
-            ),
-        }
-
-        participant = self.service._build_participant_export_columns(
-            row, users_map, trainings_map={}, rounds_map={}
-        )
-
-        # partner's preferred_name ("@pref") wins per user_display_name and
-        # gets sanitized after combining.
-        self.assertEqual(participant[5], "'@pref")  # matched_user_name
-
-    def test_build_participant_export_columns_matched_name_fallback(self):
-        """Falls back to first last name and sanitizes the combined value."""
-        row = _make_row(
-            user_id=1,
-            pair_id=10,
-            mentor_id=1,
-            mentee_id=2,
-            participant_role=ParticipantRole.MENTOR,
-        )
-        users_map = {
-            2: MagicMock(
-                user_id=2, first_name="=Mentee", last_name="Smith", preferred_name=None
-            ),
-        }
-
-        participant = self.service._build_participant_export_columns(
-            row, users_map, trainings_map={}, rounds_map={}
-        )
-
-        self.assertEqual(participant[4], 2)  # matched_user_id
-        self.assertEqual(
-            participant[5], "'=Mentee Smith"
-        )  # matched_user_name, sanitized
-
-    def test_build_participant_export_columns_onboarding_status_mentee_role(self):
-        """A mentee-role row's Onboarding Status is the mentee onboarding status,
-        not the mentor one, even if both are set."""
-        row = _make_row(user_id=1, participant_role=ParticipantRole.MENTEE)
-        trainings_map = {
-            1: {
-                TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING: TrainingStatus.DONE,
-                TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING: TrainingStatus.TO_DO,
-            }
-        }
-
-        participant = self.service._build_participant_export_columns(
-            row, users_map={}, trainings_map=trainings_map, rounds_map={}
-        )
-
-        self.assertEqual(participant[3], "to_do")
-
-    def test_build_participant_export_columns_onboarding_status_mentor_role(self):
-        """A mentor-role row's Onboarding Status is the mentor onboarding status."""
-        row = _make_row(user_id=1, participant_role=ParticipantRole.MENTOR)
-        trainings_map = {
-            1: {
-                TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING: TrainingStatus.DONE,
-                TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING: TrainingStatus.TO_DO,
-            }
-        }
-
-        participant = self.service._build_participant_export_columns(
-            row, users_map={}, trainings_map=trainings_map, rounds_map={}
-        )
-
-        self.assertEqual(participant[3], "done")
-
-    def test_build_non_participant_export_columns_returns_both_statuses(self):
-        """A non-participant row exposes both mentor and mentee onboarding
-        status, since it has no participant_role to disambiguate by."""
-        row = _make_row(user_id=1)
-        trainings_map = {
-            1: {
-                TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING: TrainingStatus.DONE,
-                TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING: TrainingStatus.TO_DO,
-            }
-        }
-
-        non_participant = self.service._build_non_participant_export_columns(
-            row, trainings_map
-        )
-
-        self.assertEqual(non_participant, ["done", "to_do"])
-
-    def test_build_non_participant_export_columns_blank_when_no_training(self):
-        """A user with no training record has blank onboarding status columns."""
-        row = _make_row()
-
-        non_participant = self.service._build_non_participant_export_columns(
-            row, trainings_map={}
-        )
-
-        self.assertEqual(non_participant, ["", ""])
-
-    def test_extract_meetings_for_row_no_meetings_returns_empty_list(self):
-        """A row whose pair has no meeting rows (or no pair at all) yields
-        no meetings."""
-        row = _make_row(user_id=1)
-        self.assertEqual(self.service._extract_meetings_for_row(row, []), [])
-
-    def test_extract_meetings_for_row_resolves_notes_from_rows(self):
-        """Resolves notes using the row-based note logic
-        (_resolve_meeting_notes_from_row), not the old dict-based one, and
-        reads is_completed from the row rather than hardcoding it."""
-        row = _make_row(user_id=1, mentor_id=10, mentee_id=20)
-        meeting = _make_meeting(
-            meeting_id="m1",
-            start_datetime="2024-07-15T22:00:00+00:00",
-            end_datetime="2024-07-15T23:00:00+00:00",
-            created_datetime="2024-07-01T00:00:00+00:00",
-            is_completed=False,
-            absent_user_id=10,
-        )
-
-        meetings = self.service._extract_meetings_for_row(row, [meeting])
-
-        self.assertEqual(len(meetings), 1)
-        self.assertEqual(meetings[0].meeting_id, "m1")
-        self.assertEqual(meetings[0].note, [MeetingNoteTag.MENTOR_ABSENT])
-        self.assertFalse(meetings[0].is_completed)
-
-    def test_extract_meetings_for_row_combines_manual_and_google_without_hiding_either(
-        self,
-    ):
-        """A pair holding both MANUAL and GOOGLE rows shows both -- no
-        priority branch hides one generation in favor of the other."""
-        row = _make_row(user_id=1, mentor_id=10, mentee_id=20)
-        manual = _make_meeting(
-            meeting_id="v1-1",
-            source=MeetingSource.MANUAL,
-            start_datetime="2024-01-01T10:00:00+00:00",
-            is_completed=False,
-        )
-        google = _make_meeting(
-            meeting_id="g1",
-            source=MeetingSource.GOOGLE,
-            start_datetime="2024-02-01T10:00:00+00:00",
-            is_completed=True,
-        )
-
-        meetings = self.service._extract_meetings_for_row(row, [manual, google])
-
-        self.assertEqual([m.meeting_id for m in meetings], ["v1-1", "g1"])
-        self.assertFalse(meetings[0].is_completed)  # real value, not forced True
-        self.assertTrue(meetings[1].is_completed)
-
-    def test_extract_meetings_for_row_preserves_repository_order_not_created_datetime(
-        self,
-    ):
-        """Ordering unification, pinned: trusts whatever order `meetings` is
-        handed in (the repository's start_datetime-then-created_datetime-
-        then-meeting_id order) instead of re-sorting by created_datetime the
-        way the JSONB-era version did. A row created later but scheduled
-        earlier still comes first, matching get_meeting_log's ordering."""
-        row = _make_row(user_id=1, mentor_id=10, mentee_id=20)
-        later_start_earlier_created = _make_meeting(
-            meeting_id="m-later-start",
-            start_datetime="2024-02-01T10:00:00+00:00",
-            created_datetime="2024-01-01T00:00:00+00:00",
-        )
-        earlier_start_later_created = _make_meeting(
-            meeting_id="m-earlier-start",
-            start_datetime="2024-01-01T10:00:00+00:00",
-            created_datetime="2024-02-01T00:00:00+00:00",
-        )
-        # This is the order the real repository would return them in
-        # (start_datetime ascending); a created_datetime sort would reverse it.
-        meetings = [earlier_start_later_created, later_start_earlier_created]
-
-        result = self.service._extract_meetings_for_row(row, meetings)
-
-        self.assertEqual(
-            [m.meeting_id for m in result], ["m-earlier-start", "m-later-start"]
-        )
-
-    async def test_missing_participation_status_raises_value_error(self):
-        """Requires participation_status — an unfiltered "both" export isn't supported."""
-        with self.assertRaises(ValueError):
-            await self.service.stream_export_csv(
-                ParticipantSearchFilterDto(), expand_meetings=False
-            ).__anext__()
-
-    async def test_summary_mode_emits_header_and_one_row_per_person(self):
-        """Summary mode: header + one CSV row per participant row, no meeting query."""
-        row = _make_row(user_id=1, round_id=None, pair_id=None)
-        self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
-            [row],
-            [],
-        ]
-        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
-            {
-                1: MagicMock(
-                    user_id=1, first_name="Alice", last_name="Doe", preferred_name=None
-                )
-            },
-            {1: []},
-        )
-
-        csv_text = await _collect_csv(
-            self.service.stream_export_csv(
-                ParticipantSearchFilterDto(participation_status="participant"),
-                expand_meetings=False,
-            )
-        )
-
-        lines = csv_text.strip("\r\n").split("\r\n")
-        self.assertEqual(
-            lines[0].split(","),
-            [
-                "User ID",
-                "First Name",
-                "Last Name",
-                "Preferred Name",
-                "Primary Email",
-                "Alternative Emails",
-                "Round",
-                "Participant Role",
-                "Approval Status",
-                "Onboarding Status",
-                "Matched User ID",
-                "Matched User Name",
-                "Completed Meetings",
-                "Required Meetings",
-            ],
-        )
-        self.assertEqual(len(lines), 2)
-        self.assertTrue(lines[1].startswith("1,Alice,Doe,,,,"))
-
-        # Summary mode never needs meeting rows at all.
-        self.mock_meeting_repo.get_meetings_by_pairs.assert_not_awaited()
-
-    async def test_summary_mode_first_chunk_starts_with_utf8_bom(self):
-        """The raw byte stream is prefixed with a UTF-8 BOM so Excel on
-        Windows doesn't mojibake non-ASCII names."""
-        self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
-            []
-        ]
-
-        chunks = [
-            chunk
-            async for chunk in self.service.stream_export_csv(
-                ParticipantSearchFilterDto(participation_status="participant"),
-                expand_meetings=False,
-            )
-        ]
-
-        self.assertTrue(chunks[0].startswith(b"\xef\xbb\xbf"))
-
-    async def test_detailed_mode_emits_one_row_per_meeting_and_pt_formats_time(self):
-        """Detailed mode: one CSV row per meeting, using the PT formatter."""
-        row = _make_row(user_id=1, pair_id=1, mentor_id=1, mentee_id=2)
-        meeting = _make_meeting(
-            meeting_id="m1",
-            pair_id=1,
-            start_datetime="2024-07-15T22:00:00+00:00",
-            end_datetime="2024-07-15T23:00:00+00:00",
-            created_datetime="2024-07-01T00:00:00+00:00",
-            is_completed=True,
-        )
-        self.mock_meeting_repo.get_meetings_by_pairs.return_value = {1: [meeting]}
-        self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
-            [row],
-            [],
-        ]
-        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
-            {
-                1: MagicMock(
-                    user_id=1, first_name="Alice", last_name="Doe", preferred_name=None
-                )
-            },
-            {1: []},
-        )
-
-        csv_text = await _collect_csv(
-            self.service.stream_export_csv(
-                ParticipantSearchFilterDto(participation_status="participant"),
-                expand_meetings=True,
-            )
-        )
-
-        lines = csv_text.strip("\r\n").split("\r\n")
-        self.assertEqual(
-            lines[0].split(",")[-4:],
-            [
-                "Complete Status",
-                "Start Datetime (PT)",
-                "End Datetime (PT)",
-                "Note",
-            ],
-        )
-        self.assertIn("PT(2024-07-15T22:00:00+00:00)", lines[1])
-        self.assertIn("Completed", lines[1])
-
-        # Batched exactly once per page, with this page's pair_ids.
-        self.mock_meeting_repo.get_meetings_by_pairs.assert_awaited_once_with(
-            session=self.mock_session, pair_ids=[1]
-        )
-
-    async def test_detailed_mode_batches_meetings_once_for_a_multi_row_page(self):
-        """Acceptance criterion: a page with several participant rows fetches
-        meetings with exactly one get_meetings_by_pairs call, not one per row."""
-        rows = [
-            _make_row(user_id=uid, pair_id=pid, mentor_id=uid, mentee_id=uid + 100)
-            for uid, pid in [(1, 10), (2, 20), (3, 30)]
-        ]
-        meetings_by_pair = {
-            10: [_make_meeting(meeting_id="m10", pair_id=10)],
-            20: [_make_meeting(meeting_id="m20", pair_id=20)],
-            # pair 30 deliberately absent: get_meetings_by_pairs omits pairs
-            # with no rows rather than mapping them to an empty list.
-        }
-        self.mock_meeting_repo.get_meetings_by_pairs.return_value = meetings_by_pair
-        self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
-            rows,
-            [],
-        ]
-        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
-            {
-                uid: MagicMock(
-                    user_id=uid,
-                    first_name=f"User{uid}",
-                    last_name="X",
-                    preferred_name=None,
-                )
-                for uid in (1, 2, 3)
-            },
-            {1: [], 2: [], 3: []},
-        )
-
-        csv_text = await _collect_csv(
-            self.service.stream_export_csv(
-                ParticipantSearchFilterDto(participation_status="participant"),
-                expand_meetings=True,
-            )
-        )
-
-        # Exactly one batched call for the whole page, regardless of row count.
-        self.mock_meeting_repo.get_meetings_by_pairs.assert_awaited_once_with(
-            session=self.mock_session, pair_ids=[10, 20, 30]
-        )
-        lines = csv_text.strip("\r\n").split("\r\n")
-        self.assertEqual(len(lines), 4)  # header + 3 rows (1 meeting row each)
-        # Row for pair 30 (absent from the batch dict) gets blank meeting columns
-        # via .get(pair_id, []), not a KeyError.
-        row_for_pair_30 = next(line for line in lines[1:] if line.startswith("3,"))
-        self.assertEqual(row_for_pair_30.split(",")[-4:], ["", "", "", ""])
-
-    async def test_detailed_mode_skips_row_on_processing_failure_and_logs(self):
-        """Logs and skips a row whose meeting data fails to process."""
-        bad_row = _make_row(
-            user_id=1,
-            round_id=10,
-            pair_id=100,
-            mentor_id=1,
-            mentee_id=2,
-        )
-        good_row = _make_row(
-            user_id=2,
-            round_id=20,
-            pair_id=200,
-            mentor_id=2,
-            mentee_id=3,
-        )
-        bad_meeting = _make_meeting(
-            meeting_id="m-bad",
-            pair_id=100,
-            start_datetime=None,  # never happens for real MANUAL/GOOGLE rows
-            end_datetime="2024-07-15T23:00:00+00:00",
-            created_datetime="2024-07-01T00:00:00+00:00",
-            is_completed=True,
-        )
-        good_meeting = _make_meeting(
-            meeting_id="m-good",
-            pair_id=200,
-            start_datetime="2024-07-15T22:00:00+00:00",
-            end_datetime="2024-07-15T23:00:00+00:00",
-            created_datetime="2024-07-01T00:00:00+00:00",
-            is_completed=True,
-        )
-        self.mock_meeting_repo.get_meetings_by_pairs.return_value = {
-            100: [bad_meeting],
-            200: [good_meeting],
-        }
-        self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
-            [bad_row, good_row],
-            [],
-        ]
-        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
-            {
-                1: MagicMock(
-                    user_id=1, first_name="Alice", last_name="Doe", preferred_name=None
-                ),
-                2: MagicMock(
-                    user_id=2, first_name="Bob", last_name="Lee", preferred_name=None
-                ),
-            },
-            {1: [], 2: []},
-        )
-
-        csv_text = await _collect_csv(
-            self.service.stream_export_csv(
-                ParticipantSearchFilterDto(participation_status="participant"),
-                expand_meetings=True,
-            )
-        )
-
-        lines = csv_text.strip("\r\n").split("\r\n")
-        self.assertEqual(len(lines), 2)  # header + only the good row's meeting
-        self.assertTrue(lines[1].startswith("2,Bob,Lee"))
-
-        self.mock_logger.exception.assert_called_once()
-        _, user_id_arg, pair_id_arg, round_id_arg = (
-            self.mock_logger.exception.call_args.args
-        )
-        self.assertEqual((user_id_arg, pair_id_arg, round_id_arg), (1, 100, 10))
-
-    async def test_detailed_mode_skips_whole_row_not_partial_meetings(self):
-        """Skips the whole row when one meeting fails, avoiding partial meeting output."""
-
-        def _format_or_raise(iso, fmt="%Y-%m-%d %H:%M %Z"):
-            if iso == "2024-07-16T22:00:00+00:00":
-                raise ValueError(f"Invalid ISO datetime string: {iso}")
-            return f"PT({iso})"
-
-        self.mock_date_time_util.format_iso_utc_to_pt.side_effect = _format_or_raise
-
-        row = _make_row(user_id=1, round_id=10, pair_id=100, mentor_id=1, mentee_id=2)
-        good_meeting = _make_meeting(
-            meeting_id="m-good",
-            pair_id=100,
-            start_datetime="2024-07-15T22:00:00+00:00",
-            end_datetime="2024-07-15T23:00:00+00:00",
-            created_datetime="2024-07-01T00:00:00+00:00",
-            is_completed=True,
-        )
-        bad_meeting = _make_meeting(
-            meeting_id="m-bad",
-            pair_id=100,
-            start_datetime="2024-07-16T22:00:00+00:00",
-            end_datetime="2024-07-16T23:00:00+00:00",
-            created_datetime="2024-07-02T00:00:00+00:00",
-            is_completed=True,
-        )
-        self.mock_meeting_repo.get_meetings_by_pairs.return_value = {
-            100: [good_meeting, bad_meeting]
-        }
-        self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
-            [row],
-            [],
-        ]
-        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
-            {
-                1: MagicMock(
-                    user_id=1, first_name="Alice", last_name="Doe", preferred_name=None
-                )
-            },
-            {1: []},
-        )
-
-        csv_text = await _collect_csv(
-            self.service.stream_export_csv(
-                ParticipantSearchFilterDto(participation_status="participant"),
-                expand_meetings=True,
-            )
-        )
-
-        lines = csv_text.strip("\r\n").split("\r\n")
-        self.assertEqual(len(lines), 1)  # header only — neither meeting written
-        self.mock_logger.exception.assert_called_once()
-
-    async def test_detailed_mode_keeps_row_with_no_meetings_blank(self):
-        """Keeps a row with no meetings instead of dropping it, with blank meeting columns."""
-        row = _make_row(user_id=1, pair_id=5)
-        self.mock_meeting_repo.get_meetings_by_pairs.return_value = {}
-        self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
-            [row],
-            [],
-        ]
-        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
-            {
-                1: MagicMock(
-                    user_id=1, first_name="Alice", last_name="Doe", preferred_name=None
-                )
-            },
-            {1: []},
-        )
-
-        csv_text = await _collect_csv(
-            self.service.stream_export_csv(
-                ParticipantSearchFilterDto(participation_status="participant"),
-                expand_meetings=True,
-            )
-        )
-
-        lines = csv_text.strip("\r\n").split("\r\n")
-        self.assertEqual(len(lines), 2)  # header + one blank-meeting row
-        self.assertEqual(lines[1].split(",")[-4:], ["", "", "", ""])
-
-    async def test_non_participant_export_ignores_expand_meetings(self):
-        """Ignores expand_meetings for non-participant exports."""
-        row = _make_row(user_id=1, participant_role=None, pair_id=None)
-        self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
-            [row],
-            [],
-        ]
-        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
-            {
-                1: MagicMock(
-                    user_id=1, first_name="Alice", last_name="Doe", preferred_name=None
-                )
-            },
-            {1: []},
-        )
-        self.mock_training_repo.get_training_by_user_ids_and_categories.return_value = [
-            MagicMock(
-                user_id=1,
-                category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
-                status=TrainingStatus.DONE,
-            )
-        ]
-
-        csv_text = await _collect_csv(
-            self.service.stream_export_csv(
-                ParticipantSearchFilterDto(participation_status="non_participant"),
-                expand_meetings=True,
-            )
-        )
-
-        lines = csv_text.strip("\r\n").split("\r\n")
-        self.assertEqual(
-            lines[0].split(","),
-            [
-                "User ID",
-                "First Name",
-                "Last Name",
-                "Preferred Name",
-                "Primary Email",
-                "Alternative Emails",
-                "Mentor Onboarding Status",
-                "Mentee Onboarding Status",
-            ],
-        )
-        self.assertEqual(lines[1], "1,Alice,Doe,,,,done,")
-
-        # A non-participant export never needs meeting rows, even with
-        # expand_meetings=True, since non-participants have no pair/meetings.
-        self.mock_meeting_repo.get_meetings_by_pairs.assert_not_awaited()
-
-    async def test_stops_paginating_on_empty_page(self):
-        """The batch loop stops as soon as a page comes back empty."""
-        row = _make_row(user_id=1)
-        self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
-            [row],
-            [],
-        ]
-        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
-            {
-                1: MagicMock(
-                    user_id=1, first_name="Alice", last_name="Doe", preferred_name=None
-                )
-            },
-            {1: []},
-        )
-
-        await _collect_csv(
-            self.service.stream_export_csv(
-                ParticipantSearchFilterDto(participation_status="participant"),
-                expand_meetings=False,
-            )
-        )
-
-        self.assertEqual(
-            self.mock_participants_repo.iter_search_participants_for_admin.await_count,
-            2,
-        )
-
-    async def test_multiple_batches_paginate_with_incrementing_offset_and_bom_once(
-        self,
-    ):
-        """Paginates across batches with incrementing offsets and a single BOM."""
-        row1 = _make_row(user_id=1)
-        row2 = _make_row(user_id=2)
-        self.mock_participants_repo.iter_search_participants_for_admin.side_effect = [
-            [row1],
-            [row2],
-            [],
-        ]
-        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
-            {
-                1: MagicMock(
-                    user_id=1, first_name="Alice", last_name="Doe", preferred_name=None
-                ),
-                2: MagicMock(
-                    user_id=2, first_name="Bob", last_name="Lee", preferred_name=None
-                ),
-            },
-            {1: [], 2: []},
-        )
-
-        chunks = [
-            chunk
-            async for chunk in self.service.stream_export_csv(
-                ParticipantSearchFilterDto(participation_status="participant"),
-                expand_meetings=False,
-            )
-        ]
-
-        self.assertTrue(chunks[0].startswith(b"\xef\xbb\xbf"))
-        for later_chunk in chunks[1:]:
-            self.assertFalse(later_chunk.startswith(b"\xef\xbb\xbf"))
-
-        call_offsets = [
-            call.kwargs["offset"]
-            for call in self.mock_participants_repo.iter_search_participants_for_admin.call_args_list
-        ]
-        self.assertEqual(call_offsets, [0, 500, 1000])
-
-        csv_text = b"".join(chunks).decode("utf-8-sig")
-        lines = csv_text.strip("\r\n").split("\r\n")
-        self.assertEqual(len(lines), 3)  # header + one row per batch
-        self.assertTrue(lines[1].startswith("1,Alice,Doe"))
-        self.assertTrue(lines[2].startswith("2,Bob,Lee"))
 
     def test_validate_note_tags_allows_valid_combinations(self):
         """Test that valid note tag combinations do not raise."""
@@ -1652,6 +962,132 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.round_version, "v2")
         self.assertEqual(result.meetings, [])
+
+
+def _feedback_user(user_id, first_name, last_name="Doe", preferred_name=None):
+    return MagicMock(
+        user_id=user_id,
+        first_name=first_name,
+        last_name=last_name,
+        preferred_name=preferred_name,
+    )
+
+
+def _feedback_participant(role, program_feedback=None, pair_feedback=None):
+    return MagicMock(
+        participant_role=role,
+        program_feedback=program_feedback,
+        pair_feedback=pair_feedback,
+    )
+
+
+class TestGetRoundFeedback(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.users_repo = MagicMock()
+        self.users_repo.get_all_by_ids = AsyncMock()
+        self.participants_repo = MagicMock()
+        self.participants_repo.get_feedback_owed_in_round = AsyncMock()
+        self.rounds_repo = MagicMock()
+        # `name` is MagicMock's own constructor argument, so it is set after.
+        round_entity = MagicMock(round_id=7)
+        round_entity.name = "2026 Fall"
+        self.rounds_repo.get_by_round_id = AsyncMock(return_value=round_entity)
+        self.session = AsyncMock()
+        self.service = MentorshipAdminService(
+            users_repository=self.users_repo,
+            participants_repository=self.participants_repo,
+            rounds_repository=self.rounds_repo,
+            training_repository=MagicMock(),
+            pairs_repository=MagicMock(),
+            mentorship_mapper=MagicMock(),
+            logger=MagicMock(),
+            mentorship_meeting_repository=MagicMock(),
+        )
+
+    async def test_maps_sent_and_unsent_rows_and_names_partners(self):
+        ann = _feedback_user(21, "Ann", preferred_name="Annie")
+        bob = _feedback_user(11, "Bob")
+        dan = _feedback_user(23, "Dan")
+        self.participants_repo.get_feedback_owed_in_round.return_value = [
+            (
+                _feedback_participant(
+                    ParticipantRole.MENTEE,
+                    {
+                        "most_valuable_aspects": "career advice",
+                        "challenges": "time zones",
+                        "program_rating": 4,
+                    },
+                    [{"partner_id": 11, "rating": 2, "feedback": "late often"}],
+                ),
+                ann,
+            ),
+            (
+                _feedback_participant(
+                    ParticipantRole.MENTOR,
+                    {"program_rating": 5},
+                    [
+                        {"partner_id": 21, "rating": 3, "feedback": None},
+                        {"partner_id": 99, "rating": 1},
+                    ],
+                ),
+                bob,
+            ),
+            (_feedback_participant(ParticipantRole.MENTEE), dan),
+        ]
+        # 99 no longer resolves to a user.
+        self.users_repo.get_all_by_ids.return_value = [ann, bob]
+
+        result = await self.service.get_round_feedback(self.session, 7)
+
+        self.rounds_repo.get_by_round_id.assert_awaited_once_with(self.session, 7)
+        self.participants_repo.get_feedback_owed_in_round.assert_awaited_once_with(
+            self.session, 7
+        )
+        self.assertEqual(
+            sorted(self.users_repo.get_all_by_ids.await_args.args[1]), [11, 21, 99]
+        )
+        self.assertEqual(
+            (result.round_id, result.round_name, result.owed, result.sent),
+            (7, "2026 Fall", 3, 2),
+        )
+
+        ann_row, bob_row, dan_row = result.participants
+        self.assertEqual(ann_row.user_id, 21)
+        self.assertEqual(ann_row.name, "Annie")
+        self.assertEqual(ann_row.role, ParticipantRole.MENTEE)
+        self.assertTrue(ann_row.has_submitted)
+        self.assertEqual(ann_row.most_valuable_aspects, "career advice")
+        self.assertEqual(ann_row.challenges, "time zones")
+        self.assertEqual(ann_row.program_rating, 4)
+        self.assertEqual(
+            [
+                (f.partner_id, f.partner_name, f.rating, f.feedback)
+                for f in ann_row.partner_feedback
+            ],
+            [(11, "Bob Doe", 2, "late often")],
+        )
+
+        self.assertEqual(bob_row.program_rating, 5)
+        self.assertIsNone(bob_row.most_valuable_aspects)
+        self.assertEqual(
+            [
+                (f.partner_id, f.partner_name, f.rating, f.feedback)
+                for f in bob_row.partner_feedback
+            ],
+            [(21, "Annie", 3, None), (99, None, 1, None)],
+        )
+
+        self.assertFalse(dan_row.has_submitted)
+        self.assertIsNone(dan_row.program_rating)
+        self.assertEqual(dan_row.partner_feedback, [])
+
+    async def test_unknown_round_raises(self):
+        self.rounds_repo.get_by_round_id.return_value = None
+
+        with self.assertRaises(ValueError):
+            await self.service.get_round_feedback(self.session, 404)
+
+        self.participants_repo.get_feedback_owed_in_round.assert_not_awaited()
 
 
 if __name__ == "__main__":

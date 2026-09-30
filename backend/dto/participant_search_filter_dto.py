@@ -5,9 +5,9 @@ from backend.common.mentorship_enums import ApprovalStatus, ParticipantRole
 
 class ParticipantSearchFilterDto(BaseRequestDto):
     user_id: int | None = None
-    name: str | None = None
-    email: str | None = None
-    matched_user: str | None = None
+    q: str | None = None
+    account_status: Literal["active", "blocked", "deactivated"] | None = None
+    internal: Literal["internal", "external"] | None = None
     round_id: int | None = None
     participant_role: ParticipantRole | None = None
     approval_status: ApprovalStatus | None = None

@@ -1,7 +1,4 @@
-from datetime import datetime
-from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
 from backend.dto.matching_run_create_dto import MatchingRunCreateDto
 from backend.dto.user_context_dto import UserContextDto
@@ -9,11 +6,11 @@ from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.api_endpoints import (
     MENTORSHIP_ADMIN_PARTICIPANTS,
-    MENTORSHIP_ADMIN_PARTICIPANTS_EXPORT,
     MENTORSHIP_ADMIN_PAIRS_MEETINGS,
     MENTORSHIP_ADMIN_MATCH_RUNS,
     MENTORSHIP_ADMIN_MATCH_RUN,
     MENTORSHIP_ADMIN_MATCH_RUN_RESULTS,
+    MENTORSHIP_ADMIN_ROUND_FEEDBACK,
 )
 from backend.common.permissions import Permission
 from backend.utils.permission_decorators import authenticate
@@ -90,9 +87,9 @@ class MentorshipAdminController:
         )
 
         self.router.add_api_route(
-            MENTORSHIP_ADMIN_PARTICIPANTS_EXPORT,
+            MENTORSHIP_ADMIN_ROUND_FEEDBACK,
             endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_READ])(
-                self.export_participants
+                self.get_round_feedback
             ),
             methods=["GET"],
             response_model=None,
@@ -128,33 +125,23 @@ class MentorshipAdminController:
             data=result,
         )
 
-    async def export_participants(
-        self,
-        filters: ParticipantSearchFilterDto = Depends(),
-        expand_meetings: bool = False,
-    ):
+    async def get_round_feedback(self, round_id: int):
         """
-        Stream the participant search results as a downloadable CSV.
+        Retrieve a round's feedback: everyone it is asked of, sent or not.
 
         Args:
-            filters (ParticipantSearchFilterDto): Search filters used for
-                the export. filters.participation_status must be set.
-            expand_meetings (bool): Whether participant exports include
-                meeting rows. Ignored for non-participant exports.
+            round_id (int): The mentorship round ID.
 
         Returns:
-            StreamingResponse: Streaming CSV file response.
+            API response containing the round's feedback.
         """
-        today = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d")
-        if filters.participation_status == "participant":
-            mode_label = "detailed" if expand_meetings else "summary"
-            filename = f"{filters.participation_status}_{mode_label}_{today}.csv"
-        else:
-            filename = f"{filters.participation_status}_{today}.csv"
-        return StreamingResponse(
-            self.mentorship_admin_service.stream_export_csv(filters, expand_meetings),
-            media_type="text/csv",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        async with self.database.session() as session:
+            result = await self.mentorship_admin_service.get_round_feedback(
+                session, round_id
+            )
+        return api_response(
+            message="Successfully retrieved round feedback.",
+            data=result,
         )
 
     async def get_meeting_log(self, pair_id: int):
