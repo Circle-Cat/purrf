@@ -718,8 +718,6 @@ class AppDependencyBuilder:
             training_repository=self.training_repository,
             pairs_repository=self.mentorship_pairs_repository,
             mentorship_mapper=self.mentorship_mapper,
-            date_time_util=self.date_time_util,
-            database=self.database,
             logger=self.logger,
             mentorship_meeting_repository=self.mentorship_meeting_repository,
         )

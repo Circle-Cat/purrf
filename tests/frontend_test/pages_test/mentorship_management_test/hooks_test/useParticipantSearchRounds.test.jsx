@@ -30,6 +30,12 @@ describe("useParticipantSearchRounds", () => {
     expect(getAllMentorshipRounds).toHaveBeenCalledWith();
   });
 
+  it("is null until the rounds have loaded", () => {
+    getAllMentorshipRounds.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useParticipantSearchRounds());
+    expect(result.current).toBeNull();
+  });
+
   it("falls back to an empty list if the fetch fails", async () => {
     getAllMentorshipRounds.mockRejectedValue(new Error("network error"));
     const { result } = renderHook(() => useParticipantSearchRounds());

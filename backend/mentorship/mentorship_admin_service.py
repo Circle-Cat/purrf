@@ -1,12 +1,16 @@
-import csv
-import io
-from collections.abc import AsyncIterator
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
-from backend.dto.participant_search_dto import ParticipantRowDto, ParticipantSearchDto
-from backend.dto.participant_search_row_dto import ParticipantSearchRow
+from backend.dto.participant_search_dto import (
+    ParticipantPairDto,
+    ParticipantRowDto,
+    ParticipantSearchDto,
+)
+from backend.dto.participant_search_row_dto import (
+    ParticipantSearchPairRow,
+    ParticipantSearchRow,
+)
 from backend.dto.partner_dto import PartnerDto
-from backend.dto.admin_meeting_log_dto import AdminMeetingDto, AdminMeetingLogDto
+from backend.dto.admin_meeting_log_dto import AdminMeetingLogDto
 from backend.dto.round_feedback_dto import (
     AdminPartnerFeedbackDto,
     ParticipantFeedbackDto,
@@ -16,92 +20,13 @@ from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
 from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import (
     MENTORSHIP_ONBOARDING_CATEGORIES,
-    ApprovalStatus,
     MeetingNoteTag,
     MeetingSource,
     PairStatus,
-    ParticipantRole,
     TrainingCategory,
 )
 from backend.common.name_utils import user_display_name
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
-
-_EXPORT_BATCH_SIZE = 500
-_UTF8_BOM = "\ufeff".encode("utf-8")
-_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
-
-
-def _sanitize_csv_field(value: str | None) -> str | None:
-    """
-    Neutralize CSV formula injection in a text cell.
-
-    If the value starts with a formula-triggering character ('=', '+', '-',
-    or '@') after leading whitespace is ignored, prefix it with a single
-    quote so spreadsheet applications treat it as literal text.
-
-    Args:
-        value (str | None): The raw cell value.
-
-    Returns:
-        str | None: The sanitized value, or the original value if no
-        sanitization is required.
-    """
-    if value and value.lstrip().startswith(_CSV_FORMULA_PREFIXES):
-        return f"'{value}"
-    return value
-
-
-def _participation_status_label(
-    approval_status: ApprovalStatus | None, has_pair: bool
-) -> str:
-    """The participation outcome as an admin should read it.
-
-    ``rejected`` is stored for two different outcomes: the person applied and
-    was not accepted, or they took part and then left -- quit, removed, or a
-    mentor suspended mid-round. Holding a pair in that round is what tells
-    them apart, since a pairing only exists once they took part.
-
-    Someone who left after registering but before being paired is
-    indistinguishable and reads as not accepted. The data genuinely does not
-    say which, so it is not guessed at.
-    """
-    if approval_status is None:
-        return ""
-    if approval_status == ApprovalStatus.REJECTED and has_pair:
-        return "ended"
-    return approval_status.value
-
-
-_EXPORT_COMMON_COLUMNS = [
-    "User ID",
-    "First Name",
-    "Last Name",
-    "Preferred Name",
-    "Primary Email",
-    "Alternative Emails",
-]
-_EXPORT_PARTICIPANT_COLUMNS = [
-    "Round",
-    "Participant Role",
-    "Approval Status",
-    "Onboarding Status",
-    "Matched User ID",
-    "Matched User Name",
-]
-_EXPORT_NON_PARTICIPANT_COLUMNS = [
-    "Mentor Onboarding Status",
-    "Mentee Onboarding Status",
-]
-_EXPORT_MEETING_SUMMARY_COLUMNS = [
-    "Completed Meetings",
-    "Required Meetings",
-]
-_EXPORT_MEETING_DETAIL_COLUMNS = [
-    "Complete Status",
-    "Start Datetime (PT)",
-    "End Datetime (PT)",
-    "Note",
-]
 
 
 class MentorshipAdminService:
@@ -122,8 +47,6 @@ class MentorshipAdminService:
         training_repository,
         pairs_repository,
         mentorship_mapper,
-        date_time_util,
-        database,
         logger,
         mentorship_meeting_repository,
     ) -> None:
@@ -133,8 +56,6 @@ class MentorshipAdminService:
         self.training_repository = training_repository
         self.pairs_repository = pairs_repository
         self.mentorship_mapper = mentorship_mapper
-        self.date_time_util = date_time_util
-        self.database = database
         self.logger = logger
         self.mentorship_meeting_repository = mentorship_meeting_repository
 
@@ -177,10 +98,9 @@ class MentorshipAdminService:
         training_user_ids: set[int] = set()
         for row in rows:
             mentorship_user_ids.add(row.user_id)
-            if row.mentor_id is not None:
-                mentorship_user_ids.add(row.mentor_id)
-            if row.mentee_id is not None:
-                mentorship_user_ids.add(row.mentee_id)
+            for pair in row.pairs:
+                mentorship_user_ids.add(pair.mentor_id)
+                mentorship_user_ids.add(pair.mentee_id)
             training_user_ids.add(row.user_id)
 
         users_map, emails_map = await self.users_repository.get_users_and_emails_by_ids(
@@ -200,174 +120,61 @@ class MentorshipAdminService:
 
         return users_map, emails_map, trainings_map
 
-    def _get_partner_user(self, row: ParticipantSearchRow, users_map: dict):
+    def _get_partner_user(
+        self, user_id: int, pair: ParticipantSearchPairRow, users_map: dict
+    ):
         """
-        Resolve the matched partner's user record for a participant search row.
+        Resolve the other side of one of a participant's pairs.
 
         Args:
-            row (ParticipantSearchRow): The row to resolve a partner for.
+            user_id (int): The participant the row is about.
+            pair (ParticipantSearchPairRow): One of that participant's pairs.
             users_map (dict[int, UsersEntity]): User records keyed by user_id.
 
         Returns:
-            The partner's user record, or None if the row has no pair or
-            the partner isn't in users_map.
+            The partner's user record, or None if the partner isn't in
+            users_map.
         """
-        if row.pair_id is None:
-            return None
-        partner_id = row.mentee_id if row.user_id == row.mentor_id else row.mentor_id
+        partner_id = pair.mentee_id if user_id == pair.mentor_id else pair.mentor_id
         return users_map.get(partner_id)
 
-    def _build_common_export_columns(
-        self,
-        row: ParticipantSearchRow,
-        users_map: dict,
-        emails_map: dict,
-    ) -> list:
+    def _build_pair_dtos(
+        self, row: ParticipantSearchRow, users_map: dict
+    ) -> list[ParticipantPairDto]:
         """
-        Build the CSV columns shared by every export row, participant or not.
+        Build the Pair column entries for a participant search row, keeping
+        the row's pair_id order and skipping any pair whose partner can't be
+        resolved.
 
         Args:
-            row (ParticipantSearchRow): The row to build columns for.
+            row (ParticipantSearchRow): The row whose pairs to build.
             users_map (dict[int, UsersEntity]): User records keyed by user_id.
-            emails_map (dict[int, list[UserEmailsEntity]]): Email records keyed by user_id.
 
         Returns:
-            list: Columns in _EXPORT_COMMON_COLUMNS order.
+            list[ParticipantPairDto]: One entry per resolvable pair.
         """
-        user = users_map[row.user_id]
-        primary_email, alternative_emails = self._extract_emails(
-            emails_map.get(row.user_id, [])
-        )
-        return [
-            row.user_id,
-            _sanitize_csv_field(user.first_name),
-            _sanitize_csv_field(user.last_name),
-            _sanitize_csv_field(user.preferred_name),
-            _sanitize_csv_field(primary_email),
-            _sanitize_csv_field(";".join(alternative_emails)),
-        ]
-
-    def _build_participant_export_columns(
-        self,
-        row: ParticipantSearchRow,
-        users_map: dict,
-        trainings_map: dict,
-        rounds_map: dict,
-    ) -> list:
-        """
-        Build the CSV columns specific to a participant export row.
-
-        Onboarding Status reflects the row's own participant role: mentee
-        onboarding status if the row is a mentee, otherwise mentor
-        onboarding status. The matched user's name follows the existing
-        partner display-name convention (preferred name if available;
-        otherwise "first last").
-
-        Args:
-            row (ParticipantSearchRow): The row to build columns for.
-            users_map (dict[int, UsersEntity]): User records keyed by user_id.
-            trainings_map (dict[int, dict[TrainingCategory, TrainingStatus]]): Training status keyed by user_id, then category.
-            rounds_map (dict[int, MentorshipRoundEntity]): Round records keyed by round_id.
-
-        Returns:
-            list: Columns in _EXPORT_PARTICIPANT_COLUMNS order.
-        """
-        round_entity = rounds_map.get(row.round_id) if row.round_id else None
-
-        statuses = trainings_map.get(row.user_id, {})
-        mentor_status = statuses.get(TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
-        mentee_status = statuses.get(TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING)
-        if row.participant_role == ParticipantRole.MENTEE:
-            onboarding_status = mentee_status
-        else:
-            onboarding_status = mentor_status
-
-        matched_user_id = ""
-        matched_user_name = ""
-        partner = self._get_partner_user(row, users_map)
-        if partner:
-            matched_user_id = partner.user_id
-            matched_user_name = user_display_name(
-                first_name=partner.first_name,
-                last_name=partner.last_name,
-                preferred_name=partner.preferred_name,
+        pair_dtos: list[ParticipantPairDto] = []
+        for pair in row.pairs:
+            partner = self._get_partner_user(row.user_id, pair, users_map)
+            if partner is None:
+                continue
+            pair_dtos.append(
+                ParticipantPairDto(
+                    pair_id=pair.pair_id,
+                    partner=PartnerDto(
+                        id=partner.user_id,
+                        first_name=partner.first_name or "",
+                        last_name=partner.last_name or "",
+                        preferred_name=partner.preferred_name or "",
+                        primary_email=None,
+                        participant_role=None,
+                        recommendation_reason=None,
+                        is_active=pair.pair_status == PairStatus.ACTIVE,
+                    ),
+                    completed_meeting_count=pair.completed_count,
+                )
             )
-
-        return [
-            _sanitize_csv_field(round_entity.name) if round_entity else "",
-            row.participant_role.value if row.participant_role else "",
-            _participation_status_label(row.approval_status, row.pair_id is not None),
-            onboarding_status.value if onboarding_status else "",
-            matched_user_id,
-            _sanitize_csv_field(matched_user_name),
-        ]
-
-    def _build_non_participant_export_columns(
-        self,
-        row: ParticipantSearchRow,
-        trainings_map: dict,
-    ) -> list:
-        """
-        Build the CSV columns specific to a non-participant export row.
-
-        Args:
-            row (ParticipantSearchRow): The row to build columns for.
-            trainings_map (dict[int, dict[TrainingCategory, TrainingStatus]]): Training status keyed by user_id, then category.
-
-        Returns:
-            list: Columns in _EXPORT_NON_PARTICIPANT_COLUMNS order.
-        """
-        statuses = trainings_map.get(row.user_id, {})
-        mentor_status = statuses.get(TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
-        mentee_status = statuses.get(TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING)
-        return [
-            mentor_status.value if mentor_status else "",
-            mentee_status.value if mentee_status else "",
-        ]
-
-    def _extract_meetings_for_row(
-        self,
-        row: ParticipantSearchRow,
-        meetings: list[MentorshipMeetingEntity],
-    ) -> list[AdminMeetingDto]:
-        """
-        Build a row's meetings from its pair's pre-fetched `mentorship_meeting`
-        rows.
-
-        `meetings` is expected to already be this row's pair's slice of a
-        batched `MentorshipMeetingRepository.get_meetings_by_pairs` result
-        (the caller looks it up per row, keyed by pair_id, from one page-wide
-        call) -- this method itself issues no query and does not re-sort:
-        it trusts the repository's own order (`start_datetime` ascending,
-        then `created_datetime`, then `meeting_id`), the same order
-        `_build_meeting_log_dto` now trusts. That is a deliberate change from
-        this method's old JSONB-era created_datetime sort, made so the two
-        read paths agree.
-
-        MANUAL and GOOGLE rows are shown together in whatever order they
-        arrive in -- there is no priority branch that hides one generation
-        in favor of the other. LEGACY rows (NULL times) are expected to
-        already be excluded by the caller's `get_meetings_by_pairs` call.
-
-        Args:
-            row (ParticipantSearchRow): The row meetings are being extracted
-                for (used only for mentor_id/mentee_id to resolve note tags).
-            meetings (list[MentorshipMeetingEntity]): This row's pair's
-                meeting rows, already ordered.
-
-        Returns:
-            list[AdminMeetingDto]: This row's meetings, in the given order.
-        """
-        return [
-            self.mentorship_mapper.map_to_admin_meeting_dto(
-                self._meeting_row_to_admin_dict(m),
-                is_completed=m.is_completed,
-                note_tags=self._resolve_meeting_notes_from_row(
-                    m, row.mentor_id, row.mentee_id
-                ),
-            )
-            for m in meetings
-        ]
+        return pair_dtos
 
     def _get_required_meetings(
         self, row: ParticipantSearchRow, rounds_map: dict
@@ -436,20 +243,6 @@ class MentorshipAdminService:
                 emails_map.get(row.user_id, [])
             )
 
-            partner = self._get_partner_user(row, users_map)
-            matched_user = None
-            if partner:
-                matched_user = PartnerDto(
-                    id=partner.user_id,
-                    first_name=partner.first_name or "",
-                    last_name=partner.last_name or "",
-                    preferred_name=partner.preferred_name or "",
-                    primary_email=None,
-                    participant_role=None,
-                    recommendation_reason=None,
-                    is_active=row.pair_status == PairStatus.ACTIVE,
-                )
-
             round_entity = rounds_map.get(row.round_id) if row.round_id else None
 
             participant_rows.append(
@@ -457,18 +250,19 @@ class MentorshipAdminService:
                     user_id=row.user_id,
                     round_id=row.round_id,
                     round_name=round_entity.name if round_entity else None,
-                    pair_id=row.pair_id,
                     first_name=user.first_name,
                     last_name=user.last_name,
                     preferred_name=user.preferred_name,
                     primary_email=primary_email,
                     alternative_emails=alternative_emails,
-                    matched_user=matched_user,
+                    is_blocked=row.is_blocked,
+                    is_deactivated=row.is_deactivated,
+                    is_internal=row.is_internal,
                     participant_role=row.participant_role,
                     approval_status=row.approval_status,
                     mentor_onboarding_status=mentor_status,
                     mentee_onboarding_status=mentee_status,
-                    completed_meeting_count=row.completed_count,
+                    pairs=self._build_pair_dtos(row, users_map),
                     required_meetings=self._get_required_meetings(row, rounds_map),
                 )
             )
@@ -947,171 +741,3 @@ class MentorshipAdminService:
         )
 
         return await self._build_meeting_log_dto(session, pair)
-
-    async def stream_export_csv(
-        self,
-        filters: ParticipantSearchFilterDto,
-        expand_meetings: bool = False,
-    ) -> AsyncIterator[bytes]:
-        """
-        Stream participant search results as BOM-prefixed UTF-8 CSV data chunks.
-
-        Uses its own database session because StreamingResponse consumes
-        this generator after the controller returns.
-
-        An export row that fails to build is logged and skipped instead of
-        aborting the stream. When expanding meetings, a pair's meeting rows
-        are built before writing to avoid partially exporting a participant
-        when one meeting fails.
-
-        When expand_meetings needs meeting data, it is fetched with exactly
-        one `mentorship_meeting_repository.get_meetings_by_pairs` call per
-        page (grouped by pair_id, up to _EXPORT_BATCH_SIZE pairs), not one
-        query per row -- the same batching this method already applies to
-        users/emails/trainings via `_fetch_batch_relations`.
-
-        Args:
-            filters (ParticipantSearchFilterDto): Same filters as the search
-                endpoint. filters.participation_status must be set, since it
-                decides which column set the export uses.
-            expand_meetings (bool): False (default) yields one row per
-                participant record. True yields one row per meeting (a
-                participant with no meetings still gets one row, with the
-                meeting columns left blank). Ignored for a non-participant
-                export, which has no meeting data.
-
-        Yields:
-            bytes: UTF-8 encoded CSV batch bytes.
-
-        Raises:
-            ValueError: If filters.participation_status is not set.
-        """
-        if filters.participation_status is None:
-            raise ValueError("filters.participation_status is required for CSV export.")
-        is_participant = filters.participation_status == "participant"
-        need_meetings = is_participant and expand_meetings
-        buffer = io.StringIO()
-        writer = csv.writer(buffer)
-
-        def drain_buffer() -> bytes:
-            data = buffer.getvalue()
-            buffer.seek(0)
-            buffer.truncate(0)
-            return data.encode("utf-8")
-
-        if is_participant:
-            meeting_columns = (
-                _EXPORT_MEETING_DETAIL_COLUMNS
-                if expand_meetings
-                else _EXPORT_MEETING_SUMMARY_COLUMNS
-            )
-            header = (
-                _EXPORT_COMMON_COLUMNS + _EXPORT_PARTICIPANT_COLUMNS + meeting_columns
-            )
-        else:
-            header = _EXPORT_COMMON_COLUMNS + _EXPORT_NON_PARTICIPANT_COLUMNS
-        writer.writerow(header)
-        yield _UTF8_BOM + drain_buffer()
-
-        async with self.database.session() as session:
-            rounds = await self.rounds_repository.get_all_rounds(session)
-            rounds_map = {r.round_id: r for r in rounds}
-
-            offset = 0
-            while True:
-                rows = await self.participants_repository.iter_search_participants_for_admin(
-                    session,
-                    filters,
-                    limit=_EXPORT_BATCH_SIZE,
-                    offset=offset,
-                )
-                if not rows:
-                    break
-
-                (
-                    users_map,
-                    emails_map,
-                    trainings_map,
-                ) = await self._fetch_batch_relations(session, rows)
-
-                # One batched call for the whole page instead of a per-row
-                # query -- get_meetings_by_pairs excludes LEGACY rows (NULL
-                # times) by default, which must never reach a meeting column
-                # that expects a real datetime.
-                meetings_by_pair: dict[int, list[MentorshipMeetingEntity]] = {}
-                if need_meetings:
-                    pair_ids = [row.pair_id for row in rows if row.pair_id is not None]
-                    meetings_by_pair = (
-                        await self.mentorship_meeting_repository.get_meetings_by_pairs(
-                            session=session, pair_ids=pair_ids
-                        )
-                    )
-
-                for row in rows:
-                    try:
-                        common = self._build_common_export_columns(
-                            row, users_map, emails_map
-                        )
-                        if is_participant:
-                            participant = self._build_participant_export_columns(
-                                row, users_map, trainings_map, rounds_map
-                            )
-                            if not expand_meetings:
-                                csv_rows = [
-                                    common
-                                    + participant
-                                    + [
-                                        row.completed_count,
-                                        self._get_required_meetings(row, rounds_map),
-                                    ]
-                                ]
-                            else:
-                                meetings = self._extract_meetings_for_row(
-                                    row, meetings_by_pair.get(row.pair_id, [])
-                                )
-                                if meetings:
-                                    csv_rows = [
-                                        common
-                                        + participant
-                                        + [
-                                            "Completed"
-                                            if meeting.is_completed
-                                            else "Incomplete",
-                                            self.date_time_util.format_iso_utc_to_pt(
-                                                meeting.start_datetime,
-                                                fmt="%Y-%m-%d %H:%M %Z",
-                                            ),
-                                            self.date_time_util.format_iso_utc_to_pt(
-                                                meeting.end_datetime,
-                                                fmt="%Y-%m-%d %H:%M %Z",
-                                            ),
-                                            "; ".join(
-                                                tag.value for tag in meeting.note
-                                            ),
-                                        ]
-                                        for meeting in meetings
-                                    ]
-                                else:
-                                    csv_rows = [common + participant + ["", "", "", ""]]
-                        else:
-                            non_participant = (
-                                self._build_non_participant_export_columns(
-                                    row, trainings_map
-                                )
-                            )
-                            csv_rows = [common + non_participant]
-                    except Exception:
-                        self.logger.exception(
-                            "Failed to build CSV row during export, "
-                            "skipping row: user_id=%s, pair_id=%s, "
-                            "round_id=%s",
-                            row.user_id,
-                            row.pair_id,
-                            row.round_id,
-                        )
-                        continue
-
-                    for csv_row in csv_rows:
-                        writer.writerow(csv_row)
-                yield drain_buffer()
-                offset += _EXPORT_BATCH_SIZE

@@ -6,10 +6,11 @@ import { getAllMentorshipRounds } from "@/api/mentorshipApi";
  * API returns them: latest round first. Re-sorting here by id would undo
  * that, because round ids are not in time order.
  *
- * @returns {Object[]} The rounds, or an empty list if the fetch fails.
+ * @returns {Object[]|null} The rounds; null until they have loaded, and an
+ *   empty list if the fetch fails.
  */
 export const useParticipantSearchRounds = () => {
-  const [rounds, setRounds] = useState([]);
+  const [rounds, setRounds] = useState(null);
 
   useEffect(() => {
     getAllMentorshipRounds()

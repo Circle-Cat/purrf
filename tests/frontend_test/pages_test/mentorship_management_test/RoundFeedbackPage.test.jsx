@@ -71,9 +71,9 @@ const FEEDBACK = {
   ],
 };
 
-const renderPage = () =>
+const renderPage = (entry = "/mentorship-management/rounds/7/feedback") =>
   render(
-    <MemoryRouter initialEntries={["/mentorship-management/rounds/7/feedback"]}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route
           path="/mentorship-management/rounds/:roundId/feedback"
@@ -93,6 +93,25 @@ describe("RoundFeedbackPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getRoundFeedback.mockResolvedValue({ data: FEEDBACK });
+  });
+
+  it("links back to the console with the search it was opened from", async () => {
+    renderPage({
+      pathname: "/mentorship-management/rounds/7/feedback",
+      state: { returnSearch: "?round=7&q=ali" },
+    });
+
+    expect(
+      await screen.findByRole("link", { name: "Mentorship Management" }),
+    ).toHaveAttribute("href", "/mentorship-management?round=7&q=ali");
+  });
+
+  it("links back to the bare console when opened directly", async () => {
+    renderPage();
+
+    expect(
+      await screen.findByRole("link", { name: "Mentorship Management" }),
+    ).toHaveAttribute("href", "/mentorship-management");
   });
 
   it("asks for the round in the URL and shows its counts", async () => {

@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Eye, Pencil, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Table from "@/components/common/Table";
@@ -45,10 +45,14 @@ const ACTION_COLUMN = { header: "Action", accessor: "action" };
  * owes feedback for the round.
  */
 const FeedbackCell = ({ round }) => {
+  // The page's own query string holds the participant search; the feedback
+  // page's back link returns to it.
+  const { search } = useLocation();
   if (!round.feedbackOwed) return "—";
   return (
     <Link
       to={ROUTE_PATHS.MENTORSHIP_ROUND_FEEDBACK(round.id)}
+      state={{ returnSearch: search }}
       aria-label={`Feedback for ${round.name}`}
       className="text-blue-700 underline-offset-2 hover:underline"
     >

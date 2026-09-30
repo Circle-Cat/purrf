@@ -11,7 +11,6 @@ import {
   searchParticipants,
   getMeetingLog,
   updateMeetingLog,
-  getParticipantExportUrl,
 } from "@/api/mentorshipApi";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
@@ -163,9 +162,9 @@ describe("Mentorship Service API", () => {
 
     const result = await searchParticipants({
       userId: 5,
-      name: "Alice",
-      email: "alice@x.com",
-      matchedUser: "Bob Smith",
+      q: "alice",
+      accountStatus: "blocked",
+      internal: "external",
       roundId: 3,
       participantRole: "mentor",
       approvalStatus: "matched",
@@ -180,9 +179,9 @@ describe("Mentorship Service API", () => {
       {
         params: {
           userId: 5,
-          name: "Alice",
-          email: "alice@x.com",
-          matchedUser: "Bob Smith",
+          q: "alice",
+          accountStatus: "blocked",
+          internal: "external",
           roundId: 3,
           participantRole: "mentor",
           approvalStatus: "matched",
@@ -232,9 +231,9 @@ describe("Mentorship Service API", () => {
       {
         params: {
           userId: undefined,
-          name: undefined,
-          email: undefined,
-          matchedUser: undefined,
+          q: undefined,
+          accountStatus: undefined,
+          internal: undefined,
           roundId: undefined,
           participantRole: undefined,
           approvalStatus: undefined,
@@ -247,47 +246,6 @@ describe("Mentorship Service API", () => {
         },
       },
     );
-  });
-
-  it("getParticipantExportUrl sends export filters with correct param names", () => {
-    const url = getParticipantExportUrl({
-      userId: 5,
-      name: "Alice",
-      participationStatus: "participant",
-      expandMeetings: true,
-    });
-
-    const [base, query] = url.split("?");
-    expect(base).toBe(
-      `${request.defaults.baseURL}${API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANTS_EXPORT}`,
-    );
-    const params = new URLSearchParams(query);
-    expect(params.get("userId")).toBe("5");
-    expect(params.get("name")).toBe("Alice");
-    expect(params.get("participationStatus")).toBe("participant");
-    expect(params.get("expand_meetings")).toBe("true");
-  });
-
-  it("getParticipantExportUrl includes expand_meetings=false when expandMeetings is false", () => {
-    const url = getParticipantExportUrl({
-      participationStatus: "participant",
-      expandMeetings: false,
-    });
-
-    const params = new URLSearchParams(url.split("?")[1]);
-    expect(params.get("expand_meetings")).toBe("false");
-  });
-
-  it("getParticipantExportUrl omits filters that are not provided", () => {
-    const url = getParticipantExportUrl({
-      participationStatus: "non_participant",
-    });
-
-    const params = new URLSearchParams(url.split("?")[1]);
-    expect(params.has("userId")).toBe(false);
-    expect(params.has("name")).toBe(false);
-    expect(params.has("expand_meetings")).toBe(false);
-    expect(params.get("participationStatus")).toBe("non_participant");
   });
 
   it("getMeetingLog should call the correct GET endpoint for the given pair", async () => {

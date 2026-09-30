@@ -17,7 +17,6 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         self.mock_admin_service.get_meeting_log = AsyncMock()
         self.mock_admin_service.get_round_feedback = AsyncMock()
         self.mock_admin_service.apply_v2_meeting_batch = AsyncMock()
-        self.mock_admin_service.stream_export_csv = MagicMock()
 
         self.mock_matching_run_service = MagicMock()
         self.mock_matching_run_service.start_run = AsyncMock()
@@ -168,76 +167,37 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
             data=mock_result,
         )
 
-    async def test_export_participants_returns_streaming_response(self):
-        """Wraps the service's async generator in a StreamingResponse with CSV headers."""
+    async def test_participant_export_route_is_gone(self):
+        paths = {route.path for route in self.controller.router.routes}
 
-        async def fake_stream():
-            yield b"header\n"
-            yield b"row\n"
+        self.assertIn("/mentorship/admin/participants", paths)
+        self.assertNotIn("/mentorship/admin/participants/export", paths)
 
-        filters = ParticipantSearchFilterDto(participation_status="participant")
-        self.mock_admin_service.stream_export_csv.return_value = fake_stream()
-
-        response = await self.controller.export_participants(
-            filters=filters, expand_meetings=False
+    async def test_search_participants_forwards_the_new_filters(self):
+        filters = ParticipantSearchFilterDto(
+            q="ada", account_status="blocked", internal="external"
         )
+        self.mock_admin_service.search_participants.return_value = MagicMock()
 
-        self.mock_admin_service.stream_export_csv.assert_called_once_with(
-            filters, False
-        )
-        self.assertEqual(response.media_type, "text/csv")
-        self.assertIn("attachment", response.headers["content-disposition"])
-        self.assertIn("participant_summary_", response.headers["content-disposition"])
+        await self.controller.search_participants(filters=filters)
 
-    async def test_export_participants_detailed_mode_filename(self):
-        """expand_meetings=True's filename includes the 'detailed' marker."""
+        forwarded = self.mock_admin_service.search_participants.await_args.args[1]
+        self.assertEqual(forwarded.q, "ada")
+        self.assertEqual(forwarded.account_status, "blocked")
+        self.assertEqual(forwarded.internal, "external")
 
-        async def fake_stream():
-            yield b"header\n"
+    def test_filter_rejects_an_unknown_account_status(self):
+        with self.assertRaises(ValidationError):
+            ParticipantSearchFilterDto(account_status="suspended")
 
-        filters = ParticipantSearchFilterDto(participation_status="participant")
-        self.mock_admin_service.stream_export_csv.return_value = fake_stream()
+    def test_filter_rejects_an_unknown_internal_value(self):
+        with self.assertRaises(ValidationError):
+            ParticipantSearchFilterDto(internal="contractor")
 
-        response = await self.controller.export_participants(
-            filters=filters, expand_meetings=True
-        )
-
-        self.assertIn("participant_detailed_", response.headers["content-disposition"])
-
-    async def test_export_non_participant_filename_ignores_mode(self):
-        """Non-participant filenames don't include a mode marker."""
-
-        async def fake_stream():
-            yield b"header\n"
-
-        filters = ParticipantSearchFilterDto(participation_status="non_participant")
-        self.mock_admin_service.stream_export_csv.return_value = fake_stream()
-
-        response = await self.controller.export_participants(
-            filters=filters, expand_meetings=False
-        )
-
-        content_disposition = response.headers["content-disposition"]
-        self.assertIn("non_participant_", content_disposition)
-        self.assertNotIn("summary", content_disposition)
-
-    async def test_export_non_participant_no_mode_filename(self):
-        """Omitting expand_meetings (unlike passing it explicitly) still
-        defaults to False and forwards that default to stream_export_csv."""
-
-        async def fake_stream():
-            yield b"header\n"
-
-        filters = ParticipantSearchFilterDto(participation_status="non_participant")
-        self.mock_admin_service.stream_export_csv.return_value = fake_stream()
-
-        response = await self.controller.export_participants(filters=filters)
-
-        self.mock_admin_service.stream_export_csv.assert_called_once_with(
-            filters, False
-        )
-        content_disposition = response.headers["content-disposition"]
-        self.assertIn("non_participant_", content_disposition)
+    def test_filter_no_longer_takes_name_email_or_matched_user(self):
+        for field in ("name", "email", "matched_user"):
+            with self.subTest(field=field), self.assertRaises(ValidationError):
+                ParticipantSearchFilterDto(**{field: "x"})
 
     async def test_start_matching_run_passes_the_selection_through(self):
         self.mock_matching_run_service.start_run.return_value = {

@@ -6,13 +6,20 @@ from backend.common.mentorship_enums import (
 )
 
 
+class ParticipantSearchPairRow(BaseInternalDTO):
+    pair_id: int
+    mentor_id: int
+    mentee_id: int
+    pair_status: PairStatus
+    completed_count: int
+
+
 class ParticipantSearchRow(BaseInternalDTO):
     user_id: int
     round_id: int | None
-    pair_id: int | None
     participant_role: ParticipantRole | None
     approval_status: ApprovalStatus | None
-    completed_count: int | None
-    mentor_id: int | None
-    mentee_id: int | None
-    pair_status: PairStatus | None
+    is_blocked: bool
+    is_deactivated: bool
+    is_internal: bool
+    pairs: list[ParticipantSearchPairRow] = []
