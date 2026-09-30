@@ -60,14 +60,21 @@ resource "google_project_iam_member" "pubsub_auto_sub" {
   member  = "serviceAccount:service-${data.google_project.main_gcp_project_data.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
 }
 
+# Both APIs are left on when an environment is removed. Every environment
+# enables them on the same project, purrf-452300, so the default
+# disable_on_destroy would let tearing down one environment turn them off for
+# the others.
+
 # Enable the Cloud Functions API
 resource "google_project_service" "cloud_functions" {
-  service = "cloudfunctions.googleapis.com"
+  service            = "cloudfunctions.googleapis.com"
+  disable_on_destroy = false
 }
 
 # Enable Access Context Manager API
 resource "google_project_service" "access_context_manager" {
-  service = "accesscontextmanager.googleapis.com"
+  service            = "accesscontextmanager.googleapis.com"
+  disable_on_destroy = false
 }
 
 # Create a storage bucket to hold the packaged function code
