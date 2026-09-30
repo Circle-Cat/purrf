@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import {
+  createMemoryRouter,
+  RouterProvider,
+  useParams,
+} from "react-router-dom";
 import Postings from "@/pages/Recruiting/Postings";
 import * as api from "@/api/recruitingApi";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
@@ -35,6 +39,7 @@ describe("Postings", () => {
     api.listJobOwners.mockResolvedValue({
       data: [{ userId: 5, name: "Alice", email: "a@x.com" }],
     });
+    api.listMyReviews.mockResolvedValue({ data: [] });
   });
 
   const renderPage = () => {
@@ -138,5 +143,69 @@ describe("Postings", () => {
     await waitFor(() =>
       expect(screen.queryByText("Backend Engineer")).not.toBeInTheDocument(),
     );
+  });
+
+  describe("review card", () => {
+    const DetailPage = () => <p>detail page {useParams().id}</p>;
+
+    // A different job from the one in the postings list, so opening it
+    // proves the card navigates by the review's own jobId.
+    const pendingReview = {
+      reviewId: 3,
+      jobId: 7,
+      jobTitle: "Data Analyst",
+      kind: "initial",
+    };
+
+    const renderWithDetail = () => {
+      const router = createMemoryRouter(
+        [
+          { path: ROUTE_PATHS.RECRUITING_POSTINGS, element: <Postings /> },
+          {
+            path: ROUTE_PATHS.RECRUITING_POSTING_DETAIL(":id"),
+            element: <DetailPage />,
+          },
+        ],
+        { initialEntries: [ROUTE_PATHS.RECRUITING_POSTINGS] },
+      );
+      return render(<RouterProvider router={router} />);
+    };
+
+    it("shows an approver the postings waiting on them and opens one", async () => {
+      mockUseAuth.mockReturnValue({
+        user: { userId: 5 },
+        permissions: [PERMISSIONS.RECRUITING_JOB_APPROVE],
+      });
+      api.listMyReviews.mockResolvedValue({ data: [pendingReview] });
+      renderWithDetail();
+
+      expect(
+        await screen.findByText("Waiting for your review (1)"),
+      ).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Review" }));
+      await waitFor(() =>
+        expect(screen.getByText("detail page 7")).toBeInTheDocument(),
+      );
+    });
+
+    it("hides the card when nothing is waiting on the approver", async () => {
+      mockUseAuth.mockReturnValue({
+        user: { userId: 5 },
+        permissions: [PERMISSIONS.RECRUITING_JOB_APPROVE],
+      });
+      renderPage();
+      await waitFor(() => screen.getByText("Backend Engineer"));
+      expect(api.listMyReviews).toHaveBeenCalled();
+      expect(
+        screen.queryByText(/Waiting for your review/),
+      ).not.toBeInTheDocument();
+    });
+
+    // The reviews route 403s without job.approve.
+    it("does not fetch reviews for a viewer without job.approve", async () => {
+      renderPage();
+      await waitFor(() => screen.getByText("Backend Engineer"));
+      expect(api.listMyReviews).not.toHaveBeenCalled();
+    });
   });
 });

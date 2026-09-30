@@ -43,15 +43,6 @@ describe("Sidebar recruiting entries", () => {
     expect(screen.getByText("Job Postings")).toBeInTheDocument();
   });
 
-  it("hides My Posting Reviews without job.approve", () => {
-    render(
-      <MemoryRouter>
-        <Sidebar />
-      </MemoryRouter>,
-    );
-    expect(screen.queryByText("My Posting Reviews")).not.toBeInTheDocument();
-  });
-
   it("hides My Interview Evaluations without recruiting.interview.evaluate", () => {
     render(
       <MemoryRouter>

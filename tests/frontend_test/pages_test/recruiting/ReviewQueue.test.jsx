@@ -40,22 +40,20 @@ describe("ReviewQueue", () => {
     expect(screen.getByText("Reopen Request")).toBeInTheDocument();
   });
 
-  it("explains an empty queue rather than only stating it is empty", () => {
-    render(<ReviewQueue reviews={[]} onOpen={() => {}} />);
+  it("renders nothing when there are no pending reviews", () => {
+    const { container } = render(
+      <ReviewQueue reviews={[]} onOpen={() => {}} />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
 
-    expect(
-      screen.getByText("Postings submitted for your approval appear here."),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "An author picks you as the reviewer when they submit a posting.",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "You can't add one yourself, and you can't review your own postings.",
-      ),
-    ).toBeInTheDocument();
+  it("counts the pending reviews in its title", () => {
+    const reviews = [
+      { reviewId: 1, jobId: 1, jobTitle: "A", kind: "initial" },
+      { reviewId: 2, jobId: 2, jobTitle: "B", kind: "close" },
+    ];
+    render(<ReviewQueue reviews={reviews} onOpen={() => {}} />);
+    expect(screen.getByText("Waiting for your review (2)")).toBeInTheDocument();
   });
 
   it("explains what approving or rejecting each request kind does", async () => {
