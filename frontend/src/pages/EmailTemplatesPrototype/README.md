@@ -35,7 +35,6 @@ Each entry shows:
 - sender alias
 - subject and body preview
 - placeholders (manual only)
-- where it lives in code
 
 Recipients come from the `@register_recipients` resolvers in each domain. The
 person who caused an event is never among them, because the pipeline removes

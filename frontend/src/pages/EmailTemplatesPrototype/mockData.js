@@ -37,13 +37,6 @@ export const PLACEHOLDER_INFO = {
   sender_name: "The staff member sending the email",
 };
 
-const MANUAL_FILE = "backend/communication/email_templates.py";
-const RECRUITING_RENDERERS = "backend/recruiting/notification_renderers.py";
-const RECRUITING_COPY = "backend/recruiting/notification_email_copy.py";
-const MENTORSHIP_RENDERERS = "backend/mentorship/notification_renderers.py";
-const MENTORSHIP_COPY = "backend/mentorship/notification_email_copy.py";
-const USERS_RENDERERS = "backend/user_identity/notification_renderers.py";
-
 const SIGNATURE =
   "<p>Best,<br><strong>{{sender_name}}</strong><br>" +
   "Director of People Operations<br>Circle Cat Inc</p>";
@@ -52,18 +45,16 @@ const ONBOARDING_FORM_URL =
   "https://docs.google.com/forms/d/e/" +
   "1FAIpQLSdlc-oaOg6I2Cj3jDgV66qeHzEcy0_AmWT8n_-urAucFV3hvA/viewform";
 
-const manual = (constant, key, name, subject, body) => ({
+const manual = (key, name, subject, body) => ({
   key,
   name,
   service: "recruiting",
   mode: "manual",
-  code: [{ file: MANUAL_FILE, symbol: constant }],
   variants: [{ label: null, subject, body }],
 });
 
 export const MANUAL_TEMPLATES = [
   manual(
-    "_SCREENING_PASSED_CULTURAL_INVITE",
     "screening_passed_cultural_invite",
     "Screening passed - request behavioral interview availability",
     "Circle Cat Program - Interview Availability",
@@ -88,7 +79,6 @@ export const MANUAL_TEMPLATES = [
       SIGNATURE,
   ),
   manual(
-    "_CULTURAL_INTERVIEW_SCHEDULED",
     "cultural_interview_scheduled",
     "Behavioral interview scheduled",
     "Your Circle Cat Behavioral Interview is Scheduled",
@@ -104,7 +94,6 @@ export const MANUAL_TEMPLATES = [
       SIGNATURE,
   ),
   manual(
-    "_INTERVIEW_RESCHEDULED",
     "interview_rescheduled",
     "Interview rescheduled",
     "Your Circle Cat Interview — Updated Time",
@@ -113,7 +102,6 @@ export const MANUAL_TEMPLATES = [
       SIGNATURE,
   ),
   manual(
-    "_CULTURAL_PASSED_TECHNICAL_INVITE",
     "cultural_passed_technical_invite",
     "Behavioral passed - request technical interview availability",
     "Circle Cat — Technical Interview Availability",
@@ -157,7 +145,6 @@ export const MANUAL_TEMPLATES = [
       SIGNATURE,
   ),
   manual(
-    "_TECHNICAL_INTERVIEW_SCHEDULED",
     "technical_interview_scheduled",
     "Technical interview scheduled",
     "Your Circle Cat Technical Interview is Scheduled",
@@ -171,7 +158,6 @@ export const MANUAL_TEMPLATES = [
       SIGNATURE,
   ),
   manual(
-    "_FEEDBACK_COMPLETE_ASK_START_DATE",
     "feedback_complete_ask_start_date",
     "Feedback complete - ask for start date",
     "Circle Cat — Next Steps",
@@ -181,7 +167,6 @@ export const MANUAL_TEMPLATES = [
       SIGNATURE,
   ),
   manual(
-    "_OFFER_ONBOARDING",
     "offer_onboarding",
     "Offer and onboarding",
     "Welcome to Circle Cat — Onboarding & Next Steps",
@@ -210,7 +195,6 @@ export const MANUAL_TEMPLATES = [
       SIGNATURE,
   ),
   manual(
-    "_REJECTION",
     "rejection",
     "Rejection",
     "Your Application to Circle Cat",
@@ -247,8 +231,6 @@ const OWNERS_AND_ASSIGNEES =
 const recruiting = ({
   key,
   name,
-  renderer,
-  copy,
   trigger,
   recipients,
   unverified,
@@ -261,10 +243,6 @@ const recruiting = ({
   trigger,
   recipients,
   unverified: unverified ?? {},
-  code: [
-    { file: RECRUITING_RENDERERS, symbol: renderer },
-    ...copy.map((symbol) => ({ file: RECRUITING_COPY, symbol })),
-  ],
   variants: variants.map((v) => ({ ...v, body: v.body + R_FOOTER })),
 });
 
@@ -272,8 +250,6 @@ export const AUTOMATIC_TEMPLATES = [
   recruiting({
     key: "recruiting.application_submitted",
     name: "New application",
-    renderer: "_render_application_submitted",
-    copy: ["_application_submitted", "_application_auto_hired"],
     trigger:
       "When someone submits an application — including one a screening rule hires (or, on an activity posting, admits) outright",
     recipients: OWNERS,
@@ -299,8 +275,6 @@ export const AUTOMATIC_TEMPLATES = [
   recruiting({
     key: "recruiting.auto_rejected",
     name: "Application auto-rejected",
-    renderer: "_render_auto_rejected",
-    copy: ["_application_auto_rejected"],
     trigger: "When a screening rule rejects an application as it is submitted",
     recipients: OWNERS,
     variants: [
@@ -317,8 +291,6 @@ export const AUTOMATIC_TEMPLATES = [
   recruiting({
     key: "recruiting.reassigned · recruiting.auto_assigned",
     name: "Evaluation assigned",
-    renderer: "_render_assigned_to_evaluate",
-    copy: ["_assigned_to_evaluate"],
     trigger:
       "When someone assigns an evaluator (directly, or by moving the application into an interview stage), or when a stage's default assignee is applied automatically",
     recipients:
@@ -347,8 +319,6 @@ export const AUTOMATIC_TEMPLATES = [
   recruiting({
     key: "recruiting.mentioned",
     name: "Mentioned in a comment",
-    renderer: "_render_mentioned",
-    copy: ["_mentioned"],
     trigger:
       "When someone @-mentions a colleague in a comment on an application",
     recipients: "The colleagues mentioned in the comment",
@@ -366,8 +336,6 @@ export const AUTOMATIC_TEMPLATES = [
   recruiting({
     key: "recruiting.review_opened",
     name: "Posting review requested",
-    renderer: "_render_review_opened",
-    copy: ["_job_review_requested"],
     trigger: "When someone submits a job posting for review",
     recipients: "The reviewer named on the review",
     variants: [
@@ -383,8 +351,6 @@ export const AUTOMATIC_TEMPLATES = [
   recruiting({
     key: "recruiting.review_reassigned",
     name: "Posting review reassigned",
-    renderer: "_render_review_reassigned",
-    copy: ["_job_review_reassigned"],
     trigger:
       "When the submitter moves a pending posting review to a different reviewer",
     recipients: "The new reviewer (the previous reviewer isn't told)",
@@ -401,8 +367,6 @@ export const AUTOMATIC_TEMPLATES = [
   recruiting({
     key: "recruiting.review_decided",
     name: "Posting review decided",
-    renderer: "_render_review_decided",
-    copy: ["_job_review_approved", "_job_review_rejected"],
     trigger: "When the reviewer approves or rejects a job posting",
     recipients: "Whoever submitted the posting for review",
     variants: [
@@ -425,8 +389,6 @@ export const AUTOMATIC_TEMPLATES = [
   recruiting({
     key: "recruiting.blacklisted",
     name: "Application blacklisted",
-    renderer: "_render_blacklisted",
-    copy: ["_blacklisted"],
     trigger:
       "When a person is blocked and their applications are closed out — one email per application",
     recipients: OWNERS,
@@ -443,8 +405,6 @@ export const AUTOMATIC_TEMPLATES = [
   recruiting({
     key: "recruiting.stage_changed",
     name: "Stage changed",
-    renderer: "_render_stage_changed",
-    copy: ["_stage_changed"],
     trigger: "When someone moves an application to a different stage",
     recipients: OWNERS_AND_ASSIGNEES,
     variants: [
@@ -461,8 +421,6 @@ export const AUTOMATIC_TEMPLATES = [
   recruiting({
     key: "recruiting.round_advanced",
     name: "Round advanced",
-    renderer: "_render_round_advanced",
-    copy: ["_round_advanced"],
     trigger:
       "When someone advances an application to its next interview round within the same stage",
     recipients: OWNERS_AND_ASSIGNEES,
@@ -481,8 +439,6 @@ export const AUTOMATIC_TEMPLATES = [
   recruiting({
     key: "recruiting.sub_status_changed",
     name: "Status changed",
-    renderer: "_render_sub_status_changed",
-    copy: ["_sub_status_changed"],
     trigger:
       "When someone changes an application's status within its stage (for example Pending to Scheduling)",
     recipients: OWNERS,
@@ -500,8 +456,6 @@ export const AUTOMATIC_TEMPLATES = [
   recruiting({
     key: "recruiting.evaluation_confirmed",
     name: "Evaluation submitted",
-    renderer: "_render_evaluation_confirmed",
-    copy: ["_evaluation_confirmed"],
     trigger: "When an evaluator submits their evaluation of an application",
     recipients: OWNERS,
     variants: [
@@ -519,8 +473,6 @@ export const AUTOMATIC_TEMPLATES = [
   recruiting({
     key: "recruiting.interview_scheduled",
     name: "Interview scheduled",
-    renderer: "_render_interview_scheduled",
-    copy: ["_interview_scheduled"],
     trigger: "When someone schedules an interview on an application",
     recipients: OWNERS_AND_ASSIGNEES,
     variants: [
@@ -538,8 +490,6 @@ export const AUTOMATIC_TEMPLATES = [
   recruiting({
     key: "recruiting.interview_updated",
     name: "Interview rescheduled",
-    renderer: "_render_interview_updated",
-    copy: ["_interview_updated"],
     trigger: "When someone changes the time of a scheduled interview",
     recipients: OWNERS_AND_ASSIGNEES,
     variants: [
@@ -557,8 +507,6 @@ export const AUTOMATIC_TEMPLATES = [
   recruiting({
     key: "recruiting.interview_cancelled",
     name: "Interview cancelled",
-    renderer: "_render_interview_cancelled",
-    copy: ["_interview_cancelled"],
     trigger: "When someone cancels a scheduled interview",
     recipients: OWNERS_AND_ASSIGNEES,
     variants: [
@@ -583,11 +531,6 @@ export const AUTOMATIC_TEMPLATES = [
       "When a mentor application is moved to Admitted — by staff, or by a screening rule that admits it outright",
     recipients: "The admitted mentor",
     unverified: {},
-    code: [
-      { file: MENTORSHIP_RENDERERS, symbol: "_render_mentor_admitted" },
-      { file: MENTORSHIP_COPY, symbol: "mentor_admitted_with_round" },
-      { file: MENTORSHIP_COPY, symbol: "mentor_admitted_without_round" },
-    ],
     variants: [
       {
         label: "A round is open",
@@ -625,11 +568,6 @@ export const AUTOMATIC_TEMPLATES = [
     trigger: "When a matching run finishes, or stops with an error",
     recipients: "The administrator who started the run",
     unverified: {},
-    code: [
-      { file: MENTORSHIP_RENDERERS, symbol: "_render_matching_run_completed" },
-      { file: MENTORSHIP_COPY, symbol: "matching_run_succeeded" },
-      { file: MENTORSHIP_COPY, symbol: "matching_run_failed" },
-    ],
     variants: [
       {
         label: "Finished",
@@ -662,7 +600,6 @@ export const AUTOMATIC_TEMPLATES = [
     trigger: "When someone raises a request to block a user",
     recipients: "The reviewer named on the request",
     unverified: {},
-    code: [{ file: USERS_RENDERERS, symbol: "_render_block_requested" }],
     variants: [
       {
         label: null,
@@ -683,9 +620,6 @@ export const AUTOMATIC_TEMPLATES = [
     trigger: "When a pending block request is moved to a different reviewer",
     recipients: "The new reviewer and the previous reviewer",
     unverified: {},
-    code: [
-      { file: USERS_RENDERERS, symbol: "_render_block_request_reassigned" },
-    ],
     variants: [
       {
         label: null,
@@ -705,7 +639,6 @@ export const AUTOMATIC_TEMPLATES = [
     trigger: "When the reviewer approves or rejects a block request",
     recipients: "Whoever raised the request",
     unverified: {},
-    code: [{ file: USERS_RENDERERS, symbol: "_render_block_request_decided" }],
     variants: [
       {
         label: "Approved",
@@ -740,7 +673,6 @@ export const PLANNED_TEMPLATES = [
       "When mail in the Mentorship inbox has needed a reply for too long",
     recipients: "Holders of the Mentorship inbox permission",
     unverified: { recipients: true },
-    code: [],
     variants: [],
   },
   {
@@ -753,7 +685,6 @@ export const PLANNED_TEMPLATES = [
       "When mail in the Recruiting inbox has needed a reply for too long",
     recipients: "Holders of the Recruiting inbox permission",
     unverified: { recipients: true },
-    code: [],
     variants: [],
   },
 ];

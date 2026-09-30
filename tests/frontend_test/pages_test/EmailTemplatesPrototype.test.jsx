@@ -63,9 +63,6 @@ describe("EmailTemplatesPrototype", () => {
     expect(
       p.getByText("recruiting@circlecat.org", { selector: "code" }),
     ).toBeInTheDocument();
-    expect(
-      p.getByText(/email_templates\.py · _CULTURAL_INTERVIEW_SCHEDULED/),
-    ).toBeInTheDocument();
 
     fireEvent.click(p.getByLabelText("Show placeholders"));
     expect(body).toHaveTextContent("Dear {{candidate_name}},");

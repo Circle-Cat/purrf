@@ -35,7 +35,7 @@ const Row = ({ label, children }) => (
  * TemplatePreview
  *
  * Everything about one template: what sends it, to whom, from which alias,
- * where it lives in code, and a rendered preview. Manual templates can show
+ * and a rendered preview. Manual templates can show
  * their `{{...}}` placeholders raw instead of filled with sample values.
  * Mounted fresh per template, so the variant and toggle reset on switching.
  *
@@ -105,19 +105,6 @@ const TemplatePreview = ({ template }) => {
             >
               alias TBD
             </Badge>
-          )}
-        </Row>
-        <Row label="Code">
-          {template.code.length ? (
-            <ul className="space-y-0.5">
-              {template.code.map((c) => (
-                <li key={c.symbol} className="font-mono text-xs break-all">
-                  {c.file} · {c.symbol}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <span className="text-slate-500">Not written yet</span>
           )}
         </Row>
       </dl>
