@@ -3,7 +3,6 @@ import { Badge } from "@/components/ui/badge";
 import { ModeBadge } from "@/pages/EmailTemplatesPrototype/TemplateList";
 import {
   PLACEHOLDER_INFO,
-  SAMPLE_VALUES,
   SENDERS,
   SERVICES,
 } from "@/pages/EmailTemplatesPrototype/mockData";
@@ -11,7 +10,6 @@ import {
   markersOf,
   placeholdersOf,
   previewBody,
-  previewSubject,
 } from "@/pages/EmailTemplatesPrototype/templateView";
 
 const Unverified = () => (
@@ -35,16 +33,15 @@ const Row = ({ label, children }) => (
  * TemplatePreview
  *
  * Everything about one template: what sends it, to whom, from which alias,
- * and a rendered preview. Manual templates can show
- * their `{{...}}` placeholders raw instead of filled with sample values.
- * Mounted fresh per template, so the variant and toggle reset on switching.
+ * and a rendered preview. Manual previews keep their `{{...}}` placeholders
+ * raw, shown as chips; automatic previews use invented sample event data.
+ * Mounted fresh per template, so the variant resets on switching.
  *
  * @param {{template: object}} props
  * @returns {JSX.Element}
  */
 const TemplatePreview = ({ template }) => {
   const [variantIndex, setVariantIndex] = useState(0);
-  const [showPlaceholders, setShowPlaceholders] = useState(false);
 
   const service = SERVICES.find((s) => s.key === template.service);
   const sender = SENDERS[template.service];
@@ -140,16 +137,6 @@ const TemplatePreview = ({ template }) => {
                 ))}
               </div>
             )}
-            {manual && (
-              <label className="flex items-center gap-2 text-sm text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={showPlaceholders}
-                  onChange={(e) => setShowPlaceholders(e.target.checked)}
-                />
-                Show placeholders
-              </label>
-            )}
           </div>
 
           <article
@@ -166,15 +153,15 @@ const TemplatePreview = ({ template }) => {
                   aria-label="Preview subject"
                   className="font-medium text-slate-900"
                 >
-                  {previewSubject(variant.subject, showPlaceholders)}
+                  {variant.subject}
                 </span>
               </div>
             </div>
             <div
               aria-label="Preview body"
-              className="px-4 py-3 text-sm text-slate-800 [&_a]:text-sky-700 [&_a]:underline [&_code.placeholder]:rounded [&_code.placeholder]:bg-sky-100 [&_code.placeholder]:px-1 [&_code.placeholder]:text-sky-800 [&_li]:my-0.5 [&_mark.marker]:rounded [&_mark.marker]:bg-yellow-200 [&_mark.marker]:px-0.5 [&_p]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
+              className="px-4 py-3 text-sm text-slate-800 [&_a]:text-sky-700 [&_a]:underline [&_code.placeholder]:rounded [&_code.placeholder]:border [&_code.placeholder]:border-sky-200 [&_code.placeholder]:bg-sky-50 [&_code.placeholder]:px-1 [&_code.placeholder]:font-mono [&_code.placeholder]:text-[0.85em] [&_code.placeholder]:text-sky-800 [&_li]:my-0.5 [&_mark.marker]:rounded [&_mark.marker]:bg-yellow-200 [&_mark.marker]:px-0.5 [&_p]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
               dangerouslySetInnerHTML={{
-                __html: previewBody(variant.body, showPlaceholders),
+                __html: previewBody(variant.body),
               }}
             />
           </article>
@@ -190,10 +177,9 @@ const TemplatePreview = ({ template }) => {
               <ul aria-label="Placeholders" className="space-y-1">
                 {placeholders.map((p) => (
                   <li key={p}>
-                    <code className="rounded bg-sky-100 px-1 text-sky-800">{`{{${p}}}`}</code>{" "}
+                    <code className="rounded border border-sky-200 bg-sky-50 px-1 font-mono text-[0.85em] text-sky-800">{`{{${p}}}`}</code>{" "}
                     <span className="text-slate-600">
-                      auto-filled: {PLACEHOLDER_INFO[p]} (sample: “
-                      {SAMPLE_VALUES[p]}”)
+                      auto-filled when sent: {PLACEHOLDER_INFO[p]}
                     </span>
                   </li>
                 ))}

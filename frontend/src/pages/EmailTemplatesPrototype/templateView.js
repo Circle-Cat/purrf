@@ -4,7 +4,6 @@
  * highlighted, then sanitized).
  */
 import DOMPurify from "dompurify";
-import { SAMPLE_VALUES } from "@/pages/EmailTemplatesPrototype/mockData";
 
 const PLACEHOLDER_RE = /\{\{(\w+)\}\}/g;
 const MARKER_RE = /\[[A-Z][A-Z0-9 /]*\]/g;
@@ -24,13 +23,6 @@ const ALLOWED_TAGS = [
 ];
 const ALLOWED_ATTR = ["href", "class", "title"];
 
-const escapeHtml = (text) =>
-  text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-
 /** Distinct `{{name}}` placeholders in a template, in order of appearance. */
 export const placeholdersOf = (template) => {
   const text = template.variants.map((v) => v.subject + v.body).join("");
@@ -44,27 +36,14 @@ export const markersOf = (template) => {
 };
 
 /**
- * Subject as plain text: placeholders filled with sample values, or left as
- * written.
+ * Body as sanitized HTML. `{{...}}` placeholders stay raw and are tagged so
+ * they render as chips; `[UPPERCASE]` markers are highlighted as text the
+ * sender still has to write.
  */
-export const previewSubject = (subject, showPlaceholders) =>
-  showPlaceholders
-    ? subject
-    : subject.replace(
-        PLACEHOLDER_RE,
-        (raw, name) => SAMPLE_VALUES[name] ?? raw,
-      );
-
-/**
- * Body as sanitized HTML. Filled placeholders are escaped, like the backend
- * does; raw ones are tagged so they stand out; `[UPPERCASE]` markers are
- * highlighted as text the sender still has to write.
- */
-export const previewBody = (body, showPlaceholders) => {
-  const withPlaceholders = body.replace(PLACEHOLDER_RE, (raw, name) =>
-    showPlaceholders
-      ? `<code class="placeholder">${raw}</code>`
-      : escapeHtml(SAMPLE_VALUES[name] ?? raw),
+export const previewBody = (body) => {
+  const withPlaceholders = body.replace(
+    PLACEHOLDER_RE,
+    (raw) => `<code class="placeholder">${raw}</code>`,
   );
   const withMarkers = withPlaceholders.replace(
     MARKER_RE,

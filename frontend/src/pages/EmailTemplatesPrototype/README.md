@@ -43,10 +43,10 @@ checked against the write site.
 
 ## Previews
 
-- **Manual** templates fill `{{candidate_name}}`, `{{position_title}}` and
-  `{{sender_name}}` with sample values. _Show placeholders_ shows them raw
-  instead. `[UPPERCASE]` markers are free text the sender writes before
-  sending, and they are highlighted in yellow.
+- **Manual** templates show `{{candidate_name}}`, `{{position_title}}` and
+  `{{sender_name}}` as written, as monospace chips. Purrf fills these in when
+  the email is sent. `[UPPERCASE]` markers are free text the sender writes
+  before sending, and they are highlighted in yellow.
 - **Automatic** previews are what each renderer would produce for one made-up
   event. Every name uses invented people and example.com addresses.
 - Bodies are sanitized with DOMPurify before they are rendered.
@@ -72,4 +72,4 @@ the Auth0 dashboard, not in Purrf code.
 | `TemplateList.jsx`    | Rows grouped by service                                    |
 | `TemplatePreview.jsx` | Metadata, variants, placeholder toggle, email-like preview |
 | `templateView.js`     | Search, placeholder discovery, preview HTML and sanitizing |
-| `mockData.js`         | The templates, sample values and sender aliases            |
+| `mockData.js`         | The templates, placeholder descriptions and sender aliases |

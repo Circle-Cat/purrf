@@ -23,13 +23,6 @@ export const SENDERS = {
   users: { address: "notifications@circlecat.org", tbd: true },
 };
 
-/** Values the preview uses for the auto-filled `{{...}}` placeholders. */
-export const SAMPLE_VALUES = {
-  candidate_name: "Jordan Rivera",
-  position_title: "Backend Engineer",
-  sender_name: "Morgan Lee",
-};
-
 /** What each auto-filled placeholder is filled with in the product. */
 export const PLACEHOLDER_INFO = {
   candidate_name: "The applicant's legal first and last name",

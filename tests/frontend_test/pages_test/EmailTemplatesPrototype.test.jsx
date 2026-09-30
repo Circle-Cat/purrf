@@ -51,22 +51,24 @@ describe("EmailTemplatesPrototype", () => {
     expect(rows()).toHaveLength(3);
   });
 
-  it("previews a manual template with sample values, raw placeholders and highlighted markers", () => {
+  it("previews a manual template with raw placeholder chips and highlighted markers", () => {
     render(<EmailTemplatesPrototype />);
     open("Behavioral interview scheduled");
     const p = preview();
     const body = p.getByLabelText("Preview body");
-    expect(body).toHaveTextContent("Dear Jordan Rivera,");
-    expect(body).toHaveTextContent("Best,Morgan Lee");
+    expect(body).toHaveTextContent("Dear {{candidate_name}},");
+    expect(body).toHaveTextContent("Best,{{sender_name}}");
+    const chips = [...body.querySelectorAll("code.placeholder")].map(
+      (c) => c.textContent,
+    );
+    expect(chips).toEqual(["{{candidate_name}}", "{{sender_name}}"]);
     const marker = body.querySelector("mark.marker");
     expect(marker).toHaveTextContent("[INTERVIEW DATE/TIME]");
     expect(
       p.getByText("recruiting@circlecat.org", { selector: "code" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(p.getByLabelText("Show placeholders"));
-    expect(body).toHaveTextContent("Dear {{candidate_name}},");
-    expect(body).not.toHaveTextContent("Jordan Rivera");
+    expect(p.queryByLabelText("Show placeholders")).toBeNull();
     const list = p.getByRole("list", { name: "Placeholders" });
     expect(list).toHaveTextContent("{{candidate_name}}");
     expect(list).toHaveTextContent("{{sender_name}}");
