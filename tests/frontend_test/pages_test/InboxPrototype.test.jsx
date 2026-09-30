@@ -181,6 +181,34 @@ describe("InboxPrototype", () => {
     expect(titles()).toEqual(["Partnership opportunity for your mentees"]);
   });
 
+  it("finds an unknown sender by the assigned person's name and #id", () => {
+    render(<InboxPrototype />);
+    const search = (value) =>
+      fireEvent.change(screen.getByLabelText("Search threads"), {
+        target: { value },
+      });
+
+    search("Elena");
+    expect(listed("Interested in becoming a mentor")).toBeNull();
+
+    search("");
+    openThread("Interested in becoming a mentor");
+    fireEvent.click(within(thread()).getByRole("button", { name: "Assign" }));
+    const dialog = within(screen.getByRole("dialog"));
+    fireEvent.change(dialog.getByLabelText("Search people"), {
+      target: { value: "Elena" },
+    });
+    fireEvent.click(dialog.getByRole("button", { name: /Elena Petrova/ }));
+    fireEvent.click(dialog.getByRole("button", { name: "Assign" }));
+
+    search("elena petrova");
+    expect(listed("Interested in becoming a mentor")).not.toBeNull();
+    search("#1715");
+    expect(listed("Interested in becoming a mentor")).not.toBeNull();
+    search("jordan.blake");
+    expect(listed("Interested in becoming a mentor")).not.toBeNull();
+  });
+
   it("shows the application chip and the alias change on a mentee thread", () => {
     render(<InboxPrototype />);
     expect(

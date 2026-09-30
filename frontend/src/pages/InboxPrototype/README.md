@@ -40,8 +40,11 @@ Things to click:
   Needs reply, so it only shows up under the Unassigned chip or with no chip
   on.
 
-- **Search** matches the sender's name, user ID (`1555` or `#1555`), the
-  sender's address (unknown senders included) and the subject. It ignores case
+- **Search** matches the thread's person by name and user ID (`1555` or
+  `#1555`), the raw sender address (unknown senders included) and the subject.
+  The thread's person is the assignee if there is one, otherwise the user the
+  sender's address matches, so an unknown sender becomes findable by name once
+  assigned. It ignores case
   and matches any part of the text. It combines with the chips and _Show
   archived_. The chip counts always cover every non-archived thread in the
   inbox and don't change with the search.
