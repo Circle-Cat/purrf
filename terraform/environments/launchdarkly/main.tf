@@ -63,6 +63,15 @@ locals {
       off_in      = ["staging", "production"]
       public_in   = ["test"]
     }
+    # Gates every leave screen. The backend has no flag of its own, so off here
+    # hides the feature rather than disabling it.
+    leave_management = {
+      key         = "leave-management"
+      name        = "Leave Management"
+      description = "Shows the leave screens: requests, approvals, balances and administration"
+      off_in      = ["staging", "production"]
+      public_in   = ["test"]
+    }
   }
 
   flag_env_matrix = {
