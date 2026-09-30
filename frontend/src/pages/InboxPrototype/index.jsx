@@ -8,15 +8,15 @@ import {
   contactOf,
   isArchived,
   isAwaiting,
-  isAwaitingIgnoringArchive,
   lastMessage,
   replyAliasOf,
 } from "@/pages/InboxPrototype/inboxState";
 import { INBOXES, INITIAL_THREADS, NOW } from "@/pages/InboxPrototype/mockData";
 
-const VIEWS = [
-  { key: "awaiting", label: "Awaiting reply" },
-  { key: "unassigned", label: "Unassigned" },
+/** Filter chips; selected ones combine with AND. */
+const FILTERS = [
+  { key: "awaiting", label: "Awaiting reply", test: isAwaiting },
+  { key: "unassigned", label: "Unassigned", test: (t) => !t.assignment },
 ];
 
 /** `#inbox/recruiting` opens on the Recruiting inbox. */
@@ -25,15 +25,9 @@ const inboxFromHash = () => {
   return INBOXES.some((i) => i.key === sub) ? sub : INBOXES[0].key;
 };
 
-const inView = (thread, view, showArchived) => {
-  if (view === "awaiting") {
-    return showArchived
-      ? isAwaiting(thread) ||
-          (isArchived(thread) && isAwaitingIgnoringArchive(thread))
-      : isAwaiting(thread);
-  }
-  return !thread.assignment && (showArchived || !isArchived(thread));
-};
+const inList = (thread, active, showArchived) =>
+  (showArchived || !isArchived(thread)) &&
+  FILTERS.every((f) => !active.includes(f.key) || f.test(thread));
 
 const byNewest = (a, b) => lastMessage(b).at.localeCompare(lastMessage(a).at);
 
@@ -53,7 +47,7 @@ const byNewest = (a, b) => lastMessage(b).at.localeCompare(lastMessage(a).at);
  */
 const InboxPrototype = () => {
   const [inbox, setInbox] = useState(inboxFromHash);
-  const [view, setView] = useState("awaiting");
+  const [active, setActive] = useState([]);
   const [showArchived, setShowArchived] = useState(false);
   const [threads, setThreads] = useState(INITIAL_THREADS);
   const [selectedId, setSelectedId] = useState(null);
@@ -72,9 +66,15 @@ const InboxPrototype = () => {
   const own = threads.filter((t) => t.inbox === inbox);
   const awaitingCount = (key) =>
     threads.filter((t) => t.inbox === key && isAwaiting(t)).length;
+  const live = own.filter((t) => !isArchived(t));
   const visible = own
-    .filter((t) => inView(t, view, showArchived))
+    .filter((t) => inList(t, active, showArchived))
     .sort(byNewest);
+
+  const toggleFilter = (key) =>
+    setActive((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
   const selected = own.find((t) => t.id === selectedId) ?? null;
   const assigning = threads.find((t) => t.id === assigningId) ?? null;
 
@@ -222,26 +222,28 @@ const InboxPrototype = () => {
 
         <div className="flex flex-wrap items-center gap-3">
           <div
-            role="tablist"
-            aria-label="View"
-            className="inline-flex rounded-lg border border-slate-200 bg-white p-1"
+            role="group"
+            aria-label="Filters"
+            className="flex flex-wrap items-center gap-2"
           >
-            {VIEWS.map((v) => (
-              <button
-                key={v.key}
-                type="button"
-                role="tab"
-                aria-selected={view === v.key}
-                onClick={() => setView(v.key)}
-                className={`rounded-md px-3 py-1 text-sm ${
-                  view === v.key
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                {v.label}
-              </button>
-            ))}
+            {FILTERS.map((f) => {
+              const on = active.includes(f.key);
+              return (
+                <button
+                  key={f.key}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => toggleFilter(f.key)}
+                  className={`rounded-full border px-3 py-1 text-sm transition-colors ${
+                    on
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  {f.label} ({live.filter(f.test).length})
+                </button>
+              );
+            })}
           </div>
           <label className="flex items-center gap-2 text-sm text-slate-600">
             <input
@@ -258,11 +260,7 @@ const InboxPrototype = () => {
             threads={visible}
             selectedId={selectedId}
             onOpen={setSelectedId}
-            emptyText={
-              view === "awaiting"
-                ? "Nothing is waiting for a reply."
-                : "Every thread here is assigned."
-            }
+            emptyText="No threads match these filters."
           />
           {selected ? (
             <ThreadDetail

@@ -4,6 +4,7 @@ import {
   contactOf,
   formatTime,
   isArchived,
+  isAwaiting,
   lastMessage,
   machineTagOf,
   matchSender,
@@ -14,6 +15,8 @@ const TAG_STYLES = {
   "Auto-reply": "border-slate-300 bg-slate-100 text-slate-600",
   "Delivery failed": "border-red-200 bg-red-50 text-red-700",
   Archived: "border-slate-300 bg-white text-slate-500",
+  "Awaiting reply": "border-orange-200 bg-orange-50 text-orange-700",
+  Unassigned: "border-sky-200 bg-sky-50 text-sky-700",
   Moved: "border-violet-200 bg-violet-50 text-violet-700",
 };
 
@@ -55,7 +58,7 @@ export const SenderName = ({ email }) => {
 /**
  * ThreadList
  *
- * One inbox's rows for the current view. Each row is a button — the whole row
+ * One inbox's rows under the current filters. Each row is a button — the whole row
  * opens the thread.
  *
  * @param {{threads: object[], selectedId: string|null, onOpen: Function,
@@ -76,6 +79,8 @@ const ThreadList = ({ threads, selectedId, onOpen, emptyText }) => {
       {threads.map((thread) => {
         const last = lastMessage(thread);
         const tags = [
+          isAwaiting(thread) ? "Awaiting reply" : null,
+          thread.assignment ? null : "Unassigned",
           machineTagOf(thread),
           isArchived(thread) ? "Archived" : null,
           thread.movedFrom

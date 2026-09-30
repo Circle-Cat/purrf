@@ -71,17 +71,6 @@ export const isAwaiting = (thread) => {
   return !isArchived(thread);
 };
 
-/**
- * Would be awaiting reply if it were not archived. "Show archived" brings
- * these back into the Awaiting reply view.
- */
-export const isAwaitingIgnoringArchive = (thread) => {
-  const inbound = lastHumanInbound(thread);
-  if (!inbound) return false;
-  const out = lastOutbound(thread);
-  return !out || out.at < inbound.at;
-};
-
 /** Tag for the most recent machine-generated inbound, if it is the latest inbound. */
 export const machineTagOf = (thread) => {
   const inbound = latest(thread.messages.filter((m) => m.direction === "in"));

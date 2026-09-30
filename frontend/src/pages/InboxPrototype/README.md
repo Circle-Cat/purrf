@@ -25,14 +25,23 @@ whatever context that inbox needs.
 
 Things to click:
 
-- **Two views.** _Awaiting reply_ means the last human inbound message is newer
-  than our last reply and newer than the archive time, whether or not the
-  thread is assigned. _Unassigned_ means not yet assigned, whether or not
-  anyone replied. _Show archived_ brings archived threads back into either
-  view.
+- **One list per inbox.** By default it shows every thread that isn't
+  archived, newest activity first, so a thread that is assigned and already
+  replied to is still in the list. Two filter chips narrow it, and when both
+  are on a thread has to match both. Their counts leave out archived threads:
+  - _Awaiting reply_: the last human inbound message is newer than our last
+    reply and newer than the archive time, whether or not the thread is
+    assigned.
+  - _Unassigned_: not assigned yet, whether or not anyone replied.
+
+  Each row carries the same two words as tags when they apply. _Show archived_
+  adds archived threads to the list. An archived thread never counts as
+  Awaiting reply, so it only shows up under the Unassigned chip or with no chip
+  on.
+
 - **Reply** goes out from the alias of the inbox that owns the thread now. That
   line is read-only. A thread moved out of Inquiries replies from its new
-  inbox's alias, and the conversation shows a note where the move happened. After you send, the thread leaves Awaiting reply.
+  inbox's alias, and the conversation shows a note where the move happened. After you send, the thread stops being Awaiting reply.
 - **Archive** hides a thread until a new inbound message arrives. Use
   _Dev: simulate new reply_ in the thread to see it come back.
 - **Assigned threads come back** into Awaiting reply when the person writes
@@ -56,7 +65,7 @@ Things to click:
 | Decision                                                                                                                 | Status                                                     |
 | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
 | One mailbox, Send-As aliases, routing new mail by alias                                                                  | Fixed                                                      |
-| Views: Awaiting reply / Unassigned, and what each one means                                                              | Fixed                                                      |
+| One list with combinable Awaiting reply / Unassigned filters, and what each means                                        | Fixed                                                      |
 | Reply alias is the owning inbox's alias and can't be chosen                                                              | Fixed                                                      |
 | Mentorship assigns to a round, Recruiting to an application via its job                                                  | Fixed                                                      |
 | Inquiries: Move to Mentorship / Recruiting inbox (arrives Unassigned, replies then go out from the target inbox's alias) | Fixed                                                      |
@@ -68,7 +77,7 @@ Things to click:
 
 | File               | Responsibility                                                   |
 | ------------------ | ---------------------------------------------------------------- |
-| `index.jsx`        | Inbox switcher, views, all state and transitions                 |
+| `index.jsx`        | Inbox switcher, filter chips, all state and transitions          |
 | `ThreadList.jsx`   | Rows: sender, subject, snippet, time, tags, assignment chip      |
 | `ThreadDetail.jsx` | Conversation, actions, bounce banner, reply box                  |
 | `AssignDialog.jsx` | Person picker, then round / job depending on the inbox           |

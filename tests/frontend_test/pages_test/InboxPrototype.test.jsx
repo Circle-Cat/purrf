@@ -18,7 +18,14 @@ const thread = () => screen.getByRole("region", { name: "Thread" });
 const listed = (subject) =>
   screen.queryByRole("button", { name: `Open thread ${subject}` });
 
-const showView = (name) => fireEvent.click(screen.getByRole("tab", { name }));
+const chip = (name) =>
+  within(screen.getByRole("group", { name: "Filters" })).getByRole("button", {
+    name: new RegExp(`^${name} \\(`),
+  });
+
+const toggle = (name) => fireEvent.click(chip(name));
+
+const rowOf = (subject) => listed(subject).closest("li");
 
 afterEach(() => {
   window.history.replaceState(null, "", window.location.pathname);
@@ -48,6 +55,44 @@ describe("InboxPrototype", () => {
     expect(screen.getByText("inquiries@circlecat.org")).toBeInTheDocument();
   });
 
+  it("lists every non-archived thread by default, and chips narrow with AND", () => {
+    render(<InboxPrototype />);
+    // Assigned and already replied: in neither filter, still in the list.
+    expect(listed("Fall 2026 pairing details")).not.toBeNull();
+    expect(listed("Midpoint check-in")).not.toBeNull();
+    expect(listed("Partnership opportunity for your mentees")).toBeNull();
+
+    expect(rowOf("Question about meeting cadence")).toHaveTextContent(
+      "Awaiting reply",
+    );
+    expect(rowOf("Question about meeting cadence")).toHaveTextContent(
+      "Unassigned",
+    );
+    expect(rowOf("Thank you for the workshop")).not.toHaveTextContent(
+      "Awaiting reply",
+    );
+
+    expect(chip("Awaiting reply")).toHaveTextContent("Awaiting reply (5)");
+    expect(chip("Unassigned")).toHaveTextContent("Unassigned (4)");
+    const rows = () =>
+      screen.getAllByRole("button", { name: /^Open thread / }).length;
+    expect(rows()).toBe(8);
+
+    toggle("Awaiting reply");
+    expect(rows()).toBe(5);
+    expect(listed("Requesting a different mentee")).not.toBeNull();
+
+    toggle("Unassigned");
+    expect(rows()).toBe(3);
+    expect(listed("Requesting a different mentee")).toBeNull();
+    expect(listed("Thank you for the workshop")).toBeNull();
+    expect(listed("Interested in becoming a mentor")).not.toBeNull();
+
+    toggle("Awaiting reply");
+    expect(rows()).toBe(4);
+    expect(listed("Thank you for the workshop")).not.toBeNull();
+  });
+
   it("shows the application chip and the alias change on a mentee thread", () => {
     render(<InboxPrototype />);
     expect(
@@ -69,6 +114,7 @@ describe("InboxPrototype", () => {
 
   it("replying takes a thread out of Awaiting reply; archive hides it until a new reply", () => {
     render(<InboxPrototype />);
+    toggle("Awaiting reply");
     openThread("Question about meeting cadence");
     fireEvent.change(within(thread()).getByLabelText("Reply"), {
       target: { value: "Every three weeks is fine." },
@@ -81,6 +127,8 @@ describe("InboxPrototype", () => {
       within(thread()).getByText("Every three weeks is fine."),
     ).toBeInTheDocument();
     expect(screen.getByText("Awaiting reply: 4")).toBeInTheDocument();
+    toggle("Awaiting reply");
+    expect(listed("Question about meeting cadence")).not.toBeNull();
 
     openThread("Interested in becoming a mentor");
     fireEvent.click(within(thread()).getByRole("button", { name: "Archive" }));
@@ -99,7 +147,6 @@ describe("InboxPrototype", () => {
   it("shows a bounce banner on a tracked thread", () => {
     window.history.replaceState(null, "", "#inbox/inquiries");
     render(<InboxPrototype />);
-    showView("Unassigned");
     openThread("Sponsorship follow-up");
     expect(within(thread()).getByRole("alert")).toHaveTextContent(
       "Delivery failed: your email to info@oldcompany.example was not delivered",
@@ -125,7 +172,10 @@ describe("InboxPrototype", () => {
 
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(listed("Can I still join the Fall round?")).not.toBeNull();
-    showView("Unassigned");
+    expect(rowOf("Can I still join the Fall round?")).not.toHaveTextContent(
+      "Unassigned",
+    );
+    toggle("Unassigned");
     expect(listed("Can I still join the Fall round?")).toBeNull();
   });
 
@@ -192,7 +242,7 @@ describe("InboxPrototype", () => {
     expect(listed("Is there a mentorship program for engineers?")).toBeNull();
 
     fireEvent.click(inboxButton("Mentorship"));
-    showView("Unassigned");
+    toggle("Unassigned");
     expect(screen.getByText("Moved from Inquiries")).toBeInTheDocument();
     openThread("Is there a mentorship program for engineers?");
     expect(
