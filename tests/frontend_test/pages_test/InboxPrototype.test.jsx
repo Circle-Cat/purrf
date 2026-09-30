@@ -32,13 +32,13 @@ afterEach(() => {
 });
 
 describe("InboxPrototype", () => {
-  it("renders each inbox with its alias and awaiting count", () => {
+  it("renders each inbox with its alias and needs-reply count", () => {
     render(<InboxPrototype />);
     expect(
       screen.getByRole("heading", { name: "Mentorship inbox" }),
     ).toBeInTheDocument();
     expect(screen.getByText("mentorship@circlecat.org")).toBeInTheDocument();
-    expect(screen.getByText("Awaiting reply: 5")).toBeInTheDocument();
+    expect(screen.getByText("Needs reply: 5")).toBeInTheDocument();
     expect(screen.getByText("Wang Xiao")).toBeInTheDocument();
     expect(screen.getByText("jordan.blake@example.net")).toBeInTheDocument();
 
@@ -63,22 +63,22 @@ describe("InboxPrototype", () => {
     expect(listed("Partnership opportunity for your mentees")).toBeNull();
 
     expect(rowOf("Question about meeting cadence")).toHaveTextContent(
-      "Awaiting reply",
+      "Needs reply",
     );
     expect(rowOf("Question about meeting cadence")).toHaveTextContent(
       "Unassigned",
     );
     expect(rowOf("Thank you for the workshop")).not.toHaveTextContent(
-      "Awaiting reply",
+      "Needs reply",
     );
 
-    expect(chip("Awaiting reply")).toHaveTextContent("Awaiting reply (5)");
+    expect(chip("Needs reply")).toHaveTextContent("Needs reply (5)");
     expect(chip("Unassigned")).toHaveTextContent("Unassigned (4)");
     const rows = () =>
       screen.getAllByRole("button", { name: /^Open thread / }).length;
     expect(rows()).toBe(8);
 
-    toggle("Awaiting reply");
+    toggle("Needs reply");
     expect(rows()).toBe(5);
     expect(listed("Requesting a different mentee")).not.toBeNull();
 
@@ -88,9 +88,97 @@ describe("InboxPrototype", () => {
     expect(listed("Thank you for the workshop")).toBeNull();
     expect(listed("Interested in becoming a mentor")).not.toBeNull();
 
-    toggle("Awaiting reply");
+    toggle("Needs reply");
     expect(rows()).toBe(4);
     expect(listed("Thank you for the workshop")).not.toBeNull();
+  });
+
+  it("puts needs-reply threads first by latest inbound, then the rest by activity", () => {
+    render(<InboxPrototype />);
+    const order = () =>
+      screen
+        .getAllByRole("button", { name: /^Open thread / })
+        .map((b) => b.getAttribute("aria-label").replace("Open thread ", ""));
+    expect(order()).toEqual([
+      "Question about meeting cadence",
+      "Requesting a different mentee",
+      "Can I still join the Fall round?",
+      "Your mentee application",
+      "Interested in becoming a mentor",
+      "Thank you for the workshop",
+      "Midpoint check-in",
+      "Fall 2026 pairing details",
+    ]);
+
+    // Replying makes this the newest activity, but it no longer needs a
+    // reply, so the older needs-reply threads stay above it.
+    openThread("Question about meeting cadence");
+    fireEvent.change(within(thread()).getByLabelText("Reply"), {
+      target: { value: "Every three weeks is fine." },
+    });
+    fireEvent.click(
+      within(thread()).getByRole("button", { name: "Send reply" }),
+    );
+    expect(order()).toEqual([
+      "Requesting a different mentee",
+      "Can I still join the Fall round?",
+      "Your mentee application",
+      "Interested in becoming a mentor",
+      "Question about meeting cadence",
+      "Thank you for the workshop",
+      "Midpoint check-in",
+      "Fall 2026 pairing details",
+    ]);
+  });
+
+  it("searches by name, user ID, email and subject, combined with chips", () => {
+    render(<InboxPrototype />);
+    const search = (value) =>
+      fireEvent.change(screen.getByLabelText("Search threads"), {
+        target: { value },
+      });
+    const titles = () =>
+      screen
+        .queryAllByRole("button", { name: /^Open thread / })
+        .map((b) => b.getAttribute("aria-label").replace("Open thread ", ""));
+
+    search("wang XIAO");
+    expect(titles()).toEqual(["Question about meeting cadence"]);
+
+    search("#1555");
+    expect(titles()).toEqual(["Requesting a different mentee"]);
+    search("1555");
+    expect(titles()).toEqual(["Requesting a different mentee"]);
+
+    search("jordan.blake@");
+    expect(titles()).toEqual(["Interested in becoming a mentor"]);
+    search("mchen.personal");
+    expect(titles()).toEqual(["Can I still join the Fall round?"]);
+
+    search("cadence");
+    expect(titles()).toEqual(["Question about meeting cadence"]);
+
+    search("fall");
+    expect(titles()).toEqual([
+      "Can I still join the Fall round?",
+      "Fall 2026 pairing details",
+    ]);
+    toggle("Needs reply");
+    expect(titles()).toEqual(["Can I still join the Fall round?"]);
+    // Counts ignore the search.
+    expect(chip("Needs reply")).toHaveTextContent("Needs reply (5)");
+    expect(chip("Unassigned")).toHaveTextContent("Unassigned (4)");
+
+    search("pairing");
+    expect(titles()).toEqual([]);
+    expect(screen.getByText(/No threads match "pairing"/)).toBeInTheDocument();
+
+    search("partnerco");
+    expect(titles()).toEqual([]);
+    toggle("Needs reply");
+    expect(titles()).toEqual([]);
+    fireEvent.click(screen.getByLabelText("Show archived"));
+    expect(titles()).toEqual(["Partnership opportunity for your mentees"]);
   });
 
   it("shows the application chip and the alias change on a mentee thread", () => {
@@ -112,9 +200,9 @@ describe("InboxPrototype", () => {
     expect(t.queryByRole("button", { name: "Assign" })).toBeNull();
   });
 
-  it("replying takes a thread out of Awaiting reply; archive hides it until a new reply", () => {
+  it("replying takes a thread out of Needs reply; archive hides it until a new reply", () => {
     render(<InboxPrototype />);
-    toggle("Awaiting reply");
+    toggle("Needs reply");
     openThread("Question about meeting cadence");
     fireEvent.change(within(thread()).getByLabelText("Reply"), {
       target: { value: "Every three weeks is fine." },
@@ -126,8 +214,8 @@ describe("InboxPrototype", () => {
     expect(
       within(thread()).getByText("Every three weeks is fine."),
     ).toBeInTheDocument();
-    expect(screen.getByText("Awaiting reply: 4")).toBeInTheDocument();
-    toggle("Awaiting reply");
+    expect(screen.getByText("Needs reply: 4")).toBeInTheDocument();
+    toggle("Needs reply");
     expect(listed("Question about meeting cadence")).not.toBeNull();
 
     openThread("Interested in becoming a mentor");

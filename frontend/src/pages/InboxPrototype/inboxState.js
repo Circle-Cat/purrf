@@ -63,12 +63,44 @@ export const isArchived = (thread) => {
 };
 
 /** Last human inbound is newer than our last reply and than the archive time. */
-export const isAwaiting = (thread) => {
+export const needsReply = (thread) => {
   const inbound = lastHumanInbound(thread);
   if (!inbound) return false;
   const out = lastOutbound(thread);
   if (out && out.at >= inbound.at) return false;
   return !isArchived(thread);
+};
+
+/**
+ * List order: threads that need a reply first, by their latest human inbound
+ * message; then everything else by latest activity. Newest first in both.
+ */
+export const byListOrder = (a, b) => {
+  const aNeeds = needsReply(a);
+  const bNeeds = needsReply(b);
+  if (aNeeds !== bNeeds) return aNeeds ? -1 : 1;
+  const key = aNeeds ? lastHumanInbound : lastMessage;
+  return key(b).at.localeCompare(key(a).at);
+};
+
+/**
+ * Case-insensitive substring search over the sender's name, user ID (with or
+ * without a leading `#`), the sender's address and the subject.
+ */
+export const matchesSearch = (thread, term) => {
+  const needle = term.trim().toLowerCase();
+  if (!needle) return true;
+  const email = contactOf(thread);
+  const user = matchSender(email)?.user;
+  const id = needle.startsWith("#") ? needle.slice(1) : needle;
+  return (
+    email.toLowerCase().includes(needle) ||
+    thread.subject.toLowerCase().includes(needle) ||
+    (user
+      ? user.name.toLowerCase().includes(needle) ||
+        (id !== "" && String(user.userId).includes(id))
+      : false)
+  );
 };
 
 /** Tag for the most recent machine-generated inbound, if it is the latest inbound. */

@@ -26,25 +26,32 @@ whatever context that inbox needs.
 Things to click:
 
 - **One list per inbox.** By default it shows every thread that isn't
-  archived, newest activity first, so a thread that is assigned and already
-  replied to is still in the list. Two filter chips narrow it, and when both
+  archived, so a thread that is assigned and already replied to is still in
+  the list. Threads that need a reply come first, newest inbound message
+  first. After them come all the other threads, newest activity first. Two filter chips narrow it, and when both
   are on a thread has to match both. Their counts leave out archived threads:
-  - _Awaiting reply_: the last human inbound message is newer than our last
+  - _Needs reply_: the last human inbound message is newer than our last
     reply and newer than the archive time, whether or not the thread is
     assigned.
   - _Unassigned_: not assigned yet, whether or not anyone replied.
 
   Each row carries the same two words as tags when they apply. _Show archived_
   adds archived threads to the list. An archived thread never counts as
-  Awaiting reply, so it only shows up under the Unassigned chip or with no chip
+  Needs reply, so it only shows up under the Unassigned chip or with no chip
   on.
+
+- **Search** matches the sender's name, user ID (`1555` or `#1555`), the
+  sender's address (unknown senders included) and the subject. It ignores case
+  and matches any part of the text. It combines with the chips and _Show
+  archived_. The chip counts always cover every non-archived thread in the
+  inbox and don't change with the search.
 
 - **Reply** goes out from the alias of the inbox that owns the thread now. That
   line is read-only. A thread moved out of Inquiries replies from its new
-  inbox's alias, and the conversation shows a note where the move happened. After you send, the thread stops being Awaiting reply.
+  inbox's alias, and the conversation shows a note where the move happened. After you send, the thread no longer needs a reply.
 - **Archive** hides a thread until a new inbound message arrives. Use
   _Dev: simulate new reply_ in the thread to see it come back.
-- **Assigned threads come back** into Awaiting reply when the person writes
+- **Assigned threads come back** into Needs reply when the person writes
   again ("Requesting a different mentee", "Take-home assignment question").
 - **Mentee application threads** ("Your mentee application") belong to the
   Mentorship inbox. They are tracked with their application, so they show no
@@ -65,7 +72,7 @@ Things to click:
 | Decision                                                                                                                 | Status                                                     |
 | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
 | One mailbox, Send-As aliases, routing new mail by alias                                                                  | Fixed                                                      |
-| One list with combinable Awaiting reply / Unassigned filters, and what each means                                        | Fixed                                                      |
+| One list, needs-reply first; combinable Needs reply / Unassigned filters and search                                      | Fixed                                                      |
 | Reply alias is the owning inbox's alias and can't be chosen                                                              | Fixed                                                      |
 | Mentorship assigns to a round, Recruiting to an application via its job                                                  | Fixed                                                      |
 | Inquiries: Move to Mentorship / Recruiting inbox (arrives Unassigned, replies then go out from the target inbox's alias) | Fixed                                                      |
@@ -75,11 +82,11 @@ Things to click:
 
 ## Structure
 
-| File               | Responsibility                                                   |
-| ------------------ | ---------------------------------------------------------------- |
-| `index.jsx`        | Inbox switcher, filter chips, all state and transitions          |
-| `ThreadList.jsx`   | Rows: sender, subject, snippet, time, tags, assignment chip      |
-| `ThreadDetail.jsx` | Conversation, actions, bounce banner, reply box                  |
-| `AssignDialog.jsx` | Person picker, then round / job depending on the inbox           |
-| `inboxState.js`    | All derived state: awaiting, archived, sender match, reply alias |
-| `mockData.js`      | Made-up users, postings and threads                              |
+| File               | Responsibility                                                      |
+| ------------------ | ------------------------------------------------------------------- |
+| `index.jsx`        | Inbox switcher, filter chips, all state and transitions             |
+| `ThreadList.jsx`   | Rows: sender, subject, snippet, time, tags, assignment chip         |
+| `ThreadDetail.jsx` | Conversation, actions, bounce banner, reply box                     |
+| `AssignDialog.jsx` | Person picker, then round / job depending on the inbox              |
+| `inboxState.js`    | All derived state: needs reply, archived, sender match, reply alias |
+| `mockData.js`      | Made-up users, postings and threads                                 |

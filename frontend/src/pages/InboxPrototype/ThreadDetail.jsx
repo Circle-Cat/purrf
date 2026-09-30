@@ -10,7 +10,7 @@ import {
   contactOf,
   formatTime,
   isArchived,
-  isAwaiting,
+  needsReply,
   openBounceOf,
   personOf,
   replyAliasOf,
@@ -133,12 +133,12 @@ const ThreadDetail = ({
           <SenderName email={contactOf(thread)} />
         </div>
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
-          {isAwaiting(thread) ? (
+          {needsReply(thread) ? (
             <Badge
               variant="outline"
               className="border-orange-200 bg-orange-50 text-orange-700"
             >
-              Awaiting reply
+              Needs reply
             </Badge>
           ) : (
             <Badge

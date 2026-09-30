@@ -1,21 +1,23 @@
 import { useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import AssignDialog from "@/pages/InboxPrototype/AssignDialog";
 import ThreadDetail from "@/pages/InboxPrototype/ThreadDetail";
 import ThreadList from "@/pages/InboxPrototype/ThreadList";
 import {
   addMinutes,
   contactOf,
+  byListOrder,
   isArchived,
-  isAwaiting,
-  lastMessage,
+  matchesSearch,
+  needsReply,
   replyAliasOf,
 } from "@/pages/InboxPrototype/inboxState";
 import { INBOXES, INITIAL_THREADS, NOW } from "@/pages/InboxPrototype/mockData";
 
 /** Filter chips; selected ones combine with AND. */
 const FILTERS = [
-  { key: "awaiting", label: "Awaiting reply", test: isAwaiting },
+  { key: "needsReply", label: "Needs reply", test: needsReply },
   { key: "unassigned", label: "Unassigned", test: (t) => !t.assignment },
 ];
 
@@ -25,11 +27,10 @@ const inboxFromHash = () => {
   return INBOXES.some((i) => i.key === sub) ? sub : INBOXES[0].key;
 };
 
-const inList = (thread, active, showArchived) =>
+const inList = (thread, active, showArchived, term) =>
   (showArchived || !isArchived(thread)) &&
-  FILTERS.every((f) => !active.includes(f.key) || f.test(thread));
-
-const byNewest = (a, b) => lastMessage(b).at.localeCompare(lastMessage(a).at);
+  FILTERS.every((f) => !active.includes(f.key) || f.test(thread)) &&
+  matchesSearch(thread, term);
 
 /**
  * InboxPrototype
@@ -49,6 +50,7 @@ const InboxPrototype = () => {
   const [inbox, setInbox] = useState(inboxFromHash);
   const [active, setActive] = useState([]);
   const [showArchived, setShowArchived] = useState(false);
+  const [term, setTerm] = useState("");
   const [threads, setThreads] = useState(INITIAL_THREADS);
   const [selectedId, setSelectedId] = useState(null);
   const [assigningId, setAssigningId] = useState(null);
@@ -64,12 +66,12 @@ const InboxPrototype = () => {
 
   const meta = INBOXES.find((i) => i.key === inbox);
   const own = threads.filter((t) => t.inbox === inbox);
-  const awaitingCount = (key) =>
-    threads.filter((t) => t.inbox === key && isAwaiting(t)).length;
+  const needsReplyCount = (key) =>
+    threads.filter((t) => t.inbox === key && needsReply(t)).length;
   const live = own.filter((t) => !isArchived(t));
   const visible = own
-    .filter((t) => inList(t, active, showArchived))
-    .sort(byNewest);
+    .filter((t) => inList(t, active, showArchived, term))
+    .sort(byListOrder);
 
   const toggleFilter = (key) =>
     setActive((prev) =>
@@ -158,7 +160,7 @@ const InboxPrototype = () => {
         </span>
         {INBOXES.map((item) => {
           const active = item.key === inbox;
-          const count = awaitingCount(item.key);
+          const count = needsReplyCount(item.key);
           return (
             <button
               key={item.key}
@@ -197,7 +199,7 @@ const InboxPrototype = () => {
               variant="outline"
               className="border-orange-200 bg-orange-50 text-orange-700"
             >
-              Awaiting reply: {awaitingCount(inbox)}
+              Needs reply: {needsReplyCount(inbox)}
             </Badge>
             {meta.draft && (
               <Badge
@@ -221,6 +223,14 @@ const InboxPrototype = () => {
         </header>
 
         <div className="flex flex-wrap items-center gap-3">
+          <Input
+            type="search"
+            aria-label="Search threads"
+            placeholder="Search name, #user ID, email or subject"
+            value={term}
+            onChange={(e) => setTerm(e.target.value)}
+            className="w-full border-slate-300 bg-white sm:w-72"
+          />
           <div
             role="group"
             aria-label="Filters"
@@ -260,7 +270,11 @@ const InboxPrototype = () => {
             threads={visible}
             selectedId={selectedId}
             onOpen={setSelectedId}
-            emptyText="No threads match these filters."
+            emptyText={
+              term.trim()
+                ? `No threads match "${term.trim()}" with these filters.`
+                : "No threads match these filters."
+            }
           />
           {selected ? (
             <ThreadDetail
