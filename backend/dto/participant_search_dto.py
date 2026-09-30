@@ -7,22 +7,29 @@ from backend.common.mentorship_enums import (
 )
 
 
+class ParticipantPairDto(BaseDto):
+    pair_id: int
+    partner: PartnerDto
+    completed_meeting_count: int
+
+
 class ParticipantRowDto(BaseDto):
     user_id: int
     round_id: int | None
     round_name: str | None
-    pair_id: int | None
     first_name: str | None
     last_name: str | None
     preferred_name: str | None
     primary_email: str | None
     alternative_emails: list[str]
-    matched_user: PartnerDto | None
+    is_blocked: bool
+    is_deactivated: bool
+    is_internal: bool
     participant_role: ParticipantRole | None
     approval_status: ApprovalStatus | None
     mentor_onboarding_status: TrainingStatus | None
     mentee_onboarding_status: TrainingStatus | None
-    completed_meeting_count: int | None
+    pairs: list[ParticipantPairDto]
     required_meetings: int | None
 
 
