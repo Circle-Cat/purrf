@@ -304,7 +304,7 @@ class JobService:
     async def _revalidate_job_config(
         self, session: AsyncSession, job: "JobEntity"
     ) -> None:
-        """Re-check the pipeline that would go live before submission.
+        """Re-check the pipeline that would go live before a review opens or passes.
 
         Validates the effective config — the staged ``pending_payload``'s
         ``pipelineConfig`` when an edit is staged, else the live
@@ -316,7 +316,7 @@ class JobService:
 
         Args:
             session (AsyncSession): Active database async session.
-            job (JobEntity): The posting about to be submitted.
+            job (JobEntity): The posting under review.
 
         Raises:
             ValueError: If the effective config has no stage or no owner, or
@@ -759,14 +759,17 @@ class JobService:
 
         Raises:
             ValueError: If the posting is not CLOSED, was never published
-                (use delete_job instead), the submitter picks themselves,
-                or the reviewer is not an active approver.
+                (use delete_job instead), the config that would go live has
+                no stage or no owner or names an assignee/owner who no longer
+                holds its permission, the submitter picks themselves, or the
+                reviewer is not an active approver.
         """
         job = await self._require_job(session, job_id)
         if not job.was_published:
             raise ValueError(
                 f"Job {job_id} was never published; delete it instead of reopening"
             )
+        await self._revalidate_job_config(session, job)
         return await self._open_review(
             session,
             job,
@@ -805,13 +808,20 @@ class JobService:
 
         Raises:
             ValueError: If the review is missing, not pending, or the acting
-                user is not the assigned reviewer.
+                user is not the assigned reviewer, or, for any kind but
+                CLOSE, the config approval would publish has no stage or no
+                owner or names an assignee/owner who no longer holds its
+                permission.
         """
         review = await self._require_pending_review(session, review_id, acting_user_id)
+        job = await self._require_job(session, review.job_id)
+        # A close publishes nothing, and a blocked owner must not trap a
+        # posting open.
+        if review.kind != JobReviewKind.CLOSE:
+            await self._revalidate_job_config(session, job)
         review.status = JobReviewStatus.APPROVED
         review.decided_at = datetime.now(timezone.utc)
 
-        job = await self._require_job(session, review.job_id)
         if review.kind == JobReviewKind.CLOSE:
             job.status = JobStatus.CLOSED
         elif review.kind == JobReviewKind.REOPEN:
@@ -954,8 +964,11 @@ class JobService:
 
         Raises:
             ValueError: If the posting has no open review, the new reviewer is
-                the one it already has, the submitter picked themselves, or
-                the new reviewer is not an active approver.
+                the one it already has, the submitter picked themselves, the
+                new reviewer is not an active approver, or, for any kind but
+                CLOSE, the config approval would publish has no stage or no
+                owner or names an assignee/owner who no longer holds its
+                permission.
             PermissionError: If the caller did not submit the review.
         """
         # Locked for the same reason a decision locks it: a concurrent approve
@@ -981,10 +994,13 @@ class JobService:
         if reviewer_id not in {a.user_id for a in approvers}:
             raise ValueError("Reviewer is not an active approver")
 
+        job = await self._require_job(session, review.job_id)
+        if review.kind != JobReviewKind.CLOSE:
+            await self._revalidate_job_config(session, job)
+
         previous_reviewer_id = review.reviewer_id
         review.reviewer_id = reviewer_id
 
-        job = await self._require_job(session, review.job_id)
         # After the reviewer write, per record_event's contract: the resolver
         # reads the new reviewer off the review row this statement just set.
         await record_event(
