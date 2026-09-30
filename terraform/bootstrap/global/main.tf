@@ -881,8 +881,8 @@ resource "cloudflare_zero_trust_access_service_token" "notification_gateway_test
 #
 # Every backend path in the gateway Worker's route table has to be listed here.
 # One that is not falls to the host-wide application, which answers the service
-# token with a redirect to a login page -- and the Worker follows it and reports
-# the login page's 200, so the caller believes it was delivered.
+# token with a redirect to a login page; the Worker refuses to follow it and
+# reports a 502.
 
 resource "cloudflare_zero_trust_access_application" "notification_delivery_test" {
   account_id = local.cloudflare_account_id
@@ -892,6 +892,7 @@ resource "cloudflare_zero_trust_access_application" "notification_delivery_test"
     { type = "public", uri = "${local.environments.test.api_host}/api/notifications/deliver" },
     # Only test runs the matcher job.
     { type = "public", uri = "${local.environments.test.api_host}/api/mentorship/match-runs/complete" },
+    { type = "public", uri = "${local.environments.test.api_host}/api/email/gmail/push" },
   ]
   # A machine endpoint: nobody should find it in the App Launcher.
   app_launcher_visible = false

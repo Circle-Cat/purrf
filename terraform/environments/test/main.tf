@@ -21,6 +21,9 @@ module "purrf_instance" {
   cloudflare_account_id = "0fc5fc1f83592f6c1bdc89b240469324"
   cloudflare_zone_id    = "9a0308ba411ef3466582881dcd274f18"
 
+  gmail_watch_topic_name  = "purrf-gmail-nonprod"
+  gmail_watch_topic_owner = true
+
   microsoft_chat_code_dir    = "../../../backend/producers/microsoft_chat_producer"
   microsoft_chat_entry_point = "notification_webhook"
 
