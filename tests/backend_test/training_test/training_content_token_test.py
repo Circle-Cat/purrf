@@ -285,7 +285,9 @@ class TestTokenCarriesNoStoragePrefix(unittest.TestCase):
         is read from the database on every request."""
         names = {field.name for field in dataclasses.fields(ContentTokenClaims)}
 
-        self.assertEqual(names, {"training_id", "user_id", "expires_at", "package_id"})
+        self.assertEqual(
+            names, {"training_id", "user_id", "expires_at", "package_id", "run_id"}
+        )
 
     def test_the_claims_are_frozen(self):
         claims = verify_content_token(_KEY, self.token, now=_NOW)
@@ -349,6 +351,68 @@ class TestReadingTheRunsPackage(unittest.TestCase):
     def test_a_learner_token_still_names_its_assignment(self):
         token, _ = issue_content_token(_KEY, 3, 7, package_id=42, now=1_000)
         self.assertEqual(3, read_session_run(_KEY, token).training_id)
+
+
+class TestRunIdentity(unittest.TestCase):
+    """Which opening of an assignment a token belongs to. Two tabs on the same
+    assignment hold tokens that agree on everything else, so this is the only
+    claim that tells them apart when both post progress back."""
+
+    def test_the_run_id_comes_back(self):
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, run_id="run-a"
+        )
+
+        self.assertEqual("run-a", read_session_run(_KEY, token).run_id)
+        self.assertEqual("run-a", verify_content_token(_KEY, token).run_id)
+
+    def test_a_token_minted_without_one_names_no_run(self):
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, now=_NOW
+        )
+
+        self.assertIsNone(read_session_run(_KEY, token).run_id)
+        self.assertNotIn("r", _payload(token))
+
+    def test_a_token_from_before_run_ids_still_reads(self):
+        """Tabs open across the deploy hold tokens of exactly this shape, and
+        refusing them would strand every one of those sittings."""
+        token = _sign(
+            _KEY,
+            {"p": _PACKAGE_ID, "t": _TRAINING_ID, "u": _USER_ID, "e": _NOW + 100},
+        )
+
+        run = read_session_run(_KEY, token)
+        self.assertIsNone(run.run_id)
+        self.assertEqual(_TRAINING_ID, run.training_id)
+
+    def test_a_run_id_that_is_not_a_string_is_refused(self):
+        for value in (5, ["run-a"], {"id": "run-a"}, ""):
+            with self.subTest(value=value):
+                token = _sign(
+                    _KEY,
+                    {
+                        "p": _PACKAGE_ID,
+                        "t": _TRAINING_ID,
+                        "u": _USER_ID,
+                        "e": _NOW + 100,
+                        "r": value,
+                    },
+                )
+                with self.assertRaises(InvalidContentToken):
+                    read_session_run(_KEY, token)
+
+    def test_an_altered_run_id_is_refused(self):
+        token, _ = issue_content_token(
+            _KEY, _TRAINING_ID, _USER_ID, package_id=_PACKAGE_ID, run_id="run-a"
+        )
+        payload, signature = _split(token)
+        claims = json.loads(_decode_segment(payload))
+        claims["r"] = "run-b"
+
+        forged = _encode_segment(json.dumps(claims).encode("utf-8")) + "." + signature
+        with self.assertRaises(InvalidContentToken):
+            read_session_run(_KEY, forged)
 
 
 if __name__ == "__main__":
