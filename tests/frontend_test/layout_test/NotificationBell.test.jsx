@@ -438,6 +438,27 @@ describe("NotificationBell", () => {
       screen.getByText("Gmail sync needs attention: watch renewal failed"),
     ).toBeInTheDocument();
   });
+
+  it("tells the sender a reply arrived, naming the application", async () => {
+    // The actor is the candidate under their preferred name; the line reads
+    // the application's applicant name, so the two differ here.
+    await openWith({
+      id: 7,
+      eventType: "recruiting.email_received",
+      jobTitle: "Backend Engineer",
+      applicantName: "Ada Lovelace",
+      subjectName: "",
+      actorName: "Ada L.",
+      createdAt: "2026-10-01T00:00:00Z",
+      details: { threadId: 3 },
+    });
+
+    expect(
+      screen.getByText(
+        "New reply to your email about Ada Lovelace — Backend Engineer",
+      ),
+    ).toBeInTheDocument();
+  });
 });
 
 const MENTION = {
