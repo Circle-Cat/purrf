@@ -9,6 +9,7 @@ from backend.common.environment_constants import (
     GMAIL_REFRESH_TOKEN,
     GMAIL_SENDER_RECRUITING,
     GMAIL_SENDER_NOTIFICATION,
+    GMAIL_WATCH_TOPIC,
     MENTORSHIP_CALENDAR_ID,
     INTERVIEW_CALENDAR_ID,
     NOTIFICATION_TOPIC,
@@ -260,6 +261,7 @@ class TestAppDependencyBuilder(TestCase):
             GMAIL_REFRESH_TOKEN: "gmail-refresh-token",
             GMAIL_SENDER_RECRUITING: "recruiting@circlecat.org",
             GMAIL_SENDER_NOTIFICATION: "notification@circlecat.org",
+            GMAIL_WATCH_TOPIC: "projects/p/topics/gmail",
             # Both scenario calendars must be configured for the app to build:
             # the builder raises on a missing one rather than letting a service
             # fall back to the impersonated account's primary calendar.
@@ -644,6 +646,8 @@ class TestAppDependencyBuilder(TestCase):
             leave_calendar_controller=ANY,
             leave_balance_controller=ANY,
             notification_delivery_controller=ANY,
+            gmail_push_controller=ANY,
+            gmail_sync_controller=ANY,
             notification_publisher=mock_notification_publisher_client,
             notification_topic_path="projects/test-project/topics/notifications",
             launchdarkly_client=mock_launchdarkly_client_cls.return_value,

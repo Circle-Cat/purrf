@@ -88,6 +88,31 @@ class EmailSyncService:
             session, application.application_id, application.user_id
         )
 
+    async def sync_tracked_thread(self, session, thread):
+        """Sync one changed APPLICATION thread and write its timeline events.
+
+        The Gmail push and the daily catch-up come in here through the email
+        context registry. The whole application's conversation is synced, not
+        just this thread, because that is the unit ``_sync_by_ids`` records
+        timeline events for. Does not commit.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            thread (EmailThreadEntity): The thread that changed.
+
+        Returns:
+            int: Messages newly persisted.
+
+        Raises:
+            ValueError: If the thread does not belong to an application.
+        """
+        if thread.context_type != ContextType.APPLICATION:
+            raise ValueError(f"not an application thread: {thread.context_type!r}")
+        new_messages = await self._sync_by_ids(
+            session, thread.context_id, thread.user_id
+        )
+        return len(new_messages)
+
     async def _sync_by_ids(self, session, application_id, user_id):
         """Sync one application's email threads and log the new inbound replies.
 
@@ -193,6 +218,10 @@ class EmailSyncService:
             session, self._terminal_cutoff(), gmail_thread_ids=flagged
         )
         return await self._sweep(session, due, "delta", flagged=len(flagged))
+
+    async def resync_all(self, session):
+        """Full resync of every application in scope. Commits per application."""
+        return await self.sync_due_applications(session)
 
     @staticmethod
     def _terminal_cutoff():
