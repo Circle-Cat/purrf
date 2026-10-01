@@ -422,6 +422,54 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
         self.assertNotIn("<script", body)
         self.assertNotIn("<b>", body)
 
+    async def test_email_received_names_the_application_and_who_wrote(self):
+        """From and subject are the candidate's own text, so they are escaped."""
+        sender, candidate = _make_user("Grace", "Hopper"), _make_user("Ada", "Lovelace")
+        await self.insert_entities([sender, candidate])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        event = await self._make_event(
+            "recruiting.email_received",
+            "application",
+            application.application_id,
+            candidate,
+            details={
+                "threadId": 1,
+                "from": "Ada <ada@example.com>",
+                "subject": "Re: <b>Interview</b>",
+            },
+        )
+
+        subject, body = await render_registry.render(self.session, event)
+
+        self.assertEqual(subject, "New email reply: Ada Lovelace (Backend Engineer)")
+        self.assertIn(
+            "A reply arrived on an email you sent about Ada Lovelace's "
+            "application for Backend Engineer.",
+            body,
+        )
+        self.assertIn("<p>From: Ada &lt;ada@example.com&gt;</p>", body)
+        self.assertIn("<p>Subject: Re: &lt;b&gt;Interview&lt;/b&gt;</p>", body)
+        self.assertIn("Emails tab", body)
+
+    async def test_email_received_leaves_out_what_the_message_did_not_carry(self):
+        candidate = _make_user("Ada", "Lovelace")
+        await self.insert_entities([candidate])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        event = await self._make_event(
+            "recruiting.email_received",
+            "application",
+            application.application_id,
+            candidate,
+            details={"threadId": 1, "from": None, "subject": None},
+        )
+
+        _, body = await render_registry.render(self.session, event)
+
+        self.assertNotIn("From:", body)
+        self.assertNotIn("Subject:", body)
+
     async def test_rendered_emails_carry_the_automated_footer(self):
         """Each renderer appends the footer itself -- nothing downstream of
         here adds one -- so a renderer that skipped it would send a body with

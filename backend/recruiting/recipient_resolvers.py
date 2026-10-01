@@ -30,11 +30,13 @@ from backend.repository.application_assignment_repository import (
 from backend.repository.application_comment_mention_repository import (
     ApplicationCommentMentionRepository,
 )
+from backend.repository.email_message_repository import EmailMessageRepository
 from backend.repository.job_repository import JobRepository
 from backend.repository.job_review_repository import JobReviewRepository
 
 # Stateless, so one module-level instance serves every resolver.
 _assignment_repository = ApplicationAssignmentRepository()
+_email_message_repository = EmailMessageRepository()
 _job_repository = JobRepository()
 _job_review_repository = JobReviewRepository()
 _mention_repository = ApplicationCommentMentionRepository()
@@ -244,6 +246,30 @@ async def _mentioned(session: AsyncSession, event: EventEntity) -> set[int]:
             f"{event.event_type!r} names comment {comment_id}, which mentions nobody"
         )
     return mentioned
+
+
+@register_recipients(RecruitingEvent.EMAIL_RECEIVED, subject_type="application")
+async def _email_senders(session: AsyncSession, event: EventEntity) -> set[int]:
+    """Whoever sent a message in the thread the reply arrived on, through Purrf.
+
+    Told because they are the one waiting on the answer, whether or not they
+    still own the posting. Nobody when every message in the thread was sent
+    from the Gmail web UI, which records no sender -- that is a state, not a
+    write-site bug.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        event (EventEntity): The event being recorded; ``subject_id`` is an
+            application id and ``details["threadId"]`` names the thread.
+
+    Returns:
+        set[int]: The senders' user ids.
+
+    Raises:
+        ValueError: If the event carries no thread id.
+    """
+    thread_id = _required_id(event, "threadId")
+    return await _email_message_repository.list_sender_ids_by_thread(session, thread_id)
 
 
 _APPLICATION_RESOLVERS: dict[str, Resolver] = {

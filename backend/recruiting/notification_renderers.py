@@ -238,6 +238,23 @@ async def _render_mentioned(session, event):
     return _with_footer(copy._mentioned(dto, None))
 
 
+# --- email_received -------------------------------------------------------
+
+
+@register_render("recruiting.email_received")
+async def _render_email_received(session, event):
+    """A reply on a thread the recipient sent into.
+
+    The sender and subject come from the event: they are what the message
+    said when it arrived, and the candidate typed them, so the copy escapes
+    them like any other field.
+    """
+    dto = await _base_dto(session, event)
+    dto.email_from = event.details.get("from") or ""
+    dto.email_subject = event.details.get("subject") or ""
+    return _with_footer(copy._email_received(dto, None))
+
+
 # --- review_opened / review_reassigned / review_decided (subject is the job) --
 
 

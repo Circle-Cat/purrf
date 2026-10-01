@@ -31,6 +31,8 @@ def _dto(**overrides):
         start_at=datetime(2026, 8, 5, 21, tzinfo=timezone.utc),
         auto_assignee_name=None,
         unavailable_default_assignee_id=None,
+        email_from="Ada <ada@example.com>",
+        email_subject="Re: Interview",
     )
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -407,6 +409,8 @@ class TestEscaping(unittest.TestCase):
             applicant_email=self._MARKUP,
             actor_name=self._MARKUP,
             reason=self._MARKUP,
+            email_from=self._MARKUP,
+            email_subject=self._MARKUP,
             to_sub_status=self._MARKUP,
         )
 

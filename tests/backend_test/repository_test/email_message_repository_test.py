@@ -79,6 +79,33 @@ class TestEmailMessageRepository(BaseRepositoryTestLib):
         )
         self.assertEqual(result, {"mine"})
 
+    async def test_sender_ids_are_the_distinct_purrf_senders_of_one_thread(self):
+        first, second, elsewhere = _make_user(), _make_user(), _make_user()
+        await self.insert_entities([first, second, elsewhere])
+        await self.insert_entities([
+            EmailMessageEntity(
+                thread_id=thread.thread_id,
+                gmail_message_id=gmail_message_id,
+                direction=direction,
+                sent_by_user_id=None if sender is None else sender.user_id,
+            )
+            for thread, gmail_message_id, direction, sender in (
+                (self.thread, "a1", EmailDirection.OUTBOUND, first),
+                (self.thread, "a2", EmailDirection.OUTBOUND, second),
+                (self.thread, "a3", EmailDirection.OUTBOUND, first),
+                # Sent from the Gmail web UI: no sender recorded.
+                (self.thread, "a4", EmailDirection.OUTBOUND, None),
+                (self.thread, "a5", EmailDirection.INBOUND, None),
+                (self.other_thread, "b1", EmailDirection.OUTBOUND, elsewhere),
+            )
+        ])
+
+        result = await self.repo.list_sender_ids_by_thread(
+            self.session, self.thread.thread_id
+        )
+
+        self.assertEqual(result, {first.user_id, second.user_id})
+
 
 if __name__ == "__main__":
     unittest.main()
