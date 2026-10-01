@@ -581,8 +581,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.email_svc.list_conversation.assert_awaited_once()
 
     async def test_conversation_read_gives_a_candidate_scope_caller_no_prefill(self):
-        """A read-only caller has no compose box to seed, and default_cc
-        would otherwise hand out a recruiter's contact address."""
+        """A read-only caller has no compose box to seed."""
         app = self._setup_owned_application(application_id=7, user_id=5, owner=2)
         sibling_app = self._application(application_id=8, job_id=200, user_id=5)
         self.app_repo.list_by_user = AsyncMock(
@@ -597,7 +596,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertIsNone(result.default_to)
-        self.assertEqual(result.default_cc, [])
         self.user_emails_repo.get_contact_email.assert_not_awaited()
 
     async def test_conversation_read_forbids_a_caller_with_no_standing_anywhere(self):
@@ -623,21 +621,8 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             )
         self.email_svc.send.assert_not_awaited()
 
-    async def test_conversation_default_cc_is_recruiter_only_for_new(self):
-        service, mocks = self._email_service()
-        mocks.email_conversation_service.list_conversation = AsyncMock(return_value=[])
-        # candidate contact = candidate@x ; recruiter (caller 3) contact = rec@x
-        mocks.user_emails_repository.get_contact_email = AsyncMock(
-            side_effect=lambda s, uid: "candidate@x" if uid == 42 else "rec@x"
-        )
-        mocks.email_conversation_service.sender_address = "recruiting@corp.com"
-        result = await service._build_application_conversation(
-            self.session, self._caller(user_id=3), application_id=7, user_id=42
-        )
-        self.assertEqual(result.default_cc, ["rec@x"])
-        self.assertEqual(result.default_to, "candidate@x")
-
-    async def test_thread_default_cc_unions_recruiter_and_history(self):
+    async def test_conversation_prefills_only_the_candidate_as_to(self):
+        """Cc is never prefilled, so the caller's own address is not looked up."""
         service, mocks = self._email_service()
         thread = EmailThreadDto(
             thread_id=10,
@@ -648,13 +633,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
                 EmailMessageDto(
                     message_id=1,
                     direction="outbound",
-                    cc_addresses="Boss <boss@x>, candidate@x",
-                    created_at=datetime.now(timezone.utc),
-                ),
-                EmailMessageDto(
-                    message_id=2,
-                    direction="inbound",
-                    cc_addresses="BOSS@x, ally@x, recruiting@corp.com",
+                    cc_addresses="Boss <boss@x>",
                     created_at=datetime.now(timezone.utc),
                 ),
             ],
@@ -663,15 +642,20 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             return_value=[thread]
         )
         mocks.user_emails_repository.get_contact_email = AsyncMock(
-            side_effect=lambda s, uid: "candidate@x" if uid == 42 else "rec@x"
+            return_value="candidate@x"
         )
-        mocks.email_conversation_service.sender_address = "recruiting@corp.com"
+
         result = await service._build_application_conversation(
-            self.session, self._caller(user_id=3), application_id=7, user_id=42
+            self.session, application_id=7, user_id=42
         )
-        # recruiter first; boss deduped case-insensitively; candidate (To) and
-        # company sender excluded; order preserved.
-        self.assertEqual(result.threads[0].default_cc, ["rec@x", "boss@x", "ally@x"])
+
+        self.assertEqual(result.default_to, "candidate@x")
+        mocks.user_emails_repository.get_contact_email.assert_awaited_once_with(
+            self.session, 42
+        )
+        dumped = result.model_dump(by_alias=True)
+        self.assertNotIn("defaultCc", dumped)
+        self.assertNotIn("defaultCc", dumped["threads"][0])
 
     # -- application email: timeline events --
 
