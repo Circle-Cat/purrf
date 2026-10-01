@@ -23,6 +23,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from backend.common.communication_enums import ContextType, EmailDirection
+from backend.common.recruiting_enums import RecruitingEvent
 from backend.notification_management.event_recorder import record_event
 
 # A terminal application keeps getting swept for this long, so a reply that
@@ -152,7 +153,7 @@ class EmailSyncService:
                 subject_type="application",
                 subject_id=application_id,
                 actor_id=user_id,
-                event_type="recruiting.email_received",
+                event_type=RecruitingEvent.EMAIL_RECEIVED,
                 details={
                     "subject": message.subject,
                     "from": message.from_address,

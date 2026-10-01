@@ -122,7 +122,7 @@ class RecruitingEvent(StrEnum):
 
     Membership here says nothing about notifications. Which types have
     recipients is decided by what registers a resolver in
-    ``recipient_registry``; the four below that no resolver claims belong on
+    ``recipient_registry``; the three below that no resolver claims belong on
     the timeline and notify nobody, by design rather than by omission.
     """
 

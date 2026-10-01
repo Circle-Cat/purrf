@@ -80,6 +80,31 @@ class EmailMessageRepository:
         )
         return set(result.scalars().all())
 
+    async def list_sender_ids_by_thread(
+        self, session: AsyncSession, thread_id: int
+    ) -> set[int]:
+        """The users who sent a message in one thread through Purrf.
+
+        Only outbound messages carry a sender, and only when Purrf sent them;
+        one sent by hand from the Gmail web UI has none.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            thread_id (int): The thread to read.
+
+        Returns:
+            set[int]: The distinct ``sent_by_user_id``s (empty if none).
+        """
+        result = await session.execute(
+            select(EmailMessageEntity.sent_by_user_id)
+            .where(
+                EmailMessageEntity.thread_id == thread_id,
+                EmailMessageEntity.sent_by_user_id.is_not(None),
+            )
+            .distinct()
+        )
+        return set(result.scalars().all())
+
     async def list_by_thread(
         self, session: AsyncSession, thread_id: int
     ) -> list[EmailMessageEntity]:
