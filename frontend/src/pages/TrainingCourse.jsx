@@ -14,8 +14,15 @@ export default function TrainingCourse() {
   // No Provider wraps this page in isolation (e.g. in tests), so guard
   // against the context's null default rather than assume a user is present.
   const { user } = useAuth() ?? {};
-  const { session, loadError, saveFailed, sessionStale, frameRef, playerSrc } =
-    useTrainingRuntime(trainingId, user);
+  const {
+    session,
+    loadError,
+    saveFailed,
+    sessionStale,
+    sessionSuperseded,
+    frameRef,
+    playerSrc,
+  } = useTrainingRuntime(trainingId, user);
 
   if (loadError) {
     return <p className="p-6 text-muted-foreground">{loadError}</p>;
@@ -28,9 +35,11 @@ export default function TrainingCourse() {
     <div className="flex h-full flex-col">
       {saveFailed && (
         <div className="border-b bg-destructive/10 px-4 py-2 text-sm">
-          {sessionStale
-            ? "This course was updated while this page was open. Reload the page to continue; this page cannot save any more."
-            : "Your progress could not be saved. Keep this tab open; the course saves again automatically."}
+          {sessionSuperseded
+            ? "This course is open in another tab. Close this tab and continue there."
+            : sessionStale
+              ? "This course was updated while this page was open. Reload the page to continue; this page cannot save any more."
+              : "Your progress could not be saved. Keep this tab open; the course saves again automatically."}
         </div>
       )}
       <iframe

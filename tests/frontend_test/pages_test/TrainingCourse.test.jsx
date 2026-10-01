@@ -133,6 +133,32 @@ describe("TrainingCourse", () => {
     expect(await screen.findByText(/could not be saved/i)).toBeInTheDocument();
   });
 
+  it("tells the learner to close this tab when a newer one took the course over", async () => {
+    saveProgress.mockRejectedValue(
+      Object.assign(new Error("refused"), {
+        response: {
+          status: 409,
+          data: {
+            success: false,
+            message: "This course is open in another tab.",
+            data: { code: "training_run_superseded" },
+          },
+        },
+      }),
+    );
+    renderCourse();
+    await screen.findByTitle(/course/i);
+
+    postCommit({});
+
+    await waitFor(() => expect(saveProgress).toHaveBeenCalled());
+    expect(
+      await screen.findByText(
+        "This course is open in another tab. Close this tab and continue there.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("logs a scorm:error from the player instead of dropping it", async () => {
     const consoleError = vi
       .spyOn(console, "error")

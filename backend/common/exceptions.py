@@ -1,5 +1,15 @@
 class ConflictError(Exception):
-    """Domain conflict — mapped to HTTP 409 Conflict."""
+    """Domain conflict — mapped to HTTP 409 Conflict.
+
+    ``code`` is for a page that has to tell two conflicts on the same route
+    apart and give different advice for each. The message is prose meant for
+    a person, and branching on its wording would break the first time
+    somebody rewords it.
+    """
+
+    def __init__(self, message: str = "", *, code: str | None = None):
+        super().__init__(message)
+        self.code = code
 
 
 class RateLimitedError(Exception):

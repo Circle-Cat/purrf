@@ -70,10 +70,17 @@ async def global_exception_handler(request: Request, exc: Exception):
         exc_info=is_server_error,
     )
 
+    # A conflict that names a code carries it where a page can read it
+    # without parsing the message.
+    data = None
+    if isinstance(exc, ConflictError) and exc.code:
+        data = {"code": exc.code}
+
     # Return a unified JSON API response to the client.
     return api_response(
         success=False,
         message=user_message,
+        data=data,
         status_code=status,
     )
 
