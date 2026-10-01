@@ -6,6 +6,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from backend.common.api_endpoints import (
+    GMAIL_PUSH_ENDPOINT,
     MENTORSHIP_MATCH_RUN_COMPLETE,
     NOTIFICATION_DELIVER_ENDPOINT,
 )
@@ -35,6 +36,7 @@ _PERMISSION_BY_VALUE = {p.value: p for p in Permission}
 _UNAUTHENTICATED_PATHS = frozenset({
     f"/api{NOTIFICATION_DELIVER_ENDPOINT}",
     f"/api{MENTORSHIP_MATCH_RUN_COMPLETE}",
+    f"/api{GMAIL_PUSH_ENDPOINT}",
 })
 
 # Course files are requested by the course's own JavaScript, which cannot

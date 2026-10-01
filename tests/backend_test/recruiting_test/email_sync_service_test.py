@@ -159,6 +159,105 @@ class TestSyncApplication(unittest.IsolatedAsyncioTestCase):
         self.session.commit.assert_not_called()
 
 
+class TestSyncTrackedThread(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.conversation_service = AsyncMock()
+        self.conversation_service.sync_context = AsyncMock(return_value=[])
+        recorder = patch(
+            "backend.recruiting.email_sync_service.record_event",
+            new_callable=AsyncMock,
+        )
+        self.record_event = recorder.start()
+        self.addCleanup(recorder.stop)
+        self.session = Mock()
+        self.service = EmailSyncService(
+            gmail_client=Mock(),
+            email_conversation_service=self.conversation_service,
+            application_repository=AsyncMock(),
+            logger=Mock(),
+        )
+        self.thread = Mock(
+            user_id=5, context_type=ContextType.APPLICATION, context_id=7
+        )
+
+    async def test_syncs_the_application_context(self):
+        await self.service.sync_tracked_thread(self.session, self.thread)
+        self.conversation_service.sync_context.assert_awaited_once_with(
+            self.session, ContextType.APPLICATION, 7
+        )
+
+    async def test_writes_email_received_for_inbound_only(self):
+        self.conversation_service.sync_context.return_value = [
+            _message(EmailDirection.INBOUND),
+            _message(EmailDirection.OUTBOUND, subject="Hello"),
+        ]
+
+        await self.service.sync_tracked_thread(self.session, self.thread)
+
+        self.record_event.assert_awaited_once()
+        _args, kwargs = self.record_event.await_args
+        self.assertEqual(kwargs["subject_id"], 7)
+        # Actor is the candidate (thread owner), not the recruiter.
+        self.assertEqual(kwargs["actor_id"], 5)
+        self.assertEqual(kwargs["event_type"], "recruiting.email_received")
+        self.assertEqual(kwargs["details"]["subject"], "Re: Hello")
+        self.assertEqual(kwargs["details"]["from"], "cand@x")
+        self.assertEqual(kwargs["details"]["to"], "recruiting@corp.com")
+        self.assertEqual(kwargs["details"]["cc"], "boss@x")
+        self.assertEqual(kwargs["details"]["threadId"], 10)
+        self.assertEqual(kwargs["details"]["direction"], "inbound")
+        # Backdated to when the mail actually arrived, not to now.
+        self.assertEqual(kwargs["created_at"], RECEIVED_AT)
+
+    async def test_no_new_messages_writes_no_activity(self):
+        await self.service.sync_tracked_thread(self.session, self.thread)
+        self.record_event.assert_not_awaited()
+
+    async def test_returns_the_new_message_count(self):
+        messages = [_message(EmailDirection.INBOUND)]
+        self.conversation_service.sync_context.return_value = messages
+        result = await self.service.sync_tracked_thread(self.session, self.thread)
+        self.assertEqual(result, 1)
+
+    async def test_does_not_commit(self):
+        # The caller owns the transaction boundary.
+        self.conversation_service.sync_context.return_value = [
+            _message(EmailDirection.INBOUND)
+        ]
+        await self.service.sync_tracked_thread(self.session, self.thread)
+        self.session.commit.assert_not_called()
+
+    async def test_sync_tracked_thread_writes_the_timeline_like_every_other_entry_point(
+        self,
+    ):
+        thread = Mock(
+            thread_id=7,
+            user_id=42,
+            context_type=ContextType.APPLICATION,
+            context_id=300,
+        )
+        self.conversation_service.sync_context.return_value = [
+            _message(EmailDirection.INBOUND, "Re: interview"),
+            _message(EmailDirection.OUTBOUND, "sent from the Gmail UI"),
+        ]
+        count = await self.service.sync_tracked_thread(self.session, thread)
+        self.assertEqual(count, 2)
+        self.conversation_service.sync_context.assert_awaited_once_with(
+            self.session, ContextType.APPLICATION, 300
+        )
+        self.record_event.assert_awaited_once()
+        kwargs = self.record_event.await_args.kwargs
+        self.assertEqual(kwargs["event_type"], "recruiting.email_received")
+        self.assertEqual(kwargs["subject_id"], 300)
+        self.assertEqual(kwargs["actor_id"], 42)
+
+    async def test_sync_tracked_thread_refuses_a_foreign_context(self):
+        thread = Mock(context_type=ContextType.ACTIVITY, context_id=9, user_id=1)
+        with self.assertRaises(ValueError):
+            await self.service.sync_tracked_thread(self.session, thread)
+        self.conversation_service.sync_context.assert_not_awaited()
+
+
 class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.conversation_service = AsyncMock()
@@ -201,6 +300,12 @@ class TestSyncDueApplications(unittest.IsolatedAsyncioTestCase):
         # The summary must be logged even on an empty sweep — it is the only
         # signal the job ran at all, since the endpoint always returns 200.
         self.logger.log.assert_called_once()
+
+    async def test_resync_all_delegates_to_the_reconcile(self):
+        summary = {"scanned": 2, "synced": 2, "failed": 0, "newMessages": 3}
+        self.service.sync_due_applications = AsyncMock(return_value=summary)
+        self.assertIs(await self.service.resync_all(self.session), summary)
+        self.service.sync_due_applications.assert_awaited_once_with(self.session)
 
     async def test_syncs_every_due_application_and_commits_each(self):
         self._due(1, 2, 3)
