@@ -933,7 +933,6 @@ class AppDependencyBuilder:
             sender_address=recruiting_sender,
         )
         self.email_sync_service = EmailSyncService(
-            gmail_client=self.gmail_client,
             email_conversation_service=self.email_conversation_service,
             application_repository=self.application_repository,
             logger=self.logger,
@@ -973,7 +972,6 @@ class AppDependencyBuilder:
         )
         self.recruiting_controller = RecruitingController(
             job_service=self.job_service,
-            email_sync_service=self.email_sync_service,
             database=self.database,
         )
 
@@ -1008,7 +1006,6 @@ class AppDependencyBuilder:
             self.notification_repository,
             self.user_emails_repository,
             self.email_conversation_service,
-            self.email_sync_service,
             self.application_interview_repository,
             self.application_access,
             self.interview_scheduling_service,
