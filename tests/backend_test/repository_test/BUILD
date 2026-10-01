@@ -287,6 +287,19 @@ py_test(
 )
 
 py_test(
+    name = "gmail_sync_state_repository_test",
+    srcs = ["gmail_sync_state_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:database",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
     name = "retire_unconfirmed_emails_migration_test",
     srcs = ["retire_unconfirmed_emails_migration_test.py"],
     data = ["//:alembic_files"],

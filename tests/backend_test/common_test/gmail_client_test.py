@@ -4,13 +4,18 @@ import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from unittest import TestCase, main
 from unittest.mock import Mock, patch
 
 from google.auth.exceptions import RefreshError
 from googleapiclient.errors import HttpError
 
-from backend.common.exceptions import RateLimitedError
+from backend.common.exceptions import (
+    GmailUnavailableError,
+    HistoryExpiredError,
+    RateLimitedError,
+)
 from backend.common.gmail_client import GmailClient
 
 TEST_CLIENT_ID = "test-client-id"
@@ -817,6 +822,100 @@ class TestGmailClient(TestCase):
         # The second chunk is never sent: no point paying for it once the
         # caller is going to see a failure anyway.
         self.assertEqual(self.mock_service.new_batch_http_request.call_count, 1)
+
+    # ---- watch / history ------------------------------------------------
+
+    def test_get_profile_returns_address_and_int_history_id(self):
+        self.mock_service.users.return_value.getProfile.return_value.execute.return_value = {
+            "emailAddress": "purrf@example.com",
+            "historyId": "12345",
+        }
+        self.assertEqual(
+            self.client.get_profile(),
+            {"email_address": "purrf@example.com", "history_id": 12345},
+        )
+
+    def test_watch_filters_to_inbox_and_parses_expiration(self):
+        watch = self.mock_service.users.return_value.watch
+        watch.return_value.execute.return_value = {
+            "historyId": "77",
+            "expiration": "1790000000000",
+        }
+        result = self.client.watch("projects/p/topics/t")
+        watch.assert_called_once_with(
+            userId="me",
+            body={
+                "topicName": "projects/p/topics/t",
+                "labelIds": ["INBOX"],
+                "labelFilterBehavior": "include",
+            },
+        )
+        self.assertEqual(result["history_id"], 77)
+        self.assertEqual(
+            result["expiration"], datetime.fromtimestamp(1790000000, tz=timezone.utc)
+        )
+
+    def test_list_history_collects_thread_ids_across_pages(self):
+        hist = self.mock_service.users.return_value.history.return_value.list
+        hist.return_value.execute.side_effect = [
+            {
+                "history": [
+                    {"messagesAdded": [{"message": {"id": "m1", "threadId": "t1"}}]}
+                ],
+                "historyId": "90",
+                "nextPageToken": "p2",
+            },
+            {
+                "history": [
+                    {
+                        "messagesAdded": [
+                            {"message": {"id": "m2", "threadId": "t2"}},
+                            {"message": {"id": "m3", "threadId": "t1"}},
+                        ]
+                    },
+                    {"labelsAdded": [{"message": {"id": "m9", "threadId": "t9"}}]},
+                ],
+                "historyId": "95",
+            },
+        ]
+        result = self.client.list_history(50)
+        self.assertEqual(result, {"history_id": 95, "thread_ids": {"t1", "t2"}})
+        first_call = hist.call_args_list[0].kwargs
+        self.assertEqual(first_call["startHistoryId"], "50")
+        self.assertEqual(first_call["historyTypes"], ["messageAdded"])
+        self.assertNotIn(
+            "labelId", first_call
+        )  # unfiltered: SENT from the Gmail UI is caught too
+
+    def test_list_history_with_no_changes_still_returns_the_mailbox_history_id(self):
+        self.mock_service.users.return_value.history.return_value.list.return_value.execute.return_value = {
+            "historyId": "60"
+        }
+        self.assertEqual(
+            self.client.list_history(60), {"history_id": 60, "thread_ids": set()}
+        )
+
+    def test_list_history_404_means_the_cursor_expired(self):
+        self.mock_service.users.return_value.history.return_value.list.return_value.execute.side_effect = _http_error(
+            404
+        )
+        with self.assertRaises(HistoryExpiredError):
+            self.client.list_history(1)
+
+    def test_5xx_is_unavailable_and_still_a_runtime_error(self):
+        self.mock_service.users.return_value.getProfile.return_value.execute.side_effect = _http_error(
+            503
+        )
+        with self.assertRaises(GmailUnavailableError) as ctx:
+            self.client.get_profile()
+        self.assertIsInstance(ctx.exception, RuntimeError)
+
+    def test_existing_callers_see_404_as_runtime_error(self):
+        self.mock_service.users.return_value.threads.return_value.get.return_value.execute.side_effect = _http_error(
+            404
+        )
+        with self.assertRaises(RuntimeError):
+            self.client.list_thread_message_ids("gone")
 
 
 if __name__ == "__main__":

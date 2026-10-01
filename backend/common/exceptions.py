@@ -25,3 +25,15 @@ class MeetingGoneError(Exception):
     *patching* one must not silently pretend to have succeeded — the stored
     time would drift from a calendar that has no such meeting.
     """
+
+
+class GmailUnavailableError(RuntimeError):
+    """Gmail answered 5xx: the same call may succeed shortly."""
+
+
+class GmailNotFoundError(RuntimeError):
+    """Gmail answered 404 for the resource asked about."""
+
+
+class HistoryExpiredError(Exception):
+    """The history cursor is older than Gmail keeps; only a full resync recovers."""

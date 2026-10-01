@@ -81,6 +81,7 @@ py_library(
         "//backend/common:fast_api_error_handler",
         "//backend/mentorship",
         "//backend/notification_management:publish_on_commit",
+        "//backend/ops",
         "//backend/recruiting",
         "//backend/user_identity:notification_renderers",
         "//backend/user_identity:user_recipient_resolvers",
