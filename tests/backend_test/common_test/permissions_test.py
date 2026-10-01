@@ -12,11 +12,16 @@ class TestPermissions(unittest.TestCase):
     # The count is a tripwire: a new permission also needs an entry in
     # permission_descriptions.py. Bump it and write the description.
     def test_catalog_values_are_unique_and_dotted(self):
-        self.assertEqual(len(Permission), 22)
+        self.assertEqual(len(Permission), 23)
         values = [p.value for p in Permission]
         self.assertEqual(len(values), len(set(values)))
         for value in values:
             self.assertRegex(value, r"^[a-z0-9_]+(\.[a-z0-9_]+)+$")
+
+    def test_ops_maintain_is_a_human_permission(self):
+        self.assertEqual(Permission.OPS_MAINTAIN.value, "ops.maintain")
+        self.assertNotIn(Permission.OPS_MAINTAIN, SERVICE_ACCOUNT_PERMISSIONS)
+        self.assertNotIn(Permission.OPS_MAINTAIN, INTERNAL_EMPLOYEE_PERMISSIONS)
 
     def test_str_enum_value_equals_string(self):
         # StrEnum members compare/serialize as their dotted string.

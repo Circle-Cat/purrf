@@ -43,6 +43,7 @@ import base64
 import os
 import re
 import threading
+from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import make_msgid, parseaddr
@@ -59,7 +60,12 @@ from backend.common.environment_constants import (
     GMAIL_CLIENT_SECRET,
     GMAIL_REFRESH_TOKEN,
 )
-from backend.common.exceptions import RateLimitedError
+from backend.common.exceptions import (
+    GmailNotFoundError,
+    GmailUnavailableError,
+    HistoryExpiredError,
+    RateLimitedError,
+)
 
 # OAuth2 token endpoint the refresh token is redeemed against.
 _TOKEN_URI = "https://oauth2.googleapis.com/token"
@@ -359,6 +365,8 @@ class GmailClient:
 
         Raises:
             RateLimitedError: The inner call was rate limited (HTTP 429).
+            GmailNotFoundError: The inner call got HTTP 404.
+            GmailUnavailableError: The inner call got HTTP 5xx.
             RuntimeError: Any other inner-call failure.
         """
         status = None
@@ -370,6 +378,14 @@ class GmailClient:
         if status == HTTPStatus.TOO_MANY_REQUESTS:
             raise RateLimitedError(
                 "Gmail rate limited during get_messages"
+            ) from exception
+        if status == HTTPStatus.NOT_FOUND:
+            raise GmailNotFoundError(
+                "Gmail resource not found during get_messages"
+            ) from exception
+        if status is not None and status >= HTTPStatus.INTERNAL_SERVER_ERROR:
+            raise GmailUnavailableError(
+                "Gmail unavailable during get_messages"
             ) from exception
         raise RuntimeError("Gmail API error during get_messages") from exception
 
@@ -419,6 +435,117 @@ class GmailClient:
             if not page_token:
                 return thread_ids
 
+    def get_profile(self):
+        """Read the mailbox address and its current history cursor.
+
+        Returns:
+            dict: ``email_address`` (lower-cased str) and ``history_id`` (int).
+
+        Raises:
+            GmailUnavailableError: Gmail answered 5xx.
+            RateLimitedError: If Gmail throttles the request (HTTP 429).
+            RuntimeError: For any other Gmail API failure.
+        """
+        request = (
+            self._get_service()
+            .users()
+            .getProfile(userId=_GMAIL_USER, fields="emailAddress,historyId")
+        )
+        response = self._execute(request, "get_profile")
+        return {
+            "email_address": response["emailAddress"].lower(),
+            "history_id": int(response["historyId"]),
+        }
+
+    def watch(self, topic_name):
+        """Ask Gmail to publish INBOX changes to a Pub/Sub topic.
+
+        Only INBOX is watched so that mail this application sends itself does
+        not produce a push.
+
+        Args:
+            topic_name (str): Full topic name, ``projects/<p>/topics/<t>``.
+
+        Returns:
+            dict: ``history_id`` (int) at registration time and ``expiration``
+                (timezone-aware UTC datetime) of the watch.
+
+        Raises:
+            GmailUnavailableError: Gmail answered 5xx.
+            RateLimitedError: If Gmail throttles the request (HTTP 429).
+            RuntimeError: For any other Gmail API failure.
+        """
+        request = (
+            self._get_service()
+            .users()
+            .watch(
+                userId=_GMAIL_USER,
+                body={
+                    "topicName": topic_name,
+                    "labelIds": ["INBOX"],
+                    "labelFilterBehavior": "include",
+                },
+            )
+        )
+        response = self._execute(request, "watch")
+        return {
+            "history_id": int(response["historyId"]),
+            "expiration": datetime.fromtimestamp(
+                int(response["expiration"]) / 1000, tz=timezone.utc
+            ),
+        }
+
+    def list_history(self, start_history_id):
+        """Thread ids that gained a message since a history cursor.
+
+        No ``labelId`` is passed, so a message sent by hand from the Gmail web
+        UI is reported as well, not just INBOX arrivals.
+
+        Args:
+            start_history_id (int): Cursor to read changes after.
+
+        Returns:
+            dict: ``history_id`` (int), the mailbox cursor from the response
+                (present even when nothing changed), and ``thread_ids``
+                (set[str]).
+
+        Raises:
+            HistoryExpiredError: The cursor is too old (HTTP 404); only a full
+                resync recovers.
+            GmailUnavailableError: Gmail answered 5xx.
+            RateLimitedError: If Gmail throttles the request (HTTP 429).
+            RuntimeError: For any other Gmail API failure.
+        """
+        thread_ids = set()
+        page_token = None
+        while True:
+            request = (
+                self._get_service()
+                .users()
+                .history()
+                .list(
+                    userId=_GMAIL_USER,
+                    startHistoryId=str(start_history_id),
+                    historyTypes=["messageAdded"],
+                    pageToken=page_token,
+                )
+            )
+            try:
+                response = self._execute(request, "list_history")
+            except GmailNotFoundError as error:
+                raise HistoryExpiredError(
+                    f"history cursor {start_history_id} expired"
+                ) from error
+            for record in response.get("history", []):
+                for added in record.get("messagesAdded", []):
+                    thread_ids.add(added["message"]["threadId"])
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                return {
+                    "history_id": int(response["historyId"]),
+                    "thread_ids": thread_ids,
+                }
+
     def _get_service(self):
         """Build the Gmail service lazily and cache it on the calling thread.
 
@@ -451,7 +578,8 @@ class GmailClient:
             # record: a replacement token must be minted with
             # https://www.googleapis.com/auth/gmail.send plus
             # https://www.googleapis.com/auth/gmail.readonly — send, plus
-            # messages.get / messages.list / threads.get. Nothing here modifies
+            # messages.get / messages.list / threads.get / history.list /
+            # watch / getProfile. Nothing here modifies
             # the mailbox, so gmail.modify is not needed.
             credentials = Credentials(
                 token=None,
@@ -491,6 +619,14 @@ class GmailClient:
             if status == HTTPStatus.TOO_MANY_REQUESTS:
                 raise RateLimitedError(
                     f"Gmail rate limited during {operation}"
+                ) from error
+            if status == HTTPStatus.NOT_FOUND:
+                raise GmailNotFoundError(
+                    f"Gmail resource not found during {operation}"
+                ) from error
+            if status is not None and status >= HTTPStatus.INTERNAL_SERVER_ERROR:
+                raise GmailUnavailableError(
+                    f"Gmail unavailable during {operation}"
                 ) from error
             raise RuntimeError(f"Gmail API error during {operation}") from error
 

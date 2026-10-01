@@ -8,6 +8,10 @@ from backend.mentorship import (  # noqa: F401 (registers)
     notification_renderers as mentorship_notification_renderers,
     recipient_resolvers as mentorship_recipient_resolvers,
 )
+from backend.ops import (  # noqa: F401 (registers)
+    notification_renderers as ops_notification_renderers,
+    recipient_resolvers as ops_recipient_resolvers,
+)
 from backend.recruiting import notification_renderers  # noqa: F401 (registers)
 from backend.recruiting import recipient_resolvers  # noqa: F401 (registers)
 from backend.user_identity import (  # noqa: F401 (registers)
