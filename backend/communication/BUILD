@@ -6,8 +6,13 @@ py_library(
     name = "communication",
     srcs = glob(["*.py"]),
     deps = [
+        "//backend/common:api_endpoints",
         "//backend/common:communication_enums",
         "//backend/common:exceptions",
+        "//backend/common:fast_api_response_wrapper",
+        "//backend/common:permissions",
         "//backend/dto",
+        "//backend/utils:permission_decorators",
+        "@pypi//fastapi",
     ],
 )
