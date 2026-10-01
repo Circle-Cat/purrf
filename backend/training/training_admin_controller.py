@@ -229,7 +229,7 @@ class TrainingAdminController:
         )
         self.router.add_api_route(
             TRAINING_ASSIGNMENTS_AUDIENCE_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_WRITE])(
+            endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_READ])(
                 self.search_audience
             ),
             methods=["GET"],
@@ -245,7 +245,7 @@ class TrainingAdminController:
         )
         self.router.add_api_route(
             TRAINING_USER_ASSIGNMENTS_ENDPOINT,
-            endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_WRITE])(
+            endpoint=authenticate(permissions=[Permission.TRAINING_ADMIN_READ])(
                 self.list_user_assignments
             ),
             methods=["GET"],
@@ -322,8 +322,10 @@ class TrainingAdminController:
     ):
         """One page of the people a course may be assigned to.
 
-        Gated on the write grant even though it only reads: the whole card is
-        one authorization, and the search lists the company directory.
+        Gated on the read grant: the card that calls it is shown to a reader,
+        who searches it to see who is on a course. Picking everyone a search
+        matches is ``list_audience_ids``, which stays on the write grant
+        because it only exists to feed an assignment.
 
         The window is bounded here rather than left to the database. A
         negative limit reaches Postgres, which refuses it -- so an operator
