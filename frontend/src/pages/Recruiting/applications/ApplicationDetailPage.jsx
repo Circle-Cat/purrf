@@ -1196,7 +1196,6 @@ const ApplicationDetailPage = () => {
   const [emails, setEmails] = useState({
     threads: [],
     defaultTo: null,
-    defaultCc: [],
   });
   const [sendingEmail, setSendingEmail] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
@@ -1234,9 +1233,7 @@ const ApplicationDetailPage = () => {
           setJob(jobData);
           setInterviewPool(pool ?? []);
           setActivity(activityRows ?? []);
-          setEmails(
-            emailData ?? { threads: [], defaultTo: null, defaultCc: [] },
-          );
+          setEmails(emailData ?? { threads: [], defaultTo: null });
           const aggregate = otherApplicationsRes?.data ?? {};
           setOtherApplications(aggregate.otherJobs ?? []);
           setPreviousApplications(aggregate.previousSameJob ?? []);
@@ -2093,7 +2090,6 @@ const ApplicationDetailPage = () => {
                     onOpenChange={setComposeOpen}
                     applicationId={applicationId}
                     defaultTo={emails.defaultTo}
-                    defaultCc={emails.defaultCc}
                     replyThread={replyThread}
                     onSend={handleSendEmail}
                     sending={sendingEmail}

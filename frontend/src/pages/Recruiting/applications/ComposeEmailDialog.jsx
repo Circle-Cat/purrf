@@ -95,9 +95,8 @@ const countUnfilledBrackets = (text) => (text.match(BRACKET_RE) ?? []).length;
  *
  * @param {{open: boolean, onOpenChange: (open: boolean) => void,
  *          applicationId: number|string,
- *          defaultTo: string|null, defaultCc: string[]|null,
- *          replyThread: {threadId: number, subject: string,
- *                        defaultCc?: string[]}|null,
+ *          defaultTo: string|null,
+ *          replyThread: {threadId: number, subject: string}|null,
  *          onSend: (payload: {to: string[], cc: string[], subject: string,
  *                             body: string, threadId: number|null})
  *                  => Promise<unknown>,
@@ -108,7 +107,6 @@ const ComposeEmailDialog = ({
   onOpenChange,
   applicationId,
   defaultTo,
-  defaultCc,
   replyThread,
   onSend,
   sending,
@@ -148,10 +146,10 @@ const ComposeEmailDialog = ({
   useEffect(() => {
     if (!open) return;
     setTo(defaultTo ?? "");
-    // Prefill (but keep editable) Cc: the thread's prior Cc on a reply,
-    // otherwise the recruiter's own address for a new email.
-    const prefillCc = replyThread?.defaultCc ?? defaultCc ?? [];
-    setCc(prefillCc.join(", "));
+    // Cc starts empty, for a reply too: the sender hears about a reply from a
+    // notification, so copying themselves would only show the candidate a
+    // personal address.
+    setCc("");
     const base = replyThread?.subject ?? "";
     setSubject(
       replyThread ? (base.startsWith("Re:") ? base : `Re: ${base}`) : "",
@@ -166,7 +164,7 @@ const ComposeEmailDialog = ({
     setPendingTemplate(null);
     setAppliedTemplateLabel("");
     setUnfilledCount(0);
-  }, [open, defaultTo, defaultCc, replyThread]);
+  }, [open, defaultTo, replyThread]);
 
   useEffect(() => {
     if (!open) return;
