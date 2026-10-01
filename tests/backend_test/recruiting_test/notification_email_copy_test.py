@@ -130,7 +130,7 @@ class TestRender(unittest.TestCase):
 
         self.assertEqual(subject, "Posting review requested: Backend Engineer")
         self.assertIn("waiting on your decision", body)
-        self.assertIn("Open My Posting Reviews in Purrf", body)
+        self.assertIn("Open Job Postings in Purrf", body)
         # A CLOSE or REOPEN review is not about publishing, so the copy must
         # not promise anything about publication.
         self.assertNotIn("publish", body.lower())
