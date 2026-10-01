@@ -3893,20 +3893,18 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(screen.getByLabelText("Cc")).toHaveValue("rec@x.com, boss@x.com");
   });
 
-  it("Refresh re-fetches with refresh=true", async () => {
+  it("the Emails tab has no Refresh button, for an owner either", async () => {
     ownerViewing();
     const user = userEvent.setup();
     renderPage();
     await waitLoaded();
     await user.click(screen.getByRole("tab", { name: "Emails" }));
-    api.getApplicationEmails.mockClear();
-    await user.click(screen.getByRole("button", { name: "Refresh" }));
-    await waitFor(() =>
-      expect(api.getApplicationEmails).toHaveBeenCalledWith("101", {
-        refresh: true,
-      }),
-    );
-    expect(toast.success).toHaveBeenCalledWith("Refreshed.");
+    expect(
+      await screen.findByRole("button", { name: "Send email" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Refresh" }),
+    ).not.toBeInTheDocument();
   });
 
   /**

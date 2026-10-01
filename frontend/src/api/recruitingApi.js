@@ -264,10 +264,8 @@ export const getApplicationComments = (id) =>
 export const postComment = (id, body) =>
   request.post(API_ENDPOINTS.RECRUITING_APPLICATION_COMMENTS(id), body);
 
-export const getApplicationEmails = (id, { refresh = false } = {}) =>
-  request.get(API_ENDPOINTS.RECRUITING_APPLICATION_EMAILS(id), {
-    params: refresh ? { refresh: true } : {},
-  });
+export const getApplicationEmails = (id) =>
+  request.get(API_ENDPOINTS.RECRUITING_APPLICATION_EMAILS(id));
 
 export const sendApplicationEmail = (id, body) =>
   request.post(API_ENDPOINTS.RECRUITING_APPLICATION_EMAILS(id), body);
