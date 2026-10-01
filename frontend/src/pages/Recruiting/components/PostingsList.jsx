@@ -7,15 +7,16 @@ import { unavailablePersonLabel } from "@/pages/Recruiting/components/personLabe
  * line, and a click-through to the unified job detail page. All lifecycle
  * actions (Edit/Submit/Delete/Request close/Request reopen) live on that
  * detail page now, not here, so this list is safe to show to
- * `RECRUITING_JOB_READ`-only viewers too.
+ * `RECRUITING_JOB_READ`-only viewers too. It draws no frame of its own:
+ * it sits inside the page's Postings card.
  *
  * @param {{jobs: object[], ownersById?: Record<number, string>,
  *          onRowClick: (job: object) => void}} props
  */
 const PostingsList = ({ jobs, ownersById = {}, onRowClick }) => (
-  <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
+  <div className="divide-y divide-slate-200">
     {jobs.length === 0 && (
-      <p className="p-6 text-sm text-slate-500">No postings yet.</p>
+      <p className="px-5 py-4 text-sm text-slate-500">No postings yet.</p>
     )}
     {jobs.map((job) => {
       const ownerIds = job.pipelineConfig?.ownerIds ?? [];
@@ -24,7 +25,7 @@ const PostingsList = ({ jobs, ownersById = {}, onRowClick }) => (
         <button
           key={job.id}
           type="button"
-          className="flex w-full items-center gap-3 p-4 text-left hover:bg-slate-50"
+          className="flex w-full items-center gap-3 px-5 py-4 text-left last:rounded-b-lg hover:bg-slate-50"
           onClick={() => onRowClick(job)}
         >
           <div className="min-w-0 flex-1">

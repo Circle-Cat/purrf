@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import {
   createMemoryRouter,
   RouterProvider,
@@ -114,6 +120,24 @@ describe("Postings", () => {
       row.compareDocumentPosition(newPosting) &
         Node.DOCUMENT_POSITION_PRECEDING,
     ).toBeTruthy();
+  });
+
+  it("titles the page Job Postings and keeps the list's controls in the Postings card", async () => {
+    renderPage();
+    await waitFor(() => screen.getByText("Backend Engineer"));
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Job Postings" }),
+    ).toBeInTheDocument();
+    const card = screen
+      .getByRole("heading", { level: 2, name: "Postings" })
+      .closest("section");
+    expect(
+      within(card).getByRole("button", { name: "New posting" }),
+    ).toBeInTheDocument();
+    expect(
+      within(card).getByRole("checkbox", { name: "I'm the recruiter" }),
+    ).toBeInTheDocument();
+    expect(within(card).getByText("Backend Engineer")).toBeInTheDocument();
   });
 
   it("disables New posting when the user lacks recruiting.job.write", async () => {

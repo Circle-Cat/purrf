@@ -10,11 +10,12 @@ import { listJobs, listJobOwners, listMyReviews } from "@/api/recruitingApi";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import PostingsList from "@/pages/Recruiting/components/PostingsList";
 import ReviewQueue from "@/pages/Recruiting/components/ReviewQueue";
+import SectionCard from "@/pages/Recruiting/components/SectionCard";
 
 /**
- * Postings browse page: status + Recruiter list, click-through to the unified
- * detail page. A reviewer also sees the postings waiting on their decision
- * above the list.
+ * Job Postings page: a card of the postings waiting on the viewer's review
+ * (approvers only), then a card of all postings with status + Recruiter and a
+ * click-through to the unified detail page.
  */
 const Postings = () => {
   const { user, permissions = [] } = useAuth();
@@ -60,43 +61,50 @@ const Postings = () => {
   }, [jobs, myPostingsOnly, user?.userId]);
 
   return (
-    <div className="space-y-4 p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">Postings</h1>
-        {/* In the header, not under the list: unlike Save in the editor or
-            Add question in the builder, starting a new posting has nothing to
-            do with what is on the page, so it should not be somewhere the
-            reader has to scroll a long list of postings to reach. */}
-        <div className="flex items-center gap-2">
-          <Button
-            disabled={!canWrite}
-            onClick={() => navigate(ROUTE_PATHS.RECRUITING_POSTING_NEW)}
-          >
-            New posting
-          </Button>
-        </div>
-      </div>
+    <div className="space-y-6 p-6">
+      <h1 className="text-xl font-semibold text-slate-900">Job Postings</h1>
       <ReviewQueue
         reviews={reviews}
         onOpen={(review) =>
           navigate(ROUTE_PATHS.RECRUITING_POSTING_DETAIL(review.jobId))
         }
       />
-      <div className="flex items-center gap-2">
-        <Checkbox
-          id="my-postings"
-          checked={myPostingsOnly}
-          onCheckedChange={(checked) => setMyPostingsOnly(Boolean(checked))}
-        />
-        <Label htmlFor="my-postings">I&apos;m the recruiter</Label>
-      </div>
-      <PostingsList
-        jobs={visibleJobs}
-        ownersById={ownersById}
-        onRowClick={(job) =>
-          navigate(ROUTE_PATHS.RECRUITING_POSTING_DETAIL(job.id))
+      {/* New posting sits in the card header, not under the list: starting a
+          new posting has nothing to do with what is on the page, so it should
+          not be somewhere the reader has to scroll a long list of postings to
+          reach. */}
+      <SectionCard
+        title="Postings"
+        right={
+          <>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="my-postings"
+                checked={myPostingsOnly}
+                onCheckedChange={(checked) =>
+                  setMyPostingsOnly(Boolean(checked))
+                }
+              />
+              <Label htmlFor="my-postings">I&apos;m the recruiter</Label>
+            </div>
+            <Button
+              size="sm"
+              disabled={!canWrite}
+              onClick={() => navigate(ROUTE_PATHS.RECRUITING_POSTING_NEW)}
+            >
+              New posting
+            </Button>
+          </>
         }
-      />
+      >
+        <PostingsList
+          jobs={visibleJobs}
+          ownersById={ownersById}
+          onRowClick={(job) =>
+            navigate(ROUTE_PATHS.RECRUITING_POSTING_DETAIL(job.id))
+          }
+        />
+      </SectionCard>
     </div>
   );
 };

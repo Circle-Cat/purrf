@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import SectionCard from "@/pages/Recruiting/components/SectionCard";
 import TermHint from "@/pages/Recruiting/components/TermHint";
 import { reviewTermId } from "@/pages/Recruiting/components/glossary";
 import { formatDateWithZone, resolveViewerTimezone } from "@/utils/dateTime";
@@ -23,13 +24,12 @@ const ReviewQueue = ({ reviews, onOpen }) => {
   if (reviews.length === 0) return null;
   const timezone = resolveViewerTimezone();
   return (
-    <section className="rounded-lg border border-slate-200 bg-white">
-      <header className="flex items-center gap-3 border-b border-slate-200 px-5 py-3">
-        <h2 className="text-sm font-semibold">Pending approvals</h2>
-        <span className="ml-auto text-xs text-slate-500">
-          {reviews.length} waiting
-        </span>
-      </header>
+    <SectionCard
+      title="Pending approvals"
+      right={
+        <span className="text-xs text-slate-500">{reviews.length} waiting</span>
+      }
+    >
       <ul className="divide-y divide-slate-200 px-5">
         {reviews.map((r) => {
           const termId = reviewTermId(r.kind);
@@ -60,7 +60,7 @@ const ReviewQueue = ({ reviews, onOpen }) => {
           );
         })}
       </ul>
-    </section>
+    </SectionCard>
   );
 };
 
