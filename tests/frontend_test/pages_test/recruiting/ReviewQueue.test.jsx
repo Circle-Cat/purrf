@@ -26,7 +26,7 @@ describe("ReviewQueue", () => {
     expect(screen.getByText("Job #42")).toBeInTheDocument();
   });
 
-  it("shows a human-readable, Request-suffixed badge for each review kind", () => {
+  it("shows a human-readable, Request-suffixed label for each review kind", () => {
     const reviews = [
       { reviewId: 1, jobId: 1, jobTitle: "A", kind: "initial" },
       { reviewId: 2, jobId: 2, jobTitle: "B", kind: "revision" },
@@ -47,13 +47,41 @@ describe("ReviewQueue", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("counts the pending reviews in its title", () => {
+  it("counts the pending reviews in its header", () => {
     const reviews = [
       { reviewId: 1, jobId: 1, jobTitle: "A", kind: "initial" },
       { reviewId: 2, jobId: 2, jobTitle: "B", kind: "close" },
     ];
     render(<ReviewQueue reviews={reviews} onOpen={() => {}} />);
-    expect(screen.getByText("Waiting for your review (2)")).toBeInTheDocument();
+    expect(screen.getByText("Pending approvals")).toBeInTheDocument();
+    expect(screen.getByText("2 waiting")).toBeInTheDocument();
+  });
+
+  it("says when each review was submitted, in the viewer's timezone", () => {
+    const reviews = [
+      {
+        reviewId: 1,
+        jobId: 1,
+        jobTitle: "A",
+        kind: "initial",
+        createdAt: "2026-09-28T03:00:00Z",
+      },
+    ];
+    render(<ReviewQueue reviews={reviews} onOpen={() => {}} />);
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    expect(
+      screen.getByText(new RegExp(`Submitted 2026-09-2\\d ${tz}`)),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves the submitted time out when the review has none", () => {
+    render(
+      <ReviewQueue
+        reviews={[{ reviewId: 1, jobId: 1, jobTitle: "A", kind: "initial" }]}
+        onOpen={() => {}}
+      />,
+    );
+    expect(screen.queryByText(/Submitted/)).not.toBeInTheDocument();
   });
 
   it("explains what approving or rejecting each request kind does", async () => {

@@ -179,9 +179,7 @@ describe("Postings", () => {
       api.listMyReviews.mockResolvedValue({ data: [pendingReview] });
       renderWithDetail();
 
-      expect(
-        await screen.findByText("Waiting for your review (1)"),
-      ).toBeInTheDocument();
+      expect(await screen.findByText("Pending approvals")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: "Review" }));
       await waitFor(() =>
         expect(screen.getByText("detail page 7")).toBeInTheDocument(),
@@ -196,9 +194,7 @@ describe("Postings", () => {
       renderPage();
       await waitFor(() => screen.getByText("Backend Engineer"));
       expect(api.listMyReviews).toHaveBeenCalled();
-      expect(
-        screen.queryByText(/Waiting for your review/),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText("Pending approvals")).not.toBeInTheDocument();
     });
 
     // The reviews route 403s without job.approve.
