@@ -99,11 +99,6 @@ const Sidebar = () => {
       ],
     },
     {
-      label: "My Posting Reviews",
-      to: ROUTE_PATHS.RECRUITING_REVIEWS,
-      permissions: [PERMISSIONS.RECRUITING_JOB_APPROVE],
-    },
-    {
       label: "Recruiting Audit",
       to: ROUTE_PATHS.RECRUITING_AUDIT,
       permissions: [PERMISSIONS.RECRUITING_AUDIT_READ],

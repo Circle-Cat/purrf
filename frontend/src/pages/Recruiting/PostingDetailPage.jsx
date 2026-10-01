@@ -122,7 +122,7 @@ const PostingDetailPage = () => {
     // It's how this page learns the *actual* review_id to decide on: JobDto
     // only exposes reviewerId (the assigned user), never the review cycle's
     // own id, and only the assigned reviewer's own listMyReviews() call can
-    // see it (mirrors MyReviews.jsx's existing self-scoped fetch).
+    // see it (the same self-scoped fetch as the postings page's review card).
     Promise.all([
       getJob(id),
       listApprovers(),

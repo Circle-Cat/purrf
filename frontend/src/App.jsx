@@ -25,7 +25,6 @@ import AdminAccounts from "@/pages/AdminAccounts";
 import Postings from "@/pages/Recruiting/Postings";
 import PostingEditor from "@/pages/Recruiting/postings/PostingEditor";
 import PostingDetailPage from "@/pages/Recruiting/PostingDetailPage";
-import MyReviews from "@/pages/Recruiting/MyReviews";
 import JobDetailPage from "@/pages/Recruiting/JobDetailPage";
 import MyApplication from "@/pages/Recruiting/MyApplication";
 import JobsBrowse from "@/pages/Recruiting/JobsBrowse";
@@ -224,18 +223,6 @@ function App() {
                           ]}
                         >
                           <PostingEditor />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path={ROUTE_PATHS.RECRUITING_REVIEWS}
-                      element={
-                        <ProtectedRoute
-                          requiredPermissions={[
-                            PERMISSIONS.RECRUITING_JOB_APPROVE,
-                          ]}
-                        >
-                          <MyReviews />
                         </ProtectedRoute>
                       }
                     />
