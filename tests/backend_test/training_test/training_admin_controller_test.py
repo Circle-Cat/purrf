@@ -810,22 +810,21 @@ class TestAudiencePagingBounds(unittest.TestCase):
 class TestTrainingAudienceRoutes(TestTrainingAdminController):
     """The two reads behind the bulk assignment card."""
 
-    def test_the_audience_routes_are_gated_on_the_write_grant(self):
+    def test_a_reader_can_search_but_only_a_writer_can_select_everyone(self):
         by_method = {
             (route.path, method): _route_permissions(route)
             for route in self.controller.router.routes
             for method in route.methods
         }
 
-        for path in [
-            TRAINING_ASSIGNMENTS_AUDIENCE_ENDPOINT,
-            TRAINING_ASSIGNMENTS_AUDIENCE_IDS_ENDPOINT,
-        ]:
-            self.assertEqual(
-                by_method[(path, "GET")],
-                [Permission.TRAINING_ADMIN_WRITE],
-                msg=f"GET {path}",
-            )
+        self.assertEqual(
+            by_method[(TRAINING_ASSIGNMENTS_AUDIENCE_ENDPOINT, "GET")],
+            [Permission.TRAINING_ADMIN_READ],
+        )
+        self.assertEqual(
+            by_method[(TRAINING_ASSIGNMENTS_AUDIENCE_IDS_ENDPOINT, "GET")],
+            [Permission.TRAINING_ADMIN_WRITE],
+        )
 
     async def test_searching_the_audience_hands_over_the_filters_and_the_page(self):
         filters = TrainingAudienceFilterDto(search="ada", user_type="internal")
@@ -907,7 +906,7 @@ class TestBulkAssignmentRoute(TestTrainingAdminController):
 class TestOnePersonsAssignmentsRoute(TestTrainingAdminController):
     """The read-only list behind an expanded row."""
 
-    def test_the_route_is_gated_on_the_write_grant(self):
+    def test_the_route_is_gated_on_the_read_grant(self):
         by_method = {
             (route.path, method): _route_permissions(route)
             for route in self.controller.router.routes
@@ -916,7 +915,7 @@ class TestOnePersonsAssignmentsRoute(TestTrainingAdminController):
 
         self.assertEqual(
             by_method[(TRAINING_USER_ASSIGNMENTS_ENDPOINT, "GET")],
-            [Permission.TRAINING_ADMIN_WRITE],
+            [Permission.TRAINING_ADMIN_READ],
         )
 
     async def test_it_hands_back_what_that_person_holds(self):
