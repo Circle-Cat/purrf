@@ -73,6 +73,7 @@ from backend.internal_activity_service.summary_service import SummaryService
 from backend.common.environment_constants import (
     GMAIL_SENDER_RECRUITING,
     GMAIL_SENDER_NOTIFICATION,
+    GMAIL_WATCH_TOPIC,
     JIRA_SERVER,
     JIRA_USER,
     MENTORSHIP_CALENDAR_ID,
@@ -185,6 +186,15 @@ from backend.repository.email_thread_repository import EmailThreadRepository
 from backend.repository.email_message_repository import EmailMessageRepository
 from backend.common.gmail_client import GmailClient
 from backend.communication.email_conversation_service import EmailConversationService
+from backend.communication.email_context_registry import EmailContextRegistry
+from backend.communication.gmail_push_controller import GmailPushController
+from backend.communication.gmail_push_service import GmailPushService
+from backend.communication.gmail_maintenance_service import GmailMaintenanceService
+from backend.communication.gmail_sync_controller import GmailSyncController
+from backend.communication.gmail_sync_service import GmailSyncService
+from backend.ops.ops_alert_service import OpsAlertService
+from backend.repository.gmail_sync_state_repository import GmailSyncStateRepository
+from backend.common.communication_enums import ContextType
 from backend.communication.meeting_scheduling_service import MeetingSchedulingService
 from backend.repository.block_request_repository import BlockRequestRepository
 from backend.repository.user_permissions_repository import UserPermissionsRepository
@@ -930,6 +940,47 @@ class AppDependencyBuilder:
             application_repository=self.application_repository,
             logger=self.logger,
         )
+        self.email_context_registry = EmailContextRegistry()
+        self.email_context_registry.register(
+            ContextType.APPLICATION, self.email_sync_service
+        )
+        # Optional: an environment whose mailbox has no watch yet boots
+        # normally and the daily job reports it as skipped.
+        gmail_watch_topic = os.getenv(GMAIL_WATCH_TOPIC) or None
+        self.gmail_sync_state_repository = GmailSyncStateRepository()
+        self.ops_alert_service = OpsAlertService(logger=self.logger)
+        self.gmail_sync_service = GmailSyncService(
+            gmail_client=self.gmail_client,
+            state_repository=self.gmail_sync_state_repository,
+            thread_repository=self.email_thread_repository,
+            context_registry=self.email_context_registry,
+            ops_alerts=self.ops_alert_service,
+            watch_topic=gmail_watch_topic,
+            database=self.database,
+            logger=self.logger,
+        )
+        # Pub/Sub pushes for Gmail use the same service account as the
+        # notification pushes, so the allowlist is shared.
+        self.gmail_push_service = GmailPushService(
+            logger=self.logger,
+            gmail_sync_service=self.gmail_sync_service,
+            auth_service=self.authentication_service,
+            pusher_subs=self.notification_pusher_subs,
+            database=self.database,
+        )
+        self.gmail_maintenance_service = GmailMaintenanceService(
+            logger=self.logger,
+            gmail_sync_service=self.gmail_sync_service,
+            database=self.database,
+        )
+        self.gmail_push_controller = GmailPushController(
+            gmail_push_service=self.gmail_push_service,
+            database=self.database,
+        )
+        self.gmail_sync_controller = GmailSyncController(
+            gmail_maintenance_service=self.gmail_maintenance_service,
+            database=self.database,
+        )
         self.recruiting_controller = RecruitingController(
             job_service=self.job_service,
             email_sync_service=self.email_sync_service,
@@ -1189,6 +1240,8 @@ class AppDependencyBuilder:
             leave_calendar_controller=self.leave_calendar_controller,
             leave_balance_controller=self.leave_balance_controller,
             notification_delivery_controller=self.notification_delivery_controller,
+            gmail_push_controller=self.gmail_push_controller,
+            gmail_sync_controller=self.gmail_sync_controller,
             notification_publisher=self.notification_publisher_client,
             notification_topic_path=self.notification_topic_path,
             launchdarkly_client=self.launchdarkly_client,

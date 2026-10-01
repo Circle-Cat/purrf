@@ -11,6 +11,7 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from backend.common.api_endpoints import (
+    GMAIL_PUSH_ENDPOINT,
     MENTORSHIP_MATCH_RUN_COMPLETE,
     NOTIFICATION_DELIVER_ENDPOINT,
     TRAINING_CONTENT_ENDPOINT,
@@ -576,6 +577,30 @@ class TestAuthMiddleware(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.text, "delivered")
+        self.mock_auth_service.authenticate_request.assert_not_called()
+        self.mock_database.session.assert_not_called()
+
+    def test_gmail_push_skips_authentication(self):
+        """Pub/Sub pushes Gmail changes with a Google OIDC token and no Auth0
+        session, so the middleware must let them through; the route checks the
+        token itself.
+        """
+        self.mock_auth_service.authenticate_request.side_effect = ValueError(
+            "Missing authentication credentials"
+        )
+        self.app.router.routes.append(
+            Route(
+                f"/api{GMAIL_PUSH_ENDPOINT}",
+                lambda request: PlainTextResponse("pushed"),
+                methods=["POST"],
+            )
+        )
+
+        client = self._add_middleware()
+        response = client.post(f"/api{GMAIL_PUSH_ENDPOINT}", json={})
+
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.text, "pushed")
         self.mock_auth_service.authenticate_request.assert_not_called()
         self.mock_database.session.assert_not_called()
 

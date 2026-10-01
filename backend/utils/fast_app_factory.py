@@ -62,6 +62,8 @@ class FastAppFactory:
         leave_calendar_controller,
         leave_balance_controller,
         notification_delivery_controller,
+        gmail_push_controller,
+        gmail_sync_controller,
         notification_publisher,
         notification_topic_path,
         launchdarkly_client,
@@ -98,6 +100,8 @@ class FastAppFactory:
             leave_request_controller: An instance of LeaveRequestController that manages the routes employees file leave through and managers decide on.
             leave_calendar_controller: An instance of LeaveCalendarController that manages API routes for the company holiday calendar and the read-only leave policy.
             notification_delivery_controller: An instance of NotificationDeliveryController that manages the Pub/Sub push endpoint which sends notification emails.
+            gmail_push_controller: An instance of GmailPushController that manages the Pub/Sub push endpoint Gmail change notifications arrive on.
+            gmail_sync_controller: An instance of GmailSyncController that manages the daily Gmail maintenance and manual full resync endpoints.
             notification_publisher: Pub/Sub publisher client used to deliver a
                 notification once its creating transaction commits.
             notification_topic_path: Fully qualified Pub/Sub topic
@@ -137,6 +141,8 @@ class FastAppFactory:
         self.leave_calendar_controller = leave_calendar_controller
         self.leave_balance_controller = leave_balance_controller
         self.notification_delivery_controller = notification_delivery_controller
+        self.gmail_push_controller = gmail_push_controller
+        self.gmail_sync_controller = gmail_sync_controller
         self.notification_publisher = notification_publisher
         self.notification_topic_path = notification_topic_path
         self.launchdarkly_client = launchdarkly_client
@@ -249,6 +255,8 @@ class FastAppFactory:
         # policy in front of it, the same trust boundary every other route
         # behind Access relies on.
         app.include_router(self.notification_delivery_controller.router, prefix="/api")
+        app.include_router(self.gmail_push_controller.router, prefix="/api")
+        app.include_router(self.gmail_sync_controller.router, prefix="/api")
 
         @app.get("/fastapi/health")
         def health_check():

@@ -114,6 +114,11 @@ GMAIL_SENDER_RECRUITING = "GMAIL_SENDER_RECRUITING"
 # own alias so a non-prod message can never look like a prod one.
 GMAIL_SENDER_NOTIFICATION = "GMAIL_SENDER_NOTIFICATION"
 
+# Fully qualified Pub/Sub topic that Gmail users.watch publishes this
+# mailbox's changes to. One topic per mailbox: environments sharing a mailbox
+# must pass the same topic, or each watch call replaces the other's.
+GMAIL_WATCH_TOPIC = "GMAIL_WATCH_TOPIC"
+
 # Fully qualified Pub/Sub topic (``projects/<p>/topics/<t>``) that
 # publish_on_commit.install_publish_listener() publishes to once a
 # notification-creating transaction commits. Holds the whole path, not just
