@@ -41,6 +41,9 @@ const describe = (n) => {
         ? `${started} did not finish`
         : `${started} has finished`;
     }
+    // Told to ops.maintain holders; the kind comes from details.
+    case "ops.gmail_sync_alert":
+      return `Gmail sync needs attention: ${(n.details?.kind ?? "unknown").replaceAll("_", " ")}`;
     case "recruiting.reassigned":
       return `${actor} assigned you to evaluate ${n.applicantName} — ${n.jobTitle}`;
     case "recruiting.auto_assigned":

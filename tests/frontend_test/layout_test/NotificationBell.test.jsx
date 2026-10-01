@@ -421,6 +421,23 @@ describe("NotificationBell", () => {
       screen.getByText("The matching run you started has finished"),
     ).toBeInTheDocument();
   });
+
+  it("tells an ops.maintain holder the Gmail sync needs attention", async () => {
+    await openWith({
+      id: 6,
+      eventType: "ops.gmail_sync_alert",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-09-30T00:00:00Z",
+      details: { kind: "watch_renewal_failed" },
+    });
+
+    expect(
+      screen.getByText("Gmail sync needs attention: watch renewal failed"),
+    ).toBeInTheDocument();
+  });
 });
 
 const MENTION = {
