@@ -188,6 +188,8 @@ from backend.common.gmail_client import GmailClient
 from backend.communication.email_conversation_service import EmailConversationService
 from backend.communication.email_context_registry import EmailContextRegistry
 from backend.communication.gmail_push_controller import GmailPushController
+from backend.communication.gmail_push_service import GmailPushService
+from backend.communication.gmail_maintenance_service import GmailMaintenanceService
 from backend.communication.gmail_sync_controller import GmailSyncController
 from backend.communication.gmail_sync_service import GmailSyncService
 from backend.ops.ops_alert_service import OpsAlertService
@@ -959,16 +961,24 @@ class AppDependencyBuilder:
         )
         # Pub/Sub pushes for Gmail use the same service account as the
         # notification pushes, so the allowlist is shared.
-        self.gmail_push_controller = GmailPushController(
+        self.gmail_push_service = GmailPushService(
+            logger=self.logger,
+            gmail_sync_service=self.gmail_sync_service,
+            auth_service=self.authentication_service,
+            pusher_subs=self.notification_pusher_subs,
+            database=self.database,
+        )
+        self.gmail_maintenance_service = GmailMaintenanceService(
             logger=self.logger,
             gmail_sync_service=self.gmail_sync_service,
             database=self.database,
-            auth_service=self.authentication_service,
-            pusher_subs=self.notification_pusher_subs,
+        )
+        self.gmail_push_controller = GmailPushController(
+            gmail_push_service=self.gmail_push_service,
+            database=self.database,
         )
         self.gmail_sync_controller = GmailSyncController(
-            logger=self.logger,
-            gmail_sync_service=self.gmail_sync_service,
+            gmail_maintenance_service=self.gmail_maintenance_service,
             database=self.database,
         )
         self.recruiting_controller = RecruitingController(

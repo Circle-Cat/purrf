@@ -31,12 +31,14 @@ class PushOutcome(StrEnum):
 
     RESYNC is acknowledged like ACK; the caller then runs
     ``run_scheduled_resync`` after the response, because a full resync
-    outlasts Pub/Sub's ack deadline.
+    outlasts Pub/Sub's ack deadline. REFUSED comes only from
+    ``GmailPushService``, for a caller that is not a provisioned pusher.
     """
 
     ACK = "ack"
     RETRY = "retry"
     RESYNC = "resync"
+    REFUSED = "refused"
 
 
 def _now():

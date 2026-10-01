@@ -54,6 +54,22 @@ py_test(
 )
 
 py_test(
+    name = "gmail_push_service_test",
+    srcs = ["gmail_push_service_test.py"],
+    deps = [
+        "//backend/communication",
+    ],
+)
+
+py_test(
+    name = "gmail_maintenance_service_test",
+    srcs = ["gmail_maintenance_service_test.py"],
+    deps = [
+        "//backend/communication",
+    ],
+)
+
+py_test(
     name = "gmail_sync_service_test",
     srcs = ["gmail_sync_service_test.py"],
     deps = [
