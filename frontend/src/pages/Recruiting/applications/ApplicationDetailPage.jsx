@@ -755,57 +755,38 @@ const EmailMessageBubble = ({ message, timezone }) => {
 /**
  * One application's email conversation.
  *
- * `canSend` and `canRefresh` are separate gates, not one flag: sending is
- * owner-only (`send_application_email` refuses `read.all`), while Refresh
- * triggers a Gmail sync that `read.all` may also run. The read-only reuse
- * inside an expanded other-application row turns both off, which drops the
- * toolbar entirely. `sendDisabledHint` keeps Send/Reply rendered but disabled
- * and titled, for an owner who lacks the grant sending needs.
+ * Sending is owner-only (`send_application_email` refuses `read.all`). The
+ * read-only reuse inside an expanded other-application row turns `canSend`
+ * off, which drops the toolbar entirely. `sendDisabledHint` keeps Send/Reply
+ * rendered but disabled and titled, for an owner who lacks the grant sending
+ * needs.
  *
  * @param {{conversation: {threads: object[]}|null, canSend: boolean,
- *          canRefresh?: boolean, sendDisabledHint?: string,
- *          onCompose?: () => void,
- *          onReply?: (thread: object) => void, onRefresh?: () => void,
- *          refreshing?: boolean, timezone: string}} props
+ *          sendDisabledHint?: string, onCompose?: () => void,
+ *          onReply?: (thread: object) => void, timezone: string}} props
  */
 const EmailsPanel = ({
   conversation,
   canSend,
-  canRefresh = true,
   sendDisabledHint,
   onCompose,
   onReply,
-  onRefresh,
-  refreshing,
   timezone,
 }) => {
   const threads = conversation?.threads ?? [];
   return (
     <div className="space-y-4">
-      {(canSend || canRefresh) && (
+      {canSend && (
         <div className="flex items-center gap-2">
-          {canSend && (
-            <Button
-              type="button"
-              size="sm"
-              disabled={Boolean(sendDisabledHint)}
-              title={sendDisabledHint}
-              onClick={onCompose}
-            >
-              Send email
-            </Button>
-          )}
-          {canRefresh && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={onRefresh}
-              disabled={refreshing}
-            >
-              Refresh
-            </Button>
-          )}
+          <Button
+            type="button"
+            size="sm"
+            disabled={Boolean(sendDisabledHint)}
+            title={sendDisabledHint}
+            onClick={onCompose}
+          >
+            Send email
+          </Button>
         </div>
       )}
       {threads.length === 0 ? (
@@ -882,7 +863,6 @@ const RowEmails = ({ visible, state, timezone }) => {
     <EmailsPanel
       conversation={state.conversation}
       canSend={false}
-      canRefresh={false}
       timezone={timezone}
     />
   );
@@ -1219,7 +1199,6 @@ const ApplicationDetailPage = () => {
     defaultCc: [],
   });
   const [sendingEmail, setSendingEmail] = useState(false);
-  const [refreshingEmails, setRefreshingEmails] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [replyThread, setReplyThread] = useState(null);
 
@@ -1847,18 +1826,6 @@ const ApplicationDetailPage = () => {
       .finally(() => setSendingEmail(false));
   };
 
-  const handleRefreshEmails = () => {
-    if (refreshingEmails) return;
-    setRefreshingEmails(true);
-    getApplicationEmails(applicationId, { refresh: true })
-      .then(({ data }) => {
-        setEmails(data);
-        toast.success("Refreshed.");
-      })
-      .catch((e) => toast.error(e.message))
-      .finally(() => setRefreshingEmails(false));
-  };
-
   const openCompose = () => {
     setReplyThread(null);
     setComposeOpen(true);
@@ -2119,8 +2086,6 @@ const ApplicationDetailPage = () => {
                     sendDisabledHint={operateHint}
                     onCompose={openCompose}
                     onReply={openReply}
-                    onRefresh={handleRefreshEmails}
-                    refreshing={refreshingEmails}
                     timezone={viewerTimezone}
                   />
                   <ComposeEmailDialog

@@ -85,21 +85,11 @@ describe("recruitingApi", () => {
     expect(request.get).toHaveBeenCalledWith("/recruiting/jobs/9/activity");
   });
 
-  it("getApplicationEmails GETs the emails endpoint (no refresh by default)", async () => {
+  it("getApplicationEmails GETs the emails endpoint with no params", async () => {
     request.get.mockResolvedValue({ data: { threads: [] } });
     await getApplicationEmails(10);
     expect(request.get).toHaveBeenCalledWith(
       "/recruiting/applications/10/emails",
-      { params: {} },
-    );
-  });
-
-  it("getApplicationEmails passes refresh=true when requested", async () => {
-    request.get.mockResolvedValue({ data: { threads: [] } });
-    await getApplicationEmails(10, { refresh: true });
-    expect(request.get).toHaveBeenCalledWith(
-      "/recruiting/applications/10/emails",
-      { params: { refresh: true } },
     );
   });
 
