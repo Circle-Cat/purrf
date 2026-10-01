@@ -3,6 +3,7 @@
 import asyncio
 import pathlib
 import posixpath
+import secrets
 from dataclasses import dataclass
 
 from backend.common.exceptions import ConflictError
@@ -158,6 +159,10 @@ class TrainingContentService:
         -- which package it names has to be decided at signing time, never by
         a caller asking for one.
 
+        Opening a run makes it the one whose commits this assignment accepts,
+        and commits that before answering: any tab opened earlier on the same
+        assignment is refused from its next save on.
+
         Args:
             session: The active async database session.
             training_id (int): The assignment being opened.
@@ -270,7 +275,27 @@ class TrainingContentService:
                 session, training_id
             )
 
-        opened = self._mint(package, training_id, user_id, progress)
+        # The newest tab wins. Two tabs on one assignment are both seeded from
+        # the row as it stood when each opened, and each commits its own
+        # in-memory model every twenty seconds; suspend_data is opaque, so
+        # nothing can merge them, and whichever commits last would silently
+        # put the learner back wherever that tab was. Opening a run hands it
+        # the assignment, and the progress service refuses a commit from any
+        # run opened before it. Only the learner's door: a trial stores no
+        # progress for another tab to overwrite, and taking over would refuse
+        # the verifier's own learner tab for nothing.
+        run_id = None
+        if state is TrainingPackageState.LIVE:
+            run_id = secrets.token_urlsafe(16)
+
+        opened = self._mint(package, training_id, user_id, progress, run_id=run_id)
+
+        if run_id is not None:
+            assignment.active_run_id = run_id
+            # Nothing above writes, and this is called straight from the
+            # controller, whose session never commits on its own.
+            await session.commit()
+
         # One line per course opening, not per file: this is the only record
         # tying a burst of content requests back to a person and a package.
         self.logger.info(
@@ -334,11 +359,20 @@ class TrainingContentService:
         return self._mint(package, None, user_id, None)
 
     def _mint(
-        self, package, training_id: int | None, user_id: int, progress
+        self,
+        package,
+        training_id: int | None,
+        user_id: int,
+        progress,
+        run_id: str | None = None,
     ) -> TrainingSessionDto:
         """Sign one run of one package and say where it loads from."""
         token, expires_at = issue_content_token(
-            self.signing_key, training_id, user_id, package_id=package.package_id
+            self.signing_key,
+            training_id,
+            user_id,
+            package_id=package.package_id,
+            run_id=run_id,
         )
         return TrainingSessionDto(
             content_base_url=f"https://{self.content_host}/p/{token}/",

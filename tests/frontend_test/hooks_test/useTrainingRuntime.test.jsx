@@ -418,6 +418,70 @@ describe("useTrainingRuntime and a run the server no longer serves", () => {
     await waitFor(() => expect(result.current.sessionStale).toBe(true));
   });
 
+  // What the server answers a commit from a tab once a newer one has opened
+  // the same assignment: a 409 like the replaced package, told apart by code.
+  const supersededRefusal = () =>
+    Object.assign(new Error("refused"), {
+      response: {
+        status: 409,
+        data: {
+          success: false,
+          message: "This course is open in another tab.",
+          data: { code: "training_run_superseded" },
+        },
+      },
+    });
+
+  it("says the course is open elsewhere when a newer tab took it over", async () => {
+    api.saveProgress.mockRejectedValue(supersededRefusal());
+    const { result } = await renderRuntime();
+
+    await act(async () => {
+      window.dispatchEvent(commit(cmiWith("incomplete")));
+    });
+
+    await waitFor(() => expect(result.current.sessionSuperseded).toBe(true));
+    expect(result.current.saveFailed).toBe(true);
+    // Different advice: a replaced package is fixed by reloading, and
+    // reloading here would take the course back from the newer tab.
+    expect(result.current.sessionStale).toBe(false);
+  });
+
+  it("does not call a replaced package open elsewhere", async () => {
+    api.saveProgress.mockRejectedValue(refusal(409));
+    const { result } = await renderRuntime();
+
+    await act(async () => {
+      window.dispatchEvent(commit(cmiWith("incomplete")));
+    });
+
+    await waitFor(() => expect(result.current.sessionStale).toBe(true));
+    expect(result.current.sessionSuperseded).toBe(false);
+  });
+
+  it("stops saving once a newer tab has taken the course over", async () => {
+    // Every later commit would get the same answer, and the parting save on
+    // close would only be refused again.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+    api.saveProgress.mockRejectedValue(supersededRefusal());
+    const { result } = await renderRuntime();
+
+    await act(async () => {
+      window.dispatchEvent(commit(cmiWith("incomplete")));
+    });
+    await waitFor(() => expect(result.current.sessionSuperseded).toBe(true));
+
+    await act(async () => {
+      window.dispatchEvent(commit(cmiWith("completed")));
+    });
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+
+    expect(api.saveProgress).toHaveBeenCalledTimes(1);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("leaves an ordinary save failure retryable", async () => {
     api.saveProgress.mockRejectedValue(refusal(500));
     const { result } = await renderRuntime();

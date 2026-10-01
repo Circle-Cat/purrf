@@ -41,6 +41,7 @@ import { MESSAGE_TYPES, isTrustedMessage } from "@/training/scormBridge";
  *   status: string|null,
  *   courseVerified: boolean,
  *   sessionStale: boolean,
+ *   sessionSuperseded: boolean,
  * }}
  */
 // fetch refuses a keepalive request once the bodies in flight exceed 64 KiB,
@@ -55,6 +56,17 @@ const KEEPALIVE_BODY_LIMIT = 60 * 1024;
 // What the server answers a commit whose run names a package it no longer
 // serves. Every later commit from this page gets the same answer.
 const HTTP_CONFLICT = 409;
+
+// The code a 409 carries when the refusal is not about the package at all: the
+// learner opened the same assignment in a newer tab, and the newest tab is the
+// one whose progress is kept. Told apart from a replaced package because the
+// advice is opposite -- reloading this tab would take the course back from the
+// newer one.
+const RUN_SUPERSEDED = "training_run_superseded";
+
+const isSuperseded = (error) =>
+  error?.response?.status === HTTP_CONFLICT &&
+  error?.response?.data?.data?.code === RUN_SUPERSEDED;
 
 const partingBody = (cmi, sessionToken) => {
   const whole = JSON.stringify({ cmi, final: true, sessionToken });
@@ -80,6 +92,12 @@ export default function useTrainingRuntime(
   // one never will be. Latched: nothing this page can do afterwards makes the
   // run current again.
   const [sessionStale, setSessionStale] = useState(false);
+  // The server refused a save because a newer tab has opened this same
+  // assignment and now owns its progress. Latched like sessionStale, and
+  // mirrored in a ref so the handlers below stop sending: every later save
+  // from this tab, the parting one included, would only be refused again.
+  const [sessionSuperseded, setSessionSuperseded] = useState(false);
+  const supersededRef = useRef(false);
   const [writes, setWrites] = useState([]);
   const frameRef = useRef(null);
   // The last cmi a commit or finish carried, and whether the safety net below
@@ -120,6 +138,8 @@ export default function useTrainingRuntime(
     setWrites([]);
     setCourseVerified(false);
     setSessionStale(false);
+    setSessionSuperseded(false);
+    supersededRef.current = false;
     const mint = openRef.current;
     mint(trainingId)
       .then((response) => {
@@ -219,6 +239,10 @@ export default function useTrainingRuntime(
         // A preview watches the course run without banking any of it: the
         // commit is noticed, and nothing leaves the page.
         if (!records) return;
+        if (supersededRef.current) {
+          post({ type: MESSAGE_TYPES.SAVED, ok: false }, contentOrigin);
+          return;
+        }
         lastCmiRef.current = event.data.cmi;
         unsavedRef.current = true;
         try {
@@ -231,7 +255,13 @@ export default function useTrainingRuntime(
           // LMSCommit already answered "true" to the course the moment it
           // posted; only this page can tell the learner the save did not land.
           setSaveFailed(true);
-          if (error?.response?.status === HTTP_CONFLICT) setSessionStale(true);
+          if (isSuperseded(error)) {
+            supersededRef.current = true;
+            unsavedRef.current = false;
+            setSessionSuperseded(true);
+          } else if (error?.response?.status === HTTP_CONFLICT) {
+            setSessionStale(true);
+          }
           post({ type: MESSAGE_TYPES.SAVED, ok: false }, contentOrigin);
         }
       }
@@ -253,6 +283,7 @@ export default function useTrainingRuntime(
     // whatever is still in flight.
     const saveOnHide = () => {
       if (!records) return;
+      if (supersededRef.current) return;
       if (!unsavedRef.current) return;
       unsavedRef.current = false;
       fetch(
@@ -312,5 +343,6 @@ export default function useTrainingRuntime(
     status,
     courseVerified,
     sessionStale,
+    sessionSuperseded,
   };
 }

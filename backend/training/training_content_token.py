@@ -21,6 +21,11 @@ back -- is refused rather than quietly served or stored against its successor.
 Without that binding, the tab's in-memory CMI model gets written back over the
 resume state the replacement just cleared, and the learner reopens onto a
 bookmark that names a lesson the new package does not have.
+
+A learner's run also carries an id of its own, minted fresh each time the
+assignment is opened. Two tabs on the same assignment agree on every other
+claim, so this is the only thing that tells the newest one -- the one whose
+commits are stored -- from an older one still open beside it.
 """
 
 import base64
@@ -56,6 +61,11 @@ class ContentTokenClaims:
     # package has since been replaced, and to land a verification stamp on
     # the package that was actually run rather than on whatever is live now.
     package_id: int
+    # Which opening of the assignment this is. None for a preview and a
+    # trial, neither of which stores progress for another tab to overwrite,
+    # and for a token minted before runs carried one -- a tab open across
+    # that deploy has to keep saving rather than be refused as a stranger.
+    run_id: str | None = None
 
 
 def _b64encode(raw: bytes) -> str:
@@ -78,6 +88,7 @@ def issue_content_token(
     user_id: int,
     *,
     package_id: int,
+    run_id: str | None = None,
     now: int | None = None,
     lifetime_seconds: int = TOKEN_LIFETIME_SECONDS,
 ) -> tuple[str, int]:
@@ -93,6 +104,9 @@ def issue_content_token(
             preview session, which cannot save.
         user_id (int): Who is opening it.
         package_id (int): The package this run opens against.
+        run_id (str | None): Which opening of the assignment this is, for a
+            run whose commits are held to being the newest. Left out of the
+            payload entirely when None.
         now (int | None): Unix seconds, for tests.
         lifetime_seconds (int): How long the token lasts.
 
@@ -107,8 +121,11 @@ def issue_content_token(
         # logger; this message reaches a browser.
         raise ValueError("Training content is not available.")
     expires_at = int(now if now is not None else time.time()) + lifetime_seconds
+    claims = {"p": package_id, "t": training_id, "u": user_id, "e": expires_at}
+    if run_id is not None:
+        claims["r"] = run_id
     payload = json.dumps(
-        {"p": package_id, "t": training_id, "u": user_id, "e": expires_at},
+        claims,
         separators=(",", ":"),
         sort_keys=True,
     ).encode("utf-8")
@@ -153,14 +170,20 @@ def _authentic_claims(signing_key: str, token: str) -> ContentTokenClaims:
         user_id = int(claims["u"])
         expires_at = int(claims["e"])
         package_id = int(claims["p"])
+        run_id = claims.get("r")
     except (ValueError, KeyError, TypeError) as error:
         raise InvalidContentToken("Malformed content token.") from error
+    # Absent is a token from before runs had ids, and reads as one. Present
+    # and not a usable string is a payload nothing here minted.
+    if run_id is not None and (not isinstance(run_id, str) or not run_id):
+        raise InvalidContentToken("Malformed content token.")
 
     return ContentTokenClaims(
         training_id=training_id,
         user_id=user_id,
         expires_at=expires_at,
         package_id=package_id,
+        run_id=run_id,
     )
 
 

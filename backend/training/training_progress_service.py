@@ -13,6 +13,11 @@ from backend.training.training_content_token import (
     read_session_run,
 )
 
+# What a refused commit from an older tab carries in its 409, so the page can
+# tell it from a replaced package: the advice for the two is opposite -- this
+# tab should be closed, where the other should be reloaded.
+RUN_SUPERSEDED = "training_run_superseded"
+
 # SCORM 1.2's CMITimespan needs at least two digits of hours. A single-digit
 # hour is already outside the format, and is treated the same as any other
 # unparseable value rather than guessed at.
@@ -218,7 +223,9 @@ class TrainingProgressService:
                 session token names a preview with nothing to save into.
             ConflictError: The run this commit came from is not running a
                 package we still serve -- because the token names none we can
-                read, or because the package it names has been replaced.
+                read, or because the package it names has been replaced -- or
+                a newer run of the same assignment has been opened since,
+                which carries the code RUN_SUPERSEDED.
         """
         _reject_unstorable(cmi)
 
@@ -237,7 +244,7 @@ class TrainingProgressService:
         if assignment.user_id != user_id:
             raise PermissionError("This training belongs to somebody else.")
 
-        package = await self._package_behind(
+        run, package = await self._package_behind(
             session, session_token, training_id, user_id
         )
 
@@ -250,6 +257,13 @@ class TrainingProgressService:
         # the staged package can be completed, so it still has to reach the
         # stamp below.
         stores_progress = package.state is not TrainingPackageState.PENDING
+
+        # Ahead of every read and write that follows, so a refused commit
+        # leaves the row and the assignment exactly as the newer tab left
+        # them. A trial is exempt: it stores nothing to overwrite, and it
+        # still has to reach the stamp.
+        if stores_progress:
+            self._refuse_superseded_run(assignment, run, training_id)
 
         existing = await self.training_progress_repository.get_by_training_id(
             session, training_id
@@ -410,7 +424,7 @@ class TrainingProgressService:
     async def _package_behind(
         self, session, session_token, training_id: int, user_id: int
     ):
-        """The package the run this commit came from is running.
+        """The run this commit came from, and the package it is running.
 
         The token is signed, so a commit cannot claim to be running a package
         it is not. Expiry is not consulted: the caller already authenticated
@@ -424,6 +438,9 @@ class TrainingProgressService:
         over the row the replacement cleared, and the learner reopens onto a
         lesson the new package does not have. Our own player always sends the
         token it was handed, so nothing legitimate arrives without one.
+
+        Returns:
+            tuple: The run's claims, and the package they name.
 
         Raises:
             PermissionError: The token names a preview -- one opened with no
@@ -492,7 +509,38 @@ class TrainingProgressService:
                 "This course's package was replaced while this page was open. "
                 "Reload the page to run the new one."
             )
-        return package
+        return run, package
+
+    def _refuse_superseded_run(self, assignment, run, training_id: int) -> None:
+        """Refuse a commit from a run opened before the assignment's newest.
+
+        Two tabs on one assignment are seeded from the same row and each
+        commits its own in-memory model; suspend_data is opaque, so the two
+        cannot be merged, and storing whichever arrives last puts the learner
+        back wherever that tab happened to be. Opening a run hands it the
+        assignment, so the newest tab is the one kept.
+
+        Either side being absent holds nothing back. A token minted before
+        runs carried an id belongs to a tab open across that deploy, and
+        refusing it would strand the sitting; an assignment that names no
+        owner has not been opened as a learner run since, so there is no
+        newer tab to defer to.
+
+        Raises:
+            ConflictError: A newer run of this assignment has been opened.
+        """
+        owner = assignment.active_run_id
+        if run.run_id is None or owner is None or run.run_id == owner:
+            return
+        self.logger.info(
+            "[TrainingProgressService] refused a commit to training %s: a "
+            "newer run of it has been opened since",
+            training_id,
+        )
+        raise ConflictError(
+            "This course is open in another tab. Close this tab and continue there.",
+            code=RUN_SUPERSEDED,
+        )
 
     def _stamp_if_unverified(
         self, package, user_id: int, may_verify_course: bool

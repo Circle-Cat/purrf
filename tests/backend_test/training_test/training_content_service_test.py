@@ -292,6 +292,81 @@ class TestOpenSession(_ContentServiceCase):
         self.assertIsNone(result.progress.score_raw)
 
 
+class TestOpeningARunTakesOverTheAssignment(_ContentServiceCase):
+    """The newest tab wins: every learner opening names a fresh run and makes
+    it the one whose commits the assignment accepts."""
+
+    async def test_the_token_names_the_run_that_now_owns_the_assignment(self):
+        result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+        run_id = verify_content_token(_KEY, self.token_from(result)).run_id
+        self.assertTrue(run_id)
+        self.assertEqual(run_id, self.training.active_run_id)
+
+    async def test_the_takeover_is_committed_after_it_is_written(self):
+        owner_at_commit = []
+        self.session.commit.side_effect = lambda: owner_at_commit.append(
+            self.training.active_run_id
+        )
+
+        result = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+        self.session.commit.assert_awaited_once()
+        run_id = verify_content_token(_KEY, self.token_from(result)).run_id
+        self.assertEqual([run_id], owner_at_commit)
+
+    async def test_a_second_opening_takes_over_from_the_first(self):
+        first = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+        second = await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+        first_run = verify_content_token(_KEY, self.token_from(first)).run_id
+        second_run = verify_content_token(_KEY, self.token_from(second)).run_id
+        self.assertNotEqual(first_run, second_run)
+        self.assertEqual(second_run, self.training.active_run_id)
+
+    async def test_a_refused_opening_takes_nothing_over(self):
+        self.training.active_run_id = "run-already-open"
+        self.course.is_active = False
+
+        with self.assertRaises(ConflictError):
+            await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+        self.assertEqual("run-already-open", self.training.active_run_id)
+        self.session.commit.assert_not_awaited()
+
+    async def test_an_opening_with_nothing_live_takes_nothing_over(self):
+        self.training.active_run_id = "run-already-open"
+        self.package_repository.get_by_state.return_value = None
+
+        with self.assertRaises(ValueError):
+            await self.service.open_session(self.session, _TRAINING_ID, _USER_ID)
+
+        self.assertEqual("run-already-open", self.training.active_run_id)
+        self.session.commit.assert_not_awaited()
+
+    async def test_a_trial_leaves_the_learners_run_in_charge(self):
+        """A trial stores nothing on the row, so it has nothing to own -- and
+        taking over would refuse the verifier's own learner tab for no gain."""
+        self.training.active_run_id = "run-already-open"
+        self.package_repository.get_by_state = AsyncMock(return_value=self.pending)
+
+        result = await self.service.open_trial_session(
+            self.session, _TRAINING_ID, _USER_ID
+        )
+
+        self.assertIsNone(verify_content_token(_KEY, self.token_from(result)).run_id)
+        self.assertEqual("run-already-open", self.training.active_run_id)
+        self.session.commit.assert_not_awaited()
+
+    async def test_a_preview_names_no_run(self):
+        result = await self.service.open_preview_session(
+            self.session, course_id=_COURSE_ID, user_id=_USER_ID
+        )
+
+        self.assertIsNone(verify_content_token(_KEY, result.session_token).run_id)
+        self.session.commit.assert_not_awaited()
+
+
 class TestOpenTrialSession(_ContentServiceCase):
     async def test_the_token_names_the_staged_package(self):
         self.package_repository.get_by_state = AsyncMock(

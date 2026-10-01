@@ -118,6 +118,31 @@ class TestFastAPIExceptionHandler(TestCase):
         self.mock_logger.warning.assert_called_once()
         self.mock_logger.error.assert_not_called()
 
+    def test_a_conflict_with_a_code_carries_it_in_data(self):
+        """The message is prose for a person; the code is what a page branches on."""
+        route = "/api/training/conflict_code"
+
+        @self.app.get(route)
+        def trigger_error():
+            raise ConflictError(CONFLICT_ERROR_MSG, code="some_conflict")
+
+        response = self.client.get(route)
+
+        self.assertEqual(response.status_code, HTTPStatus.CONFLICT)
+        self.assertEqual(response.json().get(ERROR_KEY), CONFLICT_ERROR_MSG)
+        self.assertEqual(response.json().get("data"), {"code": "some_conflict"})
+
+    def test_a_conflict_without_a_code_carries_no_data(self):
+        route = "/api/auth/conflict_no_code"
+
+        @self.app.get(route)
+        def trigger_error():
+            raise ConflictError(CONFLICT_ERROR_MSG)
+
+        response = self.client.get(route)
+
+        self.assertIsNone(response.json().get("data"))
+
     def test_handle_rate_limited_error(self):
         """429 Too Many Requests: the raw error message should be shown and logged as warning."""
         route = "/api/auth/rate_limited"

@@ -551,7 +551,10 @@ class TrainingAdminController:
         write that tab's stale bookmark back over the resume state the
         replacement cleared. A token that names no assignment at all -- a
         preview -- comes back 403 instead: there is nothing here for it to
-        save into.
+        save into. A commit from a tab opened before the assignment's newest
+        also comes back 409, carrying the code ``training_run_superseded`` so
+        the page can say the course is open in another tab instead of asking
+        for a reload that would take it back.
 
         The response says where the assignment now stands. Which lesson_status
         finishes a course is decided here; a page that judged the same values

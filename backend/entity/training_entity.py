@@ -65,6 +65,12 @@ class TrainingEntity(Base):
         ForeignKey("training_course.course_id", ondelete="RESTRICT"), index=True
     )
 
+    # The run whose progress commits this assignment accepts: the one opened
+    # most recently, by the id its content token carries. Null until the
+    # assignment is first opened as a learner run, and a null here holds no
+    # commit back.
+    active_run_id: Mapped[str | None] = mapped_column(String(64))
+
     created_datetime: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

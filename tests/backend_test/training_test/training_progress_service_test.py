@@ -11,7 +11,10 @@ from backend.entity.training_course_entity import TrainingCourseEntity
 from backend.entity.training_entity import TrainingEntity
 from backend.entity.training_progress_entity import TrainingProgressEntity
 from backend.training.training_content_token import issue_content_token
-from backend.training.training_progress_service import TrainingProgressService
+from backend.training.training_progress_service import (
+    RUN_SUPERSEDED,
+    TrainingProgressService,
+)
 
 _TRAINING_ID = 42
 _USER_ID = 11
@@ -24,16 +27,23 @@ def _session_token(
     package_id: int = _PACKAGE_ID,
     training_id: int = _TRAINING_ID,
     user_id: int = _USER_ID,
+    run_id: str | None = None,
 ) -> str:
     """The token a page was handed when it opened a run of ``package_id``.
 
     ``training_id`` and ``user_id`` are overridable so a test can hand over a
-    token that is authentic but belongs to some other run.
+    token that is authentic but belongs to some other run. ``run_id`` is None
+    by default, which is the shape of a token minted before runs had one.
     """
     token, _ = issue_content_token(
-        _SIGNING_KEY, training_id, user_id, package_id=package_id
+        _SIGNING_KEY, training_id, user_id, package_id=package_id, run_id=run_id
     )
     return token
+
+
+# Two tabs open on the same assignment, oldest first.
+_OLDER_RUN = "run-older-tab"
+_NEWER_RUN = "run-newer-tab"
 
 
 _COMMIT = {
@@ -1419,6 +1429,139 @@ class TestARunAgainstAReplacedPackage(_ProgressServiceCase):
 
         self.progress_repository.upsert.assert_awaited()
         self.package_repository.get_by_id.assert_awaited_with(self.session, _PACKAGE_ID)
+
+
+class TestTheNewestTabWins(_ProgressServiceCase):
+    """Two tabs on one assignment are seeded from the same row, and each
+    commits its own in-memory model every twenty seconds. suspend_data is
+    opaque, so the two cannot be merged; opening a run makes it the owner, and
+    a commit from any run opened before it is refused rather than stored over
+    the newer tab's place."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.assignment = self.training_repository.get_training_by_id.return_value
+        self.assignment.active_run_id = _NEWER_RUN
+
+    async def test_the_run_that_owns_the_assignment_saves(self):
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            _COMMIT,
+            session_token=_session_token(run_id=_NEWER_RUN),
+        )
+
+        self.progress_repository.upsert.assert_awaited_once()
+        self.session.commit.assert_awaited_once()
+
+    async def test_an_older_run_is_refused_as_open_elsewhere(self):
+        with self.assertRaises(ConflictError) as caught:
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                _COMMIT,
+                session_token=_session_token(run_id=_OLDER_RUN),
+            )
+
+        self.assertEqual(RUN_SUPERSEDED, caught.exception.code)
+        self.assertIn("another tab", str(caught.exception))
+
+    async def test_nothing_of_an_older_runs_commit_is_written(self):
+        """Neither the row nor the assignment: a finishing status from the
+        older tab must not move the assignment either."""
+        with self.assertRaises(ConflictError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                {**_COMMIT, "cmi.core.lesson_status": "completed"},
+                session_token=_session_token(run_id=_OLDER_RUN),
+            )
+
+        self.progress_repository.upsert.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+        self.assertIs(TrainingStatus.IN_PROGRESS, self.assignment.status)
+
+    async def test_an_older_runs_parting_save_is_refused_too(self):
+        with self.assertRaises(ConflictError):
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                _COMMIT,
+                final=True,
+                session_token=_session_token(run_id=_OLDER_RUN),
+            )
+
+        self.progress_repository.upsert.assert_not_awaited()
+        self.session.commit.assert_not_awaited()
+
+    async def test_the_refusal_is_not_the_replaced_package_one(self):
+        """The page gives opposite advice for the two -- reload here, close
+        this tab there -- so it has to be able to tell them apart."""
+        self.package_repository.get_by_id.return_value = None
+
+        with self.assertRaises(ConflictError) as caught:
+            await self.service.save(
+                self.session,
+                _TRAINING_ID,
+                _USER_ID,
+                _COMMIT,
+                session_token=_session_token(run_id=_NEWER_RUN),
+            )
+
+        self.assertNotEqual(RUN_SUPERSEDED, caught.exception.code)
+
+    async def test_a_token_from_before_runs_had_ids_still_saves(self):
+        """Tabs open across the deploy hold tokens with no run in them.
+        Refusing those would strand every sitting in progress at the time."""
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            _COMMIT,
+            session_token=_session_token(run_id=None),
+        )
+
+        self.progress_repository.upsert.assert_awaited_once()
+        self.session.commit.assert_awaited_once()
+
+    async def test_an_assignment_nobody_has_opened_since_has_no_owner_to_defer_to(
+        self,
+    ):
+        self.assignment.active_run_id = None
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            _COMMIT,
+            session_token=_session_token(run_id=_OLDER_RUN),
+        )
+
+        self.progress_repository.upsert.assert_awaited_once()
+
+    async def test_a_trial_is_not_refused_and_still_reaches_the_stamp(self):
+        """A trial stores nothing on the row, so there is nothing for it to
+        overwrite and no reason to hold it to a learner's run."""
+        self.package.state = TrainingPackageState.PENDING
+        self.package.verified_completable_at = None
+        self.package.verified_by_user_id = None
+
+        await self.service.save(
+            self.session,
+            _TRAINING_ID,
+            _USER_ID,
+            {**_COMMIT, "cmi.core.lesson_status": "completed"},
+            may_verify_course=True,
+            session_token=_session_token(run_id=_OLDER_RUN),
+        )
+
+        self.assertIsNotNone(self.package.verified_completable_at)
+        self.progress_repository.upsert.assert_not_awaited()
+        self.session.commit.assert_awaited_once()
 
 
 class TestTheStampLandsOnThePackage(_ProgressServiceCase):
