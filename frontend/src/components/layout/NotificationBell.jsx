@@ -50,6 +50,10 @@ const describe = (n) => {
       return `You were auto-assigned to evaluate ${n.applicantName} — ${n.jobTitle}`;
     case "recruiting.mentioned":
       return `${actor} mentioned you in a comment on ${n.applicantName} — ${n.jobTitle}`;
+    // Told to whoever sent into the thread. The reply may come from someone on
+    // CC, so the line names the application rather than who wrote.
+    case "recruiting.email_received":
+      return `New reply to your email about ${n.applicantName} — ${n.jobTitle}`;
     case "recruiting.review_opened":
       return `${actor} submitted "${n.jobTitle}" for your review`;
     case "recruiting.review_decided":
