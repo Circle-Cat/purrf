@@ -143,6 +143,21 @@ describe("pubsub gateway", () => {
     );
   });
 
+  it("carries a Gmail change push to the email sync endpoint", async () => {
+    const fetchMock = stubFetch(new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await worker.fetch(
+      request(await makeToken(), "/email/gmail/push"),
+      environment(),
+    );
+
+    const forwarded = fetchMock.mock.calls.find(([input]) =>
+      (typeof input === "string" ? input : input.url).includes("api.purrf.io"),
+    );
+    expect(forwarded[0]).toBe("https://api.purrf.io/api/email/gmail/push");
+  });
+
   it("answers 404 for a path no route names, without touching the origin", async () => {
     const fetchMock = stubFetch(new Response("ok", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);

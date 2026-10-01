@@ -21,6 +21,8 @@ const ROUTES = new Map([
   ["/notify", "/api/notifications/deliver"],
   // The matcher job, reporting that a run finished.
   ["/mentorship/match-runs/complete", "/api/mentorship/match-runs/complete"],
+  // Gmail users.watch changes for the mailbox, via its push subscription.
+  ["/email/gmail/push", "/api/email/gmail/push"],
 ]);
 
 const JWKS_CACHE_TTL_SECONDS = 3600;
