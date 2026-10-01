@@ -1,6 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 
+from backend.common.communication_enums import ContextType, EmailDirection
 from backend.common.mentorship_enums import CommunicationMethod
 from backend.common.recruiting_enums import (
     ApplicationStage,
@@ -17,6 +18,8 @@ from backend.entity.application_comment_mention_entity import (
     ApplicationCommentMentionEntity,
 )
 from backend.entity.application_entity import ApplicationEntity
+from backend.entity.email_message_entity import EmailMessageEntity
+from backend.entity.email_thread_entity import EmailThreadEntity
 from backend.entity.event_entity import EventEntity
 from backend.entity.job_entity import JobEntity
 from backend.entity.job_review_entity import JobReviewEntity
@@ -477,6 +480,96 @@ class RecipientResolversTest(BaseRepositoryTestLib):
             {named_a.user_id, named_b.user_id},
         )
 
+    async def _make_thread(
+        self, application: ApplicationEntity, senders: list[UsersEntity | None]
+    ) -> EmailThreadEntity:
+        """Create a thread on ``application`` with one outbound message per sender.
+
+        Args:
+            application (ApplicationEntity): The application the thread is about.
+            senders (list[UsersEntity | None]): Who sent each outbound message
+                through Purrf; None for one sent from the Gmail web UI.
+
+        Returns:
+            EmailThreadEntity: The inserted thread, with ``thread_id`` populated.
+        """
+        thread = EmailThreadEntity(
+            user_id=application.user_id,
+            gmail_thread_id=f"t-{application.application_id}-{len(senders)}",
+            context_type=ContextType.APPLICATION,
+            context_id=application.application_id,
+        )
+        await self.insert_entities([thread])
+        await self.insert_entities([
+            EmailMessageEntity(
+                thread_id=thread.thread_id,
+                gmail_message_id=f"{thread.gmail_thread_id}-m{index}",
+                direction=EmailDirection.OUTBOUND,
+                sent_by_user_id=None if sender is None else sender.user_id,
+            )
+            for index, sender in enumerate(senders)
+        ])
+        return thread
+
+    async def test_email_received_reaches_who_sent_into_the_thread(self):
+        """Not the owners: the one waiting on the reply is whoever wrote."""
+        owner, sender, other_sender, candidate = (
+            _make_user(),
+            _make_user(),
+            _make_user(),
+            _make_user(),
+        )
+        await self.insert_entities([owner, sender, other_sender, candidate])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(
+            application, [sender, other_sender, sender, None]
+        )
+        # A second thread on the same application: its sender is not told.
+        await self._make_thread(application, [owner])
+
+        _, notifications = await record_event(
+            self.session,
+            subject_type="application",
+            subject_id=application.application_id,
+            actor_id=candidate.user_id,
+            event_type=RecruitingEvent.EMAIL_RECEIVED,
+            details={"threadId": thread.thread_id},
+        )
+
+        self.assertEqual(
+            {n.user_id for n in notifications},
+            {sender.user_id, other_sender.user_id},
+        )
+
+    async def test_email_received_on_a_thread_nobody_sent_through_purrf(self):
+        """Every message sent from the Gmail web UI: nobody to tell, no error."""
+        owner, candidate = _make_user(), _make_user()
+        await self.insert_entities([owner, candidate])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(application, [None])
+        event = _event(
+            RecruitingEvent.EMAIL_RECEIVED,
+            "application",
+            application.application_id,
+            details={"threadId": thread.thread_id},
+        )
+
+        self.assertEqual(await resolve_recipients(self.session, event), set())
+
+    async def test_email_received_without_a_thread_id_is_an_error(self):
+        owner, candidate = _make_user(), _make_user()
+        await self.insert_entities([owner, candidate])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        event = _event(
+            RecruitingEvent.EMAIL_RECEIVED, "application", application.application_id
+        )
+
+        with self.assertRaises(ValueError):
+            await resolve_recipients(self.session, event)
+
     async def test_a_pointer_the_write_site_did_not_carry_is_an_error(self):
         """Failing open here is how @-mentions would silently reach nobody."""
         job = await self._make_job([])
@@ -517,7 +610,6 @@ class RegistrationCoverageTest(unittest.TestCase):
 
     SILENT = {
         RecruitingEvent.EMAIL_SENT,
-        RecruitingEvent.EMAIL_RECEIVED,
         RecruitingEvent.JOB_CREATED,
         RecruitingEvent.PENDING_EDIT_DISCARDED,
     }

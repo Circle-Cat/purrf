@@ -260,6 +260,7 @@ py_test(
     srcs = ["recipient_resolvers_test.py"],
     env_inherit = ["DATABASE_URL"],
     deps = [
+        "//backend/common:communication_enums",
         "//backend/common:mentorship_enums",
         "//backend/common:recruiting_enums",
         "//backend/entity:entities",

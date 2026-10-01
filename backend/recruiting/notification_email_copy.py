@@ -231,6 +231,24 @@ def _mentioned(dto, stage):
 
 
 @_html_body
+def _email_received(dto, stage):
+    # Inbound only means "not from our sender", so the reply may come from
+    # someone on CC rather than the candidate; the From line says who.
+    from_line = f"<p>From: {dto.email_from}</p>" if dto.email_from else ""
+    subject_line = f"<p>Subject: {dto.email_subject}</p>" if dto.email_subject else ""
+    return (
+        f"New email reply: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>A reply arrived on an email you sent about {dto.applicant}'s "
+        f"application for {dto.job_title}.</p>"
+        f"{_candidate_line(dto)}"
+        f"{from_line}"
+        f"{subject_line}"
+        "<p>Open the application in Purrf and go to its Emails tab to read "
+        "it and reply.</p>",
+    )
+
+
+@_html_body
 def _job_review_requested(dto, stage):
     return (
         f"Posting review requested: {dto.plain.job_title}",
