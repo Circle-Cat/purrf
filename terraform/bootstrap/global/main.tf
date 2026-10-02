@@ -902,6 +902,7 @@ resource "cloudflare_zero_trust_access_application" "notification_delivery_test"
     { type = "public", uri = "${local.environments.test.api_host}/api/mentorship/match-runs/complete" },
     { type = "public", uri = "${local.environments.test.api_host}/api/email/gmail/push" },
     { type = "public", uri = "${local.environments.test.api_host}/api/pubsub/push/google-chat" },
+    { type = "public", uri = "${local.environments.test.api_host}/api/pubsub/push/microsoft-chat" },
     { type = "public", uri = "${local.environments.test.api_host}/api/pubsub/push/gerrit" },
   ]
   # A machine endpoint: nobody should find it in the App Launcher.
