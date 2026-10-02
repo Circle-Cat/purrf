@@ -31,11 +31,20 @@ _ENV = {
 }
 
 
-def _http_error(status: int) -> HttpError:
+def _http_error(status: int, content: bytes = b"{}") -> HttpError:
     """Build a googleapiclient HttpError carrying the given HTTP status."""
     resp = Mock()
     resp.status = status
-    return HttpError(resp=resp, content=b"{}")
+    return HttpError(resp=resp, content=content)
+
+
+# The body Gmail sent back when the watch topic was in another project.
+_INVALID_TOPIC_BODY = (
+    b'{"error": {"code": 400, "message": "Invalid topicName does not match '
+    b'projects/purrf-auth/topics/*", "errors": [{"message": "Invalid topicName '
+    b'does not match projects/purrf-auth/topics/*", "domain": "global", '
+    b'"reason": "invalidArgument"}], "status": "INVALID_ARGUMENT"}}'
+)
 
 
 class _FakeBatch:
@@ -844,6 +853,38 @@ class TestGmailClient(TestCase):
         with self.assertRaises(GmailUnavailableError) as ctx:
             self.client.get_profile()
         self.assertIsInstance(ctx.exception, RuntimeError)
+
+    def test_api_error_carries_googles_reason(self):
+        self.mock_service.users.return_value.watch.return_value.execute.side_effect = (
+            _http_error(400, _INVALID_TOPIC_BODY)
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            self.client.watch("projects/purrf-452300/topics/t")
+
+        expected = (
+            "Invalid topicName does not match projects/purrf-auth/topics/* "
+            "(invalidArgument)"
+        )
+        self.assertEqual(
+            str(ctx.exception), f"Gmail API error during watch: {expected}"
+        )
+        logged = self.logger.error.call_args
+        self.assertIn(expected, logged.args[0] % logged.args[1:])
+
+    def test_api_error_without_a_body_keeps_the_plain_message(self):
+        self.mock_service.users.return_value.watch.return_value.execute.side_effect = (
+            _http_error(400, b"")
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            self.client.watch("projects/p/topics/t")
+        self.assertEqual(str(ctx.exception), "Gmail API error during watch")
+
+    def test_batch_inner_error_carries_googles_reason(self):
+        self._stub_batches({"g1": _http_error(400, _INVALID_TOPIC_BODY)})
+
+        with self.assertRaises(RuntimeError) as ctx:
+            self.client.get_messages(["g1"])
+        self.assertIn("(invalidArgument)", str(ctx.exception))
 
     def test_existing_callers_see_404_as_runtime_error(self):
         self.mock_service.users.return_value.threads.return_value.get.return_value.execute.side_effect = _http_error(
