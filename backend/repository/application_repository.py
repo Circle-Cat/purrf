@@ -474,7 +474,6 @@ class ApplicationRepository:
         self,
         session: AsyncSession,
         terminal_cutoff: datetime,
-        gmail_thread_ids: set[str] | None = None,
     ) -> list[ApplicationEntity]:
         """Applications the email sync should touch.
 
@@ -490,13 +489,6 @@ class ApplicationRepository:
             session (AsyncSession): The active DB session.
             terminal_cutoff (datetime): Oldest ``stage_entered_at`` still swept
                 for a HIRED/REJECTED application (e.g. now minus seven days).
-            gmail_thread_ids (set[str] | None): When given, restrict the result
-                to applications owning one of these Gmail threads — the nightly
-                delta passes the set Gmail flagged as recently active. When
-                ``None`` (the weekly reconcile), every eligible application is
-                returned. The eligibility rule itself is identical either way,
-                deliberately: it lives here once so the two jobs cannot
-                disagree about what is worth syncing.
 
         Returns:
             list[ApplicationEntity]: Distinct applications, oldest id first.
@@ -510,8 +502,6 @@ class ApplicationRepository:
                 ApplicationEntity.stage_entered_at >= terminal_cutoff,
             )
         ]
-        if gmail_thread_ids is not None:
-            conditions.append(EmailThreadEntity.gmail_thread_id.in_(gmail_thread_ids))
 
         result = await session.execute(
             select(ApplicationEntity)

@@ -174,8 +174,8 @@ class EmailConversationService:
         """Read the stored conversation for one (context_type, context_id).
 
         Pure DB read (no Gmail call): opening a conversation never triggers a
-        sync — that is done explicitly via ``sync_context`` (daily cron /
-        manual Refresh).
+        sync — that is done explicitly via ``sync_context`` (Gmail push /
+        daily catch-up / full resync).
 
         Args:
             session (AsyncSession): The active DB session.
