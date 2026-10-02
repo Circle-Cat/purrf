@@ -13,9 +13,6 @@ in-app OAuth flow):
 - ``list_thread_message_ids`` — list a thread's message ids (metadata only, no
   bodies), so a caller can tell what is new without paying for what it already
   has.
-- ``list_recent_message_thread_ids`` — ask the whole mailbox which threads
-  received mail in a recent window, so a caller can skip the conversations
-  that cannot have changed.
 - ``get_message`` — pull back and parse one message (headers, HTML/plain
   bodies, snippet, timestamps).
 
@@ -388,52 +385,6 @@ class GmailClient:
                 "Gmail unavailable during get_messages"
             ) from exception
         raise RuntimeError("Gmail API error during get_messages") from exception
-
-    def list_recent_message_thread_ids(self, lookback_days):
-        """
-        Thread ids that received mail within the last ``lookback_days`` days.
-
-        This is the whole-mailbox half of an incremental sync: one flat-cost
-        call tells the caller which conversations are worth looking at, instead
-        of asking each conversation in turn. The reply spans the entire
-        mailbox, so the caller must filter it down to threads it actually
-        tracks.
-
-        The window is expressed as Gmail's ``newer_than:Nd`` search operator.
-        That is day-granular — Gmail documents no finer relative form, and
-        epoch timestamps are not a documented input — so callers should pass a
-        window with slack rather than one that is exactly right.
-
-        Args:
-            lookback_days (int): Size of the search window, in days.
-
-        Returns:
-            set[str]: Distinct Gmail thread ids. Empty when nothing matched.
-
-        Raises:
-            RateLimitedError: If Gmail throttles the request (HTTP 429).
-            RuntimeError: For any other Gmail API failure.
-        """
-        thread_ids = set()
-        page_token = None
-        while True:
-            request = (
-                self._get_service()
-                .users()
-                .messages()
-                .list(
-                    userId=_GMAIL_USER,
-                    q=f"newer_than:{lookback_days}d",
-                    fields="messages/threadId,nextPageToken",
-                    pageToken=page_token,
-                )
-            )
-            response = self._execute(request, "list_recent_message_thread_ids")
-            for message in response.get("messages", []):
-                thread_ids.add(message["threadId"])
-            page_token = response.get("nextPageToken")
-            if not page_token:
-                return thread_ids
 
     def get_profile(self):
         """Read the mailbox address and its current history cursor.

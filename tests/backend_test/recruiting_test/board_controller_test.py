@@ -119,11 +119,9 @@ class TestBoardController(unittest.IsolatedAsyncioTestCase):
         self.board_service.get_application_conversation = AsyncMock(
             return_value=conversation
         )
-        resp = await self.controller.get_application_emails(
-            self.ctx, application_id=10, refresh=True
-        )
+        resp = await self.controller.get_application_emails(self.ctx, application_id=10)
         self.board_service.get_application_conversation.assert_awaited_once_with(
-            self.session, self.ctx, 10, refresh=True
+            self.session, self.ctx, 10
         )
         self.assertEqual(resp["data"], conversation)
 

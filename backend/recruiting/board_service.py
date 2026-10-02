@@ -178,7 +178,6 @@ class BoardService:
         notification_repository,
         user_emails_repository,
         email_conversation_service,
-        email_sync_service,
         application_interview_repository,
         application_access,
         interview_scheduling_service,
@@ -267,7 +266,6 @@ class BoardService:
         self.notification_repository = notification_repository
         self.user_emails_repository = user_emails_repository
         self.email_conversation_service = email_conversation_service
-        self.email_sync_service = email_sync_service
         self.application_interview_repository = application_interview_repository
         self.application_access = application_access
         self.interview_scheduling_service = interview_scheduling_service
@@ -643,11 +641,8 @@ class BoardService:
         session: AsyncSession,
         current_user: UserContextDto,
         application_id: int,
-        refresh: bool = False,
     ) -> EmailConversationDto:
-        """Read one application's email conversation.
-
-        Reading and refreshing are gated differently on purpose.
+        """Read one application's email conversation, from the database only.
 
         Reading passes for a *direct* caller — an owner of this
         application's own posting, or a ``read.all`` holder — and also for a
@@ -661,13 +656,8 @@ class BoardService:
         Withholding only the mail would protect nothing while leaving the
         history with a hole in it.
 
-        Refreshing does NOT widen: ``refresh=True`` calls out to Gmail and
-        writes, and nobody should be able to drive a sync on a posting they
-        have no standing on. A candidate-scope caller asking to refresh is
-        refused outright rather than quietly downgraded to a plain read, so
-        the frontend can't mistake a stale view for a fresh one. The history
-        rows accordingly render without Send or Refresh; sending stays
-        owner-only in ``send_application_email``.
+        The history rows render without Send; sending stays owner-only in
+        ``send_application_email``.
 
         A candidate-scope caller also gets no compose prefill
         (``default_to``/``default_cc`` come back empty): those exist to seed
@@ -678,8 +668,6 @@ class BoardService:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller.
             application_id (int): The application to read.
-            refresh (bool): When True, sync from Gmail before reading.
-                Direct callers only.
 
         Returns:
             EmailConversationDto: Threads (with messages), plus the
@@ -689,8 +677,7 @@ class BoardService:
         Raises:
             ValueError: If the application is missing; if the caller has no
                 owner/``read.all`` standing on it or on any other
-                application by the same candidate; or if a candidate-scope
-                caller asked to refresh.
+                application by the same candidate.
         """
         application = await self.application_repository.get_by_id(
             session, application_id
@@ -700,12 +687,7 @@ class BoardService:
         is_direct = await self._has_owner_standing(
             session, current_user, application.job_id
         )
-        if refresh:
-            if not is_direct:
-                raise ValueError("you are not an owner of this job")
-            await self.email_sync_service.sync_application(session, application)
-            await session.commit()
-        elif not is_direct and not await self._has_candidate_standing(
+        if not is_direct and not await self._has_candidate_standing(
             session, current_user, application.user_id
         ):
             raise ValueError("you are not an owner of this job")
