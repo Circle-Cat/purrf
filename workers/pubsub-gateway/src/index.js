@@ -23,6 +23,9 @@ const ROUTES = new Map([
   ["/mentorship/match-runs/complete", "/api/mentorship/match-runs/complete"],
   // Gmail users.watch changes for the mailbox, via its push subscription.
   ["/email/gmail/push", "/api/email/gmail/push"],
+  // Google Chat and Gerrit events, via their push subscriptions.
+  ["/pubsub/push/google-chat", "/api/pubsub/push/google-chat"],
+  ["/pubsub/push/gerrit", "/api/pubsub/push/gerrit"],
 ]);
 
 const JWKS_CACHE_TTL_SECONDS = 3600;
