@@ -20,12 +20,12 @@ variable "auth0_google_client_secret" {
 }
 
 variable "gmail_client_id" {
-  description = "OAuth 2.0 client ID for the Gmail candidate-email integration (purrf-auth GCP project)."
+  description = "OAuth 2.0 client ID for the Gmail candidate-email integration (purrf-452300 GCP project; users.watch requires the topic and the client in the same project)."
   type        = string
 }
 
 variable "gmail_client_secret" {
-  description = "OAuth 2.0 client secret paired with gmail_client_id (purrf-auth GCP project)."
+  description = "OAuth 2.0 client secret paired with gmail_client_id (purrf-452300 GCP project)."
   type        = string
   sensitive   = true
 }

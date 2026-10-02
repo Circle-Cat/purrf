@@ -213,3 +213,15 @@ variable "matcher_llm_concurrency" {
   type        = number
   default     = 4
 }
+
+variable "gmail_watch_topic_name" {
+  description = "Pub/Sub topic the mailbox's Gmail watch publishes to, shared by every environment on that mailbox. Empty disables Gmail push for this environment."
+  type        = string
+  default     = ""
+}
+
+variable "gmail_watch_topic_owner" {
+  description = "Whether this environment creates the shared topic and grants Gmail publish on it. Exactly one environment per mailbox sets this."
+  type        = bool
+  default     = false
+}
