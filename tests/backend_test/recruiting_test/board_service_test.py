@@ -125,12 +125,8 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.email_svc = AsyncMock()
         self.email_svc.list_conversation = AsyncMock(return_value=[])
         # sync returns the list of newly-persisted messages (Task 2); default
-        # empty so a plain refresh writes no timeline activity.
+        # empty so a sync writes no timeline activity.
         self.email_svc.sync_context = AsyncMock(return_value=[])
-        # board_service no longer syncs directly — it delegates to
-        # EmailSyncService, which owns the timeline-writing rule.
-        self.email_sync_svc = AsyncMock()
-        self.email_sync_svc.sync_application = AsyncMock(return_value=[])
         # Real ApplicationAccess wired to the SAME test doubles BoardService
         # itself uses, so delegated `_load_owned_application`/
         # `_validate_interview_assignee` calls are indistinguishable from the
@@ -171,7 +167,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
             self.notification_repo,
             self.user_emails_repo,
             self.email_svc,
-            self.email_sync_svc,
             self.interview_repo,
             self.application_access,
             self.interview_svc,
@@ -543,32 +538,23 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         rejection = next(t for t in result.templates if t.key == "rejection")
         self.assertIn("Dear ,", rejection.body_html)
 
-    # -- application email: get / refresh --
+    # -- application email: get --
 
     async def test_get_application_conversation_pure_read_does_not_sync(self):
         self._setup_owned_application(owner=2)
         result = await self.service.get_application_conversation(
-            self.session, self._ctx(user_id=2), 7, refresh=False
+            self.session, self._ctx(user_id=2), 7
         )
-        self.email_sync_svc.sync_application.assert_not_awaited()
+        self.email_svc.sync_context.assert_not_awaited()
         self.email_svc.list_conversation.assert_awaited_once()
         self.assertIsInstance(result, EmailConversationDto)
-
-    async def test_get_application_conversation_refresh_syncs_first(self):
-        self._setup_owned_application(owner=2)
-        await self.service.get_application_conversation(
-            self.session, self._ctx(user_id=2), 7, refresh=True
-        )
-        self.email_sync_svc.sync_application.assert_awaited_once()
 
     async def test_get_application_conversation_allows_read_all_non_owner(self):
         self._setup_owned_application(owner=2)
         ctx = self._ctx(
             user_id=99, permissions=[Permission.RECRUITING_APPLICATION_READ_ALL]
         )
-        result = await self.service.get_application_conversation(
-            self.session, ctx, 7, refresh=False
-        )
+        result = await self.service.get_application_conversation(self.session, ctx, 7)
         self.assertIsInstance(result, EmailConversationDto)
 
     async def test_conversation_read_allows_owner_of_another_posting_of_the_candidate(
@@ -588,7 +574,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
 
         result = await self.service.get_application_conversation(
-            self.session, self._ctx(user_id=42), 7, refresh=False
+            self.session, self._ctx(user_id=42), 7
         )
 
         self.assertIsInstance(result, EmailConversationDto)
@@ -607,7 +593,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         )
 
         result = await self.service.get_application_conversation(
-            self.session, self._ctx(user_id=42), 7, refresh=False
+            self.session, self._ctx(user_id=42), 7
         )
 
         self.assertIsNone(result.default_to)
@@ -622,29 +608,9 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ValueError):
             await self.service.get_application_conversation(
-                self.session, self._ctx(user_id=42), 7, refresh=False
+                self.session, self._ctx(user_id=42), 7
             )
         self.email_svc.list_conversation.assert_not_awaited()
-
-    async def test_conversation_refresh_does_not_widen_to_candidate_scope(self):
-        """Refresh calls out to Gmail and writes: nobody drives a sync on a
-        posting they have no standing on. Refused outright rather than
-        silently downgraded, so the caller can't mistake a stale view for a
-        fresh one."""
-        app = self._setup_owned_application(application_id=7, user_id=5, owner=2)
-        sibling_app = self._application(application_id=8, job_id=200, user_id=5)
-        self.app_repo.list_by_user = AsyncMock(
-            return_value=[
-                (app, self._job(job_id=100, owner_ids=(2,))),
-                (sibling_app, self._job(job_id=200, owner_ids=(42,))),
-            ]
-        )
-
-        with self.assertRaises(ValueError):
-            await self.service.get_application_conversation(
-                self.session, self._ctx(user_id=42), 7, refresh=True
-            )
-        self.email_sync_svc.sync_application.assert_not_awaited()
 
     async def test_send_application_email_write_forbids_read_all_non_owner(self):
         self._setup_owned_application(owner=2)
@@ -726,20 +692,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["details"]["cc"], ["boss@x"])
         self.assertEqual(kwargs["details"]["threadId"], 10)
         self.assertEqual(kwargs["details"]["direction"], "outbound")
-
-    async def test_refresh_delegates_to_email_sync_service_and_commits(self):
-        app = self._setup_owned_application(application_id=7, user_id=5, owner=2)
-        await self.service.get_application_conversation(
-            self.session, self._ctx(user_id=2), 7, refresh=True
-        )
-        self.email_sync_svc.sync_application.assert_awaited_once()
-        args, _ = self.email_sync_svc.sync_application.await_args
-        self.assertIs(args[0], self.session)
-        self.assertIs(args[1], app)
-        self.session.commit.assert_awaited_once()
-        # The timeline write moved to EmailSyncService; board_service must not
-        # write activities on the refresh path any more.
-        self.record_event.assert_not_awaited()
 
     def _assignment(self, application_id, stage, round, assignee_id, assigned_by=2):
         return ApplicationAssignmentEntity(

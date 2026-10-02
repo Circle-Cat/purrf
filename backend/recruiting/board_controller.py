@@ -300,15 +300,12 @@ class BoardController:
         return api_response(message="Application activity fetched.", data=result)
 
     async def get_application_emails(
-        self, current_user: UserContextDto, application_id: int, refresh: bool = False
+        self, current_user: UserContextDto, application_id: int
     ):
-        """Return an application's email conversation.
-
-        Pure DB read by default; ``?refresh=true`` syncs from Gmail first.
-        """
+        """Return an application's email conversation (a pure DB read)."""
         async with self.database.session() as session:
             result = await self.board_service.get_application_conversation(
-                session, current_user, application_id, refresh=refresh
+                session, current_user, application_id
             )
         return api_response(message="Emails fetched.", data=result)
 
