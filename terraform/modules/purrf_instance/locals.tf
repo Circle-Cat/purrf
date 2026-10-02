@@ -64,8 +64,9 @@ locals {
   # A subscription absent here, or every one while pubsub_event_push_enabled
   # is off, stays a pull subscription drained by the hourly sync.
   pubsub_push_paths = {
-    "chat-google-events" = "/pubsub/push/google-chat"
-    "gerrit-events"      = "/pubsub/push/gerrit"
+    "chat-google-events"    = "/pubsub/push/google-chat"
+    "chat-microsoft-events" = "/pubsub/push/microsoft-chat"
+    "gerrit-events"         = "/pubsub/push/gerrit"
   }
 
   # A pushed message is processed while Pub/Sub waits, and a Google Chat batch
