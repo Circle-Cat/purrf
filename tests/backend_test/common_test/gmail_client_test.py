@@ -634,6 +634,65 @@ class TestGmailClient(TestCase):
         self.assertEqual(message["plain"], "a reply")
         self.assertIsNone(message["html"])
 
+    def _parsed_with_headers(self, mime_type, headers):
+        self._stub_message({
+            "id": "g9",
+            "threadId": "THREAD",
+            "payload": {
+                "mimeType": mime_type,
+                "headers": [{"name": k, "value": v} for k, v in headers],
+                "body": {"data": _b64("text")},
+            },
+        })
+        return self.client.get_message("g9")
+
+    def test_a_delivery_report_carries_its_failed_recipients(self):
+        # The headers of the real Gmail bounce seen on test.
+        message = self._parsed_with_headers(
+            "multipart/report",
+            [
+                ("From", "Mail Delivery Subsystem <mailer-daemon@googlemail.com>"),
+                (
+                    "Content-Type",
+                    'multipart/report; boundary="b"; report-type=delivery-status',
+                ),
+                ("Auto-Submitted", "auto-replied"),
+                ("X-Failed-Recipients", "a@x.com"),
+            ],
+        )
+        self.assertEqual(message["failed_recipients"], "a@x.com")
+
+    def test_a_delivery_report_without_x_failed_recipients_is_still_a_bounce(self):
+        message = self._parsed_with_headers(
+            "multipart/report",
+            [
+                (
+                    "Content-Type",
+                    'Multipart/Report; Report-Type="Delivery-Status"; boundary=b',
+                )
+            ],
+        )
+        self.assertEqual(message["failed_recipients"], "")
+
+    def test_an_out_of_office_reply_is_not_a_bounce(self):
+        # Auto-Submitted is on bounces too, so it cannot be what decides.
+        message = self._parsed_with_headers(
+            "multipart/alternative",
+            [
+                ("From", "alice@example.com"),
+                ("Content-Type", 'multipart/alternative; boundary="b"'),
+                ("Auto-Submitted", "auto-replied"),
+            ],
+        )
+        self.assertIsNone(message["failed_recipients"])
+
+    def test_a_reply_from_a_postmaster_address_is_not_a_bounce(self):
+        message = self._parsed_with_headers(
+            "text/plain",
+            [("From", "postmaster@x.com"), ("Content-Type", "text/plain")],
+        )
+        self.assertIsNone(message["failed_recipients"])
+
     def test_get_message_requests_full_format(self):
         self._stub_message({"id": "g1", "payload": {}})
         self.client.get_message("g1")
