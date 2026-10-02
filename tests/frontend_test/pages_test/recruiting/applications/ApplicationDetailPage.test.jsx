@@ -2977,7 +2977,6 @@ describe("ApplicationDetailPage — history row emails", () => {
           },
         ],
         defaultTo: "cand@example.com",
-        defaultCc: [],
       },
     });
 
@@ -3018,7 +3017,7 @@ describe("ApplicationDetailPage — history row emails", () => {
       makeOtherApplication({ emailsVisible: true }),
     );
     api.getApplicationEmails.mockResolvedValue({
-      data: { threads: [], defaultTo: "cand@example.com", defaultCc: [] },
+      data: { threads: [], defaultTo: "cand@example.com" },
     });
 
     await user.click(within(row).getByRole("tab", { name: "Emails" }));
@@ -3053,7 +3052,6 @@ describe("ApplicationDetailPage — history row emails", () => {
           },
         ],
         defaultTo: "cand@example.com",
-        defaultCc: [],
       },
     });
 
@@ -3078,7 +3076,7 @@ describe("ApplicationDetailPage — history row emails", () => {
       makeOtherApplication({ emailsVisible: true }),
     );
     api.getApplicationEmails.mockResolvedValue({
-      data: { threads: [], defaultTo: null, defaultCc: [] },
+      data: { threads: [], defaultTo: null },
     });
 
     await user.click(within(row).getByRole("tab", { name: "Emails" }));
@@ -3832,9 +3830,10 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(toast.success).toHaveBeenCalledWith("Email sent.");
   });
 
-  it("new compose prefills Cc from conversation defaultCc, editable", async () => {
+  it("new compose starts with an empty Cc, whatever the response carries", async () => {
     ownerViewing();
     api.getApplicationEmails.mockResolvedValue({
+      // A stray defaultCc in the response must not reach the Cc field.
       data: { threads: [], defaultTo: "cand@x.com", defaultCc: ["rec@x.com"] },
     });
     const user = userEvent.setup();
@@ -3843,16 +3842,15 @@ describe("ApplicationDetailPage — Emails tab", () => {
     await user.click(screen.getByRole("tab", { name: "Emails" }));
     await user.click(screen.getByRole("button", { name: "Send email" }));
     const ccField = screen.getByLabelText("Cc");
-    expect(ccField).toHaveValue("rec@x.com");
-    // still editable
-    await user.type(ccField, ", extra@x.com");
+    expect(ccField).toHaveValue("");
+    await user.type(ccField, "extra@x.com");
     await user.type(screen.getByLabelText("Subject"), "Hi");
     await user.type(screen.getByLabelText("Message"), "welcome");
     await user.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() =>
       expect(api.sendApplicationEmail).toHaveBeenCalledWith("101", {
         to: ["cand@x.com"],
-        cc: ["rec@x.com", "extra@x.com"],
+        cc: ["extra@x.com"],
         subject: "Hi",
         body: "welcome",
         threadId: null,
@@ -3860,7 +3858,7 @@ describe("ApplicationDetailPage — Emails tab", () => {
     );
   });
 
-  it("reply prefills Cc from the thread defaultCc", async () => {
+  it("reply starts with an empty Cc, whatever the thread carries", async () => {
     ownerViewing();
     api.getApplicationEmails.mockResolvedValue({
       data: {
@@ -3890,7 +3888,10 @@ describe("ApplicationDetailPage — Emails tab", () => {
     await waitLoaded();
     await user.click(screen.getByRole("tab", { name: "Emails" }));
     await user.click(screen.getByRole("button", { name: "Reply" }));
-    expect(screen.getByLabelText("Cc")).toHaveValue("rec@x.com, boss@x.com");
+    expect(screen.getByLabelText("Cc")).toHaveValue("");
+    expect(screen.getByLabelText("Subject")).toHaveValue(
+      "Re: Interview Availability",
+    );
   });
 
   it("the Emails tab has no Refresh button, for an owner either", async () => {
@@ -4155,7 +4156,6 @@ describe("ApplicationDetailPage — Emails tab", () => {
           {
             threadId: 9,
             subject: "Circle Cat Program - Interview Availability",
-            defaultCc: [],
             messages: [
               {
                 messageId: 1,
