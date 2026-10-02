@@ -85,6 +85,39 @@ _ANCHOR_RE = re.compile(
 _TAG_RE = re.compile(r"<[^>]+>")
 
 
+def _google_explanation(error):
+    """Return Google's own account of an HttpError, or "" when it sent none.
+
+    The status code alone rarely says what to fix: a 400 from ``watch`` can
+    mean a malformed topic or a topic in the wrong project, and only the
+    message tells them apart.
+
+    Args:
+        error (HttpError): The error googleapiclient raised.
+
+    Returns:
+        str: ``"<message> (<reason>)"``, either part left out when absent.
+    """
+    message = error.reason if isinstance(error.reason, str) else ""
+    details = error.error_details
+    reason = ""
+    if isinstance(details, list) and details and isinstance(details[0], dict):
+        reason = details[0].get("reason") or ""
+    # Without a body googleapiclient falls back to the HTTP reason phrase,
+    # which repeats the status and explains nothing.
+    if message == getattr(error.resp, "reason", None):
+        message = ""
+    if message and reason:
+        return f"{message} ({reason})"
+    return message or reason
+
+
+def _with_explanation(text, error):
+    """Append Google's explanation of ``error`` to ``text`` when it gave one."""
+    explanation = _google_explanation(error)
+    return f"{text}: {explanation}" if explanation else text
+
+
 class GmailClient:
     """Domain-agnostic Gmail send/read transport (see module docstring)."""
 
@@ -366,25 +399,14 @@ class GmailClient:
             GmailUnavailableError: The inner call got HTTP 5xx.
             RuntimeError: Any other inner-call failure.
         """
-        status = None
-        if isinstance(exception, HttpError):
-            status = getattr(exception.resp, "status", None)
-        self._logger.error(
-            "[GmailClient] get_messages failed for one message (status=%s)", status
+        if not isinstance(exception, HttpError):
+            self._logger.error(
+                "[GmailClient] get_messages failed for one message (status=None)"
+            )
+            raise RuntimeError("Gmail API error during get_messages") from exception
+        self._raise_http_error(
+            exception, "get_messages", "get_messages failed for one message"
         )
-        if status == HTTPStatus.TOO_MANY_REQUESTS:
-            raise RateLimitedError(
-                "Gmail rate limited during get_messages"
-            ) from exception
-        if status == HTTPStatus.NOT_FOUND:
-            raise GmailNotFoundError(
-                "Gmail resource not found during get_messages"
-            ) from exception
-        if status is not None and status >= HTTPStatus.INTERNAL_SERVER_ERROR:
-            raise GmailUnavailableError(
-                "Gmail unavailable during get_messages"
-            ) from exception
-        raise RuntimeError("Gmail API error during get_messages") from exception
 
     def get_profile(self):
         """Read the mailbox address and its current history cursor.
@@ -565,21 +587,45 @@ class GmailClient:
                 "refresh token rejected (re-authorization required)"
             ) from error
         except HttpError as error:
-            status = getattr(error.resp, "status", None)
-            self._logger.error("[GmailClient] %s failed (status=%s)", operation, status)
-            if status == HTTPStatus.TOO_MANY_REQUESTS:
-                raise RateLimitedError(
-                    f"Gmail rate limited during {operation}"
-                ) from error
-            if status == HTTPStatus.NOT_FOUND:
-                raise GmailNotFoundError(
-                    f"Gmail resource not found during {operation}"
-                ) from error
-            if status is not None and status >= HTTPStatus.INTERNAL_SERVER_ERROR:
-                raise GmailUnavailableError(
-                    f"Gmail unavailable during {operation}"
-                ) from error
-            raise RuntimeError(f"Gmail API error during {operation}") from error
+            self._raise_http_error(error, operation, f"{operation} failed")
+
+    def _raise_http_error(self, error, operation, log_label):
+        """Log an HttpError and raise it as the matching domain error.
+
+        Google's explanation goes into both the log and the raised message, so
+        it reaches the ops alert and ``gmail_sync_state.last_error``.
+
+        Args:
+            error (HttpError): The error googleapiclient raised.
+            operation (str): The Gmail call, for the raised message.
+            log_label (str): What failed, for the log line.
+
+        Raises:
+            RateLimitedError: HTTP 429.
+            GmailNotFoundError: HTTP 404.
+            GmailUnavailableError: HTTP 5xx.
+            RuntimeError: Any other status.
+        """
+        status = getattr(error.resp, "status", None)
+        self._logger.error(
+            "%s",
+            _with_explanation(f"[GmailClient] {log_label} (status={status})", error),
+        )
+        if status == HTTPStatus.TOO_MANY_REQUESTS:
+            raise RateLimitedError(
+                _with_explanation(f"Gmail rate limited during {operation}", error)
+            ) from error
+        if status == HTTPStatus.NOT_FOUND:
+            raise GmailNotFoundError(
+                _with_explanation(f"Gmail resource not found during {operation}", error)
+            ) from error
+        if status is not None and status >= HTTPStatus.INTERNAL_SERVER_ERROR:
+            raise GmailUnavailableError(
+                _with_explanation(f"Gmail unavailable during {operation}", error)
+            ) from error
+        raise RuntimeError(
+            _with_explanation(f"Gmail API error during {operation}", error)
+        ) from error
 
     def _build_mime(
         self, to, cc, subject, body, sender, rfc822_message_id, in_reply_to, references
