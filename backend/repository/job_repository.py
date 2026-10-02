@@ -28,6 +28,25 @@ class JobRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_job_ids(
+        self, session: AsyncSession, job_ids: list[int]
+    ) -> list[JobEntity]:
+        """The jobs with these ids, in no particular order.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            job_ids (list[int]): The jobs wanted.
+
+        Returns:
+            list[JobEntity]: The jobs found; empty, without a query, for no ids.
+        """
+        if not job_ids:
+            return []
+        result = await session.execute(
+            select(JobEntity).where(JobEntity.job_id.in_(job_ids))
+        )
+        return list(result.scalars().all())
+
     async def get_by_application_id(
         self, session: AsyncSession, application_id: int
     ) -> JobEntity | None:

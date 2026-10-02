@@ -406,6 +406,28 @@ class ApplicationRepository:
                 roles.append(role)
         return roles
 
+    async def get_by_ids(
+        self, session: AsyncSession, application_ids: list[int]
+    ) -> list[ApplicationEntity]:
+        """The applications with these ids, in no particular order.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            application_ids (list[int]): The applications wanted.
+
+        Returns:
+            list[ApplicationEntity]: The applications found; empty, without
+                a query, for no ids.
+        """
+        if not application_ids:
+            return []
+        result = await session.execute(
+            select(ApplicationEntity).where(
+                ApplicationEntity.application_id.in_(application_ids)
+            )
+        )
+        return list(result.scalars().all())
+
     async def get_by_id(
         self,
         session: AsyncSession,

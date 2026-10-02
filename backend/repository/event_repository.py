@@ -32,6 +32,29 @@ class EventRepository:
         """
         return await session.get(EventEntity, event_id)
 
+    async def get_by_ids(
+        self, session: AsyncSession, event_ids: list[int]
+    ) -> list[EventEntity]:
+        """The events with these ids, in no particular order.
+
+        Ids with no event are left out rather than answered with None, for
+        the same reason ``get_by_id`` does not raise.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            event_ids (list[int]): The events wanted.
+
+        Returns:
+            list[EventEntity]: The events found; empty, without a query, for
+                no ids.
+        """
+        if not event_ids:
+            return []
+        result = await session.execute(
+            select(EventEntity).where(EventEntity.event_id.in_(event_ids))
+        )
+        return list(result.scalars().all())
+
     async def list_by_subject(
         self, session: AsyncSession, subject_type: str, subject_id: int
     ) -> list[EventEntity]:
