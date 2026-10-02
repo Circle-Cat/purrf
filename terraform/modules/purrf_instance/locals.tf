@@ -60,11 +60,24 @@ locals {
     "gerrit-events"
   ]
 
+  # Gateway Worker paths for the subscriptions that can be delivered by push.
+  # A subscription absent here, or every one while pubsub_event_push_enabled
+  # is off, stays a pull subscription drained by the hourly sync.
+  pubsub_push_paths = {
+    "chat-google-events" = "/pubsub/push/google-chat"
+    "gerrit-events"      = "/pubsub/push/gerrit"
+  }
+
+  # A pushed message is processed while Pub/Sub waits, and a Google Chat batch
+  # lists the whole directory, so the ack deadline is longer than for pull.
+  # More delivery attempts, spread by the retry policy's backoff, keep a
+  # backend restart from sending messages to the dead-letter topic.
   pubsub_map = {
     for name in local.pubsub_names : name => {
       full_name             = "${local.name_prefix}-${name}"
-      ack_deadline_seconds  = 20
-      max_delivery_attempts = 5
+      push_path             = var.pubsub_event_push_enabled ? lookup(local.pubsub_push_paths, name, null) : null
+      ack_deadline_seconds  = var.pubsub_event_push_enabled && contains(keys(local.pubsub_push_paths), name) ? 120 : 20
+      max_delivery_attempts = var.pubsub_event_push_enabled && contains(keys(local.pubsub_push_paths), name) ? 10 : 5
     }
   }
 }
