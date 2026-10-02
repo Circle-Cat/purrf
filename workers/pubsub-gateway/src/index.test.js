@@ -163,6 +163,10 @@ describe("pubsub gateway", () => {
       "/pubsub/push/google-chat",
       "https://api.purrf.io/api/pubsub/push/google-chat",
     ],
+    [
+      "/pubsub/push/microsoft-chat",
+      "https://api.purrf.io/api/pubsub/push/microsoft-chat",
+    ],
     ["/pubsub/push/gerrit", "https://api.purrf.io/api/pubsub/push/gerrit"],
   ])(
     "carries an event push on %s to its consumer endpoint",
