@@ -60,6 +60,22 @@ class TestApplicationRepository(BaseRepositoryTestLib):
             entity.stage_entered_at = stage_entered_at
         return await self.repo.create(self.session, entity)
 
+    async def test_get_by_ids_returns_every_application_asked_for(self):
+        first = await self._make_application()
+        second = await self._make_application()
+
+        found = await self.repo.get_by_ids(
+            self.session, [first.application_id, second.application_id, 999_999]
+        )
+
+        self.assertEqual(
+            {app.application_id for app in found},
+            {first.application_id, second.application_id},
+        )
+
+    async def test_get_by_ids_with_no_ids_returns_an_empty_list(self):
+        self.assertEqual(await self.repo.get_by_ids(self.session, []), [])
+
     async def test_create_and_get_latest_by_job_and_user(self):
         job, user = await self._seed_job_and_user()
         repo = ApplicationRepository()

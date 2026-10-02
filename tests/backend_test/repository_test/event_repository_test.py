@@ -52,6 +52,21 @@ class TestEventRepository(BaseRepositoryTestLib):
         self.assertEqual(found.event_type, "demo.thing")
         self.assertEqual(found.subject_id, 7)
 
+    async def test_get_by_ids_returns_every_event_asked_for(self):
+        first = await self._event()
+        second = await self._event()
+
+        found = await self.repo.get_by_ids(
+            self.session, [first.event_id, second.event_id, 999_999]
+        )
+
+        self.assertEqual(
+            {event.event_id for event in found}, {first.event_id, second.event_id}
+        )
+
+    async def test_get_by_ids_with_no_ids_returns_an_empty_list(self):
+        self.assertEqual(await self.repo.get_by_ids(self.session, []), [])
+
     async def test_get_by_id_returns_none_for_an_id_that_is_not_there(self):
         """The email side leans on the FK for this never happening.
 

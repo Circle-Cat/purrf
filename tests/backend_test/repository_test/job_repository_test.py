@@ -18,6 +18,25 @@ class TestJobRepository(BaseRepositoryTestLib):
         await super().asyncSetUp()
         self.repo = JobRepository()
 
+    async def test_get_by_job_ids_returns_every_job_asked_for(self):
+        first = await self.repo.create_job(
+            self.session,
+            JobEntity(kind=JobKind.ACTIVITY, title="A", status=JobStatus.DRAFT),
+        )
+        second = await self.repo.create_job(
+            self.session,
+            JobEntity(kind=JobKind.EMPLOYMENT, title="B", status=JobStatus.CLOSED),
+        )
+
+        found = await self.repo.get_by_job_ids(
+            self.session, [first.job_id, second.job_id, 999_999]
+        )
+
+        self.assertEqual({job.job_id for job in found}, {first.job_id, second.job_id})
+
+    async def test_get_by_job_ids_with_no_ids_returns_an_empty_list(self):
+        self.assertEqual(await self.repo.get_by_job_ids(self.session, []), [])
+
     async def test_persists_pipeline_config_and_pending(self):
         """create_job round-trips pipeline_config; pending fields default to None."""
         job = JobEntity(
