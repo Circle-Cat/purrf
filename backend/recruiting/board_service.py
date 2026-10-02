@@ -1,6 +1,5 @@
 import re
 from datetime import datetime, timezone
-from email.utils import getaddresses
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -127,29 +126,6 @@ def _screen_rule_label(rule: dict, question_labels: dict) -> str:
     else:
         subject = "condition"
     return f"{subject} {operator} {values}".strip()
-
-
-def _parse_cc_addresses(raw: str | None) -> list[str]:
-    """Extract bare email addresses from a raw RFC-5322 Cc header string."""
-    if not raw:
-        return []
-    return [addr for _, addr in getaddresses([raw]) if addr]
-
-
-def _dedupe_addresses(addresses: list[str], exclude: list[str]) -> list[str]:
-    """Case-insensitive dedupe preserving first-seen order, minus ``exclude``."""
-    excluded = {a.lower() for a in exclude if a}
-    seen: set[str] = set()
-    result: list[str] = []
-    for addr in addresses:
-        if not addr:
-            continue
-        low = addr.lower()
-        if low in excluded or low in seen:
-            continue
-        seen.add(low)
-        result.append(addr)
-    return result
 
 
 class BoardService:
@@ -533,7 +509,7 @@ class BoardService:
         )
         await session.commit()
         return await self._build_application_conversation(
-            session, current_user, application_id, application.user_id
+            session, application_id, application.user_id
         )
 
     async def list_application_email_templates(
@@ -659,10 +635,9 @@ class BoardService:
         The history rows render without Send; sending stays owner-only in
         ``send_application_email``.
 
-        A candidate-scope caller also gets no compose prefill
-        (``default_to``/``default_cc`` come back empty): those exist to seed
-        a compose box they aren't allowed to open, and ``default_cc`` would
-        otherwise hand out a recruiter's contact address.
+        A candidate-scope caller also gets no compose prefill (``default_to``
+        comes back empty): it exists to seed a compose box they aren't allowed
+        to open.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -693,7 +668,6 @@ class BoardService:
             raise ValueError("you are not an owner of this job")
         return await self._build_application_conversation(
             session,
-            current_user,
             application_id,
             application.user_id,
             compose_prefill=is_direct,
@@ -761,7 +735,6 @@ class BoardService:
     async def _build_application_conversation(
         self,
         session: AsyncSession,
-        current_user: UserContextDto,
         application_id: int,
         user_id: int,
         *,
@@ -769,42 +742,21 @@ class BoardService:
     ) -> EmailConversationDto:
         """Assemble the EmailConversationDto for one application.
 
-        ``default_cc`` prefills the compose Cc field: the recruiter's own
-        address for a new mail (conversation level), and the recruiter plus
-        that thread's prior Cc for a reply (thread level) — always excluding
-        the company sender and the candidate's To address.
+        ``default_to`` prefills the compose To field with the candidate's
+        contact address. Cc is never prefilled.
 
-        ``compose_prefill=False`` drops all of that (and skips the two
-        contact lookups it needs): a read-only caller has no compose box to
-        seed, and the Cc prefill would otherwise disclose a recruiter's
-        address.
+        ``compose_prefill=False`` drops that (and skips the contact lookup it
+        needs): a read-only caller has no compose box to seed.
         """
         threads = await self.email_conversation_service.list_conversation(
             session, ContextType.APPLICATION, application_id
         )
         if not compose_prefill:
-            for thread in threads:
-                thread.default_cc = []
-            return EmailConversationDto(threads=threads, default_to=None, default_cc=[])
+            return EmailConversationDto(threads=threads, default_to=None)
         default_to = await self.user_emails_repository.get_contact_email(
             session, user_id
         )
-        recruiter_email = await self.user_emails_repository.get_contact_email(
-            session, current_user.user_id
-        )
-        sender = self.email_conversation_service.sender_address
-        exclude = [default_to, sender]
-        conversation_default_cc = _dedupe_addresses([recruiter_email], exclude)
-        for thread in threads:
-            history = []
-            for message in thread.messages:
-                history.extend(_parse_cc_addresses(message.cc_addresses))
-            thread.default_cc = _dedupe_addresses([recruiter_email, *history], exclude)
-        return EmailConversationDto(
-            threads=threads,
-            default_to=default_to,
-            default_cc=conversation_default_cc,
-        )
+        return EmailConversationDto(threads=threads, default_to=default_to)
 
     async def _cards_for_rows(self, session, job, rows) -> list[BoardCardDto]:
         """Build BoardCardDto list for (application, user) rows, resolving
