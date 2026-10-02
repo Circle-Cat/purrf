@@ -14,6 +14,8 @@ from backend.common.api_endpoints import (
     GMAIL_PUSH_ENDPOINT,
     MENTORSHIP_MATCH_RUN_COMPLETE,
     NOTIFICATION_DELIVER_ENDPOINT,
+    PUBSUB_PUSH_GERRIT_ENDPOINT,
+    PUBSUB_PUSH_GOOGLE_CHAT_ENDPOINT,
     TRAINING_CONTENT_ENDPOINT,
 )
 from backend.training.content_host import resolve_content_host
@@ -601,6 +603,32 @@ class TestAuthMiddleware(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.text, "pushed")
+        self.mock_auth_service.authenticate_request.assert_not_called()
+        self.mock_database.session.assert_not_called()
+
+    def test_google_chat_and_gerrit_pushes_skip_authentication(self):
+        """Pub/Sub pushes Google Chat and Gerrit events with a Google OIDC
+        token and no Auth0 session; their routes assert that token themselves.
+        """
+        self.mock_auth_service.authenticate_request.side_effect = ValueError(
+            "Missing authentication credentials"
+        )
+        for endpoint in (PUBSUB_PUSH_GOOGLE_CHAT_ENDPOINT, PUBSUB_PUSH_GERRIT_ENDPOINT):
+            self.app.router.routes.append(
+                Route(
+                    f"/api{endpoint}",
+                    lambda request: PlainTextResponse("pushed"),
+                    methods=["POST"],
+                )
+            )
+
+        client = self._add_middleware()
+        for endpoint in (PUBSUB_PUSH_GOOGLE_CHAT_ENDPOINT, PUBSUB_PUSH_GERRIT_ENDPOINT):
+            with self.subTest(endpoint=endpoint):
+                response = client.post(f"/api{endpoint}", json={})
+
+                self.assertEqual(response.status_code, HTTPStatus.OK)
+                self.assertEqual(response.text, "pushed")
         self.mock_auth_service.authenticate_request.assert_not_called()
         self.mock_database.session.assert_not_called()
 

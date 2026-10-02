@@ -69,3 +69,24 @@ py_test(
         "//backend/consumers:pubsub_sync_pull_service",
     ],
 )
+
+py_test(
+    name = "pubsub_push_service_test",
+    srcs = ["pubsub_push_service_test.py"],
+    deps = [
+        "//backend/common:constants",
+        "//backend/consumers:pubsub_push_service",
+    ],
+)
+
+py_test(
+    name = "pubsub_push_controller_test",
+    srcs = ["pubsub_push_controller_test.py"],
+    deps = [
+        "//backend/common:api_endpoints",
+        "//backend/consumers:pubsub_push_controller",
+        "//backend/consumers:pubsub_push_service",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+    ],
+)
