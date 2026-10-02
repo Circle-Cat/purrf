@@ -73,6 +73,14 @@ data "google_project" "circlecat_prod_iad_project_data" {
   project_id = var.circlecat_prod_iad_project_id
 }
 
+# Gmail's OAuth client lives in this project, because users.watch only accepts
+# a topic in the project of the client that issued the token. Enabled here
+# rather than in purrf_instance so that one state owns it, not one per
+# environment.
+resource "google_project_service" "gmail" {
+  project = var.main_gcp_project_id
+  service = "gmail.googleapis.com"
+}
 
 # Define an Access Context Manager policy for VPC Service Controls perimeter
 resource "google_access_context_manager_access_policy" "purrf_internal" {
