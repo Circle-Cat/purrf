@@ -33,6 +33,7 @@ GERRIT_BACKFILL_PROJECTS_ENDPOINT = "/gerrit/projects/backfill"
 
 PUBSUB_SYNC_PULL_ENDPOINT = "/pubsub/sync"
 PUBSUB_PUSH_GOOGLE_CHAT_ENDPOINT = "/pubsub/push/google-chat"
+PUBSUB_PUSH_MICROSOFT_CHAT_ENDPOINT = "/pubsub/push/microsoft-chat"
 PUBSUB_PUSH_GERRIT_ENDPOINT = "/pubsub/push/gerrit"
 
 

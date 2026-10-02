@@ -1,4 +1,4 @@
-"""What a Google Chat or Gerrit event arriving by Pub/Sub push means.
+"""What a Google Chat, Microsoft Teams or Gerrit event arriving by Pub/Sub push means.
 
 These are the same events the hourly sync pull drains; push delivers each one
 as it is published. The Cloudflare Worker verifies the Google OIDC token at the
@@ -40,6 +40,7 @@ class PubSubPushService:
         pusher_subs,
         google_chat_processor_service,
         gerrit_processor_service,
+        microsoft_chat_message_util,
     ):
         """
         Args:
@@ -51,12 +52,15 @@ class PubSubPushService:
                 Google Chat events and renews the Chat subscription.
             gerrit_processor_service (GerritProcessorService): Stores Gerrit
                 events.
+            microsoft_chat_message_util (MicrosoftChatMessageUtil): Fetches a
+                changed Teams message from Graph and stores it.
         """
         self.logger = logger
         self.auth_service = auth_service
         self.pusher_subs = pusher_subs
         self.google_chat_processor_service = google_chat_processor_service
         self.gerrit_processor_service = gerrit_processor_service
+        self.microsoft_chat_message_util = microsoft_chat_message_util
 
     def _refuse(self, reason: str) -> PubSubPushOutcome:
         self.logger.warning("[PubSubPush] %s; refusing", reason)
@@ -88,11 +92,7 @@ class PubSubPushService:
     async def _receive(
         self, source: str, authorization: str, envelope, process_fn
     ) -> PubSubPushOutcome:
-        """Run ``process_fn(data, attributes)`` on the message a push envelope carries.
-
-        The processors are synchronous and call Redis and Google APIs, so they
-        run on a worker thread to keep the event loop free.
-        """
+        """Await ``process_fn(data, attributes)`` on the message a push envelope carries."""
         refusal = self._caller_refusal(authorization)
         if refusal is not None:
             return refusal
@@ -106,7 +106,7 @@ class PubSubPushService:
             return PubSubPushOutcome.RETRY
 
         try:
-            await asyncio.to_thread(process_fn, data, attributes)
+            await process_fn(data, attributes)
         except Exception:
             self.logger.exception(
                 "[PubSubPush] %s message %s failed",
@@ -116,7 +116,7 @@ class PubSubPushService:
             return PubSubPushOutcome.RETRY
         return PubSubPushOutcome.ACK
 
-    def _process_google_chat(self, data: dict, attributes: dict):
+    async def _process_google_chat(self, data: dict, attributes: dict):
         message_type = attributes.get("ce-type")
         # An event type nothing handles would fail on every redelivery, so it
         # is dropped here rather than raised.
@@ -129,10 +129,20 @@ class PubSubPushService:
                 message_type,
             )
             return
-        self.google_chat_processor_service.process_event(data, attributes)
+        # Synchronous Redis and Google API calls; a worker thread keeps the
+        # event loop free.
+        await asyncio.to_thread(
+            self.google_chat_processor_service.process_event, data, attributes
+        )
 
-    def _process_gerrit(self, data: dict, attributes: dict):
-        self.gerrit_processor_service.store_payload(data)
+    async def _process_gerrit(self, data: dict, attributes: dict):
+        # Synchronous Redis calls, likewise on a worker thread.
+        await asyncio.to_thread(self.gerrit_processor_service.store_payload, data)
+
+    async def _process_microsoft_chat(self, data: dict, attributes: dict):
+        await self.microsoft_chat_message_util.sync_near_real_time_message_to_redis(
+            data.get("changeType"), data.get("resource")
+        )
 
     async def receive_google_chat(
         self, authorization: str, envelope
@@ -150,6 +160,24 @@ class PubSubPushService:
         """
         return await self._receive(
             "Google Chat", authorization, envelope, self._process_google_chat
+        )
+
+    async def receive_microsoft_chat(
+        self, authorization: str, envelope
+    ) -> PubSubPushOutcome:
+        """Apply a Microsoft Teams chat change notification from a Pub/Sub push envelope.
+
+        Args:
+            authorization (str): The request's Authorization header, or "".
+            envelope: The decoded JSON body, or None when it could not be read.
+
+        Returns:
+            PubSubPushOutcome: REFUSED for an unknown caller; RETRY when the
+                message could not be read or processed, including a change type
+                nothing handles; ACK otherwise.
+        """
+        return await self._receive(
+            "Microsoft Teams", authorization, envelope, self._process_microsoft_chat
         )
 
     async def receive_gerrit(self, authorization: str, envelope) -> PubSubPushOutcome:

@@ -1,4 +1,4 @@
-"""The endpoints Google Chat and Gerrit events arrive on, via Pub/Sub push.
+"""The endpoints Google Chat, Microsoft Teams and Gerrit events arrive on, via Pub/Sub push.
 
 Everything they decide is in ``PubSubPushService``; this only turns the
 request into that call and the outcome into a status code.
@@ -11,6 +11,7 @@ from fastapi import APIRouter, Request, Response
 from backend.common.api_endpoints import (
     PUBSUB_PUSH_GERRIT_ENDPOINT,
     PUBSUB_PUSH_GOOGLE_CHAT_ENDPOINT,
+    PUBSUB_PUSH_MICROSOFT_CHAT_ENDPOINT,
 )
 from backend.consumers.pubsub_push_service import PubSubPushOutcome
 
@@ -47,6 +48,12 @@ class PubSubPushController:
             response_model=None,
         )
         self.router.add_api_route(
+            PUBSUB_PUSH_MICROSOFT_CHAT_ENDPOINT,
+            endpoint=self.push_microsoft_chat,
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
             PUBSUB_PUSH_GERRIT_ENDPOINT,
             endpoint=self.push_gerrit,
             methods=["POST"],
@@ -61,6 +68,18 @@ class PubSubPushController:
                 redelivery can help, 200 otherwise.
         """
         outcome = await self.pubsub_push_service.receive_google_chat(
+            request.headers.get("Authorization", ""), await _read_envelope(request)
+        )
+        return Response(status_code=_STATUS[outcome])
+
+    async def push_microsoft_chat(self, request: Request) -> Response:
+        """Apply a Microsoft Teams chat change notification from a Pub/Sub push envelope.
+
+        Returns:
+            Response: 403 for a caller the service refuses, 503 when a
+                redelivery can help, 200 otherwise.
+        """
+        outcome = await self.pubsub_push_service.receive_microsoft_chat(
             request.headers.get("Authorization", ""), await _read_envelope(request)
         )
         return Response(status_code=_STATUS[outcome])

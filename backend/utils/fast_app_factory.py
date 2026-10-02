@@ -103,7 +103,7 @@ class FastAppFactory:
             notification_delivery_controller: An instance of NotificationDeliveryController that manages the Pub/Sub push endpoint which sends notification emails.
             gmail_push_controller: An instance of GmailPushController that manages the Pub/Sub push endpoint Gmail change notifications arrive on.
             gmail_sync_controller: An instance of GmailSyncController that manages the daily Gmail maintenance and manual full resync endpoints.
-            pubsub_push_controller: An instance of PubSubPushController that manages the Pub/Sub push endpoints Google Chat and Gerrit events arrive on.
+            pubsub_push_controller: An instance of PubSubPushController that manages the Pub/Sub push endpoints Google Chat, Microsoft Teams and Gerrit events arrive on.
             notification_publisher: Pub/Sub publisher client used to deliver a
                 notification once its creating transaction commits.
             notification_topic_path: Fully qualified Pub/Sub topic

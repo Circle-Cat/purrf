@@ -969,13 +969,15 @@ class AppDependencyBuilder:
             pusher_subs=self.notification_pusher_subs,
             database=self.database,
         )
-        # Google Chat and Gerrit pushes are signed by the same account too.
+        # Google Chat, Microsoft Teams and Gerrit pushes are signed by the same
+        # account too.
         self.pubsub_push_service = PubSubPushService(
             logger=self.logger,
             auth_service=self.authentication_service,
             pusher_subs=self.notification_pusher_subs,
             google_chat_processor_service=self.google_chat_processor_service,
             gerrit_processor_service=self.gerrit_processor_service,
+            microsoft_chat_message_util=self.microsoft_chat_message_util,
         )
         self.pubsub_push_controller = PubSubPushController(
             pubsub_push_service=self.pubsub_push_service,
