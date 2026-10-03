@@ -86,8 +86,8 @@ class MentorshipMeetingRepository:
     ) -> dict[int, list[MentorshipMeetingEntity]]:
         """Every meeting for a batch of pairs, one query, grouped in Python.
 
-        For the admin CSV export, which pages up to 500 pairs and needs this
-        batched -- calling ``get_meetings_by_pair`` once per pair would
+        For callers that hold a page of pairs, such as the admin participant
+        search -- calling ``get_meetings_by_pair`` once per pair would
         reintroduce an N+1 the rest of that page already avoids.
 
         Args:
