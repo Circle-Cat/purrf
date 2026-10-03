@@ -18,7 +18,10 @@ from backend.entity.training_entity import TrainingEntity
 from backend.repository.mentorship_round_participants_repository import (
     MentorshipRoundParticipantsRepository,
 )
-from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
+from backend.dto.participant_search_filter_dto import (
+    ParticipantSearchFilterDto,
+    UnregisteredFilterDto,
+)
 from backend.common.mentorship_enums import (
     MeetingSource,
     ApprovalStatus,
@@ -119,6 +122,16 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
                 user_id=user.user_id,
                 stage=ApplicationStage.HIRED,
             )
+        ])
+
+    async def _register(self, *users, round_index=0):
+        """Give each user a participant row in one of the setUp rounds."""
+        await self.insert_entities([
+            MentorshipRoundParticipantsEntity(
+                user_id=user.user_id,
+                round_id=self.rounds[round_index].round_id,
+            )
+            for user in users
         ])
 
     async def _add_training(
@@ -469,14 +482,20 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         )
         self.assertEqual(result.goal, participant.goal)
 
-    async def test_search_no_filters_returns_all_mentorship_users(self):
-        """Verify all users meeting the base mentorship gate are returned
-        when no filters are applied."""
+    async def test_search_no_filters_returns_registered_mentorship_users_only(self):
+        """With no filters every registered user meeting the base mentorship
+        gate is returned, and an admitted user with no registration is not."""
         user2 = self._make_user(
             first_name="Bob", last_name="Jones", email="bob@example.com"
         )
-        await self.insert_entities([user2])
+        unregistered = self._make_user(
+            first_name="Una", last_name="Unregistered", email="una@example.com"
+        )
+        await self.insert_entities([user2, unregistered])
         await self._hire_for_activity(user2)
+        await self._hire_for_activity(unregistered)
+        await self._register(self.user)
+        await self._register(user2, round_index=1)
 
         rows, total = await self.repo.search_participants_for_admin(
             self.session, ParticipantSearchFilterDto(), limit=50, offset=0
@@ -502,6 +521,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             unrelated_trained_user,
             category=TrainingCategory.RESIDENCY_PROGRAM_ONBOARDING,
         )
+        await self._register(trained_user, unrelated_trained_user)
 
         rows, _ = await self.repo.search_participants_for_admin(
             self.session, ParticipantSearchFilterDto(), limit=20, offset=0
@@ -513,7 +533,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
 
     async def test_search_onboarding_status_completed_by_role(self):
         """MENTOR only checks mentor training; MENTEE only checks mentee
-        training; no role (non-participant) counts either category."""
+        training; someone with no registration is not listed at all."""
         mentor_user = self._make_user(
             first_name="Mel", last_name="Mentor", email="mel@example.com"
         )
@@ -559,7 +579,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         user_ids = {r.user_id for r in rows}
         self.assertIn(mentor_user.user_id, user_ids)
         self.assertIn(mentee_user.user_id, user_ids)
-        self.assertIn(non_participant_user.user_id, user_ids)
+        self.assertNotIn(non_participant_user.user_id, user_ids)
 
     async def test_search_onboarding_status_excludes_wrong_role_or_missing_training(
         self,
@@ -662,6 +682,9 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             )
         ])
         # no_application_user has no application at all (recruiting first-login only).
+        await self._register(
+            hired_user, applied_user, employment_hired_user, no_application_user
+        )
 
         rows, _ = await self.repo.search_participants_for_admin(
             self.session, ParticipantSearchFilterDto(), limit=20, offset=0
@@ -683,6 +706,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         )
         await self.insert_entities([inactive_user])
         await self._hire_for_activity(inactive_user)
+        await self._register(self.user, inactive_user)
 
         rows, _ = await self.repo.search_participants_for_admin(
             self.session, ParticipantSearchFilterDto(), limit=20, offset=0
@@ -698,6 +722,8 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             first_name="Bob", last_name="Jones", email="bob@example.com"
         )
         await self.insert_entities([user2])
+        await self._hire_for_activity(user2)
+        await self._register(self.user, user2)
 
         rows, total = await self.repo.search_participants_for_admin(
             self.session,
@@ -742,6 +768,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         await self.insert_entities([first, last, preferred, unrelated])
         for user in (first, last, preferred, unrelated):
             await self._hire_for_activity(user)
+        await self._register(first, last, preferred, unrelated)
 
         rows, total = await self.repo.search_participants_for_admin(
             self.session,
@@ -764,6 +791,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         )
         await self.insert_entities([bob])
         await self._hire_for_activity(bob)
+        await self._register(self.user, bob)
         await self.insert_entities([
             UserEmailsEntity(
                 user_id=self.user.user_id,
@@ -819,6 +847,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         await self.insert_entities([blocked, deactivated])
         await self._hire_for_activity(blocked)
         await self._hire_for_activity(deactivated)
+        await self._register(self.user, blocked, deactivated)
 
         expected = {
             "active": {self.user.user_id},
@@ -861,6 +890,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         )
         await self.insert_entities([both])
         await self._hire_for_activity(both)
+        await self._register(both)
 
         found = {}
         for status in ("active", "blocked", "deactivated"):
@@ -883,6 +913,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         )
         await self.insert_entities([staff])
         await self._hire_for_activity(staff)
+        await self._register(self.user, staff)
 
         expected = {
             "internal": {staff.user_id},
@@ -991,51 +1022,6 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         self.assertEqual(total, 1)
         self.assertEqual(rows[0].user_id, self.user.user_id)
 
-    async def test_search_filter_by_participation_status_participant(self):
-        user2 = self._make_user(
-            first_name="Bob", last_name="Jones", email="bob@example.com"
-        )
-        await self.insert_entities([user2])
-        await self.insert_entities([
-            MentorshipRoundParticipantsEntity(
-                user_id=self.user.user_id,
-                round_id=self.rounds[0].round_id,
-            ),
-        ])
-
-        rows, total = await self.repo.search_participants_for_admin(
-            self.session,
-            ParticipantSearchFilterDto(participation_status="participant"),
-            limit=50,
-            offset=0,
-        )
-
-        self.assertEqual(total, 1)
-        self.assertEqual(rows[0].user_id, self.user.user_id)
-
-    async def test_search_filter_by_participation_status_non_participant(self):
-        user2 = self._make_user(
-            first_name="Bob", last_name="Jones", email="bob@example.com"
-        )
-        await self.insert_entities([user2])
-        await self._hire_for_activity(user2)
-        await self.insert_entities([
-            MentorshipRoundParticipantsEntity(
-                user_id=self.user.user_id,
-                round_id=self.rounds[0].round_id,
-            ),
-        ])
-
-        rows, total = await self.repo.search_participants_for_admin(
-            self.session,
-            ParticipantSearchFilterDto(participation_status="non_participant"),
-            limit=50,
-            offset=0,
-        )
-
-        self.assertEqual(total, 1)
-        self.assertEqual(rows[0].user_id, user2.user_id)
-
     async def test_search_pagination(self):
         extra_users = [
             self._make_user(
@@ -1046,6 +1032,7 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         await self.insert_entities(extra_users)
         for extra_user in extra_users:
             await self._hire_for_activity(extra_user)
+        await self._register(self.user, *extra_users)
 
         rows_p1, total = await self.repo.search_participants_for_admin(
             self.session, ParticipantSearchFilterDto(), limit=2, offset=0
@@ -1583,6 +1570,219 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         for participant, user in rows:
             self.assertEqual(participant.user_id, user.user_id)
             self.assertEqual(participant.round_id, self.rounds[0].round_id)
+
+    # --- search_unregistered_for_admin ---
+
+    async def _unregistered_ids(self, filters=None, **kwargs):
+        rows, total = await self.repo.search_unregistered_for_admin(
+            self.session,
+            self.rounds[1].round_id,
+            filters or UnregisteredFilterDto(),
+            limit=kwargs.pop("limit", 50),
+            offset=kwargs.pop("offset", 0),
+            **kwargs,
+        )
+        return [r.user_id for r in rows], total
+
+    async def test_unregistered_is_admitted_with_no_row_in_the_round(self):
+        """Admitted and not registered for this round is listed even when
+        registered for another; registered for this one, admitted only to a
+        non-activity posting, merely applied, or only trained is not."""
+        other_round = self._make_user(first_name="Oli", email="o@example.com")
+        this_round = self._make_user(first_name="Tia", email="t@example.com")
+        employment = self._make_user(first_name="Emp", email="e@example.com")
+        applied = self._make_user(first_name="App", email="a@example.com")
+        trained = self._make_user(first_name="Tra", email="tr@example.com")
+        await self.insert_entities([
+            other_round,
+            this_round,
+            employment,
+            applied,
+            trained,
+        ])
+        await self._hire_for_activity(other_round, role=ParticipantRole.MENTOR)
+        await self._hire_for_activity(this_round)
+        await self._register(other_round, round_index=0)
+        await self._register(this_round, round_index=1)
+
+        employment_job = JobEntity(kind=JobKind.EMPLOYMENT, title="SWE Intern")
+        activity_job = JobEntity(
+            kind=JobKind.ACTIVITY,
+            mentorship_role=ParticipantRole.MENTEE,
+            title="mentee activity",
+        )
+        await self.insert_entities([employment_job, activity_job])
+        await self.insert_entities([
+            ApplicationEntity(
+                job_id=employment_job.job_id,
+                user_id=employment.user_id,
+                stage=ApplicationStage.HIRED,
+            ),
+            ApplicationEntity(
+                job_id=activity_job.job_id,
+                user_id=applied.user_id,
+                stage=ApplicationStage.APPLIED,
+            ),
+        ])
+        await self._add_training(trained)
+
+        ids, total = await self._unregistered_ids()
+
+        self.assertEqual(ids, sorted([self.user.user_id, other_round.user_id]))
+        self.assertEqual(total, 2)
+
+    async def test_unregistered_admitted_as_both_roles_is_one_row(self):
+        both = self._make_user(first_name="Bo", email="bo@example.com")
+        await self.insert_entities([both])
+        await self._hire_for_activity(both, role=ParticipantRole.MENTOR)
+        await self._hire_for_activity(both, role=ParticipantRole.MENTEE)
+        await self._register(self.user, round_index=1)
+
+        ids, total = await self._unregistered_ids()
+
+        self.assertEqual((ids, total), ([both.user_id], 1))
+
+    async def test_unregistered_admitted_role_filter(self):
+        """setUp's user is a mentee; one mentor and one person admitted as
+        both, so a filter reading the wrong role cannot pass."""
+        mentor = self._make_user(first_name="Mo", email="mo@example.com")
+        both = self._make_user(first_name="Bo", email="bo@example.com")
+        await self.insert_entities([mentor, both])
+        await self._hire_for_activity(mentor, role=ParticipantRole.MENTOR)
+        await self._hire_for_activity(both, role=ParticipantRole.MENTOR)
+        await self._hire_for_activity(both, role=ParticipantRole.MENTEE)
+
+        expected = {
+            ParticipantRole.MENTOR: sorted([mentor.user_id, both.user_id]),
+            ParticipantRole.MENTEE: sorted([self.user.user_id, both.user_id]),
+        }
+        for role, user_ids in expected.items():
+            with self.subTest(role=role):
+                ids, _ = await self._unregistered_ids(
+                    UnregisteredFilterDto(admitted_role=role)
+                )
+                self.assertEqual(ids, user_ids)
+
+    async def test_unregistered_lists_blocked_and_deactivated_and_filters_them(self):
+        blocked = self._make_user(
+            first_name="Bella", email="b@example.com", is_blocked=True
+        )
+        deactivated = self._make_user(
+            first_name="Dora", email="d@example.com", is_active=False
+        )
+        staff = self._make_user(
+            first_name="Ivy", email="i@example.com", is_internal=True
+        )
+        await self.insert_entities([blocked, deactivated, staff])
+        for user in (blocked, deactivated, staff):
+            await self._hire_for_activity(user)
+
+        rows, _ = await self.repo.search_unregistered_for_admin(
+            self.session, self.rounds[1].round_id, UnregisteredFilterDto(), 50, 0
+        )
+        self.assertEqual(
+            {r.user_id: (r.is_blocked, r.is_deactivated, r.is_internal) for r in rows},
+            {
+                self.user.user_id: (False, False, False),
+                blocked.user_id: (True, False, False),
+                deactivated.user_id: (False, True, False),
+                staff.user_id: (False, False, True),
+            },
+        )
+
+        expected = [
+            (
+                UnregisteredFilterDto(account_status="active"),
+                sorted([self.user.user_id, staff.user_id]),
+            ),
+            (UnregisteredFilterDto(account_status="blocked"), [blocked.user_id]),
+            (
+                UnregisteredFilterDto(account_status="deactivated"),
+                [deactivated.user_id],
+            ),
+            (UnregisteredFilterDto(internal="internal"), [staff.user_id]),
+            (UnregisteredFilterDto(user_id=blocked.user_id), [blocked.user_id]),
+            (UnregisteredFilterDto(q="DORA"), [deactivated.user_id]),
+        ]
+        for filters, user_ids in expected:
+            with self.subTest(filters=filters):
+                ids, total = await self._unregistered_ids(filters)
+                self.assertEqual((ids, total), (user_ids, len(user_ids)))
+
+    async def test_unregistered_pages_by_user_id_in_either_direction(self):
+        extra = [
+            self._make_user(first_name=f"U{i}", email=f"u{i}@example.com")
+            for i in range(3)
+        ]
+        await self.insert_entities(extra)
+        for user in extra:
+            await self._hire_for_activity(user)
+        everyone = sorted([self.user.user_id] + [u.user_id for u in extra])
+
+        asc_p1, total = await self._unregistered_ids(limit=2, offset=0)
+        asc_p2, _ = await self._unregistered_ids(limit=2, offset=2)
+        desc, _ = await self._unregistered_ids(order="desc")
+
+        self.assertEqual(total, 4)
+        self.assertEqual(asc_p1 + asc_p2, everyone)
+        self.assertEqual(desc, everyone[::-1])
+
+    # --- list_registered_rounds_by_user_ids ---
+
+    async def test_registered_rounds_latest_first_by_meetings_deadline(self):
+        """Every status counts; latest is by meetings deadline, not id, and a
+        round with no deadline comes last."""
+        # Created after the setUp rounds, so it has the highest id, but ends
+        # between them; a second has no deadline at all.
+        middle = MentorshipRoundEntity(
+            name="2025-summer",
+            onboarding_deadline_at=datetime(2025, 5, 1, tzinfo=timezone.utc),
+            meetings_completion_deadline_at=datetime(2025, 9, 30, tzinfo=timezone.utc),
+        )
+        undated = MentorshipRoundEntity(
+            name="undated",
+            onboarding_deadline_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        )
+        await self.insert_entities([middle, undated])
+        other = self._make_user(first_name="Oz", email="oz@example.com")
+        loner = self._make_user(first_name="Lo", email="lo@example.com")
+        await self.insert_entities([other, loner])
+        await self.insert_entities([
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=round_id,
+                approval_status=status,
+            )
+            for round_id, status in (
+                (undated.round_id, ApprovalStatus.MATCHED),
+                (self.rounds[0].round_id, ApprovalStatus.REJECTED),
+                (middle.round_id, ApprovalStatus.SIGNED_UP),
+                (self.rounds[1].round_id, ApprovalStatus.UN_MATCHED),
+            )
+        ])
+        await self._register(other, round_index=0)
+
+        result = await self.repo.list_registered_rounds_by_user_ids(
+            self.session, [self.user.user_id, other.user_id, loner.user_id]
+        )
+
+        self.assertEqual(
+            {uid: [r.name for r in rounds] for uid, rounds in result.items()},
+            {
+                self.user.user_id: [
+                    "2025-fall",
+                    "2025-summer",
+                    "2025-spring",
+                    "undated",
+                ],
+                other.user_id: ["2025-spring"],
+            },
+        )
+
+    async def test_registered_rounds_empty_input_skips_the_query(self):
+        self.assertEqual(
+            await self.repo.list_registered_rounds_by_user_ids(self.session, []), {}
+        )
 
 
 if __name__ == "__main__":

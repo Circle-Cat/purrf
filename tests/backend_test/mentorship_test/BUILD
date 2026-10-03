@@ -63,7 +63,11 @@ py_test(
 py_test(
     name = "mentorship_admin_controller_test",
     srcs = ["mentorship_admin_controller_test.py"],
-    deps = ["//backend/mentorship"],
+    deps = [
+        "//backend/mentorship",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+    ],
 )
 
 py_test(

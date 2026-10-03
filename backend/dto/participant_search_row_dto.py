@@ -23,3 +23,10 @@ class ParticipantSearchRow(BaseInternalDTO):
     is_deactivated: bool
     is_internal: bool
     pairs: list[ParticipantSearchPairRow] = []
+
+
+class UnregisteredSearchRow(BaseInternalDTO):
+    user_id: int
+    is_blocked: bool
+    is_deactivated: bool
+    is_internal: bool

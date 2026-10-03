@@ -44,3 +44,24 @@ class ParticipantRowDto(BaseDto):
 class ParticipantSearchDto(BaseDto):
     participant_rows: list[ParticipantRowDto]
     total: int
+
+
+class UnregisteredRowDto(BaseDto):
+    user_id: int
+    first_name: str | None
+    last_name: str | None
+    preferred_name: str | None
+    primary_email: str | None
+    alternative_emails: list[str]
+    is_blocked: bool
+    is_deactivated: bool
+    is_internal: bool
+    # Mentor before mentee, whatever order they were admitted in.
+    admitted_roles: list[ParticipantRole]
+    rounds_taken_part: int
+    last_round_name: str | None
+
+
+class UnregisteredSearchDto(BaseDto):
+    rows: list[UnregisteredRowDto]
+    total: int
