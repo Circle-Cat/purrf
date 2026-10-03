@@ -457,7 +457,7 @@ class BoardService:
             session (AsyncSession): Active database async session.
             current_user (UserContextDto): The authenticated caller.
             application_id (int): The application being emailed about.
-            dto (EmailSendRequestDto): Compose payload (to/cc/subject/body,
+            dto (EmailSendRequestDto): Compose payload (to/subject/body,
                 optional thread_id for a reply).
 
         Returns:
@@ -487,7 +487,6 @@ class BoardService:
             context_type=ContextType.APPLICATION,
             context_id=application_id,
             to=recipients,
-            cc=dto.cc,
             subject=dto.subject,
             body=dto.body,
             sender_user_id=current_user.user_id,
@@ -502,7 +501,6 @@ class BoardService:
             details={
                 "subject": dto.subject,
                 "to": recipients,
-                "cc": list(dto.cc),
                 "threadId": message.thread_id,
                 "direction": "outbound",
             },
@@ -646,8 +644,7 @@ class BoardService:
 
         Returns:
             EmailConversationDto: Threads (with messages), plus the
-                candidate's default contact address and Cc prefill for a
-                direct caller.
+                candidate's default contact address for a direct caller.
 
         Raises:
             ValueError: If the application is missing; if the caller has no
@@ -743,7 +740,7 @@ class BoardService:
         """Assemble the EmailConversationDto for one application.
 
         ``default_to`` prefills the compose To field with the candidate's
-        contact address. Cc is never prefilled.
+        contact address.
 
         ``compose_prefill=False`` drops that (and skips the contact lookup it
         needs): a read-only caller has no compose box to seed.

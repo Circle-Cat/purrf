@@ -268,13 +268,12 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
     def _email_dto(
         self,
         to=("cand@example.com",),
-        cc=(),
         subject="Hi",
         body="<p>x</p>",
         thread_id=None,
     ):
         return EmailSendRequestDto(
-            to=list(to), cc=list(cc), subject=subject, body=body, thread_id=thread_id
+            to=list(to), subject=subject, body=body, thread_id=thread_id
         )
 
     def _caller(self, user_id=3):
@@ -622,7 +621,7 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.email_svc.send.assert_not_awaited()
 
     async def test_conversation_prefills_only_the_candidate_as_to(self):
-        """Cc is never prefilled, so the caller's own address is not looked up."""
+        """Only the candidate's contact address is looked up for To."""
         service, mocks = self._email_service()
         thread = EmailThreadDto(
             thread_id=10,
@@ -633,7 +632,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
                 EmailMessageDto(
                     message_id=1,
                     direction="outbound",
-                    cc_addresses="Boss <boss@x>",
                     created_at=datetime.now(timezone.utc),
                 ),
             ],
@@ -653,16 +651,13 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         mocks.user_emails_repository.get_contact_email.assert_awaited_once_with(
             self.session, 42
         )
-        dumped = result.model_dump(by_alias=True)
-        self.assertNotIn("defaultCc", dumped)
-        self.assertNotIn("defaultCc", dumped["threads"][0])
 
     # -- application email: timeline events --
 
     async def test_send_application_email_logs_email_sent_activity(self):
         self._setup_owned_application(application_id=7, user_id=5, owner=2)
         self.email_svc.send = AsyncMock(return_value=SimpleNamespace(thread_id=10))
-        dto = self._email_dto(to=["c@x"], cc=["boss@x"], subject="Hello")
+        dto = self._email_dto(to=["c@x"], subject="Hello")
         await self.service.send_application_email(
             self.session, self._ctx(user_id=2), 7, dto
         )
@@ -673,7 +668,6 @@ class TestBoardService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["event_type"], "recruiting.email_sent")
         self.assertEqual(kwargs["details"]["subject"], "Hello")
         self.assertEqual(kwargs["details"]["to"], ["c@x"])
-        self.assertEqual(kwargs["details"]["cc"], ["boss@x"])
         self.assertEqual(kwargs["details"]["threadId"], 10)
         self.assertEqual(kwargs["details"]["direction"], "outbound")
 

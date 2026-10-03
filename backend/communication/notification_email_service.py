@@ -60,7 +60,6 @@ class NotificationEmailService:
             await asyncio.to_thread(
                 self._gmail.send_message,
                 to=[to],
-                cc=[],
                 subject=subject,
                 body=body_html,
                 sender=f"Purrf Notifications <{self._sender_address}>",
