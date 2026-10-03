@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
 from backend.dto.participant_search_dto import (
+    AttendanceIssueDto,
     ParticipantPairDto,
     ParticipantRowDto,
     ParticipantSearchDto,
@@ -138,8 +139,36 @@ class MentorshipAdminService:
         partner_id = pair.mentee_id if user_id == pair.mentor_id else pair.mentor_id
         return users_map.get(partner_id)
 
+    def _attendance_issues(
+        self, pair: ParticipantSearchPairRow, meetings: list[MentorshipMeetingEntity]
+    ) -> list[AttendanceIssueDto]:
+        """
+        The pair's meetings that carry any note tag, in the repository's
+        start_datetime order, tagged the same way the meeting log shows them.
+
+        Args:
+            pair (ParticipantSearchPairRow): The pair the meetings belong to.
+            meetings (list[MentorshipMeetingEntity]): That pair's meetings.
+
+        Returns:
+            list[AttendanceIssueDto]: One entry per tagged meeting.
+        """
+        issues: list[AttendanceIssueDto] = []
+        for meeting in meetings:
+            note = self._resolve_meeting_notes_from_row(
+                meeting, pair.mentor_id, pair.mentee_id
+            )
+            if note:
+                issues.append(
+                    AttendanceIssueDto(start_datetime=meeting.start_datetime, note=note)
+                )
+        return issues
+
     def _build_pair_dtos(
-        self, row: ParticipantSearchRow, users_map: dict
+        self,
+        row: ParticipantSearchRow,
+        users_map: dict,
+        meetings_by_pair: dict[int, list[MentorshipMeetingEntity]],
     ) -> list[ParticipantPairDto]:
         """
         Build the Pair column entries for a participant search row, keeping
@@ -149,6 +178,8 @@ class MentorshipAdminService:
         Args:
             row (ParticipantSearchRow): The row whose pairs to build.
             users_map (dict[int, UsersEntity]): User records keyed by user_id.
+            meetings_by_pair (dict[int, list[MentorshipMeetingEntity]]): The
+                page's meetings keyed by pair_id; a pair with none is absent.
 
         Returns:
             list[ParticipantPairDto]: One entry per resolvable pair.
@@ -172,6 +203,9 @@ class MentorshipAdminService:
                         is_active=pair.pair_status == PairStatus.ACTIVE,
                     ),
                     completed_meeting_count=pair.completed_count,
+                    attendance_issues=self._attendance_issues(
+                        pair, meetings_by_pair.get(pair.pair_id, [])
+                    ),
                 )
             )
         return pair_dtos
@@ -204,8 +238,8 @@ class MentorshipAdminService:
         """
         Search mentorship participants and non-participants for admin with pagination.
 
-        Executes the participant query, batch-fetches related user, email, round, and
-        training data, then assembles the response.
+        Executes the participant query, batch-fetches related user, email, round,
+        training and meeting data, then assembles the response.
 
         Args:
             session (AsyncSession): Active database async session.
@@ -231,6 +265,12 @@ class MentorshipAdminService:
 
         rounds = await self.rounds_repository.get_all_rounds(session)
         rounds_map = {r.round_id: r for r in rounds}
+
+        meetings_by_pair = (
+            await self.mentorship_meeting_repository.get_meetings_by_pairs(
+                session, sorted({p.pair_id for row in rows for p in row.pairs})
+            )
+        )
 
         participant_rows: list[ParticipantRowDto] = []
         for row in rows:
@@ -262,7 +302,7 @@ class MentorshipAdminService:
                     approval_status=row.approval_status,
                     mentor_onboarding_status=mentor_status,
                     mentee_onboarding_status=mentee_status,
-                    pairs=self._build_pair_dtos(row, users_map),
+                    pairs=self._build_pair_dtos(row, users_map, meetings_by_pair),
                     required_meetings=self._get_required_meetings(row, rounds_map),
                 )
             )
