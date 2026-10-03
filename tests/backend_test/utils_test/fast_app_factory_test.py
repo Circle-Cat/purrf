@@ -23,7 +23,6 @@ class TestFastAppFactory(unittest.TestCase):
             user_permissions_repository=MagicMock(),
             notification_controller=self.mock_controller,
             historical_controller=self.mock_controller,
-            consumer_controller=self.mock_controller,
             internal_activity_controller=self.mock_controller,
             profile_controller=self.mock_profile_controller,
             mentorship_controller=self.mock_controller,
@@ -65,7 +64,6 @@ class TestFastAppFactory(unittest.TestCase):
         self.assertEqual(self.factory.authentication_service, self.mock_service)
         self.assertEqual(self.factory.notification_controller, self.mock_controller)
         self.assertEqual(self.factory.historical_controller, self.mock_controller)
-        self.assertEqual(self.factory.consumer_controller, self.mock_controller)
         self.assertEqual(
             self.factory.internal_activity_controller, self.mock_controller
         )
@@ -116,7 +114,6 @@ class TestFastAppFactory(unittest.TestCase):
             user_permissions_repository=MagicMock(),
             notification_controller=self.mock_controller,
             historical_controller=self.mock_controller,
-            consumer_controller=self.mock_controller,
             internal_activity_controller=self.mock_controller,
             profile_controller=self.mock_profile_controller,
             mentorship_controller=self.mock_controller,
@@ -172,7 +169,6 @@ class TestFastAppFactory(unittest.TestCase):
             user_permissions_repository=MagicMock(),
             notification_controller=self.mock_controller,
             historical_controller=self.mock_controller,
-            consumer_controller=self.mock_controller,
             internal_activity_controller=self.mock_controller,
             profile_controller=self.mock_profile_controller,
             mentorship_controller=self.mock_controller,
@@ -231,7 +227,6 @@ class TestFastAppFactory(unittest.TestCase):
             user_permissions_repository=MagicMock(),
             notification_controller=self.mock_controller,
             historical_controller=self.mock_controller,
-            consumer_controller=self.mock_controller,
             internal_activity_controller=self.mock_controller,
             profile_controller=self.mock_profile_controller,
             mentorship_controller=self.mock_controller,
@@ -287,7 +282,6 @@ class TestFastAppFactory(unittest.TestCase):
             user_permissions_repository=MagicMock(),
             notification_controller=self.mock_controller,
             historical_controller=self.mock_controller,
-            consumer_controller=self.mock_controller,
             internal_activity_controller=self.mock_controller,
             profile_controller=self.mock_profile_controller,
             mentorship_controller=self.mock_controller,
@@ -343,7 +337,6 @@ class TestFastAppFactory(unittest.TestCase):
             user_permissions_repository=MagicMock(),
             notification_controller=self.mock_controller,
             historical_controller=self.mock_controller,
-            consumer_controller=self.mock_controller,
             internal_activity_controller=self.mock_controller,
             profile_controller=self.mock_profile_controller,
             mentorship_controller=self.mock_controller,
@@ -401,7 +394,6 @@ class TestFastAppFactory(unittest.TestCase):
             user_permissions_repository=MagicMock(),
             notification_controller=self.mock_controller,
             historical_controller=self.mock_controller,
-            consumer_controller=self.mock_controller,
             internal_activity_controller=self.mock_controller,
             profile_controller=self.mock_profile_controller,
             mentorship_controller=self.mock_controller,
@@ -460,7 +452,6 @@ class TestFastAppFactory(unittest.TestCase):
             user_permissions_repository=MagicMock(),
             notification_controller=self.mock_controller,
             historical_controller=self.mock_controller,
-            consumer_controller=self.mock_controller,
             internal_activity_controller=self.mock_controller,
             profile_controller=self.mock_profile_controller,
             mentorship_controller=self.mock_controller,
@@ -527,7 +518,6 @@ class TestFastAppFactory(unittest.TestCase):
             user_permissions_repository=MagicMock(),
             notification_controller=self.mock_controller,
             historical_controller=self.mock_controller,
-            consumer_controller=self.mock_controller,
             internal_activity_controller=self.mock_controller,
             profile_controller=self.mock_profile_controller,
             mentorship_controller=self.mock_controller,
@@ -595,7 +585,6 @@ class TestFastAppFactory(unittest.TestCase):
             user_permissions_repository=MagicMock(),
             notification_controller=self.mock_controller,
             historical_controller=self.mock_controller,
-            consumer_controller=self.mock_controller,
             internal_activity_controller=self.mock_controller,
             profile_controller=self.mock_profile_controller,
             mentorship_controller=self.mock_controller,
@@ -686,7 +675,6 @@ class TestFastAppFactoryLifespan(unittest.IsolatedAsyncioTestCase):
             user_permissions_repository=MagicMock(),
             notification_controller=self.mock_controller,
             historical_controller=self.mock_controller,
-            consumer_controller=self.mock_controller,
             internal_activity_controller=self.mock_controller,
             profile_controller=self.mock_profile_controller,
             mentorship_controller=self.mock_controller,
@@ -763,7 +751,6 @@ class TestAccountConsoleRoutes(unittest.TestCase):
             user_permissions_repository=MagicMock(),
             notification_controller=controller,
             historical_controller=controller,
-            consumer_controller=controller,
             internal_activity_controller=controller,
             profile_controller=controller,
             mentorship_controller=controller,

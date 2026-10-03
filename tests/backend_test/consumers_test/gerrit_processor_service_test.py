@@ -2,7 +2,6 @@ import unittest
 from unittest.mock import MagicMock, call  # Import call for multiple assertions
 from backend.consumers.gerrit_processor_service import GerritProcessorService
 from backend.common.constants import (
-    PullStatus,  # Not used in the provided test, but kept for context
     GERRIT_DEDUPE_REVIEWED_KEY,
     GERRIT_CL_REVIEWED_FIELD,
     GerritChangeStatus,
@@ -15,22 +14,11 @@ from backend.common.constants import (
     GERRIT_LOC_MERGED_FIELD,  # New: Import for change_merged
 )
 
-from dataclasses import dataclass
-
-
-@dataclass
-class PullStatusResponse:
-    subscription_id: str
-    task_status: str
-    message: str
-    timestamp: str | None
-
 
 class TestStorePayload(unittest.TestCase):
     def setUp(self):
         self.mock_logger = MagicMock()
         self.mock_redis = MagicMock()
-        self.mock_puller_factory = MagicMock()
         self.mock_retry = MagicMock()
         self.mock_date_util = MagicMock()
         self.mock_gerrit_client = MagicMock()
@@ -38,7 +26,6 @@ class TestStorePayload(unittest.TestCase):
         self.service = GerritProcessorService(
             logger=self.mock_logger,
             redis_client=self.mock_redis,
-            pubsub_puller_factory=self.mock_puller_factory,
             retry_utils=self.mock_retry,
             date_time_util=self.mock_date_util,
             gerrit_client=self.mock_gerrit_client,
@@ -334,51 +321,6 @@ class TestStorePayload(unittest.TestCase):
         # Verify: No statistics update (duplicate count skipped)
         self.mock_redis.pipeline.assert_not_called()
         self.mock_redis.sismember.assert_called_once()  # sismember is still called to check for duplication
-
-
-class TestPullGerrit(unittest.TestCase):
-    def setUp(self):
-        self.mock_logger = MagicMock()
-        self.mock_redis = MagicMock()
-        self.mock_puller_factory = MagicMock()
-        self.mock_retry = MagicMock()
-        self.mock_date_util = MagicMock()
-        self.mock_gerrit_client = MagicMock()
-
-        self.service = GerritProcessorService(
-            logger=self.mock_logger,
-            redis_client=self.mock_redis,
-            pubsub_puller_factory=self.mock_puller_factory,
-            retry_utils=self.mock_retry,
-            date_time_util=self.mock_date_util,
-            gerrit_client=self.mock_gerrit_client,
-        )
-
-        self.fake_status = PullStatusResponse(
-            subscription_id="test-sub",
-            task_status=PullStatus.RUNNING.code,
-            message="Puller started",
-            timestamp="2025-07-01T00:00:00Z",
-        )
-
-    def test_pull_gerrit_success(self):
-        mock_puller = MagicMock()
-        self.mock_puller_factory.get_puller_instance.return_value = mock_puller
-
-        result = self.service.pull_gerrit(project_id="proj1", subscription_id="sub1")
-
-        mock_puller.start_pulling_messages.assert_called_once()
-        self.assertIsNone(result)
-
-    def test_pull_gerrit_missing_project(self):
-        with self.assertRaises(ValueError) as cm:
-            self.service.pull_gerrit(project_id="", subscription_id="sub1")
-        self.assertIn("project_id", str(cm.exception))
-
-    def test_pull_gerrit_missing_subscription(self):
-        with self.assertRaises(ValueError) as cm:
-            self.service.pull_gerrit(project_id="proj1", subscription_id="")
-        self.assertIn("subscription_id", str(cm.exception))
 
 
 if __name__ == "__main__":
