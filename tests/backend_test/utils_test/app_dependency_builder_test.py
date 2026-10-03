@@ -648,6 +648,7 @@ class TestAppDependencyBuilder(TestCase):
             notification_delivery_controller=ANY,
             gmail_push_controller=ANY,
             gmail_sync_controller=ANY,
+            pubsub_push_controller=ANY,
             notification_publisher=mock_notification_publisher_client,
             notification_topic_path="projects/test-project/topics/notifications",
             launchdarkly_client=mock_launchdarkly_client_cls.return_value,

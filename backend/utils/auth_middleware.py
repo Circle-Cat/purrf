@@ -9,6 +9,9 @@ from backend.common.api_endpoints import (
     GMAIL_PUSH_ENDPOINT,
     MENTORSHIP_MATCH_RUN_COMPLETE,
     NOTIFICATION_DELIVER_ENDPOINT,
+    PUBSUB_PUSH_GERRIT_ENDPOINT,
+    PUBSUB_PUSH_GOOGLE_CHAT_ENDPOINT,
+    PUBSUB_PUSH_MICROSOFT_CHAT_ENDPOINT,
 )
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.identity_type import is_rowless_login
@@ -33,10 +36,14 @@ _PERMISSION_BY_VALUE = {p.value: p for p in Permission}
 #
 # The matcher job's completion callback arrives the same way, through the same
 # Worker, and its route asserts the Google token and the job's account itself.
+# So do the Google Chat, Microsoft Teams and Gerrit event pushes.
 _UNAUTHENTICATED_PATHS = frozenset({
     f"/api{NOTIFICATION_DELIVER_ENDPOINT}",
     f"/api{MENTORSHIP_MATCH_RUN_COMPLETE}",
     f"/api{GMAIL_PUSH_ENDPOINT}",
+    f"/api{PUBSUB_PUSH_GOOGLE_CHAT_ENDPOINT}",
+    f"/api{PUBSUB_PUSH_MICROSOFT_CHAT_ENDPOINT}",
+    f"/api{PUBSUB_PUSH_GERRIT_ENDPOINT}",
 })
 
 # Course files are requested by the course's own JavaScript, which cannot

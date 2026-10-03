@@ -82,3 +82,25 @@ py_library(
         "//backend/common:environment_constants",
     ],
 )
+
+py_library(
+    name = "pubsub_push_service",
+    srcs = [
+        "pubsub_push_service.py",
+    ],
+    deps = [
+        "//backend/common:constants",
+    ],
+)
+
+py_library(
+    name = "pubsub_push_controller",
+    srcs = [
+        "pubsub_push_controller.py",
+    ],
+    deps = [
+        ":pubsub_push_service",
+        "//backend/common:api_endpoints",
+        "@pypi//fastapi",
+    ],
+)

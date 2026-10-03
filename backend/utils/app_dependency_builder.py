@@ -33,6 +33,8 @@ from backend.consumers.pubsub_puller import PubSubPuller
 from backend.consumers.gerrit_processor_service import GerritProcessorService
 from backend.consumers.pubsub_pull_manager import PubSubPullManager
 from backend.consumers.pubsub_sync_pull_service import PubSubSyncPullService
+from backend.consumers.pubsub_push_controller import PubSubPushController
+from backend.consumers.pubsub_push_service import PubSubPushService
 from backend.historical_data.historical_controller import HistoricalController
 from backend.leave.employment_sync_service import EmploymentSyncService
 from backend.historical_data.microsoft_member_sync_service import (
@@ -967,6 +969,19 @@ class AppDependencyBuilder:
             pusher_subs=self.notification_pusher_subs,
             database=self.database,
         )
+        # Google Chat, Microsoft Teams and Gerrit pushes are signed by the same
+        # account too.
+        self.pubsub_push_service = PubSubPushService(
+            logger=self.logger,
+            auth_service=self.authentication_service,
+            pusher_subs=self.notification_pusher_subs,
+            google_chat_processor_service=self.google_chat_processor_service,
+            gerrit_processor_service=self.gerrit_processor_service,
+            microsoft_chat_message_util=self.microsoft_chat_message_util,
+        )
+        self.pubsub_push_controller = PubSubPushController(
+            pubsub_push_service=self.pubsub_push_service,
+        )
         self.gmail_maintenance_service = GmailMaintenanceService(
             logger=self.logger,
             gmail_sync_service=self.gmail_sync_service,
@@ -1239,6 +1254,7 @@ class AppDependencyBuilder:
             notification_delivery_controller=self.notification_delivery_controller,
             gmail_push_controller=self.gmail_push_controller,
             gmail_sync_controller=self.gmail_sync_controller,
+            pubsub_push_controller=self.pubsub_push_controller,
             notification_publisher=self.notification_publisher_client,
             notification_topic_path=self.notification_topic_path,
             launchdarkly_client=self.launchdarkly_client,
