@@ -459,6 +459,25 @@ describe("NotificationBell", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it("tells the sender their email bounced, naming the application", async () => {
+    await openWith({
+      id: 8,
+      eventType: "recruiting.email_bounced",
+      jobTitle: "Backend Engineer",
+      applicantName: "Ada Lovelace",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-03T00:00:00Z",
+      details: { threadId: 3, failedRecipients: ["bad@x.com"] },
+    });
+
+    expect(
+      screen.getByText(
+        "Your email about Ada Lovelace — Backend Engineer could not be delivered",
+      ),
+    ).toBeInTheDocument();
+  });
 });
 
 const MENTION = {
