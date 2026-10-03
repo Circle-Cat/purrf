@@ -14,12 +14,17 @@ class ParticipantSearchPairRow(BaseInternalDTO):
     completed_count: int
 
 
-class ParticipantSearchRow(BaseInternalDTO):
+class PersonSearchRow(BaseInternalDTO):
+    """Who a row in an admin people search is, read off the users table."""
+
     user_id: int
-    round_id: int | None
-    participant_role: ParticipantRole | None
-    approval_status: ApprovalStatus | None
     is_blocked: bool
     is_deactivated: bool
     is_internal: bool
+
+
+class ParticipantSearchRow(PersonSearchRow):
+    round_id: int | None
+    participant_role: ParticipantRole | None
+    approval_status: ApprovalStatus | None
     pairs: list[ParticipantSearchPairRow] = []

@@ -692,6 +692,7 @@ class AppDependencyBuilder:
             mentorship_mapper=self.mentorship_mapper,
             logger=self.logger,
             mentorship_meeting_repository=self.mentorship_meeting_repository,
+            application_repository=self.application_repository,
         )
         # Nothing here needs self.database, so it is safe this early; the
         # matching run service takes a session per call like the rest.

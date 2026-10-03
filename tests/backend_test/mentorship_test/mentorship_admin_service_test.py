@@ -3,10 +3,14 @@ import unittest
 from unittest.mock import MagicMock, AsyncMock
 from dateutil.parser import isoparse
 from backend.mentorship.mentorship_admin_service import MentorshipAdminService
-from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
+from backend.dto.participant_search_filter_dto import (
+    ParticipantSearchFilterDto,
+    UnregisteredFilterDto,
+)
 from backend.dto.participant_search_row_dto import (
     ParticipantSearchPairRow,
     ParticipantSearchRow,
+    PersonSearchRow,
 )
 from backend.dto.admin_meeting_log_dto import AdminMeetingDto
 from backend.dto.v2_meeting_batch_update_dto import (
@@ -120,6 +124,17 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.mock_meeting_repo.delete_meetings = AsyncMock(return_value=0)
         self.mock_meeting_repo.recalculate_completed_count = AsyncMock(return_value=0)
 
+        self.mock_participants_repo.search_unregistered_for_admin = AsyncMock()
+        self.mock_participants_repo.list_registered_rounds_by_user_ids = AsyncMock(
+            return_value={}
+        )
+        self.mock_rounds_repo.get_by_round_id = AsyncMock(return_value=MagicMock())
+
+        self.mock_application_repo = MagicMock()
+        self.mock_application_repo.list_hired_activity_roles_by_user_ids = AsyncMock(
+            return_value={}
+        )
+
         self.mock_mapper = MagicMock()
         self.mock_mapper.map_to_admin_meeting_dto.side_effect = (
             lambda meeting, *, is_completed, note_tags: AdminMeetingDto(
@@ -144,6 +159,122 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             mentorship_mapper=self.mock_mapper,
             logger=self.mock_logger,
             mentorship_meeting_repository=self.mock_meeting_repo,
+            application_repository=self.mock_application_repo,
+        )
+
+    async def test_unregistered_unknown_round_raises(self):
+        self.mock_rounds_repo.get_by_round_id.return_value = None
+
+        with self.assertRaises(ValueError):
+            await self.service.search_unregistered(
+                self.mock_session, 9, UnregisteredFilterDto()
+            )
+
+        self.mock_participants_repo.search_unregistered_for_admin.assert_not_awaited()
+
+    async def test_unregistered_empty_page_skips_the_lookups(self):
+        self.mock_participants_repo.search_unregistered_for_admin.return_value = (
+            [],
+            0,
+        )
+
+        result = await self.service.search_unregistered(
+            self.mock_session, 9, UnregisteredFilterDto()
+        )
+
+        self.assertEqual((result.rows, result.total), ([], 0))
+        self.mock_users_repo.get_users_and_emails_by_ids.assert_not_awaited()
+        self.mock_application_repo.list_hired_activity_roles_by_user_ids.assert_not_awaited()
+
+    async def test_unregistered_rows_carry_roles_and_past_rounds(self):
+        """Roles come back mentor first whatever the set's order; rounds taken
+        part counts the person's rounds and last round is the first of them
+        (the repository orders them latest first)."""
+        filters = UnregisteredFilterDto(q="ada")
+        self.mock_participants_repo.search_unregistered_for_admin.return_value = (
+            [
+                PersonSearchRow(
+                    user_id=5, is_blocked=True, is_deactivated=False, is_internal=False
+                ),
+                PersonSearchRow(
+                    user_id=6, is_blocked=False, is_deactivated=True, is_internal=True
+                ),
+            ],
+            12,
+        )
+        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
+            {
+                5: MagicMock(first_name="Ada", last_name="Lee", preferred_name=None),
+                6: MagicMock(first_name="Ben", last_name="Ng", preferred_name="B"),
+            },
+            {
+                5: [
+                    MagicMock(email="ada@x.com", is_primary=True),
+                    MagicMock(email="ada@old.com", is_primary=False),
+                ],
+            },
+        )
+        self.mock_application_repo.list_hired_activity_roles_by_user_ids.return_value = {
+            5: {ParticipantRole.MENTEE, ParticipantRole.MENTOR},
+            6: {ParticipantRole.MENTEE},
+        }
+        fall, spring = MagicMock(), MagicMock()
+        fall.name, spring.name = "2025 Fall", "2025 Spring"
+        self.mock_participants_repo.list_registered_rounds_by_user_ids.return_value = {
+            5: [fall, spring],
+        }
+
+        result = await self.service.search_unregistered(
+            self.mock_session, 9, filters, limit=10, offset=20, order="desc"
+        )
+
+        self.mock_participants_repo.search_unregistered_for_admin.assert_awaited_once_with(
+            self.mock_session, 9, filters, 10, 20, "desc"
+        )
+        self.mock_application_repo.list_hired_activity_roles_by_user_ids.assert_awaited_once_with(
+            self.mock_session, [5, 6]
+        )
+        self.assertEqual(result.total, 12)
+        ada, ben = result.rows
+        self.assertEqual(
+            (
+                ada.admitted_roles,
+                ada.rounds_taken_part,
+                ada.last_round_name,
+                ada.primary_email,
+                ada.alternative_emails,
+                ada.is_blocked,
+                ada.is_deactivated,
+            ),
+            (
+                [ParticipantRole.MENTOR, ParticipantRole.MENTEE],
+                2,
+                "2025 Fall",
+                "ada@x.com",
+                ["ada@old.com"],
+                True,
+                False,
+            ),
+        )
+        self.assertEqual(
+            (
+                ben.admitted_roles,
+                ben.rounds_taken_part,
+                ben.last_round_name,
+                ben.primary_email,
+                ben.is_deactivated,
+                ben.is_internal,
+            ),
+            ([ParticipantRole.MENTEE], 0, None, None, True, True),
+        )
+        wire = result.model_dump(by_alias=True, mode="json")["rows"][0]
+        self.assertEqual(
+            {k: wire[k] for k in ("admittedRoles", "roundsTakenPart", "lastRoundName")},
+            {
+                "admittedRoles": ["mentor", "mentee"],
+                "roundsTakenPart": 2,
+                "lastRoundName": "2025 Fall",
+            },
         )
 
     async def test_empty_rows_returns_immediately(self):
@@ -1135,6 +1266,7 @@ class TestGetRoundFeedback(unittest.IsolatedAsyncioTestCase):
             mentorship_mapper=MagicMock(),
             logger=MagicMock(),
             mentorship_meeting_repository=MagicMock(),
+            application_repository=MagicMock(),
         )
 
     async def test_maps_sent_and_unsent_rows_and_names_partners(self):

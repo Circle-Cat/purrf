@@ -21,8 +21,12 @@ from backend.common.recruiting_enums import ApplicationStage, JobKind
 from backend.dto.participant_search_row_dto import (
     ParticipantSearchPairRow,
     ParticipantSearchRow,
+    PersonSearchRow,
 )
-from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
+from backend.dto.participant_search_filter_dto import (
+    ParticipantSearchFilterDto,
+    UnregisteredFilterDto,
+)
 from sqlalchemy import (
     Float,
     and_,
@@ -420,43 +424,20 @@ class MentorshipRoundParticipantsRepository:
 
         return completed if is_completed else not_(completed)
 
-    def _build_admin_search_stmt(self, filters):
+    def _apply_person_filters(self, stmt, filters):
         """
-        Build the base SELECT statement for the admin participant search.
-
-        Applies all filter conditions from the provided filter DTO.
-        ORDER BY, LIMIT, and OFFSET are intentionally excluded so the
-        same statement can be reused for both result queries and
-        COUNT(*) subqueries.
+        Narrow a statement over UsersEntity by who the person is: exact user
+        ID, name or email, account state, and internal or external. Shared by
+        the participant search and the not-registered list.
 
         Args:
-            filters (ParticipantSearchFilterDto): Filter parameters to apply.
+            stmt (Select): A statement selecting from UsersEntity.
+            filters: Any DTO carrying ``user_id``, ``q``, ``account_status``
+                and ``internal``.
 
         Returns:
-            Select: A SQLAlchemy SELECT statement with all filter conditions applied.
+            Select: The statement with those conditions applied.
         """
-        columns = [
-            UsersEntity.user_id.label("user_id"),
-            MentorshipRoundParticipantsEntity.round_id.label("round_id"),
-            MentorshipRoundParticipantsEntity.participant_role.label(
-                "participant_role"
-            ),
-            MentorshipRoundParticipantsEntity.approval_status.label("approval_status"),
-            UsersEntity.is_blocked.label("is_blocked"),
-            UsersEntity.is_active.label("is_active"),
-            UsersEntity.is_internal.label("is_internal"),
-        ]
-
-        stmt = (
-            select(*columns)
-            .select_from(UsersEntity)
-            .outerjoin(
-                MentorshipRoundParticipantsEntity,
-                MentorshipRoundParticipantsEntity.user_id == UsersEntity.user_id,
-            )
-            .where(self._build_mentorship_eligibility_gate())
-        )
-
         if filters.user_id is not None:
             # Postgres rejects an int4 literal outside its range, so an ID no
             # row can hold matches nothing instead of failing the query.
@@ -464,11 +445,6 @@ class MentorshipRoundParticipantsRepository:
                 stmt = stmt.where(false())
             else:
                 stmt = stmt.where(UsersEntity.user_id == filters.user_id)
-
-        if filters.participation_status == "participant":
-            stmt = stmt.where(MentorshipRoundParticipantsEntity.user_id.is_not(None))
-        elif filters.participation_status == "non_participant":
-            stmt = stmt.where(MentorshipRoundParticipantsEntity.user_id.is_(None))
 
         if filters.q:
             pattern = f"%{filters.q}%"
@@ -499,6 +475,47 @@ class MentorshipRoundParticipantsRepository:
             stmt = stmt.where(UsersEntity.is_internal.is_(True))
         elif filters.internal == "external":
             stmt = stmt.where(UsersEntity.is_internal.is_(False))
+
+        return stmt
+
+    def _build_admin_search_stmt(self, filters):
+        """
+        Build the base SELECT statement for the admin participant search.
+
+        Applies all filter conditions from the provided filter DTO.
+        ORDER BY, LIMIT, and OFFSET are intentionally excluded so the
+        same statement can be reused for both result queries and
+        COUNT(*) subqueries.
+
+        Args:
+            filters (ParticipantSearchFilterDto): Filter parameters to apply.
+
+        Returns:
+            Select: A SQLAlchemy SELECT statement with all filter conditions applied.
+        """
+        columns = [
+            UsersEntity.user_id.label("user_id"),
+            MentorshipRoundParticipantsEntity.round_id.label("round_id"),
+            MentorshipRoundParticipantsEntity.participant_role.label(
+                "participant_role"
+            ),
+            MentorshipRoundParticipantsEntity.approval_status.label("approval_status"),
+            UsersEntity.is_blocked.label("is_blocked"),
+            UsersEntity.is_active.label("is_active"),
+            UsersEntity.is_internal.label("is_internal"),
+        ]
+
+        stmt = (
+            select(*columns)
+            .select_from(UsersEntity)
+            .join(
+                MentorshipRoundParticipantsEntity,
+                MentorshipRoundParticipantsEntity.user_id == UsersEntity.user_id,
+            )
+            .where(self._build_mentorship_eligibility_gate())
+        )
+
+        stmt = self._apply_person_filters(stmt, filters)
 
         if filters.round_id is not None:
             stmt = stmt.where(
@@ -556,7 +573,7 @@ class MentorshipRoundParticipantsRepository:
         Run the admin participant search and return paginated results.
 
         Rows are one per participant, keyed by (user_id, round_id); a user
-        with no participant row gets one row with round_id None. Each row
+        with no participant row is not listed. Each row
         carries every pair the user is in for that round, ordered by pair_id.
         The same base query is reused for both the COUNT(*) query and the
         paginated data query to ensure consistent filtering.
@@ -612,6 +629,139 @@ class MentorshipRoundParticipantsRepository:
         ]
         await self._attach_round_pairs(session, rows)
         return rows, int(total)
+
+    def _admitted_as(self, roles: list[ParticipantRole]):
+        """
+        Correlated EXISTS for a person hired into an activity posting for
+        any of ``roles``.
+
+        Args:
+            roles (list[ParticipantRole]): The mentorship roles to look for.
+
+        Returns:
+            ColumnElement[bool]: A correlated EXISTS on UsersEntity.
+        """
+        return (
+            select(ApplicationEntity.application_id)
+            .join(JobEntity, ApplicationEntity.job_id == JobEntity.job_id)
+            .where(
+                ApplicationEntity.user_id == UsersEntity.user_id,
+                ApplicationEntity.stage == ApplicationStage.HIRED,
+                JobEntity.kind == JobKind.ACTIVITY,
+                JobEntity.mentorship_role.in_(roles),
+            )
+            .exists()
+        )
+
+    async def search_unregistered_for_admin(
+        self,
+        session: AsyncSession,
+        round_id: int,
+        filters: UnregisteredFilterDto,
+        limit: int,
+        offset: int,
+        order: str = "asc",
+    ) -> tuple[list[PersonSearchRow], int]:
+        """
+        People admitted as a mentor or mentee who have not registered for a
+        round, one row each, by user ID.
+
+        Admission is a HIRED application to an activity posting carrying a
+        mentorship role. Training and past rounds play no part: the
+        historical members are backfilled with admissions. Blocked and
+        deactivated people are listed; the account filter narrows them.
+
+        Args:
+            session (AsyncSession): Active database session.
+            round_id (int): The round they have not registered for.
+            filters (UnregisteredFilterDto): Person filters, plus
+                ``admitted_role`` to keep only those admitted as that role.
+            limit (int): Maximum number of rows to return.
+            offset (int): Number of rows to skip.
+            order (str): "asc" (default) or "desc" by user ID.
+
+        Returns:
+            tuple[list[PersonSearchRow], int]: The page of rows and the
+                total before pagination.
+        """
+        roles = (
+            [filters.admitted_role]
+            if filters.admitted_role is not None
+            else [ParticipantRole.MENTOR, ParticipantRole.MENTEE]
+        )
+        registered = (
+            select(MentorshipRoundParticipantsEntity.participant_id)
+            .where(
+                MentorshipRoundParticipantsEntity.user_id == UsersEntity.user_id,
+                MentorshipRoundParticipantsEntity.round_id == round_id,
+            )
+            .exists()
+        )
+        stmt = select(
+            UsersEntity.user_id,
+            UsersEntity.is_blocked,
+            UsersEntity.is_active,
+            UsersEntity.is_internal,
+        ).where(self._admitted_as(roles), not_(registered))
+        stmt = self._apply_person_filters(stmt, filters)
+
+        total = (
+            await session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        )
+        by_id = (
+            UsersEntity.user_id.desc() if order == "desc" else UsersEntity.user_id.asc()
+        )
+        result = await session.execute(stmt.order_by(by_id).limit(limit).offset(offset))
+        rows = [
+            PersonSearchRow(
+                user_id=row.user_id,
+                is_blocked=row.is_blocked,
+                is_deactivated=not row.is_active,
+                is_internal=row.is_internal,
+            )
+            for row in result.all()
+        ]
+        return rows, int(total)
+
+    async def list_registered_rounds_by_user_ids(
+        self, session: AsyncSession, user_ids: list[int]
+    ) -> dict[int, list[MentorshipRoundEntity]]:
+        """
+        Every round each person has a participant row in, whatever its
+        approval status, latest first.
+
+        Latest is by ``meetings_completion_deadline_at`` -- round IDs do not
+        run in time order -- with rounds lacking one last and round_id
+        breaking ties.
+
+        Args:
+            session (AsyncSession): Active database session.
+            user_ids (list[int]): People to look up.
+
+        Returns:
+            dict[int, list[MentorshipRoundEntity]]: user_id -> rounds. People
+                with no registration are absent. Empty for empty input,
+                without touching the database.
+        """
+        if not user_ids:
+            return {}
+        result = await session.execute(
+            select(MentorshipRoundParticipantsEntity.user_id, MentorshipRoundEntity)
+            .join(
+                MentorshipRoundEntity,
+                MentorshipRoundEntity.round_id
+                == MentorshipRoundParticipantsEntity.round_id,
+            )
+            .where(MentorshipRoundParticipantsEntity.user_id.in_(user_ids))
+            .order_by(
+                MentorshipRoundEntity.meetings_completion_deadline_at.desc().nulls_last(),
+                MentorshipRoundEntity.round_id.desc(),
+            )
+        )
+        grouped: dict[int, list[MentorshipRoundEntity]] = {}
+        for user_id, round_entity in result.all():
+            grouped.setdefault(user_id, []).append(round_entity)
+        return grouped
 
     async def _attach_round_pairs(
         self, session: AsyncSession, rows: list[ParticipantSearchRow]

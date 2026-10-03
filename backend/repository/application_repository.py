@@ -406,6 +406,42 @@ class ApplicationRepository:
                 roles.append(role)
         return roles
 
+    async def list_hired_activity_roles_by_user_ids(
+        self, session: AsyncSession, user_ids: list[int]
+    ) -> dict[int, set[ParticipantRole]]:
+        """Every mentorship role each user holds a HIRED ACTIVITY application
+        in, for a page of people in one query.
+
+        A set, not a list: unlike ``list_hired_activity_roles`` nothing here
+        is ordered by admission, and the caller decides how to show them.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            user_ids (list[int]): People to look up.
+
+        Returns:
+            dict[int, set[ParticipantRole]]: user_id -> roles. Users with no
+                such admission are absent. Empty for empty input, without
+                touching the database.
+        """
+        if not user_ids:
+            return {}
+        result = await session.execute(
+            select(ApplicationEntity.user_id, JobEntity.mentorship_role)
+            .join(JobEntity, ApplicationEntity.job_id == JobEntity.job_id)
+            .where(
+                ApplicationEntity.user_id.in_(user_ids),
+                ApplicationEntity.stage == ApplicationStage.HIRED,
+                JobEntity.kind == JobKind.ACTIVITY,
+                JobEntity.mentorship_role.is_not(None),
+            )
+            .distinct()
+        )
+        roles: dict[int, set[ParticipantRole]] = {}
+        for user_id, role in result.all():
+            roles.setdefault(user_id, set()).add(role)
+        return roles
+
     async def get_by_ids(
         self, session: AsyncSession, application_ids: list[int]
     ) -> list[ApplicationEntity]:

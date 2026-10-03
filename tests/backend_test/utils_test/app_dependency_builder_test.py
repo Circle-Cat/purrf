@@ -522,6 +522,7 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,
             logger=mock_logger,
             mentorship_meeting_repository=mock_mentorship_meeting_repo_cls.return_value,
+            application_repository=builder.application_repository,
         )
         mock_mentorship_admin_controller_cls.assert_called_once_with(
             mentorship_admin_service=mock_mentorship_admin_service_cls.return_value,
