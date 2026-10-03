@@ -180,14 +180,11 @@ cronjobs:
     # accrual runs for a year without this, every one of those years ends about
     # 1.54h short per person and nothing reports it.
     suspend: true
-  - name: pubsub-sync-hourly
-    schedule: "0 * * * *"   # every hour at minute 00
-    url: "/api/pubsub/sync"
   - name: gmail-watch-maintain
     schedule: "15 11 * * *"  # daily: renew the 7-day Gmail watch, then catch up from the cursor
     url: "/api/email/gmail/maintain"
   - name: sync-meet-attendance
-    schedule: "15 */2 * * *"   # every 2 hours at :15, off the hour to avoid pubsub-sync-hourly
+    schedule: "15 */2 * * *"   # every 2 hours at :15
     url: "/api/mentorship/v2/meetings/attendance/sync?lookback_hours=4"
     # A meeting is offered while [now - lookback - 3h, now + 3h] overlaps its
     # own slot (3h = ATTENDANCE_WINDOW_DELTA), so at lookback_hours=4 that is
