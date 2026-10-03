@@ -1727,7 +1727,6 @@ describe("ApplicationDetailPage — activity timeline", () => {
           details: {
             subject: "Interview Availability",
             to: ["cand@x.com"],
-            cc: ["boss@x.com"],
             direction: "outbound",
           },
           actorId: OWNER_ID,
@@ -1755,7 +1754,7 @@ describe("ApplicationDetailPage — activity timeline", () => {
 
     expect(
       screen.getByText(
-        /Sent email "Interview Availability" to cand@x\.com, cc boss@x\.com, by Owen Owner/,
+        /Sent email "Interview Availability" to cand@x\.com, by Owen Owner/,
       ),
     ).toBeInTheDocument();
     expect(
@@ -2967,7 +2966,6 @@ describe("ApplicationDetailPage — history row emails", () => {
                 messageId: "m9",
                 from: "hr@circlecat.org",
                 to: ["cand@example.com"],
-                cc: [],
                 subject: "Interview invite",
                 bodyText: "Are you free Thursday?",
                 bodyHtml: null,
@@ -3042,7 +3040,6 @@ describe("ApplicationDetailPage — history row emails", () => {
                 messageId: "m9",
                 from: "hr@circlecat.org",
                 to: ["cand@example.com"],
-                cc: [],
                 subject: "Interview invite",
                 bodyText: "Are you free Thursday?",
                 bodyHtml: null,
@@ -3821,7 +3818,6 @@ describe("ApplicationDetailPage — Emails tab", () => {
     await waitFor(() =>
       expect(api.sendApplicationEmail).toHaveBeenCalledWith("101", {
         to: ["cand@x.com"],
-        cc: [],
         subject: "Hi there",
         body: "welcome",
         threadId: null,
@@ -3830,45 +3826,15 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(toast.success).toHaveBeenCalledWith("Email sent.");
   });
 
-  it("new compose starts with an empty Cc, whatever the response carries", async () => {
-    ownerViewing();
-    api.getApplicationEmails.mockResolvedValue({
-      // A stray defaultCc in the response must not reach the Cc field.
-      data: { threads: [], defaultTo: "cand@x.com", defaultCc: ["rec@x.com"] },
-    });
-    const user = userEvent.setup();
-    renderPage();
-    await waitLoaded();
-    await user.click(screen.getByRole("tab", { name: "Emails" }));
-    await user.click(screen.getByRole("button", { name: "Send email" }));
-    const ccField = screen.getByLabelText("Cc");
-    expect(ccField).toHaveValue("");
-    await user.type(ccField, "extra@x.com");
-    await user.type(screen.getByLabelText("Subject"), "Hi");
-    await user.type(screen.getByLabelText("Message"), "welcome");
-    await user.click(screen.getByRole("button", { name: "Send" }));
-    await waitFor(() =>
-      expect(api.sendApplicationEmail).toHaveBeenCalledWith("101", {
-        to: ["cand@x.com"],
-        cc: ["extra@x.com"],
-        subject: "Hi",
-        body: "welcome",
-        threadId: null,
-      }),
-    );
-  });
-
-  it("reply starts with an empty Cc, whatever the thread carries", async () => {
+  it("compose has no Cc field, for a new email or a reply", async () => {
     ownerViewing();
     api.getApplicationEmails.mockResolvedValue({
       data: {
         defaultTo: "cand@x.com",
-        defaultCc: ["rec@x.com"],
         threads: [
           {
             threadId: 1,
             subject: "Interview Availability",
-            defaultCc: ["rec@x.com", "boss@x.com"],
             messages: [
               {
                 messageId: 11,
@@ -3887,11 +3853,17 @@ describe("ApplicationDetailPage — Emails tab", () => {
     renderPage();
     await waitLoaded();
     await user.click(screen.getByRole("tab", { name: "Emails" }));
+
+    await user.click(screen.getByRole("button", { name: "Send email" }));
+    expect(screen.getByLabelText("To")).toHaveValue("cand@x.com");
+    expect(screen.queryByLabelText("Cc")).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
+
     await user.click(screen.getByRole("button", { name: "Reply" }));
-    expect(screen.getByLabelText("Cc")).toHaveValue("");
     expect(screen.getByLabelText("Subject")).toHaveValue(
       "Re: Interview Availability",
     );
+    expect(screen.queryByLabelText("Cc")).not.toBeInTheDocument();
   });
 
   it("the Emails tab has no Refresh button, for an owner either", async () => {
@@ -4067,7 +4039,6 @@ describe("ApplicationDetailPage — Emails tab", () => {
     await waitFor(() =>
       expect(api.sendApplicationEmail).toHaveBeenCalledWith("101", {
         to: ["cand@x.com"],
-        cc: [],
         subject: "Hi",
         body: '<p>Hello <b>Ana</b>, see <a href="https://x.com">this</a></p>',
         threadId: null,

@@ -95,7 +95,7 @@ describe("recruitingApi", () => {
 
   it("sendApplicationEmail POSTs the compose payload", async () => {
     request.post.mockResolvedValue({ data: { threads: [] } });
-    const body = { to: ["c@x.com"], cc: [], subject: "Hi", body: "hello" };
+    const body = { to: ["c@x.com"], subject: "Hi", body: "hello" };
     await sendApplicationEmail(10, body);
     expect(request.post).toHaveBeenCalledWith(
       "/recruiting/applications/10/emails",

@@ -531,9 +531,7 @@ const describeActivity = ({ eventType, details }, jobKind, timezone) => {
       }`;
     }
     case "recruiting.email_sent":
-      return `Sent email "${details.subject}" to ${(details.to ?? []).join(", ")}${
-        details.cc?.length ? `, cc ${details.cc.join(", ")}` : ""
-      }`;
+      return `Sent email "${details.subject}" to ${(details.to ?? []).join(", ")}`;
     case "recruiting.email_received":
       return `Received reply "${details.subject}" from ${details.from}`;
     default:
