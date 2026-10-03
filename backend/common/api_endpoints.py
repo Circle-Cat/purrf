@@ -75,6 +75,7 @@ MENTORSHIP_ADMIN_MATCH_RUNS = "/mentorship/admin/match-runs"
 MENTORSHIP_ADMIN_MATCH_RUN = "/mentorship/admin/match-runs/{round_id}"
 MENTORSHIP_ADMIN_MATCH_RUN_RESULTS = "/mentorship/admin/match-runs/{round_id}/results"
 MENTORSHIP_ADMIN_ROUND_FEEDBACK = "/mentorship/admin/rounds/{round_id}/feedback"
+MENTORSHIP_ADMIN_ROUND_UNREGISTERED = "/mentorship/admin/rounds/{round_id}/unregistered"
 # Called by the matcher job, through the gateway Worker. Not under
 # /admin: the caller is a service account, not a signed-in administrator.
 MENTORSHIP_MATCH_RUN_COMPLETE = "/mentorship/match-runs/complete"

@@ -616,6 +616,76 @@ class TestApplicationRepository(BaseRepositoryTestLib):
         roles = await repo.list_hired_activity_roles(self.session, user_id=user.user_id)
         self.assertEqual([], roles)
 
+    async def test_list_hired_activity_roles_by_user_ids_groups_per_user(self):
+        """Each user gets their own set, repeats collapse, and what is not a
+        HIRED activity admission -- or belongs to someone not asked about --
+        is left out."""
+        mentee_jobs = [
+            JobEntity(
+                kind=JobKind.ACTIVITY,
+                mentorship_role=ParticipantRole.MENTEE,
+                title=f"Mentee Activity {i}",
+                status=JobStatus.PUBLISHED,
+            )
+            for i in range(2)
+        ]
+        mentor_job = JobEntity(
+            kind=JobKind.ACTIVITY,
+            mentorship_role=ParticipantRole.MENTOR,
+            title="Mentor Activity",
+            status=JobStatus.PUBLISHED,
+        )
+        employment_job = JobEntity(
+            kind=JobKind.EMPLOYMENT, title="Some Job", status=JobStatus.PUBLISHED
+        )
+        both = _make_user("Bo", "Th", "batch-both@b.com")
+        mentor = _make_user("Me", "Nt", "batch-mentor@b.com")
+        none = _make_user("No", "Ne", "batch-none@b.com")
+        not_asked = _make_user("Na", "Sk", "batch-not-asked@b.com")
+        await self.insert_entities([
+            *mentee_jobs,
+            mentor_job,
+            employment_job,
+            both,
+            mentor,
+            none,
+            not_asked,
+        ])
+        await self.session.flush()
+
+        repo = ApplicationRepository()
+        for job, user, stage in (
+            (mentee_jobs[0], both, ApplicationStage.HIRED),
+            (mentee_jobs[1], both, ApplicationStage.HIRED),
+            (mentor_job, both, ApplicationStage.HIRED),
+            (mentor_job, mentor, ApplicationStage.HIRED),
+            (mentee_jobs[0], mentor, ApplicationStage.RECRUITER_SCREENING),
+            (employment_job, none, ApplicationStage.HIRED),
+            (mentee_jobs[0], not_asked, ApplicationStage.HIRED),
+        ):
+            await repo.create(
+                self.session,
+                ApplicationEntity(job_id=job.job_id, user_id=user.user_id, stage=stage),
+            )
+
+        roles = await repo.list_hired_activity_roles_by_user_ids(
+            self.session, [both.user_id, mentor.user_id, none.user_id]
+        )
+
+        self.assertEqual(
+            roles,
+            {
+                both.user_id: {ParticipantRole.MENTOR, ParticipantRole.MENTEE},
+                mentor.user_id: {ParticipantRole.MENTOR},
+            },
+        )
+
+    async def test_list_hired_activity_roles_by_user_ids_empty_input(self):
+        repo = ApplicationRepository()
+        self.assertEqual(
+            await repo.list_hired_activity_roles_by_user_ids(self.session, []), {}
+        )
+
     async def test_get_hired_activity_application_returns_none_when_not_hired(self):
         job = JobEntity(
             kind=JobKind.ACTIVITY,

@@ -1,5 +1,8 @@
 from fastapi import APIRouter, Depends
-from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
+from backend.dto.participant_search_filter_dto import (
+    ParticipantSearchFilterDto,
+    UnregisteredFilterDto,
+)
 from backend.dto.matching_run_create_dto import MatchingRunCreateDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
@@ -11,6 +14,7 @@ from backend.common.api_endpoints import (
     MENTORSHIP_ADMIN_MATCH_RUN,
     MENTORSHIP_ADMIN_MATCH_RUN_RESULTS,
     MENTORSHIP_ADMIN_ROUND_FEEDBACK,
+    MENTORSHIP_ADMIN_ROUND_UNREGISTERED,
 )
 from backend.common.permissions import Permission
 from backend.utils.permission_decorators import authenticate
@@ -95,6 +99,15 @@ class MentorshipAdminController:
             response_model=None,
         )
 
+        self.router.add_api_route(
+            MENTORSHIP_ADMIN_ROUND_UNREGISTERED,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_READ])(
+                self.search_unregistered
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
+
     async def search_participants(
         self,
         filters: ParticipantSearchFilterDto = Depends(),
@@ -104,7 +117,7 @@ class MentorshipAdminController:
         order: str = "asc",
     ):
         """
-        Search mentorship participants and non-participants.
+        Search mentorship participants.
 
         Args:
             filters (ParticipantSearchFilterDto): Search filters.
@@ -122,6 +135,37 @@ class MentorshipAdminController:
             )
         return api_response(
             message="Successfully retrieved participant search results.",
+            data=result,
+        )
+
+    async def search_unregistered(
+        self,
+        round_id: int,
+        filters: UnregisteredFilterDto = Depends(),
+        limit: int = 100,
+        offset: int = 0,
+        order: str = "asc",
+    ):
+        """
+        List people admitted as a mentor or mentee who have not registered
+        for a round.
+
+        Args:
+            round_id (int): The mentorship round ID.
+            filters (UnregisteredFilterDto): Person and admitted-role filters.
+            limit (int): Maximum number of rows to return.
+            offset (int): Pagination offset.
+            order (str): Sort direction by user ID ("asc" or "desc").
+
+        Returns:
+            API response containing the rows and their total.
+        """
+        async with self.database.session() as session:
+            result = await self.mentorship_admin_service.search_unregistered(
+                session, round_id, filters, limit, offset, order
+            )
+        return api_response(
+            message="Successfully retrieved people not registered for the round.",
             data=result,
         )
 

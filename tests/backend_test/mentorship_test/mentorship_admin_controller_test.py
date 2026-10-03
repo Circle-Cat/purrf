@@ -2,9 +2,15 @@ import unittest
 from datetime import date
 from unittest.mock import MagicMock, AsyncMock, patch
 from http import HTTPStatus
+from fastapi import Depends, FastAPI
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from backend.mentorship.mentorship_admin_controller import MentorshipAdminController
-from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
+from backend.dto.participant_search_filter_dto import (
+    ParticipantSearchFilterDto,
+    UnregisteredFilterDto,
+)
+from backend.common.mentorship_enums import ParticipantRole
 from backend.dto.matching_run_create_dto import MatchingRunCreateDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
@@ -16,6 +22,7 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         self.mock_admin_service.search_participants = AsyncMock()
         self.mock_admin_service.get_meeting_log = AsyncMock()
         self.mock_admin_service.get_round_feedback = AsyncMock()
+        self.mock_admin_service.search_unregistered = AsyncMock()
         self.mock_admin_service.apply_v2_meeting_batch = AsyncMock()
 
         self.mock_matching_run_service = MagicMock()
@@ -198,6 +205,62 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         for field in ("name", "email", "matched_user"):
             with self.subTest(field=field), self.assertRaises(ValidationError):
                 ParticipantSearchFilterDto(**{field: "x"})
+
+    def test_filter_no_longer_takes_participation_status(self):
+        with self.assertRaises(ValidationError):
+            ParticipantSearchFilterDto(participation_status="participant")
+
+    def test_a_query_still_carrying_participation_status_is_not_refused(self):
+        """The frontend sends participationStatus until its own change ships;
+        an undeclared query parameter is dropped before the DTO sees it."""
+        app = FastAPI()
+
+        @app.get("/probe")
+        async def probe(filters: ParticipantSearchFilterDto = Depends()):
+            return filters.model_dump()
+
+        response = TestClient(app).get(
+            "/probe", params={"participationStatus": "participant", "q": "ada"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["q"], "ada")
+
+    async def test_search_unregistered_delegates_to_service(self):
+        filters = UnregisteredFilterDto(admitted_role=ParticipantRole.MENTOR)
+        mock_result = MagicMock()
+        self.mock_admin_service.search_unregistered.return_value = mock_result
+
+        await self.controller.search_unregistered(
+            round_id=7, filters=filters, limit=25, offset=50, order="desc"
+        )
+
+        self.mock_admin_service.search_unregistered.assert_awaited_once_with(
+            self.mock_session, 7, filters, 25, 50, "desc"
+        )
+        self.mock_api_response.assert_called_once_with(
+            message="Successfully retrieved people not registered for the round.",
+            data=mock_result,
+        )
+
+    async def test_unregistered_route_is_registered_under_the_round(self):
+        routes = {
+            (route.path, tuple(sorted(route.methods)))
+            for route in self.controller.router.routes
+        }
+
+        self.assertIn(
+            ("/mentorship/admin/rounds/{round_id}/unregistered", ("GET",)), routes
+        )
+
+    def test_unregistered_filter_rejects_approval_and_training(self):
+        for field, value in (
+            ("approval_status", "matched"),
+            ("onboarding_status", "completed"),
+            ("participant_role", "mentor"),
+        ):
+            with self.subTest(field=field), self.assertRaises(ValidationError):
+                UnregisteredFilterDto(**{field: value})
 
     async def test_start_matching_run_passes_the_selection_through(self):
         self.mock_matching_run_service.start_run.return_value = {

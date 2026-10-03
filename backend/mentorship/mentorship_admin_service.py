@@ -1,14 +1,20 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.dto.participant_search_filter_dto import ParticipantSearchFilterDto
+from backend.dto.participant_search_filter_dto import (
+    ParticipantSearchFilterDto,
+    UnregisteredFilterDto,
+)
 from backend.dto.participant_search_dto import (
     AttendanceIssueDto,
     ParticipantPairDto,
     ParticipantRowDto,
     ParticipantSearchDto,
+    UnregisteredRowDto,
+    UnregisteredSearchDto,
 )
 from backend.dto.participant_search_row_dto import (
     ParticipantSearchPairRow,
     ParticipantSearchRow,
+    PersonSearchRow,
 )
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.admin_meeting_log_dto import AdminMeetingLogDto
@@ -24,6 +30,7 @@ from backend.common.mentorship_enums import (
     MeetingNoteTag,
     MeetingSource,
     PairStatus,
+    ParticipantRole,
     TrainingCategory,
 )
 from backend.common.name_utils import user_display_name
@@ -50,6 +57,7 @@ class MentorshipAdminService:
         mentorship_mapper,
         logger,
         mentorship_meeting_repository,
+        application_repository,
     ) -> None:
         self.users_repository = users_repository
         self.participants_repository = participants_repository
@@ -59,6 +67,7 @@ class MentorshipAdminService:
         self.mentorship_mapper = mentorship_mapper
         self.logger = logger
         self.mentorship_meeting_repository = mentorship_meeting_repository
+        self.application_repository = application_repository
 
     def _extract_emails(self, emails: list) -> tuple[str | None, list[str]]:
         """
@@ -79,6 +88,38 @@ class MentorshipAdminService:
             else:
                 alternative_emails.append(e.email)
         return primary_email, alternative_emails
+
+    def _person_fields(
+        self, row: PersonSearchRow, users_map: dict, emails_map: dict
+    ) -> dict:
+        """
+        The PersonRowDto fields for a search row: the user's names and
+        emails, and the account flags the row was read with.
+
+        Args:
+            row (PersonSearchRow): The row; its user must be in users_map.
+            users_map (dict[int, UsersEntity]): Users keyed by user_id.
+            emails_map (dict[int, list[UserEmailsEntity]]): Emails keyed by
+                user_id; a user with none may be absent.
+
+        Returns:
+            dict: Keyword arguments for any PersonRowDto subclass.
+        """
+        user = users_map[row.user_id]
+        primary_email, alternative_emails = self._extract_emails(
+            emails_map.get(row.user_id, [])
+        )
+        return {
+            "user_id": row.user_id,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "preferred_name": user.preferred_name,
+            "primary_email": primary_email,
+            "alternative_emails": alternative_emails,
+            "is_blocked": row.is_blocked,
+            "is_deactivated": row.is_deactivated,
+            "is_internal": row.is_internal,
+        }
 
     async def _fetch_batch_relations(
         self, session: AsyncSession, rows: list[ParticipantSearchRow]
@@ -278,26 +319,13 @@ class MentorshipAdminService:
             mentor_status = statuses.get(TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
             mentee_status = statuses.get(TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING)
 
-            user = users_map[row.user_id]
-            primary_email, alternative_emails = self._extract_emails(
-                emails_map.get(row.user_id, [])
-            )
-
             round_entity = rounds_map.get(row.round_id) if row.round_id else None
 
             participant_rows.append(
                 ParticipantRowDto(
-                    user_id=row.user_id,
+                    **self._person_fields(row, users_map, emails_map),
                     round_id=row.round_id,
                     round_name=round_entity.name if round_entity else None,
-                    first_name=user.first_name,
-                    last_name=user.last_name,
-                    preferred_name=user.preferred_name,
-                    primary_email=primary_email,
-                    alternative_emails=alternative_emails,
-                    is_blocked=row.is_blocked,
-                    is_deactivated=row.is_deactivated,
-                    is_internal=row.is_internal,
                     participant_role=row.participant_role,
                     approval_status=row.approval_status,
                     mentor_onboarding_status=mentor_status,
@@ -308,6 +336,78 @@ class MentorshipAdminService:
             )
 
         return ParticipantSearchDto(participant_rows=participant_rows, total=total)
+
+    async def search_unregistered(
+        self,
+        session: AsyncSession,
+        round_id: int,
+        filters: UnregisteredFilterDto,
+        limit: int = 100,
+        offset: int = 0,
+        order: str = "asc",
+    ) -> UnregisteredSearchDto:
+        """
+        List the people admitted as a mentor or mentee who have not
+        registered for a round, with what an admin chasing them needs: who
+        they are, what they were admitted as, and how much they have taken
+        part before.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round they have not registered for.
+            filters (UnregisteredFilterDto): Person and admitted-role filters.
+            limit (int): Maximum number of rows to return. Defaults to 100.
+            offset (int): Number of rows to skip for pagination. Defaults to 0.
+            order (str): "asc" or "desc" by user ID (default "asc").
+
+        Returns:
+            UnregisteredSearchDto: One row per person and the total count.
+
+        Raises:
+            ValueError: If the round does not exist.
+        """
+        round_entity = await self.rounds_repository.get_by_round_id(session, round_id)
+        if round_entity is None:
+            raise ValueError(f"Mentorship round {round_id} does not exist.")
+
+        rows, total = await self.participants_repository.search_unregistered_for_admin(
+            session, round_id, filters, limit, offset, order
+        )
+        if not rows:
+            return UnregisteredSearchDto(rows=[], total=total)
+
+        user_ids = [row.user_id for row in rows]
+        users_map, emails_map = await self.users_repository.get_users_and_emails_by_ids(
+            session, user_ids
+        )
+        roles_map = (
+            await self.application_repository.list_hired_activity_roles_by_user_ids(
+                session, user_ids
+            )
+        )
+        rounds_map = (
+            await self.participants_repository.list_registered_rounds_by_user_ids(
+                session, user_ids
+            )
+        )
+
+        result: list[UnregisteredRowDto] = []
+        for row in rows:
+            roles = roles_map.get(row.user_id, set())
+            past_rounds = rounds_map.get(row.user_id, [])
+            result.append(
+                UnregisteredRowDto(
+                    **self._person_fields(row, users_map, emails_map),
+                    admitted_roles=[
+                        role
+                        for role in (ParticipantRole.MENTOR, ParticipantRole.MENTEE)
+                        if role in roles
+                    ],
+                    rounds_taken_part=len(past_rounds),
+                    last_round_name=past_rounds[0].name if past_rounds else None,
+                )
+            )
+        return UnregisteredSearchDto(rows=result, total=total)
 
     def _resolve_meeting_notes(
         self, meeting: dict, mentor_id: int, mentee_id: int
