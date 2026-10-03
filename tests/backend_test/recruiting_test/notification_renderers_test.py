@@ -470,6 +470,56 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
         self.assertNotIn("From:", body)
         self.assertNotIn("Subject:", body)
 
+    async def test_email_bounced_names_the_application_and_the_failed_addresses(self):
+        candidate = _make_user("Ada", "Lovelace")
+        await self.insert_entities([candidate])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        event = await self._make_event(
+            "recruiting.email_bounced",
+            "application",
+            application.application_id,
+            None,
+            details={
+                "threadId": 1,
+                "failedRecipients": ["bad@example.com", "<b>@example.com"],
+            },
+        )
+
+        subject, body = await render_registry.render(self.session, event)
+
+        self.assertEqual(
+            subject, "Email not delivered: Ada Lovelace (Backend Engineer)"
+        )
+        self.assertIn(
+            "An email you sent about Ada Lovelace's application for Backend "
+            "Engineer could not be delivered to bad@example.com, "
+            "&lt;b&gt;@example.com.",
+            body,
+        )
+        self.assertIn("Emails tab", body)
+
+    async def test_email_bounced_without_addresses_names_nobody(self):
+        candidate = _make_user("Ada", "Lovelace")
+        await self.insert_entities([candidate])
+        job = await self._make_job()
+        application = await self._make_application(job.job_id, candidate)
+        event = await self._make_event(
+            "recruiting.email_bounced",
+            "application",
+            application.application_id,
+            None,
+            details={"threadId": 1, "failedRecipients": []},
+        )
+
+        _, body = await render_registry.render(self.session, event)
+
+        self.assertIn(
+            "An email you sent about Ada Lovelace's application for Backend "
+            "Engineer could not be delivered.",
+            body,
+        )
+
     async def test_rendered_emails_carry_the_automated_footer(self):
         """Each renderer appends the footer itself -- nothing downstream of
         here adds one -- so a renderer that skipped it would send a body with

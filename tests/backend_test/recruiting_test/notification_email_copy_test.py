@@ -33,6 +33,7 @@ def _dto(**overrides):
         unavailable_default_assignee_id=None,
         email_from="Ada <ada@example.com>",
         email_subject="Re: Interview",
+        email_failed_recipients="bad@example.com",
     )
     defaults.update(overrides)
     return SimpleNamespace(**defaults)

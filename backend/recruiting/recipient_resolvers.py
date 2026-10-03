@@ -249,11 +249,13 @@ async def _mentioned(session: AsyncSession, event: EventEntity) -> set[int]:
 
 
 @register_recipients(RecruitingEvent.EMAIL_RECEIVED, subject_type="application")
+@register_recipients(RecruitingEvent.EMAIL_BOUNCED, subject_type="application")
 async def _email_senders(session: AsyncSession, event: EventEntity) -> set[int]:
     """Whoever sent a message in the thread the reply arrived on, through Purrf.
 
     Told because they are the one waiting on the answer, whether or not they
-    still own the posting. Nobody when every message in the thread was sent
+    still own the posting. A bounce goes to the same people: it is their
+    message that did not arrive. Nobody when every message in the thread was sent
     from the Gmail web UI, which records no sender -- that is a state, not a
     write-site bug.
 
