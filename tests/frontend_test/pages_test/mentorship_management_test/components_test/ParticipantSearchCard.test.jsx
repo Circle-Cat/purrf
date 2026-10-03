@@ -13,18 +13,22 @@ import AllRoundsTable from "@/pages/MentorshipManagement/components/AllRoundsTab
 import RoundFeedbackPage from "@/pages/MentorshipManagement/RoundFeedbackPage";
 import {
   searchParticipants,
+  searchUnregistered,
   getMeetingLog,
   updateMeetingLog,
   getRoundFeedback,
   getAllMentorshipRounds,
+  getMentorshipRoundSlots,
 } from "@/api/mentorshipApi";
 
 vi.mock("@/api/mentorshipApi", () => ({
   searchParticipants: vi.fn(),
+  searchUnregistered: vi.fn(),
   getMeetingLog: vi.fn(),
   updateMeetingLog: vi.fn(),
   getRoundFeedback: vi.fn(),
   getAllMentorshipRounds: vi.fn(),
+  getMentorshipRoundSlots: vi.fn(),
 }));
 
 // Latest first, as the API returns them; the latest has the higher id here so
@@ -149,6 +153,9 @@ describe("ParticipantSearchCard", () => {
     vi.clearAllMocks();
     searchParticipants.mockResolvedValue(resultsOf([]));
     getAllMentorshipRounds.mockResolvedValue({ data: TEST_ROUNDS });
+    getMentorshipRoundSlots.mockResolvedValue({
+      data: { registrationRoundId: 7, isRegistrationOpen: false },
+    });
     getMeetingLog.mockResolvedValue({
       data: { roundVersion: "v2", meetings: [] },
     });
@@ -177,7 +184,6 @@ describe("ParticipantSearchCard", () => {
       await mounted();
       const args = searchParticipants.mock.calls[0][0];
       expect(args).toMatchObject({
-        participationStatus: "participant",
         roundId: "7",
         limit: 20,
         offset: 0,
@@ -213,7 +219,6 @@ describe("ParticipantSearchCard", () => {
         accountStatus: "blocked",
         internal: "external",
         onboardingStatus: "completed",
-        participationStatus: "participant",
         roundId: "3",
         participantRole: "mentor",
         approvalStatus: "matched",
@@ -325,7 +330,6 @@ describe("ParticipantSearchCard", () => {
           internal: "internal",
           onboardingStatus: "incomplete",
           roundId: "3",
-          participationStatus: "participant",
           offset: 0,
         }),
       );
@@ -454,7 +458,6 @@ describe("ParticipantSearchCard", () => {
       expect(searchParticipants).toHaveBeenLastCalledWith(
         expect.objectContaining({
           q: "ali",
-          participationStatus: "participant",
         }),
       );
     });
@@ -532,7 +535,7 @@ describe("ParticipantSearchCard", () => {
       expect(screen.queryByText("Non-participants")).not.toBeInTheDocument();
     });
 
-    it("lays out the filter bar in order, ending with Search", async () => {
+    it("lays out the filter bar in order, then Search, then Not registered", async () => {
       await renderCard();
       const bar = screen.getByLabelText("User ID").parentElement;
       expect(
@@ -547,17 +550,20 @@ describe("ParticipantSearchCard", () => {
         "Account",
         "Onboarding status",
         "Approval status",
+        "Not registered is unavailable",
       ]);
-      expect(bar.lastElementChild).toBe(
-        screen.getByRole("button", { name: "Search" }),
+      const [search, notRegistered] = Array.from(bar.children).slice(-2);
+      expect(search).toBe(screen.getByRole("button", { name: "Search" }));
+      expect(notRegistered).toContainElement(
+        screen.getByRole("button", { name: "Not registered" }),
       );
     });
 
-    it("sends participation_status participant on every search", async () => {
+    it("no longer sends a participation status", async () => {
       await renderCard({ url: SEARCHED_PARTICIPANTS });
       await mounted();
-      expect(searchParticipants.mock.calls[0][0].participationStatus).toBe(
-        "participant",
+      expect(searchParticipants.mock.calls[0][0]).not.toHaveProperty(
+        "participationStatus",
       );
     });
 
@@ -1013,6 +1019,116 @@ describe("ParticipantSearchCard", () => {
         ),
       ).toBeInTheDocument();
       expect(name.closest("tr").className).not.toMatch(/red/);
+    });
+  });
+
+  describe("not registered", () => {
+    const openRegistration = () =>
+      getMentorshipRoundSlots.mockResolvedValue({
+        data: { registrationRoundId: 7, isRegistrationOpen: true },
+      });
+
+    const unregisteredRow = (overrides = {}) => ({
+      userId: 31,
+      firstName: "Dana",
+      lastName: "Wu",
+      preferredName: "Dana Wu",
+      primaryEmail: "dana@x.com",
+      alternativeEmails: [],
+      isBlocked: false,
+      isDeactivated: true,
+      isInternal: true,
+      admittedRoles: ["mentor", "mentee"],
+      roundsTakenPart: 3,
+      lastRoundName: "Spring 2026",
+      ...overrides,
+    });
+
+    it("is greyed out while the round is not taking registrations and says why", async () => {
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await mounted();
+
+      expect(
+        screen.getByRole("button", { name: "Not registered" }),
+      ).toBeDisabled();
+
+      screen.getByLabelText("Not registered is unavailable").focus();
+
+      expect(
+        (await screen.findAllByText(/Only while the round takes registrations/))
+          .length,
+      ).toBeGreaterThan(0);
+    });
+
+    it("swaps the table for the not registered people of the round", async () => {
+      searchParticipants.mockResolvedValue(resultsOf([participantRow()]));
+      searchUnregistered.mockResolvedValue({
+        data: {
+          rows: [
+            unregisteredRow(),
+            unregisteredRow({
+              userId: 32,
+              preferredName: "Eli Fox",
+              isDeactivated: false,
+              isInternal: false,
+              admittedRoles: ["mentee"],
+              roundsTakenPart: 0,
+              lastRoundName: null,
+            }),
+          ],
+          total: 2,
+        },
+      });
+      openRegistration();
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await screen.findByText("Alice Doe");
+
+      await userEvent.click(
+        screen.getByRole("button", { name: "Not registered" }),
+      );
+
+      const dana = await screen.findByText("Dana Wu");
+      expect(searchUnregistered.mock.calls[0][0]).toBe("7");
+      expect(urlParams().get("notRegistered")).toBe("1");
+      expect(
+        screen.getByRole("button", { name: "Not registered" }),
+      ).toHaveAttribute("aria-pressed", "true");
+      expect(
+        within(dana.closest("table"))
+          .getAllByRole("columnheader")
+          .map((th) => th.textContent),
+      ).toEqual([
+        expect.stringContaining("Name"),
+        "Admitted as",
+        "Int / ext",
+        "Account",
+        "Rounds taken part",
+        "Last round",
+      ]);
+      expect(cellOf(dana, "Admitted as")).toHaveTextContent(/^mentor, mentee$/);
+      expect(cellOf(dana, "Int / ext")).toHaveTextContent("Internal");
+      expect(cellOf(dana, "Account")).toHaveTextContent("Deactivated");
+      expect(cellOf(dana, "Rounds taken part")).toHaveTextContent(/^3$/);
+      expect(cellOf(dana, "Last round")).toHaveTextContent("Spring 2026");
+      const eli = screen.getByText("Eli Fox");
+      expect(cellOf(eli, "Admitted as")).toHaveTextContent(/^mentee$/);
+      expect(cellOf(eli, "Rounds taken part")).toHaveTextContent(/^0$/);
+      expect(cellOf(eli, "Last round")).toHaveTextContent("Never");
+      expect(screen.queryByText("Alice Doe")).not.toBeInTheDocument();
+    });
+
+    it("greys out the training and approval filters while it is on", async () => {
+      searchUnregistered.mockResolvedValue({
+        data: { rows: [unregisteredRow()], total: 1 },
+      });
+      openRegistration();
+      await renderCard({ url: "/?round=7&notRegistered=1" });
+      await screen.findByText("Dana Wu");
+
+      expect(screen.getByLabelText("Onboarding status")).toBeDisabled();
+      expect(screen.getByLabelText("Approval status")).toBeDisabled();
+      expect(screen.getByLabelText("Role")).toBeEnabled();
+      expect(searchParticipants).not.toHaveBeenCalled();
     });
   });
 
