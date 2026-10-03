@@ -145,6 +145,7 @@ class RecruitingEvent(StrEnum):
 
     EMAIL_SENT = "recruiting.email_sent"
     EMAIL_RECEIVED = "recruiting.email_received"
+    EMAIL_BOUNCED = "recruiting.email_bounced"
     JOB_CREATED = "recruiting.job_created"
     PENDING_EDIT_DISCARDED = "recruiting.pending_edit_discarded"
 

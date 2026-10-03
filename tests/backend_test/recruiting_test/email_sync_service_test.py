@@ -12,7 +12,7 @@ from backend.recruiting.email_sync_service import EmailSyncService
 RECEIVED_AT = datetime(2023, 5, 6, 7, 8, tzinfo=timezone.utc)
 
 
-def _message(direction, subject="Re: Hello"):
+def _message(direction, subject="Re: Hello", failed_recipients=None):
     return SimpleNamespace(
         direction=direction,
         subject=subject,
@@ -20,6 +20,7 @@ def _message(direction, subject="Re: Hello"):
         to_addresses="recruiting@corp.com",
         thread_id=10,
         gmail_internal_date=RECEIVED_AT,
+        failed_recipients=failed_recipients,
     )
 
 
@@ -131,6 +132,58 @@ class TestSyncTrackedThread(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["details"]["direction"], "inbound")
         # Backdated to when the mail actually arrived, not to now.
         self.assertEqual(kwargs["created_at"], RECEIVED_AT)
+
+    async def test_a_bounce_is_recorded_as_email_bounced_not_a_reply(self):
+        self.conversation_service.sync_context.return_value = [
+            _message(
+                EmailDirection.INBOUND,
+                subject="Delivery Status Notification (Failure)",
+                failed_recipients="bad@x",
+            ),
+        ]
+
+        await self.service.sync_tracked_thread(self.session, self.thread)
+
+        self.record_event.assert_awaited_once()
+        _args, kwargs = self.record_event.await_args
+        self.assertEqual(kwargs["subject_id"], 7)
+        # Nobody acted: the candidate did not write, the mail system did.
+        self.assertIsNone(kwargs["actor_id"])
+        self.assertEqual(kwargs["event_type"], "recruiting.email_bounced")
+        self.assertEqual(
+            kwargs["details"],
+            {
+                "subject": "Delivery Status Notification (Failure)",
+                "failedRecipients": ["bad@x"],
+                "threadId": 10,
+                "direction": "inbound",
+            },
+        )
+        self.assertEqual(kwargs["created_at"], RECEIVED_AT)
+
+    async def test_a_bounce_lists_each_failed_address(self):
+        self.conversation_service.sync_context.return_value = [
+            _message(
+                EmailDirection.INBOUND,
+                failed_recipients="a@x, Bee <b@y>,c@z",
+            ),
+        ]
+
+        await self.service.sync_tracked_thread(self.session, self.thread)
+
+        details = self.record_event.await_args.kwargs["details"]
+        self.assertEqual(details["failedRecipients"], ["a@x", "b@y", "c@z"])
+
+    async def test_a_bounce_that_names_nobody_is_still_a_bounce(self):
+        self.conversation_service.sync_context.return_value = [
+            _message(EmailDirection.INBOUND, failed_recipients=""),
+        ]
+
+        await self.service.sync_tracked_thread(self.session, self.thread)
+
+        kwargs = self.record_event.await_args.kwargs
+        self.assertEqual(kwargs["event_type"], "recruiting.email_bounced")
+        self.assertEqual(kwargs["details"]["failedRecipients"], [])
 
     async def test_no_new_messages_writes_no_activity(self):
         await self.service.sync_tracked_thread(self.session, self.thread)
