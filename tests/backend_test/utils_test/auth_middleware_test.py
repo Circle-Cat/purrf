@@ -14,10 +14,20 @@ from backend.common.api_endpoints import (
     GMAIL_PUSH_ENDPOINT,
     MENTORSHIP_MATCH_RUN_COMPLETE,
     NOTIFICATION_DELIVER_ENDPOINT,
+    PUBSUB_PUSH_GERRIT_ENDPOINT,
+    PUBSUB_PUSH_GOOGLE_CHAT_ENDPOINT,
+    PUBSUB_PUSH_MICROSOFT_CHAT_ENDPOINT,
     TRAINING_CONTENT_ENDPOINT,
 )
 from backend.training.content_host import resolve_content_host
 from backend.utils.auth_middleware import AuthMiddleware
+
+
+_PUSH_ENDPOINTS = (
+    PUBSUB_PUSH_GOOGLE_CHAT_ENDPOINT,
+    PUBSUB_PUSH_MICROSOFT_CHAT_ENDPOINT,
+    PUBSUB_PUSH_GERRIT_ENDPOINT,
+)
 
 
 def make_user_context(
@@ -601,6 +611,32 @@ class TestAuthMiddleware(unittest.TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.text, "pushed")
+        self.mock_auth_service.authenticate_request.assert_not_called()
+        self.mock_database.session.assert_not_called()
+
+    def test_event_pushes_skip_authentication(self):
+        """Pub/Sub pushes Google Chat, Microsoft Teams and Gerrit events with a Google OIDC
+        token and no Auth0 session; their routes assert that token themselves.
+        """
+        self.mock_auth_service.authenticate_request.side_effect = ValueError(
+            "Missing authentication credentials"
+        )
+        for endpoint in _PUSH_ENDPOINTS:
+            self.app.router.routes.append(
+                Route(
+                    f"/api{endpoint}",
+                    lambda request: PlainTextResponse("pushed"),
+                    methods=["POST"],
+                )
+            )
+
+        client = self._add_middleware()
+        for endpoint in _PUSH_ENDPOINTS:
+            with self.subTest(endpoint=endpoint):
+                response = client.post(f"/api{endpoint}", json={})
+
+                self.assertEqual(response.status_code, HTTPStatus.OK)
+                self.assertEqual(response.text, "pushed")
         self.mock_auth_service.authenticate_request.assert_not_called()
         self.mock_database.session.assert_not_called()
 
