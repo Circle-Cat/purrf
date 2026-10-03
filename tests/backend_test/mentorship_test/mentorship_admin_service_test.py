@@ -301,6 +301,139 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(wire["pairs"][1]["partner"]["id"], 3)
 
+    async def test_tagged_meetings_become_each_pairs_attendance_issues(self):
+        """Only meetings carrying a note tag are listed, under their own pair,
+        in the repository's order, with the tags the meeting log shows."""
+        self.mock_participants_repo.search_participants_for_admin.return_value = (
+            [
+                _make_row(
+                    user_id=1,
+                    participant_role=ParticipantRole.MENTEE,
+                    pairs=[
+                        _search_pair(
+                            99,
+                            mentor_id=2,
+                            mentee_id=1,
+                            pair_status=PairStatus.INACTIVE,
+                        ),
+                        _search_pair(100, mentor_id=3, mentee_id=1),
+                    ],
+                ),
+            ],
+            1,
+        )
+        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
+            {
+                uid: MagicMock(
+                    user_id=uid, first_name="U", last_name="X", preferred_name=None
+                )
+                for uid in (1, 2, 3)
+            },
+            {},
+        )
+        self.mock_meeting_repo.get_meetings_by_pairs.return_value = {
+            99: [
+                _make_meeting(
+                    meeting_id="a",
+                    pair_id=99,
+                    start_datetime="2026-08-02T17:00:00+00:00",
+                    has_insufficient_duration=True,
+                ),
+            ],
+            100: [
+                _make_meeting(
+                    meeting_id="b",
+                    pair_id=100,
+                    start_datetime="2026-08-30T17:00:00+00:00",
+                    absent_user_id=1,
+                ),
+                _make_meeting(
+                    meeting_id="c",
+                    pair_id=100,
+                    start_datetime="2026-09-06T17:00:00+00:00",
+                    is_completed=True,
+                ),
+                _make_meeting(
+                    meeting_id="d",
+                    pair_id=100,
+                    start_datetime="2026-09-13T17:00:00+00:00",
+                    is_completed=True,
+                    late_user_ids=[3, 1],
+                ),
+            ],
+        }
+
+        result = await self.service.search_participants(
+            self.mock_session, ParticipantSearchFilterDto()
+        )
+
+        self.mock_meeting_repo.get_meetings_by_pairs.assert_awaited_once_with(
+            self.mock_session, [99, 100]
+        )
+        (row,) = result.participant_rows
+        issues = {
+            p.pair_id: [(i.start_datetime.day, i.note) for i in p.attendance_issues]
+            for p in row.pairs
+        }
+        self.assertEqual(
+            issues,
+            {
+                99: [(2, [MeetingNoteTag.INSUFFICIENT_DURATION])],
+                100: [
+                    (30, [MeetingNoteTag.MENTEE_ABSENT]),
+                    (13, [MeetingNoteTag.MENTOR_LATE, MeetingNoteTag.MENTEE_LATE]),
+                ],
+            },
+        )
+        wire = result.model_dump(by_alias=True, mode="json")["participantRows"][0]
+        self.assertEqual(
+            wire["pairs"][1]["attendanceIssues"][0],
+            {"startDatetime": "2026-08-30T17:00:00Z", "note": ["mentee_absent"]},
+        )
+
+    async def test_a_pair_on_two_rows_is_fetched_once_for_the_page(self):
+        """Mentor and mentee rows share the pair; the page's meetings come
+        from one call with each pair_id once, and both rows show the issue."""
+        self.mock_participants_repo.search_participants_for_admin.return_value = (
+            [
+                _make_row(
+                    user_id=2,
+                    participant_role=ParticipantRole.MENTOR,
+                    pairs=[_search_pair(7, mentor_id=2, mentee_id=1)],
+                ),
+                _make_row(
+                    user_id=1,
+                    participant_role=ParticipantRole.MENTEE,
+                    pairs=[_search_pair(7, mentor_id=2, mentee_id=1)],
+                ),
+            ],
+            2,
+        )
+        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
+            {
+                uid: MagicMock(
+                    user_id=uid, first_name="U", last_name="X", preferred_name=None
+                )
+                for uid in (1, 2)
+            },
+            {},
+        )
+        self.mock_meeting_repo.get_meetings_by_pairs.return_value = {
+            7: [_make_meeting(pair_id=7, has_unknown_late=True)],
+        }
+
+        result = await self.service.search_participants(
+            self.mock_session, ParticipantSearchFilterDto()
+        )
+
+        self.mock_meeting_repo.get_meetings_by_pairs.assert_awaited_once_with(
+            self.mock_session, [7]
+        )
+        self.assertEqual(
+            [r.pairs[0].attendance_issues[0].note for r in result.participant_rows],
+            [[MeetingNoteTag.UNKNOWN_LATE], [MeetingNoteTag.UNKNOWN_LATE]],
+        )
+
     async def test_no_pairs_gives_an_empty_pair_list(self):
         self.mock_participants_repo.search_participants_for_admin.return_value = (
             [_make_row(user_id=1, participant_role=ParticipantRole.MENTEE)],

@@ -1,16 +1,24 @@
 from backend.dto.base_dto import BaseDto
 from backend.dto.partner_dto import PartnerDto
+from datetime import datetime
 from backend.common.mentorship_enums import (
     ApprovalStatus,
+    MeetingNoteTag,
     ParticipantRole,
     TrainingStatus,
 )
+
+
+class AttendanceIssueDto(BaseDto):
+    start_datetime: datetime
+    note: list[MeetingNoteTag]
 
 
 class ParticipantPairDto(BaseDto):
     pair_id: int
     partner: PartnerDto
     completed_meeting_count: int
+    attendance_issues: list[AttendanceIssueDto]
 
 
 class ParticipantRowDto(BaseDto):
