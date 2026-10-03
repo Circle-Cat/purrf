@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatInTz } from "@/utils/dateTime";
+import { MEETING_TIMEZONE } from "@/pages/MentorshipManagement/utils/attendanceIssues";
 import { getMeetingStatus } from "@/utils/meetingStatusCalculator";
 import { MeetingStatus } from "@/constants/MeetingStatus";
 import { MEETING_NOTE_TAGS } from "@/constants/MeetingNoteTags";
@@ -35,7 +36,6 @@ import {
 } from "@/pages/MentorshipManagement/utils/meetingNoteTags";
 
 const ROLE_LABELS = { mentor: "Mentor", mentee: "Mentee" };
-const MEETING_TIMEZONE = "America/Los_Angeles";
 
 /**
  * Formats a UTC meeting start/end datetime as a Pacific Time date + time range
