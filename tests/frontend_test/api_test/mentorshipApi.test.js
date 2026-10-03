@@ -9,6 +9,7 @@ import {
   getMyMentorshipMeetingLog,
   postMyMentorshipMeetingLog,
   searchParticipants,
+  searchUnregistered,
   getMeetingLog,
   updateMeetingLog,
 } from "@/api/mentorshipApi";
@@ -169,7 +170,6 @@ describe("Mentorship Service API", () => {
       participantRole: "mentor",
       approvalStatus: "matched",
       onboardingStatus: "completed",
-      participationStatus: "participant",
       limit: 20,
       offset: 0,
     });
@@ -186,7 +186,6 @@ describe("Mentorship Service API", () => {
           participantRole: "mentor",
           approvalStatus: "matched",
           onboardingStatus: "completed",
-          participationStatus: "participant",
           limit: 20,
           offset: 0,
         },
@@ -199,7 +198,6 @@ describe("Mentorship Service API", () => {
     request.get.mockResolvedValue({ participant_rows: [], total: 0 });
 
     await searchParticipants({
-      participationStatus: "participant",
       limit: 20,
       offset: 0,
       sortBy: "user_id",
@@ -217,11 +215,43 @@ describe("Mentorship Service API", () => {
     );
   });
 
+  it("searchUnregistered asks the round's not-registered list with its filters", async () => {
+    const mockData = { rows: [], total: 0 };
+    request.get.mockResolvedValue(mockData);
+
+    const result = await searchUnregistered(7, {
+      userId: 5,
+      q: "alice",
+      accountStatus: "blocked",
+      internal: "external",
+      admittedRole: "mentee",
+      limit: 20,
+      offset: 40,
+      order: "desc",
+    });
+
+    expect(request.get).toHaveBeenCalledWith(
+      "/mentorship/admin/rounds/7/unregistered",
+      {
+        params: {
+          userId: 5,
+          q: "alice",
+          accountStatus: "blocked",
+          internal: "external",
+          admittedRole: "mentee",
+          limit: 20,
+          offset: 40,
+          order: "desc",
+        },
+      },
+    );
+    expect(result).toEqual(mockData);
+  });
+
   it("searchParticipants omits filters that are not provided", async () => {
     request.get.mockResolvedValue({ participant_rows: [], total: 0 });
 
     await searchParticipants({
-      participationStatus: "non_participant",
       limit: 20,
       offset: 0,
     });
@@ -238,7 +268,6 @@ describe("Mentorship Service API", () => {
           participantRole: undefined,
           approvalStatus: undefined,
           onboardingStatus: undefined,
-          participationStatus: "non_participant",
           limit: 20,
           offset: 0,
           sort_by: undefined,
