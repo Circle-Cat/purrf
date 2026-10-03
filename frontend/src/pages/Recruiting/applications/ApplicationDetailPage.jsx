@@ -534,6 +534,10 @@ const describeActivity = ({ eventType, details }, jobKind, timezone) => {
       return `Sent email "${details.subject}" to ${(details.to ?? []).join(", ")}`;
     case "recruiting.email_received":
       return `Received reply "${details.subject}" from ${details.from}`;
+    case "recruiting.email_bounced":
+      return details.failedRecipients?.length
+        ? `Email could not be delivered to ${details.failedRecipients.join(", ")}`
+        : "Email could not be delivered";
     default:
       return humanize(eventType.replace(/^[^.]+\./, ""));
   }
@@ -717,7 +721,15 @@ const CommentsPanel = ({
 
 const EMAIL_DIRECTION_LABELS = { outbound: "Sent", inbound: "Received" };
 
+/**
+ * One stored message in the Emails tab. A delivery-failure report
+ * (`failedRecipients` set, "" when it named nobody) is inbound like a reply,
+ * so it gets its own label and says which addresses failed.
+ *
+ * @param {{message: object, timezone: string}} props
+ */
 const EmailMessageBubble = ({ message, timezone }) => {
+  const bounced = message.failedRecipients != null;
   const html =
     message.bodyHtml != null && message.bodyHtml !== ""
       ? DOMPurify.sanitize(message.bodyHtml)
@@ -726,12 +738,23 @@ const EmailMessageBubble = ({ message, timezone }) => {
   return (
     <li className="rounded border p-2 text-sm">
       <div className="mb-1 text-slate-500">
-        <span className="font-medium text-slate-700">
-          {EMAIL_DIRECTION_LABELS[message.direction] ?? message.direction}
-        </span>{" "}
+        {bounced ? (
+          <span className="font-medium text-red-600">Not delivered</span>
+        ) : (
+          <span className="font-medium text-slate-700">
+            {EMAIL_DIRECTION_LABELS[message.direction] ?? message.direction}
+          </span>
+        )}{" "}
         · {message.fromAddress}
         {when ? ` · ${formatDateTimeWithZone(when, timezone)}` : ""}
       </div>
+      {bounced && (
+        <p className="mb-1 text-red-600">
+          {message.failedRecipients
+            ? `Could not be delivered to ${message.failedRecipients}`
+            : "Could not be delivered"}
+        </p>
+      )}
       {html != null ? (
         // Mail bodies are foreign HTML, and Tailwind's preflight zeroes <p>
         // margins, drops list markers and strips link underlines — without

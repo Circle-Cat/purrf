@@ -1764,6 +1764,51 @@ describe("ApplicationDetailPage — activity timeline", () => {
     ).toBeInTheDocument();
   });
 
+  it("narrates email_bounced as a delivery failure by the system", async () => {
+    const user = userEvent.setup();
+    authState.userId = OWNER_ID;
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true, assigneeId: ASSIGNEE_ID }),
+    });
+    api.getApplicationActivity.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          eventType: "recruiting.email_bounced",
+          details: {
+            subject: "Delivery Status Notification (Failure)",
+            failedRecipients: ["bad@x.com", "gone@y.com"],
+            direction: "inbound",
+          },
+          actorId: null,
+          actorName: null,
+          createdAt: "2026-10-03T12:00:00Z",
+        },
+        {
+          id: 2,
+          eventType: "recruiting.email_bounced",
+          details: { failedRecipients: [], direction: "inbound" },
+          actorId: null,
+          actorName: null,
+          createdAt: "2026-10-03T13:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("tab", { name: "Timeline" }));
+
+    expect(
+      screen.getByText(
+        /Email could not be delivered to bad@x\.com, gone@y\.com, by the system/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/— Email could not be delivered, by the system/),
+    ).toBeInTheDocument();
+  });
+
   it("shows a rejection's reason and note in the timeline", async () => {
     const user = userEvent.setup();
     authState.userId = OWNER_ID;
@@ -3709,6 +3754,62 @@ describe("ApplicationDetailPage — Emails tab", () => {
     await user.click(screen.getByRole("tab", { name: "Emails" }));
     expect(screen.getByText("Interview Availability")).toBeInTheDocument();
     expect(screen.getByText("Hello there")).toBeInTheDocument();
+  });
+
+  it("marks a bounce as not delivered and names the failed addresses", async () => {
+    ownerViewing();
+    api.getApplicationEmails.mockResolvedValue({
+      data: {
+        defaultTo: "cand@x.com",
+        threads: [
+          {
+            threadId: 1,
+            subject: "Interview Availability",
+            messages: [
+              {
+                messageId: 11,
+                direction: "outbound",
+                fromAddress: "recruiting@circlecat.org",
+                bodyHtml: "<p>Hello there</p>",
+                bodyText: "Hello there",
+                failedRecipients: null,
+                createdAt: "2026-07-23T00:00:00Z",
+              },
+              {
+                messageId: 12,
+                direction: "inbound",
+                fromAddress: "mailer-daemon@googlemail.com",
+                bodyHtml: null,
+                bodyText: "Address not found",
+                failedRecipients: "bad@x.com",
+                createdAt: "2026-07-23T00:01:00Z",
+              },
+              {
+                messageId: 13,
+                direction: "inbound",
+                fromAddress: "postmaster@x.com",
+                bodyHtml: null,
+                bodyText: "Delivery failed",
+                failedRecipients: "",
+                createdAt: "2026-07-23T00:02:00Z",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+
+    expect(screen.getByText("Sent")).toBeInTheDocument();
+    expect(screen.getAllByText("Not delivered")).toHaveLength(2);
+    expect(screen.queryByText("Received")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Could not be delivered to bad@x.com"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Could not be delivered")).toBeInTheDocument();
   });
 
   it("shows each message's timestamp with the viewer's timezone name", async () => {

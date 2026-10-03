@@ -54,6 +54,9 @@ const describe = (n) => {
     // CC, so the line names the application rather than who wrote.
     case "recruiting.email_received":
       return `New reply to your email about ${n.applicantName} — ${n.jobTitle}`;
+    // Told to the same people as a reply: it is their message that failed.
+    case "recruiting.email_bounced":
+      return `Your email about ${n.applicantName} — ${n.jobTitle} could not be delivered`;
     case "recruiting.review_opened":
       return `${actor} submitted "${n.jobTitle}" for your review`;
     case "recruiting.review_decided":
