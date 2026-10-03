@@ -10,7 +10,7 @@ from backend.dto.participant_search_filter_dto import (
 from backend.dto.participant_search_row_dto import (
     ParticipantSearchPairRow,
     ParticipantSearchRow,
-    UnregisteredSearchRow,
+    PersonSearchRow,
 )
 from backend.dto.admin_meeting_log_dto import AdminMeetingDto
 from backend.dto.v2_meeting_batch_update_dto import (
@@ -193,10 +193,10 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         filters = UnregisteredFilterDto(q="ada")
         self.mock_participants_repo.search_unregistered_for_admin.return_value = (
             [
-                UnregisteredSearchRow(
+                PersonSearchRow(
                     user_id=5, is_blocked=True, is_deactivated=False, is_internal=False
                 ),
-                UnregisteredSearchRow(
+                PersonSearchRow(
                     user_id=6, is_blocked=False, is_deactivated=True, is_internal=True
                 ),
             ],

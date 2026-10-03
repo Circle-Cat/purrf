@@ -21,7 +21,7 @@ from backend.common.recruiting_enums import ApplicationStage, JobKind
 from backend.dto.participant_search_row_dto import (
     ParticipantSearchPairRow,
     ParticipantSearchRow,
-    UnregisteredSearchRow,
+    PersonSearchRow,
 )
 from backend.dto.participant_search_filter_dto import (
     ParticipantSearchFilterDto,
@@ -661,7 +661,7 @@ class MentorshipRoundParticipantsRepository:
         limit: int,
         offset: int,
         order: str = "asc",
-    ) -> tuple[list[UnregisteredSearchRow], int]:
+    ) -> tuple[list[PersonSearchRow], int]:
         """
         People admitted as a mentor or mentee who have not registered for a
         round, one row each, by user ID.
@@ -681,7 +681,7 @@ class MentorshipRoundParticipantsRepository:
             order (str): "asc" (default) or "desc" by user ID.
 
         Returns:
-            tuple[list[UnregisteredSearchRow], int]: The page of rows and the
+            tuple[list[PersonSearchRow], int]: The page of rows and the
                 total before pagination.
         """
         roles = (
@@ -713,7 +713,7 @@ class MentorshipRoundParticipantsRepository:
         )
         result = await session.execute(stmt.order_by(by_id).limit(limit).offset(offset))
         rows = [
-            UnregisteredSearchRow(
+            PersonSearchRow(
                 user_id=row.user_id,
                 is_blocked=row.is_blocked,
                 is_deactivated=not row.is_active,

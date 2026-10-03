@@ -14,6 +14,7 @@ from backend.dto.participant_search_dto import (
 from backend.dto.participant_search_row_dto import (
     ParticipantSearchPairRow,
     ParticipantSearchRow,
+    PersonSearchRow,
 )
 from backend.dto.partner_dto import PartnerDto
 from backend.dto.admin_meeting_log_dto import AdminMeetingLogDto
@@ -87,6 +88,38 @@ class MentorshipAdminService:
             else:
                 alternative_emails.append(e.email)
         return primary_email, alternative_emails
+
+    def _person_fields(
+        self, row: PersonSearchRow, users_map: dict, emails_map: dict
+    ) -> dict:
+        """
+        The PersonRowDto fields for a search row: the user's names and
+        emails, and the account flags the row was read with.
+
+        Args:
+            row (PersonSearchRow): The row; its user must be in users_map.
+            users_map (dict[int, UsersEntity]): Users keyed by user_id.
+            emails_map (dict[int, list[UserEmailsEntity]]): Emails keyed by
+                user_id; a user with none may be absent.
+
+        Returns:
+            dict: Keyword arguments for any PersonRowDto subclass.
+        """
+        user = users_map[row.user_id]
+        primary_email, alternative_emails = self._extract_emails(
+            emails_map.get(row.user_id, [])
+        )
+        return {
+            "user_id": row.user_id,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "preferred_name": user.preferred_name,
+            "primary_email": primary_email,
+            "alternative_emails": alternative_emails,
+            "is_blocked": row.is_blocked,
+            "is_deactivated": row.is_deactivated,
+            "is_internal": row.is_internal,
+        }
 
     async def _fetch_batch_relations(
         self, session: AsyncSession, rows: list[ParticipantSearchRow]
@@ -286,26 +319,13 @@ class MentorshipAdminService:
             mentor_status = statuses.get(TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING)
             mentee_status = statuses.get(TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING)
 
-            user = users_map[row.user_id]
-            primary_email, alternative_emails = self._extract_emails(
-                emails_map.get(row.user_id, [])
-            )
-
             round_entity = rounds_map.get(row.round_id) if row.round_id else None
 
             participant_rows.append(
                 ParticipantRowDto(
-                    user_id=row.user_id,
+                    **self._person_fields(row, users_map, emails_map),
                     round_id=row.round_id,
                     round_name=round_entity.name if round_entity else None,
-                    first_name=user.first_name,
-                    last_name=user.last_name,
-                    preferred_name=user.preferred_name,
-                    primary_email=primary_email,
-                    alternative_emails=alternative_emails,
-                    is_blocked=row.is_blocked,
-                    is_deactivated=row.is_deactivated,
-                    is_internal=row.is_internal,
                     participant_role=row.participant_role,
                     approval_status=row.approval_status,
                     mentor_onboarding_status=mentor_status,
@@ -373,23 +393,11 @@ class MentorshipAdminService:
 
         result: list[UnregisteredRowDto] = []
         for row in rows:
-            user = users_map[row.user_id]
-            primary_email, alternative_emails = self._extract_emails(
-                emails_map.get(row.user_id, [])
-            )
             roles = roles_map.get(row.user_id, set())
             past_rounds = rounds_map.get(row.user_id, [])
             result.append(
                 UnregisteredRowDto(
-                    user_id=row.user_id,
-                    first_name=user.first_name,
-                    last_name=user.last_name,
-                    preferred_name=user.preferred_name,
-                    primary_email=primary_email,
-                    alternative_emails=alternative_emails,
-                    is_blocked=row.is_blocked,
-                    is_deactivated=row.is_deactivated,
-                    is_internal=row.is_internal,
+                    **self._person_fields(row, users_map, emails_map),
                     admitted_roles=[
                         role
                         for role in (ParticipantRole.MENTOR, ParticipantRole.MENTEE)
