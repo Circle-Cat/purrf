@@ -20,7 +20,6 @@ class GerritProcessorService:
         self,
         logger,
         redis_client,
-        pubsub_puller_factory,
         retry_utils,
         date_time_util,
         gerrit_client,
@@ -29,14 +28,12 @@ class GerritProcessorService:
         Args:
             logger: Logger instance.
             redis_client: Redis client instance.
-            pubsub_puller_factory: Factory that creates PubSubPuller(project_id, subscription_id).
             retry_utils: Retry utility.
             date_time_util: A DateTimeUtil instance for handling date and time operations.
             gerrit_client: A Gerrit client instance.
         """
         self.logger = logger
         self.redis_client = redis_client
-        self.pubsub_puller_factory = pubsub_puller_factory
         self.retry_utils = retry_utils
         self.date_time_util = date_time_util
         self.gerrit_client = gerrit_client
@@ -600,59 +597,3 @@ class GerritProcessorService:
             restored_unix_timestamp,
             cl_created_unix_timestamp,
         )
-
-    def _process_message(self, message):
-        """
-        Process a single Pub/Sub message.
-
-        - Decodes the message data from UTF-8 JSON.
-        - Dispatches the resulting payload to `store_payload`.
-        - Acknowledges the message on success.
-        - Logs and negatively acknowledges the message on failure.
-
-        Args:
-            message: A Pub/Sub message object, expected to have:
-                - .data (bytes): the raw JSON payload
-                - .ack(): method to acknowledge successful processing
-                - .nack(): method to signal processing failure
-        """
-        try:
-            payload = json.loads(message.data.decode("utf-8"))
-            self.store_payload(payload)
-            message.ack()
-        except Exception as err:
-            self.logger.error(
-                "[GerritProcessorService] failed to process message %s: %s",
-                getattr(message, "message_id", "<no-id>"),
-                err,
-                exc_info=True,
-            )
-            message.nack()
-
-    def pull_gerrit(self, project_id: str, subscription_id: str):
-        """
-        Start pulling Gerrit Pub/Sub messages for the given project and subscription,
-        processing each change synchronously via `store_change`.
-
-        Args:
-            project_id (str): Google Cloud project ID (non-empty).
-            subscription_id (str): Pub/Sub subscription ID (non-empty).
-
-        Raises:
-            ValueError: If either `project_id` or `subscription_id` is empty.
-
-        NOTE:
-            Originally implemented using Pub/Sub streaming pull for high-throughput, low-latency processing.
-            Switched to cron-based pull due to lower traffic and simpler operational needs.
-            Keep this for potential future scaling when traffic increases again.
-        """
-        if not project_id:
-            raise ValueError("project_id must be a non-empty string")
-        if not subscription_id:
-            raise ValueError("subscription_id must be a non-empty string")
-
-        puller = self.pubsub_puller_factory.get_puller_instance(
-            project_id, subscription_id
-        )
-
-        puller.start_pulling_messages(self._process_message)

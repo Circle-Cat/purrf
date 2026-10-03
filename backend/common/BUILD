@@ -158,11 +158,6 @@ py_library(
 )
 
 py_library(
-    name = "asyncio_event_loop_manager",
-    srcs = ["asyncio_event_loop_manager.py"],
-)
-
-py_library(
     name = "microsoft_graph_service_client",
     srcs = [
         "microsoft_graph_service_client.py",
