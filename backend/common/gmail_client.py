@@ -186,7 +186,6 @@ class GmailClient:
     def send_message(
         self,
         to,
-        cc,
         subject,
         body,
         sender,
@@ -204,7 +203,6 @@ class GmailClient:
 
         Args:
             to (list[str]): Recipient addresses.
-            cc (list[str]): Cc addresses (may be empty).
             subject (str): Subject line.
             body (str): HTML body.
             sender (str): The address to send as — an address this client owns,
@@ -232,7 +230,7 @@ class GmailClient:
         sender_domain = parseaddr(sender)[1].split("@")[-1]
         rfc822_message_id = make_msgid(domain=sender_domain)
         mime = self._build_mime(
-            to, cc, subject, body, sender, rfc822_message_id, in_reply_to, references
+            to, subject, body, sender, rfc822_message_id, in_reply_to, references
         )
         request_body = {
             "raw": base64.urlsafe_b64encode(mime.as_bytes()).decode("ascii")
@@ -301,7 +299,7 @@ class GmailClient:
         Returns:
             dict: Keys ``gmail_message_id``, ``gmail_thread_id``,
             ``rfc822_message_id``, ``from_address``, ``to_addresses``,
-            ``cc_addresses``, ``subject``, ``html``, ``plain``, ``snippet``,
+            ``subject``, ``html``, ``plain``, ``snippet``,
             ``gmail_internal_date``.
 
         Raises:
@@ -629,14 +627,12 @@ class GmailClient:
         ) from error
 
     def _build_mime(
-        self, to, cc, subject, body, sender, rfc822_message_id, in_reply_to, references
+        self, to, subject, body, sender, rfc822_message_id, in_reply_to, references
     ):
         """Assemble a multipart/alternative message (plain fallback + HTML)."""
         message = MIMEMultipart("alternative")
         message["From"] = sender
         message["To"] = ", ".join(to)
-        if cc:
-            message["Cc"] = ", ".join(cc)
         message["Subject"] = subject
         message["Message-ID"] = rfc822_message_id
         if in_reply_to:
@@ -703,7 +699,6 @@ class GmailClient:
             "rfc822_message_id": headers.get("message-id"),
             "from_address": headers.get("from"),
             "to_addresses": headers.get("to"),
-            "cc_addresses": headers.get("cc"),
             "subject": headers.get("subject"),
             "html": html_body,
             "plain": plain_body,
