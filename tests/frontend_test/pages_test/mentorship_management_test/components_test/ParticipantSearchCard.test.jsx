@@ -101,6 +101,7 @@ const pairOf = ({
   name = "Bob Smith",
   isActive = true,
   completedMeetingCount = 2,
+  attendanceIssues = [],
 } = {}) => ({
   pairId,
   partner: {
@@ -111,6 +112,7 @@ const pairOf = ({
     isActive,
   },
   completedMeetingCount,
+  attendanceIssues,
 });
 
 /**
@@ -922,6 +924,95 @@ describe("ParticipantSearchCard", () => {
         await screen.findByText("with Bob Smith (22)"),
       ).toBeInTheDocument();
       expect(screen.queryByText("Ended")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("attendance", () => {
+    const flagged = [
+      { startDatetime: "2026-08-30T17:00:00Z", note: ["mentee_absent"] },
+      {
+        startDatetime: "2026-09-13T17:00:00Z",
+        note: ["mentor_late", "insufficient_duration"],
+      },
+    ];
+    const markOf = (lines) => ({
+      name: `Attendance issues: ${lines.join(", ")}`,
+    });
+
+    it("marks a live pair with flagged meetings and lists them on focus", async () => {
+      searchParticipants.mockResolvedValue(
+        resultsOf([
+          participantRow({ pairs: [pairOf({ attendanceIssues: flagged })] }),
+        ]),
+      );
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+
+      const pair = cellOf(await screen.findByText("Alice Doe"), "Pair");
+      const lines = [
+        "2026-08-30: Bob Smith absent",
+        "2026-09-13: Alice Doe late arrival; Insufficient duration",
+      ];
+      const mark = within(pair).getByRole("button", markOf(lines));
+      expect(within(pair).getByRole("listitem")).toHaveClass("text-red-700");
+
+      mark.focus();
+
+      for (const line of lines) {
+        expect((await screen.findAllByText(line)).length).toBeGreaterThan(0);
+      }
+    });
+
+    it("does not mark an ended pair, flagged or not", async () => {
+      searchParticipants.mockResolvedValue(
+        resultsOf([
+          participantRow({
+            pairs: [pairOf({ isActive: false, attendanceIssues: flagged })],
+          }),
+        ]),
+      );
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+
+      const pair = cellOf(await screen.findByText("Alice Doe"), "Pair");
+      expect(
+        within(pair).queryByRole("button", { name: /^Attendance issues/ }),
+      ).not.toBeInTheDocument();
+      expect(within(pair).getByRole("listitem")).not.toHaveClass(
+        "text-red-700",
+      );
+    });
+
+    it("reddens only the flagged pair, not its neighbour or the row", async () => {
+      searchParticipants.mockResolvedValue(
+        resultsOf([
+          participantRow({
+            pairs: [
+              pairOf({ pairId: 81, id: 5862, name: "Bea Marlow" }),
+              pairOf({
+                pairId: 82,
+                id: 5863,
+                name: "Cid Nash",
+                attendanceIssues: [flagged[0]],
+              }),
+            ],
+          }),
+        ]),
+      );
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+
+      const name = await screen.findByText("Alice Doe");
+      const [bea, cid] = within(cellOf(name, "Pair")).getAllByRole("listitem");
+      expect(bea).not.toHaveClass("text-red-700");
+      expect(
+        within(bea).queryByRole("button", { name: /^Attendance issues/ }),
+      ).not.toBeInTheDocument();
+      expect(cid).toHaveClass("text-red-700");
+      expect(
+        within(cid).getByRole(
+          "button",
+          markOf(["2026-08-30: Cid Nash absent"]),
+        ),
+      ).toBeInTheDocument();
+      expect(name.closest("tr").className).not.toMatch(/red/);
     });
   });
 

@@ -16,6 +16,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import Table from "@/components/common/Table";
 import { useParticipantSearch } from "@/pages/MentorshipManagement/hooks/useParticipantSearch";
 import { useParticipantSearchRounds } from "@/pages/MentorshipManagement/hooks/useParticipantSearchRounds";
@@ -25,6 +31,7 @@ import { userDisplayName } from "@/utils/userName";
 import MeetingLogDialog from "@/pages/MentorshipManagement/components/MeetingLogDialog";
 import StateChips from "@/pages/AdminAccounts/components/StateChips";
 import { useMeetingLog } from "@/pages/MentorshipManagement/hooks/useMeetingLog";
+import { attendanceIssueLines } from "@/pages/MentorshipManagement/utils/attendanceIssues";
 
 const ALL_ROLES = "__all__";
 const ALL_APPROVAL_STATUSES = "__all__";
@@ -84,9 +91,34 @@ const orderPairs = (pairs) =>
   );
 
 /**
+ * A red "!" whose tooltip lists a live pair's flagged meetings, one per line.
+ *
+ * @param {{ lines: string[] }} props
+ */
+const AttendanceMark = ({ lines }) => (
+  <TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger
+        type="button"
+        aria-label={`Attendance issues: ${lines.join(", ")}`}
+        className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white"
+      >
+        !
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">
+        {lines.map((line) => (
+          <div key={line}>{line}</div>
+        ))}
+      </TooltipContent>
+    </Tooltip>
+  </TooltipProvider>
+);
+
+/**
  * Every pair the person is in this round, one item each: the partner with
  * their user ID (and Ended when the pairing is over, greyed), and under it
- * the meeting progress that opens that pair's log.
+ * the meeting progress that opens that pair's log. A live pair with flagged
+ * meetings turns red and carries an attendance mark.
  *
  * @param {{ row: Object, onOpenMeetings: (pair: Object) => void }} props
  */
@@ -104,12 +136,18 @@ const PairCell = ({ row, onOpenMeetings }) => {
         const [mentorName, menteeName] = isMentee
           ? [partnerName, subjectName]
           : [subjectName, partnerName];
+        const issues = ended
+          ? []
+          : attendanceIssueLines(pair.attendanceIssues, {
+              mentorName,
+              menteeName,
+            });
         return (
           <li
             key={pair.pairId}
             aria-label={`Pair ${mentorName} and ${menteeName}`}
             className={`flex flex-col items-start gap-0.5 text-xs ${
-              ended ? "text-slate-400" : ""
+              ended ? "text-slate-400" : issues.length ? "text-red-700" : ""
             }`}
           >
             <span className="inline-flex flex-wrap items-center gap-x-2">
@@ -121,12 +159,13 @@ const PairCell = ({ row, onOpenMeetings }) => {
                   Ended
                 </span>
               )}
+              {issues.length > 0 && <AttendanceMark lines={issues} />}
             </span>
             <button
               type="button"
               onClick={() => onOpenMeetings(pair)}
               className={`underline hover:opacity-80 ${
-                ended ? "" : "text-primary"
+                ended || issues.length ? "" : "text-primary"
               }`}
             >
               Meetings {pair.completedMeetingCount}/
