@@ -90,15 +90,15 @@ const highlightBrackets = (html) =>
 const countUnfilledBrackets = (text) => (text.match(BRACKET_RE) ?? []).length;
 
 /**
- * Compose (or reply to) a candidate email. Recipients/Cc are comma-separated
+ * Compose (or reply to) a candidate email. Recipients are comma-separated
  * text so the recruiter can add or drop addresses; the body is sent as HTML.
  *
  * @param {{open: boolean, onOpenChange: (open: boolean) => void,
  *          applicationId: number|string,
  *          defaultTo: string|null,
  *          replyThread: {threadId: number, subject: string}|null,
- *          onSend: (payload: {to: string[], cc: string[], subject: string,
- *                             body: string, threadId: number|null})
+ *          onSend: (payload: {to: string[], subject: string, body: string,
+ *                             threadId: number|null})
  *                  => Promise<unknown>,
  *          sending: boolean}} props
  */
@@ -112,7 +112,6 @@ const ComposeEmailDialog = ({
   sending,
 }) => {
   const [to, setTo] = useState("");
-  const [cc, setCc] = useState("");
   const [subject, setSubject] = useState("");
   const editorRef = useRef(null);
   // Whether the editor holds any text, tracked in state so the Send button
@@ -146,10 +145,6 @@ const ComposeEmailDialog = ({
   useEffect(() => {
     if (!open) return;
     setTo(defaultTo ?? "");
-    // Cc starts empty, for a reply too: the sender hears about a reply from a
-    // notification, so copying themselves would only show the candidate a
-    // personal address.
-    setCc("");
     const base = replyThread?.subject ?? "";
     setSubject(
       replyThread ? (base.startsWith("Re:") ? base : `Re: ${base}`) : "",
@@ -224,7 +219,6 @@ const ComposeEmailDialog = ({
     const recipients = splitAddresses(to);
     onSend({
       to: recipients,
-      cc: splitAddresses(cc),
       subject: subject.trim(),
       body: sanitizeEmailHtml(editorRef.current?.innerHTML ?? ""),
       threadId: replyThread?.threadId ?? null,
@@ -275,15 +269,6 @@ const ComposeEmailDialog = ({
                 value={to}
                 onChange={(e) => setTo(e.target.value)}
                 placeholder="candidate@example.com"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="email-cc">Cc</Label>
-              <Input
-                id="email-cc"
-                value={cc}
-                onChange={(e) => setCc(e.target.value)}
-                placeholder="Comma-separated (optional)"
               />
             </div>
             <div className="space-y-1">
