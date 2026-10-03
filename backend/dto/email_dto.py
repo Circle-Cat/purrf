@@ -25,6 +25,8 @@ class EmailMessageDto(BaseDto):
     sent_by_user_id: int | None = None
     gmail_internal_date: datetime | None = None
     created_at: datetime
+    # Set only on a delivery-failure report: the addresses it names, or "".
+    failed_recipients: str | None = None
 
 
 class EmailThreadDto(BaseDto):

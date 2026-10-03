@@ -41,6 +41,7 @@ import os
 import re
 import threading
 from datetime import datetime, timezone
+from email.message import Message
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import make_msgid, parseaddr
@@ -708,7 +709,38 @@ class GmailClient:
             "plain": plain_body,
             "snippet": message.get("snippet"),
             "gmail_internal_date": message.get("internalDate"),
+            "failed_recipients": self._failed_recipients(headers),
         }
+
+    @staticmethod
+    def _failed_recipients(headers):
+        """Who a delivery-failure report says could not be reached.
+
+        A message is such a report when its Content-Type is
+        ``multipart/report`` with ``report-type=delivery-status``, or when it
+        carries ``X-Failed-Recipients``. ``Auto-Submitted`` does not decide it:
+        Gmail sets ``auto-replied`` on its bounces and out-of-office replies
+        alike. Nor does the From address, since a person can write from
+        ``postmaster@``.
+
+        Args:
+            headers (dict[str, str]): The message's headers, names lower-cased.
+
+        Returns:
+            str | None: None for any other message; otherwise the raw
+                ``X-Failed-Recipients`` value, or "" when there is none.
+        """
+        failed = headers.get("x-failed-recipients")
+        content_type = Message()
+        content_type["Content-Type"] = headers.get("content-type", "")
+        is_report = (
+            content_type.get_content_type() == "multipart/report"
+            and str(content_type.get_param("report-type") or "").lower()
+            == "delivery-status"
+        )
+        if failed is None and not is_report:
+            return None
+        return (failed or "").strip()
 
     def _extract_bodies(self, payload):
         """Walk a message payload, returning (html, plain) — either may be None."""

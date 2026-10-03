@@ -57,6 +57,26 @@ class TestEmailMessageRepository(BaseRepositoryTestLib):
             )
         ])
 
+    async def test_create_keeps_a_bounce_failed_recipients(self):
+        bounce = await self.repo.create(
+            self.session,
+            thread_id=self.thread.thread_id,
+            gmail_message_id="g-bounce",
+            direction=EmailDirection.INBOUND,
+            failed_recipients="a@x.com",
+        )
+        reply = await self.repo.create(
+            self.session,
+            thread_id=self.thread.thread_id,
+            gmail_message_id="g-reply",
+            direction=EmailDirection.INBOUND,
+        )
+        await self.session.refresh(bounce)
+        await self.session.refresh(reply)
+
+        self.assertEqual(bounce.failed_recipients, "a@x.com")
+        self.assertIsNone(reply.failed_recipients)
+
     async def test_returns_empty_set_when_thread_has_no_messages(self):
         result = await self.repo.list_gmail_message_ids_by_thread(
             self.session, self.thread.thread_id
