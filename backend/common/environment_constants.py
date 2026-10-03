@@ -32,11 +32,6 @@ MICROSOFT_USER_LDAP = "MICROSOFT_USER_LDAP"
 
 LAUNCHDARKLY_SDK_KEY = "LAUNCHDARKLY_SDK_KEY"
 
-PUBSUB_PROJECT_ID = "PUBSUB_PROJECT_ID"
-MICROSOFT_SUBSCRIPTION_ID = "MICROSOFT_SUBSCRIPTION_ID"
-GOOGLE_CHAT_SUBSCRIPTION_ID = "GOOGLE_CHAT_SUBSCRIPTION_ID"
-GERRIT_SUBSCRIPTION_ID = "GERRIT_SUBSCRIPTION_ID"
-
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 CF_TEAM_DOMAIN = os.getenv("CF_TEAM_DOMAIN")
@@ -122,11 +117,8 @@ GMAIL_WATCH_TOPIC = "GMAIL_WATCH_TOPIC"
 # Fully qualified Pub/Sub topic (``projects/<p>/topics/<t>``) that
 # publish_on_commit.install_publish_listener() publishes to once a
 # notification-creating transaction commits. Holds the whole path, not just
-# a bare topic id, so the app never has to know which project it is in --
-# matching how GOOGLE_CHAT_SUBSCRIPTION_ID/GERRIT_SUBSCRIPTION_ID are ids
-# combined with PUBSUB_PROJECT_ID elsewhere, this is its own env var instead
-# because it is a topic, not a subscription, and is consumed as a complete
-# path by a single call site rather than built up per-client.
+# a bare topic id, so the app never has to know which project it is in. A
+# single call site consumes it as a complete path.
 NOTIFICATION_TOPIC = "NOTIFICATION_TOPIC"
 
 # Comma-separated `sub` claims of the service accounts allowed to POST the

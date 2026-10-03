@@ -56,8 +56,6 @@ from backend.common.environment_constants import (
 @patch("backend.utils.app_dependency_builder.AuthenticationService")
 @patch("backend.utils.app_dependency_builder.FastAppFactory")
 @patch("backend.utils.app_dependency_builder.SummaryService")
-@patch("backend.utils.app_dependency_builder.PubSubPullManager")
-@patch("backend.utils.app_dependency_builder.AsyncioEventLoopManager")
 @patch("backend.utils.app_dependency_builder.GoogleChatHistorySyncService")
 @patch("backend.utils.app_dependency_builder.GoogleChatAnalyticsService")
 @patch("backend.utils.app_dependency_builder.GerritProcessorService")
@@ -80,10 +78,6 @@ from backend.common.environment_constants import (
 @patch("backend.utils.app_dependency_builder.EmploymentSyncService")
 @patch("backend.utils.app_dependency_builder.MicrosoftMemberSyncService")
 @patch("backend.utils.app_dependency_builder.HistoricalController")
-@patch("backend.utils.app_dependency_builder.ConsumerController")
-@patch("backend.utils.app_dependency_builder.MicrosoftMessageProcessorService")
-@patch("backend.utils.app_dependency_builder.PubSubPullerFactory")
-@patch("backend.utils.app_dependency_builder.PubSubPuller")
 @patch("backend.utils.app_dependency_builder.MicrosoftChatMessageUtil")
 @patch("backend.utils.app_dependency_builder.DateTimeUtil")
 @patch("backend.utils.app_dependency_builder.NotificationController")
@@ -115,10 +109,6 @@ class TestAppDependencyBuilder(TestCase):
         mock_notification_controller,
         mock_date_time_util_cls,
         mock_microsoft_chat_message_util_cls,
-        mock_pubsub_puller_cls,
-        mock_pubsub_puller_factory_cls,
-        mock_microsoft_message_processor_service_cls,
-        mock_consumer_controller_cls,
         mock_historical_controller_cls,
         mock_microsoft_member_sync_service_cls,
         mock_employment_sync_service_cls,
@@ -141,8 +131,6 @@ class TestAppDependencyBuilder(TestCase):
         mock_gerrit_processor_service_cls,
         mock_google_chat_analytics_service_cls,
         mock_google_chat_history_sync_service_cls,
-        mock_asyncio_event_loop_manager_cls,
-        mock_pubsub_pull_manager_cls,
         mock_summary_service_cls,
         mock_fast_app_factory_cls,
         mock_authentication_service_cls,
@@ -201,10 +189,6 @@ class TestAppDependencyBuilder(TestCase):
         mock_google_client_instance = MagicMock()
         mock_google_chat_client = MagicMock()
         mock_google_people_client = MagicMock()
-        mock_google_subscriber_client = MagicMock()
-        mock_google_client_instance.create_subscriber_client.return_value = (
-            mock_google_subscriber_client
-        )
         mock_notification_publisher_client = MagicMock()
         mock_google_client_instance.create_publisher_client.return_value = (
             mock_notification_publisher_client
@@ -233,10 +217,6 @@ class TestAppDependencyBuilder(TestCase):
             mock_google_reports_client
         )
         mock_google_client_cls.return_value = mock_google_client_instance
-        mock_asyncio_event_loop_manager = MagicMock()
-        mock_asyncio_event_loop_manager_cls.return_value = (
-            mock_asyncio_event_loop_manager
-        )
         mock_google_client_cls.return_value = mock_google_client_instance
         mock_retry_utils_instance = MagicMock()
         mock_retry_utils_cls.return_value = mock_retry_utils_instance
@@ -329,35 +309,12 @@ class TestAppDependencyBuilder(TestCase):
             retry_utils=mock_retry_utils_instance,
         )
 
-        mock_pubsub_puller_factory_cls.assert_called_once_with(
-            puller_creator=mock_pubsub_puller_cls,
-            logger=mock_logger,
-            redis_client=mock_redis_client,
-            subscriber_client=mock_google_subscriber_client,
-            asyncio_event_loop_manager=mock_asyncio_event_loop_manager,
-        )
-
-        mock_pubsub_pull_manager_cls.assert_called_once_with(
-            pubsub_puller_factory=mock_pubsub_puller_factory_cls.return_value,
-        )
-
-        mock_microsoft_message_processor_service_cls.assert_called_once_with(
-            logger=mock_logger,
-            pubsub_puller_factory=mock_pubsub_puller_factory_cls.return_value,
-            microsoft_chat_message_util=mock_microsoft_chat_message_util_cls.return_value,
-        )
-
         mock_gerrit_processor_service_cls.assert_called_once_with(
             logger=mock_logger,
             redis_client=mock_redis_client,
-            pubsub_puller_factory=mock_pubsub_puller_factory_cls.return_value,
             retry_utils=mock_retry_utils_instance,
             date_time_util=mock_date_time_util_cls.return_value,
             gerrit_client=mock_gerrit_client,
-        )
-
-        mock_consumer_controller_cls.assert_called_once_with(
-            pubsub_sync_pull_service=builder.pubsub_sync_pull_service,
         )
 
         mock_microsoft_member_sync_service_cls.assert_called_once_with(
@@ -621,7 +578,6 @@ class TestAppDependencyBuilder(TestCase):
             user_permissions_repository=mock_user_permissions_repo_cls.return_value,
             notification_controller=mock_notification_controller.return_value,
             historical_controller=mock_historical_controller_cls.return_value,
-            consumer_controller=mock_consumer_controller_cls.return_value,
             internal_activity_controller=mock_internal_activity_controller_cls.return_value,
             profile_controller=mock_profile_controller_cls.return_value,
             mentorship_controller=mock_mentorship_controller_cls.return_value,
@@ -679,7 +635,6 @@ class TestAppDependencyBuilder(TestCase):
 
         mock_google_chat_processor_service.assert_called_once_with(
             logger=mock_logger,
-            pubsub_puller_factory=mock_pubsub_puller_factory_cls.return_value,
             google_chat_messages_utils=mock_google_chat_messages_utils.return_value,
             google_service=mock_google_service.return_value,
         )
@@ -773,18 +728,8 @@ class TestAppDependencyBuilder(TestCase):
             mock_microsoft_chat_message_util_cls.return_value,
         )
         self.assertEqual(
-            builder.pubsub_puller_factory, mock_pubsub_puller_factory_cls.return_value
-        )
-        self.assertEqual(
-            builder.microsoft_message_processor_service,
-            mock_microsoft_message_processor_service_cls.return_value,
-        )
-        self.assertEqual(
             builder.gerrit_processor_service,
             mock_gerrit_processor_service_cls.return_value,
-        )
-        self.assertEqual(
-            builder.consumer_controller, mock_consumer_controller_cls.return_value
         )
         self.assertEqual(
             builder.microsoft_member_sync_service,

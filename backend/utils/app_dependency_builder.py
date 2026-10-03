@@ -21,18 +21,10 @@ from backend.notification_management.notification_controller import (
     NotificationController,
 )
 from backend.utils.google_chat_message_utils import GoogleChatMessagesUtils
-from backend.consumers.consumer_controller import ConsumerController
 from backend.utils.microsoft_chat_message_util import MicrosoftChatMessageUtil
 from backend.utils.date_time_util import DateTimeUtil
-from backend.consumers.microsoft_message_processor_service import (
-    MicrosoftMessageProcessorService,
-)
 from backend.consumers.google_chat_processor_service import GoogleChatProcessorService
-from backend.consumers.pubsub_puller_factory import PubSubPullerFactory
-from backend.consumers.pubsub_puller import PubSubPuller
 from backend.consumers.gerrit_processor_service import GerritProcessorService
-from backend.consumers.pubsub_pull_manager import PubSubPullManager
-from backend.consumers.pubsub_sync_pull_service import PubSubSyncPullService
 from backend.consumers.pubsub_push_controller import PubSubPushController
 from backend.consumers.pubsub_push_service import PubSubPushService
 from backend.historical_data.historical_controller import HistoricalController
@@ -88,7 +80,6 @@ from backend.common.environment_constants import (
 from backend.historical_data.google_chat_history_sync_service import (
     GoogleChatHistorySyncService,
 )
-from backend.common.asyncio_event_loop_manager import AsyncioEventLoopManager
 from backend.utils.fast_app_factory import FastAppFactory
 from backend.authentication.authentication_controller import AuthenticationController
 from backend.authentication.authentication_service import AuthenticationService
@@ -270,7 +261,7 @@ class AppDependencyBuilder:
     - Redis client
     - Microsoft Graph client
     - Business services (e.g. MicrosoftService, MicrosoftChatService)
-    - HTTP API controllers (e.g. HistoryController, InternalActivityController, ConsumerController)
+    - HTTP API controllers (e.g. HistoryController, InternalActivityController)
 
     Example:
         builder = AppDependencyBuilder()
@@ -337,7 +328,6 @@ class AppDependencyBuilder:
         self.google_workspaceevents_client = (
             self.google_client.create_workspaceevents_client()
         )
-        self.subscriber_client = self.google_client.create_subscriber_client()
         self.notification_publisher_client = (
             self.google_client.create_publisher_client()
         )
@@ -395,23 +385,6 @@ class AppDependencyBuilder:
             retry_utils=self.retry_utils,
             date_time_util=self.date_time_util,
         )
-        self.asyncio_event_loop_manager = AsyncioEventLoopManager(logger=self.logger)
-
-        self.pubsub_puller_factory = PubSubPullerFactory(
-            puller_creator=PubSubPuller,
-            logger=self.logger,
-            redis_client=self.redis_client,
-            subscriber_client=self.subscriber_client,
-            asyncio_event_loop_manager=self.asyncio_event_loop_manager,
-        )
-        self.pubsub_pull_manager = PubSubPullManager(
-            pubsub_puller_factory=self.pubsub_puller_factory
-        )
-        self.microsoft_message_processor_service = MicrosoftMessageProcessorService(
-            logger=self.logger,
-            pubsub_puller_factory=self.pubsub_puller_factory,
-            microsoft_chat_message_util=self.microsoft_chat_message_util,
-        )
         self.google_chat_messages_utils = GoogleChatMessagesUtils(
             logger=self.logger,
             redis_client=self.redis_client,
@@ -429,28 +402,15 @@ class AppDependencyBuilder:
         )
         self.google_chat_processor_service = GoogleChatProcessorService(
             logger=self.logger,
-            pubsub_puller_factory=self.pubsub_puller_factory,
             google_chat_messages_utils=self.google_chat_messages_utils,
             google_service=self.google_service,
         )
         self.gerrit_processor_service = GerritProcessorService(
             logger=self.logger,
             redis_client=self.redis_client,
-            pubsub_puller_factory=self.pubsub_puller_factory,
             retry_utils=self.retry_utils,
             date_time_util=self.date_time_util,
             gerrit_client=self.gerrit_client,
-        )
-        self.pubsub_sync_pull_service = PubSubSyncPullService(
-            logger=self.logger,
-            subscriber_client=self.subscriber_client,
-            microsoft_chat_message_util=self.microsoft_chat_message_util,
-            google_chat_processor_service=self.google_chat_processor_service,
-            gerrit_processor_service=self.gerrit_processor_service,
-            asyncio_event_loop_manager=self.asyncio_event_loop_manager,
-        )
-        self.consumer_controller = ConsumerController(
-            pubsub_sync_pull_service=self.pubsub_sync_pull_service,
         )
 
         self.microsoft_member_sync_service = MicrosoftMemberSyncService(
@@ -1227,7 +1187,6 @@ class AppDependencyBuilder:
             user_permissions_repository=self.user_permissions_repository,
             notification_controller=self.notification_controller,
             historical_controller=self.historical_controller,
-            consumer_controller=self.consumer_controller,
             internal_activity_controller=self.internal_activity_controller,
             profile_controller=self.profile_controller,
             mentorship_controller=self.mentorship_controller,

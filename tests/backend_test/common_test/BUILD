@@ -134,14 +134,6 @@ py_test(
 )
 
 py_test(
-    name = "asyncio_event_loop_manager_test",
-    srcs = ["asyncio_event_loop_manager_test.py"],
-    deps = [
-        "//backend/common:asyncio_event_loop_manager",
-    ],
-)
-
-py_test(
     name = "launchdarkly_client_test",
     srcs = ["launchdarkly_client_test.py"],
     deps = [
