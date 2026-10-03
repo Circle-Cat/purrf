@@ -17,8 +17,8 @@ class EmailMessageEntity(Base):
 
     HTML and plain bodies are stored separately: an outbound message always
     has HTML, while an inbound reply may carry only one of the two.
-    ``to_addresses`` / ``cc_addresses`` hold the raw RFC 5322 header text (we
-    only display them, and parsing headers into clean lists is fragile).
+    ``to_addresses`` holds the raw RFC 5322 header text (we
+    only display it, and parsing headers into clean lists is fragile).
 
     ``failed_recipients`` marks a delivery-failure report (a bounce): NULL for
     every other message, otherwise the raw ``X-Failed-Recipients`` header, or
@@ -42,7 +42,6 @@ class EmailMessageEntity(Base):
     direction: Mapped[str] = mapped_column(String, nullable=False)
     from_address: Mapped[str | None] = mapped_column(String(255))
     to_addresses: Mapped[str | None] = mapped_column(Text)
-    cc_addresses: Mapped[str | None] = mapped_column(Text)
     subject: Mapped[str | None] = mapped_column(String(998))
     body_html: Mapped[str | None] = mapped_column(Text)
     body_text: Mapped[str | None] = mapped_column(Text)

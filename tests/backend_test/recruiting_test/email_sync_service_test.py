@@ -18,7 +18,6 @@ def _message(direction, subject="Re: Hello"):
         subject=subject,
         from_address="cand@x",
         to_addresses="recruiting@corp.com",
-        cc_addresses="boss@x",
         thread_id=10,
         gmail_internal_date=RECEIVED_AT,
     )
@@ -128,7 +127,6 @@ class TestSyncTrackedThread(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["details"]["subject"], "Re: Hello")
         self.assertEqual(kwargs["details"]["from"], "cand@x")
         self.assertEqual(kwargs["details"]["to"], "recruiting@corp.com")
-        self.assertEqual(kwargs["details"]["cc"], "boss@x")
         self.assertEqual(kwargs["details"]["threadId"], 10)
         self.assertEqual(kwargs["details"]["direction"], "inbound")
         # Backdated to when the mail actually arrived, not to now.

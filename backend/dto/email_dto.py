@@ -17,7 +17,6 @@ class EmailMessageDto(BaseDto):
     direction: str
     from_address: str | None = None
     to_addresses: str | None = None
-    cc_addresses: str | None = None
     subject: str | None = None
     body_html: str | None = None
     body_text: str | None = None
@@ -63,7 +62,6 @@ class EmailSendRequestDto(BaseDto):
     """
 
     to: list[str]
-    cc: list[str] = []
     subject: str
     body: str
     thread_id: int | None = None

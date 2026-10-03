@@ -118,7 +118,6 @@ class EmailSyncService:
                     "subject": message.subject,
                     "from": message.from_address,
                     "to": message.to_addresses,
-                    "cc": message.cc_addresses,
                     "threadId": message.thread_id,
                     "direction": "inbound",
                 },

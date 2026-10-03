@@ -33,7 +33,6 @@ class TestNotificationEmailService(unittest.IsolatedAsyncioTestCase):
             "Purrf Notifications <notification-test@circlecat.org>",
         )
         self.assertEqual(kwargs["to"], ["a@b.com"])
-        self.assertEqual(kwargs["cc"], [])
         self.assertEqual(kwargs["subject"], "Subject")
         self.assertEqual(kwargs["body"], "<p>Body</p>")
 

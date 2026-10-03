@@ -222,7 +222,6 @@ class TestGmailClient(TestCase):
         self._stub_send_result()
         self.client.send_message(
             to=["alice@example.com"],
-            cc=[],
             subject="Hi",
             body="<p>Hello</p>",
             sender=TEST_SENDER,
@@ -245,7 +244,7 @@ class TestGmailClient(TestCase):
     def _send_body(self, body):
         self._stub_send_result()
         self.client.send_message(
-            to=["alice@example.com"], cc=[], subject="Hi", body=body, sender=TEST_SENDER
+            to=["alice@example.com"], subject="Hi", body=body, sender=TEST_SENDER
         )
 
     def test_plain_part_keeps_the_url_of_a_link(self):
@@ -280,7 +279,7 @@ class TestGmailClient(TestCase):
         self._stub_send_result()
         with self.assertRaises(TypeError):
             self.client.send_message(
-                to=["a@example.com"], cc=[], subject="Hi", body="<p>x</p>"
+                to=["a@example.com"], subject="Hi", body="<p>x</p>"
             )
 
     def test_send_message_uses_the_given_sender_as_from(self):
@@ -292,7 +291,6 @@ class TestGmailClient(TestCase):
         self._stub_send_result()
         client.send_message(
             to=["a@example.com"],
-            cc=[],
             subject="Hi",
             body="<p>x</p>",
             sender=OTHER_SENDER,
@@ -303,7 +301,6 @@ class TestGmailClient(TestCase):
         self._stub_send_result()
         self.client.send_message(
             to=["a@example.com"],
-            cc=[],
             subject="Hi",
             body="<p>x</p>",
             sender=f"Circle Cat Recruiting <{TEST_SENDER}>",
@@ -317,7 +314,6 @@ class TestGmailClient(TestCase):
         with self.assertRaises(ValueError):
             self.client.send_message(
                 to=["a@example.com"],
-                cc=[],
                 subject="Hi",
                 body="<p>x</p>",
                 sender="someone-else@example.com",
@@ -337,23 +333,10 @@ class TestGmailClient(TestCase):
             with self.subTest(value=value):
                 self.assertFalse(self.client.owns_address(value))
 
-    def test_send_message_sets_cc(self):
-        self._stub_send_result()
-        self.client.send_message(
-            to=["a@example.com"],
-            cc=["b@example.com", "c@example.com"],
-            subject="Hi",
-            body="<p>x</p>",
-            sender=TEST_SENDER,
-        )
-        mime = self._sent_mime()
-        self.assertEqual(mime["Cc"], "b@example.com, c@example.com")
-
     def test_send_message_returns_ids(self):
         self._stub_send_result(message_id="MID", thread_id="TID")
         result = self.client.send_message(
             to=["a@example.com"],
-            cc=[],
             subject="Hi",
             body="<p>x</p>",
             sender=TEST_SENDER,
@@ -370,7 +353,6 @@ class TestGmailClient(TestCase):
         self._stub_send_result()
         self.client.send_message(
             to=["a@example.com"],
-            cc=[],
             subject="Hi",
             body="<p>x</p>",
             sender=TEST_SENDER,
@@ -382,7 +364,6 @@ class TestGmailClient(TestCase):
         self._stub_send_result()
         self.client.send_message(
             to=["a@example.com"],
-            cc=[],
             subject="Re: Hi",
             body="<p>reply</p>",
             sender=TEST_SENDER,
@@ -403,7 +384,6 @@ class TestGmailClient(TestCase):
         with self.assertRaises(RateLimitedError):
             self.client.send_message(
                 to=["a@example.com"],
-                cc=[],
                 subject="Hi",
                 body="<p>x</p>",
                 sender=TEST_SENDER,
@@ -416,7 +396,6 @@ class TestGmailClient(TestCase):
         with self.assertRaises(RuntimeError):
             self.client.send_message(
                 to=["a@example.com"],
-                cc=[],
                 subject="Hi",
                 body="<p>x</p>",
                 sender=TEST_SENDER,
@@ -432,7 +411,6 @@ class TestGmailClient(TestCase):
         with self.assertRaises(RuntimeError):
             self.client.send_message(
                 to=["a@example.com"],
-                cc=[],
                 subject="Hi",
                 body="<p>x</p>",
                 sender=TEST_SENDER,
@@ -442,14 +420,12 @@ class TestGmailClient(TestCase):
         self._stub_send_result()
         self.client.send_message(
             to=["a@example.com"],
-            cc=[],
             subject="Hi",
             body="<p>x</p>",
             sender=TEST_SENDER,
         )
         self.client.send_message(
             to=["a@example.com"],
-            cc=[],
             subject="Hi again",
             body="<p>y</p>",
             sender=TEST_SENDER,
@@ -493,7 +469,6 @@ class TestGmailClient(TestCase):
     def _send(self, subject):
         return self.client.send_message(
             to=["a@example.com"],
-            cc=[],
             subject=subject,
             body="<p>x</p>",
             sender=TEST_SENDER,
@@ -524,7 +499,6 @@ class TestGmailClient(TestCase):
         self._stub_send_result()
         self.client.send_message(
             to=["a@example.com"],
-            cc=[],
             subject="Hi",
             body="<p>x</p>",
             sender=TEST_SENDER,
@@ -607,7 +581,6 @@ class TestGmailClient(TestCase):
         self.assertEqual(message["rfc822_message_id"], "<g1@mail>")
         self.assertEqual(message["from_address"], TEST_SENDER)
         self.assertEqual(message["to_addresses"], "alice@example.com")
-        self.assertEqual(message["cc_addresses"], "bob@example.com")
         self.assertEqual(message["subject"], "Hi")
         self.assertEqual(message["html"], "<p>Hello there</p>")
         self.assertEqual(message["plain"], "Hello there")

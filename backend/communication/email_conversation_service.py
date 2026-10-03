@@ -72,8 +72,7 @@ class EmailConversationService:
 
     @property
     def sender_address(self):
-        """The address this service sends as (so callers can keep it out of a
-        default Cc list — never Cc ourselves)."""
+        """The address this service sends as."""
         return self._sender_address
 
     async def send(
@@ -83,7 +82,6 @@ class EmailConversationService:
         context_type,
         context_id,
         to,
-        cc,
         subject,
         body,
         sender_user_id,
@@ -97,7 +95,6 @@ class EmailConversationService:
             context_type (str): A ``ContextType`` value (e.g. ``application``).
             context_id (int | None): The scenario entity id (e.g. application id).
             to (list[str]): Recipient addresses.
-            cc (list[str]): Cc addresses (may be empty).
             subject (str): Subject line.
             body (str): HTML body.
             sender_user_id (int): The advancer sending this message.
@@ -137,7 +134,6 @@ class EmailConversationService:
         sent = await asyncio.to_thread(
             self._gmail.send_message,
             to,
-            cc,
             subject,
             body,
             sender=self._sender_address,
@@ -163,7 +159,6 @@ class EmailConversationService:
             direction=EmailDirection.OUTBOUND,
             from_address=self._sender_address,
             to_addresses=", ".join(to),
-            cc_addresses=", ".join(cc) if cc else None,
             subject=subject,
             body_html=body,
             rfc822_message_id=sent["rfc822_message_id"],
@@ -288,7 +283,6 @@ class EmailConversationService:
                 direction=self._direction_of(message.get("from_address")),
                 from_address=message.get("from_address"),
                 to_addresses=message.get("to_addresses"),
-                cc_addresses=message.get("cc_addresses"),
                 subject=message.get("subject"),
                 body_html=message.get("html"),
                 body_text=message.get("plain"),

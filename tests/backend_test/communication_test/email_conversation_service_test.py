@@ -51,7 +51,6 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
             context_type=ContextType.APPLICATION,
             context_id=7,
             to=["cand@example.com"],
-            cc=[],
             subject="Hi",
             body="<p>hello</p>",
             sender_user_id=3,
@@ -94,35 +93,12 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
                 context_type=ContextType.APPLICATION,
                 context_id=7,
                 to=["cand@example.com"],
-                cc=[],
                 subject="Hi",
                 body="<p>x</p>",
                 sender_user_id=3,
             )
         self.thread_repo.create.assert_not_awaited()
         self.message_repo.create.assert_not_awaited()
-
-    async def test_send_multiple_cc_joined_into_header(self):
-        self.gmail.send_message.return_value = {
-            "gmail_message_id": "g1",
-            "gmail_thread_id": "gt1",
-            "rfc822_message_id": "<r1@mail>",
-        }
-        self.thread_repo.create.return_value = SimpleNamespace(thread_id=10)
-        self.message_repo.create.return_value = SimpleNamespace(message_id=99)
-        await self.service.send(
-            self.session,
-            user_id=5,
-            context_type=ContextType.APPLICATION,
-            context_id=7,
-            to=["a@example.com"],
-            cc=["b@example.com", "c@example.com"],
-            subject="Hi",
-            body="<p>x</p>",
-            sender_user_id=3,
-        )
-        _, mkw = self.message_repo.create.call_args
-        self.assertEqual(mkw["cc_addresses"], "b@example.com, c@example.com")
 
     # ---- send: reply --------------------------------------------------
 
@@ -150,7 +126,6 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
             context_type=ContextType.APPLICATION,
             context_id=7,
             to=["cand@example.com"],
-            cc=[],
             subject="Re: Hi",
             body="<p>reply</p>",
             sender_user_id=3,
@@ -182,7 +157,6 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
                 context_type=ContextType.APPLICATION,
                 context_id=7,
                 to=["cand@example.com"],
-                cc=[],
                 subject="Re: Hi",
                 body="<p>x</p>",
                 sender_user_id=3,
@@ -208,7 +182,6 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
                 direction="outbound",
                 from_address="recruiting@circlecat.org",
                 to_addresses="cand@example.com",
-                cc_addresses=None,
                 subject="Hi",
                 body_html="<p>hi</p>",
                 body_text="hi",
@@ -234,7 +207,6 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
             direction="inbound",
             from_address="cand@example.com",
             to_addresses="recruiting@circlecat.org",
-            cc_addresses=None,
             subject="Hi",
             body_html="<p>hi</p>",
             body_text="hi",
@@ -351,7 +323,6 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
             "rfc822_message_id": f"<{gmail_message_id}@mail>",
             "from_address": from_address,
             "to_addresses": "someone@example.com",
-            "cc_addresses": "watcher@example.com",
             "subject": "Re: Hi",
             "html": "<p>body</p>",
             "plain": "body",
@@ -378,7 +349,6 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mkw["direction"], EmailDirection.INBOUND)
         self.assertEqual(mkw["from_address"], "cand@example.com")
         self.assertEqual(mkw["to_addresses"], "someone@example.com")
-        self.assertEqual(mkw["cc_addresses"], "watcher@example.com")
         self.assertEqual(mkw["subject"], "Re: Hi")
         self.assertEqual(mkw["body_html"], "<p>body</p>")
         self.assertEqual(mkw["body_text"], "body")
