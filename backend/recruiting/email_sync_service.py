@@ -5,7 +5,7 @@ knows how to sync one ``(user, context)`` pair and nothing else — no
 permissions, no recruiting concepts. This service is the recruiting half: it
 decides *which* applications are worth syncing and records the domain
 consequence of a sync (an ``email_received`` timeline event per inbound
-reply).
+reply, or ``email_bounced`` when the inbound message is a delivery failure).
 
 Every entry point into a sync goes through here — the Gmail push (via the
 email context registry), the daily catch-up, and a full resync (automatic when
@@ -19,6 +19,7 @@ push cursor could not cover.
 
 import logging
 from datetime import datetime, timedelta, timezone
+from email.utils import getaddresses
 
 from backend.common.communication_enums import ContextType, EmailDirection
 from backend.common.recruiting_enums import RecruitingEvent
@@ -78,9 +79,11 @@ class EmailSyncService:
         """Sync one application's email threads and log the new inbound replies.
 
         Writes an ``email_received`` timeline event per newly-persisted INBOUND
-        message, backdated to when the mail actually arrived. Outbound messages
-        picked up by a sync are deliberately not logged — the send path already
-        wrote an ``email_sent`` event when we sent them.
+        message, backdated to when the mail actually arrived. A delivery-failure
+        report is inbound too but is not a reply: it gets ``email_bounced``
+        instead, with no actor, since the candidate did not write it. Outbound
+        messages picked up by a sync are deliberately not logged — the send
+        path already wrote an ``email_sent`` event when we sent them.
 
         Does **not** commit: the caller owns the transaction boundary (each
         sweep commits per application so one failure cannot undo its
@@ -107,6 +110,26 @@ class EmailSyncService:
         )
         for message in new_messages:
             if message.direction != EmailDirection.INBOUND:
+                continue
+            if message.failed_recipients is not None:
+                await record_event(
+                    session,
+                    subject_type="application",
+                    subject_id=application_id,
+                    actor_id=None,
+                    event_type=RecruitingEvent.EMAIL_BOUNCED,
+                    details={
+                        "subject": message.subject,
+                        "failedRecipients": [
+                            address
+                            for _, address in getaddresses([message.failed_recipients])
+                            if address
+                        ],
+                        "threadId": message.thread_id,
+                        "direction": "inbound",
+                    },
+                    created_at=message.gmail_internal_date,
+                )
                 continue
             await record_event(
                 session,

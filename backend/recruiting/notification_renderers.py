@@ -255,6 +255,21 @@ async def _render_email_received(session, event):
     return _with_footer(copy._email_received(dto, None))
 
 
+# --- email_bounced --------------------------------------------------------
+
+
+@register_render("recruiting.email_bounced")
+async def _render_email_bounced(session, event):
+    """A delivery failure on a thread the recipient sent into.
+
+    The addresses come from the bounce report, which a remote mail server
+    wrote, so the copy escapes them like any other field.
+    """
+    dto = await _base_dto(session, event)
+    dto.email_failed_recipients = ", ".join(event.details.get("failedRecipients") or [])
+    return _with_footer(copy._email_bounced(dto, None))
+
+
 # --- review_opened / review_reassigned / review_decided (subject is the job) --
 
 

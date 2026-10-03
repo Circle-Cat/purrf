@@ -558,6 +558,25 @@ class RecipientResolversTest(BaseRepositoryTestLib):
 
         self.assertEqual(await resolve_recipients(self.session, event), set())
 
+    async def test_email_bounced_reaches_who_sent_into_the_thread(self):
+        """The bounce is about their message, so they are the one told."""
+        owner, sender, candidate = _make_user(), _make_user(), _make_user()
+        await self.insert_entities([owner, sender, candidate])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(application, [sender, None])
+
+        _, notifications = await record_event(
+            self.session,
+            subject_type="application",
+            subject_id=application.application_id,
+            actor_id=None,
+            event_type=RecruitingEvent.EMAIL_BOUNCED,
+            details={"threadId": thread.thread_id, "failedRecipients": ["bad@x"]},
+        )
+
+        self.assertEqual({n.user_id for n in notifications}, {sender.user_id})
+
     async def test_email_received_without_a_thread_id_is_an_error(self):
         owner, candidate = _make_user(), _make_user()
         await self.insert_entities([owner, candidate])

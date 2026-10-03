@@ -249,6 +249,23 @@ def _email_received(dto, stage):
 
 
 @_html_body
+def _email_bounced(dto, stage):
+    # A report can name nobody (no X-Failed-Recipients header); the sentence
+    # still stands without the address list.
+    to_whom = (
+        f" to {dto.email_failed_recipients}" if dto.email_failed_recipients else ""
+    )
+    return (
+        f"Email not delivered: {dto.plain.applicant} ({dto.plain.job_title})",
+        f"<p>An email you sent about {dto.applicant}'s application for "
+        f"{dto.job_title} could not be delivered{to_whom}.</p>"
+        f"{_candidate_line(dto)}"
+        "<p>Open the application in Purrf and go to its Emails tab to check "
+        "the address and send it again.</p>",
+    )
+
+
+@_html_body
 def _job_review_requested(dto, stage):
     return (
         f"Posting review requested: {dto.plain.job_title}",
