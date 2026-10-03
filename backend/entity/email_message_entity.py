@@ -19,6 +19,10 @@ class EmailMessageEntity(Base):
     has HTML, while an inbound reply may carry only one of the two.
     ``to_addresses`` / ``cc_addresses`` hold the raw RFC 5322 header text (we
     only display them, and parsing headers into clean lists is fragile).
+
+    ``failed_recipients`` marks a delivery-failure report (a bounce): NULL for
+    every other message, otherwise the raw ``X-Failed-Recipients`` header, or
+    "" when the report named nobody. A bounce keeps ``direction`` inbound.
     """
 
     __tablename__ = "email_message"
@@ -43,6 +47,7 @@ class EmailMessageEntity(Base):
     body_html: Mapped[str | None] = mapped_column(Text)
     body_text: Mapped[str | None] = mapped_column(Text)
     snippet: Mapped[str | None] = mapped_column(Text)
+    failed_recipients: Mapped[str | None] = mapped_column(Text)
     sent_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.user_id", ondelete="SET NULL")
     )

@@ -297,6 +297,7 @@ class EmailConversationService:
                 gmail_internal_date=self._parse_internal_date(
                     message.get("gmail_internal_date")
                 ),
+                failed_recipients=message.get("failed_recipients"),
             )
             created.append(entity)
         await self._thread_repo.mark_synced(session, thread.thread_id)

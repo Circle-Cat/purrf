@@ -388,6 +388,26 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(created), 1)
         self.assertIs(created[0], self.message_repo.create.return_value)
 
+    async def test_sync_thread_stores_a_bounce_as_inbound_with_its_failed_recipients(
+        self,
+    ):
+        self.gmail.list_thread_message_ids.return_value = ["g1", "g2"]
+        self.message_repo.list_gmail_message_ids_by_thread.return_value = set()
+        bounce = self._fetched("g1", "mailer-daemon@googlemail.com")
+        bounce["failed_recipients"] = "a@x.com"
+        self.gmail.get_messages.return_value = [
+            bounce,
+            self._fetched("g2", "cand@example.com"),
+        ]
+        self.message_repo.create.return_value = SimpleNamespace(message_id=1)
+
+        await self.service.sync_thread(self.session, self._thread())
+
+        (_, bounce_kw), (_, reply_kw) = self.message_repo.create.call_args_list
+        self.assertEqual(bounce_kw["failed_recipients"], "a@x.com")
+        self.assertEqual(bounce_kw["direction"], EmailDirection.INBOUND)
+        self.assertIsNone(reply_kw["failed_recipients"])
+
     async def test_sync_thread_steady_state_costs_one_call_each_side(self):
         # The common case: nothing new. This is the whole point of the change —
         # a 30-message thread must not fetch 30 bodies to discover 0 new ones.
