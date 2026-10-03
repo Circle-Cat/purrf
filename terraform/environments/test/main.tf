@@ -24,6 +24,8 @@ module "purrf_instance" {
   gmail_watch_topic_name  = "purrf-gmail-nonprod"
   gmail_watch_topic_owner = true
 
+  pubsub_event_push_enabled = true
+
   microsoft_chat_code_dir    = "../../../backend/producers/microsoft_chat_producer"
   microsoft_chat_entry_point = "notification_webhook"
 
