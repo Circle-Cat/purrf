@@ -158,6 +158,33 @@ describe("pubsub gateway", () => {
     expect(forwarded[0]).toBe("https://api.purrf.io/api/email/gmail/push");
   });
 
+  it.each([
+    [
+      "/pubsub/push/google-chat",
+      "https://api.purrf.io/api/pubsub/push/google-chat",
+    ],
+    [
+      "/pubsub/push/microsoft-chat",
+      "https://api.purrf.io/api/pubsub/push/microsoft-chat",
+    ],
+    ["/pubsub/push/gerrit", "https://api.purrf.io/api/pubsub/push/gerrit"],
+  ])(
+    "carries an event push on %s to its consumer endpoint",
+    async (path, origin) => {
+      const fetchMock = stubFetch(new Response("ok", { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      await worker.fetch(request(await makeToken(), path), environment());
+
+      const forwarded = fetchMock.mock.calls.find(([input]) =>
+        (typeof input === "string" ? input : input.url).includes(
+          "api.purrf.io",
+        ),
+      );
+      expect(forwarded[0]).toBe(origin);
+    },
+  );
+
   it("answers 404 for a path no route names, without touching the origin", async () => {
     const fetchMock = stubFetch(new Response("ok", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
