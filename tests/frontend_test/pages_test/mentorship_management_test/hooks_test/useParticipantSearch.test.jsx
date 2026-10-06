@@ -18,13 +18,17 @@ const page = (overrides = {}) => ({
 });
 
 // Latest first, as the API returns them; the first is not the lowest id.
-const ROUNDS = [{ id: 7 }, { id: 3 }];
+// Round 7 is in progress; round 3 is not.
+const ROUNDS = [
+  { id: 7, isInProgress: true },
+  { id: 3, isInProgress: false },
+];
 
 /** Renders the hook under a router at `url`, also exposing the location. */
-const renderSearch = (url = "/", rounds = ROUNDS, registrationRoundId) =>
+const renderSearch = (url = "/", rounds = ROUNDS) =>
   renderHook(
     () => ({
-      search: useParticipantSearch(rounds, registrationRoundId),
+      search: useParticipantSearch(rounds),
       location: useLocation(),
     }),
     {
@@ -269,9 +273,89 @@ describe("useParticipantSearch", () => {
     expect(result.current.search.rows).toEqual([{ userId: 2 }]);
   });
 
+  describe("Eligible for matching", () => {
+    const open = (url) => renderSearch(url);
+
+    it("picking it changes nothing until Search, which sends eligible", async () => {
+      const { result } = open("/?round=7");
+      await waitFor(() => expect(result.current.search.total).toBe(1));
+      expect(result.current.search.canListEligible).toBe(true);
+
+      act(() => result.current.search.setListEligible(true));
+      await act(async () => {});
+      expect(searchParticipants).toHaveBeenCalledTimes(1);
+      expect(paramsOf(result).has("eligible")).toBe(false);
+
+      act(() => result.current.search.submitSearch());
+
+      await waitFor(() => expect(searchParticipants).toHaveBeenCalledTimes(2));
+      expect(searchParticipants).toHaveBeenLastCalledWith(
+        expect.objectContaining({ roundId: "7", eligible: true }),
+      );
+      expect(paramsOf(result).get("eligible")).toBe("1");
+      expect(result.current.search.eligible).toBe(true);
+    });
+
+    it("keeps eligible while paging", async () => {
+      searchParticipants.mockResolvedValue(page({ total: 45 }));
+      const { result } = open("/?round=7&eligible=1");
+      await waitFor(() => expect(result.current.search.total).toBe(45));
+
+      act(() => result.current.search.nextPage());
+
+      await waitFor(() => expect(paramsOf(result).get("offset")).toBe("20"));
+      expect(paramsOf(result).get("eligible")).toBe("1");
+    });
+
+    it("cannot be picked for a round not in progress", async () => {
+      const { result } = open("/?round=3");
+      await waitFor(() => expect(result.current.search.total).toBe(1));
+
+      act(() => result.current.search.setListEligible(true));
+
+      expect(result.current.search.canListEligible).toBe(false);
+      expect(result.current.search.listEligible).toBe(false);
+    });
+
+    it("goes back to Registered when a round not in progress is picked", async () => {
+      const { result } = open("/?round=7&eligible=1");
+      await waitFor(() =>
+        expect(result.current.search.listEligible).toBe(true),
+      );
+
+      act(() => result.current.search.setRoundId("3"));
+
+      expect(result.current.search.listEligible).toBe(false);
+    });
+
+    it("is one choice with Not registered: picking either leaves the other", async () => {
+      const { result } = open("/?round=7&eligible=1");
+      await waitFor(() =>
+        expect(result.current.search.listEligible).toBe(true),
+      );
+
+      act(() => result.current.search.setListNotRegistered(true));
+      expect(result.current.search.listEligible).toBe(false);
+      expect(result.current.search.listNotRegistered).toBe(true);
+
+      act(() => result.current.search.setListEligible(true));
+      expect(result.current.search.listEligible).toBe(true);
+      expect(result.current.search.listNotRegistered).toBe(false);
+    });
+
+    it("drops a URL request for it in a round not in progress", async () => {
+      const { result } = open("/?round=3&eligible=1");
+
+      await waitFor(() => expect(paramsOf(result).has("eligible")).toBe(false));
+      expect(result.current.search.eligible).toBe(false);
+      expect(searchParticipants).toHaveBeenLastCalledWith(
+        expect.objectContaining({ eligible: undefined }),
+      );
+    });
+  });
+
   describe("Not registered", () => {
-    // Round 7 is the one taking registrations; round 3 is not.
-    const open = (url) => renderSearch(url, ROUNDS, "7");
+    const open = (url) => renderSearch(url);
 
     beforeEach(() => {
       searchUnregistered.mockResolvedValue({
@@ -392,14 +476,14 @@ describe("useParticipantSearch", () => {
       expect(result.current.search.notRegistered).toBe(false);
     });
 
-    it("waits for the registration round before reading a Not registered link", async () => {
+    it("waits for the rounds before reading a Not registered link", async () => {
       const { result, rerender } = renderHook(
-        ({ registrationRoundId }) => ({
-          search: useParticipantSearch(ROUNDS, registrationRoundId),
+        ({ rounds }) => ({
+          search: useParticipantSearch(rounds),
           location: useLocation(),
         }),
         {
-          initialProps: { registrationRoundId: undefined },
+          initialProps: { rounds: null },
           wrapper: ({ children }) => (
             <MemoryRouter initialEntries={["/?round=7&notRegistered=1"]}>
               {children}
@@ -412,20 +496,20 @@ describe("useParticipantSearch", () => {
       expect(searchParticipants).not.toHaveBeenCalled();
       expect(searchUnregistered).not.toHaveBeenCalled();
       expect(paramsOf(result).get("notRegistered")).toBe("1");
-      expect(result.current.search.loading).toBe(true);
 
-      rerender({ registrationRoundId: "7" });
+      rerender({ rounds: ROUNDS });
 
       await waitFor(() => expect(searchUnregistered).toHaveBeenCalledTimes(1));
       expect(searchParticipants).not.toHaveBeenCalled();
       expect(result.current.search.listNotRegistered).toBe(true);
     });
 
-    it("offers nothing when no round is taking registrations", async () => {
-      const { result } = renderSearch("/?round=7", ROUNDS, null);
+    it("offers nothing when the round is not in progress", async () => {
+      const { result } = renderSearch("/?round=3");
       await waitFor(() => expect(result.current.search.total).toBe(1));
 
       expect(result.current.search.canListNotRegistered).toBe(false);
+      expect(result.current.search.canListEligible).toBe(false);
     });
   });
 });

@@ -25,7 +25,6 @@ import {
 import Table from "@/components/common/Table";
 import { useParticipantSearch } from "@/pages/MentorshipManagement/hooks/useParticipantSearch";
 import { useParticipantSearchRounds } from "@/pages/MentorshipManagement/hooks/useParticipantSearchRounds";
-import { useRegistrationRound } from "@/pages/MentorshipManagement/hooks/useRegistrationRound";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
 import { MentorshipApprovalStatus } from "@/constants/MentorshipApprovalStatus";
 import { userDisplayName } from "@/utils/userName";
@@ -33,7 +32,6 @@ import MeetingLogDialog from "@/pages/MentorshipManagement/components/MeetingLog
 import StateChips from "@/pages/AdminAccounts/components/StateChips";
 import { useMeetingLog } from "@/pages/MentorshipManagement/hooks/useMeetingLog";
 import { attendanceIssueLines } from "@/pages/MentorshipManagement/utils/attendanceIssues";
-import { registrationWindowLabel } from "@/pages/MentorshipManagement/utils/registrationWindow";
 
 const ALL_ROLES = "__all__";
 const ALL_APPROVAL_STATUSES = "__all__";
@@ -42,6 +40,7 @@ const ANY_ACCOUNT = "__all__";
 const BOTH_INTERNAL_EXTERNAL = "__all__";
 const REGISTERED = "registered";
 const NOT_REGISTERED = "not_registered";
+const ELIGIBLE = "eligible";
 
 /**
  * Maps table column accessors to backend sort_by field names. Only columns
@@ -220,8 +219,10 @@ const PairCell = ({ row, onOpenMeetings }) => {
 /**
  * The Participants card: one round's participants, searched by user ID,
  * name/email, role, internal/external, account, training and approval status.
- * While the round takes registrations, the Registration filter can list the
- * people admitted to the programme who have not registered for it instead.
+ * The List filter picks which people: everyone registered (the default), only
+ * those eligible for matching, or the people admitted to the programme who
+ * have not registered for the round. The last two are only offered while the
+ * round is in progress.
  *
  * The round is picked in the card header from the rounds the API lists,
  * latest first, and the first is selected by default. Search stays disabled
@@ -234,7 +235,6 @@ const PairCell = ({ row, onOpenMeetings }) => {
  */
 const ParticipantSearchCard = () => {
   const rounds = useParticipantSearchRounds();
-  const registrationRoundId = useRegistrationRound();
 
   const {
     rows,
@@ -263,6 +263,9 @@ const ParticipantSearchCard = () => {
     listNotRegistered,
     setListNotRegistered,
     canListNotRegistered,
+    listEligible,
+    setListEligible,
+    canListEligible,
     refetch,
     offset,
     limit,
@@ -271,7 +274,7 @@ const ParticipantSearchCard = () => {
     sortBy,
     order,
     toggleSort,
-  } = useParticipantSearch(rounds, registrationRoundId);
+  } = useParticipantSearch(rounds);
 
   const hasPrev = offset > 0;
   const hasNext = offset + limit < total;
@@ -513,31 +516,31 @@ const ParticipantSearchCard = () => {
             </SelectContent>
           </Select>
           <Select
-            value={listNotRegistered ? NOT_REGISTERED : REGISTERED}
-            onValueChange={(v) => setListNotRegistered(v === NOT_REGISTERED)}
+            value={
+              listNotRegistered
+                ? NOT_REGISTERED
+                : listEligible
+                  ? ELIGIBLE
+                  : REGISTERED
+            }
+            onValueChange={(v) => {
+              setListNotRegistered(v === NOT_REGISTERED);
+              setListEligible(v === ELIGIBLE);
+            }}
           >
-            <SelectTrigger
-              aria-label="Registration"
-              className="h-8 w-36 text-xs"
-            >
+            <SelectTrigger aria-label="List" className="h-8 w-44 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={REGISTERED}>Registered</SelectItem>
+              <SelectItem value={ELIGIBLE} disabled={!canListEligible}>
+                Eligible for matching
+              </SelectItem>
               <SelectItem
                 value={NOT_REGISTERED}
                 disabled={!canListNotRegistered}
               >
                 Not registered
-                {!canListNotRegistered && (
-                  <span className="block text-[10px] text-muted-foreground">
-                    Only while the round takes registrations.{" "}
-                    {registrationWindowLabel(
-                      (rounds ?? []).find((r) => String(r.id) === roundId) ??
-                        null,
-                    )}
-                  </span>
-                )}
               </SelectItem>
             </SelectContent>
           </Select>
