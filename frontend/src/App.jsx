@@ -18,6 +18,7 @@ import AccessDenied from "@/pages/AccessDenied";
 import PersonalDashboard from "@/pages/PersonalDashboard";
 import MentorshipManagement from "@/pages/MentorshipManagement";
 import RoundFeedbackPage from "@/pages/MentorshipManagement/RoundFeedbackPage";
+import MatchingResultsPage from "@/pages/MentorshipManagement/MatchingResultsPage";
 import VerifyRequired from "@/pages/VerifyRequired";
 import SignInSecurity from "@/pages/SignInSecurity";
 import AdminPermissions from "@/pages/AdminPermissions";
@@ -161,6 +162,18 @@ function App() {
                           ]}
                         >
                           <RoundFeedbackPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.MENTORSHIP_MATCHING(":roundId")}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.MENTORSHIP_ADMIN_READ,
+                          ]}
+                        >
+                          <MatchingResultsPage />
                         </ProtectedRoute>
                       }
                     />
