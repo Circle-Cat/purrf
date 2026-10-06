@@ -24,6 +24,15 @@ def _needs_attention(row) -> tuple:
     return (1, -result.score, mentee_id)
 
 
+def _user_id_order(user_id: str) -> tuple:
+    """Numeric ids in number order, anything else after them."""
+    return (0, int(user_id), "") if user_id.isdigit() else (1, 0, user_id)
+
+
+def _by_user_id(item) -> tuple:
+    return _user_id_order(item[0])
+
+
 def _ids_on(rows) -> list[str]:
     """Every user id a page mentions: its mentees, their mentors, the alternatives."""
     ids: list[str] = []
@@ -33,6 +42,41 @@ def _ids_on(rows) -> list[str]:
             ids.append(result.mentor_id)
         ids.extend(candidate.mentor_id for candidate in result.candidates)
     return ids
+
+
+def _partner_ids_on(records) -> list[str]:
+    """Every id the given people asked to be, or not to be, paired with."""
+    return [
+        user_id
+        for record in records
+        for user_id in (*record.expected_partner_ids, *record.unexpected_partner_ids)
+    ]
+
+
+def _profile(record, names: dict[str, str]) -> dict | None:
+    """A person as the matcher saw them, with partner ids named.
+
+    Everything the run was given about them, less what the row says already
+    (name, role) and with the two partner lists carrying names beside ids.
+    """
+    if record is None:
+        return None
+
+    def named(ids):
+        return [{"user_id": user_id, "name": names.get(user_id)} for user_id in ids]
+
+    return {
+        **record.model_dump(
+            exclude={
+                "role",
+                "display_name",
+                "expected_partner_ids",
+                "unexpected_partner_ids",
+            }
+        ),
+        "expected_partners": named(record.expected_partner_ids),
+        "unexpected_partners": named(record.unexpected_partner_ids),
+    }
 
 
 class MatchingRunReadService:
@@ -90,19 +134,6 @@ class MatchingRunReadService:
             for person in people
         }
 
-    async def _named(self, session, user_ids) -> list[dict]:
-        """Pair each id with its display name, keeping ids that resolve to none.
-
-        A name that cannot be found leaves ``name`` null rather than dropping
-        the person: a mentor missing from a list of mentors nobody was given is
-        worse than one shown without a name, and the caller renders the
-        placeholder so that every surface writes it the same way.
-        """
-        names = await self._name_map(session, user_ids)
-        return [
-            {"user_id": user_id, "name": names.get(user_id)} for user_id in user_ids
-        ]
-
     def _read_run(self, round_id: int) -> tuple[dict, dict | None]:
         """Find the round's run and read as far as its state allows.
 
@@ -131,6 +162,8 @@ class MatchingRunReadService:
             "run_id": run_id,
             "started_at": meta.generated_at,
             "triggered_by_user_id": meta.triggered_by_user_id,
+            "mentor_count": self.matching_storage.mentor_count(run_id),
+            "mentee_count": self.matching_storage.mentee_count(run_id),
         }
 
         try:
@@ -196,6 +229,12 @@ class MatchingRunReadService:
             dict: The run's status and what that status carries.
         """
         run, results = self._read_run(round_id)
+        starter = run.get("triggered_by_user_id")
+        unmatched = run.get("unmatched_mentor_ids", []) if results is not None else []
+        ids = ([starter] if starter is not None else []) + list(unmatched)
+        names = await self._name_map(session, ids) if ids else {}
+        if starter is not None:
+            run = {**run, "triggered_by_name": names.get(starter)}
         if results is None:
             return run
 
@@ -205,9 +244,10 @@ class MatchingRunReadService:
                 for key, value in run.items()
                 if key != "unmatched_mentor_ids"
             },
-            "unmatched_mentors": await self._named(
-                session, run["unmatched_mentor_ids"]
-            ),
+            "unmatched_mentors": [
+                {"user_id": user_id, "name": names.get(user_id)}
+                for user_id in unmatched
+            ],
             "published": await self.mentorship_pairs_repository.has_pairs_for_round(
                 session, round_id
             ),
@@ -264,18 +304,123 @@ class MatchingRunReadService:
         selected.sort(key=_needs_attention)
         rows = selected[offset : offset + limit]
 
-        names = await self._name_map(session, _ids_on(rows))
+        run_id = run["run_id"]
+        mentees = self.matching_storage.read_people(
+            run_id, "mentee", [mentee_id for mentee_id, _ in rows]
+        )
+        mentors = self.matching_storage.read_people(
+            run_id,
+            "mentor",
+            sorted({r.mentor_id for _, r in rows if r.mentor_id is not None}),
+        )
+        names = await self._name_map(
+            session,
+            _ids_on(rows) + _partner_ids_on([*mentees.values(), *mentors.values()]),
+        )
         return {
             **page,
             "total": len(selected),
             "items": [
-                self._item(mentee_id, result, names) for mentee_id, result in rows
+                self._item(
+                    mentee_id,
+                    result,
+                    names,
+                    mentee_profile=mentees.get(mentee_id),
+                    mentor_profile=mentors.get(result.mentor_id),
+                )
+                for mentee_id, result in rows
             ],
         }
 
-    def _item(self, mentee_id: str, result, names: dict[str, str]) -> dict:
-        """Render one mentee's row, ids and names together."""
+    async def read_unmatched(
+        self, session, round_id: int, limit: int = 100, offset: int = 0
+    ) -> dict:
+        """Return one page of the people the run left without a partner.
+
+        One row per person rather than per mentee, so the mentors nobody was
+        given sit in the same list as the mentees nobody was found for. Mentees
+        come first, then mentors, each in user id order.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            round_id (int): Round whose run is wanted.
+            limit (int): How many people to return.
+            offset (int): How many to skip.
+
+        Returns:
+            dict: The run's status, how many people are unmatched, and the page.
+        """
+        run, results = self._read_run(round_id)
+        page = {"status": run["status"], "total": 0, "items": []}
+        if results is None:
+            return page
+
+        people = [
+            ("mentee", mentee_id, result)
+            for mentee_id, result in sorted(results.items(), key=_by_user_id)
+            if result.mentor_id is None
+        ] + [
+            ("mentor", mentor_id, None)
+            for mentor_id in sorted(run["unmatched_mentor_ids"], key=_user_id_order)
+        ]
+        rows = people[offset : offset + limit]
+
+        run_id = run["run_id"]
+        profiles = {
+            role: self.matching_storage.read_people(
+                run_id, role, [user_id for r, user_id, _ in rows if r == role]
+            )
+            for role in ("mentee", "mentor")
+        }
+        names = await self._name_map(
+            session,
+            [user_id for _, user_id, _ in rows]
+            + [
+                candidate.mentor_id
+                for _, _, result in rows
+                if result is not None
+                for candidate in result.candidates
+            ]
+            + _partner_ids_on([
+                record for by_id in profiles.values() for record in by_id.values()
+            ]),
+        )
         return {
+            **page,
+            "total": len(people),
+            "items": [
+                {
+                    "person": {"user_id": user_id, "name": names.get(user_id)},
+                    "role": role,
+                    "profile": _profile(profiles[role].get(user_id), names),
+                    "diagnostic_reason": result.diagnostic_reason if result else "",
+                    "candidates": [
+                        {
+                            "user_id": candidate.mentor_id,
+                            "name": names.get(candidate.mentor_id),
+                            "score": candidate.score,
+                        }
+                        for candidate in (result.candidates if result else [])
+                    ],
+                }
+                for role, user_id, result in rows
+            ],
+        }
+
+    def _item(
+        self,
+        mentee_id: str,
+        result,
+        names: dict[str, str],
+        *,
+        mentee_profile,
+        mentor_profile,
+    ) -> dict:
+        """Render one mentee's row, ids and names together, with both people
+        as the run was given them."""
+        return {
+            "mentee_profile": _profile(mentee_profile, names),
+            "mentor_profile": _profile(mentor_profile, names),
             "mentee": {"user_id": mentee_id, "name": names.get(mentee_id)},
             "mentor": None
             if result.mentor_id is None

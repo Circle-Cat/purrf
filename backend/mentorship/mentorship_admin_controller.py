@@ -4,6 +4,12 @@ from backend.dto.participant_search_filter_dto import (
     UnregisteredFilterDto,
 )
 from backend.dto.matching_run_create_dto import MatchingRunCreateDto
+from backend.dto.matching_run_dto import (
+    MatchingResultsPageDto,
+    MatchingRunOverviewDto,
+    MatchingUnmatchedPageDto,
+    MatchingRunStartedDto,
+)
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
 from backend.common.fast_api_response_wrapper import api_response
@@ -13,6 +19,7 @@ from backend.common.api_endpoints import (
     MENTORSHIP_ADMIN_MATCH_RUNS,
     MENTORSHIP_ADMIN_MATCH_RUN,
     MENTORSHIP_ADMIN_MATCH_RUN_RESULTS,
+    MENTORSHIP_ADMIN_MATCH_RUN_UNMATCHED,
     MENTORSHIP_ADMIN_ROUND_FEEDBACK,
     MENTORSHIP_ADMIN_ROUND_UNREGISTERED,
 )
@@ -85,6 +92,15 @@ class MentorshipAdminController:
             MENTORSHIP_ADMIN_MATCH_RUN_RESULTS,
             endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_READ])(
                 self.get_matching_run_results
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ADMIN_MATCH_RUN_UNMATCHED,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_READ])(
+                self.get_matching_run_unmatched
             ),
             methods=["GET"],
             response_model=None,
@@ -266,7 +282,7 @@ class MentorshipAdminController:
             )
         return api_response(
             message="Successfully started the matching run.",
-            data=result,
+            data=MatchingRunStartedDto.model_validate(result),
         )
 
     async def get_matching_run(self, round_id: int, current_user: UserContextDto):
@@ -292,7 +308,7 @@ class MentorshipAdminController:
             )
         return api_response(
             message="Successfully retrieved the matching run.",
-            data=result,
+            data=MatchingRunOverviewDto.model_validate(result),
         )
 
     async def get_matching_run_results(
@@ -329,5 +345,40 @@ class MentorshipAdminController:
             )
         return api_response(
             message="Successfully retrieved the matching run results.",
-            data=result,
+            data=MatchingResultsPageDto.model_validate(result),
+        )
+
+    async def get_matching_run_unmatched(
+        self,
+        round_id: int,
+        current_user: UserContextDto,
+        limit: int = 100,
+        offset: int = 0,
+    ):
+        """
+        Return one page of the people the round's run left without a partner,
+        mentees then mentors.
+
+        Args:
+            round_id (int): Round whose run is wanted.
+            current_user (UserContextDto): Who is asking.
+            limit (int): Maximum number of people to return.
+            offset (int): Pagination offset.
+
+        Returns:
+            API response carrying the total and one page of people.
+
+        Raises:
+            PermissionError: The flag is off for this admin. Surfaces as 403.
+        """
+        if not self.launchdarkly_service.is_matching_run_enabled(current_user):
+            raise PermissionError("Matching runs are not yet available.")
+
+        async with self.database.session() as session:
+            result = await self.matching_run_read_service.read_unmatched(
+                session, round_id, limit=limit, offset=offset
+            )
+        return api_response(
+            message="Successfully retrieved the people the matching run left unmatched.",
+            data=MatchingUnmatchedPageDto.model_validate(result),
         )

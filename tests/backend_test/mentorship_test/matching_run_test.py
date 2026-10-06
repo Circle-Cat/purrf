@@ -9,10 +9,18 @@ from requests.exceptions import ReadTimeout
 
 from backend.common.exceptions import ConflictError
 from backend.common.matching_job_client import MatcherJobNotStarted
-from backend.mentorship.matching_contract import RESULT_VERSION
+from backend.mentorship.matching_contract import (
+    INDUSTRY_KEYS,
+    RESULT_VERSION,
+    SKILL_KEYS,
+    PersonRecord,
+)
 from backend.mentorship.matching_eligibility import IneligibleReason
 from backend.mentorship.matching_run_service import MatchingRunService
 from backend.mentorship.matching_storage import MatchingStorage
+
+_NO_SKILLS = {key: False for key in SKILL_KEYS}
+_NO_INDUSTRY = {key: False for key in INDUSTRY_KEYS}
 
 
 class _FakeRedis:
@@ -56,6 +64,10 @@ class _FakeRedis:
 
     def hgetall(self, key):
         return dict(self.hashes.get(key, {}))
+
+    def hmget(self, key, fields):
+        held = self.hashes.get(key, {})
+        return [held.get(field) for field in fields]
 
 
 def _everyone_eligible():
@@ -113,6 +125,39 @@ class MatchingStorageTest(unittest.TestCase):
         self.assertEqual(
             sorted(self.redis.hashes["match:r7-x-y:in:mentees"]), ["e0", "e1", "e2"]
         )
+
+    def test_people_read_back_as_the_run_was_given_them(self):
+        mentee = PersonRecord(
+            role="mentee",
+            user_id="1",
+            display_name="Mia",
+            skills=_NO_SKILLS,
+            specific_industry=_NO_INDUSTRY,
+            goal="Land a first job",
+        )
+        mentor = PersonRecord(
+            role="mentor",
+            user_id="1",
+            display_name="Ada",
+            skills=_NO_SKILLS,
+            max_partners=2,
+        )
+        # The same id in both groups: each read keeps to the group it names.
+        self.redis.hashes["match:r7-x-y:in:mentees"] = {"1": mentee.model_dump_json()}
+        self.redis.hashes["match:r7-x-y:in:mentors"] = {"1": mentor.model_dump_json()}
+
+        mentees = self.storage.read_people("r7-x-y", "mentee", ["1", "9"])
+        mentors = self.storage.read_people("r7-x-y", "mentor", ["1"])
+
+        self.assertEqual(mentees, {"1": mentee})
+        self.assertEqual(mentors, {"1": mentor})
+        self.assertEqual(self.storage.read_people("r7-x-y", "mentee", []), {})
+
+    def test_both_groups_are_counted(self):
+        self.storage.write_input("r7-x-y", _matching_input(mentors=2, mentees=3))
+
+        self.assertEqual(self.storage.mentor_count("r7-x-y"), 2)
+        self.assertEqual(self.storage.mentee_count("r7-x-y"), 3)
 
     def test_the_envelope_is_written_after_the_people(self):
         self.storage.write_input("r7-x-y", _matching_input(mentors=2, mentees=2))
