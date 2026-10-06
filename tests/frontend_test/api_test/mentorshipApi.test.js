@@ -12,6 +12,9 @@ import {
   searchUnregistered,
   getMeetingLog,
   updateMeetingLog,
+  startMatchingRun,
+  getMatchingRun,
+  getMatchingResults,
 } from "@/api/mentorshipApi";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
@@ -306,5 +309,59 @@ describe("Mentorship Service API", () => {
       body,
     );
     expect(result).toEqual(mockData);
+  });
+
+  it("startMatchingRun posts the round and the picked people", async () => {
+    const mockData = { data: { runId: 12 } };
+    request.post.mockResolvedValue(mockData);
+
+    const result = await startMatchingRun({
+      roundId: 7,
+      participantIds: [11, 12],
+    });
+
+    expect(request.post).toHaveBeenCalledWith("/mentorship/admin/match-runs", {
+      roundId: 7,
+      participantIds: [11, 12],
+    });
+    expect(result).toEqual(mockData);
+  });
+
+  it("getMatchingRun asks for the round's run", async () => {
+    const mockData = { data: { status: "never_run" } };
+    request.get.mockResolvedValue(mockData);
+
+    const result = await getMatchingRun(7);
+
+    expect(request.get).toHaveBeenCalledWith("/mentorship/admin/match-runs/7");
+    expect(result).toEqual(mockData);
+  });
+
+  it("getMatchingResults asks for a page of the round's results", async () => {
+    const mockData = { data: { items: [], total: 0 } };
+    request.get.mockResolvedValue(mockData);
+
+    const result = await getMatchingResults(7, {
+      limit: 20,
+      offset: 40,
+      matched: false,
+    });
+
+    expect(request.get).toHaveBeenCalledWith(
+      "/mentorship/admin/match-runs/7/results",
+      { params: { limit: 20, offset: 40, matched: false } },
+    );
+    expect(result).toEqual(mockData);
+  });
+
+  it("getMatchingResults leaves matched out for every mentee", async () => {
+    request.get.mockResolvedValue({ data: {} });
+
+    await getMatchingResults(7, { limit: 20, offset: 0 });
+
+    expect(request.get).toHaveBeenCalledWith(
+      "/mentorship/admin/match-runs/7/results",
+      { params: { limit: 20, offset: 0, matched: undefined } },
+    );
   });
 });

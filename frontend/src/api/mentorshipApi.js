@@ -195,6 +195,36 @@ export const getRoundFeedback = (roundId) =>
   request.get(API_ENDPOINTS.MENTORSHIP_ADMIN_ROUND_FEEDBACK(roundId));
 
 /**
+ * Start a matching run for a round over the chosen participants (admin only).
+ * Resolves to `data: { runId }`.
+ * @param {{roundId: number, participantIds: number[]}} body
+ */
+export const startMatchingRun = ({ roundId, participantIds }) =>
+  request.post(API_ENDPOINTS.MENTORSHIP_ADMIN_MATCH_RUNS, {
+    roundId,
+    participantIds,
+  });
+
+/**
+ * Fetch where a round's latest matching run stands.
+ * @param {number|string} roundId
+ */
+export const getMatchingRun = (roundId) =>
+  request.get(API_ENDPOINTS.MENTORSHIP_ADMIN_MATCH_RUN(roundId));
+
+/**
+ * Fetch a page of a round's latest matching results, one item per mentee.
+ * @param {number|string} roundId
+ * @param {{limit?: number, offset?: number, matched?: boolean}} filters -
+ *   `matched` keeps only matched (true) or unmatched (false) mentees; leave it
+ *   out for all.
+ */
+export const getMatchingResults = (roundId, { limit, offset, matched } = {}) =>
+  request.get(API_ENDPOINTS.MENTORSHIP_ADMIN_MATCH_RUN_RESULTS(roundId), {
+    params: { limit, offset, matched },
+  });
+
+/**
  * Fetch the mentorship admin view of a pair's meeting log for the round.
  * @param {number} pairId - The mentorship pair's id.
  */
