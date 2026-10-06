@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   getMatchingResults,
   getMatchingRun,
@@ -7,10 +7,12 @@ import {
 
 /**
  * Loads where a round's latest matching run stands, again whenever the round
- * changes. With no round nothing is fetched.
+ * changes. With no round nothing is fetched. `reload` fetches it again in
+ * place, keeping what is shown until the answer comes.
  *
  * @param {number|string|null} roundId - The mentorship round's id.
- * @returns {{overview: Object|null, isLoading: boolean, error: boolean}}
+ * @returns {{overview: Object|null, isLoading: boolean, error: boolean,
+ *            reload: () => Promise<void>}}
  */
 export const useMatchingRun = (roundId) => {
   const [overview, setOverview] = useState(null);
@@ -42,14 +44,23 @@ export const useMatchingRun = (roundId) => {
     };
   }, [roundId]);
 
-  return { overview, isLoading, error };
+  const reload = useCallback(() => {
+    if (!roundId) return Promise.resolve();
+    return getMatchingRun(roundId)
+      .then(({ data }) => setOverview(data ?? null))
+      .catch((err) => {
+        console.error("Failed to fetch the matching run", err);
+      });
+  }, [roundId]);
+
+  return { overview, isLoading, error, reload };
 };
 
 /**
  * Loads one page from `load(roundId, {limit, offset, ...})`, again whenever
- * any argument changes.
+ * any argument changes; a new `reloadKey` alone fetches the same page again.
  */
-const usePage = (load, what, roundId, query) => {
+const usePage = (load, what, roundId, query, reloadKey) => {
   const [page, setPage] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -73,7 +84,7 @@ const usePage = (load, what, roundId, query) => {
     return () => {
       cancelled = true;
     };
-  }, [load, what, roundId, queryKey]);
+  }, [load, what, roundId, queryKey, reloadKey]);
 
   return { page, isLoading, error };
 };
@@ -83,14 +94,21 @@ const usePage = (load, what, roundId, query) => {
  *
  * @param {number|string} roundId - The mentorship round's id.
  * @param {{limit: number, offset: number, matched?: boolean}} query
+ * @param {number} [reloadKey] - Change it to fetch the same page again.
  * @returns {{page: Object|null, isLoading: boolean, error: boolean}}
  */
-export const useMatchingResults = (roundId, { limit, offset, matched }) =>
-  usePage(getMatchingResults, "matching results", roundId, {
-    limit,
-    offset,
-    matched,
-  });
+export const useMatchingResults = (
+  roundId,
+  { limit, offset, matched },
+  reloadKey = 0,
+) =>
+  usePage(
+    getMatchingResults,
+    "matching results",
+    roundId,
+    { limit, offset, matched },
+    reloadKey,
+  );
 
 /**
  * Loads one page of the people a round's matching left without a partner,
@@ -98,10 +116,18 @@ export const useMatchingResults = (roundId, { limit, offset, matched }) =>
  *
  * @param {number|string} roundId - The mentorship round's id.
  * @param {{limit: number, offset: number}} query
+ * @param {number} [reloadKey] - Change it to fetch the same page again.
  * @returns {{page: Object|null, isLoading: boolean, error: boolean}}
  */
-export const useMatchingUnmatched = (roundId, { limit, offset }) =>
-  usePage(getMatchingUnmatched, "unmatched people", roundId, {
-    limit,
-    offset,
-  });
+export const useMatchingUnmatched = (
+  roundId,
+  { limit, offset },
+  reloadKey = 0,
+) =>
+  usePage(
+    getMatchingUnmatched,
+    "unmatched people",
+    roundId,
+    { limit, offset },
+    reloadKey,
+  );

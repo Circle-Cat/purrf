@@ -236,6 +236,50 @@ export const getMatchingUnmatched = (roundId, { limit, offset } = {}) =>
   });
 
 /**
+ * Take the lock on editing a round's matching result, or renew it when it is
+ * already mine. Resolves to `data: { userId, name, expiresAt }`; refused with
+ * 409 while someone else holds it.
+ * @param {number|string} roundId
+ */
+export const takeMatchingEditLock = (roundId) =>
+  request.post(API_ENDPOINTS.MENTORSHIP_ADMIN_MATCH_RUN_EDIT_LOCK(roundId));
+
+/**
+ * Give up my lock on editing a round's matching result; nothing happens when
+ * it is not mine.
+ * @param {number|string} roundId
+ */
+export const releaseMatchingEditLock = (roundId) =>
+  request.delete(API_ENDPOINTS.MENTORSHIP_ADMIN_MATCH_RUN_EDIT_LOCK(roundId));
+
+/**
+ * The same release for a page that is going away. An XHR in flight when the
+ * tab closes is dropped; fetch with keepalive survives it, so this one goes
+ * around axios. Best effort: a failure is only logged.
+ * @param {number|string} roundId
+ */
+export const releaseMatchingEditLockOnLeave = (roundId) =>
+  fetch(
+    `${request.defaults.baseURL}${API_ENDPOINTS.MENTORSHIP_ADMIN_MATCH_RUN_EDIT_LOCK(roundId)}`,
+    { method: "DELETE", keepalive: true, credentials: "include" },
+  ).catch((error) => {
+    console.error("Failed to release the matching edit lock", error);
+  });
+
+/**
+ * Save changed mentees into a round's matching draft. Needs my edit lock and
+ * releases it. A change equal to the matcher's result takes that mentee out
+ * of the draft. Resolves to `data: { draftCount }`.
+ * @param {number|string} roundId
+ * @param {{menteeId: string, mentorId: string|null,
+ *          recommendationReason: string}[]} changes
+ */
+export const saveMatchingDraft = (roundId, changes) =>
+  request.patch(API_ENDPOINTS.MENTORSHIP_ADMIN_MATCH_RUN_DRAFT(roundId), {
+    changes,
+  });
+
+/**
  * Fetch the mentorship admin view of a pair's meeting log for the round.
  * @param {number} pairId - The mentorship pair's id.
  */
