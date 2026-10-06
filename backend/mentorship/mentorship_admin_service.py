@@ -368,17 +368,32 @@ class MentorshipAdminService:
         """
         if round_id is None:
             raise ValueError("Eligible for matching needs a round.")
+        await self._get_round_in_progress(session, round_id)
+        return await self.matching_eligibility_service.eligible_user_ids(
+            session, round_id
+        )
+
+    async def _get_round_in_progress(self, session: AsyncSession, round_id: int):
+        """The round, if it is in progress: the lists that act on a round --
+        who is eligible for matching, who has not registered -- are only
+        offered then.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round.
+
+        Returns:
+            MentorshipRoundEntity: The round.
+
+        Raises:
+            ValueError: The round does not exist or is not in progress.
+        """
         round_entity = await self.rounds_repository.get_by_round_id(session, round_id)
         if round_entity is None:
             raise ValueError(f"Mentorship round {round_id} does not exist.")
         if not is_in_progress(round_entity, datetime.now(timezone.utc)):
-            raise ValueError(
-                f"Mentorship round {round_id} is not in progress, so nobody is "
-                "eligible for matching in it."
-            )
-        return await self.matching_eligibility_service.eligible_user_ids(
-            session, round_id
-        )
+            raise ValueError(f"Mentorship round {round_id} is not in progress.")
+        return round_entity
 
     async def search_unregistered(
         self,
@@ -407,11 +422,9 @@ class MentorshipAdminService:
             UnregisteredSearchDto: One row per person and the total count.
 
         Raises:
-            ValueError: If the round does not exist.
+            ValueError: If the round does not exist or is not in progress.
         """
-        round_entity = await self.rounds_repository.get_by_round_id(session, round_id)
-        if round_entity is None:
-            raise ValueError(f"Mentorship round {round_id} does not exist.")
+        await self._get_round_in_progress(session, round_id)
 
         rows, total = await self.participants_repository.search_unregistered_for_admin(
             session, round_id, filters, limit, offset, order
