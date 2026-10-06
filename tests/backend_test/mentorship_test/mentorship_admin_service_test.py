@@ -100,6 +100,14 @@ def _make_meeting(
     )
 
 
+def _round_in_progress():
+    now = datetime.now(timezone.utc)
+    return MagicMock(
+        promotion_start_at=now - timedelta(days=1),
+        feedback_deadline_at=now + timedelta(days=1),
+    )
+
+
 class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.mock_users_repo = MagicMock()
@@ -129,7 +137,9 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.mock_participants_repo.list_registered_rounds_by_user_ids = AsyncMock(
             return_value={}
         )
-        self.mock_rounds_repo.get_by_round_id = AsyncMock(return_value=MagicMock())
+        self.mock_rounds_repo.get_by_round_id = AsyncMock(
+            return_value=_round_in_progress()
+        )
 
         self.mock_application_repo = MagicMock()
         self.mock_application_repo.list_hired_activity_roles_by_user_ids = AsyncMock(
@@ -173,6 +183,23 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             await self.service.search_unregistered(
                 self.mock_session, 9, UnregisteredFilterDto()
             )
+
+        self.mock_participants_repo.search_unregistered_for_admin.assert_not_awaited()
+
+    async def test_unregistered_is_refused_for_a_round_not_in_progress(self):
+        now = datetime.now(timezone.utc)
+        for label, (start, end) in {
+            "not started": (now + timedelta(days=1), now + timedelta(days=2)),
+            "over": (now - timedelta(days=2), now - timedelta(days=1)),
+        }.items():
+            with self.subTest(label):
+                self.mock_rounds_repo.get_by_round_id.return_value = MagicMock(
+                    promotion_start_at=start, feedback_deadline_at=end
+                )
+                with self.assertRaises(ValueError):
+                    await self.service.search_unregistered(
+                        self.mock_session, 9, UnregisteredFilterDto()
+                    )
 
         self.mock_participants_repo.search_unregistered_for_admin.assert_not_awaited()
 
@@ -282,11 +309,6 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_eligible_lists_only_the_eligible_in_a_round_in_progress(self):
-        now = datetime.now(timezone.utc)
-        self.mock_rounds_repo.get_by_round_id.return_value = MagicMock(
-            promotion_start_at=now - timedelta(days=1),
-            feedback_deadline_at=now + timedelta(days=1),
-        )
         self.mock_eligibility.eligible_user_ids.return_value = {4, 2}
         self.mock_participants_repo.search_participants_for_admin.return_value = ([], 0)
 
