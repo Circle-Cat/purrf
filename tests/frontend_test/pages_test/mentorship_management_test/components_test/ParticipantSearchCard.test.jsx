@@ -535,7 +535,7 @@ describe("ParticipantSearchCard", () => {
       expect(screen.queryByText("Non-participants")).not.toBeInTheDocument();
     });
 
-    it("lays out the filter bar in order, then Search, then Not registered", async () => {
+    it("lays out the filter bar in order, with Registration last, then Search", async () => {
       await renderCard();
       const bar = screen.getByLabelText("User ID").parentElement;
       expect(
@@ -550,13 +550,14 @@ describe("ParticipantSearchCard", () => {
         "Account",
         "Onboarding status",
         "Approval status",
-        "Not registered is unavailable",
+        "Registration",
       ]);
-      const [search, notRegistered] = Array.from(bar.children).slice(-2);
-      expect(search).toBe(screen.getByRole("button", { name: "Search" }));
-      expect(notRegistered).toContainElement(
-        screen.getByRole("button", { name: "Not registered" }),
+      expect(Array.from(bar.children).at(-1)).toBe(
+        screen.getByRole("button", { name: "Search" }),
       );
+      expect(
+        screen.queryByRole("button", { name: "Not registered" }),
+      ).not.toBeInTheDocument();
     });
 
     it("no longer sends a participation status", async () => {
@@ -1044,19 +1045,93 @@ describe("ParticipantSearchCard", () => {
       ...overrides,
     });
 
-    it("is greyed out while the round is not taking registrations and says why", async () => {
+    const pickRegistration = async (name) => {
+      await userEvent.click(screen.getByLabelText("Registration"));
+      await userEvent.click(screen.getByRole("option", { name }));
+    };
+
+    it("defaults the Registration filter to Registered", async () => {
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await mounted();
+      expect(screen.getByLabelText("Registration")).toHaveTextContent(
+        "Registered",
+      );
+    });
+
+    it("greys out Not registered while the round is not taking registrations and says why", async () => {
       await renderCard({ url: SEARCHED_PARTICIPANTS });
       await mounted();
 
-      expect(
-        screen.getByRole("button", { name: "Not registered" }),
-      ).toBeDisabled();
+      await userEvent.click(screen.getByLabelText("Registration"));
+      const option = screen.getByRole("option", { name: /Not registered/ });
 
-      screen.getByLabelText("Not registered is unavailable").focus();
+      expect(option).toHaveAttribute("aria-disabled", "true");
+      expect(option).toHaveTextContent(
+        "Only while the round takes registrations.",
+      );
+    });
+
+    it("does not switch lists until Search, and greys out training and approval as soon as it is picked", async () => {
+      searchParticipants.mockResolvedValue(resultsOf([participantRow()]));
+      searchUnregistered.mockResolvedValue({
+        data: { rows: [unregisteredRow()], total: 1 },
+      });
+      openRegistration();
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await screen.findByText("Alice Doe");
+
+      await pickRegistration("Not registered");
+
+      expect(screen.getByLabelText("Onboarding status")).toBeDisabled();
+      expect(screen.getByLabelText("Approval status")).toBeDisabled();
+      expect(searchUnregistered).not.toHaveBeenCalled();
+      expect(urlParams().has("notRegistered")).toBe(false);
+      expect(screen.getByText("Alice Doe")).toBeInTheDocument();
+
+      await search();
+
+      expect(await screen.findByText("Dana Wu")).toBeInTheDocument();
+      expect(urlParams().get("notRegistered")).toBe("1");
+    });
+
+    it("goes back to Registered when a round not taking registrations is picked", async () => {
+      searchUnregistered.mockResolvedValue({
+        data: { rows: [unregisteredRow()], total: 1 },
+      });
+      openRegistration();
+      await renderCard({ url: "/?round=7&notRegistered=1" });
+      await screen.findByText("Dana Wu");
+      expect(screen.getByLabelText("Registration")).toHaveTextContent(
+        "Not registered",
+      );
+
+      await userEvent.click(screen.getByLabelText("Round"));
+      await userEvent.click(
+        screen.getByRole("option", { name: "Spring 2026" }),
+      );
+
+      expect(screen.getByLabelText("Registration")).toHaveTextContent(
+        /^Registered$/,
+      );
+      expect(screen.getByLabelText("Onboarding status")).toBeEnabled();
+    });
+
+    it("explains Rounds taken part in its header", async () => {
+      searchUnregistered.mockResolvedValue({
+        data: { rows: [unregisteredRow()], total: 1 },
+      });
+      openRegistration();
+      await renderCard({ url: "/?round=7&notRegistered=1" });
+      await screen.findByText("Dana Wu");
+
+      screen.getByText("Rounds taken part").focus();
 
       expect(
-        (await screen.findAllByText(/Only while the round takes registrations/))
-          .length,
+        (
+          await screen.findAllByText(
+            "Every round the person registered for, including rounds where they were not matched or stopped early.",
+          )
+        ).length,
       ).toBeGreaterThan(0);
     });
 
@@ -1083,16 +1158,12 @@ describe("ParticipantSearchCard", () => {
       await renderCard({ url: SEARCHED_PARTICIPANTS });
       await screen.findByText("Alice Doe");
 
-      await userEvent.click(
-        screen.getByRole("button", { name: "Not registered" }),
-      );
+      await pickRegistration("Not registered");
+      await search();
 
       const dana = await screen.findByText("Dana Wu");
       expect(searchUnregistered.mock.calls[0][0]).toBe("7");
       expect(urlParams().get("notRegistered")).toBe("1");
-      expect(
-        screen.getByRole("button", { name: "Not registered" }),
-      ).toHaveAttribute("aria-pressed", "true");
       expect(
         within(dana.closest("table"))
           .getAllByRole("columnheader")
