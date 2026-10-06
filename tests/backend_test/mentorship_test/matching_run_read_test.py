@@ -20,6 +20,7 @@ from backend.dto.matching_run_dto import (
     MatchingRunOverviewDto,
     MatchingUnmatchedPageDto,
 )
+from backend.mentorship.matching_draft import DraftEntry
 from backend.mentorship.matching_run_read_service import MatchingRunReadService
 
 
@@ -44,6 +45,25 @@ def _reported(**overrides):
     )
     body.update(overrides)
     return MatchingRunResult(**body)
+
+
+def _mentor(user_id, slots=1):
+    return PersonRecord(
+        role="mentor",
+        user_id=user_id,
+        display_name=f"Mentor {user_id}",
+        skills=_NO_SKILLS,
+        max_partners=slots,
+    )
+
+
+def _draft(mentor_id, reason="Edited reason", by="9"):
+    return DraftEntry(
+        mentor_id=mentor_id,
+        recommendation_reason=reason,
+        edited_by=by,
+        edited_at="2026-10-06T08:00:00+00:00",
+    )
 
 
 def _user(user_id, first_name, last_name, preferred_name=None):
@@ -81,16 +101,15 @@ class MatchingRunOverviewTest(unittest.IsolatedAsyncioTestCase):
         self.storage.mentor_count.return_value = 2
         self.storage.mentee_count.return_value = 3
         self.storage.read_people.return_value = {}
-
-        self.pairs = MagicMock()
-        self.pairs.has_pairs_for_round = AsyncMock(return_value=False)
+        self.storage.read_all_people.return_value = {}
+        self.storage.read_draft.return_value = {}
+        self.storage.edit_lock.return_value = None
 
         self.users = MagicMock()
         self.users.get_all_by_ids = AsyncMock(return_value=[])
 
         self.service = MatchingRunReadService(
             matching_storage=self.storage,
-            mentorship_pairs_repository=self.pairs,
             users_repository=self.users,
             logger=MagicMock(),
         )
@@ -107,11 +126,25 @@ class MatchingRunOverviewTest(unittest.IsolatedAsyncioTestCase):
         )
         self.storage.read_run_result.return_value = None
 
-    def _succeeded(self, results=None, **overrides):
-        """A run the matcher finished and reported on."""
+    def _succeeded(self, results=None, slots=None, **overrides):
+        """A run the matcher finished and reported on.
+
+        The run's mentors are everyone the result assigns plus those it says it
+        gave nobody, each with the slots in ``slots`` (1 when not given).
+        """
         self._running()
         self.storage.read_run_result.return_value = _reported(**overrides)
         self.storage.read_all_results.return_value = results or {}
+        mentor_ids = {
+            r.mentor_id for r in (results or {}).values() if r.mentor_id is not None
+        } | set(overrides.get("unmatched_mentor_ids", []))
+        mentors = {
+            mentor_id: _mentor(mentor_id, (slots or {}).get(mentor_id, 1))
+            for mentor_id in mentor_ids
+        }
+        self.storage.read_all_people.side_effect = lambda run_id, role: (
+            mentors if role == "mentor" else {}
+        )
 
     async def test_a_round_that_was_never_matched_reports_no_run(self):
         overview = await self.service.read_overview(self.session, 7)
@@ -195,15 +228,12 @@ class MatchingRunOverviewTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(overview["finished_at"], "2026-09-18T01:50:00+00:00")
         self.assertEqual(overview["input_written_at"], "2026-09-18T01:00:00+00:00")
 
-    async def test_a_published_round_says_so(self):
-        self._running()
-        self.storage.read_run_result.return_value = _reported(mentee_count=0)
-        self.storage.read_all_results.return_value = {}
-        self.pairs.has_pairs_for_round.return_value = True
+    async def test_whether_the_round_has_pairs_is_not_reported(self):
+        self._succeeded(results={"1": _result(mentor_id="10")})
 
         overview = await self.service.read_overview(self.session, 7)
 
-        self.assertTrue(overview["published"])
+        self.assertNotIn("published", overview)
 
     async def test_the_mentors_nobody_was_given_are_named(self):
         self._succeeded(unmatched_mentor_ids=["10", "11"])
@@ -298,6 +328,9 @@ class MatchingRunResultsTest(MatchingRunOverviewTest):
                 "recommendation_reason": "",
                 "diagnostic_reason": "",
                 "candidates": [],
+                "edited": False,
+                "matcher_mentor": {"user_id": "10", "name": "Ada Lovelace"},
+                "matcher_reason": "",
             },
         )
 
@@ -635,6 +668,118 @@ class MatchingRunUnmatchedTest(MatchingRunOverviewTest):
         body = MatchingUnmatchedPageDto.model_validate(page).model_dump(by_alias=True)
         self.assertEqual(body["items"][0]["person"], {"userId": "3", "name": None})
         self.assertEqual(body["items"][2]["profile"]["maxPartners"], 2)
+
+
+class MatchingRunDraftReadTest(MatchingRunOverviewTest):
+    """Every reader sees the matcher's result with the saved draft laid over it."""
+
+    def _edited(self):
+        # The matcher gave 1 to 10 and 2 to 11, and found nobody for 3; 12 was
+        # given nobody. The draft moves 2 to her candidate 12 and leaves 1 with
+        # no mentor.
+        self._succeeded(
+            results={
+                "1": _result(mentor_id="10", score=80, recommendation_reason="r1"),
+                "2": _result(
+                    mentor_id="11",
+                    score=70,
+                    recommendation_reason="r2",
+                    candidates=[{"mentor_id": "12", "score": 65}],
+                ),
+                "3": _result(),
+            },
+            unmatched_mentor_ids=["12"],
+            slots={"10": 1, "11": 1, "12": 2},
+        )
+        self.storage.read_draft.return_value = {
+            "2": _draft("12", "Moved to Cy"),
+            "1": _draft(None, ""),
+        }
+        self.users.get_all_by_ids.return_value = [
+            _user(1, "Ann", "Lee"),
+            _user(10, "Ada", "Lovelace"),
+            _user(12, "Cy", "Dee"),
+        ]
+
+    async def test_the_overview_counts_with_the_draft(self):
+        self._edited()
+
+        overview = await self.service.read_overview(self.session, 7)
+
+        self.assertEqual(overview["matched_count"], 1)
+        self.assertEqual(overview["unmatched_count"], 2)
+        self.assertEqual(overview["draft_count"], 2)
+        self.assertEqual(
+            [m["user_id"] for m in overview["unmatched_mentors"]], ["10", "11"]
+        )
+        self.assertEqual(
+            overview["mentor_slots"],
+            [
+                {"user_id": "10", "name": "Ada Lovelace", "slots": 1, "assigned": 0},
+                {"user_id": "11", "name": None, "slots": 1, "assigned": 0},
+                {"user_id": "12", "name": "Cy Dee", "slots": 2, "assigned": 1},
+            ],
+        )
+        self.assertEqual(overview["problems"], [])
+        self.assertIsNone(overview["edit_lock"])
+
+    async def test_the_overview_names_the_problems_and_who_holds_the_lock(self):
+        self._edited()
+        self.storage.read_draft.return_value = {"1": _draft("10", "")}
+        self.storage.edit_lock.return_value = ("1", 600)
+
+        overview = await self.service.read_overview(self.session, 7)
+
+        self.assertEqual(
+            overview["problems"],
+            [
+                {
+                    "code": "no_reason",
+                    "mentor": None,
+                    "mentee": {"user_id": "1", "name": "Ann Lee"},
+                    "assigned": None,
+                    "slots": None,
+                }
+            ],
+        )
+        self.assertEqual(overview["edit_lock"]["user_id"], "1")
+        self.assertEqual(overview["edit_lock"]["name"], "Ann Lee")
+        self.assertIn("expires_at", overview["edit_lock"])
+        self.users.get_all_by_ids.assert_awaited_once()
+
+    async def test_a_result_row_shows_the_edit_beside_the_matcher_s_choice(self):
+        self._edited()
+
+        page = await self.service.read_results(self.session, 7, matched=True)
+
+        self.assertEqual(page["total"], 1)
+        (item,) = page["items"]
+        self.assertEqual(item["mentee"]["user_id"], "2")
+        self.assertEqual(item["mentor"], {"user_id": "12", "name": "Cy Dee"})
+        self.assertEqual(item["score"], 65)
+        self.assertEqual(item["recommendation_reason"], "Moved to Cy")
+        self.assertTrue(item["edited"])
+        self.assertEqual(item["matcher_mentor"], {"user_id": "11", "name": None})
+        self.assertEqual(item["matcher_reason"], "r2")
+        self.assertEqual(item["match_type"], "hungarian")
+        self.assertEqual((page["matched_count"], page["unmatched_count"]), (1, 2))
+
+    async def test_the_unmatched_list_follows_the_draft(self):
+        self._edited()
+
+        page = await self.service.read_unmatched(self.session, 7)
+
+        self.assertEqual(
+            [(i["role"], i["person"]["user_id"]) for i in page["items"]],
+            [("mentee", "1"), ("mentee", "3"), ("mentor", "10"), ("mentor", "11")],
+        )
+        ann = page["items"][0]
+        self.assertTrue(ann["edited"])
+        self.assertEqual(
+            ann["matcher_mentor"], {"user_id": "10", "name": "Ada Lovelace"}
+        )
+        self.assertEqual(ann["matcher_reason"], "r1")
+        self.assertFalse(page["items"][1]["edited"])
 
 
 if __name__ == "__main__":

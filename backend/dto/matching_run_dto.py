@@ -2,6 +2,7 @@
 
 from backend.common.mentorship_enums import MatchingRunStatus
 from backend.dto.base_dto import BaseDto
+from backend.dto.base_request_dto import BaseRequestDto
 
 
 class NamedUserDto(BaseDto):
@@ -13,6 +14,33 @@ class NamedUserDto(BaseDto):
 
 class MatchingRunStartedDto(BaseDto):
     run_id: str
+
+
+class MatchingEditLockDto(BaseDto):
+    """Who is editing a run's result, and until when unless they renew."""
+
+    user_id: str
+    name: str | None = None
+    expires_at: str
+
+
+class MatchingMentorSlotsDto(BaseDto):
+    user_id: str
+    name: str | None = None
+    slots: int
+    assigned: int
+
+
+class MatchingProblemDto(BaseDto):
+    """Something in the way of publishing. ``code`` says which fields are set:
+    over_slots has mentor, assigned and slots; reason_too_long and no_reason
+    have mentee."""
+
+    code: str
+    mentor: NamedUserDto | None = None
+    mentee: NamedUserDto | None = None
+    assigned: int | None = None
+    slots: int | None = None
 
 
 class MatchingRunOverviewDto(BaseDto):
@@ -33,7 +61,10 @@ class MatchingRunOverviewDto(BaseDto):
     matched_count: int | None = None
     unmatched_count: int | None = None
     unmatched_mentors: list[NamedUserDto] = []
-    published: bool | None = None
+    edit_lock: MatchingEditLockDto | None = None
+    draft_count: int | None = None
+    mentor_slots: list[MatchingMentorSlotsDto] = []
+    problems: list[MatchingProblemDto] = []
 
 
 class MatchingEducationDto(BaseDto):
@@ -99,6 +130,9 @@ class MatchingResultItemDto(BaseDto):
     candidates: list[MatchingCandidateDto] = []
     mentee_profile: MatchingProfileDto | None = None
     mentor_profile: MatchingProfileDto | None = None
+    edited: bool = False
+    matcher_mentor: NamedUserDto | None = None
+    matcher_reason: str = ""
 
 
 class MatchingUnmatchedItemDto(BaseDto):
@@ -110,6 +144,10 @@ class MatchingUnmatchedItemDto(BaseDto):
     profile: MatchingProfileDto | None = None
     diagnostic_reason: str = ""
     candidates: list[MatchingCandidateDto] = []
+    edited: bool = False
+    matcher_mentor: NamedUserDto | None = None
+    matcher_reason: str = ""
+    recommendation_reason: str = ""
 
 
 class MatchingUnmatchedPageDto(BaseDto):
@@ -124,3 +162,19 @@ class MatchingResultsPageDto(BaseDto):
     unmatched_count: int = 0
     total: int = 0
     items: list[MatchingResultItemDto] = []
+
+
+class MatchingDraftChangeDto(BaseRequestDto):
+    """One mentee as the admin left them; ``mentor_id`` None means nobody."""
+
+    mentee_id: str
+    mentor_id: str | None = None
+    recommendation_reason: str = ""
+
+
+class MatchingDraftChangesDto(BaseRequestDto):
+    changes: list[MatchingDraftChangeDto]
+
+
+class MatchingDraftSavedDto(BaseDto):
+    draft_count: int

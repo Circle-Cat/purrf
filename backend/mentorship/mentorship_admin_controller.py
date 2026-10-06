@@ -6,6 +6,9 @@ from backend.dto.participant_search_filter_dto import (
 from backend.dto.matching_run_create_dto import MatchingRunCreateDto
 from backend.dto.matching_run_dto import (
     MatchingResultsPageDto,
+    MatchingDraftChangesDto,
+    MatchingDraftSavedDto,
+    MatchingEditLockDto,
     MatchingRunOverviewDto,
     MatchingUnmatchedPageDto,
     MatchingRunStartedDto,
@@ -20,6 +23,8 @@ from backend.common.api_endpoints import (
     MENTORSHIP_ADMIN_MATCH_RUN,
     MENTORSHIP_ADMIN_MATCH_RUN_RESULTS,
     MENTORSHIP_ADMIN_MATCH_RUN_UNMATCHED,
+    MENTORSHIP_ADMIN_MATCH_RUN_EDIT_LOCK,
+    MENTORSHIP_ADMIN_MATCH_RUN_DRAFT,
     MENTORSHIP_ADMIN_ROUND_FEEDBACK,
     MENTORSHIP_ADMIN_ROUND_UNREGISTERED,
 )
@@ -33,12 +38,14 @@ class MentorshipAdminController:
         mentorship_admin_service,
         matching_run_service,
         matching_run_read_service,
+        matching_draft_service,
         launchdarkly_service,
         database,
     ):
         self.mentorship_admin_service = mentorship_admin_service
         self.matching_run_service = matching_run_service
         self.matching_run_read_service = matching_run_read_service
+        self.matching_draft_service = matching_draft_service
         self.launchdarkly_service = launchdarkly_service
         self.database = database
         self.router = APIRouter(tags=["mentorship-admin"])
@@ -103,6 +110,33 @@ class MentorshipAdminController:
                 self.get_matching_run_unmatched
             ),
             methods=["GET"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ADMIN_MATCH_RUN_EDIT_LOCK,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])(
+                self.take_matching_edit_lock
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ADMIN_MATCH_RUN_EDIT_LOCK,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])(
+                self.release_matching_edit_lock
+            ),
+            methods=["DELETE"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ADMIN_MATCH_RUN_DRAFT,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])(
+                self.save_matching_draft
+            ),
+            methods=["PATCH"],
             response_model=None,
         )
 
@@ -381,4 +415,87 @@ class MentorshipAdminController:
         return api_response(
             message="Successfully retrieved the people the matching run left unmatched.",
             data=MatchingUnmatchedPageDto.model_validate(result),
+        )
+
+    async def take_matching_edit_lock(
+        self, round_id: int, current_user: UserContextDto
+    ):
+        """
+        Take the round's matching result for editing, or renew the lock held.
+
+        Args:
+            round_id (int): Round whose result is edited.
+            current_user (UserContextDto): The admin editing.
+
+        Returns:
+            API response carrying who holds the lock and until when.
+
+        Raises:
+            PermissionError: The flag is off for this admin. Surfaces as 403.
+            ConflictError: Another admin is editing. Surfaces as 409.
+        """
+        if not self.launchdarkly_service.is_matching_run_enabled(current_user):
+            raise PermissionError("Matching runs are not yet available.")
+
+        async with self.database.session() as session:
+            result = await self.matching_draft_service.take_lock(
+                session, round_id, current_user.user_id
+            )
+        return api_response(
+            message="Successfully took the matching result for editing.",
+            data=MatchingEditLockDto.model_validate(result),
+        )
+
+    async def release_matching_edit_lock(
+        self, round_id: int, current_user: UserContextDto
+    ):
+        """
+        Give the round's matching result back, if this admin was editing it.
+
+        Args:
+            round_id (int): Round whose result was edited.
+            current_user (UserContextDto): The admin leaving.
+
+        Returns:
+            API response with no data.
+
+        Raises:
+            PermissionError: The flag is off for this admin. Surfaces as 403.
+        """
+        if not self.launchdarkly_service.is_matching_run_enabled(current_user):
+            raise PermissionError("Matching runs are not yet available.")
+
+        self.matching_draft_service.release_lock(round_id, current_user.user_id)
+        return api_response(message="Successfully released the matching result.")
+
+    async def save_matching_draft(
+        self,
+        round_id: int,
+        body: MatchingDraftChangesDto,
+        current_user: UserContextDto,
+    ):
+        """
+        Save an editing session's changes to the round's matching draft.
+
+        Args:
+            round_id (int): Round whose result is edited.
+            body (MatchingDraftChangesDto): The mentees changed this session.
+            current_user (UserContextDto): The admin holding the lock.
+
+        Returns:
+            API response carrying how many mentees the draft now changes.
+
+        Raises:
+            PermissionError: The flag is off for this admin. Surfaces as 403.
+            ConflictError: The admin no longer holds the lock. Surfaces as 409.
+        """
+        if not self.launchdarkly_service.is_matching_run_enabled(current_user):
+            raise PermissionError("Matching runs are not yet available.")
+
+        result = self.matching_draft_service.save_changes(
+            round_id, current_user.user_id, body.changes
+        )
+        return api_response(
+            message="Successfully saved the matching draft.",
+            data=MatchingDraftSavedDto.model_validate(result),
         )
