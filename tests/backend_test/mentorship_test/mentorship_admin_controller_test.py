@@ -35,6 +35,9 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         self.mock_matching_run_read_service.read_results = AsyncMock(
             return_value={"status": "succeeded", "total": 0, "items": []}
         )
+        self.mock_matching_run_read_service.read_unmatched = AsyncMock(
+            return_value={"status": "succeeded", "total": 0, "items": []}
+        )
 
         self.mock_launchdarkly_service = MagicMock()
         self.mock_launchdarkly_service.is_matching_run_enabled.return_value = True
@@ -321,6 +324,9 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         self.assertIn(
             ("/mentorship/admin/match-runs/{round_id}/results", ("GET",)), routes
         )
+        self.assertIn(
+            ("/mentorship/admin/match-runs/{round_id}/unmatched", ("GET",)), routes
+        )
 
     async def test_the_overview_is_asked_for_by_round(self):
         caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
@@ -342,6 +348,24 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         self.mock_matching_run_read_service.read_results.assert_awaited_once_with(
             self.mock_session, 7, limit=25, offset=50, matched=False
         )
+
+    async def test_the_unmatched_page_carries_the_paging_through(self):
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+
+        await self.controller.get_matching_run_unmatched(7, caller, limit=25, offset=50)
+
+        self.mock_matching_run_read_service.read_unmatched.assert_awaited_once_with(
+            self.mock_session, 7, limit=25, offset=50
+        )
+
+    async def test_reading_the_unmatched_is_refused_while_the_flag_is_off(self):
+        self.mock_launchdarkly_service.is_matching_run_enabled.return_value = False
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+
+        with self.assertRaises(PermissionError):
+            await self.controller.get_matching_run_unmatched(7, caller)
+
+        self.mock_matching_run_read_service.read_unmatched.assert_not_awaited()
 
     async def test_reading_a_run_is_refused_while_the_flag_is_off(self):
         self.mock_launchdarkly_service.is_matching_run_enabled.return_value = False

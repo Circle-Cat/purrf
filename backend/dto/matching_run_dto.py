@@ -101,6 +101,23 @@ class MatchingResultItemDto(BaseDto):
     mentor_profile: MatchingProfileDto | None = None
 
 
+class MatchingUnmatchedItemDto(BaseDto):
+    """Somebody the run left without a partner. A mentor carries no
+    diagnostic reason or candidates."""
+
+    person: NamedUserDto
+    role: str
+    profile: MatchingProfileDto | None = None
+    diagnostic_reason: str = ""
+    candidates: list[MatchingCandidateDto] = []
+
+
+class MatchingUnmatchedPageDto(BaseDto):
+    status: MatchingRunStatus
+    total: int = 0
+    items: list[MatchingUnmatchedItemDto] = []
+
+
 class MatchingResultsPageDto(BaseDto):
     status: MatchingRunStatus
     matched_count: int = 0

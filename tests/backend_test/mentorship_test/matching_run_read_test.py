@@ -18,6 +18,7 @@ from backend.dto.matching_run_dto import (
     MatchingResultItemDto,
     MatchingResultsPageDto,
     MatchingRunOverviewDto,
+    MatchingUnmatchedPageDto,
 )
 from backend.mentorship.matching_run_read_service import MatchingRunReadService
 
@@ -533,6 +534,107 @@ class MatchingRunResultsTest(MatchingRunOverviewTest):
         await self.service.read_results(self.session, 7, limit=1)
 
         self.users.get_all_by_ids.assert_awaited_once_with(self.session, [1, 101])
+
+
+class MatchingRunUnmatchedTest(MatchingRunOverviewTest):
+    def _three_unmatched(self):
+        self._succeeded(
+            results={
+                "12": _result(candidates=[{"mentor_id": "30", "score": 40}]),
+                "1": _result(mentor_id="10"),
+                "3": _result(diagnostic_reason="below the floor"),
+            },
+            unmatched_mentor_ids=["30", "20"],
+        )
+
+    async def test_a_run_still_going_has_nobody_to_list(self):
+        self._running()
+
+        page = await self.service.read_unmatched(self.session, 7)
+
+        self.assertEqual(
+            page, {"status": MatchingRunStatus.RUNNING, "total": 0, "items": []}
+        )
+
+    async def test_mentees_then_mentors_each_by_user_id(self):
+        self._three_unmatched()
+
+        page = await self.service.read_unmatched(self.session, 7)
+
+        self.assertEqual(page["total"], 4)
+        self.assertEqual(
+            [(item["role"], item["person"]["user_id"]) for item in page["items"]],
+            [("mentee", "3"), ("mentee", "12"), ("mentor", "20"), ("mentor", "30")],
+        )
+
+    async def test_a_page_is_a_slice_of_everybody(self):
+        self._three_unmatched()
+
+        page = await self.service.read_unmatched(self.session, 7, limit=2, offset=1)
+
+        self.assertEqual(page["total"], 4)
+        self.assertEqual(
+            [item["person"]["user_id"] for item in page["items"]], ["12", "20"]
+        )
+
+    async def test_a_mentee_carries_notes_and_candidates_a_mentor_does_not(self):
+        self._three_unmatched()
+        self.users.get_all_by_ids.return_value = [
+            _user(12, "Mei", "Tanaka"),
+            _user(30, "Rowan", "Pike"),
+        ]
+
+        page = await self.service.read_unmatched(self.session, 7)
+
+        by_id = {item["person"]["user_id"]: item for item in page["items"]}
+        self.assertEqual(by_id["3"]["diagnostic_reason"], "below the floor")
+        self.assertEqual(
+            by_id["12"]["candidates"],
+            [{"user_id": "30", "name": "Rowan Pike", "score": 40}],
+        )
+        self.assertEqual(by_id["12"]["person"]["name"], "Mei Tanaka")
+        self.assertEqual(by_id["30"]["diagnostic_reason"], "")
+        self.assertEqual(by_id["30"]["candidates"], [])
+
+    async def test_profiles_come_from_each_person_s_own_group_in_one_name_lookup(self):
+        self._three_unmatched()
+        mentee = PersonRecord(
+            role="mentee",
+            user_id="3",
+            display_name="Ann",
+            skills=_NO_SKILLS,
+            specific_industry=_NO_INDUSTRY,
+            unexpected_partner_ids=["40"],
+        )
+        mentor = PersonRecord(
+            role="mentor",
+            user_id="20",
+            display_name="Bo",
+            skills=_NO_SKILLS,
+            max_partners=2,
+        )
+        self.storage.read_people.side_effect = lambda run_id, role, ids: (
+            {"3": mentee} if role == "mentee" else {"20": mentor}
+        )
+        self.users.get_all_by_ids.return_value = [_user(40, "Cy", "Dee")]
+
+        page = await self.service.read_unmatched(self.session, 7)
+
+        self.assertEqual(
+            [call.args for call in self.storage.read_people.call_args_list],
+            [("r7-x-y", "mentee", ["3", "12"]), ("r7-x-y", "mentor", ["20", "30"])],
+        )
+        self.users.get_all_by_ids.assert_awaited_once()
+        by_id = {item["person"]["user_id"]: item for item in page["items"]}
+        self.assertEqual(
+            by_id["3"]["profile"]["unexpected_partners"],
+            [{"user_id": "40", "name": "Cy Dee"}],
+        )
+        self.assertEqual(by_id["20"]["profile"]["max_partners"], 2)
+        self.assertIsNone(by_id["30"]["profile"])
+        body = MatchingUnmatchedPageDto.model_validate(page).model_dump(by_alias=True)
+        self.assertEqual(body["items"][0]["person"], {"userId": "3", "name": None})
+        self.assertEqual(body["items"][2]["profile"]["maxPartners"], 2)
 
 
 if __name__ == "__main__":
