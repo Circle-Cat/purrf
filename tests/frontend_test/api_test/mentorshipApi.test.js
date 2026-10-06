@@ -16,6 +16,10 @@ import {
   getMatchingRun,
   getMatchingResults,
   getMatchingUnmatched,
+  takeMatchingEditLock,
+  releaseMatchingEditLock,
+  releaseMatchingEditLockOnLeave,
+  saveMatchingDraft,
 } from "@/api/mentorshipApi";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
@@ -25,6 +29,7 @@ vi.mock("@/utils/request", () => {
       get: vi.fn(),
       post: vi.fn(),
       patch: vi.fn(),
+      delete: vi.fn(),
       defaults: { baseURL: "/api" },
     },
   };
@@ -375,6 +380,74 @@ describe("Mentorship Service API", () => {
     expect(request.get).toHaveBeenCalledWith(
       "/mentorship/admin/match-runs/7/unmatched",
       { params: { limit: 20, offset: 20 } },
+    );
+    expect(result).toEqual(mockData);
+  });
+
+  it("takeMatchingEditLock posts to the round's edit lock", async () => {
+    const mockData = { data: { userId: 5845, name: "Dev Admin" } };
+    request.post.mockResolvedValue(mockData);
+
+    const result = await takeMatchingEditLock(7);
+
+    expect(request.post).toHaveBeenCalledWith(
+      "/mentorship/admin/match-runs/7/edit-lock",
+    );
+    expect(result).toEqual(mockData);
+  });
+
+  it("releaseMatchingEditLock deletes the round's edit lock", async () => {
+    request.delete.mockResolvedValue({ data: null });
+
+    await releaseMatchingEditLock(7);
+
+    expect(request.delete).toHaveBeenCalledWith(
+      "/mentorship/admin/match-runs/7/edit-lock",
+    );
+  });
+
+  it("releaseMatchingEditLockOnLeave sends a keepalive DELETE around axios", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await releaseMatchingEditLockOnLeave(7);
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/mentorship/admin/match-runs/7/edit-lock",
+        { method: "DELETE", keepalive: true, credentials: "include" },
+      );
+      expect(request.delete).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("releaseMatchingEditLockOnLeave only logs a failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    try {
+      await expect(releaseMatchingEditLockOnLeave(7)).resolves.toBeUndefined();
+      expect(consoleError).toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      consoleError.mockRestore();
+    }
+  });
+
+  it("saveMatchingDraft patches the draft with the changes", async () => {
+    const mockData = { data: { draftCount: 3 } };
+    request.patch.mockResolvedValue(mockData);
+    const changes = [
+      { menteeId: "201", mentorId: null, recommendationReason: "" },
+    ];
+
+    const result = await saveMatchingDraft(7, changes);
+
+    expect(request.patch).toHaveBeenCalledWith(
+      "/mentorship/admin/match-runs/7/draft",
+      { changes },
     );
     expect(result).toEqual(mockData);
   });

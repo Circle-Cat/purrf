@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Link,
   useLocation,
@@ -10,6 +10,8 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAuth } from "@/context/auth";
+import { PERMISSIONS } from "@/constants/Permissions";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
@@ -28,6 +30,17 @@ import {
   useMatchingUnmatched,
 } from "@/pages/MentorshipManagement/hooks/useMatchingRun";
 import { useParticipantSearchRounds } from "@/pages/MentorshipManagement/hooks/useParticipantSearchRounds";
+import { useMatchDraft } from "@/pages/MentorshipManagement/hooks/useMatchDraft";
+import {
+  mentorChoices,
+  problemText,
+  shownRow,
+  slotsWithChanges,
+} from "@/pages/MentorshipManagement/utils/matchDraft";
+import {
+  MatcherProposal,
+  MenteeEditor,
+} from "@/pages/MentorshipManagement/components/MatchDraftEditor";
 
 const LIMIT = 20;
 
@@ -54,14 +67,10 @@ const CANDIDATES_NOTE =
 
 /** @param {{overview: Object}} props */
 const StatusBadge = ({ overview }) => {
-  const published =
-    overview.status === RUN_STATUS.SUCCEEDED && overview.published;
-  const { label, variant } = published
-    ? { label: "Published", variant: "default" }
-    : (STATUS_BADGE[overview.status] ?? {
-        label: overview.status,
-        variant: "secondary",
-      });
+  const { label, variant } = STATUS_BADGE[overview.status] ?? {
+    label: overview.status,
+    variant: "secondary",
+  };
   return <Badge variant={variant}>{label}</Badge>;
 };
 
@@ -254,25 +263,92 @@ const CandidatesBlock = ({ candidates }) => (
 
 const DETAIL = "space-y-4 border-t border-border bg-muted/40 p-3 text-sm";
 
+/**
+ * A mentee's mentor and reason in a row's detail: the editor in edit mode,
+ * else the reason as text (left out with `showReason` false). Either way
+ * what the matcher proposed, once the row is no longer that.
+ *
+ * @param {{item: Object, draft: Object, showReason: boolean}} props
+ */
+const MentorAndReason = ({ item, draft, showReason }) => {
+  const shown = shownRow(item, draft.changes);
+  if (!draft.editing) {
+    return (
+      <>
+        {showReason ? (
+          <div>
+            <div className="font-semibold">Reason shown to the pair</div>
+            <p className="whitespace-pre-wrap">
+              {shown.recommendationReason || "No reason."}
+            </p>
+          </div>
+        ) : null}
+        <MatcherProposal item={item} shown={shown} />
+      </>
+    );
+  }
+  const revert = () =>
+    draft.setRow(item, {
+      mentorId:
+        item.matcherMentor == null ? null : String(item.matcherMentor.userId),
+      recommendationReason: item.matcherReason ?? "",
+    });
+  return (
+    <>
+      <MenteeEditor
+        item={item}
+        shown={shown}
+        slots={draft.slots}
+        onChange={(next) => draft.setRow(item, next)}
+      />
+      <MatcherProposal item={item} shown={shown} onRevert={revert} />
+    </>
+  );
+};
+
+/**
+ * Whom a row shows as the mentee's mentor, with the score that goes with
+ * them; an unsaved choice is scored from the matcher's candidates.
+ *
+ * @returns {{mentor: Object|null, score: number|null, edited: boolean}}
+ */
+const shownPair = (item, draft) => {
+  const shown = shownRow(item, draft.changes);
+  const changed = Boolean(draft.changes[shown.menteeId]);
+  const edited = Boolean(item.edited) || changed;
+  if (!changed)
+    return { mentor: item.mentor ?? null, score: item.score, edited };
+  if (shown.mentorId == null) return { mentor: null, score: null, edited };
+  const choice = mentorChoices(item).find((c) => c.userId === shown.mentorId);
+  return {
+    mentor: {
+      userId: shown.mentorId,
+      name: choice?.name ?? draft.slots.get(shown.mentorId)?.name ?? null,
+    },
+    score: choice?.score ?? null,
+    edited,
+  };
+};
+
 /** The detail under an opened pair row. */
-const MatchDetail = ({ item }) => (
-  <div className={DETAIL}>
-    <div className="grid gap-3 md:grid-cols-2">
-      <ProfileCard role="mentee" profile={item.menteeProfile} />
-      {item.mentor ? (
-        <ProfileCard role="mentor" profile={item.mentorProfile} />
-      ) : null}
+const MatchDetail = ({ item, draft }) => {
+  const shown = shownRow(item, draft.changes);
+  const sameMentor =
+    item.mentor != null && shown.mentorId === String(item.mentor.userId);
+  return (
+    <div className={DETAIL}>
+      <div className="grid gap-3 md:grid-cols-2">
+        <ProfileCard role="mentee" profile={item.menteeProfile} />
+        {sameMentor ? (
+          <ProfileCard role="mentor" profile={item.mentorProfile} />
+        ) : null}
+      </div>
+      <MentorAndReason item={item} draft={draft} showReason />
+      <NotesBlock text={item.diagnosticReason} />
+      <CandidatesBlock candidates={item.candidates} />
     </div>
-    <div>
-      <div className="font-semibold">Reason shown to the pair</div>
-      <p className="whitespace-pre-wrap">
-        {item.recommendationReason || "No reason."}
-      </p>
-    </div>
-    <NotesBlock text={item.diagnosticReason} />
-    <CandidatesBlock candidates={item.candidates} />
-  </div>
-);
+  );
+};
 
 /** A name followed by its ID, the name left out when it did not resolve. */
 const NameWithId = ({ person }) => (
@@ -302,15 +378,22 @@ const ExpandableRow = ({ summary, detail, open, onToggle, columns }) => (
   </li>
 );
 
-/** One mentee's pair: who they got, how, the score and the reason. */
-const MatchRow = ({ item, open, onToggle }) => {
-  const { mentee, mentor } = item;
+/**
+ * One mentee's pair: who they got, how, the score and the reason. A row
+ * changed in the draft, saved or not, says "Edited" instead of how.
+ */
+const MatchRow = ({ item, draft, open, onToggle }) => {
+  const { mentee } = item;
+  const { mentor, score, edited } = shownPair(item, draft);
+  let how = "No match";
+  if (edited) how = "Edited";
+  else if (mentor) how = MATCH_TYPE_LABEL[item.matchType] ?? item.matchType;
   return (
     <ExpandableRow
       open={open}
       onToggle={onToggle}
       columns="grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_3rem_minmax(0,2fr)]"
-      detail={<MatchDetail item={item} />}
+      detail={<MatchDetail item={item} draft={draft} />}
       summary={
         <>
           <span className="min-w-0">
@@ -325,14 +408,14 @@ const MatchRow = ({ item, open, onToggle }) => {
               <span className="text-muted-foreground">No mentor</span>
             )}
           </span>
-          <Badge variant={mentor ? "secondary" : "outline"}>
-            {mentor
-              ? (MATCH_TYPE_LABEL[item.matchType] ?? item.matchType)
-              : "No match"}
+          <Badge
+            variant={edited ? "default" : mentor ? "secondary" : "outline"}
+          >
+            {how}
           </Badge>
-          <span className="tabular-nums">{scoreLabel(item.score)}</span>
+          <span className="tabular-nums">{scoreLabel(score)}</span>
           <span className="truncate text-muted-foreground">
-            {item.recommendationReason}
+            {shownRow(item, draft.changes).recommendationReason}
           </span>
         </>
       }
@@ -340,9 +423,13 @@ const MatchRow = ({ item, open, onToggle }) => {
   );
 };
 
-/** One person the run left without a partner, mentee or mentor. */
-const UnmatchedRow = ({ item, open, onToggle }) => {
+/**
+ * One person the run left without a partner, mentee or mentor. In edit mode
+ * a mentee can be given a mentor here; mentors are not edited.
+ */
+const UnmatchedRow = ({ item, draft, open, onToggle }) => {
   const isMentor = item.role === "mentor";
+  const pair = isMentor ? null : shownPair(item, draft);
   return (
     <ExpandableRow
       open={open}
@@ -355,6 +442,7 @@ const UnmatchedRow = ({ item, open, onToggle }) => {
           </div>
           {isMentor ? null : (
             <>
+              <MentorAndReason item={item} draft={draft} showReason={false} />
               <NotesBlock text={item.diagnosticReason} />
               <CandidatesBlock candidates={item.candidates} />
             </>
@@ -367,8 +455,15 @@ const UnmatchedRow = ({ item, open, onToggle }) => {
             <NameWithId person={item.person} />
           </span>
           <Badge variant="secondary">{isMentor ? "Mentor" : "Mentee"}</Badge>
-          <span className="text-muted-foreground">
-            {isMentor ? "No mentee" : "No mentor"}
+          <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+            {pair?.mentor ? (
+              <span className="min-w-0">
+                → <NameWithId person={pair.mentor} />
+              </span>
+            ) : (
+              <span>{isMentor ? "No mentee" : "No mentor"}</span>
+            )}
+            {pair?.edited ? <Badge>Edited</Badge> : null}
           </span>
         </>
       }
@@ -450,12 +545,12 @@ const PagedList = ({ load, offset, onOffset, renderRow }) => {
 };
 
 /** The Matched tab: one row per pair, in the backend's order. */
-const MatchedList = ({ roundId, offset, onOffset }) => {
-  const load = useMatchingResults(roundId, {
-    limit: LIMIT,
-    offset,
-    matched: true,
-  });
+const MatchedList = ({ roundId, offset, onOffset, draft }) => {
+  const load = useMatchingResults(
+    roundId,
+    { limit: LIMIT, offset, matched: true },
+    draft.reloadKey,
+  );
   const [openKeys, toggle] = useOpenRows();
   return (
     <PagedList
@@ -466,6 +561,7 @@ const MatchedList = ({ roundId, offset, onOffset }) => {
         <MatchRow
           key={item.mentee.userId}
           item={item}
+          draft={draft}
           open={openKeys.has(item.mentee.userId)}
           onToggle={() => toggle(item.mentee.userId)}
         />
@@ -475,8 +571,12 @@ const MatchedList = ({ roundId, offset, onOffset }) => {
 };
 
 /** The Unmatched tab: one row per person, mentees first, as the API sends. */
-const UnmatchedList = ({ roundId, offset, onOffset }) => {
-  const load = useMatchingUnmatched(roundId, { limit: LIMIT, offset });
+const UnmatchedList = ({ roundId, offset, onOffset, draft }) => {
+  const load = useMatchingUnmatched(
+    roundId,
+    { limit: LIMIT, offset },
+    draft.reloadKey,
+  );
   const [openKeys, toggle] = useOpenRows();
   return (
     <PagedList
@@ -489,6 +589,7 @@ const UnmatchedList = ({ roundId, offset, onOffset }) => {
           <UnmatchedRow
             key={key}
             item={item}
+            draft={draft}
             open={openKeys.has(key)}
             onToggle={() => toggle(key)}
           />
@@ -498,11 +599,49 @@ const UnmatchedList = ({ roundId, offset, onOffset }) => {
   );
 };
 
+/** What the saved draft has to fix before it can be published. */
+const Problems = ({ problems }) => {
+  if (!problems?.length) return null;
+  return (
+    <section aria-label="Problems" className="space-y-1 text-sm">
+      <h3 className="font-semibold">Problems to fix before publishing</h3>
+      <ul className="list-disc pl-5 text-red-700">
+        {problems.map((problem, i) => (
+          <li key={i}>{problemText(problem)}</li>
+        ))}
+      </ul>
+    </section>
+  );
+};
+
 /**
- * The results of a succeeded run: the summary and the Matched / Unmatched
- * tabs, each a paged list. Tab and page are in the URL; no tab is Matched.
+ * Save or drop the unsaved changes, in edit mode. With nothing changed the
+ * second button just stops editing, so the lock is never kept for nothing.
  */
-const Results = ({ roundId, overview }) => {
+const EditBar = ({ draft }) => {
+  const dirty = Object.keys(draft.changes).length > 0;
+  return (
+    <div className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t border-border bg-background py-3">
+      <span className="text-sm">{dirty ? "Unsaved changes." : null}</span>
+      <div className="ml-auto flex gap-2">
+        <Button variant="outline" onClick={draft.discard} disabled={draft.busy}>
+          {dirty ? "Discard changes" : "Stop editing"}
+        </Button>
+        <Button onClick={draft.save} disabled={!dirty || draft.busy}>
+          Save draft
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * The results of a succeeded run: the Matched / Unmatched tabs, each a paged
+ * list, then the saved draft's problems and, in edit mode, the save bar. Tab
+ * and page are in the URL; no tab is Matched. Unsaved changes are kept across
+ * tabs and pages.
+ */
+const Results = ({ roundId, overview, draft }) => {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab =
     searchParams.get("tab") === TAB.UNMATCHED ? TAB.UNMATCHED : TAB.MATCHED;
@@ -521,6 +660,18 @@ const Results = ({ roundId, overview }) => {
   const unmatched =
     (overview.unmatchedCount ?? 0) + (overview.unmatchedMentors ?? []).length;
 
+  const slots = useMemo(
+    () => slotsWithChanges(overview.mentorSlots, draft.changes),
+    [overview.mentorSlots, draft.changes],
+  );
+  const rowDraft = {
+    editing: draft.editing,
+    changes: draft.changes,
+    setRow: draft.setRow,
+    reloadKey: draft.reloadKey,
+    slots,
+  };
+
   return (
     <div className="space-y-4">
       <Tabs value={tab} onValueChange={(v) => go(v, 0)}>
@@ -532,10 +683,22 @@ const Results = ({ roundId, overview }) => {
         </TabsList>
       </Tabs>
       {tab === TAB.MATCHED ? (
-        <MatchedList roundId={roundId} offset={offset} onOffset={onOffset} />
+        <MatchedList
+          roundId={roundId}
+          offset={offset}
+          onOffset={onOffset}
+          draft={rowDraft}
+        />
       ) : (
-        <UnmatchedList roundId={roundId} offset={offset} onOffset={onOffset} />
+        <UnmatchedList
+          roundId={roundId}
+          offset={offset}
+          onOffset={onOffset}
+          draft={rowDraft}
+        />
       )}
+      <Problems problems={overview.problems} />
+      {draft.editing ? <EditBar draft={draft} /> : null}
     </div>
   );
 };
@@ -543,10 +706,13 @@ const Results = ({ roundId, overview }) => {
 /**
  * MatchingResultsPage
  *
- * A round's latest matching run, read-only: who started it and over whom,
- * where it stands, and once it has succeeded every mentee's result with the
- * reasons and both sides' profiles. Opened from the Participants card. With
- * the matching-run flag off it says so and asks the API nothing.
+ * A round's latest matching run: who started it and over whom, where it
+ * stands, and once it has succeeded every mentee's result with the reasons
+ * and both sides' profiles. A succeeded run's result is a shared draft that
+ * users with mentorship write access edit one at a time under an edit lock
+ * (see useMatchDraft); everyone sees who holds it and what was edited.
+ * Opened from the Participants card. With the matching-run flag off it says
+ * so and asks the API nothing.
  *
  * Route: /mentorship-management/matching/:roundId
  *
@@ -562,9 +728,12 @@ const MatchingResultsPage = () => {
   const flags = useFeatureFlags();
   // The backend refuses every matching endpoint while the flag is off.
   const matchingOn = Boolean(flags[FEATURE_FLAGS.MATCHING_RUN]);
-  const { overview, isLoading, error } = useMatchingRun(
+  const { overview, isLoading, error, reload } = useMatchingRun(
     matchingOn ? roundId : null,
   );
+  const { permissions, user } = useAuth();
+  const canWrite = permissions.includes(PERMISSIONS.MENTORSHIP_ADMIN_WRITE);
+  const draft = useMatchDraft(roundId, reload);
 
   let body;
   if (!matchingOn) {
@@ -595,7 +764,7 @@ const MatchingResultsPage = () => {
       </p>
     );
   } else if (overview.status === RUN_STATUS.SUCCEEDED) {
-    body = <Results roundId={roundId} overview={overview} />;
+    body = <Results roundId={roundId} overview={overview} draft={draft} />;
   } else {
     body = (
       <p className="whitespace-pre-wrap text-sm text-red-700">
@@ -605,6 +774,10 @@ const MatchingResultsPage = () => {
   }
 
   const hasRun = overview && overview.status !== RUN_STATUS.NEVER_RUN;
+  const succeeded = matchingOn && overview?.status === RUN_STATUS.SUCCEEDED;
+  const editLock = succeeded && !draft.editing ? overview.editLock : null;
+  const lockedByOther =
+    editLock != null && String(editLock.userId) !== String(user?.userId);
 
   return (
     <Card className="border-gray-200">
@@ -622,9 +795,39 @@ const MatchingResultsPage = () => {
         <div className="flex flex-wrap items-center gap-3">
           <CardTitle>Matching{roundName ? ` — ${roundName}` : ""}</CardTitle>
           {overview ? <StatusBadge overview={overview} /> : null}
+          {succeeded && canWrite && !draft.editing ? (
+            <Button
+              className="ml-auto"
+              onClick={draft.start}
+              disabled={lockedByOther || draft.busy}
+            >
+              Edit
+            </Button>
+          ) : null}
         </div>
         {hasRun ? (
           <p className="text-sm text-gray-500">{runLine(overview)}</p>
+        ) : null}
+        {lockedByOther ? (
+          <p className="text-sm">
+            Being edited by {editLock.name || `ID ${editLock.userId}`}
+          </p>
+        ) : null}
+        {draft.editing && draft.nearEnd ? (
+          <div className="flex flex-wrap items-center gap-3 rounded-md border border-border p-2 text-sm">
+            <span>
+              Still editing? Your lock ends at{" "}
+              {formatInTz(draft.lock.expiresAt, MEETING_TIMEZONE, "HH:mm")}.
+            </span>
+            <Button size="sm" variant="outline" onClick={draft.keepEditing}>
+              Keep editing
+            </Button>
+          </div>
+        ) : null}
+        {draft.lapsed ? (
+          <p className="text-sm text-red-700">
+            Your editing lock ended; unsaved changes were not kept.
+          </p>
         ) : null}
       </CardHeader>
       <CardContent>{body}</CardContent>
