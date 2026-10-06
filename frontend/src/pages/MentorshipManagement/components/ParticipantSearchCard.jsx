@@ -40,6 +40,8 @@ const ALL_APPROVAL_STATUSES = "__all__";
 const ALL_ONBOARDING_STATUSES = "__all__";
 const ANY_ACCOUNT = "__all__";
 const BOTH_INTERNAL_EXTERNAL = "__all__";
+const REGISTERED = "registered";
+const NOT_REGISTERED = "not_registered";
 
 /**
  * Maps table column accessors to backend sort_by field names. Only columns
@@ -61,12 +63,38 @@ const COLUMNS = [
   { header: "Pair", accessor: "pair" },
 ];
 
+/**
+ * A column header that explains the column in a tooltip on hover or focus.
+ *
+ * @param {{ label: string, hint: string }} props
+ */
+const HintedHeader = ({ label, hint }) => (
+  <TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span tabIndex={0} className="cursor-help">
+          {label}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs font-normal">{hint}</TooltipContent>
+    </Tooltip>
+  </TooltipProvider>
+);
+
 const NOT_REGISTERED_COLUMNS = [
   { header: "Name", accessor: "name", sortable: true },
   { header: "Admitted as", accessor: "admittedAs" },
   { header: "Int / ext", accessor: "internal" },
   { header: "Account", accessor: "account" },
-  { header: "Rounds taken part", accessor: "roundsTakenPart" },
+  {
+    header: (
+      <HintedHeader
+        label="Rounds taken part"
+        hint="Every round the person registered for, including rounds where they were not matched or stopped early."
+      />
+    ),
+    accessor: "roundsTakenPart",
+  },
   { header: "Last round", accessor: "lastRound" },
 ];
 
@@ -190,49 +218,10 @@ const PairCell = ({ row, onOpenMeetings }) => {
 };
 
 /**
- * The Not registered toggle. Outside the round's registration window it is
- * greyed out, and hovering it says when that window is.
- *
- * @param {{ active: boolean, available: boolean, round: Object|null,
- *   onToggle: () => void }} props
- */
-const NotRegisteredButton = ({ active, available, round, onToggle }) => {
-  const button = (
-    <Button
-      type="button"
-      size="sm"
-      variant={active ? "default" : "outline"}
-      aria-pressed={active}
-      onClick={onToggle}
-      disabled={!active && !available}
-    >
-      Not registered
-    </Button>
-  );
-  if (active || available) return button;
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        {/* A disabled button gets no pointer events, so the wrapper holds the hint. */}
-        <TooltipTrigger asChild>
-          <span tabIndex={0} aria-label="Not registered is unavailable">
-            {button}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent className="max-w-xs">
-          Only while the round takes registrations.{" "}
-          {registrationWindowLabel(round)}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-};
-
-/**
  * The Participants card: one round's participants, searched by user ID,
  * name/email, role, internal/external, account, training and approval status.
- * While the round takes registrations, Not registered swaps them for the
- * people admitted to the programme who have not registered for it.
+ * While the round takes registrations, the Registration filter can list the
+ * people admitted to the programme who have not registered for it instead.
  *
  * The round is picked in the card header from the rounds the API lists,
  * latest first, and the first is selected by default. Search stays disabled
@@ -271,8 +260,9 @@ const ParticipantSearchCard = () => {
     setOnboardingStatus,
     submitSearch,
     notRegistered,
+    listNotRegistered,
+    setListNotRegistered,
     canListNotRegistered,
-    toggleNotRegistered,
     refetch,
     offset,
     limit,
@@ -475,7 +465,7 @@ const ParticipantSearchCard = () => {
             onValueChange={(v) =>
               setOnboardingStatus(v === ALL_ONBOARDING_STATUSES ? "" : v)
             }
-            disabled={notRegistered}
+            disabled={listNotRegistered}
           >
             <SelectTrigger
               aria-label="Onboarding status"
@@ -496,7 +486,7 @@ const ParticipantSearchCard = () => {
             onValueChange={(v) =>
               setApprovalStatus(v === ALL_APPROVAL_STATUSES ? "" : v)
             }
-            disabled={notRegistered}
+            disabled={listNotRegistered}
           >
             <SelectTrigger
               aria-label="Approval status"
@@ -522,6 +512,35 @@ const ParticipantSearchCard = () => {
               </SelectItem>
             </SelectContent>
           </Select>
+          <Select
+            value={listNotRegistered ? NOT_REGISTERED : REGISTERED}
+            onValueChange={(v) => setListNotRegistered(v === NOT_REGISTERED)}
+          >
+            <SelectTrigger
+              aria-label="Registration"
+              className="h-8 w-36 text-xs"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={REGISTERED}>Registered</SelectItem>
+              <SelectItem
+                value={NOT_REGISTERED}
+                disabled={!canListNotRegistered}
+              >
+                Not registered
+                {!canListNotRegistered && (
+                  <span className="block text-[10px] text-muted-foreground">
+                    Only while the round takes registrations.{" "}
+                    {registrationWindowLabel(
+                      (rounds ?? []).find((r) => String(r.id) === roundId) ??
+                        null,
+                    )}
+                  </span>
+                )}
+              </SelectItem>
+            </SelectContent>
+          </Select>
           <Button
             type="button"
             size="sm"
@@ -530,12 +549,6 @@ const ParticipantSearchCard = () => {
           >
             Search
           </Button>
-          <NotRegisteredButton
-            active={notRegistered}
-            available={canListNotRegistered}
-            round={(rounds ?? []).find((r) => String(r.id) === roundId) ?? null}
-            onToggle={toggleNotRegistered}
-          />
         </div>
 
         {!hasSearched || !canSearch ? (

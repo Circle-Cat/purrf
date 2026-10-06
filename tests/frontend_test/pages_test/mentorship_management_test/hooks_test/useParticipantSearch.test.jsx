@@ -279,14 +279,31 @@ describe("useParticipantSearch", () => {
       });
     });
 
-    it("lists the round's not registered people with the person filters and admitted role", async () => {
+    it("picking it changes nothing until Search", async () => {
+      const { result } = open("/?round=7");
+      await waitFor(() => expect(result.current.search.total).toBe(1));
+
+      act(() => result.current.search.setListNotRegistered(true));
+      await act(async () => {});
+
+      expect(result.current.search.listNotRegistered).toBe(true);
+      expect(result.current.search.notRegistered).toBe(false);
+      expect(paramsOf(result).has("notRegistered")).toBe(false);
+      expect(searchUnregistered).not.toHaveBeenCalled();
+      expect(searchParticipants).toHaveBeenCalledTimes(1);
+    });
+
+    it("lists the round's not registered people with the person filters and admitted role on Search", async () => {
       const { result } = open(
         "/?round=7&q=ali&role=mentee&training=completed&approval=matched",
       );
       await waitFor(() => expect(result.current.search.total).toBe(1));
       expect(result.current.search.canListNotRegistered).toBe(true);
 
-      act(() => result.current.search.toggleNotRegistered());
+      act(() => result.current.search.setListNotRegistered(true));
+      expect(result.current.search.onboardingStatus).toBe("");
+      expect(result.current.search.approvalStatus).toBe("");
+      act(() => result.current.search.submitSearch());
 
       await waitFor(() => expect(searchUnregistered).toHaveBeenCalled());
       expect(searchUnregistered).toHaveBeenCalledWith("7", {
@@ -325,20 +342,23 @@ describe("useParticipantSearch", () => {
       expect(searchParticipants).toHaveBeenCalled();
     });
 
-    it("will not go in for a round not taking registrations", async () => {
+    it("cannot be picked for a round not taking registrations", async () => {
       const { result } = open("/?round=3");
       await waitFor(() => expect(result.current.search.total).toBe(1));
 
-      act(() => result.current.search.toggleNotRegistered());
+      act(() => result.current.search.setListNotRegistered(true));
+      act(() => result.current.search.submitSearch());
       await act(async () => {});
 
+      expect(result.current.search.listNotRegistered).toBe(false);
       expect(paramsOf(result).has("notRegistered")).toBe(false);
       expect(searchUnregistered).not.toHaveBeenCalled();
     });
 
-    it("stays in it on Search in the same round and leaves it for another round", async () => {
+    it("stays in it on Search in the same round and goes back to Registered when another round is picked", async () => {
       const { result } = open("/?round=7&notRegistered=1");
       await waitFor(() => expect(searchUnregistered).toHaveBeenCalledTimes(1));
+      expect(result.current.search.listNotRegistered).toBe(true);
 
       act(() => result.current.search.setQ("bo"));
       act(() => result.current.search.submitSearch());
@@ -346,6 +366,8 @@ describe("useParticipantSearch", () => {
       expect(paramsOf(result).get("notRegistered")).toBe("1");
 
       act(() => result.current.search.setRoundId("3"));
+      expect(result.current.search.listNotRegistered).toBe(false);
+      expect(result.current.search.notRegistered).toBe(true);
       act(() => result.current.search.submitSearch());
 
       await waitFor(() => expect(paramsOf(result).get("round")).toBe("3"));
@@ -353,14 +375,17 @@ describe("useParticipantSearch", () => {
       expect(result.current.search.notRegistered).toBe(false);
     });
 
-    it("toggling again goes back to the participants", async () => {
+    it("picking Registered and searching goes back to the participants", async () => {
       const { result } = open("/?round=7&notRegistered=1");
       await waitFor(() =>
         expect(result.current.search.notRegistered).toBe(true),
       );
       searchParticipants.mockClear();
 
-      act(() => result.current.search.toggleNotRegistered());
+      act(() => result.current.search.setListNotRegistered(false));
+      await act(async () => {});
+      expect(searchParticipants).not.toHaveBeenCalled();
+      act(() => result.current.search.submitSearch());
 
       await waitFor(() => expect(searchParticipants).toHaveBeenCalledTimes(1));
       expect(paramsOf(result).has("notRegistered")).toBe(false);
@@ -393,6 +418,7 @@ describe("useParticipantSearch", () => {
 
       await waitFor(() => expect(searchUnregistered).toHaveBeenCalledTimes(1));
       expect(searchParticipants).not.toHaveBeenCalled();
+      expect(result.current.search.listNotRegistered).toBe(true);
     });
 
     it("offers nothing when no round is taking registrations", async () => {

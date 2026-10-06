@@ -54,13 +54,14 @@ const readOneOf = (params, key, allowed) => {
  * is read as the default round and rewritten to say so. Until `rounds` has
  * loaded, or when there are none, nothing is fetched and `canSearch` is false.
  *
- * The Not registered list replaces the participants with the people admitted
- * to the programme who have not registered for the round. It is only on offer
- * for the round taking registrations now (`registrationRoundId`): a URL asking
- * for it in any other round is rewritten without it, and a search in another
- * round drops it. In
- * it the role filter means the admitted role, and training and approval do
- * not apply.
+ * The Registration filter picks between the participants and the Not
+ * registered list: the people admitted to the programme who have not
+ * registered for the round. Like the other filters it is a draft until
+ * Search. Not registered is only on offer for the round taking registrations
+ * now (`registrationRoundId`): picking another round puts the draft back to
+ * the participants, and a URL asking for it in any other round is rewritten
+ * without it. In it the role filter means the admitted role, and training and
+ * approval do not apply.
  *
  * @param {Array<{id: number}>|null} rounds - Rounds, latest first; null while
  *   loading.
@@ -113,9 +114,10 @@ export const useParticipantSearch = (rounds, registrationRoundId) => {
   const [accountStatus, setAccountStatus] = useState(committedAccount);
   const [internal, setInternal] = useState(committedInternal);
   const [onboardingStatus, setOnboardingStatus] = useState(committedOnboarding);
-  const [roundId, setRoundId] = useState(committedRoundId);
+  const [roundId, setDraftRoundId] = useState(committedRoundId);
   const [participantRole, setParticipantRole] = useState(committedRole);
   const [approvalStatus, setApprovalStatus] = useState(committedApproval);
+  const [listNotRegistered, setListNotRegistered] = useState(notRegistered);
 
   // Keep the inputs in step when the URL changes underneath them (back,
   // forward, or a pasted link).
@@ -127,9 +129,10 @@ export const useParticipantSearch = (rounds, registrationRoundId) => {
     () => setOnboardingStatus(committedOnboarding),
     [committedOnboarding],
   );
-  useEffect(() => setRoundId(committedRoundId), [committedRoundId]);
+  useEffect(() => setDraftRoundId(committedRoundId), [committedRoundId]);
   useEffect(() => setParticipantRole(committedRole), [committedRole]);
   useEffect(() => setApprovalStatus(committedApproval), [committedApproval]);
+  useEffect(() => setListNotRegistered(notRegistered), [notRegistered]);
 
   // Write the resolved round back into a search whose round is unknown,
   // replacing the entry so back does not return to the unresolved link.
@@ -295,21 +298,36 @@ export const useParticipantSearch = (rounds, registrationRoundId) => {
     });
 
   const draftRoundId = roundIds.includes(roundId) ? roundId : defaultRoundId;
-  const canListNotRegistered =
-    canSearch &&
-    registrationRoundId != null &&
-    draftRoundId === registrationRoundId;
+  const takesRegistrations = (id) =>
+    canSearch && registrationRoundId != null && id === registrationRoundId;
+  const canListNotRegistered = takesRegistrations(draftRoundId);
+
+  /** Pick the round; one not taking registrations leaves Not registered. */
+  const setRoundId = (id) => {
+    setDraftRoundId(id);
+    if (!takesRegistrations(id)) setListNotRegistered(false);
+  };
 
   /**
-   * The drafts as a committed search, in or out of the Not registered list.
-   * The list has no training or approval, so those are cleared going in.
+   * Pick the list. Not registered is refused outside the round's
+   * registration window; picking it clears training and approval, which it
+   * has neither of.
    */
-  const commitDrafts = (inNotRegistered) => {
-    if (inNotRegistered) {
+  const pickNotRegistered = (on) => {
+    if (on && !canListNotRegistered) return;
+    setListNotRegistered(on);
+    if (on) {
       setOnboardingStatus("");
       setApprovalStatus("");
     }
-    return writeUrl({
+  };
+
+  /** Commit the drafts as the search and load its first page. */
+  const submitSearch = () => {
+    if (!canSearch) return;
+    const inNotRegistered = listNotRegistered && canListNotRegistered;
+    const before = searchParams.toString();
+    const after = writeUrl({
       [PARAM.ID]: userId,
       [PARAM.Q]: q.trim(),
       [PARAM.ACCOUNT]: accountStatus,
@@ -320,29 +338,9 @@ export const useParticipantSearch = (rounds, registrationRoundId) => {
       [PARAM.APPROVAL]: inNotRegistered ? "" : approvalStatus,
       ...withSort(sortBy, order),
       [PARAM.NOT_REGISTERED]: inNotRegistered ? "1" : "",
-    });
-  };
-
-  /** Commit the drafts as the search and load its first page. */
-  const submitSearch = () => {
-    if (!canSearch) return;
-    const before = searchParams.toString();
-    // Another round leaves the Not registered list.
-    const after = commitDrafts(
-      notRegistered && draftRoundId === committedRoundId,
-    ).toString();
+    }).toString();
     // Searching again for what is already committed still re-reads the list.
     if (before === after) fetchRows();
-  };
-
-  /**
-   * Switch between the participants and the Not registered list, searching
-   * with the current drafts. Going in is refused outside the round's
-   * registration window.
-   */
-  const toggleNotRegistered = () => {
-    if (!notRegistered && !canListNotRegistered) return;
-    commitDrafts(!notRegistered);
   };
 
   const nextPage = () => {
@@ -391,8 +389,9 @@ export const useParticipantSearch = (rounds, registrationRoundId) => {
     setOnboardingStatus,
     submitSearch,
     notRegistered,
+    listNotRegistered,
+    setListNotRegistered: pickNotRegistered,
     canListNotRegistered,
-    toggleNotRegistered,
     offset,
     limit: LIMIT,
     nextPage,
