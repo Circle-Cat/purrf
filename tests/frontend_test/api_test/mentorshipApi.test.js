@@ -15,6 +15,7 @@ import {
   startMatchingRun,
   getMatchingRun,
   getMatchingResults,
+  getMatchingUnmatched,
 } from "@/api/mentorshipApi";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
@@ -363,5 +364,18 @@ describe("Mentorship Service API", () => {
       "/mentorship/admin/match-runs/7/results",
       { params: { limit: 20, offset: 0, matched: undefined } },
     );
+  });
+
+  it("getMatchingUnmatched asks for a page of the people left unmatched", async () => {
+    const mockData = { data: { items: [], total: 0 } };
+    request.get.mockResolvedValue(mockData);
+
+    const result = await getMatchingUnmatched(7, { limit: 20, offset: 20 });
+
+    expect(request.get).toHaveBeenCalledWith(
+      "/mentorship/admin/match-runs/7/unmatched",
+      { params: { limit: 20, offset: 20 } },
+    );
+    expect(result).toEqual(mockData);
   });
 });

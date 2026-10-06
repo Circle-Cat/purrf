@@ -225,6 +225,17 @@ export const getMatchingResults = (roundId, { limit, offset, matched } = {}) =>
   });
 
 /**
+ * Fetch a page of the people a round's latest matching left without a
+ * partner, one item per person, mentees first then mentors.
+ * @param {number|string} roundId
+ * @param {{limit?: number, offset?: number}} page
+ */
+export const getMatchingUnmatched = (roundId, { limit, offset } = {}) =>
+  request.get(API_ENDPOINTS.MENTORSHIP_ADMIN_MATCH_RUN_UNMATCHED(roundId), {
+    params: { limit, offset },
+  });
+
+/**
  * Fetch the mentorship admin view of a pair's meeting log for the round.
  * @param {number} pairId - The mentorship pair's id.
  */

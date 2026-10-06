@@ -7,6 +7,7 @@ import {
   getAllMentorshipRounds,
   getMatchingResults,
   getMatchingRun,
+  getMatchingUnmatched,
 } from "@/api/mentorshipApi";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
@@ -16,6 +17,7 @@ vi.mock("@/api/mentorshipApi", () => ({
   getAllMentorshipRounds: vi.fn(),
   getMatchingRun: vi.fn(),
   getMatchingResults: vi.fn(),
+  getMatchingUnmatched: vi.fn(),
 }));
 
 vi.mock("@/hooks/useFeatureFlags", () => ({ useFeatureFlags: vi.fn() }));
@@ -163,16 +165,28 @@ const mutualItem = {
   mentorProfile: null,
 };
 
-const unmatchedItem = {
-  mentee: { userId: 203, name: null },
-  mentor: null,
-  score: null,
-  matchType: null,
-  recommendationReason: "",
+const unmatchedMentee = {
+  person: { userId: 203, name: null },
+  role: "mentee",
+  profile: null,
   diagnosticReason: "No mentor had a free slot.",
+  candidates: [{ userId: 102, name: "Dan Ma", score: 0.4 }],
+};
+
+const quietMentee = {
+  person: { userId: 204, name: "Gus Ho" },
+  role: "mentee",
+  profile: null,
+  diagnosticReason: "",
   candidates: [],
-  menteeProfile: null,
-  mentorProfile: null,
+};
+
+const unmatchedMentor = {
+  person: { userId: 3102, name: "Bob Liu" },
+  role: "mentor",
+  profile: mentorProfile,
+  diagnosticReason: "",
+  candidates: [],
 };
 
 const resultsPage = (items, overrides = {}) => ({
@@ -184,6 +198,10 @@ const resultsPage = (items, overrides = {}) => ({
     items,
     ...overrides,
   },
+});
+
+const unmatchedPage = (items, overrides = {}) => ({
+  data: { status: "succeeded", total: items.length, items, ...overrides },
 });
 
 const LocationProbe = () => {
@@ -214,6 +232,9 @@ const renderPage = ({ search = "", state } = {}) =>
     </MemoryRouter>,
   );
 
+const CANDIDATES_NOTE =
+  "A candidate can score higher than the chosen mentor: the matcher finds the best set of pairs overall, not the best mentor for each mentee alone.";
+
 const urlParams = () =>
   new URLSearchParams(screen.getByTestId("location-search").textContent);
 
@@ -228,8 +249,9 @@ describe("MatchingResultsPage", () => {
     useFeatureFlags.mockReturnValue({ [FEATURE_FLAGS.MATCHING_RUN]: true });
     getAllMentorshipRounds.mockResolvedValue({ data: ROUNDS });
     getMatchingRun.mockResolvedValue({ data: { status: "never_run" } });
-    getMatchingResults.mockResolvedValue(
-      resultsPage([scoredItem, mutualItem, unmatchedItem]),
+    getMatchingResults.mockResolvedValue(resultsPage([scoredItem, mutualItem]));
+    getMatchingUnmatched.mockResolvedValue(
+      unmatchedPage([unmatchedMentee, quietMentee, unmatchedMentor]),
     );
   });
 
@@ -338,28 +360,15 @@ describe("MatchingResultsPage", () => {
       expect(getMatchingResults).not.toHaveBeenCalled();
     });
 
-    it("succeeded shows the summary and the mentors left without a mentee", async () => {
+    it("succeeded goes straight to the tabs, with no summary line", async () => {
       getMatchingRun.mockResolvedValue({ data: succeededRun() });
       renderPage();
 
       expect(
-        await screen.findByText("2 of 3 mentees matched."),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText(
-          "Mentors without a mentee: Bob Liu (ID 3102), ID 3999",
-        ),
+        await screen.findByRole("tab", { name: "Matched (2)" }),
       ).toBeInTheDocument();
       expect(screen.getByText("Succeeded")).toBeInTheDocument();
-    });
-
-    it("leaves the unmatched mentors line out when there are none", async () => {
-      getMatchingRun.mockResolvedValue({
-        data: succeededRun({ unmatchedMentors: [] }),
-      });
-      renderPage();
-
-      await screen.findByText("2 of 3 mentees matched.");
+      expect(screen.queryByText(/mentees matched/)).not.toBeInTheDocument();
       expect(
         screen.queryByText(/Mentors without a mentee/),
       ).not.toBeInTheDocument();
@@ -392,25 +401,25 @@ describe("MatchingResultsPage", () => {
       getMatchingRun.mockResolvedValue({ data: succeededRun() });
     });
 
-    it("counts each tab and lists everyone first", async () => {
+    it("counts both tabs and opens on Matched", async () => {
       renderPage();
 
       expect(
-        await screen.findByRole("tab", { name: "All (3)" }),
+        await screen.findByRole("tab", { name: "Matched (2)" }),
       ).toHaveAttribute("aria-selected", "true");
+      // One unmatched mentee and two mentors without a mentee.
       expect(
-        screen.getByRole("tab", { name: "Unmatched (1)" }),
+        screen.getByRole("tab", { name: "Unmatched (3)" }),
       ).toBeInTheDocument();
-      expect(
-        screen.getByRole("tab", { name: "Matched (2)" }),
-      ).toBeInTheDocument();
+      expect(screen.queryByRole("tab", { name: /^All/ })).toBeNull();
       await waitFor(() =>
         expect(getMatchingResults).toHaveBeenCalledWith("7", {
           limit: 20,
           offset: 0,
-          matched: undefined,
+          matched: true,
         }),
       );
+      expect(getMatchingUnmatched).not.toHaveBeenCalled();
     });
 
     it("keeps the backend's order", async () => {
@@ -423,43 +432,52 @@ describe("MatchingResultsPage", () => {
       expect(rows.map((li) => li.textContent)).toEqual([
         expect.stringContaining("Cara Wang"),
         expect.stringContaining("Eve Zhou"),
-        expect.stringContaining("ID 203"),
       ]);
     });
 
-    it("a tab goes in the URL and asks for its mentees from the first page", async () => {
+    it("Unmatched goes in the URL and asks for its people from the first page", async () => {
       renderPage({ search: "?offset=20" });
       await screen.findByText("Cara Wang");
 
-      await userEvent.click(screen.getByRole("tab", { name: "Unmatched (1)" }));
+      await userEvent.click(screen.getByRole("tab", { name: "Unmatched (3)" }));
 
       await waitFor(() => expect(urlParams().get("tab")).toBe("unmatched"));
       expect(urlParams().has("offset")).toBe(false);
       await waitFor(() =>
-        expect(getMatchingResults).toHaveBeenLastCalledWith("7", {
+        expect(getMatchingUnmatched).toHaveBeenCalledWith("7", {
           limit: 20,
           offset: 0,
-          matched: false,
         }),
       );
+      expect(await screen.findByText("Bob Liu")).toBeInTheDocument();
+    });
+
+    it("going back to Matched drops the tab from the URL", async () => {
+      renderPage({ search: "?tab=unmatched" });
+      await screen.findByText("Bob Liu");
+
+      await userEvent.click(screen.getByRole("tab", { name: "Matched (2)" }));
+
+      await waitFor(() => expect(urlParams().has("tab")).toBe(false));
+      expect(await screen.findByText("Cara Wang")).toBeInTheDocument();
     });
 
     it("reads the tab and page from the URL", async () => {
-      renderPage({ search: "?tab=matched&offset=20" });
+      renderPage({ search: "?tab=unmatched&offset=20" });
 
       expect(
-        await screen.findByRole("tab", { name: "Matched (2)" }),
+        await screen.findByRole("tab", { name: "Unmatched (3)" }),
       ).toHaveAttribute("aria-selected", "true");
       await waitFor(() =>
-        expect(getMatchingResults).toHaveBeenCalledWith("7", {
+        expect(getMatchingUnmatched).toHaveBeenCalledWith("7", {
           limit: 20,
           offset: 20,
-          matched: true,
         }),
       );
+      expect(getMatchingResults).not.toHaveBeenCalled();
     });
 
-    it("pages through with Prev and Next", async () => {
+    it("pages through the Matched tab with Prev and Next", async () => {
       getMatchingResults.mockResolvedValue(
         resultsPage([scoredItem], { total: 45 }),
       );
@@ -476,7 +494,7 @@ describe("MatchingResultsPage", () => {
         expect(getMatchingResults).toHaveBeenLastCalledWith("7", {
           limit: 20,
           offset: 20,
-          matched: undefined,
+          matched: true,
         }),
       );
       expect(await screen.findByText("21–40 of 45")).toBeInTheDocument();
@@ -492,20 +510,42 @@ describe("MatchingResultsPage", () => {
       expect(await screen.findByText("41–45 of 45")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
     });
+
+    it("pages through the Unmatched tab, keeping the tab", async () => {
+      getMatchingUnmatched.mockResolvedValue(
+        unmatchedPage([unmatchedMentor], { total: 25 }),
+      );
+      renderPage({ search: "?tab=unmatched" });
+      await screen.findByText("Bob Liu");
+      expect(screen.getByText("1–20 of 25")).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+
+      await waitFor(() => expect(urlParams().get("offset")).toBe("20"));
+      expect(urlParams().get("tab")).toBe("unmatched");
+      await waitFor(() =>
+        expect(getMatchingUnmatched).toHaveBeenLastCalledWith("7", {
+          limit: 20,
+          offset: 20,
+        }),
+      );
+      expect(await screen.findByText("21–25 of 25")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    });
   });
 
-  describe("rows", () => {
+  describe("matched rows", () => {
     beforeEach(() => {
       getMatchingRun.mockResolvedValue({ data: succeededRun() });
     });
 
-    it("sums up each mentee's result on one line", async () => {
+    it("sums up each pair on one line", async () => {
       renderPage();
       await screen.findByText("Cara Wang");
 
       const scored = within(rowOf("Cara Wang"));
       expect(scored.getByText("ID 201")).toBeInTheDocument();
-      expect(scored.getByText(/→ Ann Lee/)).toBeInTheDocument();
+      expect(scored.getByText("Ann Lee")).toBeInTheDocument();
       expect(scored.getByText("ID 101")).toBeInTheDocument();
       expect(scored.getByText("Scored")).toBeInTheDocument();
       expect(scored.getByText("0.87")).toBeInTheDocument();
@@ -516,10 +556,6 @@ describe("MatchingResultsPage", () => {
       const mutual = within(rowOf("Eve Zhou"));
       expect(mutual.getByText("Both asked")).toBeInTheDocument();
       expect(mutual.getByText("—")).toBeInTheDocument();
-
-      const unmatched = within(rowOf("ID 203"));
-      expect(unmatched.getByText("No mentor")).toBeInTheDocument();
-      expect(unmatched.getByText("No match")).toBeInTheDocument();
     });
 
     it("opens a row's detail with the reasons and other candidates", async () => {
@@ -544,11 +580,7 @@ describe("MatchingResultsPage", () => {
       ).toBeInTheDocument();
       expect(row.getByText("Dan Ma (ID 102) · 0.91")).toBeInTheDocument();
       expect(row.getByText("ID 103 · 0.5")).toBeInTheDocument();
-      expect(
-        row.getByText(
-          "A candidate can score higher than the chosen mentor: the matcher finds the best set of pairs overall, not the best mentor for each mentee alone.",
-        ),
-      ).toBeInTheDocument();
+      expect(row.getByText(CANDIDATES_NOTE)).toBeInTheDocument();
 
       await toggleRow("Cara Wang");
       expect(row.queryByText("Reason shown to the pair")).toBeNull();
@@ -558,26 +590,90 @@ describe("MatchingResultsPage", () => {
       renderPage();
       await screen.findByText("Cara Wang");
 
+      await toggleRow("Cara Wang");
       await toggleRow("Eve Zhou");
-      await toggleRow("ID 203");
 
+      expect(
+        within(rowOf("Cara Wang")).getByText("Reason shown to the pair"),
+      ).toBeInTheDocument();
       const mutual = within(rowOf("Eve Zhou"));
       expect(mutual.getByText("No notes.")).toBeInTheDocument();
       expect(mutual.getByText("No other candidates.")).toBeInTheDocument();
-      expect(mutual.queryByText(/A candidate can score higher/)).toBeNull();
+      expect(mutual.queryByText(CANDIDATES_NOTE)).toBeNull();
       expect(mutual.getAllByText("No profile on file.")).toHaveLength(2);
+    });
+  });
 
-      const unmatched = within(rowOf("ID 203"));
-      expect(unmatched.getByText("No reason.")).toBeInTheDocument();
+  describe("unmatched rows", () => {
+    beforeEach(() => {
+      getMatchingRun.mockResolvedValue({ data: succeededRun() });
+    });
+
+    const renderUnmatched = async () => {
+      renderPage({ search: "?tab=unmatched" });
+      await screen.findByText("Bob Liu");
+    };
+
+    it("lists one row per person, mentees first, with role and what they lack", async () => {
+      await renderUnmatched();
+
+      const rows = screen
+        .getAllByRole("listitem")
+        .filter((li) => li.querySelector("button[aria-expanded]"));
+      expect(rows.map((li) => li.textContent)).toEqual([
+        expect.stringContaining("ID 203"),
+        expect.stringContaining("Gus Ho"),
+        expect.stringContaining("Bob Liu"),
+      ]);
+
+      const mentee = within(rowOf("ID 203"));
+      expect(mentee.getByText("Mentee")).toBeInTheDocument();
+      expect(mentee.getByText("No mentor")).toBeInTheDocument();
+
+      const mentor = within(rowOf("Bob Liu"));
+      expect(mentor.getByText("ID 3102")).toBeInTheDocument();
+      expect(mentor.getByText("Mentor")).toBeInTheDocument();
+      expect(mentor.getByText("No mentee")).toBeInTheDocument();
+    });
+
+    it("opens a mentee's profile, notes and other candidates", async () => {
+      await renderUnmatched();
+
+      await toggleRow("ID 203");
+
+      const row = within(rowOf("ID 203"));
       expect(
-        unmatched.getByText("No mentor had a free slot."),
-      ).toBeInTheDocument();
-      expect(
-        unmatched.getByRole("region", { name: "Mentee profile" }),
-      ).toBeInTheDocument();
-      expect(
-        unmatched.queryByRole("region", { name: "Mentor profile" }),
-      ).toBeNull();
+        row.getByRole("region", { name: "Mentee profile" }),
+      ).toHaveTextContent("No profile on file.");
+      expect(row.queryByRole("region", { name: "Mentor profile" })).toBeNull();
+      expect(row.getByText("No mentor had a free slot.")).toBeInTheDocument();
+      expect(row.getByText("Dan Ma (ID 102) · 0.4")).toBeInTheDocument();
+      expect(row.getByText(CANDIDATES_NOTE)).toBeInTheDocument();
+      expect(row.queryByText("Reason shown to the pair")).toBeNull();
+    });
+
+    it("fills a mentee's empty notes and candidates", async () => {
+      await renderUnmatched();
+
+      await toggleRow("Gus Ho");
+
+      const row = within(rowOf("Gus Ho"));
+      expect(row.getByText("No notes.")).toBeInTheDocument();
+      expect(row.getByText("No other candidates.")).toBeInTheDocument();
+    });
+
+    it("opens a mentor to their profile card alone", async () => {
+      await renderUnmatched();
+
+      await toggleRow("Bob Liu");
+
+      const row = within(rowOf("Bob Liu"));
+      const profile = within(
+        row.getByRole("region", { name: "Mentor profile" }),
+      );
+      expect(profile.getByText("Slots this run: 2")).toBeInTheDocument();
+      expect(row.queryByText("Matcher's notes")).toBeNull();
+      expect(row.queryByText("Other candidates")).toBeNull();
     });
   });
 

@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import { getMatchingResults, getMatchingRun } from "@/api/mentorshipApi";
+import {
+  getMatchingResults,
+  getMatchingRun,
+  getMatchingUnmatched,
+} from "@/api/mentorshipApi";
 
 /**
  * Loads where a round's latest matching run stands, again whenever the round
@@ -42,27 +46,25 @@ export const useMatchingRun = (roundId) => {
 };
 
 /**
- * Loads one page of a round's matching results.
- *
- * @param {number|string} roundId - The mentorship round's id.
- * @param {{limit: number, offset: number, matched?: boolean}} query
- * @returns {{page: Object|null, isLoading: boolean, error: boolean}}
+ * Loads one page from `load(roundId, {limit, offset, ...})`, again whenever
+ * any argument changes.
  */
-export const useMatchingResults = (roundId, { limit, offset, matched }) => {
+const usePage = (load, what, roundId, query) => {
   const [page, setPage] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(false);
+  const queryKey = JSON.stringify(query);
 
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
     setError(false);
-    getMatchingResults(roundId, { limit, offset, matched })
+    load(roundId, JSON.parse(queryKey))
       .then(({ data }) => {
         if (!cancelled) setPage(data ?? null);
       })
       .catch((err) => {
-        console.error("Failed to fetch the matching results", err);
+        console.error(`Failed to fetch the ${what}`, err);
         if (!cancelled) setError(true);
       })
       .finally(() => {
@@ -71,7 +73,35 @@ export const useMatchingResults = (roundId, { limit, offset, matched }) => {
     return () => {
       cancelled = true;
     };
-  }, [roundId, limit, offset, matched]);
+  }, [load, what, roundId, queryKey]);
 
   return { page, isLoading, error };
 };
+
+/**
+ * Loads one page of a round's matching results, one item per mentee.
+ *
+ * @param {number|string} roundId - The mentorship round's id.
+ * @param {{limit: number, offset: number, matched?: boolean}} query
+ * @returns {{page: Object|null, isLoading: boolean, error: boolean}}
+ */
+export const useMatchingResults = (roundId, { limit, offset, matched }) =>
+  usePage(getMatchingResults, "matching results", roundId, {
+    limit,
+    offset,
+    matched,
+  });
+
+/**
+ * Loads one page of the people a round's matching left without a partner,
+ * one item per person, mentees first.
+ *
+ * @param {number|string} roundId - The mentorship round's id.
+ * @param {{limit: number, offset: number}} query
+ * @returns {{page: Object|null, isLoading: boolean, error: boolean}}
+ */
+export const useMatchingUnmatched = (roundId, { limit, offset }) =>
+  usePage(getMatchingUnmatched, "unmatched people", roundId, {
+    limit,
+    offset,
+  });

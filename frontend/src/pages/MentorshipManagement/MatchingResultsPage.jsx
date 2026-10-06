@@ -25,22 +25,16 @@ import {
 import {
   useMatchingResults,
   useMatchingRun,
+  useMatchingUnmatched,
 } from "@/pages/MentorshipManagement/hooks/useMatchingRun";
 import { useParticipantSearchRounds } from "@/pages/MentorshipManagement/hooks/useParticipantSearchRounds";
 
 const LIMIT = 20;
 
 const TAB = Object.freeze({
-  ALL: "all",
-  UNMATCHED: "unmatched",
   MATCHED: "matched",
+  UNMATCHED: "unmatched",
 });
-
-const MATCHED_FILTER = {
-  [TAB.ALL]: undefined,
-  [TAB.UNMATCHED]: false,
-  [TAB.MATCHED]: true,
-};
 
 const STATUS_BADGE = {
   [RUN_STATUS.NEVER_RUN]: { label: "Not run", variant: "secondary" },
@@ -229,9 +223,40 @@ const ProfileCard = ({ role, profile }) => {
   );
 };
 
-/** The detail under an opened row. */
+/** What the matcher noted about a mentee. */
+const NotesBlock = ({ text }) => (
+  <div>
+    <div className="font-semibold">Matcher&apos;s notes</div>
+    <p className="whitespace-pre-wrap">{text || "No notes."}</p>
+  </div>
+);
+
+/** The mentors the matcher weighed for a mentee besides the one chosen. */
+const CandidatesBlock = ({ candidates }) => (
+  <div>
+    <div className="font-semibold">Other candidates</div>
+    {candidates?.length ? (
+      <>
+        <ul className="list-disc pl-5">
+          {candidates.map((c) => (
+            <li key={c.userId}>
+              {personWithId(c)} · {scoreLabel(c.score)}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-1 text-xs text-muted-foreground">{CANDIDATES_NOTE}</p>
+      </>
+    ) : (
+      <p>No other candidates.</p>
+    )}
+  </div>
+);
+
+const DETAIL = "space-y-4 border-t border-border bg-muted/40 p-3 text-sm";
+
+/** The detail under an opened pair row. */
 const MatchDetail = ({ item }) => (
-  <div className="space-y-4 border-t border-border bg-muted/40 p-3 text-sm">
+  <div className={DETAIL}>
     <div className="grid gap-3 md:grid-cols-2">
       <ProfileCard role="mentee" profile={item.menteeProfile} />
       {item.mentor ? (
@@ -244,119 +269,137 @@ const MatchDetail = ({ item }) => (
         {item.recommendationReason || "No reason."}
       </p>
     </div>
-    <div>
-      <div className="font-semibold">Matcher&apos;s notes</div>
-      <p className="whitespace-pre-wrap">
-        {item.diagnosticReason || "No notes."}
-      </p>
-    </div>
-    <div>
-      <div className="font-semibold">Other candidates</div>
-      {item.candidates?.length ? (
-        <>
-          <ul className="list-disc pl-5">
-            {item.candidates.map((c) => (
-              <li key={c.userId}>
-                {personWithId(c)} · {scoreLabel(c.score)}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {CANDIDATES_NOTE}
-          </p>
-        </>
-      ) : (
-        <p>No other candidates.</p>
-      )}
-    </div>
+    <NotesBlock text={item.diagnosticReason} />
+    <CandidatesBlock candidates={item.candidates} />
   </div>
 );
 
-/** One mentee's result: a summary line that opens the detail under it. */
+/** A name followed by its ID, the name left out when it did not resolve. */
+const NameWithId = ({ person }) => (
+  <>
+    {person.name ? <span className="font-medium">{person.name} </span> : null}
+    <span className="text-xs text-muted-foreground">ID {person.userId}</span>
+  </>
+);
+
+/**
+ * A row that opens the detail under it; several can be open at once.
+ *
+ * @param {{summary: JSX.Element, detail: JSX.Element, open: boolean,
+ *          onToggle: () => void, columns: string}} props
+ */
+const ExpandableRow = ({ summary, detail, open, onToggle, columns }) => (
+  <li className="border-b border-border last:border-b-0">
+    <button
+      type="button"
+      aria-expanded={open}
+      onClick={onToggle}
+      className={`grid w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-muted ${columns}`}
+    >
+      {summary}
+    </button>
+    {open ? detail : null}
+  </li>
+);
+
+/** One mentee's pair: who they got, how, the score and the reason. */
 const MatchRow = ({ item, open, onToggle }) => {
   const { mentee, mentor } = item;
   return (
-    <li className="border-b border-border last:border-b-0">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={onToggle}
-        className="grid w-full grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_3rem_minmax(0,2fr)] items-center gap-3 px-3 py-2 text-left text-sm hover:bg-muted"
-      >
-        <span className="min-w-0">
-          {mentee.name ? (
-            <span className="font-medium">{mentee.name} </span>
-          ) : null}
-          <span className="text-xs text-muted-foreground">
-            ID {mentee.userId}
+    <ExpandableRow
+      open={open}
+      onToggle={onToggle}
+      columns="grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_3rem_minmax(0,2fr)]"
+      detail={<MatchDetail item={item} />}
+      summary={
+        <>
+          <span className="min-w-0">
+            <NameWithId person={mentee} />
           </span>
-        </span>
-        <span className="min-w-0">
-          {mentor ? (
-            <>
-              → {mentor.name ? `${mentor.name} ` : ""}
-              <span className="text-xs text-muted-foreground">
-                ID {mentor.userId}
-              </span>
-            </>
-          ) : (
-            <span className="text-muted-foreground">No mentor</span>
-          )}
-        </span>
-        <Badge variant={mentor ? "secondary" : "outline"}>
-          {mentor
-            ? (MATCH_TYPE_LABEL[item.matchType] ?? item.matchType)
-            : "No match"}
-        </Badge>
-        <span className="tabular-nums">{scoreLabel(item.score)}</span>
-        <span className="truncate text-muted-foreground">
-          {item.recommendationReason}
-        </span>
-      </button>
-      {open ? <MatchDetail item={item} /> : null}
-    </li>
+          <span className="min-w-0">
+            {mentor ? (
+              <>
+                → <NameWithId person={mentor} />
+              </>
+            ) : (
+              <span className="text-muted-foreground">No mentor</span>
+            )}
+          </span>
+          <Badge variant={mentor ? "secondary" : "outline"}>
+            {mentor
+              ? (MATCH_TYPE_LABEL[item.matchType] ?? item.matchType)
+              : "No match"}
+          </Badge>
+          <span className="tabular-nums">{scoreLabel(item.score)}</span>
+          <span className="truncate text-muted-foreground">
+            {item.recommendationReason}
+          </span>
+        </>
+      }
+    />
   );
 };
 
-/**
- * The results of a succeeded run: the summary, the All / Unmatched / Matched
- * tabs and a page of mentees in the backend's order. Tab and page are in the
- * URL.
- */
-const Results = ({ roundId, overview }) => {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const rawTab = searchParams.get("tab");
-  const tab = Object.values(TAB).includes(rawTab) ? rawTab : TAB.ALL;
-  const rawOffset = searchParams.get("offset") ?? "";
-  const offset = /^\d+$/.test(rawOffset) ? Number(rawOffset) : 0;
+/** One person the run left without a partner, mentee or mentor. */
+const UnmatchedRow = ({ item, open, onToggle }) => {
+  const isMentor = item.role === "mentor";
+  return (
+    <ExpandableRow
+      open={open}
+      onToggle={onToggle}
+      columns="grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
+      detail={
+        <div className={DETAIL}>
+          <div className="grid gap-3 md:grid-cols-2">
+            <ProfileCard role={item.role} profile={item.profile} />
+          </div>
+          {isMentor ? null : (
+            <>
+              <NotesBlock text={item.diagnosticReason} />
+              <CandidatesBlock candidates={item.candidates} />
+            </>
+          )}
+        </div>
+      }
+      summary={
+        <>
+          <span className="min-w-0">
+            <NameWithId person={item.person} />
+          </span>
+          <Badge variant="secondary">{isMentor ? "Mentor" : "Mentee"}</Badge>
+          <span className="text-muted-foreground">
+            {isMentor ? "No mentee" : "No mentor"}
+          </span>
+        </>
+      }
+    />
+  );
+};
 
-  const { page, isLoading, error } = useMatchingResults(roundId, {
-    limit: LIMIT,
-    offset,
-    matched: MATCHED_FILTER[tab],
-  });
-  const [openIds, setOpenIds] = useState(() => new Set());
-
-  const toggle = (id) =>
-    setOpenIds((prev) => {
+/** The open rows of a list, by key. */
+const useOpenRows = () => {
+  const [openKeys, setOpenKeys] = useState(() => new Set());
+  const toggle = (key) =>
+    setOpenKeys((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
+  return [openKeys, toggle];
+};
 
-  const go = (nextTab, nextOffset) => {
-    const next = new URLSearchParams();
-    if (nextTab !== TAB.ALL) next.set("tab", nextTab);
-    if (nextOffset > 0) next.set("offset", String(nextOffset));
-    setSearchParams(next);
-  };
-
-  const matched = overview.matchedCount ?? 0;
-  const unmatched = overview.unmatchedCount ?? 0;
+/**
+ * A page of rows with its Prev/Next pager.
+ *
+ * @param {{load: {page: Object|null, isLoading: boolean, error: boolean},
+ *          offset: number, onOffset: (offset: number) => void,
+ *          renderRow: (item: Object) => JSX.Element}} props
+ */
+const PagedList = ({ load, offset, onOffset, renderRow }) => {
+  const { page, isLoading, error } = load;
   const total = page?.total ?? 0;
   const items = page?.items ?? [];
-  const unmatchedMentors = overview.unmatchedMentors ?? [];
 
   let list;
   if (isLoading && !page) {
@@ -372,46 +415,19 @@ const Results = ({ roundId, overview }) => {
   } else {
     list = (
       <ul className="rounded-lg border border-border">
-        {items.map((item) => (
-          <MatchRow
-            key={item.mentee.userId}
-            item={item}
-            open={openIds.has(item.mentee.userId)}
-            onToggle={() => toggle(item.mentee.userId)}
-          />
-        ))}
+        {items.map(renderRow)}
       </ul>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-1 text-sm">
-        <p>
-          {matched} of {overview.menteeCount} mentees matched.
-        </p>
-        {unmatchedMentors.length > 0 ? (
-          <p>
-            Mentors without a mentee:{" "}
-            {unmatchedMentors.map(personWithId).join(", ")}
-          </p>
-        ) : null}
-      </div>
-      <Tabs value={tab} onValueChange={(v) => go(v, 0)}>
-        <TabsList>
-          <TabsTrigger value={TAB.ALL}>All ({matched + unmatched})</TabsTrigger>
-          <TabsTrigger value={TAB.UNMATCHED}>
-            Unmatched ({unmatched})
-          </TabsTrigger>
-          <TabsTrigger value={TAB.MATCHED}>Matched ({matched})</TabsTrigger>
-        </TabsList>
-      </Tabs>
+    <>
       {list}
-      <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
+      <div className="mt-4 flex items-center justify-between gap-2 text-sm text-muted-foreground">
         <Button
           variant="outline"
           size="sm"
-          onClick={() => go(tab, Math.max(0, offset - LIMIT))}
+          onClick={() => onOffset(Math.max(0, offset - LIMIT))}
           disabled={offset === 0}
         >
           Prev
@@ -423,12 +439,103 @@ const Results = ({ roundId, overview }) => {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => go(tab, offset + LIMIT)}
+          onClick={() => onOffset(offset + LIMIT)}
           disabled={offset + LIMIT >= total}
         >
           Next
         </Button>
       </div>
+    </>
+  );
+};
+
+/** The Matched tab: one row per pair, in the backend's order. */
+const MatchedList = ({ roundId, offset, onOffset }) => {
+  const load = useMatchingResults(roundId, {
+    limit: LIMIT,
+    offset,
+    matched: true,
+  });
+  const [openKeys, toggle] = useOpenRows();
+  return (
+    <PagedList
+      load={load}
+      offset={offset}
+      onOffset={onOffset}
+      renderRow={(item) => (
+        <MatchRow
+          key={item.mentee.userId}
+          item={item}
+          open={openKeys.has(item.mentee.userId)}
+          onToggle={() => toggle(item.mentee.userId)}
+        />
+      )}
+    />
+  );
+};
+
+/** The Unmatched tab: one row per person, mentees first, as the API sends. */
+const UnmatchedList = ({ roundId, offset, onOffset }) => {
+  const load = useMatchingUnmatched(roundId, { limit: LIMIT, offset });
+  const [openKeys, toggle] = useOpenRows();
+  return (
+    <PagedList
+      load={load}
+      offset={offset}
+      onOffset={onOffset}
+      renderRow={(item) => {
+        const key = `${item.role}-${item.person.userId}`;
+        return (
+          <UnmatchedRow
+            key={key}
+            item={item}
+            open={openKeys.has(key)}
+            onToggle={() => toggle(key)}
+          />
+        );
+      }}
+    />
+  );
+};
+
+/**
+ * The results of a succeeded run: the summary and the Matched / Unmatched
+ * tabs, each a paged list. Tab and page are in the URL; no tab is Matched.
+ */
+const Results = ({ roundId, overview }) => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab =
+    searchParams.get("tab") === TAB.UNMATCHED ? TAB.UNMATCHED : TAB.MATCHED;
+  const rawOffset = searchParams.get("offset") ?? "";
+  const offset = /^\d+$/.test(rawOffset) ? Number(rawOffset) : 0;
+
+  const go = (nextTab, nextOffset) => {
+    const next = new URLSearchParams();
+    if (nextTab !== TAB.MATCHED) next.set("tab", nextTab);
+    if (nextOffset > 0) next.set("offset", String(nextOffset));
+    setSearchParams(next);
+  };
+  const onOffset = (nextOffset) => go(tab, nextOffset);
+
+  const matched = overview.matchedCount ?? 0;
+  const unmatched =
+    (overview.unmatchedCount ?? 0) + (overview.unmatchedMentors ?? []).length;
+
+  return (
+    <div className="space-y-4">
+      <Tabs value={tab} onValueChange={(v) => go(v, 0)}>
+        <TabsList>
+          <TabsTrigger value={TAB.MATCHED}>Matched ({matched})</TabsTrigger>
+          <TabsTrigger value={TAB.UNMATCHED}>
+            Unmatched ({unmatched})
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+      {tab === TAB.MATCHED ? (
+        <MatchedList roundId={roundId} offset={offset} onOffset={onOffset} />
+      ) : (
+        <UnmatchedList roundId={roundId} offset={offset} onOffset={onOffset} />
+      )}
     </div>
   );
 };
