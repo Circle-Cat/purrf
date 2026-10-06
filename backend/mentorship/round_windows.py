@@ -138,3 +138,24 @@ def is_meeting_log_open(r: MentorshipRoundEntity, now: datetime) -> bool:
     """
     closes_at = meeting_log_closes_at(r)
     return closes_at is None or now <= closes_at
+
+
+def is_in_progress(r: MentorshipRoundEntity, now: datetime) -> bool:
+    """Whether the round is under way at ``now``.
+
+    From ``promotion_start_at`` to ``feedback_deadline_at``, both inclusive.
+    The admin console's lists that act on a round -- who is eligible for
+    matching, who has not registered -- are offered for this whole span, so a
+    mentee who comes late can still be matched. A round missing either date
+    is never in progress.
+
+    Args:
+        r (MentorshipRoundEntity): The round.
+        now (datetime): The aware instant to evaluate at.
+
+    Returns:
+        bool: True inside the window.
+    """
+    start = r.promotion_start_at
+    end = r.feedback_deadline_at
+    return bool(start and end and start <= now <= end)

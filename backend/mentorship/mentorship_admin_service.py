@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.dto.participant_search_filter_dto import (
     ParticipantSearchFilterDto,
@@ -35,6 +37,7 @@ from backend.common.mentorship_enums import (
 )
 from backend.common.name_utils import user_display_name
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
+from backend.mentorship.round_windows import is_in_progress
 
 
 class MentorshipAdminService:
@@ -58,6 +61,7 @@ class MentorshipAdminService:
         logger,
         mentorship_meeting_repository,
         application_repository,
+        matching_eligibility_service,
     ) -> None:
         self.users_repository = users_repository
         self.participants_repository = participants_repository
@@ -68,6 +72,7 @@ class MentorshipAdminService:
         self.logger = logger
         self.mentorship_meeting_repository = mentorship_meeting_repository
         self.application_repository = application_repository
+        self.matching_eligibility_service = matching_eligibility_service
 
     def _extract_emails(self, emails: list) -> tuple[str | None, list[str]]:
         """
@@ -293,9 +298,18 @@ class MentorshipAdminService:
 
         Returns:
             ParticipantSearchDto: Assembled participant rows and total count.
+
+        Raises:
+            ValueError: ``eligible`` was asked for without a round, for a round
+                that does not exist, or for one not in progress.
         """
+        only_user_ids = (
+            await self._eligible_user_ids(session, filters.round_id)
+            if filters.eligible
+            else None
+        )
         rows, total = await self.participants_repository.search_participants_for_admin(
-            session, filters, limit, offset, sort_by, order
+            session, filters, limit, offset, sort_by, order, only_user_ids=only_user_ids
         )
         if not rows:
             return ParticipantSearchDto(participant_rows=[], total=total)
@@ -336,6 +350,35 @@ class MentorshipAdminService:
             )
 
         return ParticipantSearchDto(participant_rows=participant_rows, total=total)
+
+    async def _eligible_user_ids(
+        self, session: AsyncSession, round_id: int | None
+    ) -> set[int]:
+        """The people eligible for matching in a round in progress.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int | None): The round searched.
+
+        Returns:
+            set[int]: Their user_ids.
+
+        Raises:
+            ValueError: No round, an unknown round, or one not in progress.
+        """
+        if round_id is None:
+            raise ValueError("Eligible for matching needs a round.")
+        round_entity = await self.rounds_repository.get_by_round_id(session, round_id)
+        if round_entity is None:
+            raise ValueError(f"Mentorship round {round_id} does not exist.")
+        if not is_in_progress(round_entity, datetime.now(timezone.utc)):
+            raise ValueError(
+                f"Mentorship round {round_id} is not in progress, so nobody is "
+                "eligible for matching in it."
+            )
+        return await self.matching_eligibility_service.eligible_user_ids(
+            session, round_id
+        )
 
     async def search_unregistered(
         self,

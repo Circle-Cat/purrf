@@ -21,6 +21,7 @@ from backend.mentorship.round_windows import (
     feedback_window,
     is_feedback_editable,
     is_feedback_open,
+    is_in_progress,
     is_meeting_log_open,
     round_status,
 )
@@ -85,6 +86,7 @@ class MentorshipMapper:
             is_feedback_open=is_feedback_open(r, now),
             is_feedback_editable=is_feedback_editable(r, now),
             is_meeting_log_open=is_meeting_log_open(r, now),
+            is_in_progress=is_in_progress(r, now),
         )
 
     def _map_timeline(self, r: MentorshipRoundEntity) -> TimelineDto:

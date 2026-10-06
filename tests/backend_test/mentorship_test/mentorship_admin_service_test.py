@@ -1,5 +1,6 @@
 import copy
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, AsyncMock
 from dateutil.parser import isoparse
 from backend.mentorship.mentorship_admin_service import MentorshipAdminService
@@ -149,6 +150,8 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
 
         self.mock_session = AsyncMock()
         self.mock_logger = MagicMock()
+        self.mock_eligibility = MagicMock()
+        self.mock_eligibility.eligible_user_ids = AsyncMock(return_value=set())
 
         self.service = MentorshipAdminService(
             users_repository=self.mock_users_repo,
@@ -160,6 +163,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             logger=self.mock_logger,
             mentorship_meeting_repository=self.mock_meeting_repo,
             application_repository=self.mock_application_repo,
+            matching_eligibility_service=self.mock_eligibility,
         )
 
     async def test_unregistered_unknown_round_raises(self):
@@ -276,6 +280,67 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
                 "lastRoundName": "2025 Fall",
             },
         )
+
+    async def test_eligible_lists_only_the_eligible_in_a_round_in_progress(self):
+        now = datetime.now(timezone.utc)
+        self.mock_rounds_repo.get_by_round_id.return_value = MagicMock(
+            promotion_start_at=now - timedelta(days=1),
+            feedback_deadline_at=now + timedelta(days=1),
+        )
+        self.mock_eligibility.eligible_user_ids.return_value = {4, 2}
+        self.mock_participants_repo.search_participants_for_admin.return_value = ([], 0)
+
+        await self.service.search_participants(
+            self.mock_session, ParticipantSearchFilterDto(round_id=7, eligible=True)
+        )
+
+        self.mock_eligibility.eligible_user_ids.assert_awaited_once_with(
+            self.mock_session, 7
+        )
+        call = self.mock_participants_repo.search_participants_for_admin.await_args
+        self.assertEqual(call.kwargs["only_user_ids"], {2, 4})
+
+    async def test_without_eligible_nobody_is_left_out(self):
+        self.mock_participants_repo.search_participants_for_admin.return_value = ([], 0)
+
+        await self.service.search_participants(
+            self.mock_session, ParticipantSearchFilterDto(round_id=7)
+        )
+
+        self.mock_eligibility.eligible_user_ids.assert_not_awaited()
+        call = self.mock_participants_repo.search_participants_for_admin.await_args
+        self.assertIsNone(call.kwargs["only_user_ids"])
+
+    async def test_eligible_is_refused_outside_a_round_in_progress(self):
+        now = datetime.now(timezone.utc)
+        cases = {
+            "no round": (None, None),
+            "unknown round": (7, None),
+            "not started": (
+                7,
+                MagicMock(
+                    promotion_start_at=now + timedelta(days=1),
+                    feedback_deadline_at=now + timedelta(days=2),
+                ),
+            ),
+            "over": (
+                7,
+                MagicMock(
+                    promotion_start_at=now - timedelta(days=2),
+                    feedback_deadline_at=now - timedelta(days=1),
+                ),
+            ),
+        }
+        for label, (round_id, round_entity) in cases.items():
+            with self.subTest(label):
+                self.mock_rounds_repo.get_by_round_id.return_value = round_entity
+                with self.assertRaises(ValueError):
+                    await self.service.search_participants(
+                        self.mock_session,
+                        ParticipantSearchFilterDto(round_id=round_id, eligible=True),
+                    )
+        self.mock_eligibility.eligible_user_ids.assert_not_awaited()
+        self.mock_participants_repo.search_participants_for_admin.assert_not_awaited()
 
     async def test_empty_rows_returns_immediately(self):
         """Returns empty result without calling other repos when no rows found."""
@@ -1267,6 +1332,7 @@ class TestGetRoundFeedback(unittest.IsolatedAsyncioTestCase):
             logger=MagicMock(),
             mentorship_meeting_repository=MagicMock(),
             application_repository=MagicMock(),
+            matching_eligibility_service=MagicMock(),
         )
 
     async def test_maps_sent_and_unsent_rows_and_names_partners(self):

@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 from backend.common.mentorship_enums import RoundStatus
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
@@ -8,6 +9,7 @@ from backend.mentorship.round_windows import (
     feedback_window,
     is_feedback_editable,
     is_feedback_open,
+    is_in_progress,
     is_meeting_log_open,
     meeting_log_closes_at,
     round_status,
@@ -339,6 +341,34 @@ class TestMeetingLog(_WindowFixture):
         r = self._round(meetings_completion_deadline_at=None)
 
         self.assertTrue(is_meeting_log_open(r, self.FAR_FUTURE))
+
+
+class TestIsInProgress(unittest.TestCase):
+    """is_in_progress runs from promotion to the feedback deadline."""
+
+    PROMOTION = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    FEEDBACK_DEADLINE = datetime(2026, 12, 20, tzinfo=timezone.utc)
+
+    def _round(self, **overrides):
+        fields = dict(
+            promotion_start_at=self.PROMOTION,
+            feedback_deadline_at=self.FEEDBACK_DEADLINE,
+        )
+        fields.update(overrides)
+        return SimpleNamespace(**fields)
+
+    def test_open_at_both_ends_and_closed_outside(self):
+        r = self._round()
+
+        self.assertFalse(is_in_progress(r, self.PROMOTION - MICRO))
+        self.assertTrue(is_in_progress(r, self.PROMOTION))
+        self.assertTrue(is_in_progress(r, self.FEEDBACK_DEADLINE))
+        self.assertFalse(is_in_progress(r, self.FEEDBACK_DEADLINE + MICRO))
+
+    def test_never_open_without_either_date(self):
+        inside = self.PROMOTION + MICRO
+        self.assertFalse(is_in_progress(self._round(promotion_start_at=None), inside))
+        self.assertFalse(is_in_progress(self._round(feedback_deadline_at=None), inside))
 
 
 if __name__ == "__main__":

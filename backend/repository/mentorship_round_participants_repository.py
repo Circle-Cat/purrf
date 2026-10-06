@@ -1,3 +1,5 @@
+from collections.abc import Collection
+
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
@@ -13,6 +15,7 @@ from backend.entity.job_entity import JobEntity
 from backend.entity.training_entity import TrainingEntity
 from backend.common.mentorship_enums import (
     MENTORSHIP_ONBOARDING_CATEGORIES,
+    ApprovalStatus,
     ParticipantRole,
     TrainingCategory,
     TrainingStatus,
@@ -568,6 +571,7 @@ class MentorshipRoundParticipantsRepository:
         offset: int,
         sort_by: str | None = None,
         order: str = "asc",
+        only_user_ids: Collection[int] | None = None,
     ) -> tuple[list[ParticipantSearchRow], int]:
         """
         Run the admin participant search and return paginated results.
@@ -588,6 +592,8 @@ class MentorshipRoundParticipantsRepository:
                 deterministic last_name/first_name/round_id/user_id order.
             order (str): "asc" (default) or "desc". Only applied when
                 `sort_by` resolves to a whitelisted column.
+            only_user_ids (Collection[int] | None): When given, only these
+                people are listed; empty lists nobody.
 
         Returns:
             tuple[list[ParticipantSearchRow], int]:
@@ -595,6 +601,8 @@ class MentorshipRoundParticipantsRepository:
                 before pagination.
         """
         base_stmt = self._build_admin_search_stmt(filters)
+        if only_user_ids is not None:
+            base_stmt = base_stmt.where(UsersEntity.user_id.in_(sorted(only_user_ids)))
 
         total = (
             await session.scalar(select(func.count()).select_from(base_stmt.subquery()))
@@ -900,3 +908,60 @@ class MentorshipRoundParticipantsRepository:
             .where(UsersEntity.user_id.in_(user_ids))
         )
         return list(result.all())
+
+    async def list_round_registrations(
+        self, session: AsyncSession, round_id: int
+    ) -> list[tuple[UsersEntity, MentorshipRoundParticipantsEntity]]:
+        """Everyone registered for a round, with their user record.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            round_id (int): Mentorship round id.
+
+        Returns:
+            list[tuple[UsersEntity, MentorshipRoundParticipantsEntity]]:
+                (user, participant) per registration, in user_id order.
+        """
+        result = await session.execute(
+            select(UsersEntity, MentorshipRoundParticipantsEntity)
+            .join(
+                MentorshipRoundParticipantsEntity,
+                UsersEntity.user_id == MentorshipRoundParticipantsEntity.user_id,
+            )
+            .where(MentorshipRoundParticipantsEntity.round_id == round_id)
+            .order_by(UsersEntity.user_id)
+        )
+        return [(user, participant) for user, participant in result.all()]
+
+    async def list_rejected_by_round(
+        self, session: AsyncSession, round_ids: list[int], user_ids: list[int]
+    ) -> dict[int, set[int]]:
+        """Which of the given people have a rejected registration in each of
+        the given rounds.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            round_ids (list[int]): Rounds to look in.
+            user_ids (list[int]): People to look for.
+
+        Returns:
+            dict[int, set[int]]: round_id -> user_ids. Rounds with none are
+                absent. Empty for empty input, without touching the database.
+        """
+        if not round_ids or not user_ids:
+            return {}
+        result = await session.execute(
+            select(
+                MentorshipRoundParticipantsEntity.round_id,
+                MentorshipRoundParticipantsEntity.user_id,
+            ).where(
+                MentorshipRoundParticipantsEntity.round_id.in_(round_ids),
+                MentorshipRoundParticipantsEntity.user_id.in_(user_ids),
+                MentorshipRoundParticipantsEntity.approval_status
+                == ApprovalStatus.REJECTED,
+            )
+        )
+        grouped: dict[int, set[int]] = {}
+        for round_id, user_id in result.all():
+            grouped.setdefault(round_id, set()).add(user_id)
+        return grouped

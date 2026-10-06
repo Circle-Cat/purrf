@@ -450,3 +450,46 @@ class MentorshipPairsRepository:
             ).group_by(pairs.c.user_id)
         )
         return {user_id: completed for user_id, completed in result.all()}
+
+    async def list_pairs_with_meeting_counts(
+        self, session: AsyncSession, round_ids: list[int], user_ids: list[int]
+    ) -> list[tuple[MentorshipPairsEntity, int]]:
+        """Every pair in the given rounds with either side among the given
+        people, whatever its status, each with its completed meeting count.
+
+        Counted from meeting rows, as ``count_completed_rounds`` does, rather
+        than from ``completed_count``.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            round_ids (list[int]): Rounds to look in.
+            user_ids (list[int]): People to look for, as mentor or mentee.
+
+        Returns:
+            list[tuple[MentorshipPairsEntity, int]]: (pair, completed
+                meetings), in pair_id order. Empty for empty input, without
+                touching the database.
+        """
+        if not round_ids or not user_ids:
+            return []
+
+        completed = (
+            select(func.count(MentorshipMeetingEntity.meeting_id))
+            .where(
+                MentorshipMeetingEntity.pair_id == MentorshipPairsEntity.pair_id,
+                MentorshipMeetingEntity.is_completed.is_(True),
+            )
+            .scalar_subquery()
+        )
+        result = await session.execute(
+            select(MentorshipPairsEntity, completed)
+            .where(
+                MentorshipPairsEntity.round_id.in_(round_ids),
+                or_(
+                    MentorshipPairsEntity.mentor_id.in_(user_ids),
+                    MentorshipPairsEntity.mentee_id.in_(user_ids),
+                ),
+            )
+            .order_by(MentorshipPairsEntity.pair_id)
+        )
+        return [(pair, count) for pair, count in result.all()]

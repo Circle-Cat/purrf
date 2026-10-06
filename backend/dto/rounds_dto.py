@@ -40,6 +40,7 @@ class RoundsDto(BaseDto):
     is_feedback_open: bool = False
     is_feedback_editable: bool = False
     is_meeting_log_open: bool = False
+    is_in_progress: bool = False
 
 
 class RoundSlotsDto(BaseDto):

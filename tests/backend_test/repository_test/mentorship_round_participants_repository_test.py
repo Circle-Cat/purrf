@@ -966,6 +966,87 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         self.assertEqual(total, 1)
         self.assertEqual(rows[0].user_id, self.user.user_id)
 
+    async def test_search_only_user_ids_narrows_and_counts_within_them(self):
+        bob = self._make_user(first_name="Bob", email="bob@example.com")
+        cid = self._make_user(first_name="Cid", email="cid@example.com")
+        await self.insert_entities([bob, cid])
+        await self._hire_for_activity(bob)
+        await self._hire_for_activity(cid)
+        await self._register(self.user, bob, cid)
+        filters = ParticipantSearchFilterDto(round_id=self.rounds[0].round_id)
+
+        rows, total = await self.repo.search_participants_for_admin(
+            self.session,
+            filters,
+            limit=50,
+            offset=0,
+            only_user_ids={cid.user_id, self.user.user_id},
+        )
+        nobody, none_total = await self.repo.search_participants_for_admin(
+            self.session, filters, limit=50, offset=0, only_user_ids=set()
+        )
+
+        self.assertEqual(total, 2)
+        self.assertEqual(
+            sorted(row.user_id for row in rows),
+            sorted([self.user.user_id, cid.user_id]),
+        )
+        self.assertEqual((nobody, none_total), ([], 0))
+
+    async def test_list_round_registrations_lists_the_round_only(self):
+        bob = self._make_user(first_name="Bob", email="bob@example.com")
+        await self.insert_entities([bob])
+        await self._register(self.user, bob)
+        await self._register(self.user, round_index=1)
+
+        rows = await self.repo.list_round_registrations(
+            self.session, self.rounds[0].round_id
+        )
+
+        self.assertEqual(
+            [(user.user_id, participant.round_id) for user, participant in rows],
+            [
+                (self.user.user_id, self.rounds[0].round_id),
+                (bob.user_id, self.rounds[0].round_id),
+            ],
+        )
+
+    async def test_list_rejected_by_round_groups_rejected_people_by_round(self):
+        bob = self._make_user(first_name="Bob", email="bob@example.com")
+        cid = self._make_user(first_name="Cid", email="cid@example.com")
+        await self.insert_entities([bob, cid])
+        first, second = (r.round_id for r in self.rounds)
+        await self.insert_entities([
+            MentorshipRoundParticipantsEntity(
+                user_id=self.user.user_id,
+                round_id=first,
+                approval_status=ApprovalStatus.REJECTED,
+            ),
+            MentorshipRoundParticipantsEntity(
+                user_id=bob.user_id,
+                round_id=first,
+                approval_status=ApprovalStatus.MATCHED,
+            ),
+            MentorshipRoundParticipantsEntity(
+                user_id=bob.user_id,
+                round_id=second,
+                approval_status=ApprovalStatus.REJECTED,
+            ),
+            MentorshipRoundParticipantsEntity(
+                user_id=cid.user_id,
+                round_id=second,
+                approval_status=ApprovalStatus.REJECTED,
+            ),
+        ])
+
+        result = await self.repo.list_rejected_by_round(
+            self.session, [first, second], [self.user.user_id, bob.user_id]
+        )
+        empty = await self.repo.list_rejected_by_round(self.session, [first], [])
+
+        self.assertEqual(result, {first: {self.user.user_id}, second: {bob.user_id}})
+        self.assertEqual(empty, {})
+
     async def test_search_filter_by_participant_role(self):
         user2 = self._make_user(
             first_name="Bob", last_name="Jones", email="bob@example.com"
