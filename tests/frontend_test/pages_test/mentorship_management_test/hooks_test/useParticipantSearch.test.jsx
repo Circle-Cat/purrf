@@ -2,10 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { useParticipantSearch } from "@/pages/MentorshipManagement/hooks/useParticipantSearch";
-import { searchParticipants } from "@/api/mentorshipApi";
+import { searchParticipants, searchUnregistered } from "@/api/mentorshipApi";
 
 vi.mock("@/api/mentorshipApi", () => ({
   searchParticipants: vi.fn(),
+  searchUnregistered: vi.fn(),
 }));
 
 const page = (overrides = {}) => ({
@@ -20,10 +21,10 @@ const page = (overrides = {}) => ({
 const ROUNDS = [{ id: 7 }, { id: 3 }];
 
 /** Renders the hook under a router at `url`, also exposing the location. */
-const renderSearch = (url = "/", rounds = ROUNDS) =>
+const renderSearch = (url = "/", rounds = ROUNDS, registrationRoundId) =>
   renderHook(
     () => ({
-      search: useParticipantSearch(rounds),
+      search: useParticipantSearch(rounds, registrationRoundId),
       location: useLocation(),
     }),
     {
@@ -60,7 +61,6 @@ describe("useParticipantSearch", () => {
         accountStatus: "active",
         internal: "internal",
         roundId: "3",
-        participationStatus: "participant",
         offset: 0,
       }),
     );
@@ -104,7 +104,6 @@ describe("useParticipantSearch", () => {
         participantRole: "mentor",
         approvalStatus: "matched",
         onboardingStatus: "completed",
-        participationStatus: "participant",
         limit: 20,
         offset: 0,
       }),
@@ -268,5 +267,139 @@ describe("useParticipantSearch", () => {
     });
 
     expect(result.current.search.rows).toEqual([{ userId: 2 }]);
+  });
+
+  describe("Not registered", () => {
+    // Round 7 is the one taking registrations; round 3 is not.
+    const open = (url) => renderSearch(url, ROUNDS, "7");
+
+    beforeEach(() => {
+      searchUnregistered.mockResolvedValue({
+        data: { rows: [{ userId: 9, admittedRoles: ["mentee"] }], total: 1 },
+      });
+    });
+
+    it("lists the round's not registered people with the person filters and admitted role", async () => {
+      const { result } = open(
+        "/?round=7&q=ali&role=mentee&training=completed&approval=matched",
+      );
+      await waitFor(() => expect(result.current.search.total).toBe(1));
+      expect(result.current.search.canListNotRegistered).toBe(true);
+
+      act(() => result.current.search.toggleNotRegistered());
+
+      await waitFor(() => expect(searchUnregistered).toHaveBeenCalled());
+      expect(searchUnregistered).toHaveBeenCalledWith("7", {
+        userId: undefined,
+        q: "ali",
+        accountStatus: undefined,
+        internal: undefined,
+        admittedRole: "mentee",
+        limit: 20,
+        offset: 0,
+        order: "asc",
+      });
+      const params = paramsOf(result);
+      expect(params.get("notRegistered")).toBe("1");
+      expect(params.has("training")).toBe(false);
+      expect(params.has("approval")).toBe(false);
+      expect(result.current.search.onboardingStatus).toBe("");
+      expect(result.current.search.approvalStatus).toBe("");
+      await waitFor(() =>
+        expect(result.current.search.rows).toEqual([
+          { userId: 9, admittedRoles: ["mentee"] },
+        ]),
+      );
+      expect(result.current.search.notRegistered).toBe(true);
+    });
+
+    it("drops a URL request for it in a round not taking registrations", async () => {
+      const { result } = open("/?round=3&notRegistered=1");
+
+      await waitFor(() =>
+        expect(paramsOf(result).has("notRegistered")).toBe(false),
+      );
+      expect(result.current.search.notRegistered).toBe(false);
+      expect(result.current.search.canListNotRegistered).toBe(false);
+      expect(searchUnregistered).not.toHaveBeenCalled();
+      expect(searchParticipants).toHaveBeenCalled();
+    });
+
+    it("will not go in for a round not taking registrations", async () => {
+      const { result } = open("/?round=3");
+      await waitFor(() => expect(result.current.search.total).toBe(1));
+
+      act(() => result.current.search.toggleNotRegistered());
+      await act(async () => {});
+
+      expect(paramsOf(result).has("notRegistered")).toBe(false);
+      expect(searchUnregistered).not.toHaveBeenCalled();
+    });
+
+    it("stays in it on Search in the same round and leaves it for another round", async () => {
+      const { result } = open("/?round=7&notRegistered=1");
+      await waitFor(() => expect(searchUnregistered).toHaveBeenCalledTimes(1));
+
+      act(() => result.current.search.setQ("bo"));
+      act(() => result.current.search.submitSearch());
+      await waitFor(() => expect(searchUnregistered).toHaveBeenCalledTimes(2));
+      expect(paramsOf(result).get("notRegistered")).toBe("1");
+
+      act(() => result.current.search.setRoundId("3"));
+      act(() => result.current.search.submitSearch());
+
+      await waitFor(() => expect(paramsOf(result).get("round")).toBe("3"));
+      expect(paramsOf(result).has("notRegistered")).toBe(false);
+      expect(result.current.search.notRegistered).toBe(false);
+    });
+
+    it("toggling again goes back to the participants", async () => {
+      const { result } = open("/?round=7&notRegistered=1");
+      await waitFor(() =>
+        expect(result.current.search.notRegistered).toBe(true),
+      );
+      searchParticipants.mockClear();
+
+      act(() => result.current.search.toggleNotRegistered());
+
+      await waitFor(() => expect(searchParticipants).toHaveBeenCalledTimes(1));
+      expect(paramsOf(result).has("notRegistered")).toBe(false);
+      expect(result.current.search.notRegistered).toBe(false);
+    });
+
+    it("waits for the registration round before reading a Not registered link", async () => {
+      const { result, rerender } = renderHook(
+        ({ registrationRoundId }) => ({
+          search: useParticipantSearch(ROUNDS, registrationRoundId),
+          location: useLocation(),
+        }),
+        {
+          initialProps: { registrationRoundId: undefined },
+          wrapper: ({ children }) => (
+            <MemoryRouter initialEntries={["/?round=7&notRegistered=1"]}>
+              {children}
+            </MemoryRouter>
+          ),
+        },
+      );
+      await act(async () => {});
+
+      expect(searchParticipants).not.toHaveBeenCalled();
+      expect(searchUnregistered).not.toHaveBeenCalled();
+      expect(paramsOf(result).get("notRegistered")).toBe("1");
+      expect(result.current.search.loading).toBe(true);
+
+      rerender({ registrationRoundId: "7" });
+
+      await waitFor(() => expect(searchUnregistered).toHaveBeenCalledTimes(1));
+      expect(searchParticipants).not.toHaveBeenCalled();
+    });
+
+    it("offers nothing when no round is taking registrations", async () => {
+      const { result } = renderSearch("/?round=7", ROUNDS, null);
+      await waitFor(() => expect(result.current.search.total).toBe(1));
+
+      expect(result.current.search.canListNotRegistered).toBe(false);
+    });
   });
 });

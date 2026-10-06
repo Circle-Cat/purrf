@@ -25,6 +25,7 @@ import {
 import Table from "@/components/common/Table";
 import { useParticipantSearch } from "@/pages/MentorshipManagement/hooks/useParticipantSearch";
 import { useParticipantSearchRounds } from "@/pages/MentorshipManagement/hooks/useParticipantSearchRounds";
+import { useRegistrationRound } from "@/pages/MentorshipManagement/hooks/useRegistrationRound";
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
 import { MentorshipApprovalStatus } from "@/constants/MentorshipApprovalStatus";
 import { userDisplayName } from "@/utils/userName";
@@ -32,6 +33,7 @@ import MeetingLogDialog from "@/pages/MentorshipManagement/components/MeetingLog
 import StateChips from "@/pages/AdminAccounts/components/StateChips";
 import { useMeetingLog } from "@/pages/MentorshipManagement/hooks/useMeetingLog";
 import { attendanceIssueLines } from "@/pages/MentorshipManagement/utils/attendanceIssues";
+import { registrationWindowLabel } from "@/pages/MentorshipManagement/utils/registrationWindow";
 
 const ALL_ROLES = "__all__";
 const ALL_APPROVAL_STATUSES = "__all__";
@@ -57,6 +59,15 @@ const COLUMNS = [
   { header: "Approval", accessor: "approval" },
   { header: "Account", accessor: "account" },
   { header: "Pair", accessor: "pair" },
+];
+
+const NOT_REGISTERED_COLUMNS = [
+  { header: "Name", accessor: "name", sortable: true },
+  { header: "Admitted as", accessor: "admittedAs" },
+  { header: "Int / ext", accessor: "internal" },
+  { header: "Account", accessor: "account" },
+  { header: "Rounds taken part", accessor: "roundsTakenPart" },
+  { header: "Last round", accessor: "lastRound" },
 ];
 
 /**
@@ -179,8 +190,49 @@ const PairCell = ({ row, onOpenMeetings }) => {
 };
 
 /**
+ * The Not registered toggle. Outside the round's registration window it is
+ * greyed out, and hovering it says when that window is.
+ *
+ * @param {{ active: boolean, available: boolean, round: Object|null,
+ *   onToggle: () => void }} props
+ */
+const NotRegisteredButton = ({ active, available, round, onToggle }) => {
+  const button = (
+    <Button
+      type="button"
+      size="sm"
+      variant={active ? "default" : "outline"}
+      aria-pressed={active}
+      onClick={onToggle}
+      disabled={!active && !available}
+    >
+      Not registered
+    </Button>
+  );
+  if (active || available) return button;
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        {/* A disabled button gets no pointer events, so the wrapper holds the hint. */}
+        <TooltipTrigger asChild>
+          <span tabIndex={0} aria-label="Not registered is unavailable">
+            {button}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">
+          Only while the round takes registrations.{" "}
+          {registrationWindowLabel(round)}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+};
+
+/**
  * The Participants card: one round's participants, searched by user ID,
  * name/email, role, internal/external, account, training and approval status.
+ * While the round takes registrations, Not registered swaps them for the
+ * people admitted to the programme who have not registered for it.
  *
  * The round is picked in the card header from the rounds the API lists,
  * latest first, and the first is selected by default. Search stays disabled
@@ -193,6 +245,7 @@ const PairCell = ({ row, onOpenMeetings }) => {
  */
 const ParticipantSearchCard = () => {
   const rounds = useParticipantSearchRounds();
+  const registrationRoundId = useRegistrationRound();
 
   const {
     rows,
@@ -217,6 +270,9 @@ const ParticipantSearchCard = () => {
     onboardingStatus,
     setOnboardingStatus,
     submitSearch,
+    notRegistered,
+    canListNotRegistered,
+    toggleNotRegistered,
     refetch,
     offset,
     limit,
@@ -225,7 +281,7 @@ const ParticipantSearchCard = () => {
     sortBy,
     order,
     toggleSort,
-  } = useParticipantSearch(rounds);
+  } = useParticipantSearch(rounds, registrationRoundId);
 
   const hasPrev = offset > 0;
   const hasNext = offset + limit < total;
@@ -272,36 +328,50 @@ const ParticipantSearchCard = () => {
     if (field) toggleSort(field);
   };
 
+  const accountCell = (row) => (
+    <StateChips
+      isActive={!row.isDeactivated}
+      isBlocked={row.isBlocked}
+      hasPendingBlockRequest={false}
+    />
+  );
+
+  const notRegisteredData = () =>
+    rows.map((row) => ({
+      name: <NameCell row={row} />,
+      admittedAs: row.admittedRoles.join(", "),
+      internal: row.isInternal ? "Internal" : "External",
+      account: accountCell(row),
+      roundsTakenPart: row.roundsTakenPart,
+      lastRound: row.lastRoundName ?? "Never",
+    }));
+
   const data = loading
     ? []
-    : rows.map((row) => ({
-        name: <NameCell row={row} />,
-        role: row.participantRole ?? "—",
-        training: trainingLabel(
-          row.participantRole === MentorshipParticipantRoles.MENTEE
-            ? row.menteeOnboardingStatus
-            : row.mentorOnboardingStatus,
-        ),
-        internal: row.isInternal ? "Internal" : "External",
-        approval: row.approvalStatus ? (
-          <Badge variant="secondary">{row.approvalStatus}</Badge>
-        ) : (
-          "—"
-        ),
-        account: (
-          <StateChips
-            isActive={!row.isDeactivated}
-            isBlocked={row.isBlocked}
-            hasPendingBlockRequest={false}
-          />
-        ),
-        pair: (
-          <PairCell
-            row={row}
-            onOpenMeetings={(pair) => openMeetingsDialog(row, pair)}
-          />
-        ),
-      }));
+    : notRegistered
+      ? notRegisteredData()
+      : rows.map((row) => ({
+          name: <NameCell row={row} />,
+          role: row.participantRole ?? "—",
+          training: trainingLabel(
+            row.participantRole === MentorshipParticipantRoles.MENTEE
+              ? row.menteeOnboardingStatus
+              : row.mentorOnboardingStatus,
+          ),
+          internal: row.isInternal ? "Internal" : "External",
+          approval: row.approvalStatus ? (
+            <Badge variant="secondary">{row.approvalStatus}</Badge>
+          ) : (
+            "—"
+          ),
+          account: accountCell(row),
+          pair: (
+            <PairCell
+              row={row}
+              onOpenMeetings={(pair) => openMeetingsDialog(row, pair)}
+            />
+          ),
+        }));
 
   return (
     <Card className="mt-6 border-gray-200">
@@ -405,6 +475,7 @@ const ParticipantSearchCard = () => {
             onValueChange={(v) =>
               setOnboardingStatus(v === ALL_ONBOARDING_STATUSES ? "" : v)
             }
+            disabled={notRegistered}
           >
             <SelectTrigger
               aria-label="Onboarding status"
@@ -425,6 +496,7 @@ const ParticipantSearchCard = () => {
             onValueChange={(v) =>
               setApprovalStatus(v === ALL_APPROVAL_STATUSES ? "" : v)
             }
+            disabled={notRegistered}
           >
             <SelectTrigger
               aria-label="Approval status"
@@ -458,6 +530,12 @@ const ParticipantSearchCard = () => {
           >
             Search
           </Button>
+          <NotRegisteredButton
+            active={notRegistered}
+            available={canListNotRegistered}
+            round={(rounds ?? []).find((r) => String(r.id) === roundId) ?? null}
+            onToggle={toggleNotRegistered}
+          />
         </div>
 
         {!hasSearched || !canSearch ? (
@@ -467,7 +545,7 @@ const ParticipantSearchCard = () => {
         ) : (
           <>
             <Table
-              columns={COLUMNS}
+              columns={notRegistered ? NOT_REGISTERED_COLUMNS : COLUMNS}
               data={data}
               onSort={handleSort}
               sortColumn={activeSortAccessor}
