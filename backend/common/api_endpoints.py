@@ -77,6 +77,10 @@ MENTORSHIP_ADMIN_MATCH_RUN_RESULTS = "/mentorship/admin/match-runs/{round_id}/re
 MENTORSHIP_ADMIN_MATCH_RUN_UNMATCHED = (
     "/mentorship/admin/match-runs/{round_id}/unmatched"
 )
+MENTORSHIP_ADMIN_MATCH_RUN_EDIT_LOCK = (
+    "/mentorship/admin/match-runs/{round_id}/edit-lock"
+)
+MENTORSHIP_ADMIN_MATCH_RUN_DRAFT = "/mentorship/admin/match-runs/{round_id}/draft"
 MENTORSHIP_ADMIN_ROUND_FEEDBACK = "/mentorship/admin/rounds/{round_id}/feedback"
 MENTORSHIP_ADMIN_ROUND_UNREGISTERED = "/mentorship/admin/rounds/{round_id}/unregistered"
 # Called by the matcher job, through the gateway Worker. Not under

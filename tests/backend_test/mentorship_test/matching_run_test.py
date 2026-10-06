@@ -17,7 +17,9 @@ from backend.mentorship.matching_contract import (
 )
 from backend.mentorship.matching_eligibility import IneligibleReason
 from backend.mentorship.matching_run_service import MatchingRunService
-from backend.mentorship.matching_storage import MatchingStorage
+from backend.common.constants import THREE_MONTHS_IN_SECONDS
+from backend.mentorship.matching_draft import DraftEntry
+from backend.mentorship.matching_storage import EDIT_LOCK_TTL_SECONDS, MatchingStorage
 
 _NO_SKILLS = {key: False for key in SKILL_KEYS}
 _NO_INDUSTRY = {key: False for key in INDUSTRY_KEYS}
@@ -68,6 +70,14 @@ class _FakeRedis:
     def hmget(self, key, fields):
         held = self.hashes.get(key, {})
         return [held.get(field) for field in fields]
+
+    def hdel(self, key, *fields):
+        self.calls.append(("hdel", key, len(fields)))
+        for field in fields:
+            self.hashes.get(key, {}).pop(field, None)
+
+    def ttl(self, key):
+        return self.expiries.get(key, -1)
 
 
 def _everyone_eligible():
@@ -152,6 +162,51 @@ class MatchingStorageTest(unittest.TestCase):
         self.assertEqual(mentees, {"1": mentee})
         self.assertEqual(mentors, {"1": mentor})
         self.assertEqual(self.storage.read_people("r7-x-y", "mentee", []), {})
+
+    def test_a_draft_reads_back_and_entries_can_be_removed(self):
+        entry = DraftEntry(
+            mentor_id="11",
+            recommendation_reason="Moved to a candidate",
+            edited_by="9",
+            edited_at="2026-10-06T08:00:00+00:00",
+        )
+
+        self.storage.write_draft("r7-x-y", {"1": entry, "2": entry}, [])
+        self.storage.write_draft("r7-x-y", {}, ["2"])
+
+        self.assertEqual(self.storage.read_draft("r7-x-y"), {"1": entry})
+        self.assertEqual(
+            self.redis.expiries["match:r7-x-y:draft"], THREE_MONTHS_IN_SECONDS
+        )
+        self.assertEqual(self.storage.read_draft("r7-other"), {})
+
+    def test_the_edit_lock_is_one_admin_s_and_only_they_renew_or_release_it(self):
+        self.assertIsNone(self.storage.edit_lock("r7-x-y"))
+        self.assertTrue(self.storage.take_edit_lock("r7-x-y", "9"))
+        self.assertEqual(self.storage.edit_lock("r7-x-y"), ("9", EDIT_LOCK_TTL_SECONDS))
+
+        self.assertFalse(self.storage.take_edit_lock("r7-x-y", "5"))
+        self.redis.expiries["match:r7-x-y:edit_lock"] = 60
+        self.assertTrue(self.storage.take_edit_lock("r7-x-y", "9"))
+        self.assertEqual(
+            self.redis.expiries["match:r7-x-y:edit_lock"], EDIT_LOCK_TTL_SECONDS
+        )
+
+        self.storage.release_edit_lock("r7-x-y", "5")
+        self.assertEqual(self.storage.edit_lock("r7-x-y")[0], "9")
+        self.storage.release_edit_lock("r7-x-y", "9")
+        self.assertIsNone(self.storage.edit_lock("r7-x-y"))
+
+    def test_a_whole_group_reads_back(self):
+        mentor = PersonRecord(
+            role="mentor", user_id="10", display_name="Ada", skills=_NO_SKILLS
+        )
+        self.redis.hashes["match:r7-x-y:in:mentors"] = {"10": mentor.model_dump_json()}
+
+        self.assertEqual(
+            self.storage.read_all_people("r7-x-y", "mentor"), {"10": mentor}
+        )
+        self.assertEqual(self.storage.read_all_people("r7-x-y", "mentee"), {})
 
     def test_both_groups_are_counted(self):
         self.storage.write_input("r7-x-y", _matching_input(mentors=2, mentees=3))

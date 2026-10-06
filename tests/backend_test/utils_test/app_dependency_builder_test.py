@@ -533,6 +533,7 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_admin_service=mock_mentorship_admin_service_cls.return_value,
             matching_run_service=builder.matching_run_service,
             matching_run_read_service=builder.matching_run_read_service,
+            matching_draft_service=builder.matching_draft_service,
             launchdarkly_service=builder.launchdarkly_service,
             database=mock_database_cls.return_value,
         )
