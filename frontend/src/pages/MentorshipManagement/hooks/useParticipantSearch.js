@@ -24,6 +24,7 @@ export const PARAM = Object.freeze({
   ORDER: "order",
   OFFSET: "offset",
   NOT_REGISTERED: "notRegistered",
+  ELIGIBLE: "eligible",
 });
 
 const ACCOUNT_STATUSES = ["active", "blocked", "deactivated"];
@@ -54,21 +55,20 @@ const readOneOf = (params, key, allowed) => {
  * is read as the default round and rewritten to say so. Until `rounds` has
  * loaded, or when there are none, nothing is fetched and `canSearch` is false.
  *
- * The Registration filter picks between the participants and the Not
- * registered list: the people admitted to the programme who have not
- * registered for the round. Like the other filters it is a draft until
- * Search. Not registered is only on offer for the round taking registrations
- * now (`registrationRoundId`): picking another round puts the draft back to
- * the participants, and a URL asking for it in any other round is rewritten
- * without it. In it the role filter means the admitted role, and training and
- * approval do not apply.
+ * The List filter picks who is listed: everyone registered (the default),
+ * only those eligible for matching, or the Not registered list -- the people
+ * admitted to the programme who have not registered for the round. Like the
+ * other filters it is a draft until Search. Eligible and Not registered are
+ * only on offer for a round in progress, which the round list says
+ * (`isInProgress`): picking a round not in progress puts the draft back to
+ * Registered, and a URL asking for either in such a round is rewritten
+ * without it. In Not registered the role filter means the admitted role, and
+ * training and approval do not apply.
  *
- * @param {Array<{id: number}>|null} rounds - Rounds, latest first; null while
- *   loading.
- * @param {string|null|undefined} registrationRoundId - The round taking
- *   registrations now; null when none is, undefined while that is loading.
+ * @param {Array<{id: number, isInProgress?: boolean}>|null} rounds - Rounds,
+ *   latest first; null while loading.
  */
-export const useParticipantSearch = (rounds, registrationRoundId) => {
+export const useParticipantSearch = (rounds) => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const hasSearched = searchParams.has(PARAM.ROUND);
@@ -93,11 +93,16 @@ export const useParticipantSearch = (rounds, registrationRoundId) => {
     : defaultRoundId;
   const committedRole = params.get(PARAM.ROLE) ?? "";
   const committedApproval = params.get(PARAM.APPROVAL) ?? "";
+  const isInProgress = (id) =>
+    (rounds ?? []).some((r) => String(r.id) === id && r.isInProgress);
   const notRegisteredRequested = params.get(PARAM.NOT_REGISTERED) === "1";
   const notRegistered =
-    notRegisteredRequested &&
-    registrationRoundId != null &&
-    committedRoundId === registrationRoundId;
+    notRegisteredRequested && isInProgress(committedRoundId);
+  const eligibleRequested = params.get(PARAM.ELIGIBLE) === "1";
+  const eligible =
+    eligibleRequested &&
+    !notRegisteredRequested &&
+    isInProgress(committedRoundId);
   const sortBy = params.get(PARAM.SORT) || null;
   const order = sortBy && params.get(PARAM.ORDER) === "desc" ? "desc" : "asc";
   const offset = Number.parseInt(readDigits(params, PARAM.OFFSET) || "0", 10);
@@ -118,6 +123,7 @@ export const useParticipantSearch = (rounds, registrationRoundId) => {
   const [participantRole, setParticipantRole] = useState(committedRole);
   const [approvalStatus, setApprovalStatus] = useState(committedApproval);
   const [listNotRegistered, setListNotRegistered] = useState(notRegistered);
+  const [listEligible, setListEligible] = useState(eligible);
 
   // Keep the inputs in step when the URL changes underneath them (back,
   // forward, or a pasted link).
@@ -133,6 +139,7 @@ export const useParticipantSearch = (rounds, registrationRoundId) => {
   useEffect(() => setParticipantRole(committedRole), [committedRole]);
   useEffect(() => setApprovalStatus(committedApproval), [committedApproval]);
   useEffect(() => setListNotRegistered(notRegistered), [notRegistered]);
+  useEffect(() => setListEligible(eligible), [eligible]);
 
   // Write the resolved round back into a search whose round is unknown,
   // replacing the entry so back does not return to the unresolved link.
@@ -150,11 +157,9 @@ export const useParticipantSearch = (rounds, registrationRoundId) => {
   }, [hasSearched, committedRoundId, urlRoundId, setSearchParams]);
 
   // Drop a Not registered request the round cannot honour, once the rounds
-  // and the registration round are known, so the URL says what the list shows.
+  // are known, so the URL says what the list shows.
   useEffect(() => {
-    if (!hasSearched || rounds == null || registrationRoundId === undefined) {
-      return;
-    }
+    if (!hasSearched || rounds == null) return;
     if (!notRegisteredRequested || notRegistered) return;
     setSearchParams(
       (prev) => {
@@ -167,11 +172,24 @@ export const useParticipantSearch = (rounds, registrationRoundId) => {
   }, [
     hasSearched,
     rounds,
-    registrationRoundId,
     notRegisteredRequested,
     notRegistered,
     setSearchParams,
   ]);
+
+  // Likewise for an Eligible request, once the rounds are known.
+  useEffect(() => {
+    if (!hasSearched || rounds == null) return;
+    if (!eligibleRequested || eligible) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete(PARAM.ELIGIBLE);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [hasSearched, rounds, eligibleRequested, eligible, setSearchParams]);
 
   const { begin, isCurrent } = useRequestGuard();
 
@@ -182,12 +200,6 @@ export const useParticipantSearch = (rounds, registrationRoundId) => {
         setListed({ notRegistered, rows: [] });
         setTotal(0);
         setLoading(false);
-        return;
-      }
-      // Which list a Not registered link means is unknown until the
-      // registration round has loaded; wait rather than show the other one.
-      if (notRegisteredRequested && registrationRoundId === undefined) {
-        setLoading(true);
         return;
       }
       if (!silent) setLoading(true);
@@ -210,6 +222,7 @@ export const useParticipantSearch = (rounds, registrationRoundId) => {
           : await searchParticipants({
               ...person,
               onboardingStatus: committedOnboarding || undefined,
+              eligible: eligible || undefined,
               sortBy: sortBy ?? undefined,
               order,
               roundId: committedRoundId,
@@ -245,9 +258,8 @@ export const useParticipantSearch = (rounds, registrationRoundId) => {
       committedRoundId,
       committedRole,
       committedApproval,
+      eligible,
       notRegistered,
-      notRegisteredRequested,
-      registrationRoundId,
       offset,
       sortBy,
       order,
@@ -295,23 +307,35 @@ export const useParticipantSearch = (rounds, registrationRoundId) => {
       ...withSort(nextSortBy, nextOrder),
       [PARAM.OFFSET]: nextOffset || "",
       [PARAM.NOT_REGISTERED]: notRegistered ? "1" : "",
+      [PARAM.ELIGIBLE]: eligible ? "1" : "",
     });
 
   const draftRoundId = roundIds.includes(roundId) ? roundId : defaultRoundId;
-  const takesRegistrations = (id) =>
-    canSearch && registrationRoundId != null && id === registrationRoundId;
-  const canListNotRegistered = takesRegistrations(draftRoundId);
+  const canListNotRegistered = canSearch && isInProgress(draftRoundId);
+  const canListEligible = canListNotRegistered;
 
-  /** Pick the round; one not taking registrations leaves Not registered. */
+  /** Pick the round; one not in progress goes back to Registered. */
   const setRoundId = (id) => {
     setDraftRoundId(id);
-    if (!takesRegistrations(id)) setListNotRegistered(false);
+    if (!isInProgress(id)) {
+      setListNotRegistered(false);
+      setListEligible(false);
+    }
   };
 
   /**
-   * Pick the list. Not registered is refused outside the round's
-   * registration window; picking it clears training and approval, which it
-   * has neither of.
+   * Turn Eligible for matching on or off. On is refused for a round not in
+   * progress, and leaves Not registered.
+   */
+  const pickEligible = (on) => {
+    if (on && !canListEligible) return;
+    setListEligible(on);
+    if (on) setListNotRegistered(false);
+  };
+
+  /**
+   * Pick the list. Not registered is refused for a round not in progress;
+   * picking it clears training and approval, which it has neither of.
    */
   const pickNotRegistered = (on) => {
     if (on && !canListNotRegistered) return;
@@ -319,6 +343,7 @@ export const useParticipantSearch = (rounds, registrationRoundId) => {
     if (on) {
       setOnboardingStatus("");
       setApprovalStatus("");
+      setListEligible(false);
     }
   };
 
@@ -326,6 +351,7 @@ export const useParticipantSearch = (rounds, registrationRoundId) => {
   const submitSearch = () => {
     if (!canSearch) return;
     const inNotRegistered = listNotRegistered && canListNotRegistered;
+    const inEligible = listEligible && canListEligible && !inNotRegistered;
     const before = searchParams.toString();
     const after = writeUrl({
       [PARAM.ID]: userId,
@@ -338,6 +364,7 @@ export const useParticipantSearch = (rounds, registrationRoundId) => {
       [PARAM.APPROVAL]: inNotRegistered ? "" : approvalStatus,
       ...withSort(sortBy, order),
       [PARAM.NOT_REGISTERED]: inNotRegistered ? "1" : "",
+      [PARAM.ELIGIBLE]: inEligible ? "1" : "",
     }).toString();
     // Searching again for what is already committed still re-reads the list.
     if (before === after) fetchRows();
@@ -392,6 +419,10 @@ export const useParticipantSearch = (rounds, registrationRoundId) => {
     listNotRegistered,
     setListNotRegistered: pickNotRegistered,
     canListNotRegistered,
+    eligible,
+    listEligible,
+    setListEligible: pickEligible,
+    canListEligible,
     offset,
     limit: LIMIT,
     nextPage,

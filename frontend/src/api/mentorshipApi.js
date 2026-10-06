@@ -103,10 +103,12 @@ export const postMyMentorshipFeedback = (roundId, data) =>
  *          accountStatus?: "active"|"blocked"|"deactivated",
  *          internal?: "internal"|"external",
  *          roundId?: number, participantRole?: string, approvalStatus?: string,
- *          onboardingStatus?: string,
+ *          onboardingStatus?: string, eligible?: boolean,
  *          limit?: number, offset?: number, sortBy?: string, order?: "asc"|"desc"}} filters
  *
- * `q` matches name parts and any of the person's email addresses.
+ * `q` matches name parts and any of the person's email addresses. `eligible`
+ * keeps the people eligible for matching in the round, which must be in
+ * progress.
  *
  * sortBy/order are sent as sort_by/order because, unlike the other filters,
  * they are plain query parameters on the endpoint rather than fields on its
@@ -121,6 +123,7 @@ export const searchParticipants = ({
   participantRole,
   approvalStatus,
   onboardingStatus,
+  eligible,
   limit,
   offset,
   sortBy,
@@ -136,6 +139,7 @@ export const searchParticipants = ({
       participantRole,
       approvalStatus,
       onboardingStatus,
+      eligible,
       limit,
       offset,
       sort_by: sortBy,
