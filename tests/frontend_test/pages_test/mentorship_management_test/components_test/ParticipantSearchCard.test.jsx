@@ -18,7 +18,12 @@ import {
   updateMeetingLog,
   getRoundFeedback,
   getAllMentorshipRounds,
+  getMatchingRun,
+  startMatchingRun,
 } from "@/api/mentorshipApi";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
+import { toast } from "sonner";
 
 vi.mock("@/api/mentorshipApi", () => ({
   searchParticipants: vi.fn(),
@@ -27,7 +32,11 @@ vi.mock("@/api/mentorshipApi", () => ({
   updateMeetingLog: vi.fn(),
   getRoundFeedback: vi.fn(),
   getAllMentorshipRounds: vi.fn(),
+  getMatchingRun: vi.fn(),
+  startMatchingRun: vi.fn(),
 }));
+
+vi.mock("@/hooks/useFeatureFlags", () => ({ useFeatureFlags: vi.fn() }));
 
 // Latest first, as the API returns them; the latest has the higher id here so
 // that picking the lowest id instead of the first would show.
@@ -41,7 +50,12 @@ let navigateTo;
 const LocationProbe = () => {
   const location = useLocation();
   navigateTo = useNavigate();
-  return <div data-testid="location-search">{location.search}</div>;
+  return (
+    <>
+      <div data-testid="location-path">{location.pathname}</div>
+      <div data-testid="location-search">{location.search}</div>
+    </>
+  );
 };
 
 const roundsLoaded = () =>
@@ -154,6 +168,9 @@ describe("ParticipantSearchCard", () => {
     getMeetingLog.mockResolvedValue({
       data: { roundVersion: "v2", meetings: [] },
     });
+    getMatchingRun.mockResolvedValue({ data: { status: "never_run" } });
+    startMatchingRun.mockResolvedValue({ data: { runId: 12 } });
+    useFeatureFlags.mockReturnValue({});
   });
 
   afterEach(() => {
@@ -1542,6 +1559,355 @@ describe("ParticipantSearchCard", () => {
 
       await screen.findAllByRole("button", { name: "Meetings 2/5" });
       expect(getMeetingLog).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("matching run", () => {
+    const ELIGIBLE_URL = "/?round=7&eligible=1";
+
+    const mentor = participantRow({
+      userId: 11,
+      preferredName: "Alice Doe",
+      participantRole: "mentor",
+      pairs: [],
+    });
+    const mentee = participantRow({
+      userId: 12,
+      firstName: "Cara",
+      lastName: "Wang",
+      preferredName: "Cara Wang",
+      primaryEmail: "cara@x.com",
+      participantRole: "mentee",
+      pairs: [],
+    });
+
+    const flagOn = () =>
+      useFeatureFlags.mockReturnValue({ [FEATURE_FLAGS.MATCHING_RUN]: true });
+
+    const runningOverview = {
+      data: {
+        status: "running",
+        runId: 4,
+        startedAt: new Date().toISOString(),
+        triggeredByUserId: "5845",
+        triggeredByName: "Dev Admin",
+        mentorCount: 1,
+        menteeCount: 1,
+      },
+    };
+
+    const runButton = () =>
+      screen.getByRole("button", { name: /^Run matching · \d+$/ });
+
+    const pick = (name) =>
+      userEvent.click(screen.getByRole("checkbox", { name: `Select ${name}` }));
+
+    beforeEach(() => {
+      flagOn();
+      searchParticipants.mockResolvedValue(resultsOf([mentor, mentee]));
+      // vi.mock("sonner") does not reach the component's copy under Bazel.
+      vi.spyOn(toast, "error").mockImplementation(() => {});
+    });
+
+    it("gives each row and the header a checkbox in Eligible for matching", async () => {
+      await renderCard({ url: ELIGIBLE_URL });
+      await screen.findByText("Cara Wang");
+
+      expect(
+        screen.getByRole("checkbox", { name: "Select Alice Doe" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("checkbox", { name: "Select Cara Wang" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("checkbox", { name: "Select all on this page" }),
+      ).toBeInTheDocument();
+      expect(runButton()).toHaveTextContent("Run matching · 0");
+      expect(runButton()).toBeDisabled();
+    });
+
+    it("shows no checkboxes and no run button in the Registered list", async () => {
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await screen.findByText("Cara Wang");
+
+      expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /Run matching/ }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("hides the run controls and the results button with the flag off, asking nothing", async () => {
+      useFeatureFlags.mockReturnValue({
+        [FEATURE_FLAGS.MATCHING_RUN]: false,
+      });
+      await renderCard({ url: ELIGIBLE_URL });
+      await screen.findByText("Cara Wang");
+
+      expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /Run matching/ }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "View matching results" }),
+      ).not.toBeInTheDocument();
+      expect(getMatchingRun).not.toHaveBeenCalled();
+    });
+
+    it("needs at least one mentor and one mentee to run", async () => {
+      await renderCard({ url: ELIGIBLE_URL });
+      await screen.findByText("Cara Wang");
+
+      await pick("Alice Doe");
+      expect(runButton()).toHaveTextContent("Run matching · 1");
+      expect(runButton()).toBeDisabled();
+
+      await pick("Cara Wang");
+      expect(runButton()).toHaveTextContent("Run matching · 2");
+      expect(runButton()).toBeEnabled();
+    });
+
+    it("select all picks and unpicks everyone on the page", async () => {
+      await renderCard({ url: ELIGIBLE_URL });
+      await screen.findByText("Cara Wang");
+      const all = screen.getByRole("checkbox", {
+        name: "Select all on this page",
+      });
+
+      await userEvent.click(all);
+      expect(runButton()).toHaveTextContent("Run matching · 2");
+      expect(
+        screen.getByRole("checkbox", { name: "Select Alice Doe" }),
+      ).toBeChecked();
+
+      await userEvent.click(all);
+      expect(runButton()).toHaveTextContent("Run matching · 0");
+    });
+
+    it("cannot run while the round's run is running", async () => {
+      getMatchingRun.mockResolvedValue(runningOverview);
+      await renderCard({ url: ELIGIBLE_URL });
+      await screen.findByText("Cara Wang");
+      await screen.findByRole("button", { name: "Matching running…" });
+
+      await pick("Alice Doe");
+      await pick("Cara Wang");
+
+      expect(runButton()).toHaveTextContent("Run matching · 2");
+      expect(runButton()).toBeDisabled();
+    });
+
+    it("asks before running, and Cancel starts nothing", async () => {
+      await renderCard({ url: ELIGIBLE_URL });
+      await screen.findByText("Cara Wang");
+      await pick("Alice Doe");
+      await pick("Cara Wang");
+
+      await userEvent.click(runButton());
+
+      const dialog = await screen.findByRole("dialog");
+      expect(
+        within(dialog).getByText("Run matching for Fall 2026?"),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).getByText("1 mentors and 1 mentees."),
+      ).toBeInTheDocument();
+
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Cancel" }),
+      );
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
+      expect(startMatchingRun).not.toHaveBeenCalled();
+    });
+
+    it("Run starts the run for the picked people and opens its results", async () => {
+      await renderCard({ url: ELIGIBLE_URL });
+      await screen.findByText("Cara Wang");
+      await pick("Alice Doe");
+      await pick("Cara Wang");
+      await userEvent.click(runButton());
+
+      await userEvent.click(
+        within(await screen.findByRole("dialog")).getByRole("button", {
+          name: "Run",
+        }),
+      );
+
+      await waitFor(() =>
+        expect(screen.getByTestId("location-path")).toHaveTextContent(
+          "/mentorship-management/matching/7",
+        ),
+      );
+      expect(startMatchingRun).toHaveBeenCalledWith({
+        roundId: 7,
+        participantIds: [11, 12],
+      });
+    });
+
+    it("says why when the run cannot start, and stays", async () => {
+      startMatchingRun.mockRejectedValue({
+        response: { data: { message: "A run is already running" } },
+      });
+      await renderCard({ url: ELIGIBLE_URL });
+      await screen.findByText("Cara Wang");
+      await pick("Alice Doe");
+      await pick("Cara Wang");
+      await userEvent.click(runButton());
+
+      await userEvent.click(
+        within(await screen.findByRole("dialog")).getByRole("button", {
+          name: "Run",
+        }),
+      );
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith("A run is already running"),
+      );
+      expect(screen.getByTestId("location-path")).toHaveTextContent(/^\/$/);
+      // The dialog stays open over the list for another try.
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Run matching · 2", hidden: true }),
+      ).toBeInTheDocument();
+    });
+
+    it("falls back to a generic message when the error has none", async () => {
+      startMatchingRun.mockRejectedValue(new Error("network"));
+      await renderCard({ url: ELIGIBLE_URL });
+      await screen.findByText("Cara Wang");
+      await pick("Alice Doe");
+      await pick("Cara Wang");
+      await userEvent.click(runButton());
+
+      await userEvent.click(
+        within(await screen.findByRole("dialog")).getByRole("button", {
+          name: "Run",
+        }),
+      );
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          "Failed to start the matching run",
+        ),
+      );
+    });
+
+    it("keeps picks across pages and sends them all", async () => {
+      searchParticipants.mockImplementation(({ offset }) =>
+        Promise.resolve({
+          data: {
+            participantRows: offset ? [mentee] : [mentor],
+            total: 21,
+          },
+        }),
+      );
+      await renderCard({ url: ELIGIBLE_URL });
+      await screen.findByText("Alice Doe");
+      await pick("Alice Doe");
+
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      await screen.findByText("Cara Wang");
+      await pick("Cara Wang");
+      expect(runButton()).toHaveTextContent("Run matching · 2");
+      expect(runButton()).toBeEnabled();
+
+      await userEvent.click(screen.getByRole("button", { name: "Prev" }));
+      await screen.findByText("Alice Doe");
+      expect(
+        screen.getByRole("checkbox", { name: "Select Alice Doe" }),
+      ).toBeChecked();
+
+      await userEvent.click(runButton());
+      const dialog = await screen.findByRole("dialog");
+      expect(
+        within(dialog).getByText("1 mentors and 1 mentees."),
+      ).toBeInTheDocument();
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Run" }),
+      );
+      await waitFor(() =>
+        expect(startMatchingRun).toHaveBeenCalledWith({
+          roundId: 7,
+          participantIds: [11, 12],
+        }),
+      );
+    });
+
+    it("drops the picks when a new search is committed", async () => {
+      await renderCard({ url: ELIGIBLE_URL });
+      await screen.findByText("Cara Wang");
+      await pick("Alice Doe");
+      expect(runButton()).toHaveTextContent("Run matching · 1");
+
+      await userEvent.type(screen.getByPlaceholderText("Name / email"), "a");
+      await search();
+
+      await waitFor(() => expect(urlParams().get("q")).toBe("a"));
+      await screen.findByText("Cara Wang");
+      expect(runButton()).toHaveTextContent("Run matching · 0");
+      expect(
+        screen.getByRole("checkbox", { name: "Select Alice Doe" }),
+      ).not.toBeChecked();
+    });
+  });
+
+  describe("matching results button", () => {
+    const resultsButton = (name) => screen.findByRole("button", { name });
+
+    beforeEach(() => {
+      useFeatureFlags.mockReturnValue({ [FEATURE_FLAGS.MATCHING_RUN]: true });
+    });
+
+    it("is greyed out when the round has no run", async () => {
+      await renderCard();
+
+      await waitFor(() => expect(getMatchingRun).toHaveBeenCalledWith("7"));
+      expect(await resultsButton("View matching results")).toBeDisabled();
+    });
+
+    it("says the run is running, and opens the results page", async () => {
+      getMatchingRun.mockResolvedValue({
+        data: {
+          status: "running",
+          runId: 4,
+          startedAt: new Date().toISOString(),
+          triggeredByUserId: null,
+          triggeredByName: null,
+          mentorCount: 1,
+          menteeCount: 1,
+        },
+      });
+      await renderCard();
+
+      const button = await resultsButton("Matching running…");
+      expect(button).toBeEnabled();
+      await userEvent.click(button);
+      expect(screen.getByTestId("location-path")).toHaveTextContent(
+        "/mentorship-management/matching/7",
+      );
+    });
+
+    it("opens the results of a finished run", async () => {
+      getMatchingRun.mockResolvedValue({
+        data: { status: "failed", runId: 4, error: "Matcher crashed" },
+      });
+      await renderCard();
+
+      const button = await resultsButton("View matching results");
+      await waitFor(() => expect(button).toBeEnabled());
+    });
+
+    it("follows the round picked in the Round select", async () => {
+      await renderCard();
+      await waitFor(() => expect(getMatchingRun).toHaveBeenCalledWith("7"));
+
+      await userEvent.click(screen.getByLabelText("Round"));
+      await userEvent.click(
+        screen.getByRole("option", { name: "Spring 2026" }),
+      );
+
+      await waitFor(() => expect(getMatchingRun).toHaveBeenLastCalledWith("3"));
     });
   });
 });

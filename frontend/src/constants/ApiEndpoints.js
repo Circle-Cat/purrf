@@ -25,6 +25,13 @@ export const API_ENDPOINTS = {
     `/mentorship/admin/rounds/${roundId}/feedback`,
   MENTORSHIP_ADMIN_ROUND_UNREGISTERED: (roundId) =>
     `/mentorship/admin/rounds/${roundId}/unregistered`,
+  MENTORSHIP_ADMIN_MATCH_RUNS: "/mentorship/admin/match-runs",
+  MENTORSHIP_ADMIN_MATCH_RUN: (roundId) =>
+    `/mentorship/admin/match-runs/${roundId}`,
+  MENTORSHIP_ADMIN_MATCH_RUN_RESULTS: (roundId) =>
+    `/mentorship/admin/match-runs/${roundId}/results`,
+  MENTORSHIP_ADMIN_MATCH_RUN_UNMATCHED: (roundId) =>
+    `/mentorship/admin/match-runs/${roundId}/unmatched`,
   MENTORSHIP_ADMIN_PAIR_MEETINGS: (pairId) =>
     `/mentorship/admin/pairs/${pairId}/meetings`,
   MENTORSHIP_MEETINGS_ENDPOINT: "/mentorship/v1/meetings",

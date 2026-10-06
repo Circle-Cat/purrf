@@ -512,4 +512,25 @@ describe("useParticipantSearch", () => {
       expect(result.current.search.canListEligible).toBe(false);
     });
   });
+
+  it("keeps the list key through paging and sorting, and changes it with the list", async () => {
+    searchParticipants.mockResolvedValue(page({ total: 45 }));
+    const { result } = renderSearch("/?round=7&eligible=1");
+    await waitFor(() => expect(result.current.search.total).toBe(45));
+    const key = result.current.search.listKey;
+    expect(key).not.toBe("");
+    expect(result.current.search.committedRoundId).toBe("7");
+
+    act(() => result.current.search.nextPage());
+    await waitFor(() => expect(paramsOf(result).get("offset")).toBe("20"));
+    act(() => result.current.search.toggleSort("user_id"));
+    await waitFor(() => expect(paramsOf(result).get("sort")).toBe("user_id"));
+    expect(result.current.search.listKey).toBe(key);
+
+    act(() => result.current.search.setQ("ali"));
+    expect(result.current.search.listKey).toBe(key);
+    act(() => result.current.search.submitSearch());
+    await waitFor(() => expect(paramsOf(result).get("q")).toBe("ali"));
+    expect(result.current.search.listKey).not.toBe(key);
+  });
 });

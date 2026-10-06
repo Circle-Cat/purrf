@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import {
   Card,
   CardAction,
@@ -16,6 +18,15 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Tooltip,
   TooltipContent,
@@ -32,6 +43,12 @@ import MeetingLogDialog from "@/pages/MentorshipManagement/components/MeetingLog
 import StateChips from "@/pages/AdminAccounts/components/StateChips";
 import { useMeetingLog } from "@/pages/MentorshipManagement/hooks/useMeetingLog";
 import { attendanceIssueLines } from "@/pages/MentorshipManagement/utils/attendanceIssues";
+import { useMatchingRun } from "@/pages/MentorshipManagement/hooks/useMatchingRun";
+import { RUN_STATUS } from "@/pages/MentorshipManagement/utils/matchingLabels";
+import { startMatchingRun } from "@/api/mentorshipApi";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
+import { ROUTE_PATHS } from "@/constants/RoutePaths";
 
 const ALL_ROLES = "__all__";
 const ALL_APPROVAL_STATUSES = "__all__";
@@ -41,6 +58,8 @@ const BOTH_INTERNAL_EXTERNAL = "__all__";
 const REGISTERED = "registered";
 const NOT_REGISTERED = "not_registered";
 const ELIGIBLE = "eligible";
+
+const NO_SELECTION = new Map();
 
 /**
  * Maps table column accessors to backend sort_by field names. Only columns
@@ -232,6 +251,13 @@ const PairCell = ({ row, onOpenMeetings }) => {
  * Every row starts with the person's display name over their user ID and
  * primary email; training is resolved from their role in the round, and the
  * Pair cell lists every pair they are in, each opening its own meeting log.
+ *
+ * In the Eligible for matching list, while the matching-run flag is on, people
+ * can be picked (across pages) and a matching run started for them; a run
+ * needs at least one mentor and one mentee, and none may be running in the
+ * round. Picks are dropped whenever the list or its filters change. The
+ * header's matching results button, also behind the flag, follows the round
+ * in the Round select.
  */
 const ParticipantSearchCard = () => {
   const rounds = useParticipantSearchRounds();
@@ -259,6 +285,9 @@ const ParticipantSearchCard = () => {
     onboardingStatus,
     setOnboardingStatus,
     submitSearch,
+    committedRoundId,
+    listKey,
+    eligible,
     notRegistered,
     listNotRegistered,
     setListNotRegistered,
@@ -275,6 +304,74 @@ const ParticipantSearchCard = () => {
     order,
     toggleSort,
   } = useParticipantSearch(rounds);
+
+  const navigate = useNavigate();
+  const location = useLocation();
+  const flags = useFeatureFlags();
+  // The backend refuses every matching endpoint while the flag is off.
+  const matchingOn = Boolean(flags[FEATURE_FLAGS.MATCHING_RUN]);
+  const showRunUi = matchingOn && eligible && hasSearched && canSearch;
+
+  const { overview: shownRun } = useMatchingRun(
+    matchingOn ? roundId || null : null,
+  );
+  // The run starts in the committed round, which the Round select may have
+  // moved away from without searching.
+  const { overview: otherRun } = useMatchingRun(
+    showRunUi && committedRoundId !== roundId ? committedRoundId : null,
+  );
+  const committedRun = committedRoundId === roundId ? shownRun : otherRun;
+
+  const openMatching = (id) =>
+    navigate(ROUTE_PATHS.MENTORSHIP_MATCHING(id), {
+      state: { returnSearch: location.search },
+    });
+
+  // userId -> participantRole, tagged with the list it was picked in.
+  const [selection, setSelection] = useState({ key: "", picked: NO_SELECTION });
+  const picked = selection.key === listKey ? selection.picked : NO_SELECTION;
+  const setPicked = (people, on) => {
+    const next = new Map(picked);
+    people.forEach((row) =>
+      on ? next.set(row.userId, row.participantRole) : next.delete(row.userId),
+    );
+    setSelection({ key: listKey, picked: next });
+  };
+  const pickedRoles = [...picked.values()];
+  const mentorCount = pickedRoles.filter(
+    (r) => r === MentorshipParticipantRoles.MENTOR,
+  ).length;
+  const menteeCount = pickedRoles.filter(
+    (r) => r === MentorshipParticipantRoles.MENTEE,
+  ).length;
+  const canRun =
+    mentorCount > 0 &&
+    menteeCount > 0 &&
+    committedRun?.status !== RUN_STATUS.RUNNING;
+  const committedRoundName =
+    (rounds ?? []).find((r) => String(r.id) === committedRoundId)?.name ?? "";
+
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [starting, setStarting] = useState(false);
+
+  const runMatching = async () => {
+    setStarting(true);
+    try {
+      await startMatchingRun({
+        roundId: Number(committedRoundId),
+        participantIds: [...picked.keys()],
+      });
+      setSelection({ key: "", picked: NO_SELECTION });
+      setConfirmOpen(false);
+      openMatching(committedRoundId);
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.message ?? "Failed to start the matching run",
+      );
+    } finally {
+      setStarting(false);
+    }
+  };
 
   const hasPrev = offset > 0;
   const hasNext = offset + limit < total;
@@ -339,11 +436,36 @@ const ParticipantSearchCard = () => {
       lastRound: row.lastRoundName ?? "Never",
     }));
 
+  const pageRows = loading ? [] : rows;
+  const allOnPagePicked =
+    pageRows.length > 0 && pageRows.every((row) => picked.has(row.userId));
+  const someOnPagePicked = pageRows.some((row) => picked.has(row.userId));
+  const selectColumn = {
+    header: (
+      <Checkbox
+        aria-label="Select all on this page"
+        checked={
+          allOnPagePicked ? true : someOnPagePicked ? "indeterminate" : false
+        }
+        disabled={pageRows.length === 0}
+        onCheckedChange={(checked) => setPicked(pageRows, checked === true)}
+      />
+    ),
+    accessor: "select",
+  };
+
   const data = loading
     ? []
     : notRegistered
       ? notRegisteredData()
       : rows.map((row) => ({
+          select: (
+            <Checkbox
+              aria-label={`Select ${userDisplayName(row)}`}
+              checked={picked.has(row.userId)}
+              onCheckedChange={(checked) => setPicked([row], checked === true)}
+            />
+          ),
           name: <NameCell row={row} />,
           role: row.participantRole ?? "—",
           training: trainingLabel(
@@ -392,6 +514,20 @@ const ParticipantSearchCard = () => {
                 ))}
               </SelectContent>
             </Select>
+          )}
+          {!matchingOn || rounds?.length === 0 ? null : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              disabled={!shownRun || shownRun.status === RUN_STATUS.NEVER_RUN}
+              onClick={() => openMatching(roundId)}
+            >
+              {shownRun?.status === RUN_STATUS.RUNNING
+                ? "Matching running…"
+                : "View matching results"}
+            </Button>
           )}
         </CardAction>
       </CardHeader>
@@ -560,8 +696,26 @@ const ParticipantSearchCard = () => {
           </p>
         ) : (
           <>
+            {showRunUi && (
+              <div className="mb-3 flex justify-end">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={!canRun}
+                  onClick={() => setConfirmOpen(true)}
+                >
+                  Run matching · {picked.size}
+                </Button>
+              </div>
+            )}
             <Table
-              columns={notRegistered ? NOT_REGISTERED_COLUMNS : COLUMNS}
+              columns={
+                notRegistered
+                  ? NOT_REGISTERED_COLUMNS
+                  : showRunUi
+                    ? [selectColumn, ...COLUMNS]
+                    : COLUMNS
+              }
               data={data}
               onSort={handleSort}
               sortColumn={activeSortAccessor}
@@ -591,6 +745,33 @@ const ParticipantSearchCard = () => {
             </div>
           </>
         )}
+
+        <Dialog
+          open={confirmOpen}
+          onOpenChange={(open) => !starting && setConfirmOpen(open)}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Run matching for {committedRoundName}?</DialogTitle>
+              <DialogDescription>
+                {mentorCount} mentors and {menteeCount} mentees.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={starting}
+                onClick={() => setConfirmOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="button" disabled={starting} onClick={runMatching}>
+                Run
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <MeetingLogDialog
           open={activePair != null}

@@ -310,6 +310,23 @@ export const useParticipantSearch = (rounds) => {
       [PARAM.ELIGIBLE]: eligible ? "1" : "",
     });
 
+  // Everything that picks who is listed, but not paging or sorting: a
+  // selection made in one list stays valid only while this is unchanged.
+  const listKey = hasSearched
+    ? JSON.stringify([
+        committedUserId,
+        committedQ,
+        committedAccount,
+        committedInternal,
+        committedOnboarding,
+        committedRoundId,
+        committedRole,
+        committedApproval,
+        notRegistered,
+        eligible,
+      ])
+    : "";
+
   const draftRoundId = roundIds.includes(roundId) ? roundId : defaultRoundId;
   const canListNotRegistered = canSearch && isInProgress(draftRoundId);
   const canListEligible = canListNotRegistered;
@@ -415,6 +432,8 @@ export const useParticipantSearch = (rounds) => {
     onboardingStatus,
     setOnboardingStatus,
     submitSearch,
+    committedRoundId,
+    listKey,
     notRegistered,
     listNotRegistered,
     setListNotRegistered: pickNotRegistered,
