@@ -10,6 +10,7 @@ import {
   getMatchingUnmatched,
 } from "@/api/mentorshipApi";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { useAuth } from "@/context/auth";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { formatInTz } from "@/utils/dateTime";
 
@@ -18,9 +19,15 @@ vi.mock("@/api/mentorshipApi", () => ({
   getMatchingRun: vi.fn(),
   getMatchingResults: vi.fn(),
   getMatchingUnmatched: vi.fn(),
+  takeMatchingEditLock: vi.fn(() => Promise.resolve({ data: null })),
+  releaseMatchingEditLock: vi.fn(() => Promise.resolve({ data: null })),
+  releaseMatchingEditLockOnLeave: vi.fn(() => Promise.resolve()),
+  saveMatchingDraft: vi.fn(() => Promise.resolve({ data: { draftCount: 0 } })),
 }));
 
 vi.mock("@/hooks/useFeatureFlags", () => ({ useFeatureFlags: vi.fn() }));
+
+vi.mock("@/context/auth", () => ({ useAuth: vi.fn() }));
 
 const ROUNDS = [
   { id: 7, name: "Fall 2026", isInProgress: true },
@@ -54,7 +61,16 @@ const succeededRun = (overrides = {}) =>
       { userId: 3102, name: "Bob Liu" },
       { userId: 3999, name: null },
     ],
-    published: false,
+    editLock: null,
+    draftCount: 0,
+    mentorSlots: [
+      { userId: 101, name: "Ann Lee", slots: 2, assigned: 1 },
+      { userId: 102, name: "Dan Ma", slots: 1, assigned: 0 },
+      { userId: 104, name: "Fay Qi", slots: 1, assigned: 1 },
+      { userId: 3102, name: "Bob Liu", slots: 2, assigned: 0 },
+      { userId: 3999, name: null, slots: 1, assigned: 0 },
+    ],
+    problems: [],
     ...overrides,
   });
 
@@ -144,6 +160,9 @@ const scoredItem = {
   score: 0.87342,
   matchType: "hungarian",
   recommendationReason: "Both work in fintech and share a timezone overlap.",
+  edited: false,
+  matcherMentor: { userId: 101, name: "Ann Lee" },
+  matcherReason: "Both work in fintech and share a timezone overlap.",
   diagnosticReason: "Second-best total cost was 0.4 higher.",
   candidates: [
     { userId: 102, name: "Dan Ma", score: 0.91 },
@@ -159,6 +178,9 @@ const mutualItem = {
   score: null,
   matchType: "mutual_yes",
   recommendationReason: "You both asked for each other.",
+  edited: false,
+  matcherMentor: { userId: 104, name: "Fay Qi" },
+  matcherReason: "You both asked for each other.",
   diagnosticReason: "",
   candidates: [],
   menteeProfile: null,
@@ -169,6 +191,10 @@ const unmatchedMentee = {
   person: { userId: 203, name: null },
   role: "mentee",
   profile: null,
+  edited: false,
+  matcherMentor: null,
+  matcherReason: "",
+  recommendationReason: "",
   diagnosticReason: "No mentor had a free slot.",
   candidates: [{ userId: 102, name: "Dan Ma", score: 0.4 }],
 };
@@ -177,6 +203,10 @@ const quietMentee = {
   person: { userId: 204, name: "Gus Ho" },
   role: "mentee",
   profile: null,
+  edited: false,
+  matcherMentor: null,
+  matcherReason: "",
+  recommendationReason: "",
   diagnosticReason: "",
   candidates: [],
 };
@@ -247,6 +277,10 @@ describe("MatchingResultsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useFeatureFlags.mockReturnValue({ [FEATURE_FLAGS.MATCHING_RUN]: true });
+    useAuth.mockReturnValue({
+      permissions: ["mentorship.admin.read"],
+      user: { userId: 5845 },
+    });
     getAllMentorshipRounds.mockResolvedValue({ data: ROUNDS });
     getMatchingRun.mockResolvedValue({ data: { status: "never_run" } });
     getMatchingResults.mockResolvedValue(resultsPage([scoredItem, mutualItem]));
@@ -374,23 +408,23 @@ describe("MatchingResultsPage", () => {
       ).not.toBeInTheDocument();
     });
 
-    it("a published run says so in its badge", async () => {
+    it("has no Published badge, whatever the payload carries", async () => {
       getMatchingRun.mockResolvedValue({
         data: succeededRun({ published: true }),
       });
       renderPage();
 
-      expect(await screen.findByText("Published")).toBeInTheDocument();
-      expect(screen.queryByText("Succeeded")).not.toBeInTheDocument();
+      expect(await screen.findByText("Succeeded")).toBeInTheDocument();
+      expect(screen.queryByText("Published")).not.toBeInTheDocument();
     });
 
-    it("has nothing to edit or publish", async () => {
+    it("gives a reader nothing to edit or publish", async () => {
       getMatchingRun.mockResolvedValue({ data: succeededRun() });
       renderPage();
       await screen.findByText("Cara Wang");
 
       expect(
-        screen.queryByRole("button", { name: /save|publish/i }),
+        screen.queryByRole("button", { name: /^edit$|save|publish/i }),
       ).not.toBeInTheDocument();
       expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     });
