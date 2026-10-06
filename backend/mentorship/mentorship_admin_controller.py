@@ -4,6 +4,11 @@ from backend.dto.participant_search_filter_dto import (
     UnregisteredFilterDto,
 )
 from backend.dto.matching_run_create_dto import MatchingRunCreateDto
+from backend.dto.matching_run_dto import (
+    MatchingResultsPageDto,
+    MatchingRunOverviewDto,
+    MatchingRunStartedDto,
+)
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
 from backend.common.fast_api_response_wrapper import api_response
@@ -266,7 +271,7 @@ class MentorshipAdminController:
             )
         return api_response(
             message="Successfully started the matching run.",
-            data=result,
+            data=MatchingRunStartedDto.model_validate(result),
         )
 
     async def get_matching_run(self, round_id: int, current_user: UserContextDto):
@@ -292,7 +297,7 @@ class MentorshipAdminController:
             )
         return api_response(
             message="Successfully retrieved the matching run.",
-            data=result,
+            data=MatchingRunOverviewDto.model_validate(result),
         )
 
     async def get_matching_run_results(
@@ -329,5 +334,5 @@ class MentorshipAdminController:
             )
         return api_response(
             message="Successfully retrieved the matching run results.",
-            data=result,
+            data=MatchingResultsPageDto.model_validate(result),
         )

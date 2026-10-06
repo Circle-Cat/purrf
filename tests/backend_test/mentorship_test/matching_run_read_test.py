@@ -9,8 +9,21 @@ from backend.mentorship.matching_contract import (
     Candidate,
     MatchingRunResult,
     MenteeResult,
+    PersonRecord,
+    SKILL_KEYS,
+    INDUSTRY_KEYS,
+)
+from backend.dto.matching_run_dto import (
+    MatchingProfileDto,
+    MatchingResultItemDto,
+    MatchingResultsPageDto,
+    MatchingRunOverviewDto,
 )
 from backend.mentorship.matching_run_read_service import MatchingRunReadService
+
+
+_NO_SKILLS = {key: False for key in SKILL_KEYS}
+_NO_INDUSTRY = {key: False for key in INDUSTRY_KEYS}
 
 
 def _reported(**overrides):
@@ -64,6 +77,9 @@ class MatchingRunOverviewTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.storage = MagicMock()
         self.storage.current_run_id.return_value = None
+        self.storage.mentor_count.return_value = 2
+        self.storage.mentee_count.return_value = 3
+        self.storage.read_people.return_value = {}
 
         self.pairs = MagicMock()
         self.pairs.has_pairs_for_round = AsyncMock(return_value=False)
@@ -147,6 +163,23 @@ class MatchingRunOverviewTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(overview["matched_count"], 2)
         self.assertEqual(overview["unmatched_count"], 1)
 
+    async def test_the_admin_who_started_the_run_is_named(self):
+        self._running()
+        self.users.get_all_by_ids.return_value = [_user(42, "Yan", "Pei")]
+
+        overview = await self.service.read_overview(self.session, 7)
+
+        self.assertEqual(overview["triggered_by_user_id"], "42")
+        self.assertEqual(overview["triggered_by_name"], "Yan Pei")
+
+    async def test_a_running_run_says_how_many_people_it_was_given(self):
+        self._running()
+
+        overview = await self.service.read_overview(self.session, 7)
+
+        self.assertEqual(overview["mentor_count"], 2)
+        self.assertEqual(overview["mentee_count"], 3)
+
     async def test_a_finished_run_is_timed_by_the_matcher_s_own_clock(self):
         """Both timestamps have to come from the same place or the duration
         between them is meaningless. The envelope's is when Purrf wrote the
@@ -194,7 +227,10 @@ class MatchingRunOverviewTest(unittest.IsolatedAsyncioTestCase):
 
         await self.service.read_overview(self.session, 7)
 
-        self.users.get_all_by_ids.assert_awaited_once_with(self.session, [10, 11, 12])
+        # The admin who started the run is named in the same query.
+        self.users.get_all_by_ids.assert_awaited_once_with(
+            self.session, [42, 10, 11, 12]
+        )
 
     async def test_a_mentor_the_database_has_lost_keeps_his_id(self):
         self._succeeded(unmatched_mentor_ids=["10"])
@@ -212,7 +248,7 @@ class MatchingRunOverviewTest(unittest.IsolatedAsyncioTestCase):
 
         overview = await self.service.read_overview(self.session, 7)
 
-        self.users.get_all_by_ids.assert_awaited_once_with(self.session, [10])
+        self.users.get_all_by_ids.assert_awaited_once_with(self.session, [42, 10])
         self.assertEqual(
             overview["unmatched_mentors"],
             [
@@ -252,6 +288,8 @@ class MatchingRunResultsTest(MatchingRunOverviewTest):
         self.assertEqual(
             page["items"][0],
             {
+                "mentee_profile": None,
+                "mentor_profile": None,
                 "mentee": {"user_id": "1", "name": "Mia Mentee"},
                 "mentor": {"user_id": "10", "name": "Ada Lovelace"},
                 "score": 88,
@@ -375,6 +413,114 @@ class MatchingRunResultsTest(MatchingRunOverviewTest):
                 {"user_id": "12", "name": None, "score": 70},
             ],
         )
+
+    async def test_each_row_carries_both_people_as_the_run_was_given_them(self):
+        self._succeeded(results={"1": _result(mentor_id="10"), "2": _result()})
+        mentee = PersonRecord(
+            role="mentee",
+            user_id="1",
+            display_name="Mia",
+            skills={**_NO_SKILLS, "resume_guidance": True},
+            specific_industry=_NO_INDUSTRY,
+            goal="Land a first job",
+            expected_partner_ids=["10"],
+            unexpected_partner_ids=["13"],
+            mentorship_rounds_participated=2,
+            mentorship_rounds_completed=1,
+        )
+        mentor = PersonRecord(
+            role="mentor",
+            user_id="10",
+            display_name="Ada",
+            skills=_NO_SKILLS,
+            max_partners=2,
+        )
+        self.storage.read_people.side_effect = lambda run_id, role, ids: (
+            {"1": mentee} if role == "mentee" else {"10": mentor}
+        )
+        self.users.get_all_by_ids.return_value = [
+            _user(1, "Mia", "Mentee"),
+            _user(10, "Ada", "Lovelace"),
+            _user(13, "Bo", "Ng"),
+        ]
+
+        page = await self.service.read_results(self.session, 7)
+
+        self.assertEqual(
+            [call.args for call in self.storage.read_people.call_args_list],
+            [("r7-x-y", "mentee", ["2", "1"]), ("r7-x-y", "mentor", ["10"])],
+        )
+        # Partners are named in the same single query as the rest of the page.
+        self.users.get_all_by_ids.assert_awaited_once()
+        matched = next(i for i in page["items"] if i["mentee"]["user_id"] == "1")
+        profile = matched["mentee_profile"]
+        self.assertEqual(profile["user_id"], "1")
+        self.assertEqual(profile["goal"], "Land a first job")
+        self.assertTrue(profile["skills"]["resume_guidance"])
+        self.assertEqual(profile["mentorship_rounds_participated"], 2)
+        self.assertEqual(profile["mentorship_rounds_completed"], 1)
+        self.assertEqual(
+            profile["expected_partners"], [{"user_id": "10", "name": "Ada Lovelace"}]
+        )
+        self.assertEqual(
+            profile["unexpected_partners"], [{"user_id": "13", "name": "Bo Ng"}]
+        )
+        for absent in ("role", "display_name", "expected_partner_ids"):
+            self.assertNotIn(absent, profile)
+        self.assertEqual(matched["mentor_profile"]["max_partners"], 2)
+        unmatched = next(i for i in page["items"] if i["mentee"]["user_id"] == "2")
+        self.assertIsNone(unmatched["mentee_profile"])
+        self.assertIsNone(unmatched["mentor_profile"])
+
+    async def test_a_page_reads_out_in_camel_case_with_nothing_dropped(self):
+        self._succeeded(results={"1": _result(mentor_id="10", score=88)})
+        mentee = PersonRecord(
+            role="mentee",
+            user_id="1",
+            display_name="Mia",
+            skills=_NO_SKILLS,
+            specific_industry=_NO_INDUSTRY,
+            work_history=[
+                {"title": "Analyst", "company": "Acme", "is_current_job": True}
+            ],
+            expected_partner_ids=["10"],
+        )
+        self.storage.read_people.side_effect = lambda run_id, role, ids: (
+            {"1": mentee} if role == "mentee" else {}
+        )
+        self.users.get_all_by_ids.return_value = [_user(10, "Ada", "Lovelace")]
+
+        page = await self.service.read_results(self.session, 7)
+        body = MatchingResultsPageDto.model_validate(page).model_dump(by_alias=True)
+
+        item = body["items"][0]
+        self.assertEqual(item["mentor"], {"userId": "10", "name": "Ada Lovelace"})
+        self.assertEqual(item["matchType"], "hungarian")
+        profile = item["menteeProfile"]
+        self.assertEqual(profile["workHistory"][0]["isCurrentJob"], True)
+        self.assertEqual(
+            profile["expectedPartners"], [{"userId": "10", "name": "Ada Lovelace"}]
+        )
+        # Every field the service sent survives into the DTO.
+        self.assertEqual(
+            set(page["items"][0]["mentee_profile"]),
+            set(MatchingProfileDto.model_fields),
+        )
+        self.assertEqual(set(page["items"][0]), set(MatchingResultItemDto.model_fields))
+
+    async def test_an_overview_reads_out_in_camel_case(self):
+        self._succeeded(unmatched_mentor_ids=["10"])
+        self.users.get_all_by_ids.return_value = [_user(10, "Ada", "Lovelace")]
+
+        overview = await self.service.read_overview(self.session, 7)
+        body = MatchingRunOverviewDto.model_validate(overview).model_dump(by_alias=True)
+
+        self.assertEqual(
+            body["unmatchedMentors"], [{"userId": "10", "name": "Ada Lovelace"}]
+        )
+        self.assertEqual(body["menteeCount"], 3)
+        # Fields depend on the status; none the service sends may be dropped.
+        self.assertLessEqual(set(overview), set(MatchingRunOverviewDto.model_fields))
 
     async def test_names_are_looked_up_for_the_page_only(self):
         self._succeeded(

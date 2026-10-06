@@ -33,7 +33,7 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
             return_value={"status": "succeeded"}
         )
         self.mock_matching_run_read_service.read_results = AsyncMock(
-            return_value={"total": 0, "items": []}
+            return_value={"status": "succeeded", "total": 0, "items": []}
         )
 
         self.mock_launchdarkly_service = MagicMock()
@@ -283,7 +283,7 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
             run_date=date(2026, 6, 1),
             triggered_by_user_id=9,
         )
-        self.assertEqual(response["data"]["run_id"], "r7-20260912T000000Z-abc123")
+        self.assertEqual(response["data"].run_id, "r7-20260912T000000Z-abc123")
 
     def test_start_matching_run_refuses_a_date_it_cannot_read(self):
         # The job would otherwise start, fail on its own parsing, and hold the
@@ -330,7 +330,7 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         self.mock_matching_run_read_service.read_overview.assert_awaited_once_with(
             self.mock_session, 7
         )
-        self.assertEqual(response["data"]["status"], "succeeded")
+        self.assertEqual(response["data"].status, "succeeded")
 
     async def test_the_result_page_carries_the_paging_through(self):
         caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)

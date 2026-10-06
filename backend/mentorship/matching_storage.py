@@ -23,6 +23,7 @@ from backend.mentorship.matching_contract import (
     MatchingMeta,
     MatchingRunResult,
     MenteeResult,
+    PersonRecord,
 )
 
 # Matches the job's own timeout, so a run that dies without releasing the lock
@@ -216,6 +217,38 @@ class MatchingStorage:
     def mentor_count(self, run_id: str) -> int:
         """How many mentors the run was given."""
         return self.redis_client.hlen(mentors_key(run_id))
+
+    def mentee_count(self, run_id: str) -> int:
+        """How many mentees the run was given."""
+        return self.redis_client.hlen(mentees_key(run_id))
+
+    def read_people(
+        self, run_id: str, role: str, user_ids: list[str]
+    ) -> dict[str, PersonRecord]:
+        """Return the given people as the run was given them.
+
+        This is what the matcher scored on, so a review screen showing it
+        cannot disagree with the reasons written from it, whatever the people
+        have changed in their profiles since.
+
+        Args:
+            run_id (str): Identifies the run.
+            role (str): "mentor" or "mentee": which of the run's groups.
+            user_ids (list[str]): The people wanted.
+
+        Returns:
+            dict[str, PersonRecord]: user_id -> record. Ids the run was not
+                given are absent. Empty for empty input, without a request.
+        """
+        if not user_ids:
+            return {}
+        key = mentors_key(run_id) if role == "mentor" else mentees_key(run_id)
+        values = self.redis_client.hmget(key, user_ids)
+        return {
+            user_id: PersonRecord.model_validate_json(raw)
+            for user_id, raw in zip(user_ids, values)
+            if raw is not None
+        }
 
     def read_run_result(self, run_id: str) -> MatchingRunResult | None:
         """Return what the matcher reported, or None while it has yet to report.
