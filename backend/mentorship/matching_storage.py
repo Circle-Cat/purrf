@@ -25,10 +25,14 @@ from backend.mentorship.matching_contract import (
     MenteeResult,
     PersonRecord,
 )
+from backend.mentorship.matching_draft import DraftEntry
 
 # Matches the job's own timeout, so a run that dies without releasing the lock
 # frees its round by itself and nobody has to abandon it by hand.
 LOCK_TTL_SECONDS = 6 * 60 * 60
+
+# How long an admin holds a run's result for editing without touching it.
+EDIT_LOCK_TTL_SECONDS = 30 * 60
 
 # Upstash refuses a request over 10 MB. A PersonRecord is around 2 KB, so three
 # thousand people in one HSET comes close enough to matter. The limit counts
@@ -71,6 +75,16 @@ def out_key(run_id: str) -> str:
 def result_meta_key(run_id: str) -> str:
     """Key holding what the matcher reports about the run as a whole."""
     return f"match:{run_id}:result_meta"
+
+
+def draft_key(run_id: str) -> str:
+    """Hash of an admin's edits to the run's result, keyed by mentee id."""
+    return f"match:{run_id}:draft"
+
+
+def edit_lock_key(run_id: str) -> str:
+    """Key holding the user id of the admin editing the run's result."""
+    return f"match:{run_id}:edit_lock"
 
 
 def notified_key(run_id: str) -> str:
@@ -217,6 +231,73 @@ class MatchingStorage:
     def mentor_count(self, run_id: str) -> int:
         """How many mentors the run was given."""
         return self.redis_client.hlen(mentors_key(run_id))
+
+    def read_all_people(self, run_id: str, role: str) -> dict[str, PersonRecord]:
+        """Return everybody in one of the run's groups, by user id."""
+        key = mentors_key(run_id) if role == "mentor" else mentees_key(run_id)
+        return {
+            user_id: PersonRecord.model_validate_json(raw)
+            for user_id, raw in self.redis_client.hgetall(key).items()
+        }
+
+    def read_draft(self, run_id: str) -> dict[str, DraftEntry]:
+        """Return the run's saved edits, by mentee id; empty when there are none."""
+        return {
+            mentee_id: DraftEntry.model_validate_json(raw)
+            for mentee_id, raw in self.redis_client.hgetall(draft_key(run_id)).items()
+        }
+
+    def write_draft(
+        self, run_id: str, entries: dict[str, DraftEntry], removed: list[str]
+    ) -> None:
+        """Set and delete draft entries, and keep the draft as long as the run.
+
+        Args:
+            run_id (str): Identifies the run.
+            entries (dict[str, DraftEntry]): Entries to set, by mentee id.
+            removed (list[str]): Mentees back to the matcher's result.
+        """
+        key = draft_key(run_id)
+        if entries:
+            self.redis_client.hset(
+                key,
+                mapping={
+                    mentee_id: entry.model_dump_json()
+                    for mentee_id, entry in entries.items()
+                },
+            )
+        if removed:
+            self.redis_client.hdel(key, *removed)
+        self.redis_client.expire(key, THREE_MONTHS_IN_SECONDS)
+
+    def edit_lock(self, run_id: str) -> tuple[str, int] | None:
+        """Return who holds the run's edit lock and its seconds left, or None."""
+        key = edit_lock_key(run_id)
+        holder = self.redis_client.get(key)
+        if holder is None:
+            return None
+        return holder, max(self.redis_client.ttl(key), 0)
+
+    def take_edit_lock(self, run_id: str, user_id: str) -> bool:
+        """Take the run's edit lock, or renew it when this user holds it.
+
+        Returns:
+            bool: False when somebody else holds it.
+        """
+        key = edit_lock_key(run_id)
+        if self.redis_client.set(key, user_id, nx=True, ex=EDIT_LOCK_TTL_SECONDS):
+            return True
+        if self.redis_client.get(key) != user_id:
+            return False
+        self.redis_client.expire(key, EDIT_LOCK_TTL_SECONDS)
+        return True
+
+    def release_edit_lock(self, run_id: str, user_id: str) -> None:
+        """Give the edit lock back, only if this user holds it."""
+        key = edit_lock_key(run_id)
+        if self.redis_client.get(key) != user_id:
+            return
+        self.redis_client.delete(key)
 
     def mentee_count(self, run_id: str) -> int:
         """How many mentees the run was given."""

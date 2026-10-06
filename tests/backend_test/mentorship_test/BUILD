@@ -186,3 +186,15 @@ py_test(
     srcs = ["matching_eligibility_service_test.py"],
     deps = ["//backend/mentorship"],
 )
+
+py_test(
+    name = "matching_draft_test",
+    srcs = ["matching_draft_test.py"],
+    deps = ["//backend/mentorship"],
+)
+
+py_test(
+    name = "matching_draft_service_test",
+    srcs = ["matching_draft_service_test.py"],
+    deps = ["//backend/mentorship"],
+)

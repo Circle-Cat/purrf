@@ -12,6 +12,7 @@ from backend.dto.participant_search_filter_dto import (
 )
 from backend.common.mentorship_enums import ParticipantRole
 from backend.dto.matching_run_create_dto import MatchingRunCreateDto
+from backend.dto.matching_run_dto import MatchingDraftChangesDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
 
@@ -39,6 +40,16 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
             return_value={"status": "succeeded", "total": 0, "items": []}
         )
 
+        self.mock_matching_draft_service = MagicMock()
+        self.mock_matching_draft_service.take_lock = AsyncMock(
+            return_value={
+                "user_id": "9",
+                "name": "Ada",
+                "expires_at": "2026-10-06T10:30:00+00:00",
+            }
+        )
+        self.mock_matching_draft_service.save_changes.return_value = {"draft_count": 2}
+
         self.mock_launchdarkly_service = MagicMock()
         self.mock_launchdarkly_service.is_matching_run_enabled.return_value = True
 
@@ -53,6 +64,7 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
             mentorship_admin_service=self.mock_admin_service,
             matching_run_service=self.mock_matching_run_service,
             matching_run_read_service=self.mock_matching_run_read_service,
+            matching_draft_service=self.mock_matching_draft_service,
             launchdarkly_service=self.mock_launchdarkly_service,
             database=self.mock_database,
         )
@@ -327,6 +339,12 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         self.assertIn(
             ("/mentorship/admin/match-runs/{round_id}/unmatched", ("GET",)), routes
         )
+        for route in (
+            ("/mentorship/admin/match-runs/{round_id}/edit-lock", ("POST",)),
+            ("/mentorship/admin/match-runs/{round_id}/edit-lock", ("DELETE",)),
+            ("/mentorship/admin/match-runs/{round_id}/draft", ("PATCH",)),
+        ):
+            self.assertIn(route, routes)
 
     async def test_the_overview_is_asked_for_by_round(self):
         caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
@@ -366,6 +384,61 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
             await self.controller.get_matching_run_unmatched(7, caller)
 
         self.mock_matching_run_read_service.read_unmatched.assert_not_awaited()
+
+    async def test_taking_the_edit_lock_is_for_the_caller(self):
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+
+        response = await self.controller.take_matching_edit_lock(7, caller)
+
+        self.mock_matching_draft_service.take_lock.assert_awaited_once_with(
+            self.mock_session, 7, 9
+        )
+        self.assertEqual(response["data"].user_id, "9")
+
+    async def test_releasing_the_edit_lock_is_for_the_caller(self):
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+
+        await self.controller.release_matching_edit_lock(7, caller)
+
+        self.mock_matching_draft_service.release_lock.assert_called_once_with(7, 9)
+
+    async def test_saving_the_draft_passes_the_changes_through(self):
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+        body = MatchingDraftChangesDto.model_validate({
+            "changes": [
+                {"menteeId": "1", "mentorId": "11", "recommendationReason": "Moved"},
+                {"menteeId": "2", "mentorId": None},
+            ]
+        })
+
+        response = await self.controller.save_matching_draft(7, body, caller)
+
+        round_id, user_id, changes = (
+            self.mock_matching_draft_service.save_changes.call_args.args
+        )
+        self.assertEqual((round_id, user_id), (7, 9))
+        self.assertEqual(
+            [(c.mentee_id, c.mentor_id, c.recommendation_reason) for c in changes],
+            [("1", "11", "Moved"), ("2", None, "")],
+        )
+        self.assertEqual(response["data"].draft_count, 2)
+
+    async def test_editing_is_refused_while_the_flag_is_off(self):
+        self.mock_launchdarkly_service.is_matching_run_enabled.return_value = False
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+        body = MatchingDraftChangesDto(changes=[])
+
+        for call in (
+            self.controller.take_matching_edit_lock(7, caller),
+            self.controller.release_matching_edit_lock(7, caller),
+            self.controller.save_matching_draft(7, body, caller),
+        ):
+            with self.assertRaises(PermissionError):
+                await call
+
+        self.mock_matching_draft_service.take_lock.assert_not_awaited()
+        self.mock_matching_draft_service.release_lock.assert_not_called()
+        self.mock_matching_draft_service.save_changes.assert_not_called()
 
     async def test_reading_a_run_is_refused_while_the_flag_is_off(self):
         self.mock_launchdarkly_service.is_matching_run_enabled.return_value = False
