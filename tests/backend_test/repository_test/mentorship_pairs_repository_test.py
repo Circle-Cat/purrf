@@ -824,6 +824,50 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
 
         self.assertFalse(published)
 
+    async def test_list_pairs_with_meeting_counts_reads_either_side_and_any_status(
+        self,
+    ):
+        first_round = self.rounds[0].round_id
+        start = self.now - timedelta(days=3)
+
+        def meeting(meeting_id, pair, *, completed):
+            return MentorshipMeetingEntity(
+                meeting_id=meeting_id,
+                pair_id=pair.pair_id,
+                source=MeetingSource.MANUAL,
+                start_datetime=start,
+                end_datetime=start + timedelta(minutes=30),
+                is_completed=completed,
+                created_datetime=start,
+            )
+
+        await self.insert_entities([
+            meeting("eligibility-done-1", self.pairs[0], completed=True),
+            meeting("eligibility-done-2", self.pairs[0], completed=True),
+            meeting("eligibility-missed", self.pairs[0], completed=False),
+        ])
+
+        # users[0] mentors pair 0 and is the mentee of the ended pair 2.
+        rows = await self.repo.list_pairs_with_meeting_counts(
+            self.session, [first_round], [self.users[0].user_id]
+        )
+
+        self.assertEqual(
+            [(pair.pair_id, count) for pair, count in rows],
+            [(self.pairs[0].pair_id, 2), (self.pairs[2].pair_id, 0)],
+        )
+
+    async def test_list_pairs_with_meeting_counts_keeps_to_the_rounds_given(self):
+        rows = await self.repo.list_pairs_with_meeting_counts(
+            self.session, [self.rounds[1].round_id], [self.users[1].user_id]
+        )
+        empty = await self.repo.list_pairs_with_meeting_counts(
+            self.session, [], [self.users[1].user_id]
+        )
+
+        self.assertEqual([pair.pair_id for pair, _ in rows], [self.pairs[1].pair_id])
+        self.assertEqual(empty, [])
+
 
 if __name__ == "__main__":
     unittest.main()

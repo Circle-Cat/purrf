@@ -220,6 +220,7 @@ from backend.mentorship.mentorship_admin_service import MentorshipAdminService
 from backend.mentorship.matching_payload_service import MatchingPayloadService
 from backend.mentorship.matching_run_read_service import MatchingRunReadService
 from backend.mentorship.matching_run_service import MatchingRunService
+from backend.mentorship.matching_eligibility_service import MatchingEligibilityService
 from backend.mentorship.matching_run_complete_controller import (
     MatchingRunCompleteController,
 )
@@ -683,6 +684,13 @@ class AppDependencyBuilder:
             database=self.database,
             meet_attendance_sync_service=self.meet_attendance_service,
         )
+        self.matching_eligibility_service = MatchingEligibilityService(
+            participants_repository=self.mentorship_round_participants_repo,
+            pairs_repository=self.mentorship_pairs_repository,
+            rounds_repository=self.mentorship_round_repository,
+            training_repository=self.training_repository,
+            logger=self.logger,
+        )
         self.mentorship_admin_service = MentorshipAdminService(
             users_repository=self.users_repository,
             participants_repository=self.mentorship_round_participants_repo,
@@ -693,6 +701,7 @@ class AppDependencyBuilder:
             logger=self.logger,
             mentorship_meeting_repository=self.mentorship_meeting_repository,
             application_repository=self.application_repository,
+            matching_eligibility_service=self.matching_eligibility_service,
         )
         # Nothing here needs self.database, so it is safe this early; the
         # matching run service takes a session per call like the rest.
@@ -711,6 +720,7 @@ class AppDependencyBuilder:
             matching_payload_service=self.matching_payload_service,
             matching_storage=self.matching_storage,
             matching_job_client=self.matching_job_client,
+            matching_eligibility_service=self.matching_eligibility_service,
             logger=self.logger,
         )
         self.matching_run_read_service = MatchingRunReadService(
