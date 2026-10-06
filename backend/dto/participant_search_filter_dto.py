@@ -12,6 +12,9 @@ class ParticipantSearchFilterDto(BaseRequestDto):
     participant_role: ParticipantRole | None = None
     approval_status: ApprovalStatus | None = None
     onboarding_status: Literal["completed", "incomplete"] | None = None
+    # Only the people eligible for matching in round_id; needs the round to
+    # be in progress.
+    eligible: bool | None = None
 
 
 class UnregisteredFilterDto(BaseRequestDto):

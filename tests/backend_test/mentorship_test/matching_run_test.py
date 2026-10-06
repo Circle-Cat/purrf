@@ -10,6 +10,7 @@ from requests.exceptions import ReadTimeout
 from backend.common.exceptions import ConflictError
 from backend.common.matching_job_client import MatcherJobNotStarted
 from backend.mentorship.matching_contract import RESULT_VERSION
+from backend.mentorship.matching_eligibility import IneligibleReason
 from backend.mentorship.matching_run_service import MatchingRunService
 from backend.mentorship.matching_storage import MatchingStorage
 
@@ -55,6 +56,12 @@ class _FakeRedis:
 
     def hgetall(self, key):
         return dict(self.hashes.get(key, {}))
+
+
+def _everyone_eligible():
+    service = MagicMock()
+    service.ineligible_by_user = AsyncMock(return_value={})
+    return service
 
 
 def _person(user_id, size=32):
@@ -252,6 +259,7 @@ class MatchingRunServiceTest(unittest.IsolatedAsyncioTestCase):
             matching_payload_service=self.payload_service,
             matching_storage=self.storage,
             matching_job_client=self.job_client,
+            matching_eligibility_service=_everyone_eligible(),
             logger=MagicMock(),
         )
 
@@ -278,6 +286,22 @@ class MatchingRunServiceTest(unittest.IsolatedAsyncioTestCase):
         # Two admins pressing together would otherwise build two runs and let
         # the second overwrite the first one's people.
         self.assertEqual(order, ["claim", "build"])
+
+    async def test_someone_ineligible_is_refused_before_the_round_is_taken(self):
+        self.service.matching_eligibility_service.ineligible_by_user.return_value = {
+            1: [],
+            2: [IneligibleReason.TRAINING_NOT_DONE, IneligibleReason.MEETINGS_SHORT],
+            3: [IneligibleReason.BLOCKED],
+        }
+
+        with self.assertRaises(ValueError) as caught:
+            await self.service.start_run(MagicMock(), 7, [1, 2])
+
+        message = str(caught.exception)
+        self.assertIn("2 (training_not_done, meetings_short)", message)
+        self.assertNotIn("3 (", message)
+        self.storage.claim_round.assert_not_called()
+        self.payload_service.build_matching_payload.assert_not_awaited()
 
     async def test_a_round_already_running_is_a_conflict(self):
         self.storage.claim_round.return_value = False
@@ -362,6 +386,7 @@ class MatchingRunFailedStartTest(unittest.IsolatedAsyncioTestCase):
             matching_payload_service=payload_service,
             matching_storage=MatchingStorage(self.redis, MagicMock()),
             matching_job_client=self.job_client,
+            matching_eligibility_service=_everyone_eligible(),
             logger=MagicMock(),
         )
 

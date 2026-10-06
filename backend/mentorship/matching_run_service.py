@@ -22,11 +22,13 @@ class MatchingRunService:
         matching_payload_service,
         matching_storage,
         matching_job_client,
+        matching_eligibility_service,
         logger,
     ):
         """
         Args:
             matching_payload_service: Builds the input from the database.
+            matching_eligibility_service: Says who may be matched.
             matching_storage: Where the input goes.
             matching_job_client: Starts the job that reads it.
             logger: Injected logger.
@@ -34,6 +36,7 @@ class MatchingRunService:
         self.matching_payload_service = matching_payload_service
         self.matching_storage = matching_storage
         self.matching_job_client = matching_job_client
+        self.matching_eligibility_service = matching_eligibility_service
         self.logger = logger
 
     async def start_run(
@@ -72,12 +75,28 @@ class MatchingRunService:
 
         Raises:
             ConflictError: This round already has a run going.
-            ValueError: A requested user is not registered for the round, the
+            ValueError: A requested user is not eligible for matching in the
+                round, is not registered for it, the
                 selection has no mentor or no mentee, or the job is not
                 configured in this environment.
             requests.RequestException: The trigger got no answer. The round
                 stays locked and points at this run, which may be running.
         """
+        # Checked before the round is claimed, so a refused selection never
+        # holds the lock.
+        reasons = await self.matching_eligibility_service.ineligible_by_user(
+            session, round_id
+        )
+        refused = [
+            f"{user_id} ({', '.join(reasons[user_id])})"
+            for user_id in dict.fromkeys(participant_ids)
+            if reasons.get(user_id)
+        ]
+        if refused:
+            raise ValueError(
+                f"Not eligible for matching in round {round_id}: {', '.join(refused)}."
+            )
+
         run_id = new_run_id(round_id)
         if not self.matching_storage.claim_round(round_id, run_id):
             running = self.matching_storage.running_run_id(round_id)
