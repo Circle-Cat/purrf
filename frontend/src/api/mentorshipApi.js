@@ -93,7 +93,7 @@ export const postMyMentorshipFeedback = (roundId, data) =>
   request.post(API_ENDPOINTS.MENTORSHIP_FEEDBACK(roundId), data);
 
 /**
- * Admin participant search across a round's participants and non-participants.
+ * Admin participant search across registered participants.
  *
  * Filter params are sent camelCase, not snake_case like this file's other GET
  * params — the backend binds this endpoint's filters via a Pydantic model
@@ -103,7 +103,7 @@ export const postMyMentorshipFeedback = (roundId, data) =>
  *          accountStatus?: "active"|"blocked"|"deactivated",
  *          internal?: "internal"|"external",
  *          roundId?: number, participantRole?: string, approvalStatus?: string,
- *          onboardingStatus?: string, participationStatus?: "participant"|"non_participant",
+ *          onboardingStatus?: string,
  *          limit?: number, offset?: number, sortBy?: string, order?: "asc"|"desc"}} filters
  *
  * `q` matches name parts and any of the person's email addresses.
@@ -121,7 +121,6 @@ export const searchParticipants = ({
   participantRole,
   approvalStatus,
   onboardingStatus,
-  participationStatus,
   limit,
   offset,
   sortBy,
@@ -137,10 +136,48 @@ export const searchParticipants = ({
       participantRole,
       approvalStatus,
       onboardingStatus,
-      participationStatus,
       limit,
       offset,
       sort_by: sortBy,
+      order,
+    },
+  });
+
+/**
+ * People admitted as a mentor or mentee who have not registered for a round,
+ * one row per person by user ID.
+ *
+ * Filters go camelCase, as for searchParticipants; `order` is a plain query
+ * parameter. `admittedRole` keeps only those admitted as that role.
+ *
+ * @param {number|string} roundId
+ * @param {{userId?: number, q?: string,
+ *          accountStatus?: "active"|"blocked"|"deactivated",
+ *          internal?: "internal"|"external", admittedRole?: "mentor"|"mentee",
+ *          limit?: number, offset?: number, order?: "asc"|"desc"}} filters
+ */
+export const searchUnregistered = (
+  roundId,
+  {
+    userId,
+    q,
+    accountStatus,
+    internal,
+    admittedRole,
+    limit,
+    offset,
+    order,
+  } = {},
+) =>
+  request.get(API_ENDPOINTS.MENTORSHIP_ADMIN_ROUND_UNREGISTERED(roundId), {
+    params: {
+      userId,
+      q,
+      accountStatus,
+      internal,
+      admittedRole,
+      limit,
+      offset,
       order,
     },
   });
