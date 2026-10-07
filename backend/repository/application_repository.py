@@ -475,8 +475,7 @@ class ApplicationRepository:
 
         When ``for_update`` is True the row is selected ``FOR UPDATE`` so a
         concurrent stage/sub-status decision on the same application blocks
-        until this transaction commits (mirrors
-        ``JobReviewRepository.get``'s row lock).
+        until this transaction commits.
         """
         stmt = select(ApplicationEntity).where(
             ApplicationEntity.application_id == application_id,

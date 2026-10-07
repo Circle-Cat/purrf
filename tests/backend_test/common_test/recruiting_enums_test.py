@@ -5,7 +5,6 @@ import unittest
 from backend.common.recruiting_enums import (
     PUBLICLY_VISIBLE_JOB_STATUSES,
     JobReviewKind,
-    JobReviewStatus,
     JobStatus,
 )
 from backend.common.permissions import Permission
@@ -20,12 +19,7 @@ class RecruitingEnumsTest(unittest.TestCase):
         )
 
     def test_job_review_enums(self):
-        """JobReviewStatus and JobReviewKind expose exactly their MVP members."""
-        assert {s.value for s in JobReviewStatus} == {
-            "pending",
-            "approved",
-            "rejected",
-        }
+        """JobReviewKind exposes exactly its four gates."""
         assert {k.value for k in JobReviewKind} == {
             "initial",
             "revision",
