@@ -106,6 +106,7 @@ py_test(
     env_inherit = ["DATABASE_URL"],
     deps = [
         "//backend/common:communication_enums",
+        "//backend/common:exceptions",
         "//backend/common:ops_enums",
         "//backend/communication",
         "//backend/entity:entities",

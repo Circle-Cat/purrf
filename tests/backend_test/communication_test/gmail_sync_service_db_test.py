@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, Mock
 from sqlalchemy import select
 
 from backend.common.communication_enums import ContextType
+from backend.common.exceptions import RateLimitedError
 from backend.common.ops_enums import OPS_ALERT_SUBJECT_TYPE
 from backend.communication.gmail_sync_service import GmailSyncService, PushOutcome
 from backend.communication.inbox_aliases import InboxAliases
@@ -186,6 +187,33 @@ class TestInboxRoutingOnARealSession(BaseRepositoryTestLib):
         self.assertIsNone(rows[0].user_id)
         self.assertEqual(rows[0].context_type, ContextType.MENTORSHIP_INBOX)
         self.assertEqual(self.handler.synced, [_NEW_THREAD, _NEW_THREAD])
+
+    async def test_a_routed_thread_survives_its_first_sync_failing(self):
+        class _FailingHandler:
+            async def sync_tracked_thread(self, session, thread):
+                raise RateLimitedError("429")
+
+        self.handler = _FailingHandler()
+        self.gmail.list_history.return_value = {
+            "history_id": 150,
+            "thread_ids": {_NEW_THREAD},
+        }
+
+        outcome = await self.service.handle_push(self.session, _MAILBOX, 120)
+
+        self.assertEqual(outcome, PushOutcome.ACK)
+        self.assertEqual(len(await self._rows()), 1)
+        state = await self.states.get(self.session, _MAILBOX)
+        self.assertEqual(state.last_alert_kind, "sync_failed")
+        self.assertIn(_NEW_THREAD, state.last_error)
+        self.assertEqual(state.last_history_id, 150)
+        alerts = await self.session.execute(
+            select(EventEntity).where(
+                EventEntity.subject_type == OPS_ALERT_SUBJECT_TYPE,
+                EventEntity.subject_id == state.id,
+            )
+        )
+        self.assertEqual(len(alerts.scalars().all()), 1)
 
     async def test_a_racing_create_returns_the_row_the_other_push_wrote(self):
         existing = await self.threads.create(

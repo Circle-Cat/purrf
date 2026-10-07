@@ -81,8 +81,8 @@ class InboxRouter:
             hit = [r for r in recipients if r.lower() in others]
             if hit:
                 self._logger.info(
-                    "[InboxRouter] Gmail thread %s is for another environment's "
-                    "alias %s; skipped",
+                    "[InboxRouter] Gmail thread %s is for %s, a Send-As alias "
+                    "this environment does not claim; skipped",
                     gmail_thread_id,
                     hit[0],
                 )
