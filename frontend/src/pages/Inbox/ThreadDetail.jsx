@@ -113,7 +113,7 @@ const Message = ({ threadId, message }) => {
  * refused by the server when a message arrived after the thread was loaded;
  * `stale` then shows a warning and the draft stays.
  *
- * @param {{thread: object, stale: boolean, onReply: (html: string) => Promise<boolean>,
+ * @param {{thread: object, stale: boolean, pending: boolean, onReply: (html: string) => Promise<boolean>,
  *   onArchive: Function, onUnarchive: Function, onAssign: Function,
  *   onMove: (service: string) => void}} props
  * @returns {JSX.Element}
@@ -121,6 +121,7 @@ const Message = ({ threadId, message }) => {
 const ThreadDetail = ({
   thread,
   stale,
+  pending,
   onReply,
   onArchive,
   onUnarchive,
@@ -218,16 +219,26 @@ const ThreadDetail = ({
           </span>
         )}
         {thread.canAssign && (
-          <Button size="sm" onClick={onAssign}>
+          <Button size="sm" disabled={pending} onClick={onAssign}>
             {thread.assignment ? "Reassign" : "Assign"}
           </Button>
         )}
         {thread.archived ? (
-          <Button size="sm" variant="outline" onClick={onUnarchive}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pending}
+            onClick={onUnarchive}
+          >
             Unarchive
           </Button>
         ) : (
-          <Button size="sm" variant="outline" onClick={onArchive}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pending}
+            onClick={onArchive}
+          >
             Archive
           </Button>
         )}
@@ -252,7 +263,7 @@ const ThreadDetail = ({
             <Button
               size="sm"
               variant="outline"
-              disabled={!moveTarget}
+              disabled={pending || !moveTarget}
               onClick={() => {
                 onMove(moveTarget);
                 setMoveTarget("");
@@ -333,7 +344,7 @@ const ThreadDetail = ({
           className="border-slate-300 bg-white"
         />
         <div className="flex justify-end">
-          <Button size="sm" disabled={noAlias || !draft.trim()} onClick={send}>
+          <Button size="sm" disabled={pending || noAlias || !draft.trim()} onClick={send}>
             Send reply
           </Button>
         </div>

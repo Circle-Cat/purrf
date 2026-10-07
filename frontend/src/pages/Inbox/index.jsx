@@ -192,6 +192,7 @@ const InboxPage = () => {
             key={thread.threadId}
             thread={thread}
             stale={detail.stale}
+            pending={detail.pending}
             onReply={detail.reply}
             onArchive={detail.archive}
             onUnarchive={detail.unarchive}

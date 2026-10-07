@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   archiveInboxThread,
@@ -26,17 +26,22 @@ const statusOf = (e) => e?.response?.status;
  * @returns {{thread: object|null, loading: boolean, stale: boolean,
  *   reply: (html: string) => Promise<boolean>, archive: Function,
  *   unarchive: Function, assign: (body: object) => Promise<boolean>,
- *   unassign: () => Promise<boolean>, move: (service: string) => Promise<void>}}
+ *   unassign: () => Promise<boolean>, move: (service: string) => Promise<void>,
+ *   pending: boolean}}
  */
 export const useInboxThread = (threadId, { onChanged, onGone }) => {
   const { begin, isCurrent } = useRequestGuard();
   const [thread, setThread] = useState(null);
   const [loading, setLoading] = useState(false);
   const [stale, setStale] = useState(false);
+  const [pendingId, setPendingId] = useState(null);
+  const selectedRef = useRef(threadId);
+  const busyRef = useRef(null);
+  selectedRef.current = threadId;
 
   const load = useCallback(async () => {
-    if (threadId == null) return;
     const seq = begin();
+    if (threadId == null) return;
     try {
       const { data } = await getInboxThread(threadId);
       if (isCurrent(seq)) setThread(data);
@@ -56,52 +61,82 @@ export const useInboxThread = (threadId, { onChanged, onGone }) => {
     load();
   }, [threadId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const write = async (call) => {
+  // Runs one write for the thread open now. The response is applied only
+  // while that thread is still the open one, and it supersedes any load that
+  // started earlier.
+  const guarded = async (run) => {
+    const id = threadId;
+    if (busyRef.current === id) return false;
+    busyRef.current = id;
+    setPendingId(id);
     try {
-      const { data } = await call();
-      setThread(data);
-      onChanged();
-      return true;
-    } catch (e) {
-      toast.error(e.message);
-      return false;
+      return await run(id, () => selectedRef.current === id);
+    } finally {
+      if (busyRef.current === id) busyRef.current = null;
+      setPendingId((cur) => (cur === id ? null : cur));
     }
   };
 
-  const reply = async (body) => {
-    try {
-      const { data } = await replyToInboxThread(threadId, {
-        body,
-        lastSeenMessageId: thread.latestMessageId,
-      });
-      setThread(data);
-      setStale(false);
-      onChanged();
-      return true;
-    } catch (e) {
-      if (statusOf(e) === 409) {
-        setStale(true);
-        await load();
-      } else {
-        toast.error(e.message);
-      }
-      return false;
-    }
+  const apply = (data) => {
+    begin();
+    setThread(data);
+    setLoading(false);
   };
+
+  const write = (call) =>
+    guarded(async (id, stillOpen) => {
+      try {
+        const { data } = await call(id);
+        if (stillOpen()) apply(data);
+        onChanged();
+        return true;
+      } catch (e) {
+        if (stillOpen()) toast.error(e.message);
+        return false;
+      }
+    });
+
+  const reply = (body) =>
+    guarded(async (id, stillOpen) => {
+      try {
+        const { data } = await replyToInboxThread(id, {
+          body,
+          lastSeenMessageId: thread.latestMessageId,
+        });
+        if (stillOpen()) {
+          apply(data);
+          setStale(false);
+        }
+        onChanged();
+        return true;
+      } catch (e) {
+        if (!stillOpen()) return false;
+        if (statusOf(e) === 409) {
+          setStale(true);
+          await load();
+        } else {
+          toast.error(e.message);
+        }
+        return false;
+      }
+    });
 
   const move = async (service) => {
-    if (await write(() => moveInboxThread(threadId, service))) await load();
+    if (await write((id) => moveInboxThread(id, service))) {
+      if (selectedRef.current === threadId) await load();
+    }
   };
 
   return {
     thread,
     loading,
     stale,
+    pending: pendingId != null && pendingId === threadId,
     reply,
-    archive: () => write(() => archiveInboxThread(threadId)),
-    unarchive: () => write(() => unarchiveInboxThread(threadId)),
-    assign: (body) => write(() => assignInboxThread(threadId, body)),
-    unassign: () => write(() => unassignInboxThread(threadId)),
+    archive: () => write((id) => archiveInboxThread(id)),
+    unarchive: () => write((id) => unarchiveInboxThread(id)),
+    assign: (body) => write((id) => assignInboxThread(id, body)),
+    unassign: () => write((id) => unassignInboxThread(id)),
     move,
   };
 };

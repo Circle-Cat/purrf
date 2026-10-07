@@ -344,6 +344,65 @@ describe("InboxPage thread detail", () => {
     expect(await within(pane).findByRole("button", { name: "Assign" })).toBeInTheDocument();
   });
 
+  it("ignores a write response for a thread that is no longer open", async () => {
+    api.listInboxThreads.mockResolvedValue(
+      listData([row(), row({ threadId: 2, subject: "Other thread" })]),
+    );
+    api.getInboxThread.mockImplementation((id) =>
+      Promise.resolve({
+        data: id === 1 ? detail() : detail({ threadId: 2, subject: "Other thread" }),
+      }),
+    );
+    let finish;
+    api.archiveInboxThread.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    renderAt();
+    await screen.findByRole("button", { name: /Open thread Question/ });
+    open("Question about meeting cadence");
+    const pane = await thread();
+    fireEvent.click(await within(pane).findByRole("button", { name: "Archive" }));
+    open("Other thread");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Other thread" }),
+      ).toBeInTheDocument(),
+    );
+    finish({ data: detail({ archived: true }) });
+    await waitFor(() => expect(api.archiveInboxThread).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByRole("heading", { name: "Other thread" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Question about meeting cadence" }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: "Archive" })).toBeEnabled();
+  });
+
+  it("disables Send while a reply is pending so it posts once", async () => {
+    let finish;
+    api.replyToInboxThread.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    renderAt();
+    await screen.findByRole("button", { name: /Open thread Question/ });
+    open("Question about meeting cadence");
+    const pane = await thread();
+    fireEvent.change(await within(pane).findByLabelText("Reply"), {
+      target: { value: "hi" },
+    });
+    const send = within(pane).getByRole("button", { name: "Send reply" });
+    fireEvent.click(send);
+    fireEvent.click(send);
+    expect(send).toBeDisabled();
+    expect(api.replyToInboxThread).toHaveBeenCalledTimes(1);
+    finish({ data: detail({ latestMessageId: 12 }) });
+    await waitFor(() => expect(within(pane).getByLabelText("Reply")).toHaveValue(""));
+  });
+
   it("disables the reply box when the environment has no alias", async () => {
     api.getInboxThread.mockResolvedValue({ data: detail({ replyAlias: null }) });
     renderAt();
