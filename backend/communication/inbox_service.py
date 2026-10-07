@@ -18,6 +18,7 @@ from backend.communication.inbox_rows import (
     facts_of,
     matches_search,
 )
+from backend.communication.inbox_options import InboxThreadOptions
 from backend.communication.inbox_writes import InboxThreadWrites
 from backend.communication.inbox_state import message_time
 from backend.communication.thread_service import service_from
@@ -71,7 +72,7 @@ def _person_name(user, service: InboxService) -> str:
     return display_name_of(user)
 
 
-class InboxThreadService(InboxThreadWrites):
+class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
     """Reads and acts on Inbox threads; each call checks the thread's service.
 
     The write side (reply, archive, assign, move) lives in ``InboxThreadWrites``.
@@ -90,6 +91,9 @@ class InboxThreadService(InboxThreadWrites):
         thread_service_resolver,
         conversation_service,
         aliases,
+        gmail_client,
+        round_participants_repository,
+        rounds_service,
     ):
         """
         Args:
@@ -106,6 +110,10 @@ class InboxThreadService(InboxThreadWrites):
             conversation_service (EmailConversationService): Its
                 ``sender_address`` is the reply address of application threads.
             aliases (InboxAliases): The reply address of every other thread.
+            gmail_client (GmailClient): Downloads attachments.
+            round_participants_repository (MentorshipRoundParticipantsRepository):
+                Tells whether a person registered for a round.
+            rounds_service (RoundsService): Names the current round.
         """
         self._threads = thread_repository
         self._messages = message_repository
@@ -118,6 +126,9 @@ class InboxThreadService(InboxThreadWrites):
         self._resolver = thread_service_resolver
         self._conversation = conversation_service
         self._aliases = aliases
+        self._gmail = gmail_client
+        self._participants = round_participants_repository
+        self._rounds_service = rounds_service
 
     async def list_threads(self, session, user, query: InboxQueryDto) -> InboxListDto:
         """The threads the viewer may see, filtered, searched and ordered.

@@ -1,6 +1,7 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 from backend.common.communication_enums import ContextType, InboxService
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE, InboxEvent
@@ -21,6 +22,9 @@ from backend.repository.email_message_repository import EmailMessageRepository
 from backend.repository.email_thread_repository import EmailThreadRepository
 from backend.repository.event_repository import EventRepository
 from backend.repository.job_repository import JobRepository
+from backend.repository.mentorship_round_participants_repository import (
+    MentorshipRoundParticipantsRepository,
+)
 from backend.repository.mentorship_round_repository import MentorshipRoundRepository
 from backend.repository.user_emails_repository import UserEmailsRepository
 from backend.repository.users_repository import UsersRepository
@@ -62,6 +66,9 @@ class InboxListOnARealSessionTest(BaseRepositoryTestLib):
             thread_service_resolver=ThreadServiceResolver(job_repository=JobRepository()),
             conversation_service=SimpleNamespace(sender_address="careers@example.com"),
             aliases=InboxAliases(mentorship="mentorship-db@example.com"),
+            gmail_client=Mock(),
+            round_participants_repository=MentorshipRoundParticipantsRepository(),
+            rounds_service=Mock(),
         )
         self.baseline = await self._list()
 

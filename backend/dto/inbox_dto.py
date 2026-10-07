@@ -111,3 +111,31 @@ class InboxThreadDetailDto(InboxThreadRowDto):
     tracked: bool
     open_bounce: InboxOpenBounceDto | None = None
     moved_at: datetime | None = None
+
+
+class InboxRoundOptionDto(BaseDto):
+    round_id: int
+    name: str | None = None
+    current: bool
+    registered: bool
+
+
+class InboxJobOptionDto(BaseDto):
+    job_id: int
+    title: str | None = None
+    application_id: int
+    application_status: str
+    fallback: bool
+
+
+class AssignOptionsDto(BaseDto):
+    """Exactly one of ``rounds`` (Mentorship) or ``jobs`` (Recruiting) is set."""
+
+    rounds: list[InboxRoundOptionDto] | None = None
+    jobs: list[InboxJobOptionDto] | None = None
+
+
+class PersonDto(BaseDto):
+    user_id: int
+    name: str
+    email: str | None = None
