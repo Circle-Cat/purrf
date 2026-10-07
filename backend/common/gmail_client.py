@@ -353,11 +353,7 @@ class GmailClient:
             RuntimeError: For any other Gmail API failure.
         """
         request = (
-            self._get_service()
-            .users()
-            .settings()
-            .sendAs()
-            .list(userId=_GMAIL_USER)
+            self._get_service().users().settings().sendAs().list(userId=_GMAIL_USER)
         )
         response = self._execute(request, "list_send_as_addresses")
         return {
@@ -781,13 +777,11 @@ class GmailClient:
             part = stack.pop()
             body = part.get("body", {})
             if part.get("filename") and body.get("attachmentId"):
-                attachments.append(
-                    {
-                        "name": part["filename"],
-                        "size": body.get("size", 0),
-                        "gmailAttachmentId": body["attachmentId"],
-                    }
-                )
+                attachments.append({
+                    "name": part["filename"],
+                    "size": body.get("size", 0),
+                    "gmailAttachmentId": body["attachmentId"],
+                })
             stack.extend(reversed(part.get("parts", []) or []))
         return attachments
 

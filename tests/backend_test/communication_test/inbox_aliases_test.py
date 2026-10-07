@@ -16,13 +16,11 @@ class InboxAliasesTest(unittest.TestCase):
 
     def test_first_claimed_recipient_wins(self):
         self.assertEqual(
-            self.aliases.service_for(
-                [
-                    "a@example.com",
-                    "recruiting-test@circlecat.org",
-                    "mentorship-test@circlecat.org",
-                ]
-            ),
+            self.aliases.service_for([
+                "a@example.com",
+                "recruiting-test@circlecat.org",
+                "mentorship-test@circlecat.org",
+            ]),
             InboxService.RECRUITING,
         )
 

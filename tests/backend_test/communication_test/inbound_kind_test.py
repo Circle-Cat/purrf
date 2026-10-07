@@ -7,13 +7,19 @@ from backend.communication.inbound_kind import classify_inbound
 class ClassifyInboundTest(unittest.TestCase):
     def test_bounce_wins_over_auto_submitted(self):
         self.assertEqual(
-            classify_inbound({"failed_recipients": "", "auto_submitted": "auto-replied"}),
+            classify_inbound({
+                "failed_recipients": "",
+                "auto_submitted": "auto-replied",
+            }),
             InboundKind.BOUNCE,
         )
 
     def test_out_of_office_is_auto_reply(self):
         self.assertEqual(
-            classify_inbound({"failed_recipients": None, "auto_submitted": "auto-replied"}),
+            classify_inbound({
+                "failed_recipients": None,
+                "auto_submitted": "auto-replied",
+            }),
             InboundKind.AUTO_REPLY,
         )
 
@@ -30,7 +36,9 @@ class ClassifyInboundTest(unittest.TestCase):
         )
 
     def test_plain_message_is_human(self):
-        self.assertEqual(classify_inbound({"failed_recipients": None}), InboundKind.HUMAN)
+        self.assertEqual(
+            classify_inbound({"failed_recipients": None}), InboundKind.HUMAN
+        )
 
 
 if __name__ == "__main__":

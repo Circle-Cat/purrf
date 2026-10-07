@@ -940,14 +940,12 @@ class TestGmailClient(TestCase):
 
     def test_parse_collects_every_recipient_header(self):
         parsed = self.client._parse_message(
-            self._raw_message(
-                [
-                    ("To", '"Mentorship" <Mentorship-Test@circlecat.org>, a@example.com'),
-                    ("Cc", "inquiries-test@circlecat.org"),
-                    ("Delivered-To", "purrf@circlecat.org"),
-                    ("Delivered-To", "mentorship-test@circlecat.org"),
-                ]
-            )
+            self._raw_message([
+                ("To", '"Mentorship" <Mentorship-Test@circlecat.org>, a@example.com'),
+                ("Cc", "inquiries-test@circlecat.org"),
+                ("Delivered-To", "purrf@circlecat.org"),
+                ("Delivered-To", "mentorship-test@circlecat.org"),
+            ])
         )
         self.assertEqual(
             parsed["recipients"],
@@ -961,7 +959,10 @@ class TestGmailClient(TestCase):
 
     def test_parse_reads_auto_reply_headers(self):
         parsed = self.client._parse_message(
-            self._raw_message([("Auto-Submitted", "auto-replied"), ("Precedence", "bulk")])
+            self._raw_message([
+                ("Auto-Submitted", "auto-replied"),
+                ("Precedence", "bulk"),
+            ])
         )
         self.assertEqual(parsed["auto_submitted"], "auto-replied")
         self.assertEqual(parsed["precedence"], "bulk")
@@ -980,7 +981,11 @@ class TestGmailClient(TestCase):
                         "filename": "cv.pdf",
                         "body": {"attachmentId": "att-1", "size": 2048},
                     },
-                    {"mimeType": "text/html", "filename": "", "body": {"attachmentId": "x"}},
+                    {
+                        "mimeType": "text/html",
+                        "filename": "",
+                        "body": {"attachmentId": "x"},
+                    },
                 ],
             )
         )

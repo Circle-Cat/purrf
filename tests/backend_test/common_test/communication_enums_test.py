@@ -4,7 +4,6 @@ import unittest
 
 from backend.common.communication_enums import (
     INBOX_CONTEXT,
-    ContextType,
     InboundKind,
     InboxService,
 )
@@ -22,7 +21,9 @@ class CommunicationEnumsTest(unittest.TestCase):
         )
 
     def test_inbound_kinds(self):
-        self.assertEqual([k.value for k in InboundKind], ["human", "auto_reply", "bounce"])
+        self.assertEqual(
+            [k.value for k in InboundKind], ["human", "auto_reply", "bounce"]
+        )
 
 
 if __name__ == "__main__":

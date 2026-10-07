@@ -68,7 +68,9 @@ class TestEmailMessageRepository(BaseRepositoryTestLib):
             gmail_message_id="m-kind",
             direction=EmailDirection.INBOUND,
             inbound_kind=InboundKind.AUTO_REPLY,
-            attachments=[{"name": "cv.pdf", "size": 1024, "gmailAttachmentId": "att-1"}],
+            attachments=[
+                {"name": "cv.pdf", "size": 1024, "gmailAttachmentId": "att-1"}
+            ],
         )
         self.assertEqual(msg.inbound_kind, "auto_reply")
         self.assertEqual(msg.attachments[0]["name"], "cv.pdf")
