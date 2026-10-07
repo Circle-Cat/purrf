@@ -311,7 +311,7 @@ class ApprovalService:
         else:
             if comment is None:
                 raise ValueError("Give a reason for rejecting the request.")
-            await handler.revert(session, row)
+            await handler.revert(session, row, ApprovalRequestStatus.REJECTED)
             status = ApprovalRequestStatus.REJECTED
 
         await self._close(session, row, status, actor_id, comment)
@@ -367,7 +367,7 @@ class ApprovalService:
             raise PermissionError("Only the person who raised this can withdraw it.")
         self._require_pending(row)
 
-        await handler.revert(session, row)
+        await handler.revert(session, row, ApprovalRequestStatus.WITHDRAWN)
         await self._close(session, row, ApprovalRequestStatus.WITHDRAWN, actor_id, None)
         await record_event(
             session,

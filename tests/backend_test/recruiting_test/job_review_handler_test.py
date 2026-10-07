@@ -4,6 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+from backend.common.approval_enums import ApprovalRequestStatus
 from backend.common.recruiting_enums import JobStatus
 from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.recruiting.job_review_handler import (
@@ -194,7 +195,9 @@ class JobReviewHandlerTest(unittest.IsolatedAsyncioTestCase):
         for kind, (before, after) in back.items():
             with self.subTest(kind=kind):
                 self.job = _job(before, pending_payload=dict(_STAGED))
-                await self.handler.revert(self.session, _request(kind))
+                await self.handler.revert(
+                    self.session, _request(kind), ApprovalRequestStatus.REJECTED
+                )
                 self.assertEqual(self.job.status, after)
                 # A sent-back revision keeps its edit so it can be fixed and
                 # sent again.

@@ -201,7 +201,7 @@ class JobReviewHandler(ApprovalHandler):
             job.was_published = True
         await self.job_repository.update_job(session, job)
 
-    async def revert(self, session, request) -> None:
+    async def revert(self, session, request, outcome) -> None:
         """Put the posting back: INITIAL returns to DRAFT, REVISION and CLOSE
         to PUBLISHED (a revision keeps its staged edit, so it can be fixed and
         sent again), REOPEN to CLOSED."""
