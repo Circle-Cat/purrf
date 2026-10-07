@@ -205,9 +205,12 @@ py_test(
     deps = [
         "//backend/common:communication_enums",
         "//backend/common:inbox_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
         "//backend/communication",
         "//backend/entity:entities",
         "//backend/ops",
+        "//backend/recruiting",
         "//backend/repository:repositories",
         "//tests/backend_test/repository_test:base_repository_test_lib",
         "@pypi//sqlalchemy",
