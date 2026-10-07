@@ -143,3 +143,48 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "thread_service_test",
+    srcs = ["thread_service_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/communication",
+    ],
+)
+
+py_test(
+    name = "inbox_notifier_test",
+    srcs = ["inbox_notifier_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/common:inbox_enums",
+        "//backend/communication",
+    ],
+)
+
+py_test(
+    name = "recipient_resolvers_test",
+    srcs = ["recipient_resolvers_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/common:inbox_enums",
+        "//backend/communication",
+        "//backend/notification_management:recipient_registry",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
+    name = "notification_renderers_test",
+    srcs = ["notification_renderers_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/common:inbox_enums",
+        "//backend/communication",
+        "//backend/entity:entities",
+        "//backend/notification_management:recipient_registry",
+        "//backend/notification_management:render_registry",
+    ],
+)
