@@ -94,7 +94,6 @@ from backend.admin.permission_admin_controller import PermissionAdminController
 from backend.admin.user_account_controller import UserAccountController
 from backend.admin.user_account_service import UserAccountService
 from backend.repository.job_repository import JobRepository
-from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.event_repository import EventRepository
 from backend.repository.notification_repository import NotificationRepository
 from backend.repository.application_repository import ApplicationRepository
@@ -850,7 +849,6 @@ class AppDependencyBuilder:
         )
         self.notification_repository = NotificationRepository()
         self.event_repository = EventRepository()
-        self.job_review_repository = JobReviewRepository()
         self.recruiting_mapper = RecruitingMapper()
         # Person-anchored email transport, needed by the notification email
         # channel below. GmailClient reads the GMAIL_* credentials from the
@@ -918,7 +916,6 @@ class AppDependencyBuilder:
             self.job_repository,
             self.recruiting_mapper,
             self.user_permissions_repository,
-            self.job_review_repository,
             self.notification_repository,
             self.users_repository,
             self.user_emails_repository,

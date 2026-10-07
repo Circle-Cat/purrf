@@ -2,7 +2,6 @@ from backend.common.approval_enums import ApprovalRequestStatus
 from backend.entity.job_entity import JobEntity
 from backend.notification_management.event_recorder import record_event
 from backend.repository.job_repository import JobRepository
-from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.repository.users_repository import UsersRepository
 from backend.recruiting.job_blockers import submit_blockers
@@ -35,7 +34,6 @@ class JobService:
         job_repository: JobRepository,
         recruiting_mapper: RecruitingMapper,
         user_permissions_repository: UserPermissionsRepository,
-        job_review_repository: JobReviewRepository,
         notification_repository,
         users_repository: UsersRepository,
         user_emails_repository,
@@ -50,10 +48,6 @@ class JobService:
             recruiting_mapper (RecruitingMapper): Entity-to-DTO converter.
             user_permissions_repository (UserPermissionsRepository): Used to
                 resolve who may approve postings.
-            job_review_repository (JobReviewRepository): The old review
-                table, read only to clear a deleted draft's rows until the
-                table is dropped; reviews themselves go through
-                ``approval_service``.
             notification_repository (NotificationRepository): Retained until
                 the legacy notification rows are dropped; what happens here is
                 recorded through ``record_event``, which writes the event and
@@ -71,7 +65,6 @@ class JobService:
         self.job_repository = job_repository
         self.recruiting_mapper = recruiting_mapper
         self.user_permissions_repository = user_permissions_repository
-        self.job_review_repository = job_review_repository
         self.notification_repository = notification_repository
         self.users_repository = users_repository
         self.user_emails_repository = user_emails_repository
@@ -876,9 +869,6 @@ class JobService:
                 f"Job {job_id} cannot be deleted: only a draft or a "
                 "never-published closed posting may be deleted"
             )
-        # Rows in the old review table still carry a foreign key to the
-        # posting; this goes when the table does.
-        await self.job_review_repository.delete_by_job(session, job_id)
         await self.job_repository.delete_job(session, job)
         await session.commit()
 

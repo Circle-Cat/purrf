@@ -48,14 +48,6 @@ PUBLICLY_VISIBLE_JOB_STATUSES: frozenset[JobStatus] = frozenset({
 })
 
 
-class JobReviewStatus(StrEnum):
-    """State of a single job-review request."""
-
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-
-
 class JobReviewKind(StrEnum):
     """The gate a review covers: first publication, a later revision, or lifecycle transitions."""
 

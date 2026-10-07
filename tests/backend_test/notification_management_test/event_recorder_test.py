@@ -11,9 +11,6 @@ from backend.entity.application_entity import (  # noqa: F401 (registers table f
 from backend.entity.job_entity import (  # noqa: F401 (registers table for NotificationEntity's FK)
     JobEntity,
 )
-from backend.entity.job_review_entity import (  # noqa: F401 (registers table for NotificationEntity's FK)
-    JobReviewEntity,
-)
 from backend.entity.users_entity import UsersEntity
 from backend.notification_management import recipient_registry
 from backend.notification_management.event_recorder import record_event
