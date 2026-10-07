@@ -32,7 +32,9 @@ class LeaveRequestEntity(Base):
 
     ``approver_user_id`` is snapshotted from the Azure manager relationship at
     submission and never resolved live: once someone changes manager, the
-    historical record must still name whoever actually approved. It is NOT
+    historical record must still name whoever actually approved. Who decided,
+    when and why live on the approval behind the request (approval_request);
+    sick leave approved on filing has none. It is NOT
     NULL, so a person with no manager in Azure cannot submit anything at all,
     sick leave included. That is the intended side: auto-approving instead
     would make "HR left the field blank" indistinguishable from "this person
@@ -90,14 +92,6 @@ class LeaveRequestEntity(Base):
     # at submission rather than flagged, so it stays false too.
     is_late_notice: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
-    )
-    # NULL while pending. Also NULL once decided, when nobody decided it: a
-    # short sick request is approved by rule, not by a person.
-    decided_by: Mapped[int | None] = mapped_column(
-        ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True
-    )
-    decided_at: Mapped[datetime.datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
     )
     created_timestamp: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
