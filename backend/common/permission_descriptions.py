@@ -59,4 +59,5 @@ PERMISSION_DESCRIPTIONS: dict[Permission, str] = _validate_complete({
     Permission.PERMISSION_MANAGE: "View/grant/revoke user permissions, browse users and the permission catalog, view the permission-change audit log, and grant (but not revoke) super-admin status.",
     Permission.SUPER_ADMIN_REVOKE: "Revoke another user's super-admin status.",
     Permission.OPS_MAINTAIN: "System maintenance: receive operations alerts (for example, the Gmail sync losing its watch or falling back to a full resync) and trigger a full Gmail resync.",
+    Permission.INQUIRIES_MANAGE: "Inquiries inbox: read and reply to general inquiries, archive them, and move them to the Mentorship or Recruiting inbox.",
 })
