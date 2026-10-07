@@ -20,6 +20,12 @@ import {
   releaseMatchingEditLock,
   releaseMatchingEditLockOnLeave,
   saveMatchingDraft,
+  requestMatchingPublish,
+  getMentorshipApprovers,
+  getMyMentorshipApprovals,
+  reassignMentorshipApproval,
+  decideMentorshipApproval,
+  withdrawMentorshipApproval,
 } from "@/api/mentorshipApi";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
@@ -450,5 +456,60 @@ describe("Mentorship Service API", () => {
       { changes },
     );
     expect(result).toEqual(mockData);
+  });
+
+  it("requestMatchingPublish posts the reviewer and reason for the round", async () => {
+    const mockData = { data: { requestId: 31 } };
+    request.post.mockResolvedValue(mockData);
+
+    const result = await requestMatchingPublish(7, {
+      reviewerId: 8,
+      reason: "Reviewed every pair",
+    });
+
+    expect(request.post).toHaveBeenCalledWith(
+      "/mentorship/admin/match-runs/7/publish-request",
+      { reviewerId: 8, reason: "Reviewed every pair" },
+    );
+    expect(result).toEqual(mockData);
+  });
+
+  it("getMentorshipApprovers and getMyMentorshipApprovals read their lists", async () => {
+    request.get.mockResolvedValue({ data: [] });
+
+    await getMentorshipApprovers();
+    await getMyMentorshipApprovals();
+
+    expect(request.get).toHaveBeenNthCalledWith(
+      1,
+      "/mentorship/admin/approvals/approvers",
+    );
+    expect(request.get).toHaveBeenNthCalledWith(
+      2,
+      "/mentorship/admin/approvals/mine",
+    );
+  });
+
+  it("reassign, decide and withdraw post to the request", async () => {
+    request.post.mockResolvedValue({ data: {} });
+
+    await reassignMentorshipApproval(31, 12);
+    await decideMentorshipApproval(31, { decision: "reject", comment: "No" });
+    await withdrawMentorshipApproval(31);
+
+    expect(request.post).toHaveBeenNthCalledWith(
+      1,
+      "/mentorship/admin/approvals/31/reassign",
+      { reviewerId: 12 },
+    );
+    expect(request.post).toHaveBeenNthCalledWith(
+      2,
+      "/mentorship/admin/approvals/31/decide",
+      { decision: "reject", comment: "No" },
+    );
+    expect(request.post).toHaveBeenNthCalledWith(
+      3,
+      "/mentorship/admin/approvals/31/withdraw",
+    );
   });
 });

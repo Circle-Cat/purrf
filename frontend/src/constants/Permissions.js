@@ -8,6 +8,7 @@ export const PERMISSIONS = {
   DASHBOARD_ACTIVITY_SUMMARY_READ: "dashboard.activity_summary.read",
   MENTORSHIP_ADMIN_READ: "mentorship.admin.read",
   MENTORSHIP_ADMIN_WRITE: "mentorship.admin.write",
+  MENTORSHIP_APPROVE: "mentorship.approve",
   PERMISSION_MANAGE: "permission.manage",
   SUPER_ADMIN_REVOKE: "super_admin.revoke",
   RECRUITING_JOB_READ: "recruiting.job.read",

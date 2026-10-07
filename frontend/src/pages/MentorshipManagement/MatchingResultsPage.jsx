@@ -31,6 +31,7 @@ import {
 } from "@/pages/MentorshipManagement/hooks/useMatchingRun";
 import { useParticipantSearchRounds } from "@/pages/MentorshipManagement/hooks/useParticipantSearchRounds";
 import { useMatchDraft } from "@/pages/MentorshipManagement/hooks/useMatchDraft";
+import PublishApproval from "@/pages/MentorshipManagement/components/PublishApproval";
 import {
   mentorChoices,
   problemText,
@@ -711,7 +712,9 @@ const Results = ({ roundId, overview, draft }) => {
  * and both sides' profiles. A succeeded run's result is a shared draft that
  * users with mentorship write access edit one at a time under an edit lock
  * (see useMatchDraft); everyone sees who holds it and what was edited.
- * Opened from the Participants card. With the matching-run flag off it says
+ * Publishing it goes through an approval (see PublishApproval); while a
+ * request waits the result cannot be edited. Opened from the Participants
+ * card. With the matching-run flag off it says
  * so and asks the API nothing.
  *
  * Route: /mentorship-management/matching/:roundId
@@ -733,6 +736,7 @@ const MatchingResultsPage = () => {
   );
   const { permissions, user } = useAuth();
   const canWrite = permissions.includes(PERMISSIONS.MENTORSHIP_ADMIN_WRITE);
+  const canApprove = permissions.includes(PERMISSIONS.MENTORSHIP_APPROVE);
   const draft = useMatchDraft(roundId, reload);
 
   let body;
@@ -778,6 +782,8 @@ const MatchingResultsPage = () => {
   const editLock = succeeded && !draft.editing ? overview.editLock : null;
   const lockedByOther =
     editLock != null && String(editLock.userId) !== String(user?.userId);
+  // A result waiting for approval stays as it was sent.
+  const waitingToPublish = succeeded && overview.publishRequest != null;
 
   return (
     <Card className="border-gray-200">
@@ -799,7 +805,7 @@ const MatchingResultsPage = () => {
             <Button
               className="ml-auto"
               onClick={draft.start}
-              disabled={lockedByOther || draft.busy}
+              disabled={lockedByOther || waitingToPublish || draft.busy}
             >
               Edit
             </Button>
@@ -828,6 +834,17 @@ const MatchingResultsPage = () => {
           <p className="text-sm text-red-700">
             Your editing lock ended; unsaved changes were not kept.
           </p>
+        ) : null}
+        {succeeded ? (
+          <PublishApproval
+            roundId={roundId}
+            overview={overview}
+            editing={draft.editing}
+            canWrite={canWrite}
+            canApprove={canApprove}
+            userId={user?.userId}
+            onChanged={reload}
+          />
         ) : null}
       </CardHeader>
       <CardContent>{body}</CardContent>
