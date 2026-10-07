@@ -354,6 +354,63 @@ describe("useParticipantSearch", () => {
     });
   });
 
+  describe("Needs exemption", () => {
+    const open = (url) => renderSearch(url);
+
+    it("is asked for from the URL and kept while paging", async () => {
+      searchParticipants.mockResolvedValue(page({ total: 45 }));
+      const { result } = open("/?round=7&needsExemption=1");
+      await waitFor(() => expect(result.current.search.total).toBe(45));
+
+      expect(result.current.search.needsExemption).toBe(true);
+      expect(searchParticipants).toHaveBeenLastCalledWith(
+        expect.objectContaining({ needsExemption: true, eligible: undefined }),
+      );
+      act(() => result.current.search.nextPage());
+
+      await waitFor(() => expect(paramsOf(result).get("offset")).toBe("20"));
+      expect(paramsOf(result).get("needsExemption")).toBe("1");
+    });
+
+    it("is one choice with the other lists", async () => {
+      const { result } = open("/?round=7&eligible=1");
+      await waitFor(() =>
+        expect(result.current.search.listEligible).toBe(true),
+      );
+
+      act(() => result.current.search.setListNeedsExemption(true));
+      expect(result.current.search.listNeedsExemption).toBe(true);
+      expect(result.current.search.listEligible).toBe(false);
+
+      act(() => result.current.search.setListNotRegistered(true));
+      expect(result.current.search.listNeedsExemption).toBe(false);
+    });
+
+    it("cannot be picked for, and is dropped from, a round not in progress", async () => {
+      const { result } = open("/?round=3&needsExemption=1");
+
+      await waitFor(() =>
+        expect(paramsOf(result).has("needsExemption")).toBe(false),
+      );
+      expect(result.current.search.needsExemption).toBe(false);
+      act(() => result.current.search.setListNeedsExemption(true));
+      expect(result.current.search.canListNeedsExemption).toBe(false);
+      expect(result.current.search.listNeedsExemption).toBe(false);
+    });
+
+    it("searching it writes it to the URL", async () => {
+      const { result } = open("/?round=7");
+      await waitFor(() => expect(result.current.search.total).toBe(1));
+
+      act(() => result.current.search.setListNeedsExemption(true));
+      act(() => result.current.search.submitSearch());
+
+      await waitFor(() =>
+        expect(paramsOf(result).get("needsExemption")).toBe("1"),
+      );
+    });
+  });
+
   describe("Not registered", () => {
     const open = (url) => renderSearch(url);
 

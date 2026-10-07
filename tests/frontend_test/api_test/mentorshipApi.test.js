@@ -26,6 +26,7 @@ import {
   reassignMentorshipApproval,
   decideMentorshipApproval,
   withdrawMentorshipApproval,
+  requestMatchingExemption,
 } from "@/api/mentorshipApi";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
@@ -511,5 +512,24 @@ describe("Mentorship Service API", () => {
       3,
       "/mentorship/admin/approvals/31/withdraw",
     );
+  });
+
+  it("requestMatchingExemption posts to the person in the round", async () => {
+    request.post.mockResolvedValue({ data: {} });
+
+    await requestMatchingExemption(7, 21, { reviewerId: 8, reason: "Left" });
+
+    expect(request.post).toHaveBeenCalledWith(
+      "/mentorship/admin/rounds/7/participants/21/exemption-request",
+      { reviewerId: 8, reason: "Left" },
+    );
+  });
+
+  it("searchParticipants passes needsExemption through", async () => {
+    request.get.mockResolvedValue({ data: {} });
+
+    await searchParticipants({ roundId: 7, needsExemption: true });
+
+    expect(request.get.mock.calls.at(-1)[1].params.needsExemption).toBe(true);
   });
 });

@@ -38,6 +38,8 @@ export const API_ENDPOINTS = {
     `/mentorship/admin/match-runs/${roundId}/draft`,
   MENTORSHIP_ADMIN_MATCH_RUN_PUBLISH_REQUEST: (roundId) =>
     `/mentorship/admin/match-runs/${roundId}/publish-request`,
+  MENTORSHIP_ADMIN_EXEMPTION_REQUEST: (roundId, userId) =>
+    `/mentorship/admin/rounds/${roundId}/participants/${userId}/exemption-request`,
   MENTORSHIP_ADMIN_APPROVERS: "/mentorship/admin/approvals/approvers",
   MENTORSHIP_ADMIN_APPROVALS_MINE: "/mentorship/admin/approvals/mine",
   MENTORSHIP_ADMIN_APPROVAL_REASSIGN: (requestId) =>

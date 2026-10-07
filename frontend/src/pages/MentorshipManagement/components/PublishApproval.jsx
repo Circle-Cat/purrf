@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   decideMentorshipApproval,
@@ -11,8 +10,7 @@ import ApprovalRequestDialog from "@/components/approval/ApprovalRequestDialog";
 import ApprovalDecisionDialog from "@/components/approval/ApprovalDecisionDialog";
 import { useMentorshipApprovers } from "@/pages/MentorshipManagement/hooks/useMentorshipApprovers";
 import { approvalPersonLabel } from "@/pages/MentorshipManagement/utils/approvalLabels";
-
-const messageOf = (err, fallback) => err?.response?.data?.message || fallback;
+import { useApprovalAction } from "@/pages/MentorshipManagement/hooks/useApprovalAction";
 
 const sameUser = (a, b) => a != null && b != null && String(a) === String(b);
 
@@ -54,22 +52,12 @@ const PublishApproval = ({
   const reviewers = useMentorshipApprovers(
     dialog === "request" || dialog === "reassign",
   );
-  const [busy, setBusy] = useState(false);
+  const { busy, act: run } = useApprovalAction(onChanged);
   const pending = overview.publishRequest;
   const rejection = overview.lastPublishRejection;
 
   const act = async (call, done, fallback) => {
-    setBusy(true);
-    try {
-      await call();
-      setDialog(null);
-      toast.success(done);
-      await onChanged();
-    } catch (err) {
-      toast.error(messageOf(err, fallback));
-    } finally {
-      setBusy(false);
-    }
+    if (await run(call, done, fallback)) setDialog(null);
   };
 
   if (pending) {
