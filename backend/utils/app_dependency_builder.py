@@ -190,7 +190,6 @@ from backend.ops.ops_alert_service import OpsAlertService
 from backend.repository.gmail_sync_state_repository import GmailSyncStateRepository
 from backend.common.communication_enums import ContextType
 from backend.communication.meeting_scheduling_service import MeetingSchedulingService
-from backend.repository.block_request_repository import BlockRequestRepository
 from backend.repository.approval_request_repository import (
     ApprovalRequestRepository,
 )
@@ -571,7 +570,6 @@ class AppDependencyBuilder:
         )
         self.user_identities_repository = UserIdentitiesRepository()
         self.user_permissions_repository = UserPermissionsRepository()
-        self.block_request_repository = BlockRequestRepository()
         self.training_repository = TrainingRepository()
         self.training_course_repository = TrainingCourseRepository()
         self.training_course_package_repository = TrainingCoursePackageRepository()
