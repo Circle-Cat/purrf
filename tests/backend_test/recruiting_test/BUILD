@@ -294,6 +294,7 @@ py_test(
     name = "job_review_handler_test",
     srcs = ["job_review_handler_test.py"],
     deps = [
+        "//backend/common:approval_enums",
         "//backend/common:recruiting_enums",
         "//backend/entity:entities",
         "//backend/recruiting",

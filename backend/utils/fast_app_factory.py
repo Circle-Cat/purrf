@@ -4,6 +4,10 @@ from backend.common.fast_api_error_handler import register_exception_handlers
 from backend.notification_management.publish_on_commit import (
     install_publish_listener,
 )
+from backend.leave import (  # noqa: F401 (registers)
+    notification_renderers as leave_notification_renderers,
+    recipient_resolvers as leave_recipient_resolvers,
+)
 from backend.mentorship import (  # noqa: F401 (registers)
     notification_renderers as mentorship_notification_renderers,
     recipient_resolvers as mentorship_recipient_resolvers,

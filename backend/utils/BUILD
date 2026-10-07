@@ -79,6 +79,7 @@ py_library(
     deps = [
         ":auth_middleware",
         "//backend/common:fast_api_error_handler",
+        "//backend/leave:notifications",
         "//backend/mentorship",
         "//backend/notification_management:publish_on_commit",
         "//backend/ops",
@@ -154,6 +155,7 @@ py_library(
         "//backend/leave:leave_job_controller",
         "//backend/leave:leave_participants",
         "//backend/leave:leave_request_controller",
+        "//backend/leave:leave_request_handler",
         "//backend/leave:leave_request_service",
         "//backend/mentorship",
         "//backend/notification_management:delivery_controller",

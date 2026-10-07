@@ -11,6 +11,7 @@ it does.
 from abc import ABC, abstractmethod
 from typing import ClassVar
 
+from backend.common.approval_enums import ApprovalRequestStatus
 from backend.common.permissions import Permission
 from backend.entity.approval_request_entity import ApprovalRequestEntity
 
@@ -149,13 +150,20 @@ class ApprovalHandler(ABC):
             actor_id (int): The reviewer approving it.
         """
 
-    async def revert(self, session, request: ApprovalRequestEntity) -> None:
+    async def revert(
+        self,
+        session,
+        request: ApprovalRequestEntity,
+        outcome: ApprovalRequestStatus,
+    ) -> None:
         """Put the target back the way it was before the request was raised.
         Called when the request is rejected or withdrawn.
 
         Args:
             session (AsyncSession): Active database async session.
             request (ApprovalRequestEntity): The request, locked.
+            outcome (ApprovalRequestStatus): REJECTED or WITHDRAWN, for a
+                target that records which.
         """
 
     async def after_commit(self, request: ApprovalRequestEntity) -> None:
