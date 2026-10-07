@@ -1,6 +1,7 @@
 from unittest import TestCase, main
 from unittest.mock import patch, MagicMock, ANY
 from backend.utils.app_dependency_builder import AppDependencyBuilder
+from backend.common.communication_enums import ContextType
 from backend.common.environment_constants import (
     JIRA_SERVER,
     JIRA_USER,
@@ -944,6 +945,22 @@ class TestAppDependencyBuilder(TestCase):
             builder.block_user_handler._interview_scheduling,
             builder.interview_scheduling_service,
         )
+
+        # Inbox threads: one sweeping handler, the other contexts only sync.
+        registry = builder.email_context_registry
+        self.assertIs(
+            registry.get(ContextType.MENTORSHIP_INBOX), builder.inbox_sync_handler
+        )
+        self.assertIs(registry.get(ContextType.APPLICATION), builder.email_sync_service)
+        for context_type in (
+            ContextType.RECRUITING_INBOX,
+            ContextType.INQUIRIES_INBOX,
+            ContextType.ACTIVITY,
+        ):
+            alias = registry.get(context_type)
+            self.assertIs(alias._handler, builder.inbox_sync_handler)
+        self.assertIs(builder.inbox_sync_handler._notifier, builder.inbox_notifier)
+        self.assertIs(builder.inbox_notifier._services, builder.thread_service_resolver)
 
 
 if __name__ == "__main__":

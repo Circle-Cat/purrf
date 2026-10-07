@@ -183,6 +183,9 @@ from backend.communication.email_conversation_service import EmailConversationSe
 from backend.communication.email_context_registry import EmailContextRegistry
 from backend.communication.inbox_aliases import InboxAliases
 from backend.communication.inbox_router import InboxRouter
+from backend.communication.inbox_notifier import InboxNotifier
+from backend.communication.inbox_sync_handler import InboxSyncHandler
+from backend.communication.thread_service import ThreadServiceResolver
 from backend.communication.gmail_push_controller import GmailPushController
 from backend.communication.gmail_push_service import GmailPushService
 from backend.communication.gmail_maintenance_service import GmailMaintenanceService
@@ -986,6 +989,32 @@ class AppDependencyBuilder:
         self.email_context_registry.register(
             ContextType.APPLICATION, self.email_sync_service
         )
+        self.thread_service_resolver = ThreadServiceResolver(
+            job_repository=self.job_repository
+        )
+        self.inbox_notifier = InboxNotifier(
+            message_repository=self.email_message_repository,
+            thread_service_resolver=self.thread_service_resolver,
+        )
+        self.inbox_sync_handler = InboxSyncHandler(
+            conversation_service=self.email_conversation_service,
+            thread_repository=self.email_thread_repository,
+            notifier=self.inbox_notifier,
+            logger=self.logger,
+        )
+        # A full resync calls resync_all once per registered context; only
+        # MENTORSHIP_INBOX gets the sweeping handler.
+        self.email_context_registry.register(
+            ContextType.MENTORSHIP_INBOX, self.inbox_sync_handler
+        )
+        for context_type in (
+            ContextType.RECRUITING_INBOX,
+            ContextType.INQUIRIES_INBOX,
+            ContextType.ACTIVITY,
+        ):
+            self.email_context_registry.register(
+                context_type, self.inbox_sync_handler.alias_without_resync()
+            )
         # Optional: an environment whose mailbox has no watch yet boots
         # normally and the daily job reports it as skipped.
         gmail_watch_topic = os.getenv(GMAIL_WATCH_TOPIC) or None

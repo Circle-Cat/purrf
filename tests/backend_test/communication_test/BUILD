@@ -188,3 +188,28 @@ py_test(
         "//backend/notification_management:render_registry",
     ],
 )
+
+py_test(
+    name = "inbox_sync_handler_test",
+    srcs = ["inbox_sync_handler_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/communication",
+    ],
+)
+
+py_test(
+    name = "inbox_sync_handler_db_test",
+    srcs = ["inbox_sync_handler_db_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/common:inbox_enums",
+        "//backend/communication",
+        "//backend/entity:entities",
+        "//backend/ops",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+        "@pypi//sqlalchemy",
+    ],
+)
