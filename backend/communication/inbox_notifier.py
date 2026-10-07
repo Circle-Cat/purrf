@@ -63,9 +63,7 @@ class InboxNotifier:
             messages, thread.archived_at
         ):
             return False
-        newest = max(
-            (m for m in new_messages if is_human_inbound(m)), key=message_time
-        )
+        newest = max((m for m in new_messages if is_human_inbound(m)), key=message_time)
         service = await self._services.service_of(session, thread)
         await record_event(
             session,

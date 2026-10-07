@@ -152,9 +152,7 @@ class TestInboxRouter(unittest.IsolatedAsyncioTestCase):
         self.threads.get_by_gmail_thread_id.return_value = existing
         result = await self._route()
         self.assertEqual(result, RouteResult(thread=existing, unrouted=False))
-        self.threads.get_by_gmail_thread_id.assert_awaited_once_with(
-            self.session, "g1"
-        )
+        self.threads.get_by_gmail_thread_id.assert_awaited_once_with(self.session, "g1")
         self.session.begin_nested.assert_called_once()
 
     async def test_gmail_failure_propagates(self):
