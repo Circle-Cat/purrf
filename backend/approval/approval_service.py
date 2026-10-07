@@ -438,6 +438,25 @@ class ApprovalService:
             session, action, handler.target_type, target_id
         )
 
+    async def list_pending_for_targets(
+        self, session, action: str, target_ids: Collection[str]
+    ) -> dict[str, ApprovalRequestEntity]:
+        """The pending request of each of these targets that has one.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            action (str): The action.
+            target_ids (Collection[str]): The targets.
+
+        Returns:
+            dict[str, ApprovalRequestEntity]: target_id -> pending request.
+        """
+        handler = self.handler_for(action)
+        rows = await self._requests.list_pending_for_targets(
+            session, action, handler.target_type, target_ids
+        )
+        return {row.target_id: row for row in rows}
+
     async def get_latest_closed_for_target(
         self, session, action: str, target_id: str
     ) -> ApprovalRequestEntity | None:

@@ -76,7 +76,13 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
             "reason": "Reviewed every pair",
         }
         self.mock_approval_service = MagicMock()
-        for name in ("request_publish", "reassign", "decide", "withdraw"):
+        for name in (
+            "request_publish",
+            "request_exemption",
+            "reassign",
+            "decide",
+            "withdraw",
+        ):
             setattr(
                 self.mock_approval_service, name, AsyncMock(return_value=self.approval)
             )
@@ -467,6 +473,31 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response["data"].request_id, 31)
 
+    async def test_requesting_an_exemption_names_the_person_in_the_round(self):
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+        body = ApprovalRequestCreateDto(reviewer_id=8, reason="Her mentor left midway")
+
+        await self.controller.request_exemption(7, 21, body, caller)
+
+        self.mock_approval_service.request_exemption.assert_awaited_once_with(
+            self.mock_session,
+            round_id=7,
+            user_id=21,
+            actor_id=9,
+            reviewer_id=8,
+            reason="Her mentor left midway",
+        )
+
+    async def test_requesting_an_exemption_is_refused_while_the_flag_is_off(self):
+        self.mock_launchdarkly_service.is_matching_run_enabled.return_value = False
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+
+        with self.assertRaises(PermissionError):
+            await self.controller.request_exemption(
+                7, 21, ApprovalRequestCreateDto(reviewer_id=8, reason="x"), caller
+            )
+        self.mock_approval_service.request_exemption.assert_not_awaited()
+
     async def test_the_approvers_leave_out_the_caller(self):
         caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
 
@@ -563,6 +594,11 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         }
         expected = {
             ("/mentorship/admin/match-runs/{round_id}/publish-request", "POST"),
+            (
+                "/mentorship/admin/rounds/{round_id}/participants/{user_id}"
+                "/exemption-request",
+                "POST",
+            ),
             ("/mentorship/admin/approvals/approvers", "GET"),
             ("/mentorship/admin/approvals/mine", "GET"),
             ("/mentorship/admin/approvals/{request_id}/reassign", "POST"),

@@ -7,11 +7,15 @@ console shows: who raised it, who reviews it, which round it is about.
 """
 
 from backend.common.name_utils import user_display_name
+from backend.mentorship.exempt_matching_handler import (
+    EXEMPT_MATCHING,
+    exemption_target,
+)
 from backend.mentorship.publish_matching_handler import PUBLISH_MATCHING
 
 # Every action whose requests the mentorship console raises and decides. All
 # of them are reviewed by holders of mentorship.approve.
-MENTORSHIP_ACTIONS = (PUBLISH_MATCHING,)
+MENTORSHIP_ACTIONS = (PUBLISH_MATCHING, EXEMPT_MATCHING)
 
 
 class MentorshipApprovalService:
@@ -109,6 +113,68 @@ class MentorshipApprovalService:
         )
         return (await self._describe(session, [row]))[0]
 
+    async def request_exemption(
+        self,
+        session,
+        *,
+        round_id: int,
+        user_id: int,
+        actor_id: int,
+        reviewer_id: int,
+        reason: str,
+    ) -> dict:
+        """Ask a reviewer to exempt a person from the history check in a
+        round. Commits.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round.
+            user_id (int): The person.
+            actor_id (int): Who is asking.
+            reviewer_id (int): Who should decide.
+            reason (str): Why.
+
+        Returns:
+            dict: The new request.
+
+        Raises:
+            ValueError: The reviewer or reason is refused.
+            ConflictError: The round is not in progress, the person does not
+                need an exemption, or one is already waiting for approval.
+        """
+        row = await self.approval_service.raise_request(
+            session,
+            action=EXEMPT_MATCHING,
+            raised_by=actor_id,
+            target_id=exemption_target(round_id, user_id),
+            payload={"round_id": round_id, "user_id": user_id},
+            reason=reason,
+            reviewer_id=reviewer_id,
+        )
+        return (await self._describe(session, [row]))[0]
+
+    async def pending_exemptions(
+        self, session, round_id: int, user_ids
+    ) -> dict[int, dict]:
+        """The exemption request waiting on each of these people in the
+        round, for the rows of the Needs exemption list.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round.
+            user_ids (Iterable[int]): The people.
+
+        Returns:
+            dict[int, dict]: user_id -> request, for those with one.
+        """
+        pending = await self.approval_service.list_pending_for_targets(
+            session,
+            EXEMPT_MATCHING,
+            [exemption_target(round_id, user_id) for user_id in user_ids],
+        )
+        described = await self._describe(session, list(pending.values()))
+        return {d["person"]["user_id"]: d for d in described}
+
     async def reassign(
         self, session, *, request_id: int, actor_id: int, reviewer_id: int
     ) -> dict:
@@ -176,7 +242,9 @@ class MentorshipApprovalService:
         return row
 
     async def _describe(self, session, rows) -> list[dict]:
-        user_ids = {u for row in rows for u in (row.raised_by, row.reviewer_id)}
+        user_ids = {u for row in rows for u in (row.raised_by, row.reviewer_id)} | {
+            int(row.payload["user_id"]) for row in rows if "user_id" in row.payload
+        }
         people = await self.users_repository.get_all_by_ids(session, list(user_ids))
         names = {p.user_id: _name(p) for p in people}
         round_names: dict[int, str | None] = {}
@@ -199,6 +267,9 @@ class MentorshipApprovalService:
                     "name": round_names[int(row.payload["round_id"])],
                 },
                 "target_id": row.target_id,
+                "person": person(int(row.payload["user_id"]))
+                if "user_id" in row.payload
+                else None,
                 "raised_by": person(row.raised_by),
                 "reviewer": person(row.reviewer_id),
                 "reason": row.reason,

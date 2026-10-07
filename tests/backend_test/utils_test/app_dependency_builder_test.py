@@ -524,6 +524,21 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_meeting_repository=mock_mentorship_meeting_repo_cls.return_value,
             application_repository=builder.application_repository,
             matching_eligibility_service=builder.matching_eligibility_service,
+            mentorship_approval_service=builder.mentorship_approval_service,
+        )
+        # Eligibility reads the exemptions the exemption handler writes, and
+        # the handler asks the same service who needs one.
+        self.assertIs(
+            builder.matching_eligibility_service.note_repository,
+            builder.exempt_matching_handler.note_repository,
+        )
+        self.assertIs(
+            builder.approval_service.handler_for("exempt_matching"),
+            builder.exempt_matching_handler,
+        )
+        self.assertIs(
+            builder.exempt_matching_handler.matching_eligibility_service,
+            builder.matching_eligibility_service,
         )
         self.assertIs(
             builder.matching_run_service.matching_eligibility_service,

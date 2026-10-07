@@ -3,6 +3,10 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, AsyncMock
 from dateutil.parser import isoparse
+from backend.mentorship.matching_eligibility import (
+    HistoryFinding,
+    IneligibleReason,
+)
 from backend.mentorship.mentorship_admin_service import MentorshipAdminService
 from backend.dto.participant_search_filter_dto import (
     ParticipantSearchFilterDto,
@@ -162,6 +166,9 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.mock_logger = MagicMock()
         self.mock_eligibility = MagicMock()
         self.mock_eligibility.eligible_user_ids = AsyncMock(return_value=set())
+        self.mock_eligibility.needs_exemption = AsyncMock(return_value={})
+        self.mock_approvals = MagicMock()
+        self.mock_approvals.pending_exemptions = AsyncMock(return_value={})
 
         self.service = MentorshipAdminService(
             users_repository=self.mock_users_repo,
@@ -174,6 +181,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             mentorship_meeting_repository=self.mock_meeting_repo,
             application_repository=self.mock_application_repo,
             matching_eligibility_service=self.mock_eligibility,
+            mentorship_approval_service=self.mock_approvals,
         )
 
     async def test_unregistered_unknown_round_raises(self):
@@ -363,6 +371,115 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
                     )
         self.mock_eligibility.eligible_user_ids.assert_not_awaited()
         self.mock_participants_repo.search_participants_for_admin.assert_not_awaited()
+
+    async def test_needs_exemption_lists_why_and_the_request_waiting(self):
+        self.mock_eligibility.needs_exemption.return_value = {
+            21: [HistoryFinding(IneligibleReason.MEETINGS_SHORT, 5, 2, 6)],
+            22: [HistoryFinding(IneligibleReason.QUIT_AFTER_MATCH, 6)],
+        }
+        past = [MagicMock(round_id=5), MagicMock(round_id=6)]
+        past[0].name, past[1].name = "2025 Spring", "2025 Fall"
+        self.mock_rounds_repo.get_all_rounds.return_value = past
+        self.mock_participants_repo.search_participants_for_admin.return_value = (
+            [_make_row(user_id=21, round_id=7), _make_row(user_id=22, round_id=7)],
+            2,
+        )
+        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
+            {
+                uid: MagicMock(
+                    user_id=uid, first_name="U", last_name="X", preferred_name=None
+                )
+                for uid in (21, 22)
+            },
+            {},
+        )
+        self.mock_approvals.pending_exemptions.return_value = {
+            22: {
+                "request_id": 61,
+                "action": "exempt_matching",
+                "status": "pending",
+                "round": {"round_id": 7, "name": "2026 Spring"},
+                "target_id": "7:22",
+                "person": {"user_id": 22, "name": "U X"},
+                "raised_by": {"user_id": 9, "name": "Ada Ng"},
+                "reviewer": {"user_id": 8, "name": "Rae Kim"},
+                "reason": "Mentor left",
+            }
+        }
+
+        result = await self.service.search_participants(
+            self.mock_session,
+            ParticipantSearchFilterDto(round_id=7, needs_exemption=True),
+        )
+
+        call = self.mock_participants_repo.search_participants_for_admin.await_args
+        self.assertEqual(call.kwargs["only_user_ids"], {21, 22})
+        self.mock_approvals.pending_exemptions.assert_awaited_once_with(
+            self.mock_session, 7, [21, 22]
+        )
+        rows = {r.user_id: r for r in result.participant_rows}
+        self.assertEqual(
+            [f.model_dump() for f in rows[21].exemption_findings],
+            [
+                {
+                    "reason": "meetings_short",
+                    "round_id": 5,
+                    "round_name": "2025 Spring",
+                    "completed": 2,
+                    "required": 6,
+                }
+            ],
+        )
+        self.assertIsNone(rows[21].exemption_request)
+        self.assertEqual(rows[22].exemption_findings[0].reason, "quit_after_match")
+        self.assertEqual(rows[22].exemption_findings[0].round_name, "2025 Fall")
+        self.assertEqual(rows[22].exemption_request.reviewer.name, "Rae Kim")
+
+    async def test_needs_exemption_and_eligible_together_are_refused(self):
+        with self.assertRaises(ValueError):
+            await self.service.search_participants(
+                self.mock_session,
+                ParticipantSearchFilterDto(
+                    round_id=7, eligible=True, needs_exemption=True
+                ),
+            )
+        self.mock_participants_repo.search_participants_for_admin.assert_not_awaited()
+
+    async def test_needs_exemption_is_refused_outside_a_round_in_progress(self):
+        self.mock_rounds_repo.get_by_round_id.return_value = None
+
+        for round_id in (None, 7):
+            with self.subTest(round_id=round_id):
+                with self.assertRaises(ValueError):
+                    await self.service.search_participants(
+                        self.mock_session,
+                        ParticipantSearchFilterDto(
+                            round_id=round_id, needs_exemption=True
+                        ),
+                    )
+        self.mock_eligibility.needs_exemption.assert_not_awaited()
+
+    async def test_other_lists_carry_no_exemption_columns(self):
+        self.mock_participants_repo.search_participants_for_admin.return_value = (
+            [_make_row(user_id=21, round_id=7)],
+            1,
+        )
+        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
+            {
+                21: MagicMock(
+                    user_id=21, first_name="U", last_name="X", preferred_name=None
+                )
+            },
+            {},
+        )
+
+        result = await self.service.search_participants(
+            self.mock_session, ParticipantSearchFilterDto(round_id=7)
+        )
+
+        self.assertEqual(result.participant_rows[0].exemption_findings, [])
+        self.assertIsNone(result.participant_rows[0].exemption_request)
+        self.mock_approvals.pending_exemptions.assert_not_awaited()
 
     async def test_empty_rows_returns_immediately(self):
         """Returns empty result without calling other repos when no rows found."""
@@ -1355,6 +1472,7 @@ class TestGetRoundFeedback(unittest.IsolatedAsyncioTestCase):
             mentorship_meeting_repository=MagicMock(),
             application_repository=MagicMock(),
             matching_eligibility_service=MagicMock(),
+            mentorship_approval_service=MagicMock(),
         )
 
     async def test_maps_sent_and_unsent_rows_and_names_partners(self):
