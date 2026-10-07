@@ -172,6 +172,7 @@ class ApprovalService:
             # A concurrent raise on the same target got there between our
             # check and this write; the partial unique index refused ours.
             raise ConflictError("This is already waiting for approval.") from exc
+        await handler.on_raised(session, row)
 
         await record_event(
             session,
@@ -313,6 +314,7 @@ class ApprovalService:
                 "requestId": request_id,
                 "action": action,
                 "decision": status.value,
+                "comment": comment,
             },
         )
         await session.commit()
@@ -366,6 +368,7 @@ class ApprovalService:
                 "requestId": request_id,
                 "action": action,
                 "decision": ApprovalRequestStatus.WITHDRAWN.value,
+                "comment": None,
             },
         )
         await session.commit()
@@ -453,6 +456,27 @@ class ApprovalService:
         """
         handler = self.handler_for(action)
         rows = await self._requests.list_pending_for_targets(
+            session, action, handler.target_type, target_ids
+        )
+        return {row.target_id: row for row in rows}
+
+    async def latest_for_targets(
+        self, session, action: str, target_ids: Collection[str]
+    ) -> dict[str, ApprovalRequestEntity]:
+        """The most recent request of each of these targets, whatever its
+        status, for a list that shows each target's last review.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            action (str): The action.
+            target_ids (Collection[str]): The targets.
+
+        Returns:
+            dict[str, ApprovalRequestEntity]: target_id -> newest request,
+                for the targets that have one.
+        """
+        handler = self.handler_for(action)
+        rows = await self._requests.list_latest_for_targets(
             session, action, handler.target_type, target_ids
         )
         return {row.target_id: row for row in rows}

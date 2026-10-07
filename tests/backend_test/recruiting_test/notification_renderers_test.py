@@ -348,6 +348,27 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
         self.assertIn("Grace Hopper approved your submission", approved_body)
         self.assertEqual(rejected_subject, "Posting rejected: Backend Engineer")
 
+    async def test_review_decided_by_withdrawal_tells_the_reviewer_it_is_off(self):
+        """A withdrawal is no verdict: it must not read as a rejection, which
+        is where any decision other than approval used to land."""
+        actor = _make_user("Grace", "Hopper")
+        await self.insert_entities([actor])
+        job = await self._make_job()
+        event = await self._make_event(
+            "recruiting.review_decided",
+            "job",
+            job.job_id,
+            actor,
+            details={"kind": "initial", "decision": "withdrawn", "comment": None},
+        )
+
+        subject, body = await render_registry.render(self.session, event)
+
+        self.assertEqual(subject, "Posting review withdrawn: Backend Engineer")
+        self.assertIn("Grace Hopper withdrew their request", body)
+        self.assertIn("Backend Engineer", body)
+        self.assertNotIn("rejected", body)
+
     async def test_review_reassigned_tells_the_new_reviewer_it_is_theirs_now(self):
         """Its own copy, not review_opened's.
 

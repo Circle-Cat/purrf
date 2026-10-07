@@ -110,6 +110,16 @@ class ApprovalHandler(ABC):
                 refusal is, mapped to its HTTP status by the error handler.
         """
 
+    async def on_raised(self, session, request: ApprovalRequestEntity) -> None:
+        """Mark the target as waiting, once its request is written. For an
+        action whose target carries its own pending state, such as a posting
+        moving to PENDING_REVIEW; revert undoes it.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            request (ApprovalRequestEntity): The new pending request.
+        """
+
     async def problems_at_approval(
         self, session, request: ApprovalRequestEntity
     ) -> list[str]:
