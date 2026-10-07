@@ -396,3 +396,23 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "approval_request_repository_test",
+    srcs = ["approval_request_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:approval_enums",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "mentorship_participant_note_repository_test",
+    srcs = ["mentorship_participant_note_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+    ],
+)

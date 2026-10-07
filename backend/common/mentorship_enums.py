@@ -147,6 +147,14 @@ class MeetingNoteTag(str, Enum):
     MENTEE_LATE = "mentee_late"
 
 
+class ParticipantNoteTag(StrEnum):
+    """What a tagged mentorship_participant_note records. A note without a
+    tag is a plain remark; one with a tag is a mark someone acts on."""
+
+    STATUS_CHANGE = "status_change"
+    MATCHING_EXEMPTION = "matching_exemption"
+
+
 class MeetingSource(str, Enum):
     """Where a mentorship meeting record came from.
 
