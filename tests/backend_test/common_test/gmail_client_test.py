@@ -925,6 +925,93 @@ class TestGmailClient(TestCase):
         with self.assertRaises(RuntimeError):
             self.client.list_thread_message_ids("gone")
 
+    def _raw_message(self, headers, parts=None):
+        message = _message("m-1")
+        message["payload"]["headers"] = [
+            {"name": name, "value": value} for name, value in headers
+        ]
+        if parts is not None:
+            message["payload"] = {
+                "mimeType": "multipart/mixed",
+                "headers": message["payload"]["headers"],
+                "parts": parts,
+            }
+        return message
+
+    def test_parse_collects_every_recipient_header(self):
+        parsed = self.client._parse_message(
+            self._raw_message(
+                [
+                    ("To", '"Mentorship" <Mentorship-Test@circlecat.org>, a@example.com'),
+                    ("Cc", "inquiries-test@circlecat.org"),
+                    ("Delivered-To", "purrf@circlecat.org"),
+                    ("Delivered-To", "mentorship-test@circlecat.org"),
+                ]
+            )
+        )
+        self.assertEqual(
+            parsed["recipients"],
+            [
+                "mentorship-test@circlecat.org",
+                "a@example.com",
+                "inquiries-test@circlecat.org",
+                "purrf@circlecat.org",
+            ],
+        )
+
+    def test_parse_reads_auto_reply_headers(self):
+        parsed = self.client._parse_message(
+            self._raw_message([("Auto-Submitted", "auto-replied"), ("Precedence", "bulk")])
+        )
+        self.assertEqual(parsed["auto_submitted"], "auto-replied")
+        self.assertEqual(parsed["precedence"], "bulk")
+        plain = self.client._parse_message(self._raw_message([]))
+        self.assertIsNone(plain["auto_submitted"])
+        self.assertIsNone(plain["precedence"])
+
+    def test_parse_lists_attachments_without_their_bytes(self):
+        parsed = self.client._parse_message(
+            self._raw_message(
+                [],
+                parts=[
+                    {"mimeType": "text/plain", "body": {"data": _b64("hi")}},
+                    {
+                        "mimeType": "application/pdf",
+                        "filename": "cv.pdf",
+                        "body": {"attachmentId": "att-1", "size": 2048},
+                    },
+                    {"mimeType": "text/html", "filename": "", "body": {"attachmentId": "x"}},
+                ],
+            )
+        )
+        self.assertEqual(
+            parsed["attachments"],
+            [{"name": "cv.pdf", "size": 2048, "gmailAttachmentId": "att-1"}],
+        )
+
+    def test_get_attachment_decodes_base64url(self):
+        users = self.mock_service.users.return_value
+        users.messages.return_value.attachments.return_value.get.return_value.execute.return_value = {
+            "data": base64.urlsafe_b64encode(b"%PDF").decode()
+        }
+        self.assertEqual(self.client.get_attachment("m-1", "att-1"), b"%PDF")
+        users.messages.return_value.attachments.return_value.get.assert_called_once_with(
+            userId="me", messageId="m-1", id="att-1"
+        )
+
+    def test_list_send_as_addresses_lowercases(self):
+        users = self.mock_service.users.return_value
+        users.settings.return_value.sendAs.return_value.list.return_value.execute.return_value = {
+            "sendAs": [
+                {"sendAsEmail": "Purrf@circlecat.org"},
+                {"sendAsEmail": "mentorship-test@circlecat.org"},
+            ]
+        }
+        self.assertEqual(
+            self.client.list_send_as_addresses(),
+            {"purrf@circlecat.org", "mentorship-test@circlecat.org"},
+        )
+
 
 if __name__ == "__main__":
     main()

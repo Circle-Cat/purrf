@@ -26,6 +26,15 @@ py_test(
 )
 
 py_test(
+    name = "inbound_kind_test",
+    srcs = ["inbound_kind_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/communication",
+    ],
+)
+
+py_test(
     name = "meeting_scheduling_service_test",
     srcs = ["meeting_scheduling_service_test.py"],
     deps = [
