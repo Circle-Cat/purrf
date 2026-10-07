@@ -24,15 +24,16 @@ import html
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.name_utils import display_name_of
+from backend.common.approval_enums import ApprovalRequestStatus
 from backend.common.user_enums import UserEvent
 from backend.entity.event_entity import EventEntity
 from backend.notification_management.render_registry import register_render
-from backend.repository.block_request_repository import BlockRequestRepository
+from backend.repository.approval_request_repository import ApprovalRequestRepository
 from backend.repository.users_repository import UsersRepository
 
 # Stateless, so one module-level instance serves every render.
 _users_repository = UsersRepository()
-_block_request_repository = BlockRequestRepository()
+_approval_request_repository = ApprovalRequestRepository()
 
 _FOOTER = (
     "<p>This is an automated message from Purrf. Please do not reply "
@@ -65,12 +66,12 @@ async def _request_of(session: AsyncSession, event: EventEntity):
         event (EventEntity): The event being rendered.
 
     Returns:
-        BlockRequestEntity | None: The row, or None.
+        ApprovalRequestEntity | None: The row, or None.
     """
     request_id = event.details.get("requestId")
     if request_id is None:
         return None
-    return await _block_request_repository.get(session, request_id)
+    return await _approval_request_repository.get(session, request_id)
 
 
 def _person(name: str, fallback: str) -> str:
@@ -94,13 +95,14 @@ async def _render_block_requested(session: AsyncSession, event: EventEntity):
     raiser = _person(
         await _name_of(session, row.raised_by if row else None), "a colleague"
     )
-    reason = html.escape(row.reason if row else "")
+    reason = row.reason if row else None
+    reason_html = f"<p>Reason given: {html.escape(reason)}</p>" if reason else ""
     return (
         "A block request is waiting for your decision",
         f"<p>{raiser} has asked you to decide whether {target} should be "
         f"blocked from Purrf.</p>"
-        f"<p>Reason given: {reason}</p>"
-        "<p>Open the Accounts page in Purrf to approve or reject the "
+        + reason_html
+        + "<p>Open the Accounts page in Purrf to approve or reject the "
         "request.</p>" + _FOOTER,
     )
 
@@ -128,20 +130,31 @@ async def _render_block_request_reassigned(session: AsyncSession, event: EventEn
 
 @register_render(UserEvent.BLOCK_REQUEST_DECIDED)
 async def _render_block_request_decided(session: AsyncSession, event: EventEntity):
-    """Tell the person who asked what the answer was."""
+    """Tell the raiser what the answer was, or the reviewer that the request
+    was withdrawn."""
     row = await _request_of(session, event)
     target = _person(await _name_of(session, event.subject_id), "a user")
+    if event.details.get("decision") == ApprovalRequestStatus.WITHDRAWN.value:
+        raiser = _person(
+            await _name_of(session, row.raised_by if row else None), "A colleague"
+        )
+        return (
+            "A block request was withdrawn",
+            f"<p>{raiser} has withdrawn the block request about {target} that "
+            "was waiting for your decision. There is nothing left for you to "
+            "do.</p>" + _FOOTER,
+        )
     reviewer = _person(
         await _name_of(session, row.decided_by if row else None), "an administrator"
     )
-    approved = bool(event.details.get("approved"))
+    approved = event.details.get("decision") == ApprovalRequestStatus.APPROVED.value
     outcome = "approved" if approved else "rejected"
     consequence = (
         f"<p>{target} is now blocked from Purrf.</p>"
         if approved
         else f"<p>{target} has not been blocked.</p>"
     )
-    note = row.decision_note if row else None
+    note = event.details.get("comment")
     note_html = f"<p>Note: {html.escape(note)}</p>" if note else ""
     return (
         f"Your block request was {outcome}",

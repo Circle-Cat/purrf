@@ -1,4 +1,4 @@
-"""Block-request routes: raise, reassign, decide, and the pre-flight.
+"""Block-request routes: raise, reassign, decide, withdraw, and the pre-flight.
 
 Not mounted under /admin, unlike the account console. The person raising a
 request is standing on the domain page that holds the evidence and holds no
@@ -6,9 +6,9 @@ console permission at all -- the gates here say so: raising is bound to the
 recruiting advance permission, deciding to ``USER_ADMIN``, and the two do not
 overlap.
 
-Two of these routes carry a second condition that is **identity, not
-permission**: only the raiser may reassign, and only the named reviewer may
-decide. A gate can only read permissions, so those live in the service and
+Three of these routes carry a second condition that is **identity, not
+permission**: only the raiser may reassign or withdraw, and only the named
+reviewer may decide. A gate can only read permissions, so those live in the service and
 surface here as ``PermissionError`` -> 403.
 """
 
@@ -19,6 +19,7 @@ from backend.common.api_endpoints import (
     BLOCK_PREFLIGHT_ENDPOINT,
     BLOCK_REQUEST_DECIDE_ENDPOINT,
     BLOCK_REQUEST_REASSIGN_ENDPOINT,
+    BLOCK_REQUEST_WITHDRAW_ENDPOINT,
     BLOCK_REQUESTS_ENDPOINT,
     BLOCK_REQUESTS_RAISED_ENDPOINT,
 )
@@ -89,6 +90,12 @@ class BlockController:
             response_model=None,
         )
         self.router.add_api_route(
+            BLOCK_REQUEST_WITHDRAW_ENDPOINT,
+            endpoint=authenticate(permissions=_RAISE_GATE)(self.withdraw),
+            methods=["POST"],
+            response_model=None,
+        )
+        self.router.add_api_route(
             BLOCK_REQUEST_DECIDE_ENDPOINT,
             endpoint=authenticate(permissions=_DECIDE_GATE)(self.decide),
             methods=["POST"],
@@ -127,7 +134,8 @@ class BlockController:
 
         Args:
             current_user (UserContextDto): The authenticated caller (injected).
-            request_data (BlockRequestCreateDto): Target, reason, reviewer.
+            request_data (BlockRequestCreateDto): Target, optional reason,
+                reviewer.
             raised_from (str): Which domain page this came from, e.g.
                 ``"recruiting_board"``. A query parameter rather than a body
                 field because it describes where the caller is standing, not
@@ -135,8 +143,8 @@ class BlockController:
 
         Returns:
             A standardized API response wrapping the new ``BlockRequestDto``.
-            An already-pending request, an ineligible reviewer or an unknown
-            target all surface as 400.
+            An ineligible reviewer or an unknown or already-blocked target
+            surface as 400; a request already pending on the person as 409.
         """
         async with self._database.session() as session:
             view = await self._service.raise_request(
@@ -216,6 +224,26 @@ class BlockController:
             )
         return api_response(message="Block request reassigned.", data=view)
 
+    async def withdraw(self, current_user: UserContextDto, request_id: int):
+        """
+        Take back a request nobody has decided yet.
+
+        Args:
+            current_user (UserContextDto): The authenticated caller (injected).
+                Must be the request's raiser, checked in the service.
+            request_id (int): The request, from the path.
+
+        Returns:
+            A standardized API response wrapping the withdrawn
+            ``BlockRequestDto``. A caller who did not raise it gets 403; an
+            already-closed request gets 409.
+        """
+        async with self._database.session() as session:
+            view = await self._service.withdraw(
+                session, actor_id=current_user.user_id, request_id=request_id
+            )
+        return api_response(message="Block request withdrawn.", data=view)
+
     async def decide(
         self,
         current_user: UserContextDto,
@@ -229,12 +257,14 @@ class BlockController:
             current_user (UserContextDto): The authenticated caller (injected).
                 Must be the named reviewer, checked in the service.
             request_id (int): The request to decide, from the path.
-            decide_data (BlockDecideDto): The verdict and an optional note.
+            decide_data (BlockDecideDto): The verdict and a note, required
+                to reject.
 
         Returns:
             A standardized API response wrapping the closed
             ``BlockRequestDto``. A caller who is not the named reviewer gets
-            403; an already-decided request gets 400.
+            403; a rejection without a note gets 400; an already-closed
+            request, or an approval of someone blocked since, gets 409.
         """
         async with self._database.session() as session:
             view = await self._service.decide(

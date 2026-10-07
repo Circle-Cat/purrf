@@ -1,13 +1,11 @@
 import unittest
 from datetime import datetime, timezone
 
+from backend.admin.block_service import BLOCK_TARGET, BLOCK_USER
+from backend.common.approval_enums import ApprovalRequestStatus
 from backend.common.mentorship_enums import CommunicationMethod
-from backend.common.user_enums import (
-    USER_SUBJECT_TYPE,
-    BlockRequestStatus,
-    UserEvent,
-)
-from backend.entity.block_request_entity import BlockRequestEntity
+from backend.common.user_enums import USER_SUBJECT_TYPE, UserEvent
+from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.entity.event_entity import EventEntity
 from backend.entity.users_entity import UsersEntity
 from backend.notification_management import recipient_registry, render_registry
@@ -70,19 +68,21 @@ class BlockRequestRenderersTest(BaseRepositoryTestLib):
         self,
         reason="second no-show",
         reviewer: UsersEntity | None = None,
-        status=BlockRequestStatus.PENDING,
+        status=ApprovalRequestStatus.PENDING,
         decided_by: UsersEntity | None = None,
-        decision_note=None,
-    ) -> BlockRequestEntity:
-        row = BlockRequestEntity(
-            target_user_id=self.target.user_id,
+        decision_comment=None,
+    ) -> ApprovalRequestEntity:
+        row = ApprovalRequestEntity(
+            action=BLOCK_USER,
+            target_type=BLOCK_TARGET,
+            target_id=str(self.target.user_id),
+            payload={"raised_from": "recruiting_board"},
             raised_by=self.raiser.user_id,
-            raised_from="recruiting_board",
             reason=reason,
             reviewer_id=(reviewer or self.reviewer).user_id,
             status=status,
             decided_by=None if decided_by is None else decided_by.user_id,
-            decision_note=decision_note,
+            decision_comment=decision_comment,
         )
         await self.insert_entities([row])
         return row
@@ -113,6 +113,22 @@ class BlockRequestRenderersTest(BaseRepositoryTestLib):
         )
         self.assertIn("Reason given: second no-show", body)
         self.assertIn("Accounts page", body)
+
+    async def test_requested_omits_the_reason_line_when_none_was_given(self):
+        """A request's reason is optional; an empty "Reason given:" line would
+        read as though one had been lost."""
+        self.request.reason = None
+        await self.session.flush()
+
+        _, body = await self._render(UserEvent.BLOCK_REQUESTED)
+
+        self.assertNotIn("Reason given", body)
+        self.assertIn(
+            "Grace Hopper has asked you to decide whether Ada Lovelace should "
+            "be blocked from Purrf.",
+            body,
+        )
+        self.assertTrue(body.endswith(_FOOTER))
 
     async def test_requested_escapes_a_reason_written_as_markup(self):
         """The reason is free text typed by a colleague and lands in an HTML
@@ -180,13 +196,13 @@ class BlockRequestRenderersTest(BaseRepositoryTestLib):
     # -- decided ------------------------------------------------------------
 
     async def test_decided_approved_says_approved_and_states_the_consequence(self):
-        self.request.status = BlockRequestStatus.APPROVED
+        self.request.status = ApprovalRequestStatus.APPROVED
         self.request.decided_by = self.reviewer.user_id
         await self.session.flush()
 
         subject, body = await self._render(
             UserEvent.BLOCK_REQUEST_DECIDED,
-            {"requestId": self.request.request_id, "approved": True},
+            {"requestId": self.request.request_id, "decision": "approved"},
         )
 
         self.assertEqual(subject, "Your block request was approved")
@@ -198,13 +214,13 @@ class BlockRequestRenderersTest(BaseRepositoryTestLib):
         self.assertNotIn("has not been blocked", body)
 
     async def test_decided_rejected_says_rejected_and_states_the_consequence(self):
-        self.request.status = BlockRequestStatus.REJECTED
+        self.request.status = ApprovalRequestStatus.REJECTED
         self.request.decided_by = self.reviewer.user_id
         await self.session.flush()
 
         subject, body = await self._render(
             UserEvent.BLOCK_REQUEST_DECIDED,
-            {"requestId": self.request.request_id, "approved": False},
+            {"requestId": self.request.request_id, "decision": "rejected"},
         )
 
         self.assertEqual(subject, "Your block request was rejected")
@@ -216,40 +232,80 @@ class BlockRequestRenderersTest(BaseRepositoryTestLib):
         self.assertNotIn("is now blocked from Purrf", body)
 
     async def test_decided_carries_the_note_and_escapes_it(self):
-        self.request.status = BlockRequestStatus.REJECTED
+        """The note is read off the event's ``comment``, the snapshot taken
+        when the decision was made."""
+        self.request.status = ApprovalRequestStatus.REJECTED
         self.request.decided_by = self.reviewer.user_id
-        self.request.decision_note = f"see {_MARKUP_REASON}"
+        self.request.decision_comment = "the row's copy, not the one to show"
         await self.session.flush()
 
         _, body = await self._render(
             UserEvent.BLOCK_REQUEST_DECIDED,
-            {"requestId": self.request.request_id, "approved": False},
+            {
+                "requestId": self.request.request_id,
+                "decision": "rejected",
+                "comment": f"see {_MARKUP_REASON}",
+            },
         )
 
         self.assertIn(f"Note: see {_ESCAPED_REASON}", body)
         self.assertNotIn(_MARKUP_REASON, body)
 
     async def test_decided_omits_the_note_line_when_there_is_no_note(self):
-        self.request.status = BlockRequestStatus.APPROVED
+        self.request.status = ApprovalRequestStatus.APPROVED
         self.request.decided_by = self.reviewer.user_id
         await self.session.flush()
 
         _, body = await self._render(
             UserEvent.BLOCK_REQUEST_DECIDED,
-            {"requestId": self.request.request_id, "approved": True},
+            {"requestId": self.request.request_id, "decision": "approved"},
         )
 
         self.assertNotIn("Note:", body)
 
-    async def test_decided_falls_back_to_not_approved_without_the_flag(self):
-        """The row carries no outcome column -- the event's ``approved`` key is
-        the only source. Absent, it must read as "not approved" rather than
-        raising or claiming a block that never happened."""
+    async def test_decided_falls_back_to_not_approved_without_the_decision(self):
+        """The event's ``decision`` key is what the email is worded from.
+        Absent, it must read as "not approved" rather than raising or claiming
+        a block that never happened."""
         _, body = await self._render(
             UserEvent.BLOCK_REQUEST_DECIDED, {"requestId": self.request.request_id}
         )
 
         self.assertIn("has not been blocked", body)
+
+    async def test_decided_withdrawn_tells_the_reviewer_it_was_withdrawn(self):
+        self.request.status = ApprovalRequestStatus.WITHDRAWN
+        self.request.decided_by = self.raiser.user_id
+        await self.session.flush()
+
+        subject, body = await self._render(
+            UserEvent.BLOCK_REQUEST_DECIDED,
+            {
+                "requestId": self.request.request_id,
+                "decision": "withdrawn",
+                "comment": None,
+            },
+        )
+
+        self.assertEqual(subject, "A block request was withdrawn")
+        self.assertIn(
+            "Grace Hopper has withdrawn the block request about Ada Lovelace "
+            "that was waiting for your decision.",
+            body,
+        )
+        self.assertIn("There is nothing left for you to do.", body)
+        self.assertNotIn("approved", body)
+        self.assertNotIn("rejected", body)
+        self.assertTrue(body.endswith(_FOOTER))
+
+    async def test_decided_withdrawn_without_a_row_names_a_colleague(self):
+        subject, body = await self._render(
+            UserEvent.BLOCK_REQUEST_DECIDED,
+            {"requestId": _MISSING_ID, "decision": "withdrawn"},
+        )
+
+        self.assertEqual(subject, "A block request was withdrawn")
+        self.assertIn("A colleague has withdrawn the block request about Ada", body)
 
     # -- degraded input -----------------------------------------------------
 
@@ -313,7 +369,7 @@ class BlockRequestRenderersTest(BaseRepositoryTestLib):
             (
                 await self._render(
                     UserEvent.BLOCK_REQUEST_DECIDED,
-                    {"requestId": self.request.request_id, "approved": True},
+                    {"requestId": self.request.request_id, "decision": "approved"},
                 )
             )[1],
         ]

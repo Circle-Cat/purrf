@@ -102,6 +102,7 @@ py_library(
         ":retry_utils",
         "//backend/admin:block_controller",
         "//backend/admin:block_service",
+        "//backend/admin:block_user_handler",
         "//backend/admin:permission_admin_controller",
         "//backend/admin:permission_admin_service",
         "//backend/admin:user_account_controller",

@@ -9,6 +9,7 @@ is the price of the two pages coexisting.
 Entry-point service: every write method commits its own transaction.
 """
 
+from backend.admin.block_service import BLOCK_USER
 from backend.common.identity_type import IdentityType
 from backend.common.name_utils import display_name_of
 from backend.common.user_enums import USER_SUBJECT_TYPE, UserEvent
@@ -40,7 +41,7 @@ class UserAccountService:
         users_repository,
         user_emails_repository,
         user_identities_repository,
-        block_request_repository,
+        approval_service,
         logger,
     ):
         """
@@ -51,14 +52,14 @@ class UserAccountService:
                 resolution for the list, and the sign-in email rows.
             user_identities_repository (UserIdentitiesRepository): The federated
                 identities on the sign-in methods view.
-            block_request_repository (BlockRequestRepository): Reads the
-                caller's pending requests to flag rows in the list.
+            approval_service (ApprovalService): Reads the caller's pending
+                block requests to flag rows in the list.
             logger (Logger): Injected logger.
         """
         self._users = users_repository
         self._user_emails = user_emails_repository
         self._user_identities = user_identities_repository
-        self._block_requests = block_request_repository
+        self._approvals = approval_service
         self._logger = logger
 
     async def list_accounts(
@@ -351,7 +352,7 @@ class UserAccountService:
         Returns:
             set[int]: target_user_id of the caller's pending requests.
         """
-        pending = await self._block_requests.list_pending_for_reviewer(
-            session, caller_id
+        pending = await self._approvals.list_pending_for_reviewer(
+            session, caller_id, [BLOCK_USER]
         )
-        return {row.target_user_id for row in pending}
+        return {int(row.target_id) for row in pending}

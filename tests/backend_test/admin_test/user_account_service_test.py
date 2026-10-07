@@ -3,8 +3,9 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, Mock
 
 from backend.admin.user_account_service import UserAccountService
-from backend.common.user_enums import BlockRequestStatus
-from backend.entity.block_request_entity import BlockRequestEntity
+from backend.admin.block_service import BLOCK_USER
+from backend.common.approval_enums import ApprovalRequestStatus
+from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.user_identities_entity import UserIdentitiesEntity
 from backend.entity.users_entity import UsersEntity
@@ -41,13 +42,15 @@ def _user(user_id, *, first="Yanpei", last="Wang", preferred=None, **flags):
 
 
 def _pending(request_id, target_user_id, reviewer_id):
-    row = BlockRequestEntity(
-        target_user_id=target_user_id,
+    row = ApprovalRequestEntity(
+        action=BLOCK_USER,
+        target_type="user",
+        target_id=str(target_user_id),
+        payload={"raised_from": "recruiting_board"},
         raised_by=OTHER_ADMIN,
-        raised_from="recruiting_board",
         reason="second no-show",
         reviewer_id=reviewer_id,
-        status=BlockRequestStatus.PENDING,
+        status=ApprovalRequestStatus.PENDING,
     )
     row.request_id = request_id
     return row
@@ -58,18 +61,18 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
         self.users = AsyncMock()
         self.user_emails = AsyncMock()
         self.user_identities = AsyncMock()
-        self.block_requests = AsyncMock()
+        self.approvals = AsyncMock()
         self.logger = Mock()
 
         self.user_emails.get_contact_emails_by_user_ids.return_value = {}
         self.users.get_all_by_ids.return_value = []
-        self.block_requests.list_pending_for_reviewer.return_value = []
+        self.approvals.list_pending_for_reviewer.return_value = []
 
         self.service = UserAccountService(
             users_repository=self.users,
             user_emails_repository=self.user_emails,
             user_identities_repository=self.user_identities,
-            block_request_repository=self.block_requests,
+            approval_service=self.approvals,
             logger=self.logger,
         )
         self.session = AsyncMock()
@@ -207,7 +210,7 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
     async def test_pending_flag_is_scoped_to_caller(self):
         """A request names one reviewer; nobody else may even see it exists."""
         self.users.list_users.return_value = ([(_user(TARGET), False)], 1)
-        self.block_requests.list_pending_for_reviewer.return_value = [
+        self.approvals.list_pending_for_reviewer.return_value = [
             _pending(1, TARGET, REVIEWER)
         ]
 
@@ -216,14 +219,14 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(rows[0].has_pending_block_request)
 
-        self.block_requests.list_pending_for_reviewer.return_value = []
+        self.approvals.list_pending_for_reviewer.return_value = []
         rows, _ = await self.service.list_accounts(
             self.session, caller_id=OTHER_ADMIN, limit=50, offset=0
         )
         self.assertFalse(rows[0].has_pending_block_request)
 
-        self.block_requests.list_pending_for_reviewer.assert_awaited_with(
-            self.session, OTHER_ADMIN
+        self.approvals.list_pending_for_reviewer.assert_awaited_with(
+            self.session, OTHER_ADMIN, [BLOCK_USER]
         )
 
     async def test_pending_flag_is_one_query_for_the_page(self):
@@ -236,7 +239,7 @@ class TestUserAccountService(unittest.IsolatedAsyncioTestCase):
             self.session, caller_id=REVIEWER, limit=50, offset=0
         )
 
-        self.assertEqual(self.block_requests.list_pending_for_reviewer.await_count, 1)
+        self.assertEqual(self.approvals.list_pending_for_reviewer.await_count, 1)
 
     async def test_status_active_means_neither_deactivated_nor_blocked(self):
         self.users.list_users.return_value = ([], 0)

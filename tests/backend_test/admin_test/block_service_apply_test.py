@@ -37,8 +37,8 @@ class _BlockServiceTestBase(unittest.IsolatedAsyncioTestCase):
         self.interview_repo.list_by_application_ids = AsyncMock(return_value=[])
         self.interview_svc = MagicMock()
         self.interview_svc.cancel_for_round = AsyncMock(return_value=True)
-        self.requests_repo = MagicMock()
-        self.requests_repo.get_pending_for_target = AsyncMock(return_value=None)
+        self.approvals = MagicMock()
+        self.approvals.supersede_pending = AsyncMock(return_value=0)
         self.session = AsyncMock()
 
         recorder = patch(
@@ -53,7 +53,7 @@ class _BlockServiceTestBase(unittest.IsolatedAsyncioTestCase):
             application_submission_repository=self.sub_repo,
             application_interview_repository=self.interview_repo,
             interview_scheduling_service=self.interview_svc,
-            block_request_repository=self.requests_repo,
+            approval_service=self.approvals,
             user_permissions_repository=MagicMock(),
             logger=MagicMock(),
         )

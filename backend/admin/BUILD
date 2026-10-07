@@ -26,9 +26,21 @@ py_library(
 )
 
 py_library(
+    name = "block_user_handler",
+    srcs = ["block_user_handler.py"],
+    deps = [
+        ":block_service",
+        "//backend/approval:approval_handler",
+        "//backend/common:permissions",
+        "//backend/common:user_enums",
+    ],
+)
+
+py_library(
     name = "user_account_service",
     srcs = ["user_account_service.py"],
     deps = [
+        ":block_service",
         "//backend/common:identity_type",
         "//backend/common:name_utils",
         "//backend/common:user_enums",
