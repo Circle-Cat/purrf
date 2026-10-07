@@ -84,3 +84,35 @@ class MentorshipParticipantNoteRepository:
             )
         )
         return list(result.scalars().all())
+
+    async def list_round_ids_by_tag(
+        self, session: AsyncSession, user_ids: list[int], tag: ParticipantNoteTag
+    ) -> dict[int, set[int]]:
+        """The rounds each person carries a note with this tag in.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            user_ids (list[int]): The people.
+            tag (ParticipantNoteTag): The tag.
+
+        Returns:
+            dict[int, set[int]]: user_id -> round_ids; people with none are
+                left out.
+        """
+        if not user_ids:
+            return {}
+        result = await session.execute(
+            select(
+                MentorshipParticipantNoteEntity.user_id,
+                MentorshipParticipantNoteEntity.round_id,
+            )
+            .where(
+                MentorshipParticipantNoteEntity.user_id.in_(user_ids),
+                MentorshipParticipantNoteEntity.tag == tag,
+            )
+            .distinct()
+        )
+        found: dict[int, set[int]] = {}
+        for user_id, round_id in result.all():
+            found.setdefault(user_id, set()).add(round_id)
+        return found

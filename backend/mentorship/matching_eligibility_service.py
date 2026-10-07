@@ -5,21 +5,26 @@ people listed as eligible are exactly the people a run accepts.
 """
 
 from collections import Counter
+from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.mentorship_enums import (
     ApprovalStatus,
     PairStatus,
+    ParticipantNoteTag,
     ParticipantRole,
     TrainingCategory,
     TrainingStatus,
 )
 from backend.mentorship.matching_eligibility import (
+    HISTORY_REASONS,
     Candidate,
+    HistoryFinding,
     IneligibleReason,
     PastPair,
     PastRound,
+    history_findings,
     ineligible_reasons,
 )
 
@@ -35,6 +40,20 @@ _ONBOARDING_BY_ROLE = {
 }
 
 
+@dataclass(frozen=True)
+class Assessment:
+    """One registration's standing for matching in a round."""
+
+    reasons: list[IneligibleReason]
+    # The history problems behind the history reasons, with their rounds.
+    findings: list[HistoryFinding]
+
+    @property
+    def needs_exemption(self) -> bool:
+        """Only history stands in the way: everything else is met."""
+        return bool(self.reasons) and set(self.reasons) <= HISTORY_REASONS
+
+
 class MatchingEligibilityService:
     """Decides, for one round, who is eligible for matching and why not."""
 
@@ -44,6 +63,7 @@ class MatchingEligibilityService:
         pairs_repository,
         rounds_repository,
         training_repository,
+        note_repository,
         logger,
     ):
         """
@@ -52,12 +72,14 @@ class MatchingEligibilityService:
             pairs_repository: Pairs and their meeting counts.
             rounds_repository: The round and the ones before it.
             training_repository: Onboarding course status.
+            note_repository: The matching exemptions granted, as notes.
             logger: Injected logger.
         """
         self.participants_repository = participants_repository
         self.pairs_repository = pairs_repository
         self.rounds_repository = rounds_repository
         self.training_repository = training_repository
+        self.note_repository = note_repository
         self.logger = logger
 
     async def ineligible_by_user(
@@ -65,6 +87,45 @@ class MatchingEligibilityService:
     ) -> dict[int, list[IneligibleReason]]:
         """Every registration for the round with the reasons it is not
         eligible, an empty list meaning eligible.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round being matched.
+
+        Returns:
+            dict[int, list[IneligibleReason]]: user_id -> reasons.
+
+        Raises:
+            ValueError: If the round does not exist.
+        """
+        assessed = await self.assess(session, round_id)
+        return {user_id: a.reasons for user_id, a in assessed.items()}
+
+    async def needs_exemption(
+        self, session: AsyncSession, round_id: int
+    ) -> dict[int, list[HistoryFinding]]:
+        """The people only their history keeps out of the round's matching
+        pool, with what in their history does.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round being matched.
+
+        Returns:
+            dict[int, list[HistoryFinding]]: user_id -> findings.
+
+        Raises:
+            ValueError: If the round does not exist.
+        """
+        assessed = await self.assess(session, round_id)
+        return {
+            user_id: a.findings for user_id, a in assessed.items() if a.needs_exemption
+        }
+
+    async def assess(
+        self, session: AsyncSession, round_id: int
+    ) -> dict[int, Assessment]:
+        """Every registration for the round with where it stands.
 
         A round has registrations in the hundreds, so all of them are read in
         a fixed number of queries and decided in memory.
@@ -74,7 +135,7 @@ class MatchingEligibilityService:
             round_id (int): The round being matched.
 
         Returns:
-            dict[int, list[IneligibleReason]]: user_id -> reasons.
+            dict[int, Assessment]: user_id -> standing.
 
         Raises:
             ValueError: If the round does not exist.
@@ -111,8 +172,11 @@ class MatchingEligibilityService:
             held[(pair.mentee_id, ParticipantRole.MENTEE)] += 1
 
         past_rounds = await self._past_rounds(session, rounds, current, user_ids)
+        exemptions = await self.note_repository.list_round_ids_by_tag(
+            session, user_ids, ParticipantNoteTag.MATCHING_EXEMPTION
+        )
 
-        result: dict[int, list[IneligibleReason]] = {}
+        result: dict[int, Assessment] = {}
         for user, participant in registrations:
             role = participant.participant_role
             cap = (
@@ -128,8 +192,15 @@ class MatchingEligibilityService:
                 is_taking_part=participant.approval_status in _TAKING_PART,
                 training_done=(user.user_id, _ONBOARDING_BY_ROLE.get(role)) in done,
                 open_slots=cap - held[(user.user_id, role)],
+                exempt_this_round=round_id in exemptions.get(user.user_id, set()),
             )
-            result[user.user_id] = ineligible_reasons(candidate, past_rounds)
+            exempted = frozenset(exemptions.get(user.user_id, set()))
+            result[user.user_id] = Assessment(
+                reasons=ineligible_reasons(candidate, past_rounds, exempted),
+                findings=[]
+                if candidate.exempt_this_round
+                else history_findings(user.user_id, past_rounds, exempted),
+            )
         return result
 
     async def eligible_user_ids(self, session: AsyncSession, round_id: int) -> set[int]:
@@ -193,6 +264,7 @@ class MatchingEligibilityService:
             )
         return [
             PastRound(
+                round_id=r.round_id,
                 required_meetings=r.required_meetings,
                 pairs=tuple(by_round.get(r.round_id, ())),
                 quitters=frozenset(quitters.get(r.round_id, set())),

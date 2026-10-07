@@ -249,3 +249,28 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "exempt_matching_handler_test",
+    srcs = ["exempt_matching_handler_test.py"],
+    deps = [
+        "//backend/entity:entities",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "exempt_matching_flow_test",
+    srcs = ["exempt_matching_flow_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/approval:approval_service",
+        "//backend/common:approval_enums",
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)

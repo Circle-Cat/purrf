@@ -7,6 +7,7 @@ from backend.dto.participant_search_filter_dto import (
 )
 from backend.dto.participant_search_dto import (
     AttendanceIssueDto,
+    ExemptionFindingDto,
     ParticipantPairDto,
     ParticipantRowDto,
     ParticipantSearchDto,
@@ -62,6 +63,7 @@ class MentorshipAdminService:
         mentorship_meeting_repository,
         application_repository,
         matching_eligibility_service,
+        mentorship_approval_service,
     ) -> None:
         self.users_repository = users_repository
         self.participants_repository = participants_repository
@@ -73,6 +75,7 @@ class MentorshipAdminService:
         self.mentorship_meeting_repository = mentorship_meeting_repository
         self.application_repository = application_repository
         self.matching_eligibility_service = matching_eligibility_service
+        self.mentorship_approval_service = mentorship_approval_service
 
     def _extract_emails(self, emails: list) -> tuple[str | None, list[str]]:
         """
@@ -300,14 +303,20 @@ class MentorshipAdminService:
             ParticipantSearchDto: Assembled participant rows and total count.
 
         Raises:
-            ValueError: ``eligible`` was asked for without a round, for a round
-                that does not exist, or for one not in progress.
+            ValueError: ``eligible`` or ``needs_exemption`` was asked for
+                without a round, for a round that does not exist, or for one
+                not in progress; or both were asked for at once.
         """
-        only_user_ids = (
-            await self._eligible_user_ids(session, filters.round_id)
-            if filters.eligible
-            else None
-        )
+        if filters.eligible and filters.needs_exemption:
+            raise ValueError("Ask for eligible or needs exemption, not both.")
+        findings: dict[int, list] = {}
+        if filters.eligible:
+            only_user_ids = await self._eligible_user_ids(session, filters.round_id)
+        elif filters.needs_exemption:
+            findings = await self._needs_exemption(session, filters.round_id)
+            only_user_ids = set(findings)
+        else:
+            only_user_ids = None
         rows, total = await self.participants_repository.search_participants_for_admin(
             session, filters, limit, offset, sort_by, order, only_user_ids=only_user_ids
         )
@@ -325,6 +334,14 @@ class MentorshipAdminService:
             await self.mentorship_meeting_repository.get_meetings_by_pairs(
                 session, sorted({p.pair_id for row in rows for p in row.pairs})
             )
+        )
+
+        requests = (
+            await self.mentorship_approval_service.pending_exemptions(
+                session, filters.round_id, [row.user_id for row in rows]
+            )
+            if filters.needs_exemption
+            else {}
         )
 
         participant_rows: list[ParticipantRowDto] = []
@@ -346,6 +363,19 @@ class MentorshipAdminService:
                     mentee_onboarding_status=mentee_status,
                     pairs=self._build_pair_dtos(row, users_map, meetings_by_pair),
                     required_meetings=self._get_required_meetings(row, rounds_map),
+                    exemption_findings=[
+                        ExemptionFindingDto(
+                            reason=f.reason.value,
+                            round_id=f.round_id,
+                            round_name=rounds_map[f.round_id].name
+                            if f.round_id in rounds_map
+                            else None,
+                            completed=f.completed,
+                            required=f.required,
+                        )
+                        for f in findings.get(row.user_id, [])
+                    ],
+                    exemption_request=requests.get(row.user_id),
                 )
             )
 
@@ -370,6 +400,29 @@ class MentorshipAdminService:
             raise ValueError("Eligible for matching needs a round.")
         await self._get_round_in_progress(session, round_id)
         return await self.matching_eligibility_service.eligible_user_ids(
+            session, round_id
+        )
+
+    async def _needs_exemption(
+        self, session: AsyncSession, round_id: int | None
+    ) -> dict[int, list]:
+        """The people only their history keeps out of matching in a round in
+        progress, with what in their history does.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int | None): The round searched.
+
+        Returns:
+            dict[int, list[HistoryFinding]]: user_id -> findings.
+
+        Raises:
+            ValueError: No round, an unknown round, or one not in progress.
+        """
+        if round_id is None:
+            raise ValueError("Needs exemption needs a round.")
+        await self._get_round_in_progress(session, round_id)
+        return await self.matching_eligibility_service.needs_exemption(
             session, round_id
         )
 

@@ -33,6 +33,7 @@ from backend.common.api_endpoints import (
     MENTORSHIP_ADMIN_MATCH_RUN_EDIT_LOCK,
     MENTORSHIP_ADMIN_MATCH_RUN_DRAFT,
     MENTORSHIP_ADMIN_MATCH_RUN_PUBLISH_REQUEST,
+    MENTORSHIP_ADMIN_EXEMPTION_REQUEST,
     MENTORSHIP_ADMIN_APPROVERS,
     MENTORSHIP_ADMIN_APPROVALS_MINE,
     MENTORSHIP_ADMIN_APPROVAL_REASSIGN,
@@ -159,6 +160,15 @@ class MentorshipAdminController:
             MENTORSHIP_ADMIN_MATCH_RUN_PUBLISH_REQUEST,
             endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])(
                 self.request_publishing
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ADMIN_EXEMPTION_REQUEST,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])(
+                self.request_exemption
             ),
             methods=["POST"],
             response_model=None,
@@ -608,6 +618,46 @@ class MentorshipAdminController:
             )
         return api_response(
             message="Successfully asked for approval to publish.",
+            data=MentorshipApprovalDto.model_validate(result),
+        )
+
+    async def request_exemption(
+        self,
+        round_id: int,
+        user_id: int,
+        body: ApprovalRequestCreateDto,
+        current_user: UserContextDto,
+    ):
+        """
+        Ask a reviewer to exempt a person from the matching history check in
+        a round.
+
+        Args:
+            round_id (int): The round, which must be in progress.
+            user_id (int): The person.
+            body (ApprovalRequestCreateDto): The reviewer named and the reason.
+            current_user (UserContextDto): Who is asking.
+
+        Returns:
+            API response carrying the new request.
+
+        Raises:
+            PermissionError: The flag is off for this admin. Surfaces as 403.
+            ConflictError: The person does not need an exemption in the round,
+                or one is already waiting for approval. Surfaces as 409.
+        """
+        self._require_matching(current_user)
+        async with self.database.session() as session:
+            result = await self.mentorship_approval_service.request_exemption(
+                session,
+                round_id=round_id,
+                user_id=user_id,
+                actor_id=current_user.user_id,
+                reviewer_id=body.reviewer_id,
+                reason=body.reason,
+            )
+        return api_response(
+            message="Successfully asked for approval to exempt.",
             data=MentorshipApprovalDto.model_validate(result),
         )
 

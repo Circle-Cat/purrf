@@ -233,7 +233,11 @@ async def _render_approval_requested(session: AsyncSession, event: EventEntity):
     """Tell the reviewer a mentorship request is waiting on them."""
     action, round_name, actor, row = await _approval_parts(session, event)
     return copy.approval_requested(
-        action, round_name, actor, row.reason if row else None
+        action,
+        round_name,
+        actor,
+        row.reason if row else None,
+        event.details.get("personName"),
     )
 
 
@@ -242,7 +246,11 @@ async def _render_approval_reassigned(session: AsyncSession, event: EventEntity)
     """Tell the new reviewer a mentorship request was handed to them."""
     action, round_name, actor, row = await _approval_parts(session, event)
     return copy.approval_reassigned(
-        action, round_name, actor, row.reason if row else None
+        action,
+        round_name,
+        actor,
+        row.reason if row else None,
+        event.details.get("personName"),
     )
 
 
@@ -257,4 +265,5 @@ async def _render_approval_decided(session: AsyncSession, event: EventEntity):
         actor,
         event.details.get("decision", ""),
         row.decision_comment if row else None,
+        event.details.get("personName"),
     )

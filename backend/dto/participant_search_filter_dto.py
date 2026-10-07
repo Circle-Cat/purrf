@@ -15,6 +15,9 @@ class ParticipantSearchFilterDto(BaseRequestDto):
     # Only the people eligible for matching in round_id; needs the round to
     # be in progress.
     eligible: bool | None = None
+    # Only the people kept out of matching in round_id by their history
+    # alone; needs the round to be in progress.
+    needs_exemption: bool | None = None
 
 
 class UnregisteredFilterDto(BaseRequestDto):

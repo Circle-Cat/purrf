@@ -198,6 +198,7 @@ from backend.repository.mentorship_participant_note_repository import (
 )
 from backend.approval.approval_service import ApprovalService
 from backend.mentorship.publish_matching_handler import PublishMatchingHandler
+from backend.mentorship.exempt_matching_handler import ExemptMatchingHandler
 from backend.mentorship.mentorship_approval_service import MentorshipApprovalService
 from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.repository.experience_repository import ExperienceRepository
@@ -694,24 +695,16 @@ class AppDependencyBuilder:
             database=self.database,
             meet_attendance_sync_service=self.meet_attendance_service,
         )
+        self.mentorship_participant_note_repository = (
+            MentorshipParticipantNoteRepository()
+        )
         self.matching_eligibility_service = MatchingEligibilityService(
             participants_repository=self.mentorship_round_participants_repo,
             pairs_repository=self.mentorship_pairs_repository,
             rounds_repository=self.mentorship_round_repository,
             training_repository=self.training_repository,
+            note_repository=self.mentorship_participant_note_repository,
             logger=self.logger,
-        )
-        self.mentorship_admin_service = MentorshipAdminService(
-            users_repository=self.users_repository,
-            participants_repository=self.mentorship_round_participants_repo,
-            rounds_repository=self.mentorship_round_repository,
-            training_repository=self.training_repository,
-            pairs_repository=self.mentorship_pairs_repository,
-            mentorship_mapper=self.mentorship_mapper,
-            logger=self.logger,
-            mentorship_meeting_repository=self.mentorship_meeting_repository,
-            application_repository=self.application_repository,
-            matching_eligibility_service=self.matching_eligibility_service,
         )
         # Nothing here needs self.database, so it is safe this early; the
         # matching run service takes a session per call like the rest.
@@ -727,9 +720,6 @@ class AppDependencyBuilder:
             os.getenv(MATCHER_JOB_RESOURCE), logger=self.logger
         )
         self.approval_request_repository = ApprovalRequestRepository()
-        self.mentorship_participant_note_repository = (
-            MentorshipParticipantNoteRepository()
-        )
         self.publish_matching_handler = PublishMatchingHandler(
             matching_storage=self.matching_storage,
             pairs_repository=self.mentorship_pairs_repository,
@@ -739,12 +729,19 @@ class AppDependencyBuilder:
             rounds_repository=self.mentorship_round_repository,
             logger=self.logger,
         )
+        self.exempt_matching_handler = ExemptMatchingHandler(
+            matching_eligibility_service=self.matching_eligibility_service,
+            rounds_repository=self.mentorship_round_repository,
+            note_repository=self.mentorship_participant_note_repository,
+            users_repository=self.users_repository,
+            logger=self.logger,
+        )
         self.approval_service = ApprovalService(
             approval_request_repository=self.approval_request_repository,
             user_permissions_repository=self.user_permissions_repository,
             users_repository=self.users_repository,
             logger=self.logger,
-            handlers=[self.publish_matching_handler],
+            handlers=[self.publish_matching_handler, self.exempt_matching_handler],
         )
         self.mentorship_approval_service = MentorshipApprovalService(
             approval_service=self.approval_service,
@@ -752,6 +749,19 @@ class AppDependencyBuilder:
             users_repository=self.users_repository,
             rounds_repository=self.mentorship_round_repository,
             logger=self.logger,
+        )
+        self.mentorship_admin_service = MentorshipAdminService(
+            users_repository=self.users_repository,
+            participants_repository=self.mentorship_round_participants_repo,
+            rounds_repository=self.mentorship_round_repository,
+            training_repository=self.training_repository,
+            pairs_repository=self.mentorship_pairs_repository,
+            mentorship_mapper=self.mentorship_mapper,
+            logger=self.logger,
+            mentorship_meeting_repository=self.mentorship_meeting_repository,
+            application_repository=self.application_repository,
+            matching_eligibility_service=self.matching_eligibility_service,
+            mentorship_approval_service=self.mentorship_approval_service,
         )
         self.matching_run_service = MatchingRunService(
             matching_payload_service=self.matching_payload_service,

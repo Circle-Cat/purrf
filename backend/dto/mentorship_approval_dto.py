@@ -46,6 +46,8 @@ class MentorshipApprovalDto(BaseDto):
     status: ApprovalRequestStatus
     round: ApprovalRoundDto
     target_id: str
+    # Who the request is about, for an exemption.
+    person: ApprovalPersonDto | None = None
     raised_by: ApprovalPersonDto
     reviewer: ApprovalPersonDto
     reason: str | None = None

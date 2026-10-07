@@ -112,6 +112,37 @@ class ApprovalRequestRepository:
         )
         return result.scalars().one_or_none()
 
+    async def list_pending_for_targets(
+        self,
+        session: AsyncSession,
+        action: str,
+        target_type: str,
+        target_ids: Collection[str],
+    ) -> list[ApprovalRequestEntity]:
+        """The pending requests on any of these targets, for a list that
+        shows each row's request beside it.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            action (str): The action.
+            target_type (str): The kind of target.
+            target_ids (Collection[str]): The targets.
+
+        Returns:
+            list[ApprovalRequestEntity]: At most one per target.
+        """
+        if not target_ids:
+            return []
+        result = await session.execute(
+            select(ApprovalRequestEntity).where(
+                ApprovalRequestEntity.action == action,
+                ApprovalRequestEntity.target_type == target_type,
+                ApprovalRequestEntity.target_id.in_(list(target_ids)),
+                ApprovalRequestEntity.status == ApprovalRequestStatus.PENDING,
+            )
+        )
+        return list(result.scalars().all())
+
     async def get_latest_closed_for_target(
         self, session: AsyncSession, action: str, target_type: str, target_id: str
     ) -> ApprovalRequestEntity | None:

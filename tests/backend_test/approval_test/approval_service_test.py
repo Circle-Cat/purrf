@@ -618,6 +618,22 @@ class TestReads(ApprovalServiceTestBase):
             self.session, "publish_matching", "matching_run", "run-7"
         )
 
+    async def test_pending_for_targets_comes_back_by_target(self):
+        first, second = _request(target_id="run-1"), _request(target_id="run-2")
+        self.requests.list_pending_for_targets = AsyncMock(return_value=[first, second])
+
+        result = await self.service.list_pending_for_targets(
+            self.session, "publish_matching", ["run-1", "run-2", "run-3"]
+        )
+
+        self.assertEqual(result, {"run-1": first, "run-2": second})
+        self.requests.list_pending_for_targets.assert_awaited_once_with(
+            self.session,
+            "publish_matching",
+            "matching_run",
+            ["run-1", "run-2", "run-3"],
+        )
+
     async def test_latest_closed_for_target_uses_the_handler_target_type(self):
         self.requests.get_latest_closed_for_target = AsyncMock(return_value=None)
 

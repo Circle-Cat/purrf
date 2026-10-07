@@ -226,14 +226,23 @@ def matching_run_failed(round_name: str | None, error: str | None) -> tuple[str,
     )
 
 
-# What each mentorship approval asks for, as the object of "to ...".
-_APPROVAL_ASKS = {"publish_matching": "publish the matching result"}
-
-
-def _approval_ask(action: str, round_name: str | None) -> str:
-    ask = _APPROVAL_ASKS.get(action, "make a change")
+def _approval_ask(
+    action: str, round_name: str | None, person_name: str | None = None
+) -> str:
+    """What a mentorship approval asks for, as the object of "to ...", with
+    the round and the person HTML-escaped."""
     name = (round_name or "").strip()
-    return f"{ask} for {html.escape(name)}" if name else ask
+    in_round = f" in {html.escape(name)}" if name else ""
+    if action == "exempt_matching":
+        person = html.escape((person_name or "").strip() or "someone")
+        return f"exempt {person} from the matching history check{in_round}"
+    if action == "publish_matching":
+        return (
+            f"publish the matching result for {html.escape(name)}"
+            if name
+            else ("publish the matching result")
+        )
+    return "make a change"
 
 
 def _approval_subject_round(round_name: str | None) -> str:
@@ -250,7 +259,11 @@ _APPROVAL_WHERE = "<p>Open Mentorship Management in Purrf to review it.</p>"
 
 
 def approval_requested(
-    action: str, round_name: str | None, actor: str, reason: str | None
+    action: str,
+    round_name: str | None,
+    actor: str,
+    reason: str | None,
+    person_name: str | None = None,
 ) -> tuple[str, str]:
     """The email a reviewer gets when a mentorship request names them.
 
@@ -259,6 +272,7 @@ def approval_requested(
         round_name (str | None): The round's name, possibly blank.
         actor (str): Who asked, already HTML-escaped.
         reason (str | None): Their reason.
+        person_name (str | None): Who the request is about, for an exemption.
 
     Returns:
         tuple[str, str]: Subject and HTML body.
@@ -267,15 +281,17 @@ def approval_requested(
         f"Mentorship approval requested{_approval_subject_round(round_name)}",
         "<p>Hello,</p>"
         f"<p>{actor} asked you to approve a request to "
-        f"{_approval_ask(action, round_name)}. It is waiting on your decision.</p>"
-        + _quoted("Their reason", reason)
-        + _APPROVAL_WHERE
-        + _FOOTER,
+        f"{_approval_ask(action, round_name, person_name)}. It is waiting on your "
+        "decision.</p>" + _quoted("Their reason", reason) + _APPROVAL_WHERE + _FOOTER,
     )
 
 
 def approval_reassigned(
-    action: str, round_name: str | None, actor: str, reason: str | None
+    action: str,
+    round_name: str | None,
+    actor: str,
+    reason: str | None,
+    person_name: str | None = None,
 ) -> tuple[str, str]:
     """The email a reviewer gets when a request is handed to them.
 
@@ -287,6 +303,7 @@ def approval_reassigned(
         round_name (str | None): The round's name, possibly blank.
         actor (str): Who handed it over, already HTML-escaped.
         reason (str | None): The raiser's reason.
+        person_name (str | None): Who the request is about, for an exemption.
 
     Returns:
         tuple[str, str]: Subject and HTML body.
@@ -294,7 +311,8 @@ def approval_reassigned(
     return (
         f"Mentorship approval reassigned to you{_approval_subject_round(round_name)}",
         "<p>Hello,</p>"
-        f"<p>{actor} moved a request to {_approval_ask(action, round_name)} to "
+        f"<p>{actor} moved a request to "
+        f"{_approval_ask(action, round_name, person_name)} to "
         "you. It is waiting on your decision.</p>"
         + _quoted("The reason given", reason)
         + _APPROVAL_WHERE
@@ -308,6 +326,7 @@ def approval_decided(
     actor: str,
     decision: str,
     comment: str | None,
+    person_name: str | None = None,
 ) -> tuple[str, str]:
     """The email the other side gets when a request is closed: the raiser
     for an approval or a rejection, the reviewer for a withdrawal.
@@ -318,11 +337,12 @@ def approval_decided(
         actor (str): Who closed it, already HTML-escaped.
         decision (str): approved, rejected or withdrawn.
         comment (str | None): The reviewer's reason, for a rejection.
+        person_name (str | None): Who the request is about, for an exemption.
 
     Returns:
         tuple[str, str]: Subject and HTML body.
     """
-    ask = _approval_ask(action, round_name)
+    ask = _approval_ask(action, round_name, person_name)
     subject_round = _approval_subject_round(round_name)
     if decision == "withdrawn":
         return (
