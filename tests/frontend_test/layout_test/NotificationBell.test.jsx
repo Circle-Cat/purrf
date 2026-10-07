@@ -373,6 +373,71 @@ describe("NotificationBell", () => {
     ).toBeInTheDocument();
   });
 
+  // -- mentorship approvals ----------------------------------------------
+  //
+  // Written under subject_type "mentorship_round": what is asked for, the
+  // round and the person come from details.
+
+  const approvalRow = (eventType, details) => ({
+    id: 9,
+    eventType,
+    jobTitle: "",
+    applicantName: "",
+    subjectName: "",
+    actorName: "Ada Ng",
+    createdAt: "2026-10-07T00:00:00Z",
+    details: {
+      requestId: 31,
+      action: "publish_matching",
+      roundName: "Spring 2026",
+      ...details,
+    },
+  });
+
+  it("tells a reviewer a publish request is waiting on them", async () => {
+    await openWith(approvalRow("mentorship.approval_requested", {}));
+
+    expect(
+      screen.getByText(
+        "Ada Ng asked you to approve: publish the matching result for Spring 2026",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("names the person an exemption is for", async () => {
+    await openWith(
+      approvalRow("mentorship.approval_reassigned", {
+        action: "exempt_matching",
+        personName: "Ann Lee",
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Ada Ng moved to you a request to approve: exempt Ann Lee from the matching history check in Spring 2026",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    [
+      "approved",
+      "Ada Ng approved your request: publish the matching result for Spring 2026",
+    ],
+    [
+      "rejected",
+      "Ada Ng rejected your request: publish the matching result for Spring 2026",
+    ],
+    [
+      "withdrawn",
+      "Ada Ng withdrew the request: publish the matching result for Spring 2026",
+    ],
+  ])("tells the other side a request was %s", async (decision, text) => {
+    await openWith(approvalRow("mentorship.approval_decided", { decision }));
+
+    expect(screen.getByText(text)).toBeInTheDocument();
+  });
+
   // -- the matching-run line ---------------------------------------------
   //
   // Written under subject_type "mentorship_round", so everything it says comes

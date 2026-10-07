@@ -16,6 +16,23 @@ import {
 } from "@/api/recruitingApi";
 
 /**
+ * What a mentorship approval asks for, from its event's details.
+ * @param {{action?: string, roundName?: string, personName?: string}} details
+ * @returns {string}
+ */
+const approvalAsk = (details) => {
+  const round = details?.roundName?.trim();
+  if (details?.action === "exempt_matching") {
+    const person = details?.personName?.trim() || "someone";
+    return `exempt ${person} from the matching history check${round ? ` in ${round}` : ""}`;
+  }
+  if (details?.action === "publish_matching") {
+    return `publish the matching result${round ? ` for ${round}` : ""}`;
+  }
+  return "a mentorship change";
+};
+
+/**
  * Compose a notification's display text from its event type and details.
  *
  * Two audiences share this switch. Every recruiting line is written from
@@ -40,6 +57,26 @@ const describe = (n) => {
       return n.details?.status === "failed"
         ? `${started} did not finish`
         : `${started} has finished`;
+    }
+    // Mentorship approval requests: told to the reviewer named, the new one
+    // on a handover, the raiser when it is decided and the reviewer when it is
+    // withdrawn. What is asked for comes from details.
+    case "mentorship.approval_requested":
+      return `${actor} asked you to approve: ${approvalAsk(n.details)}`;
+    case "mentorship.approval_reassigned":
+      return `${actor} moved to you a request to approve: ${approvalAsk(n.details)}`;
+    case "mentorship.approval_decided": {
+      const ask = approvalAsk(n.details);
+      switch (n.details?.decision) {
+        case "approved":
+          return `${actor} approved your request: ${ask}`;
+        case "rejected":
+          return `${actor} rejected your request: ${ask}`;
+        case "withdrawn":
+          return `${actor} withdrew the request: ${ask}`;
+        default:
+          return "";
+      }
     }
     // Told to ops.maintain holders; the kind comes from details.
     case "ops.gmail_sync_alert":

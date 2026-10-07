@@ -1696,6 +1696,28 @@ describe("ParticipantSearchCard", () => {
       expect(runButton()).toBeDisabled();
     });
 
+    it("cannot run while the round's result waits for approval to publish", async () => {
+      getMatchingRun.mockResolvedValue({
+        data: {
+          status: "succeeded",
+          publishRequest: {
+            requestId: 31,
+            reviewer: { userId: "8", name: "Rae Kim" },
+            raisedBy: { userId: "9", name: "Ada Ng" },
+          },
+        },
+      });
+      await renderCard({ url: ELIGIBLE_URL });
+      await screen.findByText("Cara Wang");
+      await waitFor(() => expect(getMatchingRun).toHaveBeenCalled());
+
+      await pick("Alice Doe");
+      await pick("Cara Wang");
+
+      expect(runButton()).toHaveTextContent("Run matching · 2");
+      expect(runButton()).toBeDisabled();
+    });
+
     it("asks before running, and Cancel starts nothing", async () => {
       await renderCard({ url: ELIGIBLE_URL });
       await screen.findByText("Cara Wang");

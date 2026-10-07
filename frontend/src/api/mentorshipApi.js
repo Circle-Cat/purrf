@@ -297,3 +297,63 @@ export const getMeetingLog = (pairId) =>
  */
 export const updateMeetingLog = (pairId, body) =>
   request.patch(API_ENDPOINTS.MENTORSHIP_ADMIN_PAIR_MEETINGS(pairId), body);
+
+/**
+ * Ask a named reviewer to approve publishing a round's latest matching
+ * result. Resolves to `data` = the new approval request; refused with 409
+ * when the result cannot be published now or is already waiting.
+ * @param {number|string} roundId
+ * @param {{reviewerId: number, reason: string}} body
+ */
+export const requestMatchingPublish = (roundId, { reviewerId, reason }) =>
+  request.post(
+    API_ENDPOINTS.MENTORSHIP_ADMIN_MATCH_RUN_PUBLISH_REQUEST(roundId),
+    {
+      reviewerId,
+      reason,
+    },
+  );
+
+/**
+ * Fetch who a mentorship approval request can be sent to, me excepted.
+ * Resolves to `data: [{ userId, name }]`.
+ */
+export const getMentorshipApprovers = () =>
+  request.get(API_ENDPOINTS.MENTORSHIP_ADMIN_APPROVERS);
+
+/**
+ * Fetch the mentorship approval requests waiting on my decision, oldest
+ * first. Resolves to `data` = a list of approval requests.
+ */
+export const getMyMentorshipApprovals = () =>
+  request.get(API_ENDPOINTS.MENTORSHIP_ADMIN_APPROVALS_MINE);
+
+/**
+ * Hand a pending mentorship approval request I raised to another reviewer.
+ * @param {number} requestId
+ * @param {number} reviewerId
+ */
+export const reassignMentorshipApproval = (requestId, reviewerId) =>
+  request.post(API_ENDPOINTS.MENTORSHIP_ADMIN_APPROVAL_REASSIGN(requestId), {
+    reviewerId,
+  });
+
+/**
+ * Approve or reject a mentorship approval request naming me. A rejection
+ * needs a comment. An approval whose checks no longer hold is refused with
+ * 409 and the reasons as its message; the request stays pending.
+ * @param {number} requestId
+ * @param {{decision: "approve"|"reject", comment?: string}} body
+ */
+export const decideMentorshipApproval = (requestId, { decision, comment }) =>
+  request.post(API_ENDPOINTS.MENTORSHIP_ADMIN_APPROVAL_DECIDE(requestId), {
+    decision,
+    comment,
+  });
+
+/**
+ * Take back a pending mentorship approval request I raised.
+ * @param {number} requestId
+ */
+export const withdrawMentorshipApproval = (requestId) =>
+  request.post(API_ENDPOINTS.MENTORSHIP_ADMIN_APPROVAL_WITHDRAW(requestId));
