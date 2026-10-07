@@ -20,7 +20,10 @@ def _at(minutes):
     return _T0 + timedelta(minutes=minutes)
 
 
-def _inbound(minutes, kind=InboundKind.HUMAN, sender="asker@ext.com", failed=None):
+def _inbound(
+    minutes, kind=InboundKind.HUMAN, sender="asker@ext.com", failed=None, stored=None
+):
+    # created_at is when Purrf stored it, shortly after Gmail received it.
     return Mock(
         message_id=next(_ids),
         direction=EmailDirection.INBOUND,
@@ -28,7 +31,7 @@ def _inbound(minutes, kind=InboundKind.HUMAN, sender="asker@ext.com", failed=Non
         from_address=sender,
         subject="Re: A question",
         gmail_internal_date=_at(minutes),
-        created_at=_at(minutes + 30),
+        created_at=_at(stored if stored is not None else minutes + 1),
         failed_recipients=failed,
         sent_by_user_id=None,
     )
@@ -211,6 +214,36 @@ class InboxNotifierTest(unittest.IsolatedAsyncioTestCase):
 
         (event,) = self._events(InboxEvent.BOUNCED)
         self.assertEqual(event["details"]["bouncedTo"], "asker@ext.com")
+
+    async def test_mail_dated_before_the_archive_but_stored_after_it_records(self):
+        self.thread.archived_at = _at(5)
+
+        recorded = await self._after_sync([_inbound(0)], [_inbound(3, stored=8)])
+
+        self.assertTrue(recorded)
+        self.assertEqual(len(self._events(InboxEvent.NEEDS_REPLY)), 1)
+
+    async def test_mail_dated_before_our_reply_but_stored_after_it_records(self):
+        recorded = await self._after_sync(
+            [_inbound(0), _outbound(3)], [_inbound(2, stored=6)]
+        )
+
+        self.assertTrue(recorded)
+        self.assertEqual(len(self._events(InboxEvent.NEEDS_REPLY)), 1)
+
+    async def test_a_legacy_bounce_without_a_kind_records_bounced_not_needs_reply(
+        self,
+    ):
+        legacy = _inbound(
+            5, kind=None, sender="mailer-daemon@x.com", failed="asker@ext.com"
+        )
+
+        recorded = await self._after_sync([_outbound(0, sent_by=9)], [legacy])
+
+        self.assertFalse(recorded)
+        (event,) = self._events(InboxEvent.BOUNCED)
+        self.assertEqual(event["details"]["senderUserId"], 9)
+        self.assertEqual(self._events(InboxEvent.NEEDS_REPLY), [])
 
 
 if __name__ == "__main__":

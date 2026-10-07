@@ -6,27 +6,15 @@ Application threads are skipped: PUR-717's ``email_received`` and
 
 from email.utils import getaddresses
 
-from backend.common.communication_enums import (
-    ContextType,
-    EmailDirection,
-    InboundKind,
-)
+from backend.common.communication_enums import ContextType, EmailDirection
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE, InboxEvent
-from backend.communication.inbox_state import message_time, needs_reply
+from backend.communication.inbox_state import (
+    is_bounce,
+    is_human_inbound,
+    message_time,
+    needs_reply,
+)
 from backend.notification_management.event_recorder import record_event
-
-
-def _is_human_inbound(m):
-    return (
-        m.direction == EmailDirection.INBOUND
-        and (m.inbound_kind or InboundKind.HUMAN) == InboundKind.HUMAN
-    )
-
-
-def _is_bounce(m):
-    return (
-        m.direction == EmailDirection.INBOUND and m.inbound_kind == InboundKind.BOUNCE
-    )
 
 
 def _bounced_to(bounce, original):
@@ -68,7 +56,7 @@ class InboxNotifier:
         new_ids = {m.message_id for m in new_messages}
         before = [m for m in messages if m.message_id not in new_ids]
 
-        for bounce in (m for m in new_messages if _is_bounce(m)):
+        for bounce in (m for m in new_messages if is_bounce(m)):
             await self._record_bounce(session, thread, messages, bounce)
 
         if needs_reply(before, thread.archived_at) or not needs_reply(
@@ -76,7 +64,7 @@ class InboxNotifier:
         ):
             return False
         newest = max(
-            (m for m in new_messages if _is_human_inbound(m)), key=message_time
+            (m for m in new_messages if is_human_inbound(m)), key=message_time
         )
         service = await self._services.service_of(session, thread)
         await record_event(
