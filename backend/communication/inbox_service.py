@@ -12,7 +12,13 @@ from backend.common.communication_enums import (
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE, InboxEvent
 from backend.common.name_utils import display_name_of
 from backend.communication.inbox_access import visible_services
-from backend.communication.inbox_rows import ThreadFacts, facts_of, matches_search
+from backend.communication.inbox_rows import (
+    ThreadFacts,
+    can_assign,
+    facts_of,
+    matches_search,
+)
+from backend.communication.inbox_writes import InboxThreadWrites
 from backend.communication.inbox_state import message_time
 from backend.communication.thread_service import service_from
 from backend.dto.inbox_dto import (
@@ -65,8 +71,11 @@ def _person_name(user, service: InboxService) -> str:
     return display_name_of(user)
 
 
-class InboxThreadService:
-    """Reads and acts on Inbox threads; each call checks the thread's service."""
+class InboxThreadService(InboxThreadWrites):
+    """Reads and acts on Inbox threads; each call checks the thread's service.
+
+    The write side (reply, archive, assign, move) lives in ``InboxThreadWrites``.
+    """
 
     def __init__(
         self,
@@ -75,6 +84,7 @@ class InboxThreadService:
         user_emails_repository,
         users_repository,
         job_repository,
+        application_repository,
         round_repository,
         event_repository,
         thread_service_resolver,
@@ -88,7 +98,9 @@ class InboxThreadService:
             user_emails_repository (UserEmailsRepository): Matches senders to users.
             users_repository (UsersRepository): Names people.
             job_repository (JobRepository): Finds an application's job.
-            round_repository (MentorshipRoundRepository): Names rounds.
+            application_repository (ApplicationRepository): A person's
+                applications, for Assign.
+            round_repository (MentorshipRoundRepository): Names and finds rounds.
             event_repository (EventRepository): Finds the last move.
             thread_service_resolver (ThreadServiceResolver): A thread's service.
             conversation_service (EmailConversationService): Its
@@ -100,6 +112,7 @@ class InboxThreadService:
         self._user_emails = user_emails_repository
         self._users = users_repository
         self._jobs = job_repository
+        self._applications = application_repository
         self._rounds = round_repository
         self._events = event_repository
         self._resolver = thread_service_resolver
@@ -315,7 +328,7 @@ class InboxThreadService:
 
     @staticmethod
     def _can_assign(item: _Item) -> bool:
-        return item.service != InboxService.INQUIRIES and not item.facts.tracked
+        return can_assign(item.service, item.facts)
 
     def _row(self, item: _Item, lookups: _Lookups) -> InboxThreadRowDto:
         thread, facts = item.thread, item.facts

@@ -155,16 +155,22 @@ class _Fixture(unittest.IsolatedAsyncioTestCase):
                 i: self.moves[i] for i in ids if i in self.moves
             }
         )
-        self.service = InboxThreadService(
+        self.application_repo = Mock()
+        self.conversation = SimpleNamespace(sender_address=_CAREERS)
+        self.service = self._build_service()
+
+    def _build_service(self):
+        return InboxThreadService(
             thread_repository=self.thread_repo,
             message_repository=self.message_repo,
             user_emails_repository=self.email_repo,
             users_repository=self.user_repo,
             job_repository=self.job_repo,
+            application_repository=self.application_repo,
             round_repository=self.round_repo,
             event_repository=self.event_repo,
             thread_service_resolver=ThreadServiceResolver(job_repository=self.job_repo),
-            conversation_service=SimpleNamespace(sender_address=_CAREERS),
+            conversation_service=self.conversation,
             aliases=InboxAliases(
                 mentorship=_MENTORSHIP_ALIAS, recruiting=_RECRUITING_ALIAS
             ),
@@ -574,6 +580,15 @@ class DetailTest(_Fixture):
         detail = await self.service.get_thread(self.session, _viewer(*_ALL), 1)
 
         self.assertIsNone(detail.open_bounce)
+
+    async def test_bounce_naming_nobody_on_a_thread_without_contact_is_not_open(self):
+        self.threads = [_thread(1, ContextType.MENTORSHIP_INBOX)]
+        self.messages = {1: [_in(11, 5, kind="bounce", failed_recipients="")]}
+
+        detail = await self.service.get_thread(self.session, _viewer(*_ALL), 1)
+
+        self.assertIsNone(detail.open_bounce)
+        self.assertEqual(detail.machine_tag, "bounce")
 
     async def test_bounce_without_named_recipients_points_at_the_contact(self):
         self.threads = [_thread(1, ContextType.MENTORSHIP_INBOX)]

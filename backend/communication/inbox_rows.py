@@ -9,7 +9,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from email.utils import getaddresses, parseaddr
 
-from backend.common.communication_enums import EmailDirection, InboundKind
+from backend.common.communication_enums import (
+    EmailDirection,
+    InboundKind,
+    InboxService,
+)
 from backend.communication.inbox_state import is_archived, message_time, needs_reply
 
 _USER_ID_QUERY = re.compile(r"^#?(\d+)$")
@@ -48,6 +52,21 @@ def _contact_of(ordered) -> str | None:
     return None
 
 
+def reply_contact(ordered) -> str | None:
+    """Who a reply goes to: the newest human sender, else our first recipient.
+
+    Args:
+        ordered (list[EmailMessageEntity]): Messages, oldest first.
+    """
+    for m in reversed(ordered):
+        if _is_human_inbound(m) and (address := address_of(m.from_address)):
+            return address
+    for m in ordered:
+        if m.direction == EmailDirection.OUTBOUND:
+            return _first_address(m.to_addresses)
+    return None
+
+
 def _machine_tag(ordered) -> str | None:
     inbound = [m for m in ordered if m.direction == EmailDirection.INBOUND]
     if not inbound:
@@ -64,7 +83,7 @@ def _open_bounce_to(ordered, contact: str | None) -> str | None:
     outbound = [m for m in ordered if m.direction == EmailDirection.OUTBOUND]
     if outbound and message_time(outbound[-1]) > message_time(bounce):
         return None
-    return (bounce.failed_recipients or "").strip() or contact or ""
+    return (bounce.failed_recipients or "").strip() or contact
 
 
 @dataclass(frozen=True)
@@ -120,6 +139,11 @@ def facts_of(thread, messages) -> ThreadFacts:
         machine_tag=_machine_tag(ordered),
         open_bounce_to=_open_bounce_to(ordered, contact),
     )
+
+
+def can_assign(service: InboxService, facts: ThreadFacts) -> bool:
+    """Inquiries are never about one person, and a tracked thread keeps its owner."""
+    return service != InboxService.INQUIRIES and not facts.tracked
 
 
 def matches_search(

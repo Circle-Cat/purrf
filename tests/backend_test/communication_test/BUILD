@@ -239,6 +239,24 @@ py_test(
 )
 
 py_test(
+    name = "inbox_service_write_test",
+    srcs = [
+        "inbox_service_read_test.py",
+        "inbox_service_write_test.py",
+    ],
+    main = "inbox_service_write_test.py",
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/common:exceptions",
+        "//backend/common:inbox_enums",
+        "//backend/common:permissions",
+        "//backend/common:recruiting_enums",
+        "//backend/communication",
+        "//backend/dto",
+    ],
+)
+
+py_test(
     name = "inbox_service_db_test",
     srcs = ["inbox_service_db_test.py"],
     env_inherit = ["DATABASE_URL"],

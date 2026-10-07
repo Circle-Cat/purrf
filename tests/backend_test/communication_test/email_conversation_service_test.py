@@ -104,6 +104,33 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.thread_repo.create.assert_not_awaited()
         self.message_repo.create.assert_not_awaited()
 
+    async def test_send_as_another_address_sends_and_stores_it(self):
+        self.gmail.send_message.return_value = {
+            "gmail_message_id": "g1",
+            "gmail_thread_id": "gt1",
+            "rfc822_message_id": "<r1@mail>",
+        }
+        self.thread_repo.create.return_value = SimpleNamespace(
+            thread_id=10, gmail_thread_id="gt1"
+        )
+
+        await self.service.send(
+            self.session,
+            user_id=None,
+            context_type=ContextType.MENTORSHIP_INBOX,
+            context_id=None,
+            to=["asker@example.com"],
+            subject="Hi",
+            body="<p>hello</p>",
+            sender_user_id=3,
+            sender_address="mentorship-test@circlecat.org",
+        )
+
+        _, kwargs = self.gmail.send_message.call_args
+        self.assertEqual(kwargs["sender"], "mentorship-test@circlecat.org")
+        _, mkw = self.message_repo.create.call_args
+        self.assertEqual(mkw["from_address"], "mentorship-test@circlecat.org")
+
     # ---- send: reply --------------------------------------------------
 
     async def test_send_reply_uses_existing_thread_and_headers(self):

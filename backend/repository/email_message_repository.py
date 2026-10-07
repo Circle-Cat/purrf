@@ -2,6 +2,7 @@ from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from backend.entity.email_message_entity import EmailMessageEntity
 
@@ -142,6 +143,9 @@ class EmailMessageRepository:
     ) -> dict[int, list[EmailMessageEntity]]:
         """Every message of several threads in one query, each thread oldest first.
 
+        Bodies are not loaded: rows and counts never show them, and
+        ``list_by_thread`` reads them for the one thread that is opened.
+
         Args:
             session (AsyncSession): The active DB session.
             thread_ids (list[int]): The threads to read.
@@ -156,6 +160,10 @@ class EmailMessageRepository:
             return {}
         result = await session.execute(
             select(EmailMessageEntity)
+            .options(
+                defer(EmailMessageEntity.body_html, raiseload=True),
+                defer(EmailMessageEntity.body_text, raiseload=True),
+            )
             .where(EmailMessageEntity.thread_id.in_(thread_ids))
             .order_by(
                 func.coalesce(

@@ -87,6 +87,7 @@ class EmailConversationService:
         body,
         sender_user_id,
         thread_id=None,
+        sender_address=None,
     ):
         """Send a message (new thread or reply) and persist it on Gmail success.
 
@@ -101,6 +102,8 @@ class EmailConversationService:
             sender_user_id (int): The advancer sending this message.
             thread_id (int | None): An existing thread to reply into; ``None``
                 starts a new thread.
+            sender_address (str | None): Send as this address instead of the
+                service's own; it is also stored as the message's From.
 
         Returns:
             EmailMessageEntity: The persisted outbound message.
@@ -132,12 +135,13 @@ class EmailConversationService:
                 in_reply_to = rfc_ids[-1]
                 references = " ".join(rfc_ids)
 
+        sender = sender_address or self._sender_address
         sent = await asyncio.to_thread(
             self._gmail.send_message,
             to,
             subject,
             body,
-            sender=self._sender_address,
+            sender=sender,
             thread_id=gmail_thread_id,
             in_reply_to=in_reply_to,
             references=references,
@@ -158,7 +162,7 @@ class EmailConversationService:
             thread_id=thread.thread_id,
             gmail_message_id=sent["gmail_message_id"],
             direction=EmailDirection.OUTBOUND,
-            from_address=self._sender_address,
+            from_address=sender,
             to_addresses=", ".join(to),
             subject=subject,
             body_html=body,

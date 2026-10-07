@@ -16,6 +16,7 @@ from backend.entity.email_thread_entity import EmailThreadEntity
 from backend.entity.event_entity import EventEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.users_entity import UsersEntity
+from backend.repository.application_repository import ApplicationRepository
 from backend.repository.email_message_repository import EmailMessageRepository
 from backend.repository.email_thread_repository import EmailThreadRepository
 from backend.repository.event_repository import EventRepository
@@ -55,6 +56,7 @@ class InboxListOnARealSessionTest(BaseRepositoryTestLib):
             user_emails_repository=UserEmailsRepository(),
             users_repository=UsersRepository(),
             job_repository=JobRepository(),
+            application_repository=ApplicationRepository(),
             round_repository=MentorshipRoundRepository(),
             event_repository=EventRepository(),
             thread_service_resolver=ThreadServiceResolver(job_repository=JobRepository()),
