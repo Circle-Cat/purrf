@@ -132,12 +132,10 @@ describe("InboxPage list", () => {
 
   it("writes the service filter to the URL and refetches", async () => {
     const router = renderAt();
-    await screen.findByRole("group", { name: "Services" });
     fireEvent.click(
-      within(screen.getByRole("group", { name: "Services" })).getByRole(
-        "button",
-        { name: /^Recruiting/ },
-      ),
+      await within(
+        await screen.findByRole("group", { name: "Services" }),
+      ).findByRole("button", { name: /^Recruiting/ }),
     );
     await waitFor(() =>
       expect(lastListParams()).toEqual({ service: "recruiting" }),
@@ -245,10 +243,14 @@ describe("InboxPage thread detail", () => {
     const pane = await thread();
     await within(pane).findByText("Hello");
     expect(pane.innerHTML).not.toContain("onerror");
-    expect(within(pane).getByRole("link", { name: /cv\.pdf/ })).toHaveAttribute(
+    const cv = within(pane).getByRole("link", { name: /cv\.pdf/ });
+    expect(cv).toHaveAttribute(
       "href",
       "http://api.test/inbox/threads/1/messages/11/attachments/0",
     );
+    expect(cv).toHaveAttribute("target", "_blank");
+    expect(cv).toHaveAttribute("rel", "noopener noreferrer");
+    expect(cv).toHaveAttribute("download");
     expect(within(pane).getByRole("link", { name: /b\.png/ })).toHaveAttribute(
       "href",
       "http://api.test/inbox/threads/1/messages/11/attachments/1",
@@ -290,6 +292,26 @@ describe("InboxPage thread detail", () => {
 
   it("clears the selection when the thread is no longer visible after Move", async () => {
     api.moveInboxThread.mockResolvedValue({ data: detail() });
+    renderAt();
+    await screen.findByRole("button", { name: /Open thread Question/ });
+    open("Question about meeting cadence");
+    const pane = await thread();
+    const select = await within(pane).findByLabelText("Move to");
+    api.getInboxThread.mockRejectedValue({
+      response: { status: 400 },
+      message: "not found",
+    });
+    const before = api.listInboxThreads.mock.calls.length;
+    fireEvent.change(select, { target: { value: "inquiries" } });
+    fireEvent.click(within(pane).getByRole("button", { name: "Move" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Thread" })).toBeNull(),
+    );
+    expect(api.listInboxThreads.mock.calls.length).toBeGreaterThan(before);
+  });
+
+  it("closes the thread when Move returns no data", async () => {
+    api.moveInboxThread.mockResolvedValue({ data: null });
     renderAt();
     await screen.findByRole("button", { name: /Open thread Question/ });
     open("Question about meeting cadence");

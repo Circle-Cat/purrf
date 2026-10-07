@@ -91,6 +91,8 @@ const Message = ({ threadId, message }) => {
               <a
                 href={inboxAttachmentUrl(threadId, message.messageId, index)}
                 download
+                target="_blank"
+                rel="noopener noreferrer"
                 className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-100"
               >
                 <Paperclip size={12} />

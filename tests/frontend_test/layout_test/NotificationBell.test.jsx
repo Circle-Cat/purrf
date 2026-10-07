@@ -688,6 +688,23 @@ describe("NotificationBell", () => {
       screen.getByText("Your email to recipient@example.com was not delivered"),
     ).toBeInTheDocument();
   });
+
+  it("omits the address when the bounce names no recipient", async () => {
+    await openWith({
+      id: 12,
+      eventType: "inbox.bounced",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { bouncedTo: "" },
+    });
+
+    expect(
+      screen.getByText("Your email was not delivered"),
+    ).toBeInTheDocument();
+  });
 });
 
 const MENTION = {

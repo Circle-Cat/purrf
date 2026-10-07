@@ -115,7 +115,9 @@ const describe = (n) => {
       return `New email needs a reply: ${n.details?.subject || "(no subject)"}`;
     // Told to the person who sent the email that bounced.
     case "inbox.bounced":
-      return `Your email to ${n.details?.bouncedTo} was not delivered`;
+      return n.details?.bouncedTo
+        ? `Your email to ${n.details.bouncedTo} was not delivered`
+        : "Your email was not delivered";
     case "recruiting.reassigned":
       return `${actor} assigned you to evaluate ${n.applicantName} — ${n.jobTitle}`;
     case "recruiting.auto_assigned":
