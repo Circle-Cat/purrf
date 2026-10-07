@@ -43,6 +43,7 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
             setattr(self.approvals, name, AsyncMock(return_value=_request()))
         self.approvals.get_request = AsyncMock(return_value=_request())
         self.approvals.list_pending_for_reviewer = AsyncMock(return_value=[_request()])
+        self.approvals.list_pending_for_targets = AsyncMock(return_value={})
         self.approvals.list_reviewers = AsyncMock(
             return_value=[_user(12, "zoe", "Adams"), _user(8, "Rae", "Kim")]
         )
@@ -102,7 +103,7 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
         result = await self.service.list_mine(self.session, REVIEWER)
 
         self.approvals.list_pending_for_reviewer.assert_awaited_once_with(
-            self.session, REVIEWER, ("publish_matching",)
+            self.session, REVIEWER, ("publish_matching", "exempt_matching")
         )
         self.assertEqual(
             result,
@@ -113,6 +114,7 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
                     "status": ApprovalRequestStatus.PENDING,
                     "round": {"round_id": 7, "name": "Spring 2026"},
                     "target_id": "r7-x-y",
+                    "person": None,
                     "raised_by": {"user_id": RAISER, "name": "Ada Ng"},
                     "reviewer": {"user_id": REVIEWER, "name": "Rae Kim"},
                     "reason": "Reviewed every pair",
@@ -149,6 +151,51 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
         self.approvals.withdraw.assert_awaited_once_with(
             self.session, request_id=31, actor_id=RAISER
         )
+
+    async def test_an_exemption_asks_about_the_person_in_the_round(self):
+        exemption = _request(action="exempt_matching")
+        exemption.target_id = "7:21"
+        exemption.payload = {"round_id": 7, "user_id": 21}
+        self.approvals.raise_request.return_value = exemption
+        self.users.get_all_by_ids.return_value = [
+            _user(RAISER, "Ada", "Ng"),
+            _user(REVIEWER, "Rae", "Kim"),
+            _user(21, "Ann", "Lee"),
+        ]
+
+        result = await self.service.request_exemption(
+            self.session,
+            round_id=7,
+            user_id=21,
+            actor_id=RAISER,
+            reviewer_id=REVIEWER,
+            reason="Her mentor left midway",
+        )
+
+        self.approvals.raise_request.assert_awaited_once_with(
+            self.session,
+            action="exempt_matching",
+            raised_by=RAISER,
+            target_id="7:21",
+            payload={"round_id": 7, "user_id": 21},
+            reason="Her mentor left midway",
+            reviewer_id=REVIEWER,
+        )
+        self.assertEqual(result["person"], {"user_id": 21, "name": "Ann Lee"})
+
+    async def test_pending_exemptions_are_keyed_by_person(self):
+        exemption = _request(action="exempt_matching")
+        exemption.target_id = "7:21"
+        exemption.payload = {"round_id": 7, "user_id": 21}
+        self.approvals.list_pending_for_targets.return_value = {"7:21": exemption}
+
+        result = await self.service.pending_exemptions(self.session, 7, [21, 22])
+
+        self.approvals.list_pending_for_targets.assert_awaited_once_with(
+            self.session, "exempt_matching", ["7:21", "7:22"]
+        )
+        self.assertEqual(list(result), [21])
+        self.assertEqual(result[21]["reviewer"]["user_id"], REVIEWER)
 
     async def test_another_part_of_purrf_s_request_cannot_be_touched_here(self):
         self.approvals.get_request.return_value = _request(action="job_review")

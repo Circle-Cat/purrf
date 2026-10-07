@@ -1,4 +1,5 @@
 from backend.dto.base_dto import BaseDto
+from backend.dto.mentorship_approval_dto import MentorshipApprovalDto
 from backend.dto.partner_dto import PartnerDto
 from datetime import datetime
 from backend.common.mentorship_enums import (
@@ -35,6 +36,18 @@ class PersonRowDto(BaseDto):
     is_internal: bool
 
 
+class ExemptionFindingDto(BaseDto):
+    """One history problem that keeps someone out of matching. ``reason`` is
+    quit_after_match or meetings_short; a shortfall carries the meetings held
+    and required."""
+
+    reason: str
+    round_id: int | None = None
+    round_name: str | None = None
+    completed: int | None = None
+    required: int | None = None
+
+
 class ParticipantRowDto(PersonRowDto):
     round_id: int | None
     round_name: str | None
@@ -44,6 +57,10 @@ class ParticipantRowDto(PersonRowDto):
     mentee_onboarding_status: TrainingStatus | None
     pairs: list[ParticipantPairDto]
     required_meetings: int | None
+    # Set only in the Needs exemption list: why the person needs one, and
+    # the request for it waiting on a reviewer, if there is one.
+    exemption_findings: list[ExemptionFindingDto] = []
+    exemption_request: MentorshipApprovalDto | None = None
 
 
 class ParticipantSearchDto(BaseDto):

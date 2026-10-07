@@ -173,6 +173,25 @@ class ApprovalNotificationsTest(BaseRepositoryTestLib):
         self.assertIn("Ada Ng withdrew their request", withdrawn_body)
         self.assertIn("Nothing is waiting on you", withdrawn_body)
 
+    async def test_an_exemption_email_names_the_person(self):
+        self.request.action = "exempt_matching"
+        await self.session.flush()
+        event = await self._event(
+            "mentorship.approval_requested",
+            self.raiser,
+            action="exempt_matching",
+            personName="Ann <Lee>",
+        )
+
+        subject, body = await render_registry.render(self.session, event)
+
+        self.assertEqual(subject, "Mentorship approval requested: Spring 2026")
+        self.assertIn(
+            "asked you to approve a request to exempt Ann &lt;Lee&gt; from the "
+            "matching history check in Spring 2026.",
+            body,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

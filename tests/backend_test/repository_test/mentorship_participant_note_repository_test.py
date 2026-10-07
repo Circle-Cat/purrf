@@ -114,6 +114,40 @@ class TestMentorshipParticipantNoteRepository(BaseRepositoryTestLib):
 
         self.assertEqual([r.note_id for r in rows], [first.note_id, second.note_id])
 
+    async def test_round_ids_by_tag_counts_only_that_tag(self):
+        for user, round_, tag in (
+            (self.person, self.round, ParticipantNoteTag.MATCHING_EXEMPTION),
+            (self.person, self.other_round, ParticipantNoteTag.MATCHING_EXEMPTION),
+            (self.person, self.round, ParticipantNoteTag.MATCHING_EXEMPTION),
+            (self.other_person, self.round, ParticipantNoteTag.STATUS_CHANGE),
+            (self.other_person, self.other_round, None),
+        ):
+            await self.repo.create(
+                self.session,
+                user_id=user.user_id,
+                round_id=round_.round_id,
+                author_user_id=self.author.user_id,
+                body="note",
+                tag=tag,
+            )
+
+        found = await self.repo.list_round_ids_by_tag(
+            self.session,
+            [self.person.user_id, self.other_person.user_id],
+            ParticipantNoteTag.MATCHING_EXEMPTION,
+        )
+
+        self.assertEqual(
+            found,
+            {self.person.user_id: {self.round.round_id, self.other_round.round_id}},
+        )
+        self.assertEqual(
+            await self.repo.list_round_ids_by_tag(
+                self.session, [], ParticipantNoteTag.MATCHING_EXEMPTION
+            ),
+            {},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

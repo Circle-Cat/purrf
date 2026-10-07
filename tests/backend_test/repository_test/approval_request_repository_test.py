@@ -136,6 +136,30 @@ class TestApprovalRequestRepository(BaseRepositoryTestLib):
         )
         self.assertEqual(pending.target_id, "run-b")
 
+    async def test_pending_for_targets_skips_closed_and_unlisted_targets(self):
+        wanted = await self._create(target_id="run-a")
+        closed = await self._create(target_id="run-b")
+        await self.repo.close(
+            self.session,
+            closed.request_id,
+            status=ApprovalRequestStatus.REJECTED,
+            decided_by=self.reviewer.user_id,
+            decision_comment="no",
+        )
+        await self._create(target_id="run-c")
+
+        rows = await self.repo.list_pending_for_targets(
+            self.session, PUBLISH, "matching_run", ["run-a", "run-b"]
+        )
+
+        self.assertEqual([r.request_id for r in rows], [wanted.request_id])
+        self.assertEqual(
+            await self.repo.list_pending_for_targets(
+                self.session, PUBLISH, "matching_run", []
+            ),
+            [],
+        )
+
     async def test_latest_closed_for_target_is_the_newest_decision(self):
         older = await self._create()
         await self.repo.close(

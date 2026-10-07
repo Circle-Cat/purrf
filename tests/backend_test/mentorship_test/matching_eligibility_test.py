@@ -3,10 +3,13 @@
 import unittest
 
 from backend.mentorship.matching_eligibility import (
+    HISTORY_REASONS,
     Candidate,
+    HistoryFinding,
     IneligibleReason,
     PastPair,
     PastRound,
+    history_findings,
     history_problems,
     ineligible_reasons,
 )
@@ -37,9 +40,12 @@ def _pair(mentor_id, mentee_id, meetings, *, active=True):
     )
 
 
-def _round(*pairs, quitters=()):
+def _round(*pairs, quitters=(), round_id=None):
     return PastRound(
-        required_meetings=REQUIRED, pairs=tuple(pairs), quitters=frozenset(quitters)
+        required_meetings=REQUIRED,
+        pairs=tuple(pairs),
+        quitters=frozenset(quitters),
+        round_id=round_id,
     )
 
 
@@ -176,6 +182,88 @@ class HistoryProblemsTest(unittest.TestCase):
         self.assertEqual(
             ineligible_reasons(_candidate(), [_round(_pair(9, ME, 2))]),
             [IneligibleReason.MEETINGS_SHORT],
+        )
+
+
+class ExemptionTest(unittest.TestCase):
+    """An exemption lifts the history check in its round and clears what came
+    before it. Rounds are latest first: 30, then 20, then 10."""
+
+    def test_an_exemption_this_round_lifts_history_but_nothing_else(self):
+        reasons = ineligible_reasons(
+            _candidate(exempt_this_round=True, training_done=False),
+            [_round(_pair(9, ME, 1), round_id=20)],
+        )
+
+        self.assertEqual(reasons, [IneligibleReason.TRAINING_NOT_DONE])
+
+    def test_an_exemption_clears_the_rounds_before_it(self):
+        # Exempted in 20 and not paired there: 10's shortfall no longer counts.
+        rounds = [
+            _round(round_id=30),
+            _round(round_id=20),
+            _round(_pair(9, ME, 1), round_id=10),
+        ]
+
+        self.assertEqual(history_problems(ME, rounds, frozenset({20})), [])
+        self.assertEqual(
+            history_problems(ME, rounds), [IneligibleReason.MEETINGS_SHORT]
+        )
+
+    def test_the_round_of_the_exemption_itself_still_counts(self):
+        # Exempted in 20, then quit after being matched in 20.
+        rounds = [
+            _round(_pair(9, ME, 0, active=False), quitters=[ME], round_id=20),
+            _round(_pair(8, ME, 1), round_id=10),
+        ]
+
+        self.assertEqual(
+            history_problems(ME, rounds, frozenset({20})),
+            [IneligibleReason.QUIT_AFTER_MATCH],
+        )
+
+    def test_a_round_after_the_exemption_counts_as_usual(self):
+        rounds = [
+            _round(_pair(9, ME, 2), round_id=30),
+            _round(round_id=20),
+            _round(_pair(8, ME, 5), round_id=10),
+        ]
+
+        self.assertEqual(
+            history_problems(ME, rounds, frozenset({20})),
+            [IneligibleReason.MEETINGS_SHORT],
+        )
+
+    def test_history_reasons_are_the_two_an_exemption_lifts(self):
+        self.assertEqual(
+            HISTORY_REASONS,
+            {IneligibleReason.QUIT_AFTER_MATCH, IneligibleReason.MEETINGS_SHORT},
+        )
+
+
+class HistoryFindingsTest(unittest.TestCase):
+    def test_a_finding_names_its_round_and_her_meetings(self):
+        rounds = [_round(_pair(9, ME, 3), round_id=20)]
+
+        self.assertEqual(
+            history_findings(ME, rounds),
+            [HistoryFinding(IneligibleReason.MEETINGS_SHORT, 20, 3, REQUIRED)],
+        )
+
+    def test_a_mentor_short_with_two_mentees_carries_the_shortest(self):
+        rounds = [_round(_pair(ME, 21, 4), _pair(ME, 22, 1), round_id=20)]
+
+        self.assertEqual(
+            history_findings(ME, rounds),
+            [HistoryFinding(IneligibleReason.MEETINGS_SHORT, 20, 1, REQUIRED)],
+        )
+
+    def test_quitting_carries_no_counts(self):
+        rounds = [_round(_pair(9, ME, 0, active=False), quitters=[ME], round_id=20)]
+
+        self.assertEqual(
+            history_findings(ME, rounds),
+            [HistoryFinding(IneligibleReason.QUIT_AFTER_MATCH, 20)],
         )
 
 

@@ -8,11 +8,12 @@ from unittest.mock import AsyncMock, MagicMock
 from backend.common.mentorship_enums import (
     ApprovalStatus,
     PairStatus,
+    ParticipantNoteTag,
     ParticipantRole,
     TrainingCategory,
     TrainingStatus,
 )
-from backend.mentorship.matching_eligibility import IneligibleReason
+from backend.mentorship.matching_eligibility import HistoryFinding, IneligibleReason
 from backend.mentorship.matching_eligibility_service import MatchingEligibilityService
 
 MENTOR_COURSE = TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING
@@ -75,11 +76,14 @@ class MatchingEligibilityServiceTest(unittest.IsolatedAsyncioTestCase):
         self.training_repo.get_training_by_user_ids_and_categories = AsyncMock(
             return_value=[]
         )
+        self.notes_repo = MagicMock()
+        self.notes_repo.list_round_ids_by_tag = AsyncMock(return_value={})
         self.service = MatchingEligibilityService(
             participants_repository=self.participants_repo,
             pairs_repository=self.pairs_repo,
             rounds_repository=self.rounds_repo,
             training_repository=self.training_repo,
+            note_repository=self.notes_repo,
             logger=MagicMock(),
         )
         self.session = MagicMock()
@@ -212,6 +216,69 @@ class MatchingEligibilityServiceTest(unittest.IsolatedAsyncioTestCase):
         result = await self.service.ineligible_by_user(self.session, 30)
 
         self.assertEqual(result[1], [IneligibleReason.QUIT_AFTER_MATCH])
+
+    def _short_last_round(self, *user_ids):
+        """Each of these mentees was two meetings into round 20's five. Asked
+        for these people, the pairs come back; asked for their mentees'
+        other pairs, there are none."""
+        pairs = [(_pair(50 + u, 20, 7, u), 2) for u in user_ids]
+        self.pairs_repo.list_pairs_with_meeting_counts.side_effect = (
+            lambda session, round_ids, people: [
+                p for p in pairs if p[0].mentee_id in people
+            ]
+        )
+
+    async def test_needs_exemption_is_those_only_history_keeps_out(self):
+        self.participants_repo.list_round_registrations.return_value = [
+            _registration(1, ParticipantRole.MENTEE),
+            _registration(2, ParticipantRole.MENTEE),
+            _registration(3, ParticipantRole.MENTEE),
+        ]
+        # 2 has not done the course; 3 has no history.
+        self.training_repo.get_training_by_user_ids_and_categories.return_value = [
+            _training(1, MENTEE_COURSE),
+            _training(3, MENTEE_COURSE),
+        ]
+        self._short_last_round(1, 2)
+
+        result = await self.service.needs_exemption(self.session, 30)
+
+        self.assertEqual(
+            result,
+            {1: [HistoryFinding(IneligibleReason.MEETINGS_SHORT, 20, 2, 5)]},
+        )
+
+    async def test_an_exemption_in_this_round_makes_them_eligible(self):
+        self.participants_repo.list_round_registrations.return_value = [
+            _registration(1, ParticipantRole.MENTEE),
+        ]
+        self.training_repo.get_training_by_user_ids_and_categories.return_value = [
+            _training(1, MENTEE_COURSE),
+        ]
+        self._short_last_round(1)
+        self.notes_repo.list_round_ids_by_tag.return_value = {1: {30}}
+
+        self.assertEqual(await self.service.eligible_user_ids(self.session, 30), {1})
+        self.assertEqual(await self.service.needs_exemption(self.session, 30), {})
+        self.notes_repo.list_round_ids_by_tag.assert_awaited_with(
+            self.session, [1], ParticipantNoteTag.MATCHING_EXEMPTION
+        )
+
+    async def test_an_exemption_in_another_round_is_passed_to_the_history_check(self):
+        # Exempted in 20 and short in 20 itself: the round of the exemption
+        # still counts, so she still needs one.
+        self.participants_repo.list_round_registrations.return_value = [
+            _registration(1, ParticipantRole.MENTEE),
+        ]
+        self.training_repo.get_training_by_user_ids_and_categories.return_value = [
+            _training(1, MENTEE_COURSE),
+        ]
+        self._short_last_round(1)
+        self.notes_repo.list_round_ids_by_tag.return_value = {1: {20}}
+
+        result = await self.service.ineligible_by_user(self.session, 30)
+
+        self.assertEqual(result[1], [IneligibleReason.MEETINGS_SHORT])
 
     async def test_eligible_user_ids_keeps_only_those_with_no_reason(self):
         self.participants_repo.list_round_registrations.return_value = [
