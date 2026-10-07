@@ -3830,6 +3830,27 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(screen.queryByText("Not delivered")).not.toBeInTheDocument();
   });
 
+  it("tags a message with failedRecipients as a bounce when inboundKind is absent", async () => {
+    await openEmails(
+      kindThread({
+        openBounce: null,
+        messages: [
+          {
+            messageId: 21,
+            direction: "inbound",
+            fromAddress: "mailer-daemon@googlemail.com",
+            toAddresses: "recruiting@circlecat.org",
+            failedRecipients: ["a@x.example"],
+            bodyText: "Address not found",
+            createdAt: "2026-07-23T00:03:00Z",
+          },
+        ],
+      }),
+    );
+
+    expect(screen.getAllByText("Delivery failed")).toHaveLength(1);
+  });
+
   it("shows no banner or Needs reply when the thread has neither", async () => {
     await openEmails(
       kindThread({

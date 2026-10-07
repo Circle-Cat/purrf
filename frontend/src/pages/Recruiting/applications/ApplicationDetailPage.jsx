@@ -741,7 +741,10 @@ const EMAIL_KIND_TAGS = {
  * @param {{message: object, timezone: string}} props
  */
 const EmailMessageBubble = ({ message, timezone }) => {
-  const tag = EMAIL_KIND_TAGS[message.inboundKind];
+  const kind =
+    message.inboundKind ??
+    (message.failedRecipients != null ? "bounce" : undefined);
+  const tag = EMAIL_KIND_TAGS[kind];
   const html =
     message.bodyHtml != null && message.bodyHtml !== ""
       ? DOMPurify.sanitize(message.bodyHtml)
