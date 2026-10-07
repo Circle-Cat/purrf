@@ -25,7 +25,8 @@ from datetime import datetime, timezone
 
 from backend.common.communication_enums import EmailDirection
 from backend.communication.inbound_kind import classify_inbound
-from backend.dto.email_dto import EmailMessageDto, EmailThreadDto
+from backend.communication.inbox_rows import facts_of
+from backend.dto.email_dto import EmailMessageDto, EmailThreadDto, OpenBounceDto
 
 
 def _as_utc(moment: datetime) -> datetime:
@@ -199,6 +200,7 @@ class EmailConversationService:
             # References header in the chronological order RFC 5322 requires.
             # Reading is a different job, so the reversal for display lives
             # here rather than in the repository.
+            facts = facts_of(thread, messages)
             conversation.append(
                 EmailThreadDto(
                     thread_id=thread.thread_id,
@@ -208,6 +210,13 @@ class EmailConversationService:
                     messages=[
                         EmailMessageDto.model_validate(m) for m in reversed(messages)
                     ],
+                    needs_reply=facts.needs_reply,
+                    open_bounce=(
+                        OpenBounceDto(bounced_to=facts.open_bounce_to)
+                        if facts.open_bounce_to
+                        else None
+                    ),
+                    reply_alias=self._sender_address,
                 )
             )
         conversation.sort(key=_latest_activity, reverse=True)

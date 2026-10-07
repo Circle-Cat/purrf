@@ -26,6 +26,14 @@ class EmailMessageDto(BaseDto):
     created_at: datetime
     # Set only on a delivery-failure report: the addresses it names, or "".
     failed_recipients: str | None = None
+    # Set only on inbound mail: human, auto_reply or bounce.
+    inbound_kind: str | None = None
+
+
+class OpenBounceDto(BaseDto):
+    """A delivery failure no later outbound mail has answered."""
+
+    bounced_to: str
 
 
 class EmailThreadDto(BaseDto):
@@ -40,6 +48,10 @@ class EmailThreadDto(BaseDto):
     synced_at: datetime | None = None
     created_at: datetime
     messages: list[EmailMessageDto]
+    needs_reply: bool = False
+    open_bounce: OpenBounceDto | None = None
+    # The address replies in this thread go out as.
+    reply_alias: str | None = None
 
 
 class EmailConversationDto(BaseDto):
