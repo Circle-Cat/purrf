@@ -90,6 +90,8 @@ export const API_ENDPOINTS = {
   BLOCK_REQUEST_REASSIGN: (requestId) =>
     `/block-requests/${requestId}/reassign`,
   BLOCK_REQUEST_DECIDE: (requestId) => `/block-requests/${requestId}/decide`,
+  BLOCK_REQUEST_WITHDRAW: (requestId) =>
+    `/block-requests/${requestId}/withdraw`,
   RECRUITING_JOBS: "/recruiting/jobs",
   RECRUITING_JOB: (jobId) => `/recruiting/jobs/${jobId}`,
   RECRUITING_JOB_SUBMIT: (jobId) => `/recruiting/jobs/${jobId}/submit`,

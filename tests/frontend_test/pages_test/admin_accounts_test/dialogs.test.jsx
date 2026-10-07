@@ -31,17 +31,57 @@ describe("BlockDialog", () => {
     expect(button).toBeEnabled();
   });
 
-  it("requires a reviewer in request mode", async () => {
+  it("requires a reviewer but not a reason in request mode", async () => {
     const user = userEvent.setup();
     render(
       <BlockDialog mode="request" open holders={[holder(9), holder(11)]} />,
     );
 
-    await user.type(screen.getByLabelText(/Reason/), "r");
+    expect(screen.getByLabelText("Reason (optional)")).toHaveValue("");
     expect(screen.getByRole("button", { name: /Send request/ })).toBeDisabled();
 
     await user.selectOptions(screen.getByLabelText(/Reviewer/), "9");
     expect(screen.getByRole("button", { name: /Send request/ })).toBeEnabled();
+  });
+
+  it("sends a request with an empty reason when none is given", async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    render(
+      <BlockDialog
+        mode="request"
+        open
+        holders={[holder(9), holder(11)]}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    await user.selectOptions(screen.getByLabelText(/Reviewer/), "9");
+    await user.click(screen.getByRole("button", { name: /Send request/ }));
+
+    expect(onConfirm).toHaveBeenCalledWith({ reason: "", reviewerId: 9 });
+  });
+
+  it("names the account in the request title and shows the preflight above the picker", () => {
+    render(
+      <BlockDialog
+        mode="request"
+        open
+        account={account}
+        holders={[holder(9)]}
+        preflight={preflight(1, [])}
+      />,
+    );
+
+    expect(
+      screen.getByText("Request a block — Ada Lovelace"),
+    ).toBeInTheDocument();
+    const preflightNode = screen.getByTestId("block-preflight");
+    const picker = screen.getByLabelText("Reviewer");
+    expect(
+      preflightNode.compareDocumentPosition(picker) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("says the request goes to the named reviewer, not to whoever holds the permission", () => {
@@ -49,7 +89,7 @@ describe("BlockDialog", () => {
 
     expect(
       screen.getByText(
-        "This does not block anyone yet. It goes to the reviewer you name below, and nothing changes for this person until they approve it.",
+        "This does not block anyone yet. It goes to the reviewer you name below, and nothing changes for this person until they approve it. You can change the reviewer or withdraw while it waits.",
       ),
     ).toBeInTheDocument();
   });
@@ -122,7 +162,9 @@ describe("BlockDialog", () => {
 
     expect(screen.queryByLabelText(/Reviewer/)).not.toBeInTheDocument();
     expect(
-      screen.getByText(/Couldn't load the reviewers to pick from/),
+      screen.getByText(
+        "Couldn't load the reviewers. Close this and try again.",
+      ),
     ).toBeInTheDocument();
     expect(
       screen.queryByText(/No one else holds user\.admin/),
@@ -155,7 +197,7 @@ describe("BlockDialog", () => {
     expect(names).toContain("Sam Steward");
   });
 
-  it("explains an empty reviewer pool instead of showing an empty picker", () => {
+  it("explains an empty reviewer pool and cannot be sent", () => {
     render(
       <BlockDialog
         mode="request"
@@ -165,10 +207,14 @@ describe("BlockDialog", () => {
       />,
     );
 
-    expect(screen.queryByLabelText(/Reviewer/)).not.toBeInTheDocument();
+    const options = within(screen.getByLabelText("Reviewer"))
+      .getAllByRole("option")
+      .map((o) => o.textContent);
+    expect(options).toEqual(["Select a reviewer…"]);
     expect(
       screen.getByText(/No one else holds user\.admin/),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Send request/ })).toBeDisabled();
   });
 
   it("confirms a direct block with a trimmed reason and no reviewer", async () => {

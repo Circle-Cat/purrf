@@ -12,6 +12,7 @@ import {
   getPendingBlockRequests,
   reassignBlockRequest,
   decideBlockRequest,
+  withdrawBlockRequest,
   getUserAdmins,
 } from "@/api/adminAccountsApi";
 
@@ -140,6 +141,13 @@ describe("adminAccountsApi", () => {
       "/block-requests/41/decide",
       { approved: false, note: "not enough" },
     );
+  });
+
+  it("withdraws by request id with no body", async () => {
+    await withdrawBlockRequest(41);
+
+    expect(request.post).toHaveBeenCalledWith("/block-requests/41/withdraw");
+    expect(request.post.mock.calls[0]).toHaveLength(1);
   });
 
   it("reads the pickable reviewers", async () => {

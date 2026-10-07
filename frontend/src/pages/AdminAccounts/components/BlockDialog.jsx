@@ -10,8 +10,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import ApprovalRequestDialog from "@/components/approval/ApprovalRequestDialog";
 import { accountLabel } from "@/utils/userName";
-import { pickableReviewers } from "@/utils/blockReviewers";
 import BlockPreflight from "@/pages/AdminAccounts/components/BlockPreflight";
 
 /**
@@ -19,8 +19,9 @@ import BlockPreflight from "@/pages/AdminAccounts/components/BlockPreflight";
  *
  * One component in two modes. The preflight block is word-for-word identical
  * in both -- the reviewer deciding a request must read exactly what the raiser
- * read. Only three things differ: the opening sentence, the reviewer picker
- * (request mode only), and the button label.
+ * read. Request mode is the shared approval request dialog with the preflight
+ * above its picker, and its reason is optional like every approval request's;
+ * blocking directly requires one, because nobody else will ever be asked why.
  *
  * A failed or still-loading preflight never blocks the dialog: the counts are
  * context for a decision, not a precondition for taking it.
@@ -55,7 +56,8 @@ import BlockPreflight from "@/pages/AdminAccounts/components/BlockPreflight";
  * @param {number} [props.currentUserId] Excluded from the reviewer options --
  *   nobody reviews their own request.
  * @param {Function} props.onConfirm Called with `{reason, reviewerId}`;
- *   `reviewerId` is a number in request mode and null in direct mode.
+ *   `reviewerId` is a number in request mode and null in direct mode, and
+ *   `reason` is "" when a request gives none.
  * @param {boolean} [props.submitting] Disables both buttons while in flight.
  * @returns {JSX.Element}
  */
@@ -74,83 +76,69 @@ const BlockDialog = ({
   submitting = false,
 }) => {
   const isRequest = mode === "request";
-  const options = pickableReviewers(holders, [currentUserId, account?.userId]);
   const [reason, setReason] = useState("");
-  const [reviewerId, setReviewerId] = useState("");
 
   useEffect(() => {
-    if (open) {
-      setReason("");
-      setReviewerId("");
-    }
+    if (open) setReason("");
   }, [open]);
 
   const name = accountLabel(account);
-  const title = isRequest ? "Request a block" : "Block account";
-  const submitLabel = isRequest ? "Send request" : "Block";
-  const canSubmit =
-    Boolean(reason.trim()) &&
-    (!isRequest || Boolean(reviewerId)) &&
-    !submitting;
+  const preflightBlock = (
+    <>
+      <BlockPreflight preflight={preflight} timezone={timezone} />
+      {preflightError && (
+        <p className="text-sm text-slate-500">
+          Couldn&apos;t read what this will affect. The block still does all of
+          the above.
+        </p>
+      )}
+    </>
+  );
 
+  if (isRequest) {
+    const title = "Request a block";
+    return (
+      <ApprovalRequestDialog
+        open={open}
+        onOpenChange={onOpenChange}
+        title={name ? `${title} — ${name}` : title}
+        description="This does not block anyone yet. It goes to the reviewer you name below, and nothing changes for this person until they approve it. You can change the reviewer or withdraw while it waits."
+        reviewers={holders}
+        reviewersError={holdersError}
+        excludeUserIds={[currentUserId, account?.userId]}
+        reviewerHint="You and the person this is about are both left out of this list."
+        emptyText="No one else holds user.admin, so there is nobody to send this to. Ask an admin to grant someone that access."
+        askReason
+        confirmLabel="Send request"
+        onConfirm={({ reviewerId, reason: given }) =>
+          onConfirm?.({ reason: given, reviewerId })
+        }
+        submitting={submitting}
+      >
+        {preflightBlock}
+      </ApprovalRequestDialog>
+    );
+  }
+
+  const canSubmit = Boolean(reason.trim()) && !submitting;
   const handleConfirm = () => {
     if (!canSubmit) return;
-    onConfirm?.({
-      reason: reason.trim(),
-      reviewerId: isRequest ? Number(reviewerId) : null,
-    });
+    onConfirm?.({ reason: reason.trim(), reviewerId: null });
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{name ? `${title} — ${name}` : title}</DialogTitle>
+          <DialogTitle>
+            {name ? `Block account — ${name}` : "Block account"}
+          </DialogTitle>
           <DialogDescription className="text-slate-700">
-            {isRequest
-              ? "This does not block anyone yet. It goes to the reviewer you name below, and nothing changes for this person until they approve it."
-              : "This takes effect immediately. You hold user.admin, so no second approval is required."}
+            This takes effect immediately. You hold user.admin, so no second
+            approval is required.
           </DialogDescription>
         </DialogHeader>
-        <BlockPreflight preflight={preflight} timezone={timezone} />
-        {preflightError && (
-          <p className="text-sm text-slate-500">
-            Couldn&apos;t read what this will affect. The block still does all
-            of the above.
-          </p>
-        )}
-        {isRequest &&
-          (holdersError ? (
-            <p className="text-sm text-slate-500">
-              Couldn&apos;t load the reviewers to pick from. Close this and try
-              again.
-            </p>
-          ) : options.length === 0 ? (
-            <p className="text-sm text-slate-500">
-              No one else holds user.admin, so there is nobody to send this to.
-              Ask an admin to grant someone that access.
-            </p>
-          ) : (
-            <div className="space-y-1">
-              <Label htmlFor="reviewer">Reviewer</Label>
-              <p className="text-xs text-slate-500">
-                You and the person this is about are both left out of this list.
-              </p>
-              <select
-                id="reviewer"
-                className="w-full rounded-md border border-slate-300 p-2 text-sm"
-                value={reviewerId}
-                onChange={(e) => setReviewerId(e.target.value)}
-              >
-                <option value="">Select a reviewer…</option>
-                {options.map((holder) => (
-                  <option key={holder.userId} value={holder.userId}>
-                    {holder.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ))}
+        {preflightBlock}
         <div className="space-y-1">
           <Label htmlFor="block-reason">
             Reason — required, kept with the record
@@ -171,11 +159,11 @@ const BlockDialog = ({
             Cancel
           </Button>
           <Button
-            variant={isRequest ? "default" : "destructive"}
+            variant="destructive"
             onClick={handleConfirm}
             disabled={!canSubmit}
           >
-            {submitLabel}
+            Block
           </Button>
         </DialogFooter>
       </DialogContent>

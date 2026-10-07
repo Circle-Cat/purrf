@@ -51,7 +51,8 @@ export const getBlockPreflight = (userId) =>
 
 /**
  * Ask a named reviewer to block someone.
- * @param {{userId: number, reason: string, reviewerId: number}} body
+ * @param {{userId: number, reason: string, reviewerId: number}} body The
+ *   reason may be "", as on every approval request.
  * @param {string} raisedFrom Domain page the request came from. A query
  *   parameter on the wire, not a body field.
  */
@@ -81,7 +82,12 @@ export const getRaisedBlockRequests = () =>
 export const reassignBlockRequest = (requestId, reviewerId) =>
   request.post(API_ENDPOINTS.BLOCK_REQUEST_REASSIGN(requestId), { reviewerId });
 
-/** Approve or turn down a request the caller was named to decide. */
+/** Take back a request the caller raised that nobody has decided yet. */
+export const withdrawBlockRequest = (requestId) =>
+  request.post(API_ENDPOINTS.BLOCK_REQUEST_WITHDRAW(requestId));
+
+/** Approve or turn down a request the caller was named to decide. The note
+ * is required to turn it down. */
 export const decideBlockRequest = (requestId, approved, note) =>
   request.post(API_ENDPOINTS.BLOCK_REQUEST_DECIDE(requestId), {
     approved,

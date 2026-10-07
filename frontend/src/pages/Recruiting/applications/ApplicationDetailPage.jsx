@@ -83,9 +83,10 @@ import {
   getUserAdmins,
   getRaisedBlockRequests,
   reassignBlockRequest,
+  withdrawBlockRequest,
 } from "@/api/adminAccountsApi";
+import ApprovalRequestDialog from "@/components/approval/ApprovalRequestDialog";
 import BlockDialog from "@/pages/AdminAccounts/components/BlockDialog";
-import ReassignDialog from "@/pages/Recruiting/components/ReassignDialog";
 import { termHint } from "@/pages/Recruiting/components/glossary";
 import {
   humanize,
@@ -1201,6 +1202,7 @@ const ApplicationDetailPage = () => {
   const [raisedBlockRequest, setRaisedBlockRequest] = useState(null);
   const [blockReassignOpen, setBlockReassignOpen] = useState(false);
   const [blockReassigning, setBlockReassigning] = useState(false);
+  const [blockWithdrawing, setBlockWithdrawing] = useState(false);
 
   const [interviewDialogOpen, setInterviewDialogOpen] = useState(false);
   const [interviewDialogMode, setInterviewDialogMode] = useState("schedule");
@@ -1749,6 +1751,18 @@ const ApplicationDetailPage = () => {
       .finally(() => setBlockReassigning(false));
   };
 
+  const handleWithdrawBlockRequest = () => {
+    if (blockWithdrawing) return;
+    setBlockWithdrawing(true);
+    withdrawBlockRequest(raisedBlockRequest.id)
+      .then(() => {
+        setRaisedBlockRequest(null);
+        toast.success("Block request withdrawn.");
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setBlockWithdrawing(false));
+  };
+
   const openScheduleInterview = () => {
     setInterviewDialogMode("schedule");
     setInterviewDialogOpen(true);
@@ -2030,6 +2044,14 @@ const ApplicationDetailPage = () => {
                       >
                         Reassign
                       </Button>
+                      <Button
+                        variant="link"
+                        className="px-2"
+                        onClick={handleWithdrawBlockRequest}
+                        disabled={blockWithdrawing}
+                      >
+                        Withdraw
+                      </Button>
                     </span>
                   )}
                   {isPipelineStage && (
@@ -2259,15 +2281,23 @@ const ApplicationDetailPage = () => {
         submitting={blockSubmitting}
       />
 
-      <ReassignDialog
+      <ApprovalRequestDialog
         open={blockReassignOpen}
         onOpenChange={setBlockReassignOpen}
-        currentReviewerId={raisedBlockRequest?.reviewerId}
-        currentUserId={user?.userId}
-        targetUserId={detail.application.userId}
-        holders={reviewerOptions}
-        holdersError={reviewerOptionsFailed}
-        onConfirm={handleReassignBlockRequest}
+        title="Reassign this block request"
+        description="The request stays open and nothing about it changes except who decides it. Both the old and the new reviewer are told."
+        reviewers={reviewerOptions}
+        reviewersError={reviewerOptionsFailed}
+        // Everyone the backend refuses: the reviewer who has it, the raiser
+        // and the person it is about.
+        excludeUserIds={[
+          raisedBlockRequest?.reviewerId,
+          user?.userId,
+          detail.application.userId,
+        ]}
+        reviewerHint="The reviewer who has it now, you, and the person this is about are all left out of this list."
+        confirmLabel="Reassign"
+        onConfirm={({ reviewerId }) => handleReassignBlockRequest(reviewerId)}
         submitting={blockReassigning}
       />
 
