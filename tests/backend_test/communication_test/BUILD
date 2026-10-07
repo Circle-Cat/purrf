@@ -123,3 +123,11 @@ py_test(
         "//backend/communication",
     ],
 )
+
+py_test(
+    name = "inbox_state_test",
+    srcs = ["inbox_state_test.py"],
+    deps = [
+        "//backend/communication",
+    ],
+)
