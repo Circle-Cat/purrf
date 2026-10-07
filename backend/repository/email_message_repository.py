@@ -136,3 +136,36 @@ class EmailMessageRepository:
             )
         )
         return list(result.scalars().all())
+
+    async def list_by_threads(
+        self, session: AsyncSession, thread_ids: list[int]
+    ) -> dict[int, list[EmailMessageEntity]]:
+        """Every message of several threads in one query, each thread oldest first.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            thread_ids (list[int]): The threads to read.
+
+        Returns:
+            dict[int, list[EmailMessageEntity]]: One entry per requested id,
+                empty for a thread with no messages, ordered as
+                ``list_by_thread`` orders them. Empty, without a query, for no
+                ids.
+        """
+        if not thread_ids:
+            return {}
+        result = await session.execute(
+            select(EmailMessageEntity)
+            .where(EmailMessageEntity.thread_id.in_(thread_ids))
+            .order_by(
+                func.coalesce(
+                    EmailMessageEntity.gmail_internal_date,
+                    EmailMessageEntity.created_at,
+                ).asc(),
+                EmailMessageEntity.message_id.asc(),
+            )
+        )
+        by_thread: dict[int, list[EmailMessageEntity]] = {i: [] for i in thread_ids}
+        for message in result.scalars().all():
+            by_thread[message.thread_id].append(message)
+        return by_thread
