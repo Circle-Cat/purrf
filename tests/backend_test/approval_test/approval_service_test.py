@@ -36,6 +36,7 @@ class ChosenHandler(ApprovalHandler):
 
     def __init__(self):
         self.check_raise_mock = AsyncMock()
+        self.on_raised_mock = AsyncMock()
         self.problems = []
         self.execute_mock = AsyncMock()
         self.revert_mock = AsyncMock()
@@ -52,6 +53,9 @@ class ChosenHandler(ApprovalHandler):
         await self.check_raise_mock(
             session, raised_by=raised_by, target_id=target_id, payload=payload
         )
+
+    async def on_raised(self, session, request):
+        await self.on_raised_mock(session, request)
 
     async def problems_at_approval(self, session, request):
         return list(self.problems)
@@ -244,6 +248,25 @@ class TestRaise(ApprovalServiceTestBase):
             },
         )
         self.assertEqual(self.order, ["event", "commit"])
+
+    async def test_the_target_is_marked_waiting_before_the_event(self):
+        self.chosen.on_raised_mock.side_effect = lambda *a: self.order.append(
+            "on_raised"
+        )
+
+        await self._raise()
+
+        self.assertEqual(self.order, ["on_raised", "event", "commit"])
+        self.assertEqual(
+            self.chosen.on_raised_mock.await_args.args[1].request_id, REQUEST_ID
+        )
+
+    async def test_nothing_is_marked_waiting_when_the_raise_is_refused(self):
+        self.requests.get_pending_for_target.return_value = _request()
+
+        with self.assertRaises(ConflictError):
+            await self._raise()
+        self.chosen.on_raised_mock.assert_not_awaited()
 
     async def test_a_blank_reason_is_stored_as_none(self):
         # The reason is optional for every action.
@@ -450,6 +473,7 @@ class TestDecide(ApprovalServiceTestBase):
                 "requestId": REQUEST_ID,
                 "action": "publish_matching",
                 "decision": "approved",
+                "comment": None,
             },
         )
         self.assertEqual(
@@ -504,9 +528,10 @@ class TestDecide(ApprovalServiceTestBase):
             decided_by=REVIEWER,
             decision_comment="two mentors over slots",
         )
-        self.assertEqual(
-            self.record_event.await_args.kwargs["details"]["decision"], "rejected"
-        )
+        details = self.record_event.await_args.kwargs["details"]
+        self.assertEqual(details["decision"], "rejected")
+        # The timeline of what was decided shows why.
+        self.assertEqual(details["comment"], "two mentors over slots")
         self.chosen.after_commit_mock.assert_not_awaited()
 
     async def test_a_failing_after_commit_step_is_logged_not_raised(self):
@@ -551,6 +576,7 @@ class TestWithdraw(ApprovalServiceTestBase):
                 "requestId": REQUEST_ID,
                 "action": "publish_matching",
                 "decision": "withdrawn",
+                "comment": None,
             },
         )
         self.assertEqual(self.order, ["close", "event", "commit"])
@@ -632,6 +658,19 @@ class TestReads(ApprovalServiceTestBase):
             "publish_matching",
             "matching_run",
             ["run-1", "run-2", "run-3"],
+        )
+
+    async def test_latest_for_targets_comes_back_by_target(self):
+        newest = _request(target_id="run-1")
+        self.requests.list_latest_for_targets = AsyncMock(return_value=[newest])
+
+        result = await self.service.latest_for_targets(
+            self.session, "publish_matching", ["run-1", "run-2"]
+        )
+
+        self.assertEqual(result, {"run-1": newest})
+        self.requests.list_latest_for_targets.assert_awaited_once_with(
+            self.session, "publish_matching", "matching_run", ["run-1", "run-2"]
         )
 
     async def test_latest_closed_for_target_uses_the_handler_target_type(self):
