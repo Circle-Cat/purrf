@@ -116,10 +116,11 @@ const describe = (n) => {
       return `You were auto-assigned to evaluate ${n.applicantName} — ${n.jobTitle}`;
     case "recruiting.mentioned":
       return `${actor} mentioned you in a comment on ${n.applicantName} — ${n.jobTitle}`;
-    // Told to whoever sent into the thread. The reply may come from someone on
-    // CC, so the line names the application rather than who wrote.
+    // Goes to whoever sent into the thread, or the job owners when nobody has.
+    // The reply may come from someone on CC, so the line names the application
+    // rather than who wrote.
     case "recruiting.email_received":
-      return `New reply to your email about ${n.applicantName} — ${n.jobTitle}`;
+      return `New reply on the email thread about ${n.applicantName} — ${n.jobTitle}`;
     // Told to the same people as a reply: it is their message that failed.
     case "recruiting.email_bounced":
       return `Your email about ${n.applicantName} — ${n.jobTitle} could not be delivered`;
