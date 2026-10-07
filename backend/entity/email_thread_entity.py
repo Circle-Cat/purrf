@@ -18,7 +18,9 @@ class EmailThreadEntity(Base):
     different table depending on ``context_type``), so it carries **no**
     database-level foreign key; keeping it consistent is the caller's job.
 
-    A row is created only after Gmail accepts the first outbound message, so
+    When we write first, the row is created after Gmail accepts the first
+    outbound message. When someone writes to us first, inbound routing creates
+    the row, and ``user_id`` stays empty until Assign. Either way
     ``gmail_thread_id`` is always known and non-null.
     """
 
@@ -27,8 +29,8 @@ class EmailThreadEntity(Base):
     thread_id: Mapped[int] = mapped_column(
         Integer, primary_key=True, autoincrement=True
     )
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.user_id", ondelete="CASCADE"), index=True, nullable=False
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.user_id", ondelete="CASCADE"), index=True, nullable=True
     )
     gmail_thread_id: Mapped[str] = mapped_column(
         String(255), unique=True, nullable=False
@@ -39,6 +41,10 @@ class EmailThreadEntity(Base):
     synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    archived_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.user_id", ondelete="SET NULL")
     )
 
     __table_args__ = (
