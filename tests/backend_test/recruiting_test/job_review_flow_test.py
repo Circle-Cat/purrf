@@ -27,7 +27,6 @@ from backend.repository.approval_request_repository import (
 )
 from backend.repository.event_repository import EventRepository
 from backend.repository.job_repository import JobRepository
-from backend.repository.job_review_repository import JobReviewRepository
 from backend.repository.notification_repository import NotificationRepository
 from backend.repository.user_emails_repository import UserEmailsRepository
 from backend.repository.user_permissions_repository import UserPermissionsRepository
@@ -87,7 +86,6 @@ class JobReviewFlowTest(BaseRepositoryTestLib):
             job_repository,
             RecruitingMapper(),
             perms,
-            JobReviewRepository(),
             NotificationRepository(),
             UsersRepository(),
             UserEmailsRepository(),
