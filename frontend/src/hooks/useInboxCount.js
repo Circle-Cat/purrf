@@ -8,7 +8,7 @@ import { getInboxCount } from "@/api/inboxApi";
  * Refreshes on route change, tab visibility, window focus and the
  * "inbox:changed" window event (dispatched after Inbox write actions). There
  * is deliberately no timer. Does not request at all while `enabled` is false.
- * A failed request leaves the last known count in place and is silent.
+ * A failed request clears the count (no number is shown) and is silent.
  *
  * @param {boolean} enabled - Whether the viewer may see the Inbox.
  * @returns {{count: number, refresh: () => Promise<void>}}
@@ -27,7 +27,7 @@ export const useInboxCount = (enabled) => {
       const { data } = await getInboxCount();
       setCount(data?.needsReply ?? 0);
     } catch {
-      // Keep the last good number.
+      setCount(0);
     } finally {
       inFlight.current = false;
     }

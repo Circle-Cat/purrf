@@ -60,6 +60,7 @@ describe("Sidebar Inbox entry", () => {
     renderSidebar();
 
     await waitFor(() => expect(getInboxCount).toHaveBeenCalled());
+    await act(async () => {});
     expect(screen.queryByText("0")).not.toBeInTheDocument();
   });
 
@@ -71,12 +72,20 @@ describe("Sidebar Inbox entry", () => {
     expect(await screen.findByText("3")).toBeInTheDocument();
   });
 
-  it("shows no number when the request fails", async () => {
-    getInboxCount.mockRejectedValue(new Error("boom"));
+  it("clears the number when a refresh fails", async () => {
+    getInboxCount.mockResolvedValueOnce({ data: { needsReply: 3 } });
     useAuth.mockReturnValue({ permissions: [PERMISSIONS.INQUIRIES_MANAGE] });
     renderSidebar();
+    expect(await screen.findByText("3")).toBeInTheDocument();
 
-    await waitFor(() => expect(getInboxCount).toHaveBeenCalled());
+    getInboxCount.mockRejectedValueOnce(new Error("boom"));
+    await act(async () => {
+      window.dispatchEvent(new Event("inbox:changed"));
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByText("3")).not.toBeInTheDocument(),
+    );
     expect(screen.getByText("Inbox")).toBeInTheDocument();
   });
 
