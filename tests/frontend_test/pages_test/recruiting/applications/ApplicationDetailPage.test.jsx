@@ -3756,60 +3756,93 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(screen.getByText("Hello there")).toBeInTheDocument();
   });
 
-  it("marks a bounce as not delivered and names the failed addresses", async () => {
+  const kindThread = (overrides = {}) => ({
+    threadId: 1,
+    subject: "Interview Availability",
+    needsReply: true,
+    openBounce: { bouncedTo: "a@x.example" },
+    replyAlias: "recruiting@circlecat.org",
+    messages: [
+      {
+        messageId: 11,
+        direction: "outbound",
+        fromAddress: "recruiting@circlecat.org",
+        toAddresses: "Cand <a@x.example>",
+        inboundKind: null,
+        bodyText: "Hello there",
+        createdAt: "2026-07-23T00:00:00Z",
+      },
+      {
+        messageId: 12,
+        direction: "inbound",
+        fromAddress: "cand@x.example",
+        toAddresses: "recruiting@circlecat.org",
+        inboundKind: "human",
+        bodyText: "Sounds good",
+        createdAt: "2026-07-23T00:01:00Z",
+      },
+      {
+        messageId: 13,
+        direction: "inbound",
+        fromAddress: "noreply@x.example",
+        toAddresses: "recruiting@circlecat.org",
+        inboundKind: "auto_reply",
+        bodyText: "Out of office",
+        createdAt: "2026-07-23T00:02:00Z",
+      },
+      {
+        messageId: 14,
+        direction: "inbound",
+        fromAddress: "mailer-daemon@googlemail.com",
+        toAddresses: "recruiting@circlecat.org",
+        inboundKind: "bounce",
+        bodyText: "Address not found",
+        createdAt: "2026-07-23T00:03:00Z",
+      },
+    ],
+    ...overrides,
+  });
+
+  const openEmails = async (thread) => {
     ownerViewing();
     api.getApplicationEmails.mockResolvedValue({
-      data: {
-        defaultTo: "cand@x.com",
-        threads: [
-          {
-            threadId: 1,
-            subject: "Interview Availability",
-            messages: [
-              {
-                messageId: 11,
-                direction: "outbound",
-                fromAddress: "recruiting@circlecat.org",
-                bodyHtml: "<p>Hello there</p>",
-                bodyText: "Hello there",
-                failedRecipients: null,
-                createdAt: "2026-07-23T00:00:00Z",
-              },
-              {
-                messageId: 12,
-                direction: "inbound",
-                fromAddress: "mailer-daemon@googlemail.com",
-                bodyHtml: null,
-                bodyText: "Address not found",
-                failedRecipients: "bad@x.com",
-                createdAt: "2026-07-23T00:01:00Z",
-              },
-              {
-                messageId: 13,
-                direction: "inbound",
-                fromAddress: "postmaster@x.com",
-                bodyHtml: null,
-                bodyText: "Delivery failed",
-                failedRecipients: "",
-                createdAt: "2026-07-23T00:02:00Z",
-              },
-            ],
-          },
-        ],
-      },
+      data: { defaultTo: "cand@x.com", threads: [thread] },
     });
     const user = userEvent.setup();
     renderPage();
     await waitLoaded();
     await user.click(screen.getByRole("tab", { name: "Emails" }));
+  };
 
-    expect(screen.getByText("Sent")).toBeInTheDocument();
-    expect(screen.getAllByText("Not delivered")).toHaveLength(2);
-    expect(screen.queryByText("Received")).not.toBeInTheDocument();
-    expect(
-      screen.getByText("Could not be delivered to bad@x.com"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Could not be delivered")).toBeInTheDocument();
+  it("shows From and To, kind tags, the bounce banner and Needs reply", async () => {
+    await openEmails(kindThread());
+
+    expect(screen.getAllByText("From")).toHaveLength(4);
+    expect(screen.getAllByText("To")).toHaveLength(4);
+    expect(screen.getByText("Cand <a@x.example>")).toBeInTheDocument();
+    expect(screen.getByText("cand@x.example")).toBeInTheDocument();
+    expect(screen.getAllByText("Auto-reply")).toHaveLength(1);
+    expect(screen.getAllByText("Delivery failed")).toHaveLength(1);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Delivery failed: your email to a@x.example was not delivered",
+    );
+    expect(screen.getByText("Needs reply")).toBeInTheDocument();
+    expect(screen.queryByText("Not delivered")).not.toBeInTheDocument();
+  });
+
+  it("shows no banner or Needs reply when the thread has neither", async () => {
+    await openEmails(
+      kindThread({
+        needsReply: false,
+        openBounce: null,
+        messages: kindThread().messages.slice(0, 2),
+      }),
+    );
+
+    expect(screen.queryByText("Needs reply")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText("Auto-reply")).not.toBeInTheDocument();
+    expect(screen.getByText("Sounds good")).toBeInTheDocument();
   });
 
   it("shows each message's timestamp with the viewer's timezone name", async () => {

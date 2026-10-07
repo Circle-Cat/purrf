@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Check, X } from "lucide-react";
+import { AlertTriangle, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -722,40 +722,54 @@ const CommentsPanel = ({
 
 const EMAIL_DIRECTION_LABELS = { outbound: "Sent", inbound: "Received" };
 
+const EMAIL_KIND_TAGS = {
+  auto_reply: {
+    label: "Auto-reply",
+    className: "border-slate-300 bg-slate-100 text-slate-600",
+  },
+  bounce: {
+    label: "Delivery failed",
+    className: "border-red-200 bg-red-50 text-red-700",
+  },
+};
+
 /**
- * One stored message in the Emails tab. A delivery-failure report
- * (`failedRecipients` set, "" when it named nobody) is inbound like a reply,
- * so it gets its own label and says which addresses failed.
+ * One stored message in the Emails tab. Auto-replies and delivery-failure
+ * reports (`inboundKind`) are tagged and dimmed so they read as noise next to
+ * human replies.
  *
  * @param {{message: object, timezone: string}} props
  */
 const EmailMessageBubble = ({ message, timezone }) => {
-  const bounced = message.failedRecipients != null;
+  const tag = EMAIL_KIND_TAGS[message.inboundKind];
   const html =
     message.bodyHtml != null && message.bodyHtml !== ""
       ? DOMPurify.sanitize(message.bodyHtml)
       : null;
   const when = message.gmailInternalDate ?? message.createdAt;
   return (
-    <li className="rounded border p-2 text-sm">
-      <div className="mb-1 text-slate-500">
-        {bounced ? (
-          <span className="font-medium text-red-600">Not delivered</span>
-        ) : (
-          <span className="font-medium text-slate-700">
-            {EMAIL_DIRECTION_LABELS[message.direction] ?? message.direction}
-          </span>
-        )}{" "}
-        · {message.fromAddress}
-        {when ? ` · ${formatDateTimeWithZone(when, timezone)}` : ""}
+    <li
+      className={`rounded border p-2 text-sm ${
+        tag ? "border-dashed border-slate-300 bg-slate-50 text-slate-500" : ""
+      }`}
+    >
+      <div className="mb-1 flex flex-wrap items-center gap-x-1.5 text-slate-500">
+        <span className="font-medium text-slate-700">
+          {EMAIL_DIRECTION_LABELS[message.direction] ?? message.direction}
+        </span>
+        {when ? <span>· {formatDateTimeWithZone(when, timezone)}</span> : null}
+        {tag && (
+          <Badge variant="outline" className={tag.className}>
+            {tag.label}
+          </Badge>
+        )}
       </div>
-      {bounced && (
-        <p className="mb-1 text-red-600">
-          {message.failedRecipients
-            ? `Could not be delivered to ${message.failedRecipients}`
-            : "Could not be delivered"}
-        </p>
-      )}
+      <dl className="mb-1 grid grid-cols-[2.25rem_1fr] gap-x-2 text-xs text-slate-500">
+        <dt>From</dt>
+        <dd className="break-all text-slate-700">{message.fromAddress}</dd>
+        <dt>To</dt>
+        <dd className="break-all text-slate-700">{message.toAddresses}</dd>
+      </dl>
       {html != null ? (
         // Mail bodies are foreign HTML, and Tailwind's preflight zeroes <p>
         // margins, drops list markers and strips link underlines — without
@@ -818,8 +832,16 @@ const EmailsPanel = ({
           {threads.map((thread) => (
             <li key={thread.threadId} className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-slate-700">
+                <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-700">
                   {thread.subject || "(no subject)"}
+                  {thread.needsReply && (
+                    <Badge
+                      variant="outline"
+                      className="border-orange-200 bg-orange-50 text-orange-700"
+                    >
+                      Needs reply
+                    </Badge>
+                  )}
                 </span>
                 {canSend && (
                   <Button
@@ -834,6 +856,16 @@ const EmailsPanel = ({
                   </Button>
                 )}
               </div>
+              {thread.openBounce && (
+                <div
+                  role="alert"
+                  className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-800"
+                >
+                  <AlertTriangle size={14} />
+                  Delivery failed: your email to {thread.openBounce.bouncedTo}{" "}
+                  was not delivered
+                </div>
+              )}
               <ul className="space-y-2">
                 {thread.messages.map((message) => (
                   <EmailMessageBubble
