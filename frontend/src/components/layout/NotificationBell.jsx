@@ -110,6 +110,12 @@ const describe = (n) => {
     // Told to ops.maintain holders; the kind comes from details.
     case "ops.gmail_sync_alert":
       return `Gmail sync needs attention: ${(n.details?.kind ?? "unknown").replaceAll("_", " ")}`;
+    // Told to whoever can handle that service's Inbox threads.
+    case "inbox.needs_reply":
+      return `New email needs a reply: ${n.details?.subject || "(no subject)"}`;
+    // Told to the person who sent the email that bounced.
+    case "inbox.bounced":
+      return `Your email to ${n.details?.bouncedTo} was not delivered`;
     case "recruiting.reassigned":
       return `${actor} assigned you to evaluate ${n.applicantName} — ${n.jobTitle}`;
     case "recruiting.auto_assigned":

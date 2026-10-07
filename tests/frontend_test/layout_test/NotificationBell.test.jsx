@@ -637,6 +637,59 @@ describe("NotificationBell", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it("tells whoever can handle the thread that an email needs a reply", async () => {
+    await openWith({
+      id: 9,
+      eventType: "inbox.needs_reply",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { subject: "Regarding Q4 plans" },
+    });
+
+    expect(
+      screen.getByText("New email needs a reply: Regarding Q4 plans"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows fallback subject when inbox.needs_reply has no subject", async () => {
+    await openWith({
+      id: 10,
+      eventType: "inbox.needs_reply",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { subject: "" },
+    });
+
+    expect(
+      screen.getByText("New email needs a reply: (no subject)"),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the sender their email to a recipient bounced", async () => {
+    await openWith({
+      id: 11,
+      eventType: "inbox.bounced",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: null,
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { bouncedTo: "recipient@example.com" },
+    });
+
+    expect(
+      screen.getByText(
+        "Your email to recipient@example.com was not delivered",
+      ),
+    ).toBeInTheDocument();
+  });
 });
 
 const MENTION = {
