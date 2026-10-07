@@ -30,7 +30,8 @@ def _in(mid, minutes, sender="Asker <asker@ext.com>", kind="human", **kw):
         from_address=sender,
         to_addresses=_MENTORSHIP_ALIAS,
         gmail_internal_date=_at(minutes),
-        created_at=_at(minutes + 1000),
+        # Stored shortly after Gmail received it, unless the test says when.
+        created_at=_at(kw.get("stored", minutes + 1)),
         inbound_kind=kind,
         snippet=kw.get("snippet", f"in {mid}"),
         body_html=kw.get("body_html", f"<p>in {mid}</p>"),
@@ -535,6 +536,41 @@ class FlagsAndOrderTest(_Fixture):
         )
 
 
+    async def test_mail_dated_before_the_archive_but_synced_after_it_reopens(self):
+        self.threads = [
+            _thread(1, ContextType.MENTORSHIP_INBOX, archived_at=_at(50)),
+            _thread(2, ContextType.MENTORSHIP_INBOX, archived_at=_at(50)),
+        ]
+        self.messages = {1: [_in(10, 20, stored=60)], 2: [_in(20, 20)]}
+
+        result = await self._list()
+        detail = await self.service.get_thread(self.session, _viewer(*_ALL), 1)
+
+        self.assertEqual(self._ids(result), [1])
+        self.assertFalse(result.threads[0].archived)
+        self.assertTrue(result.threads[0].needs_reply)
+        self.assertEqual(result.counts.needs_reply, 1)
+        self.assertTrue(detail.needs_reply)
+        self.assertFalse(detail.archived)
+
+    async def test_mail_dated_before_our_reply_but_synced_after_it_needs_reply(self):
+        self.threads = [
+            _thread(1, ContextType.MENTORSHIP_INBOX),
+            _thread(2, ContextType.MENTORSHIP_INBOX),
+        ]
+        self.messages = {
+            1: [_out(10, 30), _in(11, 20, stored=40)],
+            2: [_out(20, 30), _in(21, 20)],
+        }
+
+        result = await self._list(needs_reply=True)
+
+        self.assertEqual(self._ids(result), [1])
+        self.assertEqual(
+            await self.service.count_needs_reply(self.session, _viewer(*_ALL)), 1
+        )
+
+
 class DetailTest(_Fixture):
     async def test_detail_of_an_inbox_thread(self):
         self.threads = [_thread(1, ContextType.MENTORSHIP_INBOX, subject="Q")]
@@ -580,6 +616,33 @@ class DetailTest(_Fixture):
         self.assertEqual(dumped["messages"][0]["attachments"][1]["attachmentId"], 1)
         self.assertIn("openBounce", dumped)
         self.assertIn("replyAlias", dumped)
+
+    async def test_an_unclassified_inbound_with_failed_recipients_is_a_bounce(self):
+        self.threads = [_thread(1, ContextType.MENTORSHIP_INBOX)]
+        self.messages = {
+            1: [
+                _out(10, 0, sent_by=70),
+                _in(11, 5, kind=None, failed_recipients="asker@ext.com"),
+            ]
+        }
+
+        detail = await self.service.get_thread(self.session, _viewer(*_ALL), 1)
+
+        self.assertFalse(detail.needs_reply)
+        self.assertEqual(detail.machine_tag, "bounce")
+        self.assertEqual(detail.open_bounce.bounced_to, "asker@ext.com")
+        self.assertEqual(detail.messages[-1].inbound_kind, "bounce")
+
+    async def test_an_unclassified_inbound_without_failed_recipients_is_human(self):
+        self.threads = [_thread(1, ContextType.MENTORSHIP_INBOX)]
+        self.messages = {1: [_out(10, 0), _in(11, 5, kind=None)]}
+
+        detail = await self.service.get_thread(self.session, _viewer(*_ALL), 1)
+
+        self.assertTrue(detail.needs_reply)
+        self.assertIsNone(detail.machine_tag)
+        self.assertIsNone(detail.open_bounce)
+        self.assertEqual(detail.messages[-1].inbound_kind, "human")
 
     async def test_a_later_outbound_closes_the_bounce(self):
         self.threads = [_thread(1, ContextType.MENTORSHIP_INBOX)]

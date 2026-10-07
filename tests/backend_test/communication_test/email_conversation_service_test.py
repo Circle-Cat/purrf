@@ -248,6 +248,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
             gmail_internal_date=gmail_date,
             created_at=when,
             inbound_kind=None,
+            failed_recipients=None,
         )
 
     def _thread_row(self, thread_id, created_at):
@@ -299,6 +300,25 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         msgs = [self._out(1, "2026-07-01T00:00:00Z"), self._msg(2, "2026-07-02T00:00:00Z")]
         thread = await self._list_one(msgs, archived_at="2026-07-03T00:00:00Z")
         self.assertFalse(thread.needs_reply)
+
+    async def test_list_conversation_mail_stored_after_our_reply_needs_reply(self):
+        late = self._msg(2, "2026-07-05T00:00:00Z", gmail_date="2026-07-01T00:00:00Z")
+        thread = await self._list_one([self._out(1, "2026-07-03T00:00:00Z"), late])
+        self.assertTrue(thread.needs_reply)
+
+    async def test_list_conversation_mail_stored_after_the_archive_needs_reply(self):
+        late = self._msg(2, "2026-07-05T00:00:00Z", gmail_date="2026-07-01T00:00:00Z")
+        thread = await self._list_one([late], archived_at="2026-07-03T00:00:00Z")
+        self.assertTrue(thread.needs_reply)
+
+    async def test_list_conversation_unclassified_bounce_is_open_not_needing_reply(
+        self,
+    ):
+        bounce = self._msg(2, "2026-07-02T00:00:00Z")
+        bounce.failed_recipients = "typo@example.com"
+        thread = await self._list_one([self._out(1, "2026-07-01T00:00:00Z"), bounce])
+        self.assertFalse(thread.needs_reply)
+        self.assertEqual(thread.open_bounce.bounced_to, "typo@example.com")
 
     async def test_list_conversation_open_bounce_until_a_later_send(self):
         bounce = self._msg(2, "2026-07-02T00:00:00Z")

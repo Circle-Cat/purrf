@@ -98,6 +98,7 @@ class InboxListOnARealSessionTest(BaseRepositoryTestLib):
                     to_addresses="mentorship-db@example.com",
                     snippet=f"snippet {key}",
                     gmail_internal_date=_at(minutes),
+                    created_at=_at(minutes),
                     inbound_kind=kind,
                 )
             ]

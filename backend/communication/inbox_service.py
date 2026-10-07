@@ -5,8 +5,6 @@ from dataclasses import dataclass, field
 from backend.common.communication_enums import (
     INBOX_CONTEXT,
     ContextType,
-    EmailDirection,
-    InboundKind,
     InboxService,
 )
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE, InboxEvent
@@ -16,6 +14,7 @@ from backend.communication.inbox_rows import (
     ThreadFacts,
     can_assign,
     facts_of,
+    inbound_kind_of,
     matches_search,
 )
 from backend.communication.inbox_options import InboxThreadOptions
@@ -397,7 +396,6 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
 
     @staticmethod
     def _message(m, users) -> InboxMessageDto:
-        inbound = m.direction == EmailDirection.INBOUND
         sender = users.get(m.sent_by_user_id) if m.sent_by_user_id else None
         return InboxMessageDto(
             message_id=m.message_id,
@@ -407,7 +405,7 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
             at=message_time(m),
             body_html=m.body_html,
             body_text=m.body_text,
-            inbound_kind=(m.inbound_kind or InboundKind.HUMAN) if inbound else None,
+            inbound_kind=inbound_kind_of(m),
             attachments=[
                 InboxAttachmentDto(
                     name=entry.get("name"), size=entry.get("size"), attachment_id=index

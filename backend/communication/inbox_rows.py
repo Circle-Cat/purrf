@@ -14,7 +14,13 @@ from backend.common.communication_enums import (
     InboundKind,
     InboxService,
 )
-from backend.communication.inbox_state import is_archived, message_time, needs_reply
+from backend.communication.inbox_state import (
+    is_archived,
+    is_bounce,
+    is_human_inbound,
+    message_time,
+    needs_reply,
+)
 
 _USER_ID_QUERY = re.compile(r"^#?(\d+)$")
 
@@ -35,16 +41,18 @@ def _first_address(raw: str | None) -> str | None:
     return None
 
 
-def _is_human_inbound(m) -> bool:
-    return (
-        m.direction == EmailDirection.INBOUND
-        and (m.inbound_kind or InboundKind.HUMAN) == InboundKind.HUMAN
-    )
+def inbound_kind_of(m) -> str | None:
+    """An inbound message's kind, as ``inbox_state`` judges it; None for outbound."""
+    if is_bounce(m):
+        return InboundKind.BOUNCE
+    if is_human_inbound(m):
+        return InboundKind.HUMAN
+    return m.inbound_kind if m.direction == EmailDirection.INBOUND else None
 
 
 def _contact_of(ordered) -> str | None:
     for m in ordered:
-        if _is_human_inbound(m) and (address := address_of(m.from_address)):
+        if is_human_inbound(m) and (address := address_of(m.from_address)):
             return address
     for m in ordered:
         if m.direction == EmailDirection.OUTBOUND:
@@ -59,7 +67,7 @@ def reply_contact(ordered) -> str | None:
         ordered (list[EmailMessageEntity]): Messages, oldest first.
     """
     for m in reversed(ordered):
-        if _is_human_inbound(m) and (address := address_of(m.from_address)):
+        if is_human_inbound(m) and (address := address_of(m.from_address)):
             return address
     for m in ordered:
         if m.direction == EmailDirection.OUTBOUND:
@@ -71,12 +79,12 @@ def _machine_tag(ordered) -> str | None:
     inbound = [m for m in ordered if m.direction == EmailDirection.INBOUND]
     if not inbound:
         return None
-    kind = inbound[-1].inbound_kind
+    kind = inbound_kind_of(inbound[-1])
     return kind if kind in (InboundKind.AUTO_REPLY, InboundKind.BOUNCE) else None
 
 
 def _open_bounce_to(ordered, contact: str | None) -> str | None:
-    bounces = [m for m in ordered if m.inbound_kind == InboundKind.BOUNCE]
+    bounces = [m for m in ordered if is_bounce(m)]
     if not bounces:
         return None
     bounce = bounces[-1]
@@ -123,7 +131,7 @@ def facts_of(thread, messages) -> ThreadFacts:
         ThreadFacts: The derived facts; messages ordered oldest first.
     """
     ordered = sorted(messages, key=lambda m: (message_time(m), m.message_id))
-    human = [message_time(m) for m in ordered if _is_human_inbound(m)]
+    human = [message_time(m) for m in ordered if is_human_inbound(m)]
     contact = _contact_of(ordered)
     return ThreadFacts(
         ordered=ordered,
