@@ -23,6 +23,11 @@ vi.mock("@/api/mentorshipApi", () => ({
   releaseMatchingEditLock: vi.fn(() => Promise.resolve({ data: null })),
   releaseMatchingEditLockOnLeave: vi.fn(() => Promise.resolve()),
   saveMatchingDraft: vi.fn(() => Promise.resolve({ data: { draftCount: 0 } })),
+  getMentorshipApprovers: vi.fn(() => Promise.resolve({ data: [] })),
+  requestMatchingPublish: vi.fn(() => Promise.resolve({ data: {} })),
+  reassignMentorshipApproval: vi.fn(() => Promise.resolve({ data: {} })),
+  decideMentorshipApproval: vi.fn(() => Promise.resolve({ data: {} })),
+  withdrawMentorshipApproval: vi.fn(() => Promise.resolve({ data: {} })),
 }));
 
 vi.mock("@/hooks/useFeatureFlags", () => ({ useFeatureFlags: vi.fn() }));

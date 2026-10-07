@@ -344,10 +344,13 @@ const ParticipantSearchCard = () => {
   const menteeCount = pickedRoles.filter(
     (r) => r === MentorshipParticipantRoles.MENTEE,
   ).length;
+  // A result waiting for approval to publish would be pushed aside by a new
+  // run, so none starts until it is decided.
   const canRun =
     mentorCount > 0 &&
     menteeCount > 0 &&
-    committedRun?.status !== RUN_STATUS.RUNNING;
+    committedRun?.status !== RUN_STATUS.RUNNING &&
+    committedRun?.publishRequest == null;
   const committedRoundName =
     (rounds ?? []).find((r) => String(r.id) === committedRoundId)?.name ?? "";
 

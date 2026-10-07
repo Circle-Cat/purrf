@@ -5,6 +5,9 @@ import MentorshipManagement from "@/pages/MentorshipManagement";
 import { useMentorshipManagement } from "@/pages/MentorshipManagement/hooks/useMentorshipManagement";
 import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
+import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { useMyMentorshipApprovals } from "@/pages/MentorshipManagement/hooks/useMyMentorshipApprovals";
 
 vi.mock("@/pages/MentorshipManagement/hooks/useMentorshipManagement", () => ({
   useMentorshipManagement: vi.fn(),
@@ -12,6 +15,18 @@ vi.mock("@/pages/MentorshipManagement/hooks/useMentorshipManagement", () => ({
 
 vi.mock("@/context/auth", () => ({
   useAuth: vi.fn(),
+}));
+
+vi.mock("@/hooks/useFeatureFlags", () => ({ useFeatureFlags: vi.fn() }));
+
+vi.mock("@/pages/MentorshipManagement/hooks/useMyMentorshipApprovals", () => ({
+  useMyMentorshipApprovals: vi.fn(),
+}));
+
+vi.mock("@/pages/MentorshipManagement/components/PendingApprovalsCard", () => ({
+  default: vi.fn(({ requests }) => (
+    <div data-testid="mock-pending-approvals">{requests.length}</div>
+  )),
 }));
 
 vi.mock("@/pages/MentorshipManagement/components/RoundsManagementCard", () => ({
@@ -71,12 +86,44 @@ describe("MentorshipManagement", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useMentorshipManagement.mockReturnValue(defaultHookData);
+    useFeatureFlags.mockReturnValue({ [FEATURE_FLAGS.MATCHING_RUN]: true });
+    useMyMentorshipApprovals.mockReturnValue({ requests: [] });
     useAuth.mockReturnValue({
       permissions: [
         PERMISSIONS.MENTORSHIP_ADMIN_READ,
         PERMISSIONS.MENTORSHIP_ADMIN_WRITE,
       ],
     });
+  });
+
+  it("leads with the requests waiting on an approver", () => {
+    useAuth.mockReturnValue({
+      permissions: [
+        PERMISSIONS.MENTORSHIP_ADMIN_READ,
+        PERMISSIONS.MENTORSHIP_APPROVE,
+      ],
+    });
+    useMyMentorshipApprovals.mockReturnValue({
+      requests: [{ requestId: 31 }, { requestId: 32 }],
+    });
+
+    render(<MentorshipManagement />);
+
+    expect(useMyMentorshipApprovals).toHaveBeenCalledWith(true);
+    expect(screen.getByTestId("mock-pending-approvals").textContent).toBe("2");
+  });
+
+  it("asks for no approvals without mentorship.approve or the flag", () => {
+    render(<MentorshipManagement />);
+    expect(useMyMentorshipApprovals).toHaveBeenLastCalledWith(false);
+
+    useAuth.mockReturnValue({ permissions: [PERMISSIONS.MENTORSHIP_APPROVE] });
+    useFeatureFlags.mockReturnValue({});
+    render(<MentorshipManagement />);
+    expect(useMyMentorshipApprovals).toHaveBeenLastCalledWith(false);
+    expect(
+      screen.queryByTestId("mock-pending-approvals"),
+    ).not.toBeInTheDocument();
   });
 
   it("passes rounds and totals to RoundsManagementCard", () => {

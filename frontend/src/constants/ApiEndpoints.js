@@ -36,6 +36,16 @@ export const API_ENDPOINTS = {
     `/mentorship/admin/match-runs/${roundId}/edit-lock`,
   MENTORSHIP_ADMIN_MATCH_RUN_DRAFT: (roundId) =>
     `/mentorship/admin/match-runs/${roundId}/draft`,
+  MENTORSHIP_ADMIN_MATCH_RUN_PUBLISH_REQUEST: (roundId) =>
+    `/mentorship/admin/match-runs/${roundId}/publish-request`,
+  MENTORSHIP_ADMIN_APPROVERS: "/mentorship/admin/approvals/approvers",
+  MENTORSHIP_ADMIN_APPROVALS_MINE: "/mentorship/admin/approvals/mine",
+  MENTORSHIP_ADMIN_APPROVAL_REASSIGN: (requestId) =>
+    `/mentorship/admin/approvals/${requestId}/reassign`,
+  MENTORSHIP_ADMIN_APPROVAL_DECIDE: (requestId) =>
+    `/mentorship/admin/approvals/${requestId}/decide`,
+  MENTORSHIP_ADMIN_APPROVAL_WITHDRAW: (requestId) =>
+    `/mentorship/admin/approvals/${requestId}/withdraw`,
   MENTORSHIP_ADMIN_PAIR_MEETINGS: (pairId) =>
     `/mentorship/admin/pairs/${pairId}/meetings`,
   MENTORSHIP_MEETINGS_ENDPOINT: "/mentorship/v1/meetings",

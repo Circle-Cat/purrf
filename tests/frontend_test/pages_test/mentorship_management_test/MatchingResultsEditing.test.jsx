@@ -35,6 +35,11 @@ vi.mock("@/api/mentorshipApi", () => ({
   releaseMatchingEditLock: vi.fn(() => Promise.resolve({ data: null })),
   releaseMatchingEditLockOnLeave: vi.fn(() => Promise.resolve()),
   saveMatchingDraft: vi.fn(() => Promise.resolve({ data: { draftCount: 0 } })),
+  getMentorshipApprovers: vi.fn(() => Promise.resolve({ data: [] })),
+  requestMatchingPublish: vi.fn(() => Promise.resolve({ data: {} })),
+  reassignMentorshipApproval: vi.fn(() => Promise.resolve({ data: {} })),
+  decideMentorshipApproval: vi.fn(() => Promise.resolve({ data: {} })),
+  withdrawMentorshipApproval: vi.fn(() => Promise.resolve({ data: {} })),
 }));
 
 vi.mock("@/hooks/useFeatureFlags", () => ({ useFeatureFlags: vi.fn() }));
@@ -841,6 +846,52 @@ describe("MatchingResultsPage editing", () => {
       expect(
         screen.queryByText("Problems to fix before publishing"),
       ).toBeNull();
+    });
+  });
+
+  describe("publishing", () => {
+    const waiting = {
+      requestId: 31,
+      reviewer: { userId: "8", name: "Rae Kim" },
+      raisedBy: { userId: String(ME), name: "Dev Admin" },
+      reason: "Reviewed every pair",
+      createdAt: STARTED_AT,
+    };
+
+    it("offers Request publishing beside Edit", async () => {
+      renderPage();
+
+      expect(
+        await screen.findByRole("button", { name: "Request publishing" }),
+      ).toBeEnabled();
+      expect(editButton()).toBeEnabled();
+    });
+
+    it("keeps the result as it was sent while a request waits", async () => {
+      getMatchingRun.mockResolvedValue({
+        data: overviewOf({ publishRequest: waiting }),
+      });
+      renderPage();
+
+      expect(
+        await screen.findByText(
+          "Waiting for approval — sent to Rae Kim by Dev Admin.",
+        ),
+      ).toBeInTheDocument();
+      expect(editButton()).toBeDisabled();
+      expect(
+        screen.queryByRole("button", { name: "Request publishing" }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Withdraw" })).toBeEnabled();
+    });
+
+    it("cannot be asked for while editing", async () => {
+      renderPage();
+      await startEditing();
+
+      expect(
+        screen.getByRole("button", { name: "Request publishing" }),
+      ).toBeDisabled();
     });
   });
 });
