@@ -1,7 +1,7 @@
 from backend.entity.application_entity import ApplicationEntity
 from backend.entity.application_interview_entity import ApplicationInterviewEntity
 from backend.entity.job_entity import JobEntity
-from backend.entity.job_review_entity import JobReviewEntity
+from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.entity.users_entity import UsersEntity
 from backend.common.name_utils import user_display_name
 from backend.common.recruiting_enums import PUBLICLY_VISIBLE_JOB_STATUSES
@@ -40,21 +40,36 @@ class RecruitingMapper:
         )
 
     def to_job_review_dto(
-        self, review: JobReviewEntity, job_title: str | None = None
+        self, review: ApprovalRequestEntity, job_title: str | None = None
     ) -> JobReviewDto:
-        """Map a JobReviewEntity to a JobReviewDto, optionally including the posting title.
+        """Map a job review's approval request to a JobReviewDto, optionally
+        including the posting title.
+
+        Keeps the review's API shape: ``reviewId`` is the request id, and the
+        submitter, message and reject comment are the request's raiser,
+        reason and decision comment.
 
         Args:
-            review (JobReviewEntity): The review entity to convert.
+            review (ApprovalRequestEntity): A ``job_review`` request.
             job_title (str | None): Title of the associated job posting, when
                 available. Serialised as ``jobTitle`` in API responses.
 
         Returns:
             JobReviewDto: The mapped DTO with ``job_title`` set if provided.
         """
-        dto = JobReviewDto.model_validate(review)
-        dto.job_title = job_title
-        return dto
+        return JobReviewDto(
+            review_id=review.request_id,
+            job_id=int(review.target_id),
+            submitted_by=review.raised_by,
+            reviewer_id=review.reviewer_id,
+            status=review.status.value,
+            kind=review.payload["kind"],
+            submit_message=review.reason,
+            reject_comment=review.decision_comment,
+            created_at=review.created_at,
+            decided_at=review.decided_at,
+            job_title=job_title,
+        )
 
     def to_job_dto(
         self,

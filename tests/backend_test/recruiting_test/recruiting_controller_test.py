@@ -106,6 +106,28 @@ class TestRecruitingController(unittest.IsolatedAsyncioTestCase):
             self.session, 3, acting_user_id=42, reviewer_id=7
         )
 
+    async def test_withdraw_review_passes_current_user_as_the_actor(self):
+        """Like reassigning: the token names the claimed submitter, and the
+        service decides whether they are."""
+        self.service.withdraw_review = AsyncMock(return_value="withdrawn")
+
+        result = await self.controller.withdraw_review(current_user=self.user, job_id=3)
+
+        self.service.withdraw_review.assert_awaited_once_with(
+            self.session, 3, acting_user_id=42
+        )
+        self.assertEqual(result["data"], "withdrawn")
+
+    def test_withdraw_review_route_is_a_post_for_job_writers(self):
+        routes_by_path = {route.path: route for route in self.controller.router.routes}
+        route = routes_by_path["/recruiting/jobs/{job_id}/review/withdraw"]
+
+        self.assertEqual(route.methods, {"POST"})
+        self.assertEqual(
+            self._endpoint_permissions(route.endpoint),
+            [Permission.RECRUITING_JOB_WRITE],
+        )
+
     async def test_my_reviews_uses_current_user(self):
         await self.controller.list_my_reviews(current_user=self.user)
         self.service.list_reviews_for_reviewer.assert_awaited_once_with(

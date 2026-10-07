@@ -6,7 +6,9 @@ py_library(
     name = "recruiting",
     srcs = glob(["*.py"]),
     deps = [
+        "//backend/approval:approval_handler",
         "//backend/common:api_endpoints",
+        "//backend/common:approval_enums",
         "//backend/common:communication_enums",
         "//backend/common:exceptions",
         "//backend/common:fast_api_response_wrapper",

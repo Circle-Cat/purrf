@@ -200,6 +200,7 @@ from backend.approval.approval_service import ApprovalService
 from backend.mentorship.publish_matching_handler import PublishMatchingHandler
 from backend.mentorship.exempt_matching_handler import ExemptMatchingHandler
 from backend.mentorship.mentorship_approval_service import MentorshipApprovalService
+from backend.recruiting.job_review_handler import JobReviewHandler
 from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.repository.experience_repository import ExperienceRepository
 from backend.repository.training_course_repository import (
@@ -720,6 +721,10 @@ class AppDependencyBuilder:
             os.getenv(MATCHER_JOB_RESOURCE), logger=self.logger
         )
         self.approval_request_repository = ApprovalRequestRepository()
+        self.job_review_handler = JobReviewHandler(
+            job_repository=self.job_repository,
+            user_permissions_repository=self.user_permissions_repository,
+        )
         self.publish_matching_handler = PublishMatchingHandler(
             matching_storage=self.matching_storage,
             pairs_repository=self.mentorship_pairs_repository,
@@ -741,7 +746,11 @@ class AppDependencyBuilder:
             user_permissions_repository=self.user_permissions_repository,
             users_repository=self.users_repository,
             logger=self.logger,
-            handlers=[self.publish_matching_handler, self.exempt_matching_handler],
+            handlers=[
+                self.publish_matching_handler,
+                self.exempt_matching_handler,
+                self.job_review_handler,
+            ],
         )
         self.mentorship_approval_service = MentorshipApprovalService(
             approval_service=self.approval_service,
@@ -914,6 +923,7 @@ class AppDependencyBuilder:
             self.users_repository,
             self.user_emails_repository,
             self.event_repository,
+            approval_service=self.approval_service,
         )
         self.application_assignment_repository = ApplicationAssignmentRepository()
         self.application_interview_repository = ApplicationInterviewRepository()

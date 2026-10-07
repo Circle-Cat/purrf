@@ -4,10 +4,14 @@ py_test(
     name = "job_service_test",
     srcs = ["job_service_test.py"],
     deps = [
+        "//backend/approval:approval_service",
+        "//backend/common:approval_enums",
+        "//backend/common:exceptions",
         "//backend/common:recruiting_enums",
         "//backend/dto",
         "//backend/entity:entities",
         "//backend/recruiting",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -266,6 +270,7 @@ py_test(
         "//backend/entity:entities",
         "//backend/notification_management:recipient_registry",
         "//backend/recruiting",
+        "//backend/repository:repositories",
         "//tests/backend_test/repository_test:base_repository_test_lib",
     ],
 )
@@ -282,5 +287,33 @@ py_test(
         "//backend/notification_management:render_registry",
         "//backend/recruiting",
         "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "job_review_handler_test",
+    srcs = ["job_review_handler_test.py"],
+    deps = [
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/recruiting",
+    ],
+)
+
+py_test(
+    name = "job_review_flow_test",
+    srcs = ["job_review_flow_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/approval:approval_service",
+        "//backend/common:approval_enums",
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/recruiting",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+        "@pypi//sqlalchemy",
     ],
 )

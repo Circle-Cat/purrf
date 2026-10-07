@@ -569,6 +569,12 @@ class TestAppDependencyBuilder(TestCase):
             builder.approval_service.handler_for("publish_matching"),
             builder.publish_matching_handler,
         )
+        # One approval service serves recruiting too.
+        self.assertIs(
+            builder.approval_service.handler_for("job_review"),
+            builder.job_review_handler,
+        )
+        self.assertIs(builder.job_service.approval_service, builder.approval_service)
         mock_rounds_service_cls.assert_called_once_with(
             mentorship_round_repository=mock_mentorship_round_repository_cls.return_value,
             mentorship_mapper=mock_mentorship_mapper_cls.return_value,

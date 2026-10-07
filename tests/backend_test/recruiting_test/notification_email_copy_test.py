@@ -138,6 +138,13 @@ class TestRender(unittest.TestCase):
         # not promise anything about publication.
         self.assertNotIn("publish", body.lower())
 
+    def test_job_review_withdrawn_tells_the_reviewer_nothing_waits(self):
+        subject, body = notification_email_copy._job_review_withdrawn(_dto(), None)
+
+        self.assertTrue(subject.startswith("Posting review withdrawn:"))
+        self.assertIn("withdrew their request to review the posting", body)
+        self.assertIn("Nothing is waiting on you any more.", body)
+
     def test_job_review_approved_and_rejected_name_the_actor(self):
         _, approved = notification_email_copy._job_review_approved(_dto(), None)
         subject, rejected = notification_email_copy._job_review_rejected(_dto(), None)
@@ -267,6 +274,7 @@ class TestCandidateLine(unittest.TestCase):
         "_job_review_reassigned",
         "_job_review_approved",
         "_job_review_rejected",
+        "_job_review_withdrawn",
     }
 
     def test_names_the_candidate_and_the_address(self):

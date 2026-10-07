@@ -32,13 +32,15 @@ from backend.repository.application_comment_mention_repository import (
 )
 from backend.repository.email_message_repository import EmailMessageRepository
 from backend.repository.job_repository import JobRepository
-from backend.repository.job_review_repository import JobReviewRepository
+from backend.repository.approval_request_repository import (
+    ApprovalRequestRepository,
+)
 
 # Stateless, so one module-level instance serves every resolver.
 _assignment_repository = ApplicationAssignmentRepository()
 _email_message_repository = EmailMessageRepository()
 _job_repository = JobRepository()
-_job_review_repository = JobReviewRepository()
+_approval_request_repository = ApprovalRequestRepository()
 _mention_repository = ApplicationCommentMentionRepository()
 
 
@@ -77,8 +79,8 @@ async def _review_participant(
         session (AsyncSession): Session inside the caller's open transaction.
         event (EventEntity): The event being recorded; ``details["reviewId"]``
             names the review.
-        field (str): The ``JobReviewEntity`` attribute holding the user id
-            wanted -- ``"reviewer_id"`` or ``"submitted_by"``.
+        field (str): The approval request attribute holding the user id
+            wanted -- ``"reviewer_id"`` or ``"raised_by"``.
 
     Returns:
         set[int]: The single user id in that field.
@@ -88,7 +90,7 @@ async def _review_participant(
             does not exist.
     """
     review_id = _required_id(event, "reviewId")
-    review = await _job_review_repository.get(session, review_id)
+    review = await _approval_request_repository.get(session, review_id)
     if review is None:
         raise ValueError(f"{event.event_type!r} names unknown review {review_id}")
     return {getattr(review, field)}
@@ -196,7 +198,9 @@ async def _review_reassigned(session: AsyncSession, event: EventEntity) -> set[i
 
 @register_recipients(RecruitingEvent.REVIEW_DECIDED, subject_type="job")
 async def _review_decided(session: AsyncSession, event: EventEntity) -> set[int]:
-    """Whoever submitted the review and is waiting on the verdict.
+    """Whoever the closing of the review is news to: the submitter waiting on
+    the verdict, or, when the submitter withdrew it, the reviewer it was
+    waiting on.
 
     Not the job's owners: submitting for review is gated on permission rather
     than ownership, so the person waiting need not be an owner of the posting
@@ -208,12 +212,14 @@ async def _review_decided(session: AsyncSession, event: EventEntity) -> set[int]
             id and ``details["reviewId"]`` names the review.
 
     Returns:
-        set[int]: The submitter's user id.
+        set[int]: The submitter's user id, or the reviewer's for a withdrawal.
 
     Raises:
         ValueError: If the event carries no review id, or names no review.
     """
-    return await _review_participant(session, event, "submitted_by")
+    if event.details.get("decision") == "withdrawn":
+        return await _review_participant(session, event, "reviewer_id")
+    return await _review_participant(session, event, "raised_by")
 
 
 @register_recipients(RecruitingEvent.MENTIONED, subject_type="application")

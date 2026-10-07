@@ -160,6 +160,34 @@ class TestApprovalRequestRepository(BaseRepositoryTestLib):
             [],
         )
 
+    async def test_latest_for_targets_is_the_newest_request_of_each(self):
+        older = await self._create(target_id="run-a")
+        await self.repo.close(
+            self.session,
+            older.request_id,
+            status=ApprovalRequestStatus.REJECTED,
+            decided_by=self.reviewer.user_id,
+            decision_comment="no",
+        )
+        newer = await self._create(target_id="run-a")
+        only = await self._create(target_id="run-b")
+        await self._create(target_id="run-c")
+
+        rows = await self.repo.list_latest_for_targets(
+            self.session, PUBLISH, "matching_run", ["run-a", "run-b", "run-x"]
+        )
+
+        self.assertEqual(
+            {r.target_id: r.request_id for r in rows},
+            {"run-a": newer.request_id, "run-b": only.request_id},
+        )
+        self.assertEqual(
+            await self.repo.list_latest_for_targets(
+                self.session, PUBLISH, "matching_run", []
+            ),
+            [],
+        )
+
     async def test_latest_closed_for_target_is_the_newest_decision(self):
         older = await self._create()
         await self.repo.close(

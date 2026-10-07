@@ -3,7 +3,7 @@ from typing import Literal
 
 from backend.dto.base_dto import BaseDto
 from backend.dto.base_request_dto import BaseRequestDto
-from backend.common.recruiting_enums import JobReviewKind, JobReviewStatus
+from backend.common.recruiting_enums import JobReviewKind
 
 
 class JobSubmitDto(BaseRequestDto):
@@ -38,7 +38,8 @@ class JobReviewDto(BaseDto):
     job_id: int
     submitted_by: int
     reviewer_id: int
-    status: JobReviewStatus
+    # pending, approved, rejected or withdrawn.
+    status: str
     kind: JobReviewKind
     submit_message: str | None = None
     reject_comment: str | None = None

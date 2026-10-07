@@ -22,12 +22,15 @@ from backend.entity.email_message_entity import EmailMessageEntity
 from backend.entity.email_thread_entity import EmailThreadEntity
 from backend.entity.event_entity import EventEntity
 from backend.entity.job_entity import JobEntity
-from backend.entity.job_review_entity import JobReviewEntity
+from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.entity.users_entity import UsersEntity
 from backend.notification_management import recipient_registry
 from backend.notification_management.event_recorder import record_event
 from backend.notification_management.recipient_registry import resolve_recipients
 from backend.recruiting import recipient_resolvers  # noqa: F401  (registers)
+from backend.repository.approval_request_repository import (
+    ApprovalRequestRepository,
+)
 from tests.backend_test.repository_test.base_repository_test_lib import (
     BaseRepositoryTestLib,
 )
@@ -165,8 +168,9 @@ class RecipientResolversTest(BaseRepositoryTestLib):
         job_id: int,
         submitted_by: UsersEntity,
         reviewer: UsersEntity,
-    ) -> JobReviewEntity:
-        """Create and insert a pending initial review of a job.
+    ) -> ApprovalRequestEntity:
+        """Create and insert a pending initial review of a job: a
+        ``job_review`` approval request.
 
         Args:
             job_id (int): The job under review.
@@ -174,13 +178,16 @@ class RecipientResolversTest(BaseRepositoryTestLib):
             reviewer (UsersEntity): Who can decide it.
 
         Returns:
-            JobReviewEntity: The inserted review, with ``review_id`` populated.
+            ApprovalRequestEntity: The inserted request, with ``request_id``
+                populated.
         """
-        review = JobReviewEntity(
-            job_id=job_id,
-            submitted_by=submitted_by.user_id,
+        review = ApprovalRequestEntity(
+            action="job_review",
+            target_type="job",
+            target_id=str(job_id),
+            payload={"kind": JobReviewKind.INITIAL.value},
+            raised_by=submitted_by.user_id,
             reviewer_id=reviewer.user_id,
-            kind=JobReviewKind.INITIAL,
         )
         await self.insert_entities([review])
         return review
@@ -367,7 +374,7 @@ class RecipientResolversTest(BaseRepositoryTestLib):
             "recruiting.review_opened",
             "job",
             job.job_id,
-            details={"reviewId": review.review_id},
+            details={"reviewId": review.request_id},
         )
 
         self.assertEqual(
@@ -391,7 +398,7 @@ class RecipientResolversTest(BaseRepositoryTestLib):
             "job",
             job.job_id,
             details={
-                "reviewId": review.review_id,
+                "reviewId": review.request_id,
                 "previousReviewerId": previous.user_id,
             },
         )
@@ -400,28 +407,34 @@ class RecipientResolversTest(BaseRepositoryTestLib):
             await resolve_recipients(self.session, event), {reviewer.user_id}
         )
 
-    async def test_review_reassigned_survives_the_unflushed_reviewer_write(self):
-        """The whole point of the action must not be undone by flush order.
+    async def test_review_reassigned_sees_the_reviewer_write_in_the_same_session(
+        self,
+    ):
+        """The whole point of the action must not be undone by a stale read.
 
-        ``reassign_review`` sets ``review.reviewer_id`` as an ORM attribute and
-        does not flush; sessions run ``autoflush=False`` (see
-        ``common/database.py``), so nothing carries that change to the database
-        except ``record_event``\'s own flush, which happens before it resolves.
-        If that ever stopped being true the resolver\'s SELECT would read the
-        previous reviewer and mail the handover notice to the very account the
-        reassignment exists to route around -- silently, since a notification
-        addressed to somebody is never obviously the wrong somebody.
+        The approval service moves the review with the repository's UPDATE
+        while the row is already loaded in the session, then records the
+        event in the same transaction. Were the loaded row left stale, the
+        resolver would read the previous reviewer and mail the handover
+        notice to the very account the reassignment exists to route around --
+        silently, since a notification addressed to somebody is never
+        obviously the wrong somebody.
 
-        Written against the real ``record_event`` rather than the resolver
-        alone, because the ordering is the thing under test.
+        Written against the real repository and ``record_event`` rather than
+        the resolver alone, because the ordering is the thing under test.
         """
         submitter, previous, reviewer = _make_user(), _make_user(), _make_user()
         await self.insert_entities([submitter, previous, reviewer])
         job = await self._make_job([])
         review = await self._make_review(job.job_id, submitter, previous)
 
-        # Exactly what the service does: an attribute set, with no flush.
-        review.reviewer_id = reviewer.user_id
+        # Exactly what the service does: the row is loaded, then moved.
+        repository = ApprovalRequestRepository()
+        await repository.get(self.session, review.request_id, for_update=True)
+        moved = await repository.set_reviewer(
+            self.session, review.request_id, reviewer.user_id
+        )
+        self.assertTrue(moved)
 
         _, notifications = await record_event(
             self.session,
@@ -430,7 +443,7 @@ class RecipientResolversTest(BaseRepositoryTestLib):
             actor_id=submitter.user_id,
             event_type=RecruitingEvent.REVIEW_REASSIGNED,
             details={
-                "reviewId": review.review_id,
+                "reviewId": review.request_id,
                 "previousReviewerId": previous.user_id,
             },
         )
@@ -451,11 +464,29 @@ class RecipientResolversTest(BaseRepositoryTestLib):
             "recruiting.review_decided",
             "job",
             job.job_id,
-            details={"reviewId": review.review_id},
+            details={"reviewId": review.request_id, "decision": "rejected"},
         )
 
         self.assertEqual(
             await resolve_recipients(self.session, event), {submitter.user_id}
+        )
+
+    async def test_review_decided_by_withdrawal_reaches_the_reviewer(self):
+        """The submitter took it back themselves; the news is for the person
+        it was waiting on."""
+        submitter, reviewer = _make_user(), _make_user()
+        await self.insert_entities([submitter, reviewer])
+        job = await self._make_job([])
+        review = await self._make_review(job.job_id, submitter, reviewer)
+        event = _event(
+            "recruiting.review_decided",
+            "job",
+            job.job_id,
+            details={"reviewId": review.request_id, "decision": "withdrawn"},
+        )
+
+        self.assertEqual(
+            await resolve_recipients(self.session, event), {reviewer.user_id}
         )
 
     async def test_mentioned_reaches_the_users_named_in_the_comment(self):

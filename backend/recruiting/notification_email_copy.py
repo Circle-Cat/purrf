@@ -312,6 +312,17 @@ def _job_review_rejected(dto, stage):
     )
 
 
+@_html_body
+def _job_review_withdrawn(dto, stage):
+    # Told to the reviewer the review was waiting on: nothing is left for
+    # them to do.
+    return (
+        f"Posting review withdrawn: {dto.plain.job_title}",
+        f"<p>{dto.actor} withdrew their request to review the posting "
+        f'"{dto.job_title}". Nothing is waiting on you any more.</p>',
+    )
+
+
 def unavailable_person_label(user_id: int) -> str:
     """How copy names a person it must not name: ``User {id} — unavailable``.
 

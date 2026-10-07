@@ -21,6 +21,7 @@ from backend.common.api_endpoints import (
     RECRUITING_REVIEWS_ENDPOINT,
     RECRUITING_REVIEW_ENDPOINT,
     RECRUITING_JOB_REVIEW_REVIEWER_ENDPOINT,
+    RECRUITING_JOB_REVIEW_WITHDRAW_ENDPOINT,
     RECRUITING_INTERVIEW_POOL_ENDPOINT,
     RECRUITING_JOB_OWNERS_ENDPOINT,
 )
@@ -172,6 +173,16 @@ class RecruitingController:
                 self.reassign_review
             ),
             methods=["PATCH"],
+            response_model=None,
+        )
+        self.router.add_api_route(
+            RECRUITING_JOB_REVIEW_WITHDRAW_ENDPOINT,
+            # The submitter's, like reassigning: JOB_WRITE here, and the
+            # submitter-only rule in the approval flow.
+            endpoint=authenticate(permissions=[Permission.RECRUITING_JOB_WRITE])(
+                self.withdraw_review
+            ),
+            methods=["POST"],
             response_model=None,
         )
         self.router.add_api_route(
@@ -348,6 +359,15 @@ class RecruitingController:
                 reviewer_id=reassign_data.reviewer_id,
             )
         return api_response(message="Review reassigned.", data=result)
+
+    async def withdraw_review(self, current_user: UserContextDto, job_id: int):
+        """Take back a posting's open review; the posting returns to where it
+        was."""
+        async with self.database.session() as session:
+            result = await self.job_service.withdraw_review(
+                session, job_id, acting_user_id=current_user.user_id
+            )
+        return api_response(message="Review withdrawn.", data=result)
 
     async def get_job(self, current_user: UserContextDto, job_id: int):
         """Fetch one posting."""
