@@ -41,9 +41,10 @@ import TrainingCourse from "@/pages/TrainingCourse";
 import TrainingTrial from "@/pages/TrainingTrial";
 import TrainingPreview from "@/pages/TrainingPreview";
 import AdminTraining from "@/pages/AdminTraining";
+import InboxPage from "@/pages/Inbox";
 import { AuthProvider } from "@/context/auth";
 import { FlagsProvider, LDIdentifier } from "@/context/flags";
-import { PERMISSIONS } from "@/constants/Permissions";
+import { PERMISSIONS, INBOX_PERMISSIONS } from "@/constants/Permissions";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -236,6 +237,14 @@ function App() {
                           ]}
                         >
                           <PostingEditor />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.INBOX}
+                      element={
+                        <ProtectedRoute requiredPermissions={INBOX_PERMISSIONS}>
+                          <InboxPage />
                         </ProtectedRoute>
                       }
                     />
