@@ -15,6 +15,8 @@ py_test(
     srcs = ["notification_renderers_test.py"],
     env_inherit = ["DATABASE_URL"],
     deps = [
+        "//backend/admin:block_service",
+        "//backend/common:approval_enums",
         "//backend/common:mentorship_enums",
         "//backend/common:user_enums",
         "//backend/entity:entities",

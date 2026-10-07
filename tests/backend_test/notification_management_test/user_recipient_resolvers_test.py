@@ -1,13 +1,11 @@
 import unittest
 from datetime import datetime, timezone
 
+from backend.admin.block_service import BLOCK_TARGET, BLOCK_USER
+from backend.common.approval_enums import ApprovalRequestStatus
 from backend.common.mentorship_enums import CommunicationMethod
-from backend.common.user_enums import (
-    USER_SUBJECT_TYPE,
-    BlockRequestStatus,
-    UserEvent,
-)
-from backend.entity.block_request_entity import BlockRequestEntity
+from backend.common.user_enums import USER_SUBJECT_TYPE, UserEvent
+from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.entity.event_entity import EventEntity
 from backend.entity.users_entity import UsersEntity
 from backend.notification_management.recipient_registry import resolve_recipients
@@ -55,13 +53,15 @@ class TestUserRecipientResolvers(BaseRepositoryTestLib):
             self.admin,
         ])
 
-        self.request = BlockRequestEntity(
-            target_user_id=self.target.user_id,
+        self.request = ApprovalRequestEntity(
+            action=BLOCK_USER,
+            target_type=BLOCK_TARGET,
+            target_id=str(self.target.user_id),
+            payload={"raised_from": "recruiting_board"},
             raised_by=self.raiser.user_id,
-            raised_from="recruiting_board",
             reason="second no-show",
             reviewer_id=self.reviewer.user_id,
-            status=BlockRequestStatus.PENDING,
+            status=ApprovalRequestStatus.PENDING,
         )
         await self.insert_entities([self.request])
 
@@ -105,14 +105,33 @@ class TestUserRecipientResolvers(BaseRepositoryTestLib):
         )
 
     async def test_decided_reaches_only_the_raiser(self):
+        for decision in ("approved", "rejected"):
+            with self.subTest(decision=decision):
+                event = _event(
+                    UserEvent.BLOCK_REQUEST_DECIDED,
+                    self.target.user_id,
+                    {"requestId": self.request.request_id, "decision": decision},
+                )
+
+                self.assertEqual(
+                    await resolve_recipients(self.session, event),
+                    {self.raiser.user_id},
+                )
+
+    async def test_withdrawn_reaches_only_the_reviewer(self):
+        """The raiser withdrew it themselves; the one still waiting on it is
+        the reviewer it was sent to."""
+        self.request.status = ApprovalRequestStatus.WITHDRAWN
+        self.request.decided_by = self.raiser.user_id
+        await self.session.flush()
         event = _event(
             UserEvent.BLOCK_REQUEST_DECIDED,
             self.target.user_id,
-            {"requestId": self.request.request_id},
+            {"requestId": self.request.request_id, "decision": "withdrawn"},
         )
 
         self.assertEqual(
-            await resolve_recipients(self.session, event), {self.raiser.user_id}
+            await resolve_recipients(self.session, event), {self.reviewer.user_id}
         )
 
     async def test_state_change_events_notify_nobody(self):

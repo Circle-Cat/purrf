@@ -35,6 +35,7 @@ py_library(
     name = "user_recipient_resolvers",
     srcs = ["user_recipient_resolvers.py"],
     deps = [
+        "//backend/common:approval_enums",
         "//backend/common:user_enums",
         "//backend/entity:entities",
         "//backend/notification_management:recipient_registry",
@@ -47,6 +48,7 @@ py_library(
     name = "notification_renderers",
     srcs = ["notification_renderers.py"],
     deps = [
+        "//backend/common:approval_enums",
         "//backend/common:name_utils",
         "//backend/common:user_enums",
         "//backend/entity:entities",

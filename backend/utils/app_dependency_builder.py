@@ -90,6 +90,7 @@ from backend.authentication.email_management_controller import (
 from backend.admin.permission_admin_service import PermissionAdminService
 from backend.admin.block_controller import BlockController
 from backend.admin.block_service import BlockService
+from backend.admin.block_user_handler import BlockUserHandler
 from backend.admin.permission_admin_controller import PermissionAdminController
 from backend.admin.user_account_controller import UserAccountController
 from backend.admin.user_account_service import UserAccountService
@@ -1079,16 +1080,26 @@ class AppDependencyBuilder:
             self.users_repository,
             self.user_emails_repository,
             self.user_identities_repository,
-            self.block_request_repository,
+            self.approval_service,
             logger=self.logger,
         )
+        # Registered here rather than with the other handlers: approving a
+        # block cancels interviews, and the scheduling service is built late.
+        self.block_user_handler = BlockUserHandler(
+            self.users_repository,
+            self.application_repository,
+            self.application_submission_repository,
+            self.application_interview_repository,
+            self.interview_scheduling_service,
+        )
+        self.approval_service.register(self.block_user_handler)
         self.block_service = BlockService(
             self.users_repository,
             self.application_repository,
             self.application_submission_repository,
             self.application_interview_repository,
             self.interview_scheduling_service,
-            self.block_request_repository,
+            self.approval_service,
             self.user_permissions_repository,
             logger=self.logger,
         )

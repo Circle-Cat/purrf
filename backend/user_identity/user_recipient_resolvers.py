@@ -1,7 +1,7 @@
 """Who needs to know about each user-subject event.
 
 Same derivation rule as ``recruiting/recipient_resolvers.py``: recipients come
-from rows already in the database, here the ``block_request`` row the event
+from rows already in the database, here the ``approval_request`` row the event
 points at, rather than from a subscription table.
 
 🔴 **The target is never a recipient of any of these.** Blocking deliberately
@@ -25,10 +25,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.common.user_enums import USER_SUBJECT_TYPE, UserEvent
 from backend.entity.event_entity import EventEntity
 from backend.notification_management.recipient_registry import register_recipients
-from backend.repository.block_request_repository import BlockRequestRepository
+from backend.common.approval_enums import ApprovalRequestStatus
+from backend.repository.approval_request_repository import ApprovalRequestRepository
 
 # Stateless, so one module-level instance serves every resolver.
-_block_request_repository = BlockRequestRepository()
+_approval_request_repository = ApprovalRequestRepository()
 
 
 async def _request_of(session: AsyncSession, event: EventEntity):
@@ -39,7 +40,7 @@ async def _request_of(session: AsyncSession, event: EventEntity):
         event (EventEntity): The event being recorded.
 
     Returns:
-        BlockRequestEntity: The row named by ``details["requestId"]``.
+        ApprovalRequestEntity: The row named by ``details["requestId"]``.
 
     Raises:
         ValueError: If the key is absent, or names no row. An event of this
@@ -51,7 +52,7 @@ async def _request_of(session: AsyncSession, event: EventEntity):
     request_id = event.details.get("requestId")
     if request_id is None:
         raise ValueError(f"{event.event_type!r} requires details['requestId']")
-    row = await _block_request_repository.get(session, request_id)
+    row = await _approval_request_repository.get(session, request_id)
     if row is None:
         raise ValueError(f"{event.event_type!r} names unknown request {request_id}")
     return row
@@ -94,15 +95,18 @@ async def _both_reviewers(session: AsyncSession, event: EventEntity) -> set[int]
 
 
 @register_recipients(UserEvent.BLOCK_REQUEST_DECIDED, subject_type=USER_SUBJECT_TYPE)
-async def _the_raiser(session: AsyncSession, event: EventEntity) -> set[int]:
-    """The person who asked, now that there is an answer.
+async def _the_other_side(session: AsyncSession, event: EventEntity) -> set[int]:
+    """Whoever is waiting on the request now that it is closed: the raiser
+    when the reviewer decided it, the reviewer when the raiser withdrew it.
 
     Args:
         session (AsyncSession): Session inside the caller's open transaction.
         event (EventEntity): The ``user.block_request_decided`` event.
 
     Returns:
-        set[int]: The raiser.
+        set[int]: The raiser, or the reviewer for a withdrawal.
     """
     row = await _request_of(session, event)
+    if event.details.get("decision") == ApprovalRequestStatus.WITHDRAWN.value:
+        return {row.reviewer_id}
     return {row.raised_by}

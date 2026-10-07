@@ -12,9 +12,11 @@ from backend.common.api_endpoints import (
     BLOCK_PREFLIGHT_ENDPOINT,
     BLOCK_REQUEST_DECIDE_ENDPOINT,
     BLOCK_REQUEST_REASSIGN_ENDPOINT,
+    BLOCK_REQUEST_WITHDRAW_ENDPOINT,
     BLOCK_REQUESTS_ENDPOINT,
     BLOCK_REQUESTS_RAISED_ENDPOINT,
 )
+from backend.common.exceptions import ConflictError
 from backend.common.fast_api_error_handler import register_exception_handlers
 from backend.common.permissions import Permission
 from backend.dto.block_dto import (
@@ -62,6 +64,7 @@ class TestBlockController(unittest.TestCase):
         self.service.raise_request = AsyncMock(return_value=_request_dto())
         self.service.reassign = AsyncMock(return_value=_request_dto())
         self.service.decide = AsyncMock(return_value=_request_dto())
+        self.service.withdraw = AsyncMock(return_value=_request_dto())
         self.service.list_pending_for_reviewer = AsyncMock(return_value=[])
         self.service.list_pending_raised_by_actor = AsyncMock(return_value=[])
         self.service.list_user_admins = AsyncMock(return_value=[])
@@ -188,6 +191,18 @@ class TestBlockController(unittest.TestCase):
         self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
         self.service.list_pending_raised_by_actor.assert_not_awaited()
 
+    def test_user_admin_cannot_withdraw(self):
+        """Withdrawing takes back a question you asked, so it sits with the
+        raiser's permissions, like reassigning."""
+        client = self._client(permissions=[Permission.USER_ADMIN])
+
+        resp = client.post(
+            BLOCK_REQUEST_WITHDRAW_ENDPOINT.format(request_id=REQUEST_ID)
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
+        self.service.withdraw.assert_not_awaited()
+
     def test_user_admin_cannot_read_the_reviewer_dropdown(self):
         client = self._client(permissions=[Permission.USER_ADMIN])
 
@@ -212,16 +227,17 @@ class TestBlockController(unittest.TestCase):
         self.assertEqual(kwargs["reviewer_id"], REVIEWER)
         self.assertEqual(kwargs["raised_from"], "recruiting_interviews")
 
-    def test_raise_rejects_a_blank_reason(self):
+    def test_raise_accepts_a_request_without_a_reason(self):
+        """The reason is optional, as on every approval request."""
         client = self._client(permissions=[Permission.RECRUITING_APPLICATION_ADVANCE])
 
         resp = client.post(
             f"{BLOCK_REQUESTS_ENDPOINT}?raised_from=recruiting_board",
-            json={"userId": TARGET, "reason": "   ", "reviewerId": REVIEWER},
+            json={"userId": TARGET, "reviewerId": REVIEWER},
         )
 
-        self.assertEqual(resp.status_code, HTTPStatus.BAD_REQUEST)
-        self.service.raise_request.assert_not_awaited()
+        self.assertEqual(resp.status_code, HTTPStatus.OK)
+        self.assertIsNone(self.service.raise_request.await_args.kwargs["reason"])
 
     def test_pending_list_is_scoped_to_the_caller(self):
         """Scoped, not filtered: the caller's own id is the only input, so
@@ -277,6 +293,19 @@ class TestBlockController(unittest.TestCase):
         self.assertEqual(kwargs["actor_id"], CALLER)
         self.assertEqual(kwargs["reviewer_id"], REVIEWER)
 
+    def test_withdraw_passes_the_request_and_the_actor(self):
+        client = self._client(permissions=[Permission.RECRUITING_APPLICATION_ADVANCE])
+
+        resp = client.post(
+            BLOCK_REQUEST_WITHDRAW_ENDPOINT.format(request_id=REQUEST_ID)
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK)
+        self.assertEqual(resp.json()["data"]["id"], REQUEST_ID)
+        kwargs = self.service.withdraw.await_args.kwargs
+        self.assertEqual(kwargs["actor_id"], CALLER)
+        self.assertEqual(kwargs["request_id"], REQUEST_ID)
+
     def test_user_admins_dropdown_delegates_to_the_holder_lookup(self):
         """The dead-letter path this scoping exists to prevent -- naming a
         reviewer who can never sign in -- is closed inside that lookup, which
@@ -315,9 +344,22 @@ class TestBlockController(unittest.TestCase):
 
         self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
 
-    def test_a_second_pending_request_is_a_400(self):
+    def test_a_second_pending_request_is_a_409(self):
         self.service.raise_request = AsyncMock(
-            side_effect=ValueError("already awaiting a decision")
+            side_effect=ConflictError("already waiting for approval")
+        )
+        client = self._client(permissions=[Permission.RECRUITING_APPLICATION_ADVANCE])
+
+        resp = client.post(
+            f"{BLOCK_REQUESTS_ENDPOINT}?raised_from=recruiting_board",
+            json={"userId": TARGET, "reason": "r", "reviewerId": REVIEWER},
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.CONFLICT)
+
+    def test_an_ineligible_reviewer_is_a_400(self):
+        self.service.raise_request = AsyncMock(
+            side_effect=ValueError("cannot review this request")
         )
         client = self._client(permissions=[Permission.RECRUITING_APPLICATION_ADVANCE])
 
@@ -327,6 +369,48 @@ class TestBlockController(unittest.TestCase):
         )
 
         self.assertEqual(resp.status_code, HTTPStatus.BAD_REQUEST)
+
+    def test_deciding_a_closed_request_is_a_409(self):
+        self.service.decide = AsyncMock(side_effect=ConflictError("already closed"))
+        client = self._client(permissions=[Permission.USER_ADMIN], user_id=REVIEWER)
+
+        resp = client.post(
+            BLOCK_REQUEST_DECIDE_ENDPOINT.format(request_id=REQUEST_ID),
+            json={"approved": True},
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.CONFLICT)
+
+    def test_rejecting_without_a_note_is_a_400(self):
+        self.service.decide = AsyncMock(side_effect=ValueError("give a reason"))
+        client = self._client(permissions=[Permission.USER_ADMIN], user_id=REVIEWER)
+
+        resp = client.post(
+            BLOCK_REQUEST_DECIDE_ENDPOINT.format(request_id=REQUEST_ID),
+            json={"approved": False},
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.BAD_REQUEST)
+
+    def test_withdrawing_a_request_you_did_not_raise_is_a_403(self):
+        self.service.withdraw = AsyncMock(side_effect=PermissionError("not yours"))
+        client = self._client(permissions=[Permission.RECRUITING_APPLICATION_ADVANCE])
+
+        resp = client.post(
+            BLOCK_REQUEST_WITHDRAW_ENDPOINT.format(request_id=REQUEST_ID)
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
+
+    def test_withdrawing_a_closed_request_is_a_409(self):
+        self.service.withdraw = AsyncMock(side_effect=ConflictError("already closed"))
+        client = self._client(permissions=[Permission.RECRUITING_APPLICATION_ADVANCE])
+
+        resp = client.post(
+            BLOCK_REQUEST_WITHDRAW_ENDPOINT.format(request_id=REQUEST_ID)
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.CONFLICT)
 
 
 if __name__ == "__main__":

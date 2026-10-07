@@ -52,9 +52,21 @@ class ApprovalService:
         self._logger = logger
         self._handlers: dict[str, ApprovalHandler] = {}
         for handler in handlers:
-            if handler.action in self._handlers:
-                raise ValueError(f"Two approval handlers for {handler.action!r}")
-            self._handlers[handler.action] = handler
+            self.register(handler)
+
+    def register(self, handler: ApprovalHandler) -> None:
+        """Add a handler after construction, for one whose own dependencies
+        are built later than this service.
+
+        Args:
+            handler (ApprovalHandler): The handler.
+
+        Raises:
+            ValueError: When a handler already claims its action.
+        """
+        if handler.action in self._handlers:
+            raise ValueError(f"Two approval handlers for {handler.action!r}")
+        self._handlers[handler.action] = handler
 
     def handler_for(self, action: str) -> ApprovalHandler:
         """The handler registered for an action.
