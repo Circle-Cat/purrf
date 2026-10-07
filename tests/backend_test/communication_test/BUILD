@@ -288,3 +288,18 @@ py_test(
         "//tests/backend_test/repository_test:base_repository_test_lib",
     ],
 )
+
+py_test(
+    name = "inbox_controller_test",
+    srcs = ["inbox_controller_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/common:exceptions",
+        "//backend/common:fast_api_error_handler",
+        "//backend/common:permissions",
+        "//backend/communication",
+        "//backend/dto",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+    ],
+)

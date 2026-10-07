@@ -71,6 +71,7 @@ class FastAppFactory:
         notification_delivery_controller,
         gmail_push_controller,
         gmail_sync_controller,
+        inbox_controller,
         pubsub_push_controller,
         notification_publisher,
         notification_topic_path,
@@ -109,6 +110,7 @@ class FastAppFactory:
             notification_delivery_controller: An instance of NotificationDeliveryController that manages the Pub/Sub push endpoint which sends notification emails.
             gmail_push_controller: An instance of GmailPushController that manages the Pub/Sub push endpoint Gmail change notifications arrive on.
             gmail_sync_controller: An instance of GmailSyncController that manages the daily Gmail maintenance and manual full resync endpoints.
+            inbox_controller: An instance of InboxController that manages the Inbox routes (threads of every service, by permission).
             pubsub_push_controller: An instance of PubSubPushController that manages the Pub/Sub push endpoints Google Chat, Microsoft Teams and Gerrit events arrive on.
             notification_publisher: Pub/Sub publisher client used to deliver a
                 notification once its creating transaction commits.
@@ -150,6 +152,7 @@ class FastAppFactory:
         self.notification_delivery_controller = notification_delivery_controller
         self.gmail_push_controller = gmail_push_controller
         self.gmail_sync_controller = gmail_sync_controller
+        self.inbox_controller = inbox_controller
         self.pubsub_push_controller = pubsub_push_controller
         self.notification_publisher = notification_publisher
         self.notification_topic_path = notification_topic_path
@@ -264,6 +267,7 @@ class FastAppFactory:
         app.include_router(self.notification_delivery_controller.router, prefix="/api")
         app.include_router(self.gmail_push_controller.router, prefix="/api")
         app.include_router(self.gmail_sync_controller.router, prefix="/api")
+        app.include_router(self.inbox_controller.router, prefix="/api")
         app.include_router(self.pubsub_push_controller.router, prefix="/api")
 
         @app.get("/fastapi/health")

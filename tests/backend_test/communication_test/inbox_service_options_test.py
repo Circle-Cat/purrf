@@ -257,6 +257,16 @@ class SearchPeopleTest(_OptionsFixture):
         self.assertEqual(len(result), 20)
         self.assertEqual(result[0].user_id, 5)
 
+    async def test_blocked_people_are_not_offered(self):
+        blocked = _user(5, "Cy", "Dow")
+        blocked.is_blocked = True
+        self.user_repo.get_user_by_user_id = AsyncMock(return_value=blocked)
+
+        result = await self.service.search_people(self.session, "5")
+
+        self.assertIs(self.user_repo.list_users.await_args.kwargs["is_blocked"], False)
+        self.assertEqual([p.user_id for p in result], [7, 42])
+
     async def test_blank_query_returns_nothing(self):
         self.assertEqual(await self.service.search_people(self.session, "  "), [])
         self.user_repo.list_users.assert_not_awaited()

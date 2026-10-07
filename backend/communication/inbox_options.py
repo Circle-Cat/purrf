@@ -128,8 +128,8 @@ class InboxThreadOptions:
         """Find users by name or address for the Assign dialog, at most 20.
 
         A query of digits (optionally ``#``-prefixed) also looks up that exact
-        user id and puts it first. The route is limited to people who may
-        assign threads.
+        user id and puts it first. Blocked users are left out. The route is
+        limited to people who may assign threads.
 
         Args:
             session (AsyncSession): The active DB session.
@@ -141,12 +141,14 @@ class InboxThreadOptions:
         q = (q or "").strip()
         if not q:
             return []
-        rows, _ = await self._users.list_users(session, search=q, limit=_MAX_PEOPLE)
+        rows, _ = await self._users.list_users(
+            session, search=q, limit=_MAX_PEOPLE, is_blocked=False
+        )
         found = [row[0] for row in rows]
         match = _ID_QUERY.match(q)
         if match:
             exact = await self._users.get_user_by_user_id(session, int(match.group(1)))
-            if exact is not None:
+            if exact is not None and not exact.is_blocked:
                 found = [exact] + [u for u in found if u.user_id != exact.user_id]
         found = found[:_MAX_PEOPLE]
         emails = await self._user_emails.get_contact_emails_by_user_ids(

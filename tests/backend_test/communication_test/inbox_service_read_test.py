@@ -73,7 +73,11 @@ def _thread(tid, context_type, context_id=None, user_id=None, subject=None, **kw
 
 def _user(user_id, first, last, preferred=None):
     return SimpleNamespace(
-        user_id=user_id, first_name=first, last_name=last, preferred_name=preferred
+        user_id=user_id,
+        first_name=first,
+        last_name=last,
+        preferred_name=preferred,
+        is_blocked=False,
     )
 
 

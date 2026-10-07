@@ -139,3 +139,22 @@ class PersonDto(BaseDto):
     user_id: int
     name: str
     email: str | None = None
+
+
+class InboxReplyRequestDto(BaseDto):
+    """``last_seen_message_id`` is the newest message the sender had on screen."""
+
+    body: str
+    last_seen_message_id: int | None = None
+
+
+class InboxAssignRequestDto(BaseDto):
+    """A Mentorship thread takes ``round_id``; a Recruiting thread takes ``job_id``."""
+
+    user_id: int
+    round_id: int | None = None
+    job_id: int | None = None
+
+
+class InboxMoveRequestDto(BaseDto):
+    service: InboxService
