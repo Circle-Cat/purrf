@@ -200,7 +200,9 @@ class InboxNotifierTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_a_bounce_with_no_known_sender_records_nothing(self):
-        await self._after_sync([_outbound(0, sent_by=None)], [_bounce(5)])
+        await self._after_sync(
+            [_outbound(0, sent_by=8), _outbound(2, sent_by=None)], [_bounce(5)]
+        )
 
         self.record.assert_not_awaited()
 
