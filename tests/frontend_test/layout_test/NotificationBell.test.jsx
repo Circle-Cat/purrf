@@ -685,9 +685,7 @@ describe("NotificationBell", () => {
     });
 
     expect(
-      screen.getByText(
-        "Your email to recipient@example.com was not delivered",
-      ),
+      screen.getByText("Your email to recipient@example.com was not delivered"),
     ).toBeInTheDocument();
   });
 });

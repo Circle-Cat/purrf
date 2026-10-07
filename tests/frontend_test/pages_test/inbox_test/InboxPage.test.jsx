@@ -158,9 +158,13 @@ describe("InboxPage list", () => {
     renderAt();
     await screen.findByRole("group", { name: "Filters" });
     const filters = screen.getByRole("group", { name: "Filters" });
-    fireEvent.click(within(filters).getByRole("button", { name: /^Needs reply/ }));
+    fireEvent.click(
+      within(filters).getByRole("button", { name: /^Needs reply/ }),
+    );
     await waitFor(() => expect(lastListParams()).toEqual({ needsReply: true }));
-    fireEvent.click(within(filters).getByRole("button", { name: /^Unassigned/ }));
+    fireEvent.click(
+      within(filters).getByRole("button", { name: /^Unassigned/ }),
+    );
     await waitFor(() =>
       expect(lastListParams()).toEqual({ needsReply: true, unassigned: true }),
     );
@@ -314,7 +318,9 @@ describe("InboxPage thread detail", () => {
     await screen.findByRole("button", { name: /Open thread Question/ });
     open("Question about meeting cadence");
     const pane = await thread();
-    fireEvent.click(await within(pane).findByRole("button", { name: "Archive" }));
+    fireEvent.click(
+      await within(pane).findByRole("button", { name: "Archive" }),
+    );
     expect(
       await within(pane).findByRole("button", { name: "Unarchive" }),
     ).toBeInTheDocument();
@@ -336,12 +342,18 @@ describe("InboxPage thread detail", () => {
     await screen.findByRole("button", { name: /Open thread Question/ });
     open("Question about meeting cadence");
     const pane = await thread();
-    fireEvent.click(await within(pane).findByRole("button", { name: "Reassign" }));
+    fireEvent.click(
+      await within(pane).findByRole("button", { name: "Reassign" }),
+    );
     fireEvent.click(
       await screen.findByRole("button", { name: "Remove assignment" }),
     );
-    await waitFor(() => expect(api.unassignInboxThread).toHaveBeenCalledWith(1));
-    expect(await within(pane).findByRole("button", { name: "Assign" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(api.unassignInboxThread).toHaveBeenCalledWith(1),
+    );
+    expect(
+      await within(pane).findByRole("button", { name: "Assign" }),
+    ).toBeInTheDocument();
   });
 
   it("ignores a write response for a thread that is no longer open", async () => {
@@ -350,7 +362,10 @@ describe("InboxPage thread detail", () => {
     );
     api.getInboxThread.mockImplementation((id) =>
       Promise.resolve({
-        data: id === 1 ? detail() : detail({ threadId: 2, subject: "Other thread" }),
+        data:
+          id === 1
+            ? detail()
+            : detail({ threadId: 2, subject: "Other thread" }),
       }),
     );
     let finish;
@@ -363,7 +378,9 @@ describe("InboxPage thread detail", () => {
     await screen.findByRole("button", { name: /Open thread Question/ });
     open("Question about meeting cadence");
     const pane = await thread();
-    fireEvent.click(await within(pane).findByRole("button", { name: "Archive" }));
+    fireEvent.click(
+      await within(pane).findByRole("button", { name: "Archive" }),
+    );
     open("Other thread");
     await waitFor(() =>
       expect(
@@ -371,9 +388,13 @@ describe("InboxPage thread detail", () => {
       ).toBeInTheDocument(),
     );
     finish({ data: detail({ archived: true }) });
-    await waitFor(() => expect(api.archiveInboxThread).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(api.archiveInboxThread).toHaveBeenCalledTimes(1),
+    );
     await new Promise((r) => setTimeout(r, 20));
-    expect(screen.getByRole("heading", { name: "Other thread" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Other thread" }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "Question about meeting cadence" }),
     ).toBeNull();
@@ -400,11 +421,15 @@ describe("InboxPage thread detail", () => {
     expect(send).toBeDisabled();
     expect(api.replyToInboxThread).toHaveBeenCalledTimes(1);
     finish({ data: detail({ latestMessageId: 12 }) });
-    await waitFor(() => expect(within(pane).getByLabelText("Reply")).toHaveValue(""));
+    await waitFor(() =>
+      expect(within(pane).getByLabelText("Reply")).toHaveValue(""),
+    );
   });
 
   it("disables the reply box when the environment has no alias", async () => {
-    api.getInboxThread.mockResolvedValue({ data: detail({ replyAlias: null }) });
+    api.getInboxThread.mockResolvedValue({
+      data: detail({ replyAlias: null }),
+    });
     renderAt();
     await screen.findByRole("button", { name: /Open thread Question/ });
     open("Question about meeting cadence");
@@ -421,7 +446,10 @@ describe("InboxPage thread detail", () => {
     api.replyToInboxThread.mockResolvedValue({
       data: detail({
         latestMessageId: 12,
-        messages: [message(), message({ messageId: 12, direction: "outbound" })],
+        messages: [
+          message(),
+          message({ messageId: 12, direction: "outbound" }),
+        ],
       }),
     });
     renderAt();
@@ -438,7 +466,9 @@ describe("InboxPage thread detail", () => {
         lastSeenMessageId: 11,
       }),
     );
-    await waitFor(() => expect(within(pane).getByLabelText("Reply")).toHaveValue(""));
+    await waitFor(() =>
+      expect(within(pane).getByLabelText("Reply")).toHaveValue(""),
+    );
   });
 
   it("on 409 warns, keeps the draft, reloads, and resends with the new id", async () => {

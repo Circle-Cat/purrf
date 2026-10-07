@@ -3,7 +3,11 @@ import { toast } from "sonner";
 import { listInboxThreads } from "@/api/inboxApi";
 import { useRequestGuard } from "@/hooks/useRequestGuard";
 
-const EMPTY = { threads: [], counts: { needsReply: 0, unassigned: 0 }, services: [] };
+const EMPTY = {
+  threads: [],
+  counts: { needsReply: 0, unassigned: 0 },
+  services: [],
+};
 
 /**
  * Loads the Inbox thread list for the given filters; unset filters are not
@@ -13,7 +17,13 @@ const EMPTY = { threads: [], counts: { needsReply: 0, unassigned: 0 }, services:
  *   archived?: boolean, q?: string}} filters
  * @returns {{data: object, loading: boolean, refresh: () => Promise<void>}}
  */
-export const useInboxThreads = ({ service, needsReply, unassigned, archived, q }) => {
+export const useInboxThreads = ({
+  service,
+  needsReply,
+  unassigned,
+  archived,
+  q,
+}) => {
   const { begin, isCurrent } = useRequestGuard();
   const [data, setData] = useState(EMPTY);
   const [loading, setLoading] = useState(true);

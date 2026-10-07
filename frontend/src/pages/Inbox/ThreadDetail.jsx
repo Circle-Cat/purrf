@@ -344,7 +344,11 @@ const ThreadDetail = ({
           className="border-slate-300 bg-white"
         />
         <div className="flex justify-end">
-          <Button size="sm" disabled={pending || noAlias || !draft.trim()} onClick={send}>
+          <Button
+            size="sm"
+            disabled={pending || noAlias || !draft.trim()}
+            onClick={send}
+          >
             Send reply
           </Button>
         </div>

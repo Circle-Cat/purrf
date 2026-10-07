@@ -70,7 +70,10 @@ const PersonSearch = ({ onPick }) => {
 
 const RoundPicker = ({ rounds, value, onChange }) => (
   <div className="space-y-1.5">
-    <label htmlFor="assign-round" className="text-sm font-medium text-slate-900">
+    <label
+      htmlFor="assign-round"
+      className="text-sm font-medium text-slate-900"
+    >
       Round
     </label>
     <select
@@ -94,16 +97,18 @@ const JobPicker = ({ name, jobs, value, onChange }) => {
   if (!jobs.length) {
     return (
       <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-        {name} has not applied to any employment job, so this thread
-        can&apos;t be assigned. You can still reply without assigning, or
-        Archive it.
+        {name} has not applied to any employment job, so this thread can&apos;t
+        be assigned. You can still reply without assigning, or Archive it.
       </p>
     );
   }
   const pick = jobs.find((j) => String(j.jobId) === value);
   return (
     <div className="space-y-1.5">
-      <label htmlFor="assign-job" className="text-sm font-medium text-slate-900">
+      <label
+        htmlFor="assign-job"
+        className="text-sm font-medium text-slate-900"
+      >
         Job
       </label>
       <select

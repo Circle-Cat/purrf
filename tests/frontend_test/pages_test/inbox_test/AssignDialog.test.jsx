@@ -51,7 +51,9 @@ describe("AssignDialog", () => {
     expect(screen.getByLabelText("Selected person")).toHaveTextContent(
       "Wang Xiao",
     );
-    expect(screen.getByText("Matched by alternative email")).toBeInTheDocument();
+    expect(
+      screen.getByText("Matched by alternative email"),
+    ).toBeInTheDocument();
     const select = await screen.findByLabelText("Round");
     expect(api.getInboxAssignOptions).toHaveBeenCalledWith(1, 7);
     expect(select).toHaveValue("5");
