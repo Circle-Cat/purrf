@@ -862,7 +862,9 @@ const EmailsPanel = ({
                   className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-800"
                 >
                   <AlertTriangle size={14} />
-                  Delivery failed: your email to {thread.openBounce.bouncedTo}{" "}
+                  Delivery failed: your email to {
+                    thread.openBounce.bouncedTo
+                  }{" "}
                   was not delivered
                 </div>
               )}
