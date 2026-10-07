@@ -15,6 +15,10 @@ request's hours are held back from the balance separately.
 Approval is the end of the line. There is no cancelling an approved request:
 somebody who does not take leave they had approved has spent the hours, and
 putting them back is an admin adjustment carrying a note.
+
+Deciding and withdrawing run through the shared approval flow (see
+leave_request_handler): the approval record says who decided, when and why,
+and the request's own status says where it is.
 """
 
 import datetime
@@ -25,7 +29,9 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.constants import INTERNAL_GOOGLE_ACCOUNT_DOMAIN
+from backend.common.exceptions import ConflictError
 from backend.common.leave_enums import (
+    LEAVE_APPROVAL,
     LeaveEntryType,
     LeaveRequestStatus,
     LeaveRequestType,
@@ -109,6 +115,124 @@ def _ldap_from_addresses(addresses) -> str | None:
     return None
 
 
+async def load_calendar(
+    session: AsyncSession,
+    leave_holiday_repository,
+    today: datetime.date,
+    start_date: datetime.date,
+    end_date: datetime.date,
+) -> tuple[frozenset[datetime.date], frozenset[datetime.date]]:
+    """Company holidays covering a request and its notice window.
+
+    Every year the request itself touches must be entered. Without it the
+    hours would be computed against a year with no holidays in it and
+    quietly come out too high.
+
+    The notice window can reach back into an earlier year -- asking in
+    December for leave in January -- and that year is not required to be
+    entered. A missing calendar there makes the notice count generous
+    rather than wrong, which is the harmless direction.
+
+    Args:
+        session: Active async session.
+        leave_holiday_repository (LeaveHolidayRepository): The calendar.
+        today: The business day the request is judged on.
+        start_date: First day of the leave.
+        end_date: Last day of the leave.
+
+    Returns:
+        All the holiday dates, and the subset that may be exchanged.
+
+    Raises:
+        ValueError: A year the request covers has no holidays entered.
+    """
+    holidays: set[datetime.date] = set()
+    exchangeable: set[datetime.date] = set()
+    for year in range(min(today.year, start_date.year), end_date.year + 1):
+        rows = await leave_holiday_repository.list_by_year(session, year)
+        if not rows and start_date.year <= year <= end_date.year:
+            raise ValueError(
+                f"The company holidays for {year} have not been entered "
+                "yet, so leave in that year cannot be worked out."
+            )
+        for row in rows:
+            holidays.add(row.date)
+            if row.is_exchangeable:
+                exchangeable.add(row.date)
+    return frozenset(holidays), frozenset(exchangeable)
+
+
+def ledger_entry_for(
+    request: LeaveRequestEntity, *, created_by: int | None
+) -> LeaveLedgerEntity | None:
+    """The row approving a request writes, or None for sick leave.
+
+    One row per request, dated where the leave starts and pointing back at
+    it: per-day rows would multiply the ledger and buy nothing, since the
+    request already says which days. Sick leave has no allowance and deducts
+    nothing, so it produces no row at all -- not even a zero one, which would
+    only be a row readers have to learn to ignore.
+
+    Args:
+        request: The request being approved.
+        created_by: Who approved it.
+
+    Returns:
+        The row to write, or None.
+    """
+    if request.type is LeaveRequestType.SICK:
+        return None
+
+    entry_type = (
+        LeaveEntryType.EXCHANGE_CREDIT
+        if request.type is LeaveRequestType.EXCHANGE
+        else LeaveEntryType.LEAVE_DEDUCTION
+    )
+    return LeaveLedgerEntity(
+        user_id=request.user_id,
+        entry_type=entry_type,
+        hours=_balance_delta(request.type, request.hours),
+        effective_date=request.start_date,
+        source_request_id=request.leave_request_id,
+        created_by=created_by,
+    )
+
+
+async def overdraft_now(
+    session: AsyncSession,
+    leave_ledger_repository,
+    leave_request_repository,
+    request: LeaveRequestEntity,
+) -> bool:
+    """Whether a waiting paid request is an overdraft against the balance as
+    it stands now.
+
+    The mark filed with a request goes stale: an admin adjustment, the weekly
+    grant, or another request withdrawn or turned down all move what is left.
+    This is the same test as at filing -- the balance less every paid hour
+    still waiting, this request's included, must not go below zero -- run
+    again for an approver who is looking at it today.
+
+    Args:
+        session: Active async session.
+        leave_ledger_repository (LeaveLedgerRepository): The balance.
+        leave_request_repository (LeaveRequestRepository): The hours held by
+            waiting requests.
+        request: A request still waiting.
+
+    Returns:
+        True when the balance does not cover it. Always False for sick leave
+        and exchanges, which spend nothing.
+    """
+    if request.type is not LeaveRequestType.PAID:
+        return False
+    balance = await leave_ledger_repository.balance(session, request.user_id)
+    held = await leave_request_repository.sum_pending_paid_hours(
+        session, request.user_id
+    )
+    return balance - held < NO_HOURS
+
+
 class LeaveRequestService:
     """The request lifecycle."""
 
@@ -123,6 +247,7 @@ class LeaveRequestService:
         redis_client,
         retry_utils,
         participant_resolver,
+        approval_service,
     ):
         """
         Args:
@@ -137,6 +262,8 @@ class LeaveRequestService:
             retry_utils: Transient-failure retry wrapper.
             participant_resolver (LeaveParticipantResolver): Turns the manager's
                 ldap into the account that will approve.
+            approval_service (ApprovalService): Runs deciding and withdrawing,
+                through the ``leave_approval`` handler.
         """
         self.logger = logger
         self.leave_request_repository = leave_request_repository
@@ -147,6 +274,7 @@ class LeaveRequestService:
         self.redis_client = redis_client
         self.retry_utils = retry_utils
         self.participant_resolver = participant_resolver
+        self.approval_service = approval_service
 
     async def submit(
         self,
@@ -173,7 +301,8 @@ class LeaveRequestService:
 
         Returns:
             The stored request. Sick leave of three days or less comes back
-            already approved, with ``decided_by`` empty: nobody decided it.
+            already approved, with no approval behind it: nobody decided it,
+            so ``decided_by`` is empty.
 
         Raises:
             ValueError: Any of the refusals. Each message says what to do
@@ -190,8 +319,8 @@ class LeaveRequestService:
             raise ValueError(f"{end_date} is before {start_date}.")
 
         approver_user_id = await self._approver_for(session, user_id)
-        holidays, exchangeable = await self._calendar(
-            session, today, start_date, end_date
+        holidays, exchangeable = await load_calendar(
+            session, self.leave_holiday_repository, today, start_date, end_date
         )
 
         hours = request_hours(
@@ -236,16 +365,31 @@ class LeaveRequestService:
             is_late_notice=is_late_notice,
         )
 
-        if request_type is LeaveRequestType.SICK and hours <= SICK_AUTO_APPROVE_HOURS:
+        auto_approved = (
+            request_type is LeaveRequestType.SICK and hours <= SICK_AUTO_APPROVE_HOURS
+        )
+        if auto_approved:
             # Approved on submission, and the approver is still recorded: what
-            # is automatic is the decision, not who it belonged to. decided_by
-            # stays empty, which is what says no person made it -- and it is
-            # the same convention the ledger uses for a row a job wrote.
+            # is automatic is the decision, not who it belonged to. It never
+            # goes to the approver, so there is no approval behind it, and
+            # nobody is named as having decided it.
             request.status = LeaveRequestStatus.APPROVED
-            request.decided_at = datetime.datetime.now(datetime.timezone.utc)
 
         stored = await self.leave_request_repository.add(session, request)
-        await session.commit()
+        approval = None
+        if auto_approved:
+            await session.commit()
+        else:
+            # Commits the request with its approval.
+            approval = await self.approval_service.raise_request(
+                session,
+                action=LEAVE_APPROVAL,
+                raised_by=user_id,
+                target_id=str(stored.leave_request_id),
+                payload=None,
+                reason=None,
+                reviewer_id=None,
+            )
         self.logger.info(
             "Leave request %s: user %s, %s, %s to %s, %s hours, %s.",
             stored.leave_request_id,
@@ -256,7 +400,7 @@ class LeaveRequestService:
             hours,
             stored.status.value,
         )
-        return self._read_model(stored)
+        return self._read_model(stored, approval)
 
     async def decide(
         self,
@@ -264,66 +408,64 @@ class LeaveRequestService:
         request_id: int,
         approver_user_id: int,
         approve: bool,
+        comment: str | None = None,
     ) -> LeaveRequestDto:
-        """Approves or rejects a pending request, writing the ledger row.
-
-        Approving is the only thing that moves hours. One row per request,
-        dated where the leave starts and pointing back at it: per-day rows
-        would multiply the ledger and buy nothing, since the request already
-        says which days.
+        """Approves or rejects a pending request. Committed by the approval
+        flow; approving writes the ledger row (see leave_request_handler).
 
         Args:
-            session: Active async session, committed once at the end.
+            session: Active async session.
             request_id: Which request.
             approver_user_id: Who is deciding. Must be the approver the request
                 was submitted against.
             approve: True to approve, False to reject.
+            comment: Why. Required to reject.
 
         Returns:
             The decided request.
 
         Raises:
-            ValueError: No such request, or it has already been decided --
-                deciding twice would write a second deduction.
+            ValueError: No such request, or a rejection with no reason.
             PermissionError: Somebody other than the named approver. The
                 approver was snapshotted at submission, so anybody else
                 deciding would attribute the approval to the wrong person.
+            ConflictError: It has already been decided, or approving it no
+                longer holds (it has started, its hours have changed, or its
+                owner is no longer active); it stays pending.
         """
-        request = await self._pending_request(session, request_id)
-        if request.approver_user_id != approver_user_id:
-            raise PermissionError(
-                f"Request {request_id} is for somebody else to decide."
-            )
-
-        request.status = (
-            LeaveRequestStatus.APPROVED if approve else LeaveRequestStatus.REJECTED
+        pending = await self._pending_approval(
+            session,
+            request_id,
+            may_act=lambda leave: leave.approver_user_id == approver_user_id,
+            refusal=f"Request {request_id} is for somebody else to decide.",
         )
-        request.decided_by = approver_user_id
-        request.decided_at = datetime.datetime.now(datetime.timezone.utc)
-
-        if approve:
-            entry = self._ledger_entry(request, approver_user_id)
-            if entry is not None:
-                await self.leave_ledger_repository.add_entries(session, [entry])
-        await session.commit()
+        approval = await self.approval_service.decide(
+            session,
+            request_id=pending.request_id,
+            actor_id=approver_user_id,
+            approve=approve,
+            comment=comment,
+        )
+        request = await self.leave_request_repository.get_by_id(session, request_id)
         self.logger.info(
             "Leave request %s %s by %s.",
             request_id,
             request.status.value,
             approver_user_id,
         )
-        return self._read_model(request)
+        return self._read_model(request, approval)
 
     async def withdraw(
         self, session: AsyncSession, request_id: int, user_id: int
     ) -> LeaveRequestDto:
-        """Takes back a request nobody has decided yet.
+        """Takes back a request nobody has decided yet. Committed by the
+        approval flow, which tells the approver.
 
         No manager needed: nothing has reached the ledger. Once approved a
         request stays approved -- see the module docstring.
 
         Args:
-            session: Active async session, committed once at the end.
+            session: Active async session.
             request_id: Which request.
             user_id: Who is taking it back. Must be its owner.
 
@@ -331,17 +473,22 @@ class LeaveRequestService:
             The withdrawn request.
 
         Raises:
-            ValueError: No such request, or it has already been decided.
+            ValueError: No such request.
             PermissionError: Somebody other than its owner.
+            ConflictError: It has already been decided.
         """
-        request = await self._pending_request(session, request_id)
-        if request.user_id != user_id:
-            raise PermissionError(f"Request {request_id} belongs to somebody else.")
-
-        request.status = LeaveRequestStatus.WITHDRAWN
-        await session.commit()
+        pending = await self._pending_approval(
+            session,
+            request_id,
+            may_act=lambda leave: leave.user_id == user_id,
+            refusal=f"Request {request_id} belongs to somebody else.",
+        )
+        approval = await self.approval_service.withdraw(
+            session, request_id=pending.request_id, actor_id=user_id
+        )
+        request = await self.leave_request_repository.get_by_id(session, request_id)
         self.logger.info("Leave request %s withdrawn by %s.", request_id, user_id)
-        return self._read_model(request)
+        return self._read_model(request, approval)
 
     async def list_own(
         self, session: AsyncSession, user_id: int
@@ -356,10 +503,9 @@ class LeaveRequestService:
             Their requests. No name on them: it would be the reader's own.
         """
         requests = await self.leave_request_repository.list_for_user(session, user_id)
+        approvals = await self._approvals_of(session, requests)
         return [
-            LeaveRequestDto.of(
-                request, required_notice_workdays=self._required_notice(request)
-            )
+            self._read_model(request, approvals.get(str(request.leave_request_id)))
             for request in requests
         ]
 
@@ -380,6 +526,10 @@ class LeaveRequestService:
         unusable. A name that cannot be resolved is left empty rather than
         allowed to take the whole queue down -- a deleted account should not
         stop a manager working.
+
+        A waiting paid request's overdraft mark is worked out again against
+        the balance as it stands now, since the one filed with it goes stale;
+        a decided one keeps the mark it was decided on.
 
         Args:
             session: Active async session.
@@ -418,12 +568,21 @@ class LeaveRequestService:
         balance_by_id = await self.leave_ledger_repository.balances_by_user_ids(
             session, pending_user_ids
         )
+        held_by_id = {
+            user_id: await self.leave_request_repository.sum_pending_paid_hours(
+                session, user_id
+            )
+            for user_id in pending_user_ids
+        }
+        approvals = await self._approvals_of(session, requests)
         return [
             LeaveRequestDto.of(
                 request,
+                approval=approvals.get(str(request.leave_request_id)),
                 employee_name=name_by_id.get(request.user_id),
                 employee_ldap=ldap_by_id.get(request.user_id),
                 required_notice_workdays=self._required_notice(request),
+                is_overdraft=self._overdraft_mark(request, balance_by_id, held_by_id),
                 **self._balance_pair(request, balance_by_id),
             )
             for request in requests
@@ -517,7 +676,9 @@ class LeaveRequestService:
         )
         return user_id in balances
 
-    def _read_model(self, request: LeaveRequestEntity) -> LeaveRequestDto:
+    def _read_model(
+        self, request: LeaveRequestEntity, approval=None
+    ) -> LeaveRequestDto:
         """One request as it is read back, in the shape the lists use.
 
         One resource answers with one shape, and the read model is that shape.
@@ -534,8 +695,38 @@ class LeaveRequestService:
         moved.
         """
         return LeaveRequestDto.of(
-            request, required_notice_workdays=self._required_notice(request)
+            request,
+            approval=approval,
+            required_notice_workdays=self._required_notice(request),
         )
+
+    async def _approvals_of(self, session: AsyncSession, requests) -> dict:
+        """The approval behind each of these requests, by request id as text.
+
+        Sick leave approved on submission has none.
+        """
+        return await self.approval_service.latest_for_targets(
+            session,
+            LEAVE_APPROVAL,
+            [str(request.leave_request_id) for request in requests],
+        )
+
+    @staticmethod
+    def _overdraft_mark(
+        request: LeaveRequestEntity,
+        balance_by_id: dict[int, Decimal],
+        held_by_id: dict[int, Decimal],
+    ) -> bool:
+        """The overdraft mark an approver reads: worked out now for a waiting
+        paid request, the stored one otherwise. Same test as ``overdraft_now``.
+        """
+        if (
+            request.status is not LeaveRequestStatus.PENDING
+            or request.type is not LeaveRequestType.PAID
+        ):
+            return request.is_overdraft
+        balance = balance_by_id.get(request.user_id, NO_HOURS)
+        return balance - held_by_id.get(request.user_id, NO_HOURS) < NO_HOURS
 
     @staticmethod
     def _required_notice(request: LeaveRequestEntity) -> int | None:
@@ -571,59 +762,40 @@ class LeaveRequestService:
             "balance_after": before + _balance_delta(request.type, request.hours),
         }
 
-    async def _pending_request(
-        self, session: AsyncSession, request_id: int
-    ) -> LeaveRequestEntity:
-        """Loads a request that is still awaiting a decision, holding its row.
+    async def _pending_approval(
+        self, session: AsyncSession, request_id: int, *, may_act, refusal: str
+    ):
+        """The approval a request is waiting on, for somebody who may act on it.
 
-        The row is locked rather than merely read. Both callers -- deciding and
-        withdrawing -- read the status, judge it, and then write; without the
-        lock a second caller reads the same pending row before the first has
-        written, passes the same check, and the request is settled twice. An
-        approval settled twice writes a second deduction, and the ledger is
-        append-only: the extra hours cannot be edited away, only argued back
-        with a further row that somebody has to notice is needed.
+        Who is asking is judged before whether the request is still waiting,
+        so that somebody with no part in a request cannot learn its status by
+        trying to act on it.
 
-        With the lock, the second caller waits and then reads the decided
-        status, so the check below refuses it. The check itself is unchanged --
-        it was always right, and was only ever being read too early.
+        Args:
+            session: Active async session.
+            request_id: Which request.
+            may_act: Whether the caller may act on this request.
+            refusal: What to tell them when they may not.
+
+        Raises:
+            ValueError: No such request.
+            PermissionError: The caller has no part in it.
+            ConflictError: It is not waiting on anybody: decided, withdrawn,
+                or sick leave approved on submission.
         """
-        request = await self.leave_request_repository.get_by_id(
-            session, request_id, for_update=True
-        )
+        request = await self.leave_request_repository.get_by_id(session, request_id)
         if request is None:
             raise ValueError(f"No leave request {request_id}.")
-        if request.status is not LeaveRequestStatus.PENDING:
-            raise ValueError(f"Request {request_id} is already {request.status.value}.")
-        return request
-
-    def _ledger_entry(
-        self, request: LeaveRequestEntity, approver_user_id: int
-    ) -> LeaveLedgerEntity | None:
-        """The row an approval writes, or None for sick leave.
-
-        Sick leave has no allowance and deducts nothing, so it produces no row
-        at all -- not even a zero one, which would only be a row readers have
-        to learn to ignore.
-        """
-        if request.type is LeaveRequestType.SICK:
-            return None
-
-        entry_type = (
-            LeaveEntryType.EXCHANGE_CREDIT
-            if request.type is LeaveRequestType.EXCHANGE
-            else LeaveEntryType.LEAVE_DEDUCTION
+        if not may_act(request):
+            raise PermissionError(refusal)
+        approval = await self.approval_service.get_pending_for_target(
+            session, LEAVE_APPROVAL, str(request_id)
         )
-        hours = _balance_delta(request.type, request.hours)
-
-        return LeaveLedgerEntity(
-            user_id=request.user_id,
-            entry_type=entry_type,
-            hours=hours,
-            effective_date=request.start_date,
-            source_request_id=request.leave_request_id,
-            created_by=approver_user_id,
-        )
+        if approval is None:
+            raise ConflictError(
+                f"Request {request_id} is already {request.status.value}."
+            )
+        return approval
 
     def _notice(self, request_type: LeaveRequestType, given: int, needed: int) -> bool:
         """Whether to mark short notice, having refused it where it is hard.
@@ -748,42 +920,3 @@ class LeaveRequestService:
                 "cannot be found."
             )
         return ldap
-
-    async def _calendar(
-        self,
-        session: AsyncSession,
-        today: datetime.date,
-        start_date: datetime.date,
-        end_date: datetime.date,
-    ) -> tuple[frozenset[datetime.date], frozenset[datetime.date]]:
-        """Company holidays covering the request and the notice window.
-
-        Every year the request itself touches must be entered. Without it the
-        hours would be computed against a year with no holidays in it and
-        quietly come out too high.
-
-        The notice window can reach back into an earlier year -- asking in
-        December for leave in January -- and that year is not required to be
-        entered. A missing calendar there makes the notice count generous
-        rather than wrong, which is the harmless direction.
-
-        Returns:
-            All the holiday dates, and the subset that may be exchanged.
-
-        Raises:
-            ValueError: A year the request covers has no holidays entered.
-        """
-        holidays: set[datetime.date] = set()
-        exchangeable: set[datetime.date] = set()
-        for year in range(min(today.year, start_date.year), end_date.year + 1):
-            rows = await self.leave_holiday_repository.list_by_year(session, year)
-            if not rows and start_date.year <= year <= end_date.year:
-                raise ValueError(
-                    f"The company holidays for {year} have not been entered "
-                    "yet, so leave in that year cannot be worked out."
-                )
-            for row in rows:
-                holidays.add(row.date)
-                if row.is_exchangeable:
-                    exchangeable.add(row.date)
-        return frozenset(holidays), frozenset(exchangeable)

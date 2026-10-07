@@ -62,3 +62,19 @@ class LeaveRequestStatus(StrEnum):
     APPROVED = "approved"
     REJECTED = "rejected"
     WITHDRAWN = "withdrawn"
+
+
+# The approval action a leave request runs as, and the subject its events are
+# recorded against.
+LEAVE_APPROVAL = "leave_approval"
+LEAVE_REQUEST_SUBJECT = "leave_request"
+
+
+class LeaveEvent(StrEnum):
+    """Events about one leave request, recorded by the shared approval flow."""
+
+    REQUEST_SUBMITTED = "leave.request_submitted"
+    # Required by the approval handler contract and never recorded: a leave
+    # request's approver is its owner's manager, and nobody reassigns it.
+    REQUEST_REASSIGNED = "leave.request_reassigned"
+    REQUEST_DECIDED = "leave.request_decided"

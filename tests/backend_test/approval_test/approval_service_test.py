@@ -63,8 +63,8 @@ class ChosenHandler(ApprovalHandler):
     async def execute(self, session, request, *, actor_id):
         await self.execute_mock(session, request, actor_id=actor_id)
 
-    async def revert(self, session, request):
-        await self.revert_mock(session, request)
+    async def revert(self, session, request, outcome):
+        await self.revert_mock(session, request, outcome)
 
     async def after_commit(self, request):
         await self.after_commit_mock(request)
@@ -533,7 +533,9 @@ class TestDecide(ApprovalServiceTestBase):
     async def test_rejecting_reverts_and_records_the_reason(self):
         await self._decide(approve=False, comment=" two mentors over slots ")
 
-        self.chosen.revert_mock.assert_awaited_once()
+        self.assertIs(
+            self.chosen.revert_mock.await_args.args[2], ApprovalRequestStatus.REJECTED
+        )
         self.chosen.execute_mock.assert_not_awaited()
         self.requests.close.assert_awaited_once_with(
             self.session,
@@ -571,7 +573,9 @@ class TestWithdraw(ApprovalServiceTestBase):
             self.session, request_id=REQUEST_ID, actor_id=RAISER
         )
 
-        self.chosen.revert_mock.assert_awaited_once()
+        self.assertIs(
+            self.chosen.revert_mock.await_args.args[2], ApprovalRequestStatus.WITHDRAWN
+        )
         self.requests.close.assert_awaited_once_with(
             self.session,
             REQUEST_ID,

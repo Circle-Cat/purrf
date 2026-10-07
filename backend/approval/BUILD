@@ -6,6 +6,7 @@ py_library(
     name = "approval_handler",
     srcs = ["approval_handler.py"],
     deps = [
+        "//backend/common:approval_enums",
         "//backend/common:permissions",
         "//backend/entity:entities",
     ],

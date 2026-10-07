@@ -148,6 +148,7 @@ from backend.training.training_progress_service import TrainingProgressService
 from backend.training.training_storage import TrainingStorage
 from backend.leave.leave_engine_service import LeaveEngineService
 from backend.leave.leave_job_controller import LeaveJobController
+from backend.leave.leave_request_handler import LeaveRequestHandler
 from backend.leave.leave_request_service import LeaveRequestService
 from backend.leave.leave_request_controller import LeaveRequestController
 from backend.repository.leave_request_repository import LeaveRequestRepository
@@ -1242,6 +1243,13 @@ class AppDependencyBuilder:
         )
 
         self.leave_request_repository = LeaveRequestRepository()
+        self.leave_request_handler = LeaveRequestHandler(
+            leave_request_repository=self.leave_request_repository,
+            leave_ledger_repository=self.leave_ledger_repository,
+            leave_holiday_repository=self.leave_holiday_repository,
+            users_repository=self.users_repository,
+        )
+        self.approval_service.register(self.leave_request_handler)
         self.leave_request_service = LeaveRequestService(
             logger=self.logger,
             leave_request_repository=self.leave_request_repository,
@@ -1252,6 +1260,7 @@ class AppDependencyBuilder:
             redis_client=self.redis_client,
             retry_utils=self.retry_utils,
             participant_resolver=self.leave_participant_resolver,
+            approval_service=self.approval_service,
         )
         self.leave_request_controller = LeaveRequestController(
             self.leave_request_service,
