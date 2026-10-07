@@ -56,6 +56,7 @@ class TestGmailSyncServiceOnARealSession(BaseRepositoryTestLib):
         self.gmail.list_history.return_value = {
             "history_id": 150,
             "thread_ids": {"t-bad", "t-ok"},
+            "sent_only_thread_ids": set(),
         }
         threads = AsyncMock()
         threads.get_by_gmail_thread_id.side_effect = lambda session, gid: Mock(
@@ -178,6 +179,7 @@ class TestInboxRoutingOnARealSession(BaseRepositoryTestLib):
             self.gmail.list_history.return_value = {
                 "history_id": history_id,
                 "thread_ids": {_NEW_THREAD},
+                "sent_only_thread_ids": set(),
             }
             outcome = await self.service.handle_push(self.session, _MAILBOX, push_id)
             self.assertEqual(outcome, PushOutcome.ACK)
@@ -197,6 +199,7 @@ class TestInboxRoutingOnARealSession(BaseRepositoryTestLib):
         self.gmail.list_history.return_value = {
             "history_id": 150,
             "thread_ids": {_NEW_THREAD},
+            "sent_only_thread_ids": set(),
         }
 
         outcome = await self.service.handle_push(self.session, _MAILBOX, 120)

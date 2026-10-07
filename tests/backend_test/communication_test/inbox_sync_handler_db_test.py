@@ -4,6 +4,7 @@ from unittest.mock import Mock
 from sqlalchemy import select
 
 from backend.common.communication_enums import ContextType, EmailDirection
+from backend.common.exceptions import RateLimitedError
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE, InboxEvent
 from backend.communication import recipient_resolvers  # noqa: F401 (registers)
 from backend.communication.email_context_registry import EmailContextRegistry
@@ -104,10 +105,11 @@ class TestInboxSyncOnARealSession(BaseRepositoryTestLib):
         await GmailSyncStateRepository().create(self.session, _MAILBOX, 100)
         await self.session.commit()
 
-    async def _push(self, push_id, history_id):
+    async def _push(self, push_id, history_id, sent_only=()):
         self.gmail.list_history.return_value = {
             "history_id": history_id,
             "thread_ids": {_GMAIL_THREAD},
+            "sent_only_thread_ids": set(sent_only),
         }
         return await self.service.handle_push(self.session, _MAILBOX, push_id)
 
@@ -148,6 +150,35 @@ class TestInboxSyncOnARealSession(BaseRepositoryTestLib):
                 "from": "Asker <asker@ext.com>",
             },
         )
+
+    async def test_an_untracked_thread_of_only_our_sent_mail_costs_no_gmail_reads(
+        self,
+    ):
+        self.assertEqual(
+            await self._push(120, 150, sent_only={_GMAIL_THREAD}), PushOutcome.ACK
+        )
+
+        self.assertIsNone(await self._thread())
+        self.gmail.list_thread_message_ids.assert_not_called()
+        self.gmail.get_messages.assert_not_called()
+        self.gmail.list_send_as_addresses.assert_not_called()
+        state = await GmailSyncStateRepository().get(self.session, _MAILBOX)
+        self.assertEqual(state.last_history_id, 150)
+
+    async def test_a_rate_limited_first_read_is_retried_and_then_claimed(self):
+        self.gmail.list_thread_message_ids.side_effect = RateLimitedError("429")
+        self.assertEqual(await self._push(120, 150), PushOutcome.RETRY)
+        self.assertIsNone(await self._thread())
+        state = await GmailSyncStateRepository().get(self.session, _MAILBOX)
+        self.assertEqual(state.last_history_id, 100)
+
+        self.gmail.list_thread_message_ids.side_effect = lambda gid: list(self.listed)
+        self.assertEqual(await self._push(120, 150), PushOutcome.ACK)
+        thread = await self._thread()
+        self.assertEqual(thread.context_type, ContextType.MENTORSHIP_INBOX)
+        self.assertEqual(len(await self._needs_reply_events(thread.thread_id)), 1)
+        state = await GmailSyncStateRepository().get(self.session, _MAILBOX)
+        self.assertEqual(state.last_history_id, 150)
 
     async def test_resync_sweeps_inbox_threads_and_skips_application_ones(self):
         inbox = await self.threads.create(
