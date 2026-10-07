@@ -17,9 +17,10 @@ from backend.common.api_endpoints import (
     INBOX_THREAD_UNARCHIVE_ENDPOINT,
     INBOX_THREADS_ENDPOINT,
 )
+from backend.common.communication_enums import InboxService
 from backend.common.fast_api_response_wrapper import api_response
 from backend.common.permissions import Permission
-from backend.communication.inbox_access import INBOX_GATE
+from backend.communication.inbox_access import INBOX_GATE, SERVICE_PERMISSION
 from backend.dto.inbox_dto import (
     InboxAssignRequestDto,
     InboxMoveRequestDto,
@@ -31,8 +32,7 @@ from backend.utils.permission_decorators import authenticate
 
 # Only the services whose threads can be assigned to a person search people.
 PEOPLE_GATE: list[Permission] = [
-    Permission.MENTORSHIP_ADMIN_WRITE,
-    Permission.RECRUITING_APPLICATION_ADVANCE,
+    SERVICE_PERMISSION[s] for s in (InboxService.MENTORSHIP, InboxService.RECRUITING)
 ]
 
 _UNSAFE_IN_NAME = frozenset('/\\"')
