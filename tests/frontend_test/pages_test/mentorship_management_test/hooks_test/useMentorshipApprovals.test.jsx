@@ -2,6 +2,9 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { useMentorshipApprovers } from "@/pages/MentorshipManagement/hooks/useMentorshipApprovers";
 import { useMyMentorshipApprovals } from "@/pages/MentorshipManagement/hooks/useMyMentorshipApprovals";
+import { useApprovalAction } from "@/pages/MentorshipManagement/hooks/useApprovalAction";
+import { act } from "@testing-library/react";
+import { toast } from "sonner";
 import {
   getMentorshipApprovers,
   getMyMentorshipApprovals,
@@ -66,5 +69,60 @@ describe("useMyMentorshipApprovals", () => {
 
     expect(result.current.requests).toEqual([]);
     expect(getMyMentorshipApprovals).not.toHaveBeenCalled();
+  });
+});
+
+describe("useApprovalAction", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(toast, "success").mockImplementation(() => {});
+    vi.spyOn(toast, "error").mockImplementation(() => {});
+  });
+
+  it("toasts and reloads after a call that succeeds", async () => {
+    const onChanged = vi.fn();
+    const { result } = renderHook(() => useApprovalAction(onChanged));
+
+    let ok;
+    await act(async () => {
+      ok = await result.current.act(
+        () => Promise.resolve(),
+        "Done.",
+        "Failed.",
+      );
+    });
+
+    expect(ok).toBe(true);
+    expect(toast.success).toHaveBeenCalledWith("Done.");
+    expect(onChanged).toHaveBeenCalled();
+    expect(result.current.busy).toBe(false);
+  });
+
+  it("shows the server's refusal, or the fallback, and does not reload", async () => {
+    const onChanged = vi.fn();
+    const { result } = renderHook(() => useApprovalAction(onChanged));
+
+    let ok;
+    await act(async () => {
+      ok = await result.current.act(
+        () =>
+          Promise.reject({
+            response: { data: { message: "Already closed." } },
+          }),
+        "Done.",
+        "Failed.",
+      );
+    });
+    await act(async () => {
+      await result.current.act(
+        () => Promise.reject(new Error("x")),
+        "Done.",
+        "Failed.",
+      );
+    });
+
+    expect(ok).toBe(false);
+    expect(toast.error.mock.calls).toEqual([["Already closed."], ["Failed."]]);
+    expect(onChanged).not.toHaveBeenCalled();
   });
 });

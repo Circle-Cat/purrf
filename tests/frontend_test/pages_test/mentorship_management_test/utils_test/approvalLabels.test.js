@@ -3,6 +3,7 @@ import {
   approvalActionLabel,
   approvalPersonLabel,
   approvalReviewLink,
+  exemptionWhyLines,
 } from "@/pages/MentorshipManagement/utils/approvalLabels";
 
 describe("approvalLabels", () => {
@@ -39,5 +40,30 @@ describe("approvalLabels", () => {
       needsExemption: "1",
       id: "21",
     });
+  });
+
+  it("says why someone needs an exemption, one line per problem", () => {
+    expect(
+      exemptionWhyLines([
+        { reason: "quit_after_match", roundName: "Fall 2025" },
+        {
+          reason: "meetings_short",
+          roundName: "Fall 2025",
+          completed: 2,
+          required: 5,
+        },
+        {
+          reason: "meetings_short",
+          roundName: null,
+          completed: null,
+          required: 6,
+        },
+      ]),
+    ).toEqual([
+      "Quit after being matched in Fall 2025",
+      "Meetings short in Fall 2025: 2 of 5",
+      "Meetings short in an earlier round: 0 of 6",
+    ]);
+    expect(exemptionWhyLines(undefined)).toEqual([]);
   });
 });
