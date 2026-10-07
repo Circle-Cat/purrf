@@ -373,6 +373,27 @@ describe("NotificationBell", () => {
     ).toBeInTheDocument();
   });
 
+  // -- posting reviews ----------------------------------------------------
+
+  it.each([
+    ["approved", 'Rae Kim approved "Backend Engineer"'],
+    ["rejected", 'Rae Kim rejected "Backend Engineer"'],
+    ["withdrawn", 'Rae Kim withdrew the review of "Backend Engineer"'],
+  ])("says a posting review was %s", async (decision, text) => {
+    await openWith({
+      id: 11,
+      eventType: "recruiting.review_decided",
+      jobTitle: "Backend Engineer",
+      applicantName: "",
+      subjectName: "",
+      actorName: "Rae Kim",
+      createdAt: "2026-10-07T00:00:00Z",
+      details: { kind: "initial", reviewId: 31, decision },
+    });
+
+    expect(screen.getByText(text)).toBeInTheDocument();
+  });
+
   // -- mentorship approvals ----------------------------------------------
   //
   // Written under subject_type "mentorship_round": what is asked for, the

@@ -99,4 +99,32 @@ describe("ApprovalRequestDialog", () => {
       screen.getByText("2 open applications will be closed."),
     ).toBeInTheDocument();
   });
+
+  it("labels options, hints at who is left out, and names the reason box as asked", () => {
+    renderDialog({
+      askReason: true,
+      reasonLabel: "Message (optional)",
+      reviewerHint: "You are not in this list.",
+      optionLabel: (r) => `${r.name} <${r.userId}>`,
+    });
+
+    expect(
+      screen.getByRole("option", { name: "Rae Kim <8>" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("You are not in this list.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Message (optional)")).toBeInTheDocument();
+  });
+
+  it("shows the caller's explanation in place of an empty picker", () => {
+    renderDialog({
+      reviewers: [],
+      emptyContent: <p>Ask an admin to grant someone access.</p>,
+    });
+
+    expect(
+      screen.getByText("Ask an admin to grant someone access."),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Reviewer")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send request" })).toBeDisabled();
+  });
 });
