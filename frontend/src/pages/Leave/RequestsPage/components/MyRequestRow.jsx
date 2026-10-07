@@ -60,6 +60,9 @@ const MyRequestRow = ({ row, isWithdrawable, isWithdrawing, onWithdraw }) => {
         {row.reason && (
           <p className="mt-1 text-sm text-muted-foreground">{row.reason}</p>
         )}
+        {row.decisionComment && (
+          <p className="mt-1 text-sm">{`Your manager's reason: ${row.decisionComment}`}</p>
+        )}
         {row.isLateNotice && (
           <p className="mt-1 text-sm text-amber-700">
             {`Submitted with less than ${row.requiredNoticeWorkdays} working days' notice`}

@@ -33,9 +33,9 @@ import { LEAVE_REQUEST_STATUS } from "@/constants/LeaveRequest";
  *   isLoading: boolean,
  *   loadError: boolean,
  *   decidingId: number|null,
- *   decideError: boolean,
+ *   decideError: string|null,
  *   load: () => void,
- *   decide: (requestId: number, approve: boolean) => Promise<void>,
+ *   decide: (requestId: number, approve: boolean, comment?: string) => Promise<void>,
  * }}
  */
 export const useLeaveApprovals = ({ enabled = true } = {}) => {
@@ -43,7 +43,9 @@ export const useLeaveApprovals = ({ enabled = true } = {}) => {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [decidingId, setDecidingId] = useState(null);
-  const [decideError, setDecideError] = useState(false);
+  // The server's own wording: an approval refused because the leave has
+  // started or its hours have changed says so, and the manager acts on that.
+  const [decideError, setDecideError] = useState(null);
 
   const load = useCallback(() => {
     if (!enabled) return Promise.resolve();
@@ -65,18 +67,21 @@ export const useLeaveApprovals = ({ enabled = true } = {}) => {
   }, [load]);
 
   const decide = useCallback(
-    async (requestId, approve) => {
+    async (requestId, approve, comment = null) => {
       // One decision at a time. Approving is irreversible, and a second click
       // while the first is in flight would be answered by the server with a
       // refusal the user reads as their own approval having failed.
       if (decidingId !== null) return;
       setDecidingId(requestId);
-      setDecideError(false);
+      setDecideError(null);
       try {
-        await decideLeaveRequest(requestId, approve);
+        await decideLeaveRequest(requestId, approve, comment);
         await load();
-      } catch {
-        setDecideError(true);
+      } catch (error) {
+        setDecideError(
+          error?.response?.data?.message ??
+            "That decision didn't go through. Nothing was recorded — try again.",
+        );
       } finally {
         setDecidingId(null);
       }

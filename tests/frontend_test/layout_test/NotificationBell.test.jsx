@@ -489,6 +489,49 @@ describe("NotificationBell", () => {
     expect(screen.getByText(text)).toBeInTheDocument();
   });
 
+  // -- leave requests -----------------------------------------------------
+  //
+  // What the leave was for comes from details; the manager hears of a filing
+  // or a withdrawal, the employee of the decision.
+
+  const leaveRow = (eventType, details) => ({
+    id: 11,
+    eventType,
+    jobTitle: "",
+    applicantName: "",
+    subjectName: "",
+    actorName: "Ann Lee",
+    createdAt: "2026-10-07T00:00:00Z",
+    details: {
+      requestId: 40,
+      leaveType: "paid",
+      startDate: "2026-11-03",
+      endDate: "2026-11-05",
+      ...details,
+    },
+  });
+
+  it("tells a manager a leave request was filed", async () => {
+    await openWith(leaveRow("leave.request_submitted", {}));
+
+    expect(
+      screen.getByText("Ann Lee asked for paid leave, Nov 3 – Nov 5, 2026"),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    ["approved", "Ann Lee approved your paid leave, Nov 3 – Nov 5, 2026"],
+    ["rejected", "Ann Lee rejected your paid leave, Nov 3 – Nov 5, 2026"],
+    [
+      "withdrawn",
+      "Ann Lee withdrew their request for paid leave, Nov 3 – Nov 5, 2026",
+    ],
+  ])("tells the other side a leave request was %s", async (decision, text) => {
+    await openWith(leaveRow("leave.request_decided", { decision }));
+
+    expect(screen.getByText(text)).toBeInTheDocument();
+  });
+
   // -- the matching-run line ---------------------------------------------
   //
   // Written under subject_type "mentorship_round", so everything it says comes

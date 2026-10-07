@@ -84,6 +84,21 @@ describe("LeaveRequestsPage", () => {
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
   });
 
+  it("tells the employee why their manager decided as they did", async () => {
+    api.getMyLeaveRequests.mockResolvedValue(
+      envelope([
+        row({ status: "rejected", decisionComment: "Team is short that week" }),
+      ]),
+    );
+    renderPage();
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Your manager's reason: Team is short that week"),
+      ).toBeInTheDocument(),
+    );
+  });
+
   it("lists what has been asked for, with the hours the server computed", async () => {
     renderPage();
 

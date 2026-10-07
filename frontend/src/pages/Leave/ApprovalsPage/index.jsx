@@ -68,11 +68,7 @@ const LeaveApprovalsPage = () => {
 
       {!isLoading && !loadError && (
         <>
-          {decideError && (
-            <p className="text-sm text-red-700">
-              That decision didn't go through. Nothing was recorded — try again.
-            </p>
-          )}
+          {decideError && <p className="text-sm text-red-700">{decideError}</p>}
 
           <Card className="border-gray-200 shadow-sm">
             <CardHeader>
