@@ -13,6 +13,11 @@ from backend.dto.participant_search_filter_dto import (
 from backend.common.mentorship_enums import ParticipantRole
 from backend.dto.matching_run_create_dto import MatchingRunCreateDto
 from backend.dto.matching_run_dto import MatchingDraftChangesDto
+from backend.dto.mentorship_approval_dto import (
+    ApprovalDecisionDto,
+    ApprovalReassignDto,
+    ApprovalRequestCreateDto,
+)
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
 
@@ -60,11 +65,32 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         )
         self.mock_database.session.return_value.__aexit__.return_value = None
 
+        self.approval = {
+            "request_id": 31,
+            "action": "publish_matching",
+            "status": "pending",
+            "round": {"round_id": 7, "name": "Spring 2026"},
+            "target_id": "r7-x-y",
+            "raised_by": {"user_id": 9, "name": "Ada Ng"},
+            "reviewer": {"user_id": 8, "name": "Rae Kim"},
+            "reason": "Reviewed every pair",
+        }
+        self.mock_approval_service = MagicMock()
+        for name in ("request_publish", "reassign", "decide", "withdraw"):
+            setattr(
+                self.mock_approval_service, name, AsyncMock(return_value=self.approval)
+            )
+        self.mock_approval_service.list_mine = AsyncMock(return_value=[self.approval])
+        self.mock_approval_service.list_reviewers = AsyncMock(
+            return_value=[{"user_id": 8, "name": "Rae Kim"}]
+        )
+
         self.controller = MentorshipAdminController(
             mentorship_admin_service=self.mock_admin_service,
             matching_run_service=self.mock_matching_run_service,
             matching_run_read_service=self.mock_matching_run_read_service,
             matching_draft_service=self.mock_matching_draft_service,
+            mentorship_approval_service=self.mock_approval_service,
             launchdarkly_service=self.mock_launchdarkly_service,
             database=self.mock_database,
         )
@@ -422,6 +448,129 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
             [("1", "11", "Moved"), ("2", None, "")],
         )
         self.assertEqual(response["data"].draft_count, 2)
+
+    async def test_requesting_publishing_names_the_round_reviewer_and_reason(self):
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+        body = ApprovalRequestCreateDto.model_validate({
+            "reviewerId": 8,
+            "reason": "Reviewed every pair",
+        })
+
+        response = await self.controller.request_publishing(7, body, caller)
+
+        self.mock_approval_service.request_publish.assert_awaited_once_with(
+            self.mock_session,
+            round_id=7,
+            actor_id=9,
+            reviewer_id=8,
+            reason="Reviewed every pair",
+        )
+        self.assertEqual(response["data"].request_id, 31)
+
+    async def test_the_approvers_leave_out_the_caller(self):
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+
+        response = await self.controller.list_approvers(caller)
+
+        self.mock_approval_service.list_reviewers.assert_awaited_once_with(
+            self.mock_session, 9
+        )
+        self.assertEqual([r.user_id for r in response["data"]], [8])
+
+    async def test_my_approvals_are_the_caller_s(self):
+        caller = UserContextDto(sub="auth0|2", primary_email="rae@x.org", user_id=8)
+
+        response = await self.controller.list_my_approvals(caller)
+
+        self.mock_approval_service.list_mine.assert_awaited_once_with(
+            self.mock_session, 8
+        )
+        self.assertEqual(response["data"][0].round.name, "Spring 2026")
+
+    async def test_reassigning_is_done_as_the_caller(self):
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+
+        await self.controller.reassign_approval(
+            31, ApprovalReassignDto(reviewer_id=12), caller
+        )
+
+        self.mock_approval_service.reassign.assert_awaited_once_with(
+            self.mock_session, request_id=31, actor_id=9, reviewer_id=12
+        )
+
+    async def test_a_decision_is_passed_through_as_approve_or_reject(self):
+        caller = UserContextDto(sub="auth0|2", primary_email="rae@x.org", user_id=8)
+
+        await self.controller.decide_approval(
+            31,
+            ApprovalDecisionDto(decision="reject", comment="Mentor 10 is away"),
+            caller,
+        )
+        await self.controller.decide_approval(
+            31, ApprovalDecisionDto(decision="approve"), caller
+        )
+
+        calls = self.mock_approval_service.decide.await_args_list
+        self.assertEqual(
+            [(c.kwargs["approve"], c.kwargs["comment"]) for c in calls],
+            [(False, "Mentor 10 is away"), (True, None)],
+        )
+        self.assertEqual({c.kwargs["actor_id"] for c in calls}, {8})
+
+    async def test_withdrawing_is_done_as_the_caller(self):
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+
+        await self.controller.withdraw_approval(31, caller)
+
+        self.mock_approval_service.withdraw.assert_awaited_once_with(
+            self.mock_session, request_id=31, actor_id=9
+        )
+
+    async def test_approvals_are_refused_while_the_flag_is_off(self):
+        self.mock_launchdarkly_service.is_matching_run_enabled.return_value = False
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+        create = ApprovalRequestCreateDto(reviewer_id=8, reason="Reviewed")
+
+        for call in (
+            self.controller.request_publishing(7, create, caller),
+            self.controller.list_approvers(caller),
+            self.controller.list_my_approvals(caller),
+            self.controller.reassign_approval(
+                31, ApprovalReassignDto(reviewer_id=12), caller
+            ),
+            self.controller.decide_approval(
+                31, ApprovalDecisionDto(decision="approve"), caller
+            ),
+            self.controller.withdraw_approval(31, caller),
+        ):
+            with self.assertRaises(PermissionError):
+                await call
+
+        for name in (
+            "request_publish",
+            "list_reviewers",
+            "list_mine",
+            "reassign",
+            "decide",
+            "withdraw",
+        ):
+            getattr(self.mock_approval_service, name).assert_not_awaited()
+
+    def test_the_approval_routes_carry_their_permissions(self):
+        routes = {
+            (route.path, tuple(sorted(route.methods))): route
+            for route in self.controller.router.routes
+        }
+        expected = {
+            ("/mentorship/admin/match-runs/{round_id}/publish-request", "POST"),
+            ("/mentorship/admin/approvals/approvers", "GET"),
+            ("/mentorship/admin/approvals/mine", "GET"),
+            ("/mentorship/admin/approvals/{request_id}/reassign", "POST"),
+            ("/mentorship/admin/approvals/{request_id}/decide", "POST"),
+            ("/mentorship/admin/approvals/{request_id}/withdraw", "POST"),
+        }
+        for path, method in expected:
+            self.assertIn((path, (method,)), routes)
 
     async def test_editing_is_refused_while_the_flag_is_off(self):
         self.mock_launchdarkly_service.is_matching_run_enabled.return_value = False

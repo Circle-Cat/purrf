@@ -534,8 +534,25 @@ class TestAppDependencyBuilder(TestCase):
             matching_run_service=builder.matching_run_service,
             matching_run_read_service=builder.matching_run_read_service,
             matching_draft_service=builder.matching_draft_service,
+            mentorship_approval_service=builder.mentorship_approval_service,
             launchdarkly_service=builder.launchdarkly_service,
             database=mock_database_cls.return_value,
+        )
+        # One approval service, holding the publish handler, is what locks
+        # editing, a new run and the overview to the same pending request.
+        self.assertIs(
+            builder.matching_run_service.approval_service, builder.approval_service
+        )
+        self.assertIs(
+            builder.matching_draft_service.approval_service, builder.approval_service
+        )
+        self.assertIs(
+            builder.matching_run_read_service.approval_service,
+            builder.approval_service,
+        )
+        self.assertIs(
+            builder.approval_service.handler_for("publish_matching"),
+            builder.publish_matching_handler,
         )
         mock_rounds_service_cls.assert_called_once_with(
             mentorship_round_repository=mock_mentorship_round_repository_cls.return_value,

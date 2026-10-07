@@ -106,6 +106,7 @@ py_library(
         "//backend/admin:permission_admin_service",
         "//backend/admin:user_account_controller",
         "//backend/admin:user_account_service",
+        "//backend/approval:approval_service",
         "//backend/authentication:authentication_controller",
         "//backend/authentication:authentication_service",
         "//backend/authentication:email_management_controller",

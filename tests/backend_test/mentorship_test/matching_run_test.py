@@ -21,6 +21,15 @@ from backend.common.constants import THREE_MONTHS_IN_SECONDS
 from backend.mentorship.matching_draft import DraftEntry
 from backend.mentorship.matching_storage import EDIT_LOCK_TTL_SECONDS, MatchingStorage
 
+
+def _no_approvals():
+    """An approval service with nothing pending and nothing closed."""
+    approvals = MagicMock()
+    approvals.get_pending_for_target = AsyncMock(return_value=None)
+    approvals.get_latest_closed_for_target = AsyncMock(return_value=None)
+    return approvals
+
+
 _NO_SKILLS = {key: False for key in SKILL_KEYS}
 _NO_INDUSTRY = {key: False for key in INDUSTRY_KEYS}
 
@@ -343,6 +352,20 @@ class MatchingStorageTest(unittest.TestCase):
         self.assertEqual(results["e0"].mentor_id, "m1")
         self.assertIsNone(results["e1"].mentor_id)
 
+    def test_clearing_the_pointer_after_a_publish_hides_that_run(self):
+        self.storage.point_round_at(7, "r7-published")
+
+        self.storage.clear_round_pointer(7, "r7-published")
+
+        self.assertIsNone(self.storage.current_run_id(7))
+
+    def test_clearing_the_pointer_leaves_a_newer_run_alone(self):
+        self.storage.point_round_at(7, "r7-newer")
+
+        self.storage.clear_round_pointer(7, "r7-published")
+
+        self.assertEqual(self.storage.current_run_id(7), "r7-newer")
+
 
 class MatchingRunServiceTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -355,11 +378,13 @@ class MatchingRunServiceTest(unittest.IsolatedAsyncioTestCase):
         self.storage.claim_round.return_value = True
         self.job_client = MagicMock()
         self.job_client.start.return_value = "projects/p/l/jobs/j/executions/e"
+        self.approvals = _no_approvals()
         self.service = MatchingRunService(
             matching_payload_service=self.payload_service,
             matching_storage=self.storage,
             matching_job_client=self.job_client,
             matching_eligibility_service=_everyone_eligible(),
+            approval_service=self.approvals,
             logger=MagicMock(),
         )
 
@@ -469,6 +494,28 @@ class MatchingRunServiceTest(unittest.IsolatedAsyncioTestCase):
             "42",
         )
 
+    async def test_a_result_waiting_for_approval_to_publish_refuses_a_new_run(self):
+        self.storage.current_run_id.return_value = "r7-waiting"
+        self.approvals.get_pending_for_target.return_value = MagicMock()
+
+        with self.assertRaises(ConflictError) as caught:
+            await self.service.start_run(MagicMock(), 7, [1, 2])
+
+        self.assertIn("waiting for approval", str(caught.exception))
+        self.approvals.get_pending_for_target.assert_awaited_once()
+        self.assertEqual(
+            self.approvals.get_pending_for_target.await_args.args[1:],
+            ("publish_matching", "r7-waiting"),
+        )
+        self.storage.claim_round.assert_not_called()
+
+    async def test_a_round_with_no_run_yet_is_not_checked_for_approvals(self):
+        self.storage.current_run_id.return_value = None
+
+        await self.service.start_run(MagicMock(), 7, [1, 2])
+
+        self.approvals.get_pending_for_target.assert_not_awaited()
+
 
 class MatchingRunFailedStartTest(unittest.IsolatedAsyncioTestCase):
     """What a failed trigger leaves in Redis, through the real key layout."""
@@ -482,11 +529,13 @@ class MatchingRunFailedStartTest(unittest.IsolatedAsyncioTestCase):
             return_value=_matching_input(round_id=7)
         )
         self.job_client = MagicMock()
+        self.approvals = _no_approvals()
         self.service = MatchingRunService(
             matching_payload_service=payload_service,
             matching_storage=MatchingStorage(self.redis, MagicMock()),
             matching_job_client=self.job_client,
             matching_eligibility_service=_everyone_eligible(),
+            approval_service=self.approvals,
             logger=MagicMock(),
         )
 

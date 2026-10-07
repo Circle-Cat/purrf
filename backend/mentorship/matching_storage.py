@@ -202,6 +202,21 @@ class MatchingStorage:
             round_current_key(round_id), run_id, ex=THREE_MONTHS_IN_SECONDS
         )
 
+    def clear_round_pointer(self, round_id: int, run_id: str) -> None:
+        """Stop the review screen finding this run, once its result is published.
+
+        Deletes only a pointer still naming this run, so clearing after a
+        publish cannot hide a newer run started since.
+
+        Args:
+            round_id (int): The round.
+            run_id (str): The run that was published.
+        """
+        key = round_current_key(round_id)
+        if self.redis_client.get(key) != run_id:
+            return
+        self.redis_client.delete(key)
+
     def _write_people(self, key: str, people) -> None:
         """Fill one person hash in batches, then give the whole key its expiry."""
         batch: dict[str, str] = {}

@@ -12,6 +12,7 @@ from datetime import date
 from backend.common.exceptions import ConflictError
 from backend.common.matching_job_client import MatcherJobNotStarted
 from backend.mentorship.matching_payload_service import new_run_id
+from backend.mentorship.publish_matching_handler import PUBLISH_MATCHING
 
 
 class MatchingRunService:
@@ -23,6 +24,7 @@ class MatchingRunService:
         matching_storage,
         matching_job_client,
         matching_eligibility_service,
+        approval_service,
         logger,
     ):
         """
@@ -31,12 +33,15 @@ class MatchingRunService:
             matching_eligibility_service: Says who may be matched.
             matching_storage: Where the input goes.
             matching_job_client: Starts the job that reads it.
+            approval_service (ApprovalService): Says whether the round's
+                result is waiting for approval to publish.
             logger: Injected logger.
         """
         self.matching_payload_service = matching_payload_service
         self.matching_storage = matching_storage
         self.matching_job_client = matching_job_client
         self.matching_eligibility_service = matching_eligibility_service
+        self.approval_service = approval_service
         self.logger = logger
 
     async def start_run(
@@ -74,7 +79,8 @@ class MatchingRunService:
                 this returns as soon as it has started rather than waiting.
 
         Raises:
-            ConflictError: This round already has a run going.
+            ConflictError: This round already has a run going, or its result
+                is waiting for approval to publish.
             ValueError: A requested user is not eligible for matching in the
                 round, is not registered for it, the
                 selection has no mentor or no mentee, or the job is not
@@ -82,6 +88,16 @@ class MatchingRunService:
             requests.RequestException: The trigger got no answer. The round
                 stays locked and points at this run, which may be running.
         """
+        # A new run would move the round's pointer off the run waiting to be
+        # published, and the request would be approving a run nobody can see.
+        current = self.matching_storage.current_run_id(round_id)
+        if current is not None and await self.approval_service.get_pending_for_target(
+            session, PUBLISH_MATCHING, current
+        ):
+            raise ConflictError(
+                f"Round {round_id}'s result is waiting for approval to publish."
+            )
+
         # Checked before the round is claimed, so a refused selection never
         # holds the lock.
         reasons = await self.matching_eligibility_service.ineligible_by_user(

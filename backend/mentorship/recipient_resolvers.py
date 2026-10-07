@@ -14,9 +14,13 @@ from backend.common.mentorship_enums import MentorshipEvent
 from backend.entity.event_entity import EventEntity
 from backend.notification_management.recipient_registry import register_recipients
 from backend.repository.application_repository import ApplicationRepository
+from backend.repository.approval_request_repository import (
+    ApprovalRequestRepository,
+)
 
-# Stateless, so one module-level instance serves every resolver.
+# Stateless, so these module-level instances serve every resolver.
 _application_repository = ApplicationRepository()
+_approval_request_repository = ApprovalRequestRepository()
 
 
 @register_recipients(MentorshipEvent.MENTOR_ADMITTED, subject_type="application")
@@ -77,3 +81,71 @@ async def _run_starter(session: AsyncSession, event: EventEntity) -> set[int]:
         return {int(raw)}
     except (TypeError, ValueError):
         return set()
+
+
+async def _approval_request(session: AsyncSession, event: EventEntity):
+    """The approval request an event names in ``details["requestId"]``.
+
+    Raises:
+        ValueError: The event names no request, or one that does not exist.
+            Failing loudly beats telling nobody about a request.
+    """
+    request_id = event.details.get("requestId")
+    if request_id is None:
+        raise ValueError(f"{event.event_type!r} requires details['requestId']")
+    row = await _approval_request_repository.get(session, int(request_id))
+    if row is None:
+        raise ValueError(f"{event.event_type!r} names unknown request {request_id}")
+    return row
+
+
+@register_recipients(
+    MentorshipEvent.APPROVAL_REQUESTED, subject_type="mentorship_round"
+)
+async def _approval_reviewer(session: AsyncSession, event: EventEntity) -> set[int]:
+    """The reviewer the request names: it is waiting on them.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        event (EventEntity): The event; its subject is the round.
+
+    Returns:
+        set[int]: The reviewer's user id.
+    """
+    return {(await _approval_request(session, event)).reviewer_id}
+
+
+@register_recipients(
+    MentorshipEvent.APPROVAL_REASSIGNED, subject_type="mentorship_round"
+)
+async def _approval_new_reviewer(session: AsyncSession, event: EventEntity) -> set[int]:
+    """The reviewer the request was handed to. Read after the move, so the
+    row already names them; the reviewer it was taken from is not told.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        event (EventEntity): The event; its subject is the round.
+
+    Returns:
+        set[int]: The new reviewer's user id.
+    """
+    return {(await _approval_request(session, event)).reviewer_id}
+
+
+@register_recipients(MentorshipEvent.APPROVAL_DECIDED, subject_type="mentorship_round")
+async def _approval_other_side(session: AsyncSession, event: EventEntity) -> set[int]:
+    """Whoever the closing of a request is news to: the raiser when the
+    reviewer decided it, the reviewer when the raiser withdrew it.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        event (EventEntity): The event; ``details["decision"]`` is approved,
+            rejected or withdrawn.
+
+    Returns:
+        set[int]: One user id.
+    """
+    row = await _approval_request(session, event)
+    if event.details.get("decision") == "withdrawn":
+        return {row.reviewer_id}
+    return {row.raised_by}

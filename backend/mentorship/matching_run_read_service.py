@@ -7,6 +7,7 @@ comes back days later with a round in hand and nothing else.
 
 from datetime import datetime, timedelta, timezone
 
+from backend.common.approval_enums import ApprovalRequestStatus
 from backend.common.mentorship_enums import MatchingRunStatus
 from backend.common.name_utils import user_display_name
 from backend.mentorship.matching_draft import (
@@ -15,6 +16,7 @@ from backend.mentorship.matching_draft import (
     problems,
     user_id_order,
 )
+from backend.mentorship.publish_matching_handler import PUBLISH_MATCHING
 
 
 def _needs_attention(item) -> tuple:
@@ -105,16 +107,20 @@ class MatchingRunReadService:
         self,
         matching_storage,
         users_repository,
+        approval_service,
         logger,
     ):
         """
         Args:
             matching_storage: Where a run's input, result and draft live.
             users_repository: Resolves the ids a result is written in.
+            approval_service (ApprovalService): Finds the request to publish
+                a run, if one is waiting or was turned down.
             logger: Injected logger.
         """
         self.matching_storage = matching_storage
         self.users_repository = users_repository
+        self.approval_service = approval_service
         self.logger = logger
 
     async def _name_map(self, session, user_ids) -> dict[str, str]:
@@ -265,13 +271,30 @@ class MatchingRunReadService:
         unmatched = [m for m in mentor_ids if counts.get(m, 0) == 0]
         found = problems(rows, slots)
         lock = self.matching_storage.edit_lock(run_id)
+        pending = await self.approval_service.get_pending_for_target(
+            session, PUBLISH_MATCHING, run_id
+        )
+        closed = await self.approval_service.get_latest_closed_for_target(
+            session, PUBLISH_MATCHING, run_id
+        )
+        rejected = (
+            closed
+            if closed is not None and closed.status == ApprovalRequestStatus.REJECTED
+            else None
+        )
 
         names = await self._name_map(
             session,
             ([starter] if starter is not None else [])
             + ([lock[0]] if lock else [])
             + mentor_ids
-            + [p["mentee_id"] for p in found if "mentee_id" in p],
+            + [p["mentee_id"] for p in found if "mentee_id" in p]
+            + (
+                [str(pending.reviewer_id), str(pending.raised_by)]
+                if pending is not None
+                else []
+            )
+            + ([str(rejected.decided_by)] if rejected is not None else []),
         )
         matched = sum(1 for row in rows.values() if row.mentor_id is not None)
         return {
@@ -308,6 +331,24 @@ class MatchingRunReadService:
                 }
                 for p in found
             ],
+            "publish_request": None
+            if pending is None
+            else {
+                "request_id": pending.request_id,
+                "reviewer": _named(str(pending.reviewer_id), names),
+                "raised_by": _named(str(pending.raised_by), names),
+                "reason": pending.reason,
+                "created_at": pending.created_at.isoformat(timespec="seconds"),
+            },
+            "last_publish_rejection": None
+            if rejected is None
+            else {
+                "comment": rejected.decision_comment,
+                "decided_by": _named(str(rejected.decided_by), names),
+                "decided_at": rejected.decided_at.isoformat(timespec="seconds")
+                if rejected.decided_at
+                else None,
+            },
         }
 
     async def read_results(

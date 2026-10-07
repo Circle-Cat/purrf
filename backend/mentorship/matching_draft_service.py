@@ -13,20 +13,26 @@ from backend.mentorship.matching_draft import (
     allowed_mentors,
     is_matchers_choice,
 )
+from backend.mentorship.publish_matching_handler import PUBLISH_MATCHING
+
+WAITING_TO_PUBLISH = "Waiting for approval to publish."
 
 
 class MatchingDraftService:
     """Takes and releases a run's edit lock and saves its draft."""
 
-    def __init__(self, matching_storage, users_repository, logger):
+    def __init__(self, matching_storage, users_repository, approval_service, logger):
         """
         Args:
             matching_storage: Where the run, its draft and its lock live.
             users_repository: Names the admin holding the lock.
+            approval_service (ApprovalService): Says whether the run is
+                waiting for approval to publish, which locks it.
             logger: Injected logger.
         """
         self.matching_storage = matching_storage
         self.users_repository = users_repository
+        self.approval_service = approval_service
         self.logger = logger
 
     def _editable_run(self, round_id: int) -> tuple[str, dict]:
@@ -69,9 +75,15 @@ class MatchingDraftService:
 
         Raises:
             ValueError: No result to edit.
-            ConflictError: Another admin holds the lock.
+            ConflictError: Another admin holds the lock, or the result is
+                waiting for approval to publish.
         """
         run_id, _ = self._editable_run(round_id)
+        if await self.approval_service.get_pending_for_target(
+            session, PUBLISH_MATCHING, run_id
+        ):
+            # What the reviewer approves has to be what was asked for.
+            raise ConflictError(WAITING_TO_PUBLISH)
         me = str(user_id)
         if not self.matching_storage.take_edit_lock(run_id, me):
             held = self.matching_storage.edit_lock(run_id)

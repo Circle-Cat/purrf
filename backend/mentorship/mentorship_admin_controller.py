@@ -13,6 +13,13 @@ from backend.dto.matching_run_dto import (
     MatchingUnmatchedPageDto,
     MatchingRunStartedDto,
 )
+from backend.dto.mentorship_approval_dto import (
+    ApprovalDecisionDto,
+    ApprovalPersonDto,
+    ApprovalReassignDto,
+    ApprovalRequestCreateDto,
+    MentorshipApprovalDto,
+)
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
 from backend.common.fast_api_response_wrapper import api_response
@@ -25,6 +32,12 @@ from backend.common.api_endpoints import (
     MENTORSHIP_ADMIN_MATCH_RUN_UNMATCHED,
     MENTORSHIP_ADMIN_MATCH_RUN_EDIT_LOCK,
     MENTORSHIP_ADMIN_MATCH_RUN_DRAFT,
+    MENTORSHIP_ADMIN_MATCH_RUN_PUBLISH_REQUEST,
+    MENTORSHIP_ADMIN_APPROVERS,
+    MENTORSHIP_ADMIN_APPROVALS_MINE,
+    MENTORSHIP_ADMIN_APPROVAL_REASSIGN,
+    MENTORSHIP_ADMIN_APPROVAL_DECIDE,
+    MENTORSHIP_ADMIN_APPROVAL_WITHDRAW,
     MENTORSHIP_ADMIN_ROUND_FEEDBACK,
     MENTORSHIP_ADMIN_ROUND_UNREGISTERED,
 )
@@ -39,6 +52,7 @@ class MentorshipAdminController:
         matching_run_service,
         matching_run_read_service,
         matching_draft_service,
+        mentorship_approval_service,
         launchdarkly_service,
         database,
     ):
@@ -46,6 +60,7 @@ class MentorshipAdminController:
         self.matching_run_service = matching_run_service
         self.matching_run_read_service = matching_run_read_service
         self.matching_draft_service = matching_draft_service
+        self.mentorship_approval_service = mentorship_approval_service
         self.launchdarkly_service = launchdarkly_service
         self.database = database
         self.router = APIRouter(tags=["mentorship-admin"])
@@ -137,6 +152,60 @@ class MentorshipAdminController:
                 self.save_matching_draft
             ),
             methods=["PATCH"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ADMIN_MATCH_RUN_PUBLISH_REQUEST,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])(
+                self.request_publishing
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ADMIN_APPROVERS,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])(
+                self.list_approvers
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ADMIN_APPROVALS_MINE,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_APPROVE])(
+                self.list_my_approvals
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ADMIN_APPROVAL_REASSIGN,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])(
+                self.reassign_approval
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ADMIN_APPROVAL_DECIDE,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_APPROVE])(
+                self.decide_approval
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ADMIN_APPROVAL_WITHDRAW,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])(
+                self.withdraw_approval
+            ),
+            methods=["POST"],
             response_model=None,
         )
 
@@ -498,4 +567,191 @@ class MentorshipAdminController:
         return api_response(
             message="Successfully saved the matching draft.",
             data=MatchingDraftSavedDto.model_validate(result),
+        )
+
+    def _require_matching(self, current_user: UserContextDto) -> None:
+        """Approvals in the mentorship console sit behind the same flag as
+        matching: publishing and exemptions are both part of it."""
+        if not self.launchdarkly_service.is_matching_run_enabled(current_user):
+            raise PermissionError("Matching runs are not yet available.")
+
+    async def request_publishing(
+        self,
+        round_id: int,
+        body: ApprovalRequestCreateDto,
+        current_user: UserContextDto,
+    ):
+        """
+        Ask a reviewer to approve publishing the round's matching result.
+
+        Args:
+            round_id (int): Round whose current run is to be published.
+            body (ApprovalRequestCreateDto): The reviewer named and the reason.
+            current_user (UserContextDto): Who is asking.
+
+        Returns:
+            API response carrying the new request.
+
+        Raises:
+            PermissionError: The flag is off for this admin. Surfaces as 403.
+            ConflictError: The result cannot be published now, or is already
+                waiting for approval. Surfaces as 409.
+        """
+        self._require_matching(current_user)
+        async with self.database.session() as session:
+            result = await self.mentorship_approval_service.request_publish(
+                session,
+                round_id=round_id,
+                actor_id=current_user.user_id,
+                reviewer_id=body.reviewer_id,
+                reason=body.reason,
+            )
+        return api_response(
+            message="Successfully asked for approval to publish.",
+            data=MentorshipApprovalDto.model_validate(result),
+        )
+
+    async def list_approvers(self, current_user: UserContextDto):
+        """
+        List who a mentorship approval request can be sent to.
+
+        Args:
+            current_user (UserContextDto): The would-be raiser, left out.
+
+        Returns:
+            API response carrying the reviewers.
+
+        Raises:
+            PermissionError: The flag is off for this admin. Surfaces as 403.
+        """
+        self._require_matching(current_user)
+        async with self.database.session() as session:
+            result = await self.mentorship_approval_service.list_reviewers(
+                session, current_user.user_id
+            )
+        return api_response(
+            message="Successfully retrieved the approvers.",
+            data=[ApprovalPersonDto.model_validate(r) for r in result],
+        )
+
+    async def list_my_approvals(self, current_user: UserContextDto):
+        """
+        List the mentorship requests waiting on the caller's decision.
+
+        Args:
+            current_user (UserContextDto): The reviewer.
+
+        Returns:
+            API response carrying the pending requests, oldest first.
+
+        Raises:
+            PermissionError: The flag is off for this admin. Surfaces as 403.
+        """
+        self._require_matching(current_user)
+        async with self.database.session() as session:
+            result = await self.mentorship_approval_service.list_mine(
+                session, current_user.user_id
+            )
+        return api_response(
+            message="Successfully retrieved your pending approvals.",
+            data=[MentorshipApprovalDto.model_validate(r) for r in result],
+        )
+
+    async def reassign_approval(
+        self,
+        request_id: int,
+        body: ApprovalReassignDto,
+        current_user: UserContextDto,
+    ):
+        """
+        Hand a pending mentorship request to another reviewer.
+
+        Args:
+            request_id (int): The request.
+            body (ApprovalReassignDto): The new reviewer.
+            current_user (UserContextDto): Must be the raiser.
+
+        Returns:
+            API response carrying the request.
+
+        Raises:
+            PermissionError: The flag is off, or the caller did not raise it.
+                Surfaces as 403.
+            ConflictError: It is no longer pending. Surfaces as 409.
+        """
+        self._require_matching(current_user)
+        async with self.database.session() as session:
+            result = await self.mentorship_approval_service.reassign(
+                session,
+                request_id=request_id,
+                actor_id=current_user.user_id,
+                reviewer_id=body.reviewer_id,
+            )
+        return api_response(
+            message="Successfully reassigned the request.",
+            data=MentorshipApprovalDto.model_validate(result),
+        )
+
+    async def decide_approval(
+        self,
+        request_id: int,
+        body: ApprovalDecisionDto,
+        current_user: UserContextDto,
+    ):
+        """
+        Approve or reject a mentorship request.
+
+        Args:
+            request_id (int): The request.
+            body (ApprovalDecisionDto): The decision, and the reason for a
+                rejection.
+            current_user (UserContextDto): Must be the named reviewer.
+
+        Returns:
+            API response carrying the closed request.
+
+        Raises:
+            PermissionError: The flag is off, or the caller is not the named
+                reviewer. Surfaces as 403.
+            ConflictError: It is no longer pending, or what it asks for can no
+                longer be done. Surfaces as 409.
+        """
+        self._require_matching(current_user)
+        async with self.database.session() as session:
+            result = await self.mentorship_approval_service.decide(
+                session,
+                request_id=request_id,
+                actor_id=current_user.user_id,
+                approve=body.decision == "approve",
+                comment=body.comment,
+            )
+        return api_response(
+            message="Successfully decided the request.",
+            data=MentorshipApprovalDto.model_validate(result),
+        )
+
+    async def withdraw_approval(self, request_id: int, current_user: UserContextDto):
+        """
+        Take back a mentorship request nobody has decided yet.
+
+        Args:
+            request_id (int): The request.
+            current_user (UserContextDto): Must be the raiser.
+
+        Returns:
+            API response carrying the withdrawn request.
+
+        Raises:
+            PermissionError: The flag is off, or the caller did not raise it.
+                Surfaces as 403.
+            ConflictError: It is no longer pending. Surfaces as 409.
+        """
+        self._require_matching(current_user)
+        async with self.database.session() as session:
+            result = await self.mentorship_approval_service.withdraw(
+                session, request_id=request_id, actor_id=current_user.user_id
+            )
+        return api_response(
+            message="Successfully withdrew the request.",
+            data=MentorshipApprovalDto.model_validate(result),
         )
