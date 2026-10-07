@@ -337,7 +337,7 @@ describe("NotificationBell", () => {
     await openWith(
       blockRow({
         eventType: "user.block_request_decided",
-        details: { requestId: 12, approved: false },
+        details: { requestId: 12, decision: "rejected" },
       }),
     );
 
@@ -352,13 +352,43 @@ describe("NotificationBell", () => {
     await openWith(
       blockRow({
         eventType: "user.block_request_decided",
-        details: { requestId: 12, approved: true },
+        details: { requestId: 12, decision: "approved" },
       }),
     );
 
     expect(
       screen.getByText(
         "Grace Hopper approved the block request you raised about Ada Lovelace",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the reviewer the raiser withdrew the block request", async () => {
+    await openWith(
+      blockRow({
+        eventType: "user.block_request_decided",
+        details: { requestId: 12, decision: "withdrawn" },
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Grace Hopper withdrew the block request about Ada Lovelace",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("reads the decision field, not the old approved flag", async () => {
+    await openWith(
+      blockRow({
+        eventType: "user.block_request_decided",
+        details: { requestId: 12, approved: true, decision: "rejected" },
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Grace Hopper rejected the block request you raised about Ada Lovelace",
       ),
     ).toBeInTheDocument();
   });
