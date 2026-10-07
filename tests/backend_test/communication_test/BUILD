@@ -105,6 +105,7 @@ py_test(
     srcs = ["gmail_sync_service_db_test.py"],
     env_inherit = ["DATABASE_URL"],
     deps = [
+        "//backend/common:communication_enums",
         "//backend/common:ops_enums",
         "//backend/communication",
         "//backend/entity:entities",
@@ -129,5 +130,15 @@ py_test(
     srcs = ["inbox_state_test.py"],
     deps = [
         "//backend/communication",
+    ],
+)
+
+py_test(
+    name = "inbox_router_test",
+    srcs = ["inbox_router_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/communication",
+        "@pypi//sqlalchemy",
     ],
 )

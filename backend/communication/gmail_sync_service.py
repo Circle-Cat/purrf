@@ -46,7 +46,7 @@ def _now():
 
 
 def _empty_summary():
-    return {"threads": 0, "newMessages": 0, "failed": 0}
+    return {"threads": 0, "newMessages": 0, "failed": 0, "unrouted": []}
 
 
 def _list_threads(gmail_thread_ids):
@@ -71,6 +71,7 @@ class GmailSyncService:
         watch_topic,
         database,
         logger,
+        inbox_router,
     ):
         """
         Args:
@@ -84,6 +85,7 @@ class GmailSyncService:
             database (Database): Opens a fresh session to record a failure
                 when the caller's session is no longer usable.
             logger: Application logger.
+            inbox_router (InboxRouter): Claims untracked threads for the Inbox.
         """
         self._gmail = gmail_client
         self._states = state_repository
@@ -93,6 +95,7 @@ class GmailSyncService:
         self._watch_topic = watch_topic
         self._database = database
         self._logger = logger
+        self._inbox_router = inbox_router
         self._mailbox = None
 
     async def mailbox_address(self):
@@ -252,7 +255,9 @@ class GmailSyncService:
         except Exception as exc:
             return await self._on_gmail_error(session, state, exc, is_push)
 
-        summary, transient = await self._sync_threads(session, history["thread_ids"])
+        summary, transient = await self._sync_threads(
+            session, history["thread_ids"], mailbox
+        )
 
         # A rolled-back savepoint may have expired the state row; re-read it.
         state = await self._states.get_for_update(session, mailbox)
@@ -276,23 +281,45 @@ class GmailSyncService:
                     "resync repairs them."
                 ),
             )
+        if summary["unrouted"]:
+            await self._alerts.raise_alert(
+                session,
+                state=state,
+                kind="unrouted_mail",
+                detail=(
+                    f"New mail in Gmail threads {_list_threads(summary['unrouted'])} "
+                    "was addressed to no Inbox alias and stays in Gmail only."
+                ),
+            )
         await session.commit()
         return PushOutcome.ACK, summary
 
-    async def _sync_threads(self, session, thread_ids):
-        """Returns (summary, ids of threads that failed for a reason other than 404)."""
+    async def _sync_threads(self, session, thread_ids, mailbox_address):
+        """Returns (summary, ids of threads that failed for a reason other than 404).
+
+        An untracked thread is offered to the Inbox router first. A created
+        thread is kept even when its handler then fails, so a full resync
+        can still pick it up.
+        """
         summary = _empty_summary()
         transient = []
         for gmail_thread_id in sorted(thread_ids):
             thread = await self._threads.get_by_gmail_thread_id(
                 session, gmail_thread_id
             )
-            if thread is None:
-                continue
-            handler = self._registry.get(thread.context_type)
-            if handler is None:
-                continue
             try:
+                if thread is None:
+                    routed = await self._inbox_router.route(
+                        session, gmail_thread_id, mailbox_address
+                    )
+                    if routed.unrouted:
+                        summary["unrouted"].append(gmail_thread_id)
+                    thread = routed.thread
+                    if thread is None:
+                        continue
+                handler = self._registry.get(thread.context_type)
+                if handler is None:
+                    continue
                 async with session.begin_nested():
                     new_messages = await handler.sync_tracked_thread(session, thread)
             except Exception as exc:

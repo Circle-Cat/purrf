@@ -21,6 +21,7 @@ _TITLES = {
     "watch_renewal_failed": "watch renewal failed",
     "history_expired": "history expired, full resync started",
     "sync_failed": "sync failed",
+    "unrouted_mail": "new mail matched no Inbox alias",
 }
 
 

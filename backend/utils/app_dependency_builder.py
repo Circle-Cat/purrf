@@ -182,6 +182,7 @@ from backend.common.gmail_client import GmailClient
 from backend.communication.email_conversation_service import EmailConversationService
 from backend.communication.email_context_registry import EmailContextRegistry
 from backend.communication.inbox_aliases import InboxAliases
+from backend.communication.inbox_router import InboxRouter
 from backend.communication.gmail_push_controller import GmailPushController
 from backend.communication.gmail_push_service import GmailPushService
 from backend.communication.gmail_maintenance_service import GmailMaintenanceService
@@ -990,6 +991,12 @@ class AppDependencyBuilder:
         gmail_watch_topic = os.getenv(GMAIL_WATCH_TOPIC) or None
         self.gmail_sync_state_repository = GmailSyncStateRepository()
         self.ops_alert_service = OpsAlertService(logger=self.logger)
+        self.inbox_router = InboxRouter(
+            gmail_client=self.gmail_client,
+            thread_repository=self.email_thread_repository,
+            aliases=self.inbox_aliases,
+            logger=self.logger,
+        )
         self.gmail_sync_service = GmailSyncService(
             gmail_client=self.gmail_client,
             state_repository=self.gmail_sync_state_repository,
@@ -999,6 +1006,7 @@ class AppDependencyBuilder:
             watch_topic=gmail_watch_topic,
             database=self.database,
             logger=self.logger,
+            inbox_router=self.inbox_router,
         )
         # Pub/Sub pushes for Gmail use the same service account as the
         # notification pushes, so the allowlist is shared.
