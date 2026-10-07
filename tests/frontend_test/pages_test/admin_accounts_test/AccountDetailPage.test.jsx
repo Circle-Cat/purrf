@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { toast } from "sonner";
 import AdminAccounts from "@/pages/AdminAccounts";
@@ -218,26 +224,85 @@ describe("AccountDetailPage — the block request card", () => {
     ).toBeNull();
   });
 
-  it("approves through the decide endpoint", async () => {
+  it("says so when the raiser gave no reason", async () => {
+    // A request's reason is optional, so an empty one is a normal state and
+    // must not render as a blank line under the header.
+    api.getPendingBlockRequests.mockResolvedValue({
+      data: [request({ reason: null })],
+    });
+    renderPage();
+    expect(await screen.findByText("No reason given.")).toBeInTheDocument();
+  });
+
+  it("treats an empty reason string the same as none", async () => {
+    api.getPendingBlockRequests.mockResolvedValue({
+      data: [request({ reason: "" })],
+    });
+    renderPage();
+    expect(await screen.findByText("No reason given.")).toBeInTheDocument();
+  });
+
+  it("asks for confirmation before approving, then approves with no note", async () => {
     api.getPendingBlockRequests.mockResolvedValue({ data: [request()] });
     renderPage();
     fireEvent.click(
       await screen.findByRole("button", { name: /Approve and block/ }),
     );
+
+    // Approving blocks at once, so the first click only opens the confirm.
+    expect(api.decideBlockRequest).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Block Sam Rivera?")).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("Reason")).not.toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Approve" }));
     await waitFor(() =>
       expect(api.decideBlockRequest).toHaveBeenCalledWith(7, true, null),
     );
   });
 
-  it("sends the reviewer's note so the raiser is told why", async () => {
-    // The outcome email renders this note. Without a field for it a rejection
-    // reaches the raiser as a bare no.
+  it("sends nothing when the approval is cancelled", async () => {
     api.getPendingBlockRequests.mockResolvedValue({ data: [request()] });
     renderPage();
-    fireEvent.change(await screen.findByLabelText(/Note/), {
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Approve and block/ }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(api.decideBlockRequest).not.toHaveBeenCalled();
+  });
+
+  it("needs a reason to reject, and sends it trimmed so the raiser is told why", async () => {
+    api.getPendingBlockRequests.mockResolvedValue({ data: [request()] });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Reject" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText("Reject this block request"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        "Sam Rivera is not blocked. Dana Raiser is told your reason.",
+      ),
+    ).toBeInTheDocument();
+    const confirm = within(dialog).getByRole("button", { name: "Reject" });
+    expect(confirm).toBeDisabled();
+
+    fireEvent.change(within(dialog).getByLabelText("Reason"), {
+      target: { value: "   " },
+    });
+    expect(confirm).toBeDisabled();
+
+    fireEvent.change(within(dialog).getByLabelText("Reason"), {
       target: { value: "  not enough evidence  " },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
 
     await waitFor(() =>
       expect(api.decideBlockRequest).toHaveBeenCalledWith(
@@ -245,15 +310,6 @@ describe("AccountDetailPage — the block request card", () => {
         false,
         "not enough evidence",
       ),
-    );
-  });
-
-  it("rejects through the same endpoint", async () => {
-    api.getPendingBlockRequests.mockResolvedValue({ data: [request()] });
-    renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Reject" }));
-    await waitFor(() =>
-      expect(api.decideBlockRequest).toHaveBeenCalledWith(7, false, null),
     );
   });
 });

@@ -47,12 +47,14 @@ const JOB = {
  * The `user.admin` holders the reviewer pickers choose from. The owner is in
  * the list on purpose: the request dialog has to drop them (nobody reviews
  * their own request) while the reassign dialog has to keep them (they are not
- * the reviewer who currently holds it).
+ * the reviewer who currently holds it). The applicant is in it too, and both
+ * dialogs have to drop them.
  */
 const HOLDERS = [
   { userId: 77, name: "Rita Reviewer" },
   { userId: 88, name: "Sam Steward" },
   { userId: OWNER_ID, name: "Olive Owner" },
+  { userId: APPLICANT_ID, name: "Alice Applicant" },
 ];
 
 /** A BlockRequestDto as the create/reassign/raised endpoints return it. */
@@ -130,6 +132,7 @@ beforeEach(() => {
     data: requestDto(88, "Sam Steward"),
   });
   adminApi.getRaisedBlockRequests.mockResolvedValue({ data: [] });
+  adminApi.withdrawBlockRequest.mockResolvedValue({ data: null });
 });
 
 const renderPage = () => {
@@ -264,6 +267,7 @@ describe("Request block — opening the dialog", () => {
     expect(names).toContain("Rita Reviewer");
     expect(names).toContain("Sam Steward");
     expect(names).not.toContain("Olive Owner");
+    expect(names).not.toContain("Alice Applicant");
   });
 });
 
@@ -300,6 +304,25 @@ describe("Request block — sending the request", () => {
       expect(
         screen.queryByRole("button", { name: "Send request" }),
       ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("sends an empty reason when the raiser gives none", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+
+    await user.click(screen.getByRole("button", { name: "Request block" }));
+    await screen.findByRole("heading", { name: /Request a block/ });
+    expect(screen.getByLabelText("Reason (optional)")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Reviewer"), "77");
+    await user.click(screen.getByRole("button", { name: "Send request" }));
+
+    await waitFor(() =>
+      expect(adminApi.createBlockRequest).toHaveBeenCalledWith(
+        { userId: APPLICANT_ID, reason: "", reviewerId: 77 },
+        "recruiting_application",
+      ),
     );
   });
 
@@ -345,6 +368,7 @@ describe("Request block — reassigning it", () => {
     // the reviewer who has it now, the raiser, and the person it is about.
     expect(names).not.toContain("Rita Reviewer");
     expect(names).not.toContain("Olive Owner");
+    expect(names).not.toContain("Alice Applicant");
     expect(names).toContain("Sam Steward");
   });
 
@@ -366,6 +390,76 @@ describe("Request block — reassigning it", () => {
     await waitFor(() =>
       expect(row).toHaveTextContent("Block requested — sent to Sam Steward"),
     );
+  });
+});
+
+describe("Request block — withdrawing it", () => {
+  it("withdraws the request, clears the row and opens Request block again", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitLoaded();
+    await raiseRequest(user);
+    const row = await requestRow();
+    expect(
+      screen.getByRole("button", { name: "Request block" }),
+    ).toBeDisabled();
+
+    await user.click(within(row).getByRole("button", { name: "Withdraw" }));
+
+    await waitFor(() =>
+      expect(adminApi.withdrawBlockRequest).toHaveBeenCalledWith(42),
+    );
+    await waitFor(() =>
+      expect(screen.queryByText(/Block requested/)).not.toBeInTheDocument(),
+    );
+    expect(toast.success).toHaveBeenCalledWith("Block request withdrawn.");
+    expect(screen.getByRole("button", { name: "Request block" })).toBeEnabled();
+  });
+
+  it("withdraws a request restored from a reload by its id", async () => {
+    const user = userEvent.setup();
+    adminApi.getRaisedBlockRequests.mockResolvedValue({
+      data: [{ ...requestDto(77, "Rita Reviewer"), id: 63 }],
+    });
+    renderPage();
+    await waitLoaded();
+    const row = await requestRow();
+
+    await user.click(within(row).getByRole("button", { name: "Withdraw" }));
+
+    await waitFor(() =>
+      expect(adminApi.withdrawBlockRequest).toHaveBeenCalledWith(63),
+    );
+  });
+
+  it("keeps the row and says why when the withdraw is refused", async () => {
+    const user = userEvent.setup();
+    adminApi.withdrawBlockRequest.mockRejectedValue(
+      new Error("This request has already been decided."),
+    );
+    renderPage();
+    await waitLoaded();
+    await raiseRequest(user);
+    const row = await requestRow();
+    toast.success.mockClear();
+
+    await user.click(within(row).getByRole("button", { name: "Withdraw" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "This request has already been decided.",
+      ),
+    );
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(row).toHaveTextContent("Block requested — sent to Rita Reviewer");
+    await waitFor(() =>
+      expect(
+        within(row).getByRole("button", { name: "Withdraw" }),
+      ).toBeEnabled(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Request block" }),
+    ).toBeDisabled();
   });
 });
 
