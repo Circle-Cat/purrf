@@ -273,7 +273,8 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
     def _out(self, message_id, when):
         m = self._msg(message_id, when)
         m.direction = "outbound"
-        m.from_address = SENDER
+        # An earlier sender alias: reply_alias must come from the service.
+        m.from_address = "careers-old@circlecat.org"
         m.to_addresses = "cand@example.com"
         return m
 
