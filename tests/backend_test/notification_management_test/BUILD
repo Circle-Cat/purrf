@@ -133,7 +133,11 @@ py_test(
     srcs = ["user_recipient_resolvers_test.py"],
     env_inherit = ["DATABASE_URL"],
     deps = [
+        "//backend/admin:block_service",
+        "//backend/common:approval_enums",
+        "//backend/common:mentorship_enums",
         "//backend/common:user_enums",
+        "//backend/entity:entities",
         "//backend/notification_management:recipient_registry",
         "//backend/user_identity:user_recipient_resolvers",
         "//tests/backend_test/repository_test:base_repository_test_lib",

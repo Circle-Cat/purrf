@@ -38,10 +38,10 @@ class BlockRequestDto(BaseDto):
     raised_by_name: str
     raised_from: str
     raised_at: datetime
-    reason: str
+    reason: str | None = None
     reviewer_id: int
     reviewer_name: str
-    status: str  # pending | approved | rejected | superseded
+    status: str  # pending | approved | rejected | withdrawn | superseded
     decided_by: int | None = None
     decided_by_name: str | None = None
     decided_at: datetime | None = None
@@ -56,19 +56,12 @@ class DeactivateRequestDto(BaseRequestDto):
 
 
 class BlockRequestCreateDto(BaseRequestDto):
-    """Ask a named reviewer to block someone."""
+    """Ask a named reviewer to block someone. The reason is optional, as it
+    is on every approval request."""
 
     user_id: int
-    reason: str
+    reason: str | None = None
     reviewer_id: int
-
-    @field_validator("reason")
-    @classmethod
-    def reason_must_not_be_blank(cls, value: str) -> str:
-        """A block request must always carry a non-empty reason."""
-        if not value.strip():
-            raise ValueError("a reason is required")
-        return value
 
 
 class BlockDirectDto(BaseRequestDto):
@@ -86,7 +79,8 @@ class BlockDirectDto(BaseRequestDto):
 
 
 class BlockDecideDto(BaseRequestDto):
-    """The named reviewer's decision on a pending request."""
+    """The named reviewer's decision on a pending request. The note is
+    required to reject."""
 
     approved: bool
     note: str | None = None

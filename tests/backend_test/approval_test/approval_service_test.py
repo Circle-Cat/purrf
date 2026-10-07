@@ -189,6 +189,20 @@ class TestRegistry(ApprovalServiceTestBase):
         with self.assertRaises(ValueError):
             self.service.handler_for("delete_everything")
 
+    def test_a_handler_registered_later_is_found(self):
+        service = ApprovalService(
+            self.requests, self.permissions, self.users, self.logger
+        )
+        handler = ChosenHandler()
+
+        service.register(handler)
+
+        self.assertIs(service.handler_for(handler.action), handler)
+
+    def test_registering_a_second_handler_for_an_action_is_refused(self):
+        with self.assertRaises(ValueError):
+            self.service.register(ChosenHandler())
+
 
 class TestListReviewers(ApprovalServiceTestBase):
     async def test_lists_holders_of_the_review_permission_except_the_raiser(self):

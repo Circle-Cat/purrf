@@ -17,13 +17,16 @@ from backend.dto.user_account_dto import (
 
 
 class TestBlockRequestCreateDto(unittest.TestCase):
-    def test_blank_reason_is_rejected(self):
-        with self.assertRaises(pydantic.ValidationError):
-            BlockRequestCreateDto.model_validate({
-                "userId": 1,
-                "reason": "   ",
-                "reviewerId": 2,
-            })
+    def test_the_reason_is_optional(self):
+        # As on every approval request; the service stores a blank one as None.
+        dto = BlockRequestCreateDto.model_validate({"userId": 1, "reviewerId": 2})
+        self.assertIsNone(dto.reason)
+        blank = BlockRequestCreateDto.model_validate({
+            "userId": 1,
+            "reason": "   ",
+            "reviewerId": 2,
+        })
+        self.assertEqual(blank.reason, "")
 
     def test_reason_is_stripped(self):
         dto = BlockRequestCreateDto.model_validate({

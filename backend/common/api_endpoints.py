@@ -127,6 +127,7 @@ BLOCK_REQUESTS_ENDPOINT = "/block-requests"
 BLOCK_REQUESTS_RAISED_ENDPOINT = "/block-requests/raised"
 BLOCK_REQUEST_REASSIGN_ENDPOINT = "/block-requests/{request_id}/reassign"
 BLOCK_REQUEST_DECIDE_ENDPOINT = "/block-requests/{request_id}/decide"
+BLOCK_REQUEST_WITHDRAW_ENDPOINT = "/block-requests/{request_id}/withdraw"
 # The reviewer picker for a raise. Named for its use, and outside /admin like
 # the rest of this group, because a raiser holds no console permission.
 BLOCK_REQUEST_REVIEWERS_ENDPOINT = "/block-request-reviewers"

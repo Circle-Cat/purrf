@@ -933,10 +933,17 @@ class TestAppDependencyBuilder(TestCase):
             builder.block_service._interview_scheduling,
             builder.interview_scheduling_service,
         )
-        self.assertIs(builder.block_service._requests, builder.block_request_repository)
+        # Block requests run through the shared approval service; the
+        # handler is registered late because it needs the scheduling service.
+        self.assertIs(builder.block_service._approvals, builder.approval_service)
+        self.assertIs(builder.user_account_service._approvals, builder.approval_service)
         self.assertIs(
-            builder.user_account_service._block_requests,
-            builder.block_request_repository,
+            builder.approval_service.handler_for("block_user"),
+            builder.block_user_handler,
+        )
+        self.assertIs(
+            builder.block_user_handler._interview_scheduling,
+            builder.interview_scheduling_service,
         )
 
 
