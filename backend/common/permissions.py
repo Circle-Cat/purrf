@@ -21,6 +21,10 @@ class Permission(StrEnum):
     DASHBOARD_ACTIVITY_SUMMARY_READ = "dashboard.activity_summary.read"
     MENTORSHIP_ADMIN_READ = "mentorship.admin.read"
     MENTORSHIP_ADMIN_WRITE = "mentorship.admin.write"
+    # Deciding a mentorship approval request someone named you on. Held by
+    # different people from MENTORSHIP_ADMIN_WRITE, or the two-person check
+    # only ever stops someone approving their own request.
+    MENTORSHIP_APPROVE = "mentorship.approve"
     RECRUITING_JOB_READ = "recruiting.job.read"
     RECRUITING_JOB_WRITE = "recruiting.job.write"
     RECRUITING_JOB_APPROVE = "recruiting.job.approve"

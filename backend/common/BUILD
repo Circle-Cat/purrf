@@ -204,6 +204,11 @@ py_library(
 )
 
 py_library(
+    name = "approval_enums",
+    srcs = ["approval_enums.py"],
+)
+
+py_library(
     name = "ops_enums",
     srcs = ["ops_enums.py"],
 )

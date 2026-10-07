@@ -74,3 +74,20 @@ py_test(
         "//backend/entity:entities",
     ],
 )
+
+py_test(
+    name = "approval_request_entity_test",
+    srcs = ["approval_request_entity_test.py"],
+    deps = [
+        "//backend/common:approval_enums",
+        "//backend/entity:entities",
+    ],
+)
+
+py_test(
+    name = "mentorship_participant_note_entity_test",
+    srcs = ["mentorship_participant_note_entity_test.py"],
+    deps = [
+        "//backend/entity:entities",
+    ],
+)
