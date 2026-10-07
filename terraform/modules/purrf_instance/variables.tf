@@ -180,6 +180,24 @@ variable "gmail_sender_notification" {
   type        = string
 }
 
+variable "gmail_sender_mentorship" {
+  description = "From address of the mentorship Inbox: its replies are sent from it, and with gmail_inbox_enabled new mail to it is claimed. Must be a verified Send-As on the mailbox. Empty: no mentorship Inbox in this environment."
+  type        = string
+  default     = ""
+}
+
+variable "gmail_sender_inquiries" {
+  description = "From address of the inquiries Inbox: its replies are sent from it, and with gmail_inbox_enabled new mail to it is claimed. Must be a verified Send-As on the mailbox. Empty: no inquiries Inbox in this environment."
+  type        = string
+  default     = ""
+}
+
+variable "gmail_inbox_enabled" {
+  description = "Claim new mail sent to the mentorship, recruiting and inquiries senders for this environment's Inbox. Environments sharing a mailbox and its aliases (test and staging) must not both turn it on, or each would file the same mail."
+  type        = bool
+  default     = false
+}
+
 variable "mentorship_calendar_id" {
   description = "Secondary calendar under user_email that mentorship meetings are created on and deleted from. MUST differ between prod and non-prod: Calendar event ids are scoped per calendar, so sharing one calendar let a delete driven by restored prod data remove the real prod event. The calendar must be OWNED by user_email -- the DWD grant is calendar.events.owned, so a calendar merely shared in will 403 at runtime. No default on purpose: a wrong or missing value costs real meetings, so it must fail at apply time."
   type        = string
