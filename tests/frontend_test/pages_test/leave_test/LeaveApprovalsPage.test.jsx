@@ -128,6 +128,10 @@ describe("LeaveApprovalsPage", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    fireEvent.change(screen.getByLabelText(/Reason/), {
+      target: { value: "Team is short that week" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
 
     await waitFor(() =>
       expect(screen.getByText(/nothing was recorded/i)).toBeInTheDocument(),

@@ -14,6 +14,8 @@ import {
   dismissNotification,
   listNotifications,
 } from "@/api/recruitingApi";
+import { LEAVE_TYPE_LABELS } from "@/constants/LeaveRequest";
+import { formatBusinessRange } from "@/pages/Leave/utils/leaveDates";
 
 /**
  * What a mentorship approval asks for, from its event's details.
@@ -30,6 +32,18 @@ const approvalAsk = (details) => {
     return `publish the matching result${round ? ` for ${round}` : ""}`;
   }
   return "a mentorship change";
+};
+
+/**
+ * What a leave request was for, from its event's details: "paid leave, Nov 3
+ * – Nov 5, 2026".
+ * @param {{leaveType?: string, startDate?: string, endDate?: string}} details
+ * @returns {string}
+ */
+const leaveAsk = (details) => {
+  const what = (LEAVE_TYPE_LABELS[details?.leaveType] ?? "leave").toLowerCase();
+  const when = formatBusinessRange(details?.startDate, details?.endDate);
+  return when ? `${what}, ${when}` : what;
 };
 
 /**
@@ -78,6 +92,21 @@ const describe = (n) => {
           return "";
       }
     }
+    // Leave requests: the manager is told one was filed or withdrawn, the
+    // employee how it was decided. What it was for comes from details.
+    case "leave.request_submitted":
+      return `${actor} asked for ${leaveAsk(n.details)}`;
+    case "leave.request_decided":
+      switch (n.details?.decision) {
+        case "approved":
+          return `${actor} approved your ${leaveAsk(n.details)}`;
+        case "rejected":
+          return `${actor} rejected your ${leaveAsk(n.details)}`;
+        case "withdrawn":
+          return `${actor} withdrew their request for ${leaveAsk(n.details)}`;
+        default:
+          return "";
+      }
     // Told to ops.maintain holders; the kind comes from details.
     case "ops.gmail_sync_alert":
       return `Gmail sync needs attention: ${(n.details?.kind ?? "unknown").replaceAll("_", " ")}`;

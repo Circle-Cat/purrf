@@ -2,7 +2,10 @@ import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
+  LEAVE_REQUEST_STATUS,
   LEAVE_STATUS_LABELS,
   LEAVE_TYPE_EFFECT,
   LEAVE_TYPE_LABELS,
@@ -31,19 +34,22 @@ import {
  * would disagree with the ledger without saying so.
  *
  * Approving is irreversible -- there is no state for cancelling an approved
- * request -- so Approve asks once more in place. The confirmation is inline
- * rather than a dialog to keep one control per row and avoid stacking a modal
- * over a list the user is reading.
+ * request -- so Approve asks once more in place. Rejecting asks for the reason
+ * the employee is told, in place too. Both are inline rather than a dialog to
+ * keep one control per row and avoid stacking a modal over a list the user is
+ * reading.
  *
  * @param {{
  *   row: object,
  *   isDecidable: boolean,
  *   isDeciding: boolean,
- *   onDecide?: (requestId: number, approve: boolean) => void,
+ *   onDecide?: (requestId: number, approve: boolean, comment?: string) => void,
  * }} props
  */
 const ApprovalRow = ({ row, isDecidable, isDeciding, onDecide }) => {
-  const [isConfirming, setIsConfirming] = useState(false);
+  // null, "approve" or "reject": which decision is being confirmed.
+  const [confirming, setConfirming] = useState(null);
+  const [reason, setReason] = useState("");
   const timeSpan = formatTimeSpan(row.startTime, row.endTime);
   const effect = LEAVE_TYPE_EFFECT[row.type];
   // Sent only while a request is still waiting: once decided, the ledger has
@@ -75,13 +81,19 @@ const ApprovalRow = ({ row, isDecidable, isDeciding, onDecide }) => {
           {` · ${row.hours} h`}
         </p>
         {row.reason && <p className="mt-1 text-sm">{row.reason}</p>}
-        {/* Short notice only. The request also carries an overdraft flag, and
-            it is deliberately not shown: it was computed once when the request
-            was filed, while the balance figures on the right are computed now.
-            Weekly accrual keeps raising a balance, so a flag from weeks ago can
-            contradict the live number beside it, and a reader given two
-            answers has to guess. Short notice has no such second source -- the
-            notice a request gave cannot change after it was filed. */}
+        {/* For a waiting request the server works the overdraft out against
+            the balance as it stands now, counting every paid hour still
+            waiting -- so it can be set while "Balance after" is not, when this
+            person has other requests waiting too. A decided request carries
+            the mark it was approved on. */}
+        {row.isOverdraft &&
+          (isDecidable || row.status === LEAVE_REQUEST_STATUS.APPROVED) && (
+            <p className="mt-1 text-sm text-rose-600">
+              {isDecidable
+                ? "Over the balance, counting their other waiting requests"
+                : "Approved over the balance"}
+            </p>
+          )}
         {row.isLateNotice && (
           <p className="mt-1 text-sm text-amber-700">
             {/* Working days, not calendar days: the working week runs Tuesday
@@ -95,6 +107,11 @@ const ApprovalRow = ({ row, isDecidable, isDeciding, onDecide }) => {
         {!isDecidable && (
           <p className="mt-1 text-sm text-muted-foreground">
             {LEAVE_STATUS_LABELS[row.status] ?? row.status}
+          </p>
+        )}
+        {!isDecidable && row.decisionComment && (
+          <p className="mt-1 text-sm text-muted-foreground">
+            {`Reason: ${row.decisionComment}`}
           </p>
         )}
       </div>
@@ -122,44 +139,74 @@ const ApprovalRow = ({ row, isDecidable, isDeciding, onDecide }) => {
           </div>
         )}
 
-        {isDecidable && (
+        {isDecidable && confirming === null && (
           <div className="flex items-center gap-2">
-            {isConfirming ? (
-              <>
-                <span className="text-sm text-muted-foreground">
-                  Approve for good?
-                </span>
-                <Button
-                  disabled={isDeciding}
-                  onClick={() => onDecide(row.requestId, true)}
-                >
-                  Yes, approve
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={isDeciding}
-                  onClick={() => setIsConfirming(false)}
-                >
-                  Cancel
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  disabled={isDeciding}
-                  onClick={() => setIsConfirming(true)}
-                >
-                  Approve
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={isDeciding}
-                  onClick={() => onDecide(row.requestId, false)}
-                >
-                  Reject
-                </Button>
-              </>
-            )}
+            <Button
+              disabled={isDeciding}
+              onClick={() => setConfirming("approve")}
+            >
+              Approve
+            </Button>
+            <Button
+              variant="outline"
+              disabled={isDeciding}
+              onClick={() => {
+                setReason("");
+                setConfirming("reject");
+              }}
+            >
+              Reject
+            </Button>
+          </div>
+        )}
+        {isDecidable && confirming === "approve" && (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">
+              Approve for good?
+            </span>
+            <Button
+              disabled={isDeciding}
+              onClick={() => onDecide(row.requestId, true)}
+            >
+              Yes, approve
+            </Button>
+            <Button
+              variant="outline"
+              disabled={isDeciding}
+              onClick={() => setConfirming(null)}
+            >
+              Cancel
+            </Button>
+          </div>
+        )}
+        {isDecidable && confirming === "reject" && (
+          <div className="flex w-64 flex-col gap-2">
+            <Label htmlFor={`reject-reason-${row.requestId}`}>
+              Reason (required, the employee is told)
+            </Label>
+            <Textarea
+              id={`reject-reason-${row.requestId}`}
+              rows={2}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              disabled={isDeciding}
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                disabled={isDeciding}
+                onClick={() => setConfirming(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={isDeciding || reason.trim() === ""}
+                onClick={() => onDecide(row.requestId, false, reason.trim())}
+              >
+                Reject
+              </Button>
+            </div>
           </div>
         )}
       </div>

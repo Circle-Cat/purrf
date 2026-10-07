@@ -26,11 +26,14 @@ export async function getLeaveApprovals() {
  *
  * @param {number} requestId - The request being decided.
  * @param {boolean} approve - True to approve, false to reject.
+ * @param {string|null} [comment] - Why. Required to reject; the employee is
+ *   told it.
  * @returns {Promise<object>} The API envelope; `data` is the decided request.
  */
-export async function decideLeaveRequest(requestId, approve) {
+export async function decideLeaveRequest(requestId, approve, comment = null) {
   return await request.post(API_ENDPOINTS.LEAVE_REQUEST_DECISION(requestId), {
     approve,
+    comment,
   });
 }
 
