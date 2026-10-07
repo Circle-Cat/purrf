@@ -43,6 +43,24 @@ class MatchingProblemDto(BaseDto):
     slots: int | None = None
 
 
+class MatchingPublishRequestDto(BaseDto):
+    """The request to publish this run that is waiting for a decision."""
+
+    request_id: int
+    reviewer: NamedUserDto
+    raised_by: NamedUserDto
+    reason: str | None = None
+    created_at: str
+
+
+class MatchingPublishRejectionDto(BaseDto):
+    """Why the last request to publish this run was turned down."""
+
+    comment: str | None = None
+    decided_by: NamedUserDto
+    decided_at: str | None = None
+
+
 class MatchingRunOverviewDto(BaseDto):
     """A round's most recent run. Which fields are set depends on ``status``."""
 
@@ -65,6 +83,8 @@ class MatchingRunOverviewDto(BaseDto):
     draft_count: int | None = None
     mentor_slots: list[MatchingMentorSlotsDto] = []
     problems: list[MatchingProblemDto] = []
+    publish_request: MatchingPublishRequestDto | None = None
+    last_publish_rejection: MatchingPublishRejectionDto | None = None
 
 
 class MatchingEducationDto(BaseDto):

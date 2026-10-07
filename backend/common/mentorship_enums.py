@@ -58,6 +58,11 @@ class MentorshipEvent(StrEnum):
 
     MENTOR_ADMITTED = "mentorship.mentor_admitted"
     MATCHING_RUN_COMPLETED = "mentorship.matching_run_completed"
+    # The three events of a mentorship approval request. Which request, and
+    # what it asks for, is in the event's details.
+    APPROVAL_REQUESTED = "mentorship.approval_requested"
+    APPROVAL_REASSIGNED = "mentorship.approval_reassigned"
+    APPROVAL_DECIDED = "mentorship.approval_decided"
 
 
 class RoundStatus(str, Enum):

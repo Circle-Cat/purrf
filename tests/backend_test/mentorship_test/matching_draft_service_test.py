@@ -9,6 +9,14 @@ from backend.mentorship.matching_contract import Candidate, MenteeResult
 from backend.mentorship.matching_draft_service import MatchingDraftService
 
 
+def _no_approvals():
+    """An approval service with nothing pending and nothing closed."""
+    approvals = MagicMock()
+    approvals.get_pending_for_target = AsyncMock(return_value=None)
+    approvals.get_latest_closed_for_target = AsyncMock(return_value=None)
+    return approvals
+
+
 def _change(mentee_id, mentor_id, reason=""):
     return SimpleNamespace(
         mentee_id=mentee_id, mentor_id=mentor_id, recommendation_reason=reason
@@ -41,9 +49,11 @@ class MatchingDraftServiceTest(unittest.IsolatedAsyncioTestCase):
         self.storage.read_draft.return_value = {"1": object()}
         self.users = MagicMock()
         self.users.get_all_by_ids = AsyncMock(return_value=[_user(9, "Ann", "Lee")])
+        self.approvals = _no_approvals()
         self.service = MatchingDraftService(
             matching_storage=self.storage,
             users_repository=self.users,
+            approval_service=self.approvals,
             logger=MagicMock(),
         )
         self.session = MagicMock()
@@ -119,6 +129,19 @@ class MatchingDraftServiceTest(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(ConflictError):
                     self.service.save_changes(7, 9, [_change("1", None)])
         self.storage.write_draft.assert_not_called()
+
+    async def test_a_result_waiting_for_approval_to_publish_cannot_be_taken(self):
+        self.approvals.get_pending_for_target.return_value = MagicMock()
+
+        with self.assertRaises(ConflictError) as caught:
+            await self.service.take_lock(self.session, 7, 9)
+
+        self.assertEqual(str(caught.exception), "Waiting for approval to publish.")
+        self.assertEqual(
+            self.approvals.get_pending_for_target.await_args.args[1:],
+            ("publish_matching", "r7-x-y"),
+        )
+        self.storage.take_edit_lock.assert_not_called()
 
 
 if __name__ == "__main__":

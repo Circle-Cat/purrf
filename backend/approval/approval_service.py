@@ -402,6 +402,24 @@ class ApprovalService:
         )
         return 1 if closed else 0
 
+    async def get_request(self, session, request_id: int) -> ApprovalRequestEntity:
+        """One request by id, whatever its status.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            request_id (int): The request.
+
+        Returns:
+            ApprovalRequestEntity: The request.
+
+        Raises:
+            ValueError: No such request.
+        """
+        row = await self._requests.get(session, request_id)
+        if row is None:
+            raise ValueError(f"No approval request {request_id}")
+        return row
+
     async def get_pending_for_target(
         self, session, action: str, target_id: str
     ) -> ApprovalRequestEntity | None:

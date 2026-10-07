@@ -190,6 +190,15 @@ from backend.repository.gmail_sync_state_repository import GmailSyncStateReposit
 from backend.common.communication_enums import ContextType
 from backend.communication.meeting_scheduling_service import MeetingSchedulingService
 from backend.repository.block_request_repository import BlockRequestRepository
+from backend.repository.approval_request_repository import (
+    ApprovalRequestRepository,
+)
+from backend.repository.mentorship_participant_note_repository import (
+    MentorshipParticipantNoteRepository,
+)
+from backend.approval.approval_service import ApprovalService
+from backend.mentorship.publish_matching_handler import PublishMatchingHandler
+from backend.mentorship.mentorship_approval_service import MentorshipApprovalService
 from backend.repository.user_permissions_repository import UserPermissionsRepository
 from backend.repository.experience_repository import ExperienceRepository
 from backend.repository.training_course_repository import (
@@ -717,21 +726,51 @@ class AppDependencyBuilder:
         self.matching_job_client = MatchingJobClient(
             os.getenv(MATCHER_JOB_RESOURCE), logger=self.logger
         )
+        self.approval_request_repository = ApprovalRequestRepository()
+        self.mentorship_participant_note_repository = (
+            MentorshipParticipantNoteRepository()
+        )
+        self.publish_matching_handler = PublishMatchingHandler(
+            matching_storage=self.matching_storage,
+            pairs_repository=self.mentorship_pairs_repository,
+            participants_repository=self.mentorship_round_participants_repo,
+            note_repository=self.mentorship_participant_note_repository,
+            users_repository=self.users_repository,
+            rounds_repository=self.mentorship_round_repository,
+            logger=self.logger,
+        )
+        self.approval_service = ApprovalService(
+            approval_request_repository=self.approval_request_repository,
+            user_permissions_repository=self.user_permissions_repository,
+            users_repository=self.users_repository,
+            logger=self.logger,
+            handlers=[self.publish_matching_handler],
+        )
+        self.mentorship_approval_service = MentorshipApprovalService(
+            approval_service=self.approval_service,
+            matching_storage=self.matching_storage,
+            users_repository=self.users_repository,
+            rounds_repository=self.mentorship_round_repository,
+            logger=self.logger,
+        )
         self.matching_run_service = MatchingRunService(
             matching_payload_service=self.matching_payload_service,
             matching_storage=self.matching_storage,
             matching_job_client=self.matching_job_client,
             matching_eligibility_service=self.matching_eligibility_service,
+            approval_service=self.approval_service,
             logger=self.logger,
         )
         self.matching_run_read_service = MatchingRunReadService(
             matching_storage=self.matching_storage,
             users_repository=self.users_repository,
+            approval_service=self.approval_service,
             logger=self.logger,
         )
         self.matching_draft_service = MatchingDraftService(
             matching_storage=self.matching_storage,
             users_repository=self.users_repository,
+            approval_service=self.approval_service,
             logger=self.logger,
         )
         self.matching_run_complete_service = MatchingRunCompleteService(
@@ -750,6 +789,7 @@ class AppDependencyBuilder:
             matching_run_service=self.matching_run_service,
             matching_run_read_service=self.matching_run_read_service,
             matching_draft_service=self.matching_draft_service,
+            mentorship_approval_service=self.mentorship_approval_service,
             launchdarkly_service=self.launchdarkly_service,
             database=self.database,
         )
