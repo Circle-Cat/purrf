@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "@/utils/request";
 import {
+  withdrawReview,
   listJobs,
   getJob,
   createJob,
@@ -344,6 +345,14 @@ describe("recruitingApi", () => {
     await getEvaluationsForApplication(7);
     expect(request.get).toHaveBeenCalledWith(
       "/recruiting/applications/7/evaluations",
+    );
+  });
+
+  it("withdrawReview POSTs to the posting's review", async () => {
+    request.post.mockResolvedValue({ data: {} });
+    await withdrawReview(41);
+    expect(request.post).toHaveBeenCalledWith(
+      "/recruiting/jobs/41/review/withdraw",
     );
   });
 });

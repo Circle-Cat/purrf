@@ -33,8 +33,16 @@ import { Textarea } from "@/components/ui/textarea";
  * @param {(number|string|null|undefined)[]} [props.excludeUserIds] People to
  *   leave out of the picker.
  * @param {boolean} [props.askReason] Offer an optional reason.
+ * @param {string} [props.reasonLabel] The reason box's label.
+ * @param {string} [props.reviewerHint] Said under the picker's label, such
+ *   as who is left out of it and why.
+ * @param {(reviewer: {userId: number|string, name?: string|null}) => string}
+ *   [props.optionLabel] How each reviewer reads in the picker.
  * @param {string} props.confirmLabel The send button's label.
  * @param {string} [props.emptyText] Said when nobody can be picked.
+ * @param {import("react").ReactNode} [props.emptyContent] Shown in place of
+ *   the picker when nobody can be picked, for a caller that has more to say
+ *   than one line.
  * @param {import("react").ReactNode} [props.children] Shown above the picker.
  * @param {({reviewerId: number, reason: string}) => void} props.onConfirm
  *   Called with the chosen reviewer and the trimmed reason ("" when none).
@@ -51,8 +59,12 @@ const ApprovalRequestDialog = ({
   reviewersError = false,
   excludeUserIds = [],
   askReason = false,
+  reasonLabel = "Reason (optional)",
+  reviewerHint = null,
+  optionLabel = (r) => r.name || `ID ${r.userId}`,
   confirmLabel,
   emptyText = "Nobody else can review this.",
+  emptyContent = null,
   children = null,
   onConfirm,
   submitting = false,
@@ -74,6 +86,7 @@ const ApprovalRequestDialog = ({
     (r) => !excluded.has(String(r.userId)),
   );
   const ready = reviewerId !== "";
+  const empty = !reviewersLoading && options.length === 0;
 
   const submit = () => {
     if (!ready || submitting) return;
@@ -92,9 +105,14 @@ const ApprovalRequestDialog = ({
           <p className="text-sm text-muted-foreground">
             Couldn&apos;t load the reviewers. Close this and try again.
           </p>
+        ) : empty && emptyContent ? (
+          emptyContent
         ) : (
           <div className="space-y-1">
             <Label htmlFor="approval-reviewer">Reviewer</Label>
+            {reviewerHint ? (
+              <p className="text-xs text-muted-foreground">{reviewerHint}</p>
+            ) : null}
             <select
               id="approval-reviewer"
               className="w-full rounded-md border border-border p-2 text-sm"
@@ -107,18 +125,18 @@ const ApprovalRequestDialog = ({
               </option>
               {options.map((r) => (
                 <option key={r.userId} value={r.userId}>
-                  {r.name || `ID ${r.userId}`}
+                  {optionLabel(r)}
                 </option>
               ))}
             </select>
-            {!reviewersLoading && options.length === 0 ? (
+            {empty ? (
               <p className="text-xs text-muted-foreground">{emptyText}</p>
             ) : null}
           </div>
         )}
         {askReason ? (
           <div className="space-y-1">
-            <Label htmlFor="approval-reason">Reason (optional)</Label>
+            <Label htmlFor="approval-reason">{reasonLabel}</Label>
             <Textarea
               id="approval-reason"
               value={reason}

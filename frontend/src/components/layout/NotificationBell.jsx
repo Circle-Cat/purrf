@@ -97,6 +97,11 @@ const describe = (n) => {
     case "recruiting.review_opened":
       return `${actor} submitted "${n.jobTitle}" for your review`;
     case "recruiting.review_decided":
+      // Withdrawn is told to the reviewer it was waiting on; the other two
+      // to the submitter.
+      if (n.details?.decision === "withdrawn") {
+        return `${actor} withdrew the review of "${n.jobTitle}"`;
+      }
       return n.details?.decision === "approved"
         ? `${actor} approved "${n.jobTitle}"`
         : `${actor} rejected "${n.jobTitle}"`;
