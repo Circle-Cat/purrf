@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { AlertTriangle, ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDownLeft,
+  ArrowUpRight,
+  Paperclip,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -7,21 +12,43 @@ import {
   activityApplications,
   applicationById,
   assignmentLabel,
+  canAssign,
+  canMove,
   contactOf,
   formatTime,
   isArchived,
   isUnassigned,
+  lastMessage,
   needsReply,
   openBounceOf,
   personOf,
   replyAliasOf,
+  serviceOf,
 } from "@/pages/InboxPrototype/inboxState";
 import { SenderName } from "@/pages/InboxPrototype/ThreadList";
-import { INBOXES } from "@/pages/InboxPrototype/mockData";
+import { SERVICES } from "@/pages/InboxPrototype/mockData";
 
 const KIND_TAG = { auto_reply: "Auto-reply", bounce: "Delivery failed" };
 
-const Message = ({ message }) => {
+const Attachments = ({ attachments, onDownload }) => (
+  <ul aria-label="Attachments" className="mt-2 flex flex-wrap gap-2">
+    {attachments.map((a) => (
+      <li key={a.name}>
+        <button
+          type="button"
+          onClick={() => onDownload(a.name)}
+          className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-100"
+        >
+          <Paperclip size={12} />
+          {a.name}
+          <span className="text-slate-500">{a.size}</span>
+        </button>
+      </li>
+    ))}
+  </ul>
+);
+
+const Message = ({ message, onDownload }) => {
   const machine = message.kind !== "human";
   const inbound = message.direction === "in";
   return (
@@ -39,6 +66,11 @@ const Message = ({ message }) => {
         <span className="flex items-center gap-1.5 font-medium text-slate-600">
           {inbound ? <ArrowDownLeft size={12} /> : <ArrowUpRight size={12} />}
           {inbound ? "Received" : "Sent"}
+          {message.sentBy && (
+            <span className="font-normal text-slate-500">
+              by {message.sentBy}
+            </span>
+          )}
           {machine && (
             <Badge
               variant="outline"
@@ -61,6 +93,12 @@ const Message = ({ message }) => {
         <dd className="break-all">{message.to}</dd>
       </dl>
       <p className="mt-2 whitespace-pre-wrap">{message.body}</p>
+      {inbound && message.attachments?.length > 0 && (
+        <Attachments
+          attachments={message.attachments}
+          onDownload={onDownload}
+        />
+      )}
     </li>
   );
 };
@@ -69,12 +107,16 @@ const Message = ({ message }) => {
  * ThreadDetail
  *
  * The whole conversation, the actions on it, and the reply box. The reply's
- * sending alias is the alias of the inbox that owns the thread now, and is
+ * sending alias is the alias of the service that owns the thread now, and is
  * shown read-only.
+ *
+ * Sending is refused when a message arrived after the thread was opened (or
+ * after the last refusal), so two staff members can't both answer the same
+ * question without one of them seeing the other's reply first.
  *
  * @param {{thread: object, onReply: Function, onArchive: Function,
  *   onUnarchive: Function, onAssign: Function, onMove: Function,
- *   onSimulateReply: Function}} props
+ *   onSimulateReply: Function, onSimulateColleague: Function}} props
  * @returns {JSX.Element}
  */
 const ThreadDetail = ({
@@ -85,23 +127,28 @@ const ThreadDetail = ({
   onAssign,
   onMove,
   onSimulateReply,
+  onSimulateColleague,
 }) => {
+  const latestId = lastMessage(thread).id;
   const [draft, setDraft] = useState("");
   const [moveTarget, setMoveTarget] = useState("");
   const [boardNote, setBoardNote] = useState(false);
+  const [download, setDownload] = useState(null);
+  const [seenId, setSeenId] = useState(latestId);
+  const [stale, setStale] = useState(false);
 
   const archived = isArchived(thread);
   const bounce = openBounceOf(thread);
   const person = personOf(thread);
   const alias = replyAliasOf(thread);
   const chip = assignmentLabel(thread.assignment);
-  const tracksApplication = thread.assignment?.context?.kind === "application";
   const activityApp =
-    thread.inbox === "mentorship"
-      ? tracksApplication
+    thread.service === "mentorship"
+      ? thread.tracked
         ? applicationById(thread.assignment.context.applicationId)
         : activityApplications(person)[0]
       : null;
+  const moveTargets = SERVICES.filter((s) => s.key !== thread.service);
   const sorted = [
     ...thread.messages,
     ...(thread.movedFrom
@@ -110,14 +157,20 @@ const ThreadDetail = ({
             id: "moved",
             kind: "system",
             at: thread.movedAt,
-            body: `Moved from ${INBOXES.find((i) => i.key === thread.movedFrom).label} — replies now sent from ${alias}`,
+            body: `Moved from ${serviceOf(thread.movedFrom).label} — replies now sent from ${alias}`,
           },
         ]
       : []),
   ].sort((a, b) => a.at.localeCompare(b.at));
 
   const send = () => {
-    onReply(thread.id, draft.trim());
+    if (seenId !== latestId) {
+      setStale(true);
+      setSeenId(latestId);
+      return;
+    }
+    setSeenId(onReply(thread.id, draft.trim()));
+    setStale(false);
     setDraft("");
   };
 
@@ -127,9 +180,17 @@ const ThreadDetail = ({
       className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4"
     >
       <header className="space-y-2">
-        <h2 className="text-lg font-semibold text-slate-900">
-          {thread.subject}
-        </h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge
+            variant="outline"
+            className={serviceOf(thread.service).badgeClass}
+          >
+            {serviceOf(thread.service).label}
+          </Badge>
+          <h2 className="text-lg font-semibold text-slate-900">
+            {thread.subject}
+          </h2>
+        </div>
         <div className="text-sm">
           <SenderName email={contactOf(thread)} />
         </div>
@@ -173,11 +234,13 @@ const ThreadDetail = ({
       </header>
 
       <div className="flex flex-wrap items-center gap-2 border-y border-slate-200 py-3">
-        {tracksApplication ? (
+        {thread.tracked && (
           <span className="text-xs text-slate-500">
-            Tracked with its application — assignment comes from there.
+            Tracked with its application — assignment and service come from
+            there.
           </span>
-        ) : (
+        )}
+        {canAssign(thread) && (
           <Button size="sm" onClick={() => onAssign(thread.id)}>
             {thread.assignment ? "Reassign" : "Assign"}
           </Button>
@@ -199,7 +262,7 @@ const ThreadDetail = ({
             Archive
           </Button>
         )}
-        {thread.inbox === "inquiries" && (
+        {canMove(thread) && (
           <span className="flex items-center gap-1.5">
             <label htmlFor="move-target" className="sr-only">
               Move to
@@ -211,8 +274,11 @@ const ThreadDetail = ({
               className="h-8 rounded-md border border-slate-300 bg-white px-2 text-sm"
             >
               <option value="">Move to…</option>
-              <option value="mentorship">Mentorship inbox</option>
-              <option value="recruiting">Recruiting inbox</option>
+              {moveTargets.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label}
+                </option>
+              ))}
             </select>
             <Button
               size="sm"
@@ -233,14 +299,24 @@ const ThreadDetail = ({
             View application on Applications Board
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => onSimulateReply(thread.id)}
-          className="ml-auto text-xs text-slate-400 hover:text-slate-600"
-          title="Prototype only: append a new message from the sender"
-        >
-          Dev: simulate new reply
-        </button>
+        <span className="ml-auto flex flex-col items-end gap-0.5">
+          <button
+            type="button"
+            onClick={() => onSimulateReply(thread.id)}
+            className="text-xs text-slate-400 hover:text-slate-600"
+            title="Prototype only: append a new message from the sender"
+          >
+            Dev: simulate new reply
+          </button>
+          <button
+            type="button"
+            onClick={() => onSimulateColleague(thread.id)}
+            className="text-xs text-slate-400 hover:text-slate-600"
+            title="Prototype only: a colleague answers this thread while you have it open"
+          >
+            Dev: simulate colleague reply
+          </button>
+        </span>
       </div>
 
       {boardNote && activityApp && (
@@ -250,10 +326,19 @@ const ThreadDetail = ({
         </p>
       )}
 
-      {thread.inbox === "inquiries" && (
+      {download && (
+        <p className="rounded-md border border-sky-200 bg-sky-50 p-2 text-xs text-sky-800">
+          Would download {download}: the server fetches it from Gmail when you
+          click, nothing is stored in Purrf, and it always saves as a file
+          rather than opening in the browser.
+        </p>
+      )}
+
+      {canMove(thread) && (
         <p className="text-xs text-slate-500">
-          Moving sends the thread to that inbox as Unassigned. Replies then go
-          out from that inbox&apos;s alias.
+          Moving hands the thread to that service as Unassigned. Replies then go
+          out from that service&apos;s alias, and you may no longer see it if
+          you lack that service&apos;s permission.
         </p>
       )}
 
@@ -277,7 +362,7 @@ const ThreadDetail = ({
               {m.body}
             </li>
           ) : (
-            <Message key={m.id} message={m} />
+            <Message key={m.id} message={m} onDownload={setDownload} />
           ),
         )}
       </ol>
@@ -289,6 +374,15 @@ const ThreadDetail = ({
             To: <span className="text-slate-800">{contactOf(thread)}</span>
           </span>
         </div>
+        {stale && (
+          <p
+            role="status"
+            className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900"
+          >
+            Not sent: this thread has new messages since you opened it. Read
+            them first; your draft is kept. Send again to send it as is.
+          </p>
+        )}
         <Textarea
           aria-label="Reply"
           value={draft}

@@ -2,9 +2,26 @@
  * Everything a row or thread shows is derived from its messages, its
  * assignment and its archive time — nothing here is a stored flag.
  */
-import { ALIASES, JOBS, USERS } from "@/pages/InboxPrototype/mockData";
+import {
+  ALIASES,
+  JOBS,
+  SERVICES,
+  USERS,
+} from "@/pages/InboxPrototype/mockData";
 
 export const userById = (userId) => USERS.find((u) => u.userId === userId);
+
+export const serviceOf = (key) => SERVICES.find((s) => s.key === key);
+
+/**
+ * Inquiries threads are never assigned, and a tracked application thread
+ * gets its assignment from the application.
+ */
+export const canAssign = (thread) =>
+  thread.service !== "inquiries" && !thread.tracked;
+
+/** A tracked application thread's service follows its job type. */
+export const canMove = (thread) => !thread.tracked;
 
 /**
  * Resolve an address to a user on primary or any alternative email.
@@ -40,12 +57,14 @@ export const personOf = (thread) =>
     : (matchSender(contactOf(thread))?.user ?? null);
 
 /**
- * Waiting to be assigned. A sender whose address matches no user is not: the
- * normal flow there is reply and Archive, though staff can still assign one
- * by hand.
+ * Waiting to be assigned. Only threads that can be assigned at all; and a
+ * sender whose address matches no user is not either: the normal flow there
+ * is reply and Archive, though staff can still assign one by hand.
  */
 export const isUnassigned = (thread) =>
-  !thread.assignment && matchSender(contactOf(thread)) !== null;
+  canAssign(thread) &&
+  !thread.assignment &&
+  matchSender(contactOf(thread)) !== null;
 
 const latest = (messages) =>
   messages.reduce((acc, m) => (!acc || m.at > acc.at ? m : acc), null);
@@ -127,8 +146,8 @@ export const openBounceOf = (thread) => {
   return out && out.at > b.at ? null : b;
 };
 
-/** Replies go out from the alias of the inbox that owns the thread now. */
-export const replyAliasOf = (thread) => ALIASES[thread.inbox];
+/** Replies go out from the alias of the service that owns the thread now. */
+export const replyAliasOf = (thread) => ALIASES[thread.service];
 
 export const applicationById = (applicationId) => {
   for (const user of USERS) {
@@ -142,7 +161,6 @@ export const applicationById = (applicationId) => {
 export const assignmentLabel = (assignment) => {
   if (!assignment) return null;
   const { context } = assignment;
-  if (!context) return `Assigned to ${userById(assignment.userId).name}`;
   if (context.kind === "round") return `${context.round} round`;
   const app = applicationById(context.applicationId);
   return `${JOBS[app.job].title} · application #${app.id}`;

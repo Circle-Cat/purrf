@@ -9,8 +9,8 @@ import {
   lastMessage,
   machineTagOf,
   matchSender,
+  serviceOf,
 } from "@/pages/InboxPrototype/inboxState";
-import { INBOXES } from "@/pages/InboxPrototype/mockData";
 
 const TAG_STYLES = {
   "Auto-reply": "border-slate-300 bg-slate-100 text-slate-600",
@@ -59,8 +59,8 @@ export const SenderName = ({ email }) => {
 /**
  * ThreadList
  *
- * One inbox's rows under the current filters. Each row is a button — the whole row
- * opens the thread.
+ * The Inbox rows under the current filters, every service mixed in one list.
+ * Each row is a button — the whole row opens the thread.
  *
  * @param {{threads: object[], selectedId: string|null, onOpen: Function,
  *   emptyText: string}} props
@@ -85,7 +85,7 @@ const ThreadList = ({ threads, selectedId, onOpen, emptyText }) => {
           machineTagOf(thread),
           isArchived(thread) ? "Archived" : null,
           thread.movedFrom
-            ? `Moved from ${INBOXES.find((i) => i.key === thread.movedFrom).label}`
+            ? `Moved from ${serviceOf(thread.movedFrom).label}`
             : null,
         ].filter(Boolean);
         const chip = assignmentLabel(thread.assignment);
@@ -105,8 +105,16 @@ const ThreadList = ({ threads, selectedId, onOpen, emptyText }) => {
                   {formatTime(last.at)}
                 </span>
               </div>
-              <div className="mt-0.5 font-medium text-slate-800">
-                {thread.subject}
+              <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                <Badge
+                  variant="outline"
+                  className={serviceOf(thread.service).badgeClass}
+                >
+                  {serviceOf(thread.service).label}
+                </Badge>
+                <span className="font-medium text-slate-800">
+                  {thread.subject}
+                </span>
               </div>
               <div className="truncate text-slate-500">{last.body}</div>
               {(tags.length > 0 || chip) && (

@@ -18,28 +18,32 @@ export const ALIASES = {
   inquiries: "inquiries@circlecat.org",
 };
 
-/** The three service inboxes, in switcher order. */
-export const INBOXES = [
+/**
+ * The three services sharing the one Inbox. `permission` is what lets a viewer
+ * see and act on that service's threads; `badgeClass` gives each service its
+ * own colour so mixed rows read at a glance.
+ */
+export const SERVICES = [
   {
     key: "mentorship",
     label: "Mentorship",
     alias: ALIASES.mentorship,
-    placement: "In the product: a tab on the Mentorship management page.",
-    draft: false,
+    permission: "mentorship.admin.write",
+    badgeClass: "border-teal-200 bg-teal-50 text-teal-800",
   },
   {
     key: "recruiting",
     label: "Recruiting",
     alias: ALIASES.recruiting,
-    placement: "In the product: an entry on the Applications Board.",
-    draft: false,
+    permission: "recruiting.application.advance",
+    badgeClass: "border-indigo-200 bg-indigo-50 text-indigo-800",
   },
   {
     key: "inquiries",
     label: "Inquiries",
     alias: ALIASES.inquiries,
-    placement: "In the product: a new standalone page (placement TBD).",
-    draft: true,
+    permission: "inquiries.manage",
+    badgeClass: "border-stone-300 bg-stone-100 text-stone-700",
   },
 ];
 
@@ -51,9 +55,9 @@ export const ROUNDS = ["Fall 2026", "Spring 2026", "Fall 2025", "Spring 2025"];
 export const CURRENT_ROUND = "Fall 2026";
 
 /**
- * Postings. EMPLOYMENT jobs are what the Recruiting inbox assigns to; the two
+ * Postings. EMPLOYMENT jobs are what Recruiting threads assign to; the two
  * ACTIVITY postings are the mentorship registrations, whose application
- * threads count toward the Mentorship inbox.
+ * threads belong to the Mentorship service.
  */
 export const JOBS = {
   backend: { title: "Backend Engineer", type: "EMPLOYMENT" },
@@ -205,7 +209,7 @@ const R = ALIASES.recruiting;
 const Q = ALIASES.inquiries;
 const DAEMON = "mailer-daemon@googlemail.com";
 
-const human = (id, direction, from, to, at, body) => ({
+const human = (id, direction, from, to, at, body, attachments = []) => ({
   id,
   direction,
   from,
@@ -213,6 +217,7 @@ const human = (id, direction, from, to, at, body) => ({
   at,
   body,
   kind: "human",
+  attachments,
 });
 
 const autoReply = (id, from, to, at, body) => ({
@@ -238,14 +243,20 @@ const bounce = (id, to, at, bouncedTo) => ({
 
 /**
  * `assignment` is `null` or `{userId, context}`, where `context` is
- * `{kind: "round", round}`, `{kind: "application", applicationId}` or
- * `null` (Inquiries: person only).
+ * `{kind: "round", round}` or `{kind: "application", applicationId}`.
+ * Inquiries threads are never assigned.
+ *
+ * `tracked` marks a thread that belongs to an application from the start
+ * (it began with mail we sent about that application). Its service follows
+ * the job type, so it can be neither reassigned nor moved.
+ *
+ * An inbound message may carry `attachments: [{name, size}]`.
  */
 export const INITIAL_THREADS = [
   // Mentorship
   {
     id: "m1",
-    inbox: "mentorship",
+    service: "mentorship",
     subject: "Question about meeting cadence",
     archivedAt: null,
     assignment: null,
@@ -262,7 +273,7 @@ export const INITIAL_THREADS = [
   },
   {
     id: "m2",
-    inbox: "mentorship",
+    service: "mentorship",
     subject: "Can I still join the Fall round?",
     archivedAt: null,
     assignment: null,
@@ -279,7 +290,7 @@ export const INITIAL_THREADS = [
   },
   {
     id: "m3",
-    inbox: "mentorship",
+    service: "mentorship",
     subject: "Interested in becoming a mentor",
     archivedAt: null,
     assignment: null,
@@ -296,7 +307,7 @@ export const INITIAL_THREADS = [
   },
   {
     id: "m4",
-    inbox: "mentorship",
+    service: "mentorship",
     subject: "Requesting a different mentee",
     archivedAt: null,
     assignment: {
@@ -332,7 +343,8 @@ export const INITIAL_THREADS = [
   },
   {
     id: "m5",
-    inbox: "mentorship",
+    service: "mentorship",
+    tracked: true,
     subject: "Your mentee application",
     archivedAt: null,
     assignment: {
@@ -363,12 +375,13 @@ export const INITIAL_THREADS = [
         M,
         "2026-09-29T08:47",
         "Thank you! The course link opens a blank page for me. Is there another way to access it?",
+        [{ name: "blank-page.png", size: "412 KB" }],
       ),
     ],
   },
   {
     id: "m6",
-    inbox: "mentorship",
+    service: "mentorship",
     subject: "Midpoint check-in",
     archivedAt: null,
     assignment: {
@@ -403,7 +416,7 @@ export const INITIAL_THREADS = [
   },
   {
     id: "m7",
-    inbox: "mentorship",
+    service: "mentorship",
     subject: "Fall 2026 pairing details",
     archivedAt: null,
     assignment: {
@@ -432,7 +445,7 @@ export const INITIAL_THREADS = [
   },
   {
     id: "m8",
-    inbox: "mentorship",
+    service: "mentorship",
     subject: "Partnership opportunity for your mentees",
     archivedAt: "2026-09-21T15:00",
     assignment: null,
@@ -449,7 +462,7 @@ export const INITIAL_THREADS = [
   },
   {
     id: "m9",
-    inbox: "mentorship",
+    service: "mentorship",
     subject: "Thank you for the workshop",
     archivedAt: null,
     assignment: null,
@@ -468,7 +481,7 @@ export const INITIAL_THREADS = [
         M,
         "yuna.park@example.com",
         "2026-09-27T09:15",
-        "Glad you enjoyed it! The slides are attached.",
+        "Glad you enjoyed it! The slides are on the event page.",
       ),
     ],
   },
@@ -476,7 +489,7 @@ export const INITIAL_THREADS = [
   // Recruiting
   {
     id: "r1",
-    inbox: "recruiting",
+    service: "recruiting",
     subject: "Follow-up on my interview",
     archivedAt: null,
     assignment: null,
@@ -493,7 +506,7 @@ export const INITIAL_THREADS = [
   },
   {
     id: "r2",
-    inbox: "recruiting",
+    service: "recruiting",
     subject: "Can I reapply?",
     archivedAt: null,
     assignment: null,
@@ -510,7 +523,7 @@ export const INITIAL_THREADS = [
   },
   {
     id: "r3",
-    inbox: "recruiting",
+    service: "recruiting",
     subject: "Resume for any open role",
     archivedAt: null,
     assignment: null,
@@ -522,12 +535,16 @@ export const INITIAL_THREADS = [
         R,
         "2026-09-28T22:40",
         "Please find my resume attached. I am open to any engineering role.",
+        [
+          { name: "Kevin_Zhou_Resume.pdf", size: "182 KB" },
+          { name: "Portfolio_Links.docx", size: "24 KB" },
+        ],
       ),
     ],
   },
   {
     id: "r4",
-    inbox: "recruiting",
+    service: "recruiting",
     subject: "Do you offer internships?",
     archivedAt: null,
     assignment: null,
@@ -544,7 +561,7 @@ export const INITIAL_THREADS = [
   },
   {
     id: "r5",
-    inbox: "recruiting",
+    service: "recruiting",
     subject: "Take-home assignment question",
     archivedAt: null,
     assignment: {
@@ -580,7 +597,7 @@ export const INITIAL_THREADS = [
   },
   {
     id: "r6",
-    inbox: "recruiting",
+    service: "recruiting",
     subject: "Scheduling your first interview",
     archivedAt: null,
     assignment: {
@@ -615,7 +632,7 @@ export const INITIAL_THREADS = [
   },
   {
     id: "r7",
-    inbox: "recruiting",
+    service: "recruiting",
     subject: "Updated phone number",
     archivedAt: null,
     assignment: {
@@ -644,7 +661,7 @@ export const INITIAL_THREADS = [
   },
   {
     id: "r8",
-    inbox: "recruiting",
+    service: "recruiting",
     subject: "Demo: recruiting software for small teams",
     archivedAt: "2026-09-22T10:00",
     assignment: null,
@@ -661,7 +678,7 @@ export const INITIAL_THREADS = [
   },
   {
     id: "r9",
-    inbox: "recruiting",
+    service: "recruiting",
     subject: "Where do I update my address?",
     archivedAt: null,
     assignment: null,
@@ -688,7 +705,7 @@ export const INITIAL_THREADS = [
   // Inquiries
   {
     id: "q1",
-    inbox: "inquiries",
+    service: "inquiries",
     subject: "Donation receipt request",
     archivedAt: null,
     assignment: null,
@@ -705,7 +722,7 @@ export const INITIAL_THREADS = [
   },
   {
     id: "q2",
-    inbox: "inquiries",
+    service: "inquiries",
     subject: "Volunteer opportunities",
     archivedAt: null,
     assignment: null,
@@ -722,7 +739,7 @@ export const INITIAL_THREADS = [
   },
   {
     id: "q3",
-    inbox: "inquiries",
+    service: "inquiries",
     subject: "Speaking at your community event",
     archivedAt: null,
     assignment: null,
@@ -739,7 +756,7 @@ export const INITIAL_THREADS = [
   },
   {
     id: "q4",
-    inbox: "inquiries",
+    service: "inquiries",
     subject: "Press inquiry",
     archivedAt: null,
     assignment: null,
@@ -771,7 +788,7 @@ export const INITIAL_THREADS = [
   },
   {
     id: "q5",
-    inbox: "inquiries",
+    service: "inquiries",
     subject: "Sponsorship follow-up",
     archivedAt: null,
     assignment: null,
@@ -797,7 +814,7 @@ export const INITIAL_THREADS = [
   },
   {
     id: "q6",
-    inbox: "inquiries",
+    service: "inquiries",
     subject: "Boost your website traffic",
     archivedAt: "2026-09-19T08:00",
     assignment: null,
@@ -814,10 +831,10 @@ export const INITIAL_THREADS = [
   },
   {
     id: "q7",
-    inbox: "inquiries",
+    service: "inquiries",
     subject: "Reference letter request",
     archivedAt: null,
-    assignment: { userId: 1555, context: null },
+    assignment: null,
     messages: [
       human(
         "q7-1",
@@ -847,7 +864,7 @@ export const INITIAL_THREADS = [
   },
   {
     id: "q8",
-    inbox: "inquiries",
+    service: "inquiries",
     subject: "Is there a mentorship program for engineers?",
     archivedAt: null,
     assignment: null,

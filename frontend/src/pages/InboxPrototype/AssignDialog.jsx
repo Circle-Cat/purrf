@@ -152,11 +152,15 @@ const initialJob = (thread) => {
 /**
  * AssignDialog
  *
- * Assign a thread to a person, then to the context its inbox needs: a round
- * for Mentorship, a job (and so an application) for Recruiting, nothing more
- * for Inquiries. The person is prefilled when the sender's address matches a
- * user; for a sender with no matching user, staff pick the person by hand
- * (they may be an existing user writing from an unregistered address).
+ * Assign a thread to a person, then to the context its service needs: a
+ * round for Mentorship, a job (and so an application) for Recruiting.
+ * Inquiries threads never open this. The person is prefilled when the
+ * sender's address matches a user; for a sender with no matching user, staff
+ * pick the person by hand (they may be an existing user writing from an
+ * unregistered address).
+ *
+ * An assigned thread can also drop its assignment and go back to Unassigned
+ * (or No matching user, if the sender matches no one).
  *
  * Mounted fresh for each opening, so its state never leaks between threads.
  *
@@ -182,10 +186,10 @@ const AssignDialog = ({ thread, onCancel, onConfirm }) => {
 
   let context = null;
   let ready = Boolean(person);
-  if (person && thread.inbox === "mentorship") {
+  if (person && thread.service === "mentorship") {
     context = { kind: "round", round };
   }
-  if (person && thread.inbox === "recruiting") {
+  if (person && thread.service === "recruiting") {
     const pick = jobKey ? pickApplication(person, jobKey) : null;
     context = pick
       ? { kind: "application", applicationId: pick.application.id }
@@ -197,7 +201,9 @@ const AssignDialog = ({ thread, onCancel, onConfirm }) => {
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Assign thread</DialogTitle>
+          <DialogTitle>
+            {thread.assignment ? "Reassign thread" : "Assign thread"}
+          </DialogTitle>
           <DialogDescription>{thread.subject}</DialogDescription>
         </DialogHeader>
 
@@ -241,19 +247,23 @@ const AssignDialog = ({ thread, onCancel, onConfirm }) => {
           )}
         </div>
 
-        {person && !searching && thread.inbox === "mentorship" && (
+        {person && !searching && thread.service === "mentorship" && (
           <RoundPicker person={person} round={round} onRound={setRound} />
         )}
-        {person && !searching && thread.inbox === "recruiting" && (
+        {person && !searching && thread.service === "recruiting" && (
           <JobPicker person={person} jobKey={jobKey} onJob={setJobKey} />
-        )}
-        {person && !searching && thread.inbox === "inquiries" && (
-          <p className="text-xs text-slate-500">
-            Inquiries assign to a person only — there is no round or job.
-          </p>
         )}
 
         <DialogFooter>
+          {thread.assignment && (
+            <Button
+              variant="ghost"
+              className="mr-auto text-red-700 hover:bg-red-50 hover:text-red-800"
+              onClick={() => onConfirm(thread.id, null)}
+            >
+              Remove assignment
+            </Button>
+          )}
           <Button variant="outline" onClick={onCancel}>
             Cancel
           </Button>
