@@ -53,6 +53,14 @@ export const submitForReview = (jobId, body) =>
 export const reassignReviewer = (jobId, body) =>
   request.patch(API_ENDPOINTS.RECRUITING_JOB_REVIEW_REVIEWER(jobId), body);
 
+/**
+ * Take back a posting's open review; the posting returns to where it was.
+ * Only its submitter may.
+ * @param {number|string} jobId
+ */
+export const withdrawReview = (jobId) =>
+  request.post(API_ENDPOINTS.RECRUITING_JOB_REVIEW_WITHDRAW(jobId));
+
 /** List the current reviewer's pending reviews. */
 export const listMyReviews = () =>
   request.get(API_ENDPOINTS.RECRUITING_REVIEWS);

@@ -794,6 +794,162 @@ describe("PostingDetailPage", () => {
     );
   });
 
+  it.each([
+    ["initial", "Ada Ng withdrew the review — back to draft"],
+    ["revision", "Ada Ng withdrew the revision — posting stays published"],
+    ["close", "Ada Ng withdrew the close request — posting stays published"],
+    ["reopen", "Ada Ng withdrew the reopen request — posting stays closed"],
+  ])(
+    "says in the history that a %s review was withdrawn",
+    async (kind, text) => {
+      api.listJobActivity.mockResolvedValue({
+        data: [
+          {
+            id: 4,
+            eventType: "recruiting.review_decided",
+            details: { kind, decision: "withdrawn", comment: null },
+            actorId: 5,
+            actorName: "Ada Ng",
+            createdAt: "2026-10-07T09:00:00Z",
+          },
+        ],
+      });
+      authState.permissions = ["recruiting.job.write"];
+      renderAt(1);
+
+      const user = userEvent.setup();
+      await user.click(
+        await screen.findByRole("tab", { name: "Review history" }),
+      );
+
+      expect(await screen.findByText(new RegExp(text))).toBeInTheDocument();
+    },
+  );
+
+  describe("the submit dialog", () => {
+    const draft = {
+      data: {
+        id: 1,
+        title: "Backend Engineer",
+        description: "desc",
+        status: "draft",
+        pipelineConfig: {
+          stages: [{ stage: "recruiter_screening", rounds: 1 }],
+          ownerIds: [5],
+        },
+        screenRules: null,
+        profileConfig: null,
+        lastRejectComment: null,
+        reviewerId: null,
+      },
+    };
+
+    const openDialog = async () => {
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Submit for review" }),
+        ).toBeInTheDocument(),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Submit for review" }),
+      );
+      return screen.findByRole("dialog");
+    };
+
+    beforeEach(() => {
+      api.getJob.mockResolvedValue(draft);
+      authState.permissions = ["recruiting.job.write"];
+    });
+
+    it("lists everyone else by name and email, saying the author is not there", async () => {
+      api.listApprovers.mockResolvedValue({
+        data: [
+          { userId: 5, name: "Me", email: "me@x.com" },
+          { userId: 9, name: "Bob", email: "bob@x.com" },
+        ],
+      });
+      renderAt(1);
+
+      const dialog = await openDialog();
+
+      expect(
+        within(dialog)
+          .getAllByRole("option")
+          .map((o) => o.textContent),
+      ).toEqual(["Select a reviewer…", "Bob (bob@x.com)"]);
+      expect(
+        within(dialog).getByText(
+          "You cannot review your own posting, so you are not in this list.",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it("explains an empty approver pool instead of an empty picker", async () => {
+      api.listApprovers.mockResolvedValue({
+        data: [{ userId: 5, name: "Me", email: "me@x.com" }],
+      });
+      renderAt(1);
+
+      const dialog = await openDialog();
+
+      expect(
+        within(dialog).getByText("No one else can approve this posting."),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).getByRole("button", { name: "Submit for review" }),
+      ).toBeDisabled();
+    });
+
+    it("sends the reviewer and the trimmed message, or none", async () => {
+      api.listApprovers.mockResolvedValue({
+        data: [{ userId: 9, name: "Bob", email: "bob@x.com" }],
+      });
+      api.submitForReview.mockResolvedValue({ data: { id: 1 } });
+      renderAt(1);
+
+      const dialog = await openDialog();
+      fireEvent.change(within(dialog).getByLabelText("Reviewer"), {
+        target: { value: "9" },
+      });
+      fireEvent.change(within(dialog).getByLabelText("Message (optional)"), {
+        target: { value: "  Pipeline checked  " },
+      });
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Submit for review" }),
+      );
+
+      await waitFor(() =>
+        expect(api.submitForReview).toHaveBeenCalledWith("1", {
+          reviewerId: 9,
+          message: "Pipeline checked",
+        }),
+      );
+    });
+
+    it("sends no message when none was written", async () => {
+      api.listApprovers.mockResolvedValue({
+        data: [{ userId: 9, name: "Bob", email: "bob@x.com" }],
+      });
+      api.submitForReview.mockResolvedValue({ data: { id: 1 } });
+      renderAt(1);
+
+      const dialog = await openDialog();
+      fireEvent.change(within(dialog).getByLabelText("Reviewer"), {
+        target: { value: "9" },
+      });
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Submit for review" }),
+      );
+
+      await waitFor(() =>
+        expect(api.submitForReview).toHaveBeenCalledWith("1", {
+          reviewerId: 9,
+          message: null,
+        }),
+      );
+    });
+  });
+
   it("disables Submit for review and shows every blocker the server reports", async () => {
     api.getJob.mockResolvedValue({
       data: {
@@ -1307,6 +1463,92 @@ describe("PostingDetailPage", () => {
       );
       // Reloaded so the page shows who has it now, rather than the stale name.
       await waitFor(() => expect(api.getJob).toHaveBeenCalledTimes(2));
+    });
+
+    it("leaves out the reviewer who has it and the submitter", async () => {
+      api.getJob.mockResolvedValue(pendingJob(5));
+      api.listApprovers.mockResolvedValue({
+        data: [
+          { userId: 5, name: "Me", email: "me@x.com" },
+          { userId: 9, name: "Gone", email: "gone@x.com" },
+          { userId: 3, name: "Cara", email: "cara@x.com" },
+        ],
+      });
+      const user = userEvent.setup();
+      renderAt(1);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Change reviewer" }),
+      );
+      const dialog = await screen.findByRole("dialog");
+
+      expect(
+        within(dialog)
+          .getAllByRole("option")
+          .map((o) => o.textContent),
+      ).toEqual(["Select a reviewer…", "Cara (cara@x.com)"]);
+      expect(
+        within(dialog).getByRole("button", { name: "Reassign" }),
+      ).toBeDisabled();
+    });
+
+    it("explains an empty pool instead of an empty picker", async () => {
+      api.getJob.mockResolvedValue(pendingJob(5));
+      api.listApprovers.mockResolvedValue({
+        data: [{ userId: 9, name: "Gone", email: "gone@x.com" }],
+      });
+      const user = userEvent.setup();
+      renderAt(1);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Change reviewer" }),
+      );
+
+      expect(
+        await screen.findByText("There is nobody else to review this posting."),
+      ).toBeInTheDocument();
+      expect(screen.queryByLabelText("Reviewer")).not.toBeInTheDocument();
+    });
+
+    it("lets the submitter withdraw the review and reloads", async () => {
+      api.getJob.mockResolvedValue(pendingJob(5));
+      api.withdrawReview.mockResolvedValue({ data: {} });
+      const user = userEvent.setup();
+      renderAt(1);
+
+      await user.click(await screen.findByRole("button", { name: "Withdraw" }));
+
+      await waitFor(() => expect(api.withdrawReview).toHaveBeenCalledWith("1"));
+      await waitFor(() => expect(api.getJob).toHaveBeenCalledTimes(2));
+      expect(toast.success).toHaveBeenCalledWith("Review withdrawn.");
+    });
+
+    it("offers Withdraw to nobody but the submitter", async () => {
+      api.getJob.mockResolvedValue(pendingJob(7));
+      renderAt(1);
+
+      await screen.findByText(/Assigned reviewer:/);
+
+      expect(
+        screen.queryByRole("button", { name: "Withdraw" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("says why a withdrawal failed", async () => {
+      api.getJob.mockResolvedValue(pendingJob(5));
+      api.withdrawReview.mockRejectedValue(
+        new Error("This request has already been closed."),
+      );
+      const user = userEvent.setup();
+      renderAt(1);
+
+      await user.click(await screen.findByRole("button", { name: "Withdraw" }));
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          "This request has already been closed.",
+        ),
+      );
     });
 
     it("keeps the dialog open and reports why when the call fails", async () => {
