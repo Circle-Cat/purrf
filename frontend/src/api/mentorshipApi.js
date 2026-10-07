@@ -124,6 +124,7 @@ export const searchParticipants = ({
   approvalStatus,
   onboardingStatus,
   eligible,
+  needsExemption,
   limit,
   offset,
   sortBy,
@@ -140,6 +141,7 @@ export const searchParticipants = ({
       approvalStatus,
       onboardingStatus,
       eligible,
+      needsExemption,
       limit,
       offset,
       sort_by: sortBy,
@@ -357,3 +359,21 @@ export const decideMentorshipApproval = (requestId, { decision, comment }) =>
  */
 export const withdrawMentorshipApproval = (requestId) =>
   request.post(API_ENDPOINTS.MENTORSHIP_ADMIN_APPROVAL_WITHDRAW(requestId));
+
+/**
+ * Ask a named reviewer to exempt a person from the matching history check in
+ * a round in progress. Resolves to `data` = the new approval request; refused
+ * with 409 when the person does not need one or one is already waiting.
+ * @param {number|string} roundId
+ * @param {number} userId
+ * @param {{reviewerId: number, reason: string}} body
+ */
+export const requestMatchingExemption = (
+  roundId,
+  userId,
+  { reviewerId, reason },
+) =>
+  request.post(
+    API_ENDPOINTS.MENTORSHIP_ADMIN_EXEMPTION_REQUEST(roundId, userId),
+    { reviewerId, reason },
+  );

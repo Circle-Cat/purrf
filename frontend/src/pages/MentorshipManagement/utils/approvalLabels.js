@@ -56,3 +56,21 @@ export const approvalPersonLabel = (person) => {
   if (!person) return "";
   return person.name || `ID ${person.userId}`;
 };
+
+/**
+ * Why someone needs a matching exemption, one line per history problem.
+ * @param {{reason: string, roundName?: string|null, completed?: number|null,
+ *          required?: number|null}[]} findings
+ * @returns {string[]}
+ */
+export const exemptionWhyLines = (findings) =>
+  (findings ?? []).map((f) => {
+    const round = f.roundName || "an earlier round";
+    if (f.reason === "quit_after_match") {
+      return `Quit after being matched in ${round}`;
+    }
+    if (f.reason === "meetings_short") {
+      return `Meetings short in ${round}: ${f.completed ?? 0} of ${f.required ?? "?"}`;
+    }
+    return f.reason;
+  });

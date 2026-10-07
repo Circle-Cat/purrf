@@ -20,8 +20,12 @@ import {
   getAllMentorshipRounds,
   getMatchingRun,
   startMatchingRun,
+  requestMatchingExemption,
+  getMentorshipApprovers,
+  decideMentorshipApproval,
 } from "@/api/mentorshipApi";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { useAuth } from "@/context/auth";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { toast } from "sonner";
 
@@ -34,9 +38,16 @@ vi.mock("@/api/mentorshipApi", () => ({
   getAllMentorshipRounds: vi.fn(),
   getMatchingRun: vi.fn(),
   startMatchingRun: vi.fn(),
+  requestMatchingExemption: vi.fn(),
+  getMentorshipApprovers: vi.fn(),
+  decideMentorshipApproval: vi.fn(),
+  reassignMentorshipApproval: vi.fn(),
+  withdrawMentorshipApproval: vi.fn(),
 }));
 
 vi.mock("@/hooks/useFeatureFlags", () => ({ useFeatureFlags: vi.fn() }));
+
+vi.mock("@/context/auth", () => ({ useAuth: vi.fn() }));
 
 // Latest first, as the API returns them; the latest has the higher id here so
 // that picking the lowest id instead of the first would show.
@@ -171,6 +182,10 @@ describe("ParticipantSearchCard", () => {
     getMatchingRun.mockResolvedValue({ data: { status: "never_run" } });
     startMatchingRun.mockResolvedValue({ data: { runId: 12 } });
     useFeatureFlags.mockReturnValue({});
+    useAuth.mockReturnValue({
+      permissions: ["mentorship.admin.read", "mentorship.admin.write"],
+      user: { userId: 9 },
+    });
   });
 
   afterEach(() => {
@@ -1930,6 +1945,200 @@ describe("ParticipantSearchCard", () => {
       );
 
       await waitFor(() => expect(getMatchingRun).toHaveBeenLastCalledWith("3"));
+    });
+  });
+
+  describe("needs exemption", () => {
+    const NEEDS_URL = "/?round=7&needsExemption=1";
+
+    const pickList = async (name) => {
+      await userEvent.click(screen.getByLabelText("List"));
+      await userEvent.click(screen.getByRole("option", { name }));
+    };
+
+    const shortOfMeetings = (overrides = {}) =>
+      participantRow({
+        userId: 21,
+        firstName: "Ann",
+        lastName: "Lee",
+        preferredName: "Ann Lee",
+        participantRole: "mentee",
+        approvalStatus: "signed_up",
+        pairs: [],
+        exemptionFindings: [
+          {
+            reason: "meetings_short",
+            roundId: 3,
+            roundName: "Spring 2026",
+            completed: 2,
+            required: 5,
+          },
+        ],
+        exemptionRequest: null,
+        ...overrides,
+      });
+
+    it("lists those only their history keeps out when picked and searched", async () => {
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await mounted();
+
+      await pickList("Needs exemption");
+      await search();
+
+      await waitFor(() => expect(searchParticipants).toHaveBeenCalledTimes(2));
+      expect(searchParticipants).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          roundId: "7",
+          needsExemption: true,
+          eligible: undefined,
+        }),
+      );
+      expect(urlParams().get("needsExemption")).toBe("1");
+    });
+
+    it("greys out Needs exemption for a round not in progress", async () => {
+      await renderCard({ url: "/?round=3" });
+      await mounted();
+
+      await userEvent.click(screen.getByLabelText("List"));
+
+      expect(
+        screen.getByRole("option", { name: "Needs exemption" }),
+      ).toHaveAttribute("aria-disabled", "true");
+    });
+
+    it("says why each person needs one", async () => {
+      searchParticipants.mockResolvedValue(
+        resultsOf([
+          shortOfMeetings(),
+          shortOfMeetings({
+            userId: 22,
+            preferredName: "Bo Ng",
+            exemptionFindings: [
+              {
+                reason: "quit_after_match",
+                roundId: 3,
+                roundName: "Spring 2026",
+              },
+            ],
+          }),
+        ]),
+      );
+      await renderCard({ url: NEEDS_URL });
+
+      expect(
+        await screen.findByText("Meetings short in Spring 2026: 2 of 5"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("Quit after being matched in Spring 2026"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("columnheader", { name: "Why" }),
+      ).toBeInTheDocument();
+    });
+
+    it("offers the Exemption column only with the matching-run flag on", async () => {
+      searchParticipants.mockResolvedValue(resultsOf([shortOfMeetings()]));
+      await renderCard({ url: NEEDS_URL });
+      await screen.findByText("Ann Lee");
+
+      expect(
+        screen.queryByRole("columnheader", { name: "Exemption" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Request exemption" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("asks for an exemption for the person in the round", async () => {
+      useFeatureFlags.mockReturnValue({ [FEATURE_FLAGS.MATCHING_RUN]: true });
+      searchParticipants.mockResolvedValue(resultsOf([shortOfMeetings()]));
+      getMentorshipApprovers.mockResolvedValue({
+        data: [{ userId: 8, name: "Rae Kim" }],
+      });
+      requestMatchingExemption.mockResolvedValue({ data: {} });
+      await renderCard({ url: NEEDS_URL });
+
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Request exemption" }),
+      );
+      const dialog = await screen.findByRole("dialog");
+      await waitFor(() =>
+        expect(
+          within(dialog).getByRole("option", { name: "Rae Kim" }),
+        ).toBeInTheDocument(),
+      );
+      await userEvent.selectOptions(
+        within(dialog).getByLabelText("Reviewer"),
+        "8",
+      );
+      await userEvent.type(
+        within(dialog).getByLabelText("Reason (optional)"),
+        "Her mentor left midway",
+      );
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Send request" }),
+      );
+
+      await waitFor(() =>
+        expect(requestMatchingExemption).toHaveBeenCalledWith("7", 21, {
+          reviewerId: 8,
+          reason: "Her mentor left midway",
+        }),
+      );
+      // The list is read again, quietly, to show the request waiting.
+      await waitFor(() => expect(searchParticipants).toHaveBeenCalledTimes(2));
+    });
+
+    it("lets the named reviewer decide on the row", async () => {
+      useFeatureFlags.mockReturnValue({ [FEATURE_FLAGS.MATCHING_RUN]: true });
+      useAuth.mockReturnValue({
+        permissions: ["mentorship.admin.read", "mentorship.approve"],
+        user: { userId: 8 },
+      });
+      searchParticipants.mockResolvedValue(
+        resultsOf([
+          shortOfMeetings({
+            exemptionRequest: {
+              requestId: 61,
+              action: "exempt_matching",
+              status: "pending",
+              round: { roundId: 7, name: "Fall 2026" },
+              targetId: "7:21",
+              person: { userId: 21, name: "Ann Lee" },
+              raisedBy: { userId: 9, name: "Ada Ng" },
+              reviewer: { userId: 8, name: "Rae Kim" },
+              reason: "Her mentor left midway",
+            },
+          }),
+        ]),
+      );
+      decideMentorshipApproval.mockResolvedValue({ data: {} });
+      await renderCard({ url: NEEDS_URL });
+
+      expect(
+        await screen.findByText("Waiting for approval — sent to Rae Kim"),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Withdraw" }),
+      ).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Approve" }));
+      const dialog = await screen.findByRole("dialog");
+      expect(
+        within(dialog).getByText(
+          /Ann Lee goes into this round's matching pool/,
+        ),
+      ).toBeInTheDocument();
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Approve" }),
+      );
+
+      await waitFor(() =>
+        expect(decideMentorshipApproval).toHaveBeenCalledWith(61, {
+          decision: "approve",
+          comment: undefined,
+        }),
+      );
     });
   });
 });

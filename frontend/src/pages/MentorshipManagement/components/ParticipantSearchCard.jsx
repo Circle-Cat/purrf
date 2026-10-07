@@ -39,6 +39,10 @@ import { useParticipantSearchRounds } from "@/pages/MentorshipManagement/hooks/u
 import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
 import { MentorshipApprovalStatus } from "@/constants/MentorshipApprovalStatus";
 import { userDisplayName } from "@/utils/userName";
+import { useAuth } from "@/context/auth";
+import { PERMISSIONS } from "@/constants/Permissions";
+import ExemptionCell from "@/pages/MentorshipManagement/components/ExemptionCell";
+import { exemptionWhyLines } from "@/pages/MentorshipManagement/utils/approvalLabels";
 import MeetingLogDialog from "@/pages/MentorshipManagement/components/MeetingLogDialog";
 import StateChips from "@/pages/AdminAccounts/components/StateChips";
 import { useMeetingLog } from "@/pages/MentorshipManagement/hooks/useMeetingLog";
@@ -58,6 +62,7 @@ const BOTH_INTERNAL_EXTERNAL = "__all__";
 const REGISTERED = "registered";
 const NOT_REGISTERED = "not_registered";
 const ELIGIBLE = "eligible";
+const NEEDS_EXEMPTION = "needs_exemption";
 
 const NO_SELECTION = new Map();
 
@@ -80,6 +85,9 @@ const COLUMNS = [
   { header: "Account", accessor: "account" },
   { header: "Pair", accessor: "pair" },
 ];
+
+const WHY_COLUMN = { header: "Why", accessor: "why" };
+const EXEMPTION_COLUMN = { header: "Exemption", accessor: "exemption" };
 
 /**
  * A column header that explains the column in a tooltip on hover or focus.
@@ -295,6 +303,10 @@ const ParticipantSearchCard = () => {
     listEligible,
     setListEligible,
     canListEligible,
+    needsExemption,
+    listNeedsExemption,
+    setListNeedsExemption,
+    canListNeedsExemption,
     refetch,
     offset,
     limit,
@@ -307,6 +319,9 @@ const ParticipantSearchCard = () => {
 
   const navigate = useNavigate();
   const location = useLocation();
+  const { permissions, user } = useAuth();
+  const canWrite = permissions.includes(PERMISSIONS.MENTORSHIP_ADMIN_WRITE);
+  const canApprove = permissions.includes(PERMISSIONS.MENTORSHIP_APPROVE);
   const flags = useFeatureFlags();
   // The backend refuses every matching endpoint while the flag is off.
   const matchingOn = Boolean(flags[FEATURE_FLAGS.MATCHING_RUN]);
@@ -489,6 +504,23 @@ const ParticipantSearchCard = () => {
               onOpenMeetings={(pair) => openMeetingsDialog(row, pair)}
             />
           ),
+          why: (
+            <ul className="space-y-0.5 text-xs">
+              {exemptionWhyLines(row.exemptionFindings).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          ),
+          exemption: (
+            <ExemptionCell
+              row={row}
+              roundId={committedRoundId}
+              canWrite={canWrite}
+              canApprove={canApprove}
+              userId={user?.userId}
+              onChanged={refetch}
+            />
+          ),
         }));
 
   return (
@@ -660,11 +692,14 @@ const ParticipantSearchCard = () => {
                 ? NOT_REGISTERED
                 : listEligible
                   ? ELIGIBLE
-                  : REGISTERED
+                  : listNeedsExemption
+                    ? NEEDS_EXEMPTION
+                    : REGISTERED
             }
             onValueChange={(v) => {
               setListNotRegistered(v === NOT_REGISTERED);
               setListEligible(v === ELIGIBLE);
+              setListNeedsExemption(v === NEEDS_EXEMPTION);
             }}
           >
             <SelectTrigger aria-label="List" className="h-8 w-44 text-xs">
@@ -674,6 +709,12 @@ const ParticipantSearchCard = () => {
               <SelectItem value={REGISTERED}>Registered</SelectItem>
               <SelectItem value={ELIGIBLE} disabled={!canListEligible}>
                 Eligible for matching
+              </SelectItem>
+              <SelectItem
+                value={NEEDS_EXEMPTION}
+                disabled={!canListNeedsExemption}
+              >
+                Needs exemption
               </SelectItem>
               <SelectItem
                 value={NOT_REGISTERED}
@@ -717,7 +758,13 @@ const ParticipantSearchCard = () => {
                   ? NOT_REGISTERED_COLUMNS
                   : showRunUi
                     ? [selectColumn, ...COLUMNS]
-                    : COLUMNS
+                    : needsExemption
+                      ? [
+                          ...COLUMNS,
+                          WHY_COLUMN,
+                          ...(matchingOn ? [EXEMPTION_COLUMN] : []),
+                        ]
+                      : COLUMNS
               }
               data={data}
               onSort={handleSort}

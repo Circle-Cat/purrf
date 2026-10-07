@@ -25,6 +25,7 @@ export const PARAM = Object.freeze({
   OFFSET: "offset",
   NOT_REGISTERED: "notRegistered",
   ELIGIBLE: "eligible",
+  NEEDS_EXEMPTION: "needsExemption",
 });
 
 const ACCOUNT_STATUSES = ["active", "blocked", "deactivated"];
@@ -56,13 +57,14 @@ const readOneOf = (params, key, allowed) => {
  * loaded, or when there are none, nothing is fetched and `canSearch` is false.
  *
  * The List filter picks who is listed: everyone registered (the default),
- * only those eligible for matching, or the Not registered list -- the people
+ * only those eligible for matching, those only their history keeps out of
+ * matching (Needs exemption), or the Not registered list -- the people
  * admitted to the programme who have not registered for the round. Like the
- * other filters it is a draft until Search. Eligible and Not registered are
- * only on offer for a round in progress, which the round list says
- * (`isInProgress`): picking a round not in progress puts the draft back to
- * Registered, and a URL asking for either in such a round is rewritten
- * without it. In Not registered the role filter means the admitted role, and
+ * other filters it is a draft until Search. Eligible, Needs exemption and
+ * Not registered are only on offer for a round in progress, which the round
+ * list says (`isInProgress`): picking a round not in progress puts the draft
+ * back to Registered, and a URL asking for any of them in such a round is
+ * rewritten without it. In Not registered the role filter means the admitted role, and
  * training and approval do not apply.
  *
  * @param {Array<{id: number, isInProgress?: boolean}>|null} rounds - Rounds,
@@ -103,6 +105,12 @@ export const useParticipantSearch = (rounds) => {
     eligibleRequested &&
     !notRegisteredRequested &&
     isInProgress(committedRoundId);
+  const needsExemptionRequested = params.get(PARAM.NEEDS_EXEMPTION) === "1";
+  const needsExemption =
+    needsExemptionRequested &&
+    !notRegisteredRequested &&
+    !eligibleRequested &&
+    isInProgress(committedRoundId);
   const sortBy = params.get(PARAM.SORT) || null;
   const order = sortBy && params.get(PARAM.ORDER) === "desc" ? "desc" : "asc";
   const offset = Number.parseInt(readDigits(params, PARAM.OFFSET) || "0", 10);
@@ -124,6 +132,7 @@ export const useParticipantSearch = (rounds) => {
   const [approvalStatus, setApprovalStatus] = useState(committedApproval);
   const [listNotRegistered, setListNotRegistered] = useState(notRegistered);
   const [listEligible, setListEligible] = useState(eligible);
+  const [listNeedsExemption, setListNeedsExemption] = useState(needsExemption);
 
   // Keep the inputs in step when the URL changes underneath them (back,
   // forward, or a pasted link).
@@ -140,6 +149,7 @@ export const useParticipantSearch = (rounds) => {
   useEffect(() => setApprovalStatus(committedApproval), [committedApproval]);
   useEffect(() => setListNotRegistered(notRegistered), [notRegistered]);
   useEffect(() => setListEligible(eligible), [eligible]);
+  useEffect(() => setListNeedsExemption(needsExemption), [needsExemption]);
 
   // Write the resolved round back into a search whose round is unknown,
   // replacing the entry so back does not return to the unresolved link.
@@ -191,6 +201,26 @@ export const useParticipantSearch = (rounds) => {
     );
   }, [hasSearched, rounds, eligibleRequested, eligible, setSearchParams]);
 
+  // Likewise for a Needs exemption request, once the rounds are known.
+  useEffect(() => {
+    if (!hasSearched || rounds == null) return;
+    if (!needsExemptionRequested || needsExemption) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete(PARAM.NEEDS_EXEMPTION);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [
+    hasSearched,
+    rounds,
+    needsExemptionRequested,
+    needsExemption,
+    setSearchParams,
+  ]);
+
   const { begin, isCurrent } = useRequestGuard();
 
   const fetchRows = useCallback(
@@ -223,6 +253,7 @@ export const useParticipantSearch = (rounds) => {
               ...person,
               onboardingStatus: committedOnboarding || undefined,
               eligible: eligible || undefined,
+              needsExemption: needsExemption || undefined,
               sortBy: sortBy ?? undefined,
               order,
               roundId: committedRoundId,
@@ -259,6 +290,7 @@ export const useParticipantSearch = (rounds) => {
       committedRole,
       committedApproval,
       eligible,
+      needsExemption,
       notRegistered,
       offset,
       sortBy,
@@ -308,6 +340,7 @@ export const useParticipantSearch = (rounds) => {
       [PARAM.OFFSET]: nextOffset || "",
       [PARAM.NOT_REGISTERED]: notRegistered ? "1" : "",
       [PARAM.ELIGIBLE]: eligible ? "1" : "",
+      [PARAM.NEEDS_EXEMPTION]: needsExemption ? "1" : "",
     });
 
   // Everything that picks who is listed, but not paging or sorting: a
@@ -324,12 +357,14 @@ export const useParticipantSearch = (rounds) => {
         committedApproval,
         notRegistered,
         eligible,
+        needsExemption,
       ])
     : "";
 
   const draftRoundId = roundIds.includes(roundId) ? roundId : defaultRoundId;
   const canListNotRegistered = canSearch && isInProgress(draftRoundId);
   const canListEligible = canListNotRegistered;
+  const canListNeedsExemption = canListNotRegistered;
 
   /** Pick the round; one not in progress goes back to Registered. */
   const setRoundId = (id) => {
@@ -337,6 +372,7 @@ export const useParticipantSearch = (rounds) => {
     if (!isInProgress(id)) {
       setListNotRegistered(false);
       setListEligible(false);
+      setListNeedsExemption(false);
     }
   };
 
@@ -347,7 +383,23 @@ export const useParticipantSearch = (rounds) => {
   const pickEligible = (on) => {
     if (on && !canListEligible) return;
     setListEligible(on);
-    if (on) setListNotRegistered(false);
+    if (on) {
+      setListNotRegistered(false);
+      setListNeedsExemption(false);
+    }
+  };
+
+  /**
+   * Turn Needs exemption on or off. On is refused for a round not in
+   * progress, and leaves the other lists.
+   */
+  const pickNeedsExemption = (on) => {
+    if (on && !canListNeedsExemption) return;
+    setListNeedsExemption(on);
+    if (on) {
+      setListNotRegistered(false);
+      setListEligible(false);
+    }
   };
 
   /**
@@ -361,6 +413,7 @@ export const useParticipantSearch = (rounds) => {
       setOnboardingStatus("");
       setApprovalStatus("");
       setListEligible(false);
+      setListNeedsExemption(false);
     }
   };
 
@@ -369,6 +422,11 @@ export const useParticipantSearch = (rounds) => {
     if (!canSearch) return;
     const inNotRegistered = listNotRegistered && canListNotRegistered;
     const inEligible = listEligible && canListEligible && !inNotRegistered;
+    const inNeedsExemption =
+      listNeedsExemption &&
+      canListNeedsExemption &&
+      !inNotRegistered &&
+      !inEligible;
     const before = searchParams.toString();
     const after = writeUrl({
       [PARAM.ID]: userId,
@@ -382,6 +440,7 @@ export const useParticipantSearch = (rounds) => {
       ...withSort(sortBy, order),
       [PARAM.NOT_REGISTERED]: inNotRegistered ? "1" : "",
       [PARAM.ELIGIBLE]: inEligible ? "1" : "",
+      [PARAM.NEEDS_EXEMPTION]: inNeedsExemption ? "1" : "",
     }).toString();
     // Searching again for what is already committed still re-reads the list.
     if (before === after) fetchRows();
@@ -442,6 +501,10 @@ export const useParticipantSearch = (rounds) => {
     listEligible,
     setListEligible: pickEligible,
     canListEligible,
+    needsExemption,
+    listNeedsExemption,
+    setListNeedsExemption: pickNeedsExemption,
+    canListNeedsExemption,
     offset,
     limit: LIMIT,
     nextPage,
