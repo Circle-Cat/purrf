@@ -9,6 +9,9 @@ import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { PERMISSIONS } from "@/constants/Permissions";
 
 vi.mock("@/context/auth", () => ({ useAuth: vi.fn() }));
+vi.mock("@/api/inboxApi", () => ({
+  getInboxCount: vi.fn(() => Promise.resolve({ data: { needsReply: 0 } })),
+}));
 vi.mock("@/hooks/useFeatureFlags", () => ({ useFeatureFlags: vi.fn() }));
 
 const renderSidebar = () =>
