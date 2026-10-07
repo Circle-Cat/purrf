@@ -81,6 +81,14 @@ MENTORSHIP_ADMIN_MATCH_RUN_EDIT_LOCK = (
     "/mentorship/admin/match-runs/{round_id}/edit-lock"
 )
 MENTORSHIP_ADMIN_MATCH_RUN_DRAFT = "/mentorship/admin/match-runs/{round_id}/draft"
+MENTORSHIP_ADMIN_MATCH_RUN_PUBLISH_REQUEST = (
+    "/mentorship/admin/match-runs/{round_id}/publish-request"
+)
+MENTORSHIP_ADMIN_APPROVERS = "/mentorship/admin/approvals/approvers"
+MENTORSHIP_ADMIN_APPROVALS_MINE = "/mentorship/admin/approvals/mine"
+MENTORSHIP_ADMIN_APPROVAL_REASSIGN = "/mentorship/admin/approvals/{request_id}/reassign"
+MENTORSHIP_ADMIN_APPROVAL_DECIDE = "/mentorship/admin/approvals/{request_id}/decide"
+MENTORSHIP_ADMIN_APPROVAL_WITHDRAW = "/mentorship/admin/approvals/{request_id}/withdraw"
 MENTORSHIP_ADMIN_ROUND_FEEDBACK = "/mentorship/admin/rounds/{round_id}/feedback"
 MENTORSHIP_ADMIN_ROUND_UNREGISTERED = "/mentorship/admin/rounds/{round_id}/unregistered"
 # Called by the matcher job, through the gateway Worker. Not under

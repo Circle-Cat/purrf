@@ -609,6 +609,21 @@ class TestMentorShipPairsRepository(BaseRepositoryTestLib):
         self.assertTrue(all(p.status == PairStatus.ACTIVE for p in result))
         self.assertTrue(all(p.round_id == self.rounds[0].round_id for p in result))
 
+    async def test_list_pairs_by_round_includes_inactive_pairs(self):
+        """Every pair in the round, whatever its status, and only that round."""
+        result = await self.repo.list_pairs_by_round(
+            session=self.session,
+            round_id=self.rounds[0].round_id,
+        )
+
+        self.assertEqual(
+            [p.pair_id for p in result],
+            sorted([self.pairs[0].pair_id, self.pairs[2].pair_id]),
+        )
+        self.assertEqual(
+            {p.status for p in result}, {PairStatus.ACTIVE, PairStatus.INACTIVE}
+        )
+
     async def test_get_active_pairs_by_round_no_result(self):
         """Test no pairs returned for non-existing round."""
         result = await self.repo.get_active_pairs_by_round(

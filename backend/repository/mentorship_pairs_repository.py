@@ -344,6 +344,26 @@ class MentorshipPairsRepository:
         result = await session.execute(stmt)
         return result.one_or_none()
 
+    async def list_pairs_by_round(
+        self, session: AsyncSession, round_id: int
+    ) -> list[MentorshipPairsEntity]:
+        """
+        Every pair in a round, active or not.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            round_id (int): The mentorship round ID.
+
+        Returns:
+            list[MentorshipPairsEntity]: The round's pairs, in pair id order.
+        """
+        result = await session.execute(
+            select(MentorshipPairsEntity)
+            .where(MentorshipPairsEntity.round_id == round_id)
+            .order_by(MentorshipPairsEntity.pair_id)
+        )
+        return list(result.scalars().all())
+
     async def get_active_pairs_by_round(
         self, session: AsyncSession, round_id: int
     ) -> list[MentorshipPairsEntity]:

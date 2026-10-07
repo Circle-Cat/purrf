@@ -14,6 +14,7 @@ Importing this module registers the renderer. ``fast_app_factory`` imports it
 once at startup for that side effect, alongside ``recipient_resolvers``.
 """
 
+import html
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -23,10 +24,15 @@ from backend.common.mentorship_enums import MentorshipEvent
 from backend.entity.event_entity import EventEntity
 from backend.mentorship import notification_email_copy as copy
 from backend.notification_management.render_registry import register_render
+from backend.common.name_utils import user_display_name
+from backend.repository.approval_request_repository import (
+    ApprovalRequestRepository,
+)
 from backend.repository.users_repository import UsersRepository
 
-# Stateless, so one module-level instance serves every render.
+# Stateless, so these module-level instances serve every render.
 _users_repository = UsersRepository()
+_approval_request_repository = ApprovalRequestRepository()
 
 # Where a recipient with no usable timezone on file is assumed to be. Most
 # mentors are in North America, and ``users.timezone`` is a free-form string
@@ -193,4 +199,62 @@ async def _render_matching_run_completed(session: AsyncSession, event: EventEnti
         int(details.get("menteeCount") or 0),
         int(details.get("mentorCount") or 0),
         seconds,
+    )
+
+
+async def _approval_parts(session: AsyncSession, event: EventEntity):
+    """What every approval email names: the action, the round, who acted, and
+    the request row.
+
+    The round's name is the snapshot taken when the event was recorded. The
+    reason and the decision comment are read from the request, which never
+    changes them once written, so a redelivery renders the same email.
+    """
+    details = event.details
+    row = await _approval_request_repository.get(session, int(details["requestId"]))
+    actor = "A colleague"
+    if event.actor_id is not None:
+        people = await _users_repository.get_all_by_ids(session, [event.actor_id])
+        if people:
+            person = people[0]
+            actor = (
+                user_display_name(
+                    first_name=person.first_name,
+                    last_name=person.last_name,
+                    preferred_name=person.preferred_name,
+                )
+                or actor
+            )
+    return details.get("action", ""), details.get("roundName"), html.escape(actor), row
+
+
+@register_render(MentorshipEvent.APPROVAL_REQUESTED)
+async def _render_approval_requested(session: AsyncSession, event: EventEntity):
+    """Tell the reviewer a mentorship request is waiting on them."""
+    action, round_name, actor, row = await _approval_parts(session, event)
+    return copy.approval_requested(
+        action, round_name, actor, row.reason if row else None
+    )
+
+
+@register_render(MentorshipEvent.APPROVAL_REASSIGNED)
+async def _render_approval_reassigned(session: AsyncSession, event: EventEntity):
+    """Tell the new reviewer a mentorship request was handed to them."""
+    action, round_name, actor, row = await _approval_parts(session, event)
+    return copy.approval_reassigned(
+        action, round_name, actor, row.reason if row else None
+    )
+
+
+@register_render(MentorshipEvent.APPROVAL_DECIDED)
+async def _render_approval_decided(session: AsyncSession, event: EventEntity):
+    """Tell the other side a mentorship request was approved, rejected or
+    withdrawn."""
+    action, round_name, actor, row = await _approval_parts(session, event)
+    return copy.approval_decided(
+        action,
+        round_name,
+        actor,
+        event.details.get("decision", ""),
+        row.decision_comment if row else None,
     )

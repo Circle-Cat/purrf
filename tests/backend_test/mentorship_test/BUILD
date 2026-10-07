@@ -198,3 +198,54 @@ py_test(
     srcs = ["matching_draft_service_test.py"],
     deps = ["//backend/mentorship"],
 )
+
+py_test(
+    name = "publish_matching_handler_test",
+    srcs = ["publish_matching_handler_test.py"],
+    deps = [
+        "//backend/entity:entities",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "approval_notifications_test",
+    srcs = ["approval_notifications_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/common:approval_enums",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/notification_management:recipient_registry",
+        "//backend/notification_management:render_registry",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "mentorship_approval_service_test",
+    srcs = ["mentorship_approval_service_test.py"],
+    deps = [
+        "//backend/common:approval_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "publish_matching_flow_test",
+    srcs = ["publish_matching_flow_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/approval:approval_service",
+        "//backend/common:approval_enums",
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+        "@pypi//sqlalchemy",
+    ],
+)

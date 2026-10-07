@@ -1,8 +1,11 @@
 """Reading a matching run back: what state it is in, and the result itself."""
 
 import unittest
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+from backend.common.approval_enums import ApprovalRequestStatus
 from backend.common.mentorship_enums import MatchingRunStatus
 from backend.mentorship.matching_contract import (
     RESULT_VERSION,
@@ -22,6 +25,14 @@ from backend.dto.matching_run_dto import (
 )
 from backend.mentorship.matching_draft import DraftEntry
 from backend.mentorship.matching_run_read_service import MatchingRunReadService
+
+
+def _no_approvals():
+    """An approval service with nothing pending and nothing closed."""
+    approvals = MagicMock()
+    approvals.get_pending_for_target = AsyncMock(return_value=None)
+    approvals.get_latest_closed_for_target = AsyncMock(return_value=None)
+    return approvals
 
 
 _NO_SKILLS = {key: False for key in SKILL_KEYS}
@@ -108,9 +119,11 @@ class MatchingRunOverviewTest(unittest.IsolatedAsyncioTestCase):
         self.users = MagicMock()
         self.users.get_all_by_ids = AsyncMock(return_value=[])
 
+        self.approvals = _no_approvals()
         self.service = MatchingRunReadService(
             matching_storage=self.storage,
             users_repository=self.users,
+            approval_service=self.approvals,
             logger=MagicMock(),
         )
         self.session = AsyncMock()
@@ -295,6 +308,73 @@ class MatchingRunOverviewTest(unittest.IsolatedAsyncioTestCase):
         overview = await self.service.read_overview(self.session, 7)
 
         self.assertEqual(overview["status"], MatchingRunStatus.NEVER_RUN)
+
+    async def test_a_publish_request_waiting_on_the_run_is_described(self):
+        self._succeeded({"1": _result(mentor_id="10")})
+        self.approvals.get_pending_for_target.return_value = SimpleNamespace(
+            request_id=31,
+            reviewer_id=8,
+            raised_by=42,
+            reason="Reviewed every pair",
+            created_at=datetime(2026, 10, 7, 9, 30, tzinfo=timezone.utc),
+        )
+        self.users.get_all_by_ids.return_value = [
+            _user(8, "Rae", "Kim"),
+            _user(42, "Yan", "Pei"),
+        ]
+
+        overview = await self.service.read_overview(self.session, 7)
+
+        self.assertEqual(
+            overview["publish_request"],
+            {
+                "request_id": 31,
+                "reviewer": {"user_id": "8", "name": "Rae Kim"},
+                "raised_by": {"user_id": "42", "name": "Yan Pei"},
+                "reason": "Reviewed every pair",
+                "created_at": "2026-10-07T09:30:00+00:00",
+            },
+        )
+        self.assertEqual(
+            self.approvals.get_pending_for_target.await_args.args[1:],
+            ("publish_matching", "r7-x-y"),
+        )
+        self.assertIsNone(overview["last_publish_rejection"])
+
+    async def test_the_last_rejection_of_the_run_is_shown(self):
+        self._succeeded({"1": _result(mentor_id="10")})
+        self.approvals.get_latest_closed_for_target.return_value = SimpleNamespace(
+            status=ApprovalRequestStatus.REJECTED,
+            decision_comment="Mentor 10 asked for one mentee only",
+            decided_by=8,
+            decided_at=datetime(2026, 10, 7, 11, 0, tzinfo=timezone.utc),
+        )
+        self.users.get_all_by_ids.return_value = [_user(8, "Rae", "Kim")]
+
+        overview = await self.service.read_overview(self.session, 7)
+
+        self.assertEqual(
+            overview["last_publish_rejection"],
+            {
+                "comment": "Mentor 10 asked for one mentee only",
+                "decided_by": {"user_id": "8", "name": "Rae Kim"},
+                "decided_at": "2026-10-07T11:00:00+00:00",
+            },
+        )
+        self.assertIsNone(overview["publish_request"])
+
+    async def test_a_withdrawn_request_is_not_shown_as_a_rejection(self):
+        self._succeeded({"1": _result(mentor_id="10")})
+        self.approvals.get_latest_closed_for_target.return_value = SimpleNamespace(
+            status=ApprovalRequestStatus.WITHDRAWN,
+            decision_comment=None,
+            decided_by=42,
+            decided_at=datetime(2026, 10, 7, 11, 0, tzinfo=timezone.utc),
+        )
+
+        overview = await self.service.read_overview(self.session, 7)
+
+        self.assertIsNone(overview["last_publish_rejection"])
 
 
 class MatchingRunResultsTest(MatchingRunOverviewTest):

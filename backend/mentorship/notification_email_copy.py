@@ -224,3 +224,124 @@ def matching_run_failed(round_name: str | None, error: str | None) -> tuple[str,
         "produced results.</p>" + reported + "<p>Nothing was changed. Starting "
         "a new run for this round is safe.</p>" + _FOOTER,
     )
+
+
+# What each mentorship approval asks for, as the object of "to ...".
+_APPROVAL_ASKS = {"publish_matching": "publish the matching result"}
+
+
+def _approval_ask(action: str, round_name: str | None) -> str:
+    ask = _APPROVAL_ASKS.get(action, "make a change")
+    name = (round_name or "").strip()
+    return f"{ask} for {html.escape(name)}" if name else ask
+
+
+def _approval_subject_round(round_name: str | None) -> str:
+    name = (round_name or "").strip()
+    return f": {name}" if name else ""
+
+
+def _quoted(label: str, text: str | None) -> str:
+    text = (text or "").strip()
+    return f"<p>{label}: {html.escape(text)}</p>" if text else ""
+
+
+_APPROVAL_WHERE = "<p>Open Mentorship Management in Purrf to review it.</p>"
+
+
+def approval_requested(
+    action: str, round_name: str | None, actor: str, reason: str | None
+) -> tuple[str, str]:
+    """The email a reviewer gets when a mentorship request names them.
+
+    Args:
+        action (str): What is asked for.
+        round_name (str | None): The round's name, possibly blank.
+        actor (str): Who asked, already HTML-escaped.
+        reason (str | None): Their reason.
+
+    Returns:
+        tuple[str, str]: Subject and HTML body.
+    """
+    return (
+        f"Mentorship approval requested{_approval_subject_round(round_name)}",
+        "<p>Hello,</p>"
+        f"<p>{actor} asked you to approve a request to "
+        f"{_approval_ask(action, round_name)}. It is waiting on your decision.</p>"
+        + _quoted("Their reason", reason)
+        + _APPROVAL_WHERE
+        + _FOOTER,
+    )
+
+
+def approval_reassigned(
+    action: str, round_name: str | None, actor: str, reason: str | None
+) -> tuple[str, str]:
+    """The email a reviewer gets when a request is handed to them.
+
+    Says a handover happened, since the request may have been waiting on
+    somebody else for a while.
+
+    Args:
+        action (str): What is asked for.
+        round_name (str | None): The round's name, possibly blank.
+        actor (str): Who handed it over, already HTML-escaped.
+        reason (str | None): The raiser's reason.
+
+    Returns:
+        tuple[str, str]: Subject and HTML body.
+    """
+    return (
+        f"Mentorship approval reassigned to you{_approval_subject_round(round_name)}",
+        "<p>Hello,</p>"
+        f"<p>{actor} moved a request to {_approval_ask(action, round_name)} to "
+        "you. It is waiting on your decision.</p>"
+        + _quoted("The reason given", reason)
+        + _APPROVAL_WHERE
+        + _FOOTER,
+    )
+
+
+def approval_decided(
+    action: str,
+    round_name: str | None,
+    actor: str,
+    decision: str,
+    comment: str | None,
+) -> tuple[str, str]:
+    """The email the other side gets when a request is closed: the raiser
+    for an approval or a rejection, the reviewer for a withdrawal.
+
+    Args:
+        action (str): What was asked for.
+        round_name (str | None): The round's name, possibly blank.
+        actor (str): Who closed it, already HTML-escaped.
+        decision (str): approved, rejected or withdrawn.
+        comment (str | None): The reviewer's reason, for a rejection.
+
+    Returns:
+        tuple[str, str]: Subject and HTML body.
+    """
+    ask = _approval_ask(action, round_name)
+    subject_round = _approval_subject_round(round_name)
+    if decision == "withdrawn":
+        return (
+            f"Mentorship approval withdrawn{subject_round}",
+            "<p>Hello,</p>"
+            f"<p>{actor} withdrew their request to {ask}. Nothing is waiting "
+            "on you any more.</p>" + _FOOTER,
+        )
+    if decision == "rejected":
+        return (
+            f"Mentorship approval rejected{subject_round}",
+            "<p>Hello,</p>"
+            f"<p>{actor} rejected your request to {ask}.</p>"
+            + _quoted("Their reason", comment)
+            + "<p>Open Mentorship Management in Purrf to make changes and ask "
+            "again.</p>" + _FOOTER,
+        )
+    return (
+        f"Mentorship approval approved{subject_round}",
+        "<p>Hello,</p>"
+        f"<p>{actor} approved your request to {ask}. It has been done.</p>" + _FOOTER,
+    )
