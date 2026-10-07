@@ -37,13 +37,11 @@ _VIEWER = UserContextDto(
     sub="v",
     primary_email="viewer@circlecat.org",
     user_id=None,
-    permissions=frozenset(
-        {
-            Permission.MENTORSHIP_ADMIN_WRITE,
-            Permission.RECRUITING_APPLICATION_ADVANCE,
-            Permission.INQUIRIES_MANAGE,
-        }
-    ),
+    permissions=frozenset({
+        Permission.MENTORSHIP_ADMIN_WRITE,
+        Permission.RECRUITING_APPLICATION_ADVANCE,
+        Permission.INQUIRIES_MANAGE,
+    }),
 )
 
 
@@ -63,7 +61,9 @@ class InboxListOnARealSessionTest(BaseRepositoryTestLib):
             application_repository=ApplicationRepository(),
             round_repository=MentorshipRoundRepository(),
             event_repository=EventRepository(),
-            thread_service_resolver=ThreadServiceResolver(job_repository=JobRepository()),
+            thread_service_resolver=ThreadServiceResolver(
+                job_repository=JobRepository()
+            ),
             conversation_service=SimpleNamespace(sender_address="careers@example.com"),
             aliases=InboxAliases(mentorship="mentorship-db@example.com"),
             gmail_client=Mock(),
@@ -88,34 +88,30 @@ class InboxListOnARealSessionTest(BaseRepositoryTestLib):
         return thread
 
     async def _message(self, thread, key, direction, minutes, sender=None, kind=None):
-        await self.insert_entities(
-            [
-                EmailMessageEntity(
-                    thread_id=thread.thread_id,
-                    gmail_message_id=f"g-inbox-list-db-{key}",
-                    direction=direction,
-                    from_address=sender,
-                    to_addresses="mentorship-db@example.com",
-                    snippet=f"snippet {key}",
-                    gmail_internal_date=_at(minutes),
-                    created_at=_at(minutes),
-                    inbound_kind=kind,
-                )
-            ]
-        )
+        await self.insert_entities([
+            EmailMessageEntity(
+                thread_id=thread.thread_id,
+                gmail_message_id=f"g-inbox-list-db-{key}",
+                direction=direction,
+                from_address=sender,
+                to_addresses="mentorship-db@example.com",
+                snippet=f"snippet {key}",
+                gmail_internal_date=_at(minutes),
+                created_at=_at(minutes),
+                inbound_kind=kind,
+            )
+        ])
 
     async def _moved(self, thread, from_service, minutes):
-        await self.insert_entities(
-            [
-                EventEntity(
-                    subject_type=INBOX_SUBJECT_TYPE,
-                    subject_id=thread.thread_id,
-                    event_type=InboxEvent.MOVED,
-                    details={"from": from_service, "to": "inquiries"},
-                    created_at=_at(minutes),
-                )
-            ]
-        )
+        await self.insert_entities([
+            EventEntity(
+                subject_type=INBOX_SUBJECT_TYPE,
+                subject_id=thread.thread_id,
+                event_type=InboxEvent.MOVED,
+                details={"from": from_service, "to": "inquiries"},
+                created_at=_at(minutes),
+            )
+        ])
 
     async def test_order_counts_and_matching_match_the_prototype(self):
         user = UsersEntity(
@@ -128,31 +124,43 @@ class InboxListOnARealSessionTest(BaseRepositoryTestLib):
             is_active=True,
         )
         await self.insert_entities([user])
-        await self.insert_entities(
-            [
-                UserEmailsEntity(
-                    user_id=user.user_id,
-                    email="w.xiao.inbox-db@example.com",
-                    is_primary=False,
-                )
-            ]
-        )
+        await self.insert_entities([
+            UserEmailsEntity(
+                user_id=user.user_id,
+                email="w.xiao.inbox-db@example.com",
+                is_primary=False,
+            )
+        ])
         asked = await self._thread("asked", ContextType.MENTORSHIP_INBOX)
         await self._message(
-            asked, "asked-1", "inbound", 10, '"Wang" <W.Xiao.Inbox-DB@Example.com>', "human"
+            asked,
+            "asked-1",
+            "inbound",
+            10,
+            '"Wang" <W.Xiao.Inbox-DB@Example.com>',
+            "human",
         )
         moved = await self._thread("moved", ContextType.INQUIRIES_INBOX)
-        await self._message(moved, "moved-1", "inbound", 30, "stranger@ext.com", "human")
+        await self._message(
+            moved, "moved-1", "inbound", 30, "stranger@ext.com", "human"
+        )
         await self._moved(moved, "recruiting", 31)
         await self._moved(moved, "mentorship", 32)
         answered = await self._thread("answered", ContextType.MENTORSHIP_INBOX)
         await self._message(answered, "answered-1", "inbound", 5, "a@ext.com", "human")
-        await self._message(answered, "answered-2", "outbound", 60, "mentorship-db@example.com")
+        await self._message(
+            answered, "answered-2", "outbound", 60, "mentorship-db@example.com"
+        )
         archived = await self._thread(
             "archived", ContextType.MENTORSHIP_INBOX, archived_at=_at(25)
         )
         await self._message(archived, "archived-1", "inbound", 20, "b@ext.com", "human")
-        mine = {asked.thread_id, moved.thread_id, answered.thread_id, archived.thread_id}
+        mine = {
+            asked.thread_id,
+            moved.thread_id,
+            answered.thread_id,
+            archived.thread_id,
+        }
 
         result = await self._list()
         with_archived = await self._list(archived=True)
@@ -168,13 +176,15 @@ class InboxListOnARealSessionTest(BaseRepositoryTestLib):
         self.assertEqual(
             result.counts.needs_reply, self.baseline.counts.needs_reply + 2
         )
-        self.assertEqual(
-            result.counts.unassigned, self.baseline.counts.unassigned + 1
-        )
+        self.assertEqual(result.counts.unassigned, self.baseline.counts.unassigned + 1)
         before = {s.key: s.needs_reply for s in self.baseline.services}
         after = {s.key: s.needs_reply for s in result.services}
-        self.assertEqual(after[InboxService.MENTORSHIP], before[InboxService.MENTORSHIP] + 1)
-        self.assertEqual(after[InboxService.INQUIRIES], before[InboxService.INQUIRIES] + 1)
+        self.assertEqual(
+            after[InboxService.MENTORSHIP], before[InboxService.MENTORSHIP] + 1
+        )
+        self.assertEqual(
+            after[InboxService.INQUIRIES], before[InboxService.INQUIRIES] + 1
+        )
 
         rows = {r.thread_id: r for r in result.threads}
         self.assertEqual(rows[asked.thread_id].sender, "w.xiao.inbox-db@example.com")

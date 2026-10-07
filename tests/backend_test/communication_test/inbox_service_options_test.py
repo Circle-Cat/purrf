@@ -8,7 +8,6 @@ from backend.common.recruiting_enums import ApplicationStage, JobKind
 from tests.backend_test.communication_test.inbox_service_read_test import (
     _ALL,
     _Fixture,
-    _email,
     _in,
     _out,
     _thread,
@@ -54,7 +53,11 @@ class _OptionsFixture(_Fixture):
                 )
             ],
             2: [_in(20, 0)],
-            3: [_attached(30, 0, [{"name": "q.txt", "size": 1, "gmailAttachmentId": "att-q"}])],
+            3: [
+                _attached(
+                    30, 0, [{"name": "q.txt", "size": 1, "gmailAttachmentId": "att-q"}]
+                )
+            ],
             4: [_out(40, 0)],
         }
         self.gmail.get_attachment = Mock(return_value=b"BYTES")
@@ -71,7 +74,9 @@ class DownloadTest(_OptionsFixture):
 
     async def test_message_of_another_thread_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "attachment not found"):
-            await self.service.download_attachment(self.session, _viewer(*_ALL), 1, 30, 0)
+            await self.service.download_attachment(
+                self.session, _viewer(*_ALL), 1, 30, 0
+            )
 
         self.gmail.get_attachment.assert_not_called()
 
@@ -86,7 +91,9 @@ class DownloadTest(_OptionsFixture):
 
     async def test_message_without_attachments_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "attachment not found"):
-            await self.service.download_attachment(self.session, _viewer(*_ALL), 2, 20, 0)
+            await self.service.download_attachment(
+                self.session, _viewer(*_ALL), 2, 20, 0
+            )
 
     async def test_invisible_thread_is_not_found(self):
         viewer = _viewer(Permission.MENTORSHIP_ADMIN_WRITE)
@@ -155,7 +162,14 @@ class JobOptionsTest(_OptionsFixture):
         self.applications = []
         self.application_repo.list_by_user = AsyncMock(
             side_effect=lambda s, uid: [
-                (a, next(j for j in (_ANALYST, _DESIGNER, _MENTEE) if j.job_id == a.job_id))
+                (
+                    a,
+                    next(
+                        j
+                        for j in (_ANALYST, _DESIGNER, _MENTEE)
+                        if j.job_id == a.job_id
+                    ),
+                )
                 for a in self.applications
                 if a.user_id == uid
             ]
@@ -184,7 +198,13 @@ class JobOptionsTest(_OptionsFixture):
         (job,) = (await self._options(40)).jobs
 
         self.assertEqual(
-            (job.job_id, job.title, job.application_id, job.application_status, job.fallback),
+            (
+                job.job_id,
+                job.title,
+                job.application_id,
+                job.application_status,
+                job.fallback,
+            ),
             (5, "Data Analyst", 12, "rejected", True),
         )
 
@@ -208,7 +228,9 @@ class JobOptionsTest(_OptionsFixture):
 
         result = await self._options(40)
 
-        self.assertEqual([(j.job_id, j.application_id) for j in result.jobs], [(9, 11), (5, 10)])
+        self.assertEqual(
+            [(j.job_id, j.application_id) for j in result.jobs], [(9, 11), (5, 10)]
+        )
 
 
 class SearchPeopleTest(_OptionsFixture):
@@ -216,11 +238,15 @@ class SearchPeopleTest(_OptionsFixture):
         super().setUp()
         self.found = [_user(7, "Ann", "Lee"), _user(42, "Bo", "Chan")]
         self.user_repo.list_users = AsyncMock(
-            side_effect=lambda s, **kw: ([(u, False) for u in self.found], len(self.found))
+            side_effect=lambda s, **kw: (
+                [(u, False) for u in self.found],
+                len(self.found),
+            )
         )
         self.user_repo.get_user_by_user_id = AsyncMock(
             side_effect=lambda s, uid: next(
-                (u for u in self.found + [_user(5, "Cy", "Dow")] if u.user_id == uid), None
+                (u for u in self.found + [_user(5, "Cy", "Dow")] if u.user_id == uid),
+                None,
             )
         )
         self.email_repo.get_contact_emails_by_user_ids = AsyncMock(

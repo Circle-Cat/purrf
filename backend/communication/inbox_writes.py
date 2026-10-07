@@ -143,7 +143,9 @@ class InboxThreadWrites:
         thread.archived_by_user_id = None
         return await self._finish(session, user, thread, InboxEvent.UNARCHIVED)
 
-    async def assign(self, session, user, thread_id, person_id, round_id=None, job_id=None):
+    async def assign(
+        self, session, user, thread_id, person_id, round_id=None, job_id=None
+    ):
         """Attach a thread to a person and a Mentorship round or Recruiting job. Commits.
 
         A Mentorship thread takes ``round_id`` (any existing round, registered
@@ -203,7 +205,11 @@ class InboxThreadWrites:
             raise ValueError("This thread cannot be assigned")
         if thread.context_type not in _ASSIGNED_CONTEXTS or thread.context_id is None:
             raise ValueError("This thread is not assigned")
-        key = "roundId" if thread.context_type == ContextType.ACTIVITY else "applicationId"
+        key = (
+            "roundId"
+            if thread.context_type == ContextType.ACTIVITY
+            else "applicationId"
+        )
         details = {"userId": thread.user_id, key: thread.context_id}
         thread.user_id = None
         thread.context_type = INBOX_CONTEXT[service]

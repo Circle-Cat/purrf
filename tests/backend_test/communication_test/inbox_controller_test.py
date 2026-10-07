@@ -226,7 +226,8 @@ class InboxControllerTest(unittest.TestCase):
         self.service.reply.return_value = _detail()
 
         response = self.client.post(
-            "/inbox/threads/31/reply", json={"body": "<p>Hi</p>", "lastSeenMessageId": 77}
+            "/inbox/threads/31/reply",
+            json={"body": "<p>Hi</p>", "lastSeenMessageId": 77},
         )
 
         self.assertEqual(response.status_code, 200)
@@ -329,7 +330,9 @@ class InboxControllerTest(unittest.TestCase):
     def test_round_options_return_only_rounds(self):
         self.service.assign_options.return_value = AssignOptionsDto(
             rounds=[
-                InboxRoundOptionDto(round_id=3, name=None, current=True, registered=False)
+                InboxRoundOptionDto(
+                    round_id=3, name=None, current=True, registered=False
+                )
             ]
         )
 
@@ -339,7 +342,11 @@ class InboxControllerTest(unittest.TestCase):
 
         self.assertEqual(
             response.json()["data"],
-            {"rounds": [{"roundId": 3, "name": None, "current": True, "registered": False}]},
+            {
+                "rounds": [
+                    {"roundId": 3, "name": None, "current": True, "registered": False}
+                ]
+            },
         )
         self.assertEqual(self.service.assign_options.await_args.args[2:], (31, 40))
 
@@ -397,7 +404,10 @@ class InboxControllerTest(unittest.TestCase):
     # -- attachments --
 
     def test_attachment_download(self):
-        self.service.download_attachment.return_value = (b"%PDF", '../\u7b80\u5386 "v2".pdf')
+        self.service.download_attachment.return_value = (
+            b"%PDF",
+            '../\u7b80\u5386 "v2".pdf',
+        )
 
         response = self.client.get("/inbox/threads/31/messages/77/attachments/1")
 
@@ -413,7 +423,9 @@ class InboxControllerTest(unittest.TestCase):
         )
 
     def test_attachment_of_another_thread_is_400(self):
-        self.service.download_attachment.side_effect = ValueError("attachment not found")
+        self.service.download_attachment.side_effect = ValueError(
+            "attachment not found"
+        )
 
         response = self.client.get("/inbox/threads/31/messages/77/attachments/9")
 
@@ -424,7 +436,7 @@ class AttachmentDispositionTest(unittest.TestCase):
     def test_quotes_slashes_and_non_ascii(self):
         self.assertEqual(
             _attachment_disposition('../\u7b80\u5386 "v2".pdf'),
-            "attachment; filename=\"__ v2.pdf\"; "
+            'attachment; filename="__ v2.pdf"; '
             "filename*=UTF-8''%E7%AE%80%E5%8E%86%20v2.pdf",
         )
 

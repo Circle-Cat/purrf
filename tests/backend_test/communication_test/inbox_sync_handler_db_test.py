@@ -260,14 +260,18 @@ class TestInboxSyncOnARealSession(BaseRepositoryTestLib):
 
         self.assertEqual(await self._stored_ids(thread_id), ["m1", "m2"])
         received = (
-            await self.session.execute(
-                select(EventEntity).where(
-                    EventEntity.subject_type == "application",
-                    EventEntity.subject_id == application.application_id,
-                    EventEntity.event_type == RecruitingEvent.EMAIL_RECEIVED,
+            (
+                await self.session.execute(
+                    select(EventEntity).where(
+                        EventEntity.subject_type == "application",
+                        EventEntity.subject_id == application.application_id,
+                        EventEntity.event_type == RecruitingEvent.EMAIL_RECEIVED,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         self.assertEqual(len(received), 1)
         self.assertEqual(received[0].details["threadId"], thread_id)
         notified = await self.session.scalars(
@@ -303,9 +307,7 @@ class TestInboxSyncOnARealSession(BaseRepositoryTestLib):
         self.assertEqual(await self._stored_ids(thread_id), ["m1", "m2"])
         events = await self._needs_reply_events(thread_id)
         self.assertEqual(len(events), 2)
-        self.assertEqual(
-            {e.details["service"] for e in events}, {"mentorship"}
-        )
+        self.assertEqual({e.details["service"] for e in events}, {"mentorship"})
 
     async def test_resync_sweeps_inbox_threads_and_skips_application_ones(self):
         inbox = await self.threads.create(

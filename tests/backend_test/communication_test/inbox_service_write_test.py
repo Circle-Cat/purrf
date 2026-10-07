@@ -109,7 +109,9 @@ class _WriteFixture(_Fixture):
         self.next_message_id += 1
         message = _out(self.next_message_id, 500, to=", ".join(kwargs["to"]))
         self.messages.setdefault(kwargs["thread_id"], []).append(message)
-        return SimpleNamespace(message_id=message.message_id, thread_id=kwargs["thread_id"])
+        return SimpleNamespace(
+            message_id=message.message_id, thread_id=kwargs["thread_id"]
+        )
 
     async def _record(self, session, **kwargs):
         self.calls.append(("event", kwargs["event_type"]))
@@ -171,7 +173,9 @@ class ReplyTest(_WriteFixture):
 
         await self.service.reply(self.session, _viewer(*_ALL), 1, "b", 13)
 
-        self.assertEqual(self.conversation.send.call_args.kwargs["subject"], "RE: Question")
+        self.assertEqual(
+            self.conversation.send.call_args.kwargs["subject"], "RE: Question"
+        )
 
     async def test_thread_without_inbound_replies_to_the_first_recipient(self):
         await self.service.reply(self.session, _viewer(*_ALL), 8, "b", 80)
@@ -330,7 +334,9 @@ class AssignTest(_WriteFixture):
 
         self._assert_nothing_written()
 
-    async def test_recruiting_assign_falls_back_to_the_latest_rejected_application(self):
+    async def test_recruiting_assign_falls_back_to_the_latest_rejected_application(
+        self,
+    ):
         self.applications = [
             _application(41, _ANALYST, ApplicationStage.REJECTED),
             _application(57, _ANALYST, ApplicationStage.REJECTED),
@@ -338,7 +344,9 @@ class AssignTest(_WriteFixture):
         ]
         viewer = _viewer(Permission.RECRUITING_APPLICATION_ADVANCE)
 
-        detail = await self.service.assign(self.session, viewer, 4, person_id=40, job_id=5)
+        detail = await self.service.assign(
+            self.session, viewer, 4, person_id=40, job_id=5
+        )
 
         thread = self._thread_of(4)
         self.assertEqual(
@@ -358,7 +366,9 @@ class AssignTest(_WriteFixture):
             _application(57, _ANALYST, ApplicationStage.REJECTED),
         ]
 
-        await self.service.assign(self.session, _viewer(*_ALL), 4, person_id=40, job_id=5)
+        await self.service.assign(
+            self.session, _viewer(*_ALL), 4, person_id=40, job_id=5
+        )
 
         self.assertEqual(self._thread_of(4).context_id, 41)
 

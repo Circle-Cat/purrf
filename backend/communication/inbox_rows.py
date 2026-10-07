@@ -173,4 +173,6 @@ def matches_search(
     by_id = _USER_ID_QUERY.match(needle)
     if by_id:
         return person_id is not None and str(person_id) == by_id.group(1)
-    return any(needle in (value or "").lower() for value in (person_name, sender, subject))
+    return any(
+        needle in (value or "").lower() for value in (person_name, sender, subject)
+    )

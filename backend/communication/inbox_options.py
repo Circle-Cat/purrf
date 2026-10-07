@@ -80,7 +80,9 @@ class InboxThreadOptions:
         if not can_assign(service, facts_of(thread, messages)):
             raise ValueError("This thread cannot be assigned")
         if service == InboxService.MENTORSHIP:
-            return AssignOptionsDto(rounds=await self._round_options(session, person_id))
+            return AssignOptionsDto(
+                rounds=await self._round_options(session, person_id)
+            )
         return AssignOptionsDto(jobs=await self._job_options(session, person_id))
 
     async def _round_options(self, session, person_id):

@@ -303,13 +303,11 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
         """Everything rows need beyond the thread itself, one query per kind."""
         if not items:
             return _Lookups()
-        senders = sorted(
-            {
-                item.facts.contact
-                for item in items
-                if item.thread.user_id is None and item.facts.contact
-            }
-        )
+        senders = sorted({
+            item.facts.contact
+            for item in items
+            if item.thread.user_id is None and item.facts.contact
+        })
         matched = {
             row.email.lower(): row
             for row in await self._user_emails.list_by_emails(session, senders)

@@ -52,9 +52,7 @@ def _attachment_disposition(name: str) -> str:
         str: The header value.
     """
     cleaned = "".join(
-        c
-        for c in name
-        if c not in _UNSAFE_IN_NAME and ord(c) >= 32 and ord(c) != 127
+        c for c in name if c not in _UNSAFE_IN_NAME and ord(c) >= 32 and ord(c) != 127
     ).lstrip(". ")
     cleaned = cleaned or "attachment"
     ascii_name = "".join(c if c.isascii() else "_" for c in cleaned)

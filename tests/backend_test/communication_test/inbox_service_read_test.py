@@ -320,7 +320,10 @@ class PersonMatchingTest(_Fixture):
     async def test_sender_falls_back_to_first_outbound_recipient(self):
         self.threads = [_thread(1, ContextType.MENTORSHIP_INBOX)]
         self.messages = {
-            1: [_out(10, 0, to='"Pat" <Pat@Ext.com>, other@ext.com'), _in(11, 5, kind="auto_reply")]
+            1: [
+                _out(10, 0, to='"Pat" <Pat@Ext.com>, other@ext.com'),
+                _in(11, 5, kind="auto_reply"),
+            ]
         }
 
         row = (await self._list()).threads[0]
@@ -339,7 +342,9 @@ class PersonMatchingTest(_Fixture):
         self.assertEqual((row.person.user_id, row.person.name), (50, "Bobby"))
         self.assertIsNone(row.matched_by)
         self.assertEqual(row.assignment.kind, "round")
-        self.assertEqual((row.assignment.round_id, row.assignment.round_name), (8, "Fall 2026"))
+        self.assertEqual(
+            (row.assignment.round_id, row.assignment.round_name), (8, "Fall 2026")
+        )
         self.assertFalse(row.unassigned)
 
     async def test_recruiting_person_is_named_by_legal_name(self):
@@ -426,7 +431,9 @@ class FlagsAndOrderTest(_Fixture):
 
     async def test_tracked_thread_is_never_unassigned(self):
         self.threads = [_thread(1, ContextType.MENTORSHIP_INBOX)]
-        self.messages = {1: [_out(10, 0, to="known@ext.com"), _in(11, 1, sender="known@ext.com")]}
+        self.messages = {
+            1: [_out(10, 0, to="known@ext.com"), _in(11, 1, sender="known@ext.com")]
+        }
         self.emails = [_email(41, "known@ext.com", True)]
         self.users = [_user(41, "Ann", "Lee")]
 
@@ -505,7 +512,9 @@ class FlagsAndOrderTest(_Fixture):
         self.threads = [_thread(1, ContextType.INQUIRIES_INBOX)]
         self.messages = {1: [_in(10, 0)]}
         self.moves = {
-            1: SimpleNamespace(details={"from": "mentorship", "to": "inquiries"}, created_at=_at(5))
+            1: SimpleNamespace(
+                details={"from": "mentorship", "to": "inquiries"}, created_at=_at(5)
+            )
         }
 
         row = (await self._list()).threads[0]
@@ -534,7 +543,6 @@ class FlagsAndOrderTest(_Fixture):
             ),
             1,
         )
-
 
     async def test_mail_dated_before_the_archive_but_synced_after_it_reopens(self):
         self.threads = [
@@ -647,7 +655,11 @@ class DetailTest(_Fixture):
     async def test_a_later_outbound_closes_the_bounce(self):
         self.threads = [_thread(1, ContextType.MENTORSHIP_INBOX)]
         self.messages = {
-            1: [_out(10, 0), _in(11, 5, kind="bounce", failed_recipients=""), _out(12, 9)]
+            1: [
+                _out(10, 0),
+                _in(11, 5, kind="bounce", failed_recipients=""),
+                _out(12, 9),
+            ]
         }
 
         detail = await self.service.get_thread(self.session, _viewer(*_ALL), 1)
@@ -665,7 +677,12 @@ class DetailTest(_Fixture):
 
     async def test_bounce_without_named_recipients_points_at_the_contact(self):
         self.threads = [_thread(1, ContextType.MENTORSHIP_INBOX)]
-        self.messages = {1: [_out(10, 0, to="pat@ext.com"), _in(11, 5, kind="bounce", failed_recipients="")]}
+        self.messages = {
+            1: [
+                _out(10, 0, to="pat@ext.com"),
+                _in(11, 5, kind="bounce", failed_recipients=""),
+            ]
+        }
 
         detail = await self.service.get_thread(self.session, _viewer(*_ALL), 1)
 

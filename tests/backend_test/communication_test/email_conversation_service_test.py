@@ -285,20 +285,28 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(thread.reply_alias, SENDER)
         self.assertIsNone(thread.open_bounce)
 
-        thread = await self._list_one(
-            [self._out(1, t0), self._msg(2, t1), self._out(3, t2)]
-        )
+        thread = await self._list_one([
+            self._out(1, t0),
+            self._msg(2, t1),
+            self._out(3, t2),
+        ])
         self.assertFalse(thread.needs_reply)
 
     async def test_list_conversation_needs_reply_matches_inbox_state(self):
         from backend.communication.inbox_state import needs_reply
 
-        msgs = [self._out(1, "2026-07-01T00:00:00Z"), self._msg(2, "2026-07-02T00:00:00Z")]
+        msgs = [
+            self._out(1, "2026-07-01T00:00:00Z"),
+            self._msg(2, "2026-07-02T00:00:00Z"),
+        ]
         thread = await self._list_one(msgs)
         self.assertEqual(thread.needs_reply, needs_reply(msgs, None))
 
     async def test_list_conversation_archived_thread_does_not_need_reply(self):
-        msgs = [self._out(1, "2026-07-01T00:00:00Z"), self._msg(2, "2026-07-02T00:00:00Z")]
+        msgs = [
+            self._out(1, "2026-07-01T00:00:00Z"),
+            self._msg(2, "2026-07-02T00:00:00Z"),
+        ]
         thread = await self._list_one(msgs, archived_at="2026-07-03T00:00:00Z")
         self.assertFalse(thread.needs_reply)
 
@@ -329,7 +337,11 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         thread = await self._list_one([first, bounce])
         self.assertEqual(thread.open_bounce.bounced_to, "typo@example.com")
 
-        thread = await self._list_one([first, bounce, self._out(3, "2026-07-03T00:00:00Z")])
+        thread = await self._list_one([
+            first,
+            bounce,
+            self._out(3, "2026-07-03T00:00:00Z"),
+        ])
         self.assertIsNone(thread.open_bounce)
 
     async def test_list_conversation_exposes_inbound_kind_and_to_addresses(self):
