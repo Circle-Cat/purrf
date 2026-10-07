@@ -109,6 +109,13 @@ GMAIL_SENDER_RECRUITING = "GMAIL_SENDER_RECRUITING"
 # own alias so a non-prod message can never look like a prod one.
 GMAIL_SENDER_NOTIFICATION = "GMAIL_SENDER_NOTIFICATION"
 
+# Aliases this environment claims for the Inbox, one per service. Empty means
+# the service is not claimed. Environments sharing a mailbox must not set the
+# same address.
+GMAIL_INBOX_MENTORSHIP = "GMAIL_INBOX_MENTORSHIP"
+GMAIL_INBOX_RECRUITING = "GMAIL_INBOX_RECRUITING"
+GMAIL_INBOX_INQUIRIES = "GMAIL_INBOX_INQUIRIES"
+
 # Fully qualified Pub/Sub topic that Gmail users.watch publishes this
 # mailbox's changes to. One topic per mailbox: environments sharing a mailbox
 # must pass the same topic, or each watch call replaces the other's.

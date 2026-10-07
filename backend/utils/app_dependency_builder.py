@@ -181,6 +181,7 @@ from backend.repository.email_message_repository import EmailMessageRepository
 from backend.common.gmail_client import GmailClient
 from backend.communication.email_conversation_service import EmailConversationService
 from backend.communication.email_context_registry import EmailContextRegistry
+from backend.communication.inbox_aliases import InboxAliases
 from backend.communication.gmail_push_controller import GmailPushController
 from backend.communication.gmail_push_service import GmailPushService
 from backend.communication.gmail_maintenance_service import GmailMaintenanceService
@@ -869,10 +870,15 @@ class AppDependencyBuilder:
             raise ValueError(
                 f"Missing environment variable: {GMAIL_SENDER_NOTIFICATION}"
             )
+        self.inbox_aliases = InboxAliases.from_env()
         self.gmail_client = GmailClient(
             logger=self.logger,
             retry_utils=self.retry_utils,
-            sender_addresses=[recruiting_sender, self.notification_sender_address],
+            sender_addresses=[
+                recruiting_sender,
+                self.notification_sender_address,
+                *self.inbox_aliases.claimed(),
+            ],
         )
         self.recruiting_notification_service = RecruitingNotificationService(
             self.notification_repository,

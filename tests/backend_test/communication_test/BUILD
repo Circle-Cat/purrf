@@ -114,3 +114,12 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "inbox_aliases_test",
+    srcs = ["inbox_aliases_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+        "//backend/communication",
+    ],
+)
