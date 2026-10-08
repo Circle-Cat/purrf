@@ -877,7 +877,7 @@ class AppDependencyBuilder:
             sender_addresses=[
                 recruiting_sender,
                 self.notification_sender_address,
-                *self.inbox_aliases.claimed(),
+                *self.inbox_aliases.addresses(),
             ],
         )
         self.recruiting_notification_service = RecruitingNotificationService(

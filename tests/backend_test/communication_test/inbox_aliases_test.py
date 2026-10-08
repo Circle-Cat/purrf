@@ -28,25 +28,35 @@ class InboxAliasesTest(unittest.TestCase):
         self.assertIsNone(self.aliases.service_for(["inquiries-test@circlecat.org"]))
         self.assertIsNone(self.aliases.alias_of(InboxService.INQUIRIES))
 
-    def test_claimed_is_lowercase_and_skips_unset(self):
+    def test_addresses_are_lowercase_and_skip_unset(self):
         self.assertEqual(
-            self.aliases.claimed(),
+            self.aliases.addresses(),
             ["mentorship-test@circlecat.org", "recruiting-test@circlecat.org"],
         )
 
     def test_from_env_treats_blank_as_unset(self):
-        with patch.dict(os.environ, {"GMAIL_INBOX_MENTORSHIP": "  "}, clear=False):
+        with patch.dict(os.environ, {"GMAIL_SENDER_MENTORSHIP": "  "}, clear=False):
             self.assertIsNone(InboxAliases.from_env().mentorship)
 
-    def test_from_env_reads_all_three(self):
+    def test_from_env_reads_the_senders(self):
         env = {
-            "GMAIL_INBOX_MENTORSHIP": " M@x.org ",
-            "GMAIL_INBOX_RECRUITING": "r@x.org",
-            "GMAIL_INBOX_INQUIRIES": "I@x.org",
+            "GMAIL_SENDER_MENTORSHIP": " M@x.org ",
+            "GMAIL_SENDER_RECRUITING": "r@x.org",
+            "GMAIL_SENDER_INQUIRIES": "I@x.org",
+            "GMAIL_INBOX_ENABLED": "true",
         }
         with patch.dict(os.environ, env, clear=False):
             aliases = InboxAliases.from_env()
-        self.assertEqual(aliases.claimed(), ["m@x.org", "r@x.org", "i@x.org"])
+        self.assertEqual(aliases.addresses(), ["m@x.org", "r@x.org", "i@x.org"])
+        self.assertEqual(aliases.service_for(["r@x.org"]), InboxService.RECRUITING)
+
+    def test_from_env_claims_nothing_unless_enabled(self):
+        for flag in ("", "false", "1"):
+            env = {"GMAIL_SENDER_MENTORSHIP": "m@x.org", "GMAIL_INBOX_ENABLED": flag}
+            with patch.dict(os.environ, env, clear=False):
+                aliases = InboxAliases.from_env()
+            self.assertIsNone(aliases.service_for(["m@x.org"]), flag)
+            self.assertEqual(aliases.alias_of(InboxService.MENTORSHIP), "m@x.org")
 
     def test_service_for_is_case_insensitive(self):
         self.assertEqual(
