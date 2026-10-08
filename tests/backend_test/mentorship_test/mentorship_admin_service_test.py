@@ -190,6 +190,8 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             application_repository=self.mock_application_repo,
             matching_eligibility_service=self.mock_eligibility,
             mentorship_approval_service=self.mock_approvals,
+            note_repository=MagicMock(),
+            approval_service=MagicMock(),
         )
 
     async def test_meeting_log_says_whether_its_round_is_in_progress(self):
@@ -1572,6 +1574,8 @@ class TestGetRoundFeedback(unittest.IsolatedAsyncioTestCase):
             application_repository=MagicMock(),
             matching_eligibility_service=MagicMock(),
             mentorship_approval_service=MagicMock(),
+            note_repository=MagicMock(),
+            approval_service=MagicMock(),
         )
 
     async def test_maps_sent_and_unsent_rows_and_names_partners(self):

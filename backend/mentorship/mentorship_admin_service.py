@@ -5,12 +5,21 @@ from backend.dto.participant_search_filter_dto import (
     ParticipantSearchFilterDto,
     UnregisteredFilterDto,
 )
+from backend.dto.mentorship_approval_dto import ApprovalPersonDto
+from backend.dto.participant_detail_dto import (
+    DetailRoundDto,
+    ParticipantDetailDto,
+    ParticipantNoteDto,
+    ParticipationHistoryRowDto,
+    PendingBlockRequestDto,
+)
 from backend.dto.participant_search_dto import (
     AttendanceIssueDto,
     ExemptionFindingDto,
     ParticipantPairDto,
     ParticipantRowDto,
     ParticipantSearchDto,
+    PersonRowDto,
     UnregisteredRowDto,
     UnregisteredSearchDto,
 )
@@ -27,12 +36,14 @@ from backend.dto.round_feedback_dto import (
     RoundFeedbackDto,
 )
 from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
-from backend.common.exceptions import ConflictError
+from backend.admin.block_service import BLOCK_USER
+from backend.common.exceptions import ConflictError, NotFoundError
 from backend.common.mentorship_enums import (
     MENTORSHIP_ONBOARDING_CATEGORIES,
     MeetingNoteTag,
     MeetingSource,
     PairStatus,
+    ParticipantNoteTag,
     ParticipantRole,
     TrainingCategory,
 )
@@ -64,6 +75,8 @@ class MentorshipAdminService:
         application_repository,
         matching_eligibility_service,
         mentorship_approval_service,
+        note_repository,
+        approval_service,
     ) -> None:
         self.users_repository = users_repository
         self.participants_repository = participants_repository
@@ -76,6 +89,8 @@ class MentorshipAdminService:
         self.application_repository = application_repository
         self.matching_eligibility_service = matching_eligibility_service
         self.mentorship_approval_service = mentorship_approval_service
+        self.note_repository = note_repository
+        self.approval_service = approval_service
 
     def _extract_emails(self, emails: list) -> tuple[str | None, list[str]]:
         """
@@ -536,6 +551,199 @@ class MentorshipAdminService:
                 )
             )
         return UnregisteredSearchDto(rows=result, total=total)
+
+    async def get_participant_detail(
+        self, session: AsyncSession, round_id: int, user_id: int
+    ) -> ParticipantDetailDto:
+        """Everything the admin console's page for one person in one round
+        shows, registered for it or not.
+
+        Reuses the participant search for the registration and history rows,
+        so the page and the list cannot disagree about a pair or a status.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round the page is about.
+            user_id (int): The person.
+
+        Returns:
+            ParticipantDetailDto: The page's data.
+
+        Raises:
+            NotFoundError: The round or the user does not exist.
+        """
+        round_entity = await self.rounds_repository.get_by_round_id(session, round_id)
+        if round_entity is None:
+            raise NotFoundError(f"Mentorship round {round_id} does not exist.")
+        users_map, emails_map = await self.users_repository.get_users_and_emails_by_ids(
+            session, [user_id]
+        )
+        user = users_map.get(user_id)
+        if user is None:
+            raise NotFoundError(f"User {user_id} does not exist.")
+        in_progress = is_in_progress(round_entity, datetime.now(timezone.utc))
+
+        rows = (
+            await self.search_participants(
+                session, ParticipantSearchFilterDto(user_id=user_id)
+            )
+        ).participant_rows
+        registration = next((r for r in rows if r.round_id == round_id), None)
+        if registration is not None and in_progress:
+            # The Needs exemption search is what fills in the findings and
+            # the request waiting on them; it returns nothing for someone
+            # whose history is clean.
+            flagged = (
+                await self.search_participants(
+                    session,
+                    ParticipantSearchFilterDto(
+                        user_id=user_id, round_id=round_id, needs_exemption=True
+                    ),
+                )
+            ).participant_rows
+            if flagged:
+                registration = flagged[0]
+
+        exempted_rounds = (
+            await self.note_repository.list_round_ids_by_tag(
+                session, [user_id], ParticipantNoteTag.MATCHING_EXEMPTION
+            )
+        ).get(user_id, set())
+
+        primary_email, alternative_emails = self._extract_emails(
+            emails_map.get(user_id, [])
+        )
+        return ParticipantDetailDto(
+            person=PersonRowDto(
+                user_id=user_id,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                preferred_name=user.preferred_name,
+                primary_email=primary_email,
+                alternative_emails=alternative_emails,
+                is_blocked=bool(user.is_blocked),
+                is_deactivated=not user.is_active,
+                is_internal=bool(user.is_internal),
+            ),
+            round=DetailRoundDto(
+                round_id=round_entity.round_id,
+                name=round_entity.name,
+                required_meetings=round_entity.required_meetings,
+                in_progress=in_progress,
+            ),
+            registration=registration,
+            exempted=round_id in exempted_rounds,
+            feedback=await self._feedback_of(session, round_id, user_id),
+            notes=await self._notes_of(session, round_id, user_id),
+            pending_block_request=await self._pending_block_request(session, user_id),
+            history=await self._history(session, round_entity, rows, exempted_rounds),
+        )
+
+    async def _names(self, session: AsyncSession, user_ids) -> dict[int, str]:
+        """Display names of these people, keyed by user_id."""
+        users = await self.users_repository.get_all_by_ids(session, list(user_ids))
+        return {
+            u.user_id: user_display_name(
+                first_name=u.first_name,
+                last_name=u.last_name,
+                preferred_name=u.preferred_name,
+            )
+            for u in users
+        }
+
+    def _note_dto(self, note, names: dict[int, str]) -> ParticipantNoteDto:
+        return ParticipantNoteDto(
+            note_id=note.note_id,
+            tag=note.tag,
+            body=note.body,
+            pair_id=note.pair_id,
+            request_id=note.request_id,
+            author=ApprovalPersonDto(
+                user_id=note.author_user_id, name=names.get(note.author_user_id)
+            ),
+            created_at=note.created_at,
+        )
+
+    async def _notes_of(
+        self, session: AsyncSession, round_id: int, user_id: int
+    ) -> list[ParticipantNoteDto]:
+        """The person's notes in the round, newest first."""
+        notes = await self.note_repository.list_for_user_round(
+            session, user_id, round_id
+        )
+        names = await self._names(session, {n.author_user_id for n in notes})
+        return [self._note_dto(n, names) for n in reversed(notes)]
+
+    async def _feedback_of(
+        self, session: AsyncSession, round_id: int, user_id: int
+    ) -> ParticipantFeedbackDto | None:
+        """The person's feedback for the round, if the round asks them for
+        any -- the same people the round's Feedback page lists."""
+        owed = await self.participants_repository.get_feedback_owed_in_round(
+            session, round_id
+        )
+        mine = next(((p, u) for p, u in owed if u.user_id == user_id), None)
+        if mine is None:
+            return None
+        participant, user = mine
+        partners = {
+            u.user_id: u
+            for u in await self.users_repository.get_all_by_ids(
+                session,
+                [e["partner_id"] for e in self._pair_feedback_entries(participant)],
+            )
+        }
+        return self._participant_feedback(participant, user, partners)
+
+    async def _pending_block_request(
+        self, session: AsyncSession, user_id: int
+    ) -> PendingBlockRequestDto | None:
+        """The block request waiting on a reviewer for this person, if any."""
+        row = await self.approval_service.get_pending_for_target(
+            session, BLOCK_USER, str(user_id)
+        )
+        if row is None:
+            return None
+        names = await self._names(session, {row.reviewer_id})
+        return PendingBlockRequestDto(
+            request_id=row.request_id,
+            reviewer=ApprovalPersonDto(
+                user_id=row.reviewer_id, name=names.get(row.reviewer_id)
+            ),
+        )
+
+    async def _history(
+        self,
+        session: AsyncSession,
+        round_entity,
+        rows: list[ParticipantRowDto],
+        exempted_rounds: set[int],
+    ) -> list[ParticipationHistoryRowDto]:
+        """The person's rounds that ended before this one, newest first.
+
+        "Ended before" compares meetings_completion_deadline_at; a round
+        missing it has no place on the timeline and is left out, and so is
+        every round when this one is missing it.
+        """
+        cutoff = round_entity.meetings_completion_deadline_at
+        if cutoff is None:
+            return []
+        rounds_map = {
+            r.round_id: r for r in await self.rounds_repository.get_all_rounds(session)
+        }
+
+        def deadline(row):
+            r = rounds_map.get(row.round_id)
+            return r.meetings_completion_deadline_at if r else None
+
+        earlier = [r for r in rows if deadline(r) is not None and deadline(r) < cutoff]
+        earlier.sort(key=deadline, reverse=True)
+        return [
+            ParticipationHistoryRowDto.model_validate(
+                {**r.model_dump(), "exempted": r.round_id in exempted_rounds}
+            )
+            for r in earlier
+        ]
 
     def _resolve_meeting_notes(
         self, meeting: dict, mentor_id: int, mentee_id: int
