@@ -10,6 +10,8 @@ export const ROUTE_PATHS = {
     `/mentorship-management/rounds/${roundId}/feedback`,
   MENTORSHIP_MATCHING: (roundId) =>
     `/mentorship-management/matching/${roundId}`,
+  MENTORSHIP_PARTICIPANT: (userId) =>
+    `/mentorship-management/participants/${userId}`,
   INBOX: "/inbox",
   VERIFY_REQUIRED: "/verify-required",
   SIGN_IN_SECURITY: "/settings/sign-in",
