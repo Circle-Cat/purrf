@@ -13,6 +13,7 @@ from backend.common.exceptions import ConflictError
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE, InboxEvent
 from backend.communication.inbox_access import visible_services
 from backend.communication.inbox_rows import can_assign, facts_of, reply_contact
+from backend.communication.inbox_state import is_human_inbound, needs_reply
 from backend.notification_management.event_recorder import record_event
 
 
@@ -157,6 +158,10 @@ class InboxThreadWrites:
     async def move(self, session, user, thread_id, target: InboxService):
         """Move a thread to another service's inbox, unassigned and unarchived. Commits.
 
+        When the moved thread needs a reply, the target service's people are
+        told with NEEDS_REPLY, ``movedFrom`` naming the old service; the mover
+        is not.
+
         Args:
             session (AsyncSession): The active DB session.
             user (UserContextDto): The viewer.
@@ -189,6 +194,21 @@ class InboxThreadWrites:
             event_type=InboxEvent.MOVED,
             details={"from": str(service), "to": str(target)},
         )
+        if needs_reply(facts.ordered, thread.archived_at):
+            newest = [m for m in facts.ordered if is_human_inbound(m)][-1]
+            await record_event(
+                session,
+                subject_type=INBOX_SUBJECT_TYPE,
+                subject_id=thread.thread_id,
+                actor_id=user.user_id,
+                event_type=InboxEvent.NEEDS_REPLY,
+                details={
+                    "service": str(target),
+                    "subject": thread.subject,
+                    "from": newest.from_address,
+                    "movedFrom": str(service),
+                },
+            )
         await session.commit()
         if target not in visible_services(user):
             return None
