@@ -127,7 +127,7 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
             InboxListDto: Rows, counts and per-service Needs reply counts.
         """
         services = visible_services(user)
-        items = await self._load_items(session, services)
+        items = await self._load_items(session, services, archived=query.archived)
         lookups = await self._lookups(session, items)
         rows = [(item, self._row(item, lookups)) for item in items]
 
@@ -187,7 +187,7 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
         Returns:
             int: The count for the sidebar badge.
         """
-        items = await self._load_items(session, visible_services(user))
+        items = await self._load_items(session, visible_services(user), archived=False)
         return sum(item.facts.needs_reply for item in items)
 
     async def get_thread(self, session, user, thread_id: int) -> InboxThreadDetailDto:
@@ -246,12 +246,16 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
             raise not_found
         return thread, service
 
-    async def _load_items(self, session, services) -> list[_Item]:
+    async def _load_items(self, session, services, archived) -> list[_Item]:
+        """The viewer's Inbox threads; archived ones are read only when asked for."""
         if not services:
             return []
-        threads = await self._threads.list_by_context_types(
-            session, [INBOX_CONTEXT[s] for s in services]
+        list_threads = (
+            self._threads.list_by_context_types
+            if archived
+            else self._threads.list_open_by_context_types
         )
+        threads = await list_threads(session, [INBOX_CONTEXT[s] for s in services])
         service_of = {context: service for service, context in INBOX_CONTEXT.items()}
         messages = await self._messages.list_by_threads(
             session, [t.thread_id for t in threads]

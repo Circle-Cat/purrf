@@ -9,6 +9,7 @@ from backend.common.permissions import Permission
 from backend.common.recruiting_enums import JobKind
 from backend.communication.inbox_aliases import InboxAliases
 from backend.communication.inbox_service import InboxThreadService
+from backend.communication.inbox_state import is_archived
 from backend.communication.thread_service import ThreadServiceResolver
 from backend.dto.inbox_dto import InboxQueryDto
 from backend.dto.user_context_dto import UserContextDto
@@ -118,6 +119,14 @@ class _Fixture(unittest.IsolatedAsyncioTestCase):
         self.thread_repo.list_by_context_types = AsyncMock(
             side_effect=lambda s, types: [
                 t for t in self.threads if t.context_type in types
+            ]
+        )
+        self.thread_repo.list_open_by_context_types = AsyncMock(
+            side_effect=lambda s, types: [
+                t
+                for t in self.threads
+                if t.context_type in types
+                and not is_archived(self.messages.get(t.thread_id, []), t.archived_at)
             ]
         )
         self.thread_repo.get = AsyncMock(
@@ -390,6 +399,18 @@ class SearchTest(_Fixture):
 
 
 class FlagsAndOrderTest(_Fixture):
+    async def test_archived_threads_are_read_only_when_asked_for(self):
+        self.threads = [_thread(1, ContextType.MENTORSHIP_INBOX)]
+        self.messages = {1: [_in(10, 0)]}
+
+        await self._list()
+        await self.service.count_needs_reply(self.session, _viewer(*_ALL))
+        self.thread_repo.list_by_context_types.assert_not_awaited()
+        self.assertEqual(self.thread_repo.list_open_by_context_types.await_count, 2)
+
+        await self._list(archived=True)
+        self.thread_repo.list_by_context_types.assert_awaited_once()
+
     async def test_needs_reply_first_by_latest_human_inbound_then_activity(self):
         self.threads = [
             _thread(1, ContextType.MENTORSHIP_INBOX),
