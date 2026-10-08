@@ -95,10 +95,10 @@ const RoundPicker = ({ rounds, value, onChange }) => (
   </div>
 );
 
-const appLabel = (a) =>
+const appLabel = (a, kind) =>
   [
     `#${a.applicationId}`,
-    stageLabel(a.stage, "employment"),
+    stageLabel(a.stage, kind),
     a.appliedAt &&
       `Applied ${formatInTz(a.appliedAt, resolveViewerTimezone(), "MMM d, yyyy")}`,
   ]
@@ -123,8 +123,8 @@ const JobPicker = ({
   if (!jobs.length) {
     return (
       <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-        {name} has not applied to any employment job, so this thread can&apos;t
-        be assigned. You can still reply without assigning, or Archive it.
+        {name} has not applied to any job, so this thread can&apos;t be
+        assigned. You can still reply without assigning, or Archive it.
       </p>
     );
   }
@@ -152,7 +152,7 @@ const JobPicker = ({
           ))}
         </select>
         <p className="text-xs text-slate-500">
-          Only employment jobs this person applied to.
+          Only jobs this person applied to.
         </p>
       </div>
       {job && (
@@ -171,7 +171,7 @@ const JobPicker = ({
           >
             {(job.applications ?? []).map((a) => (
               <option key={a.applicationId} value={a.applicationId}>
-                {appLabel(a)}
+                {appLabel(a, job.kind)}
               </option>
             ))}
           </select>

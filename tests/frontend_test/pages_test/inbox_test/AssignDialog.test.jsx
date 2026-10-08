@@ -94,6 +94,7 @@ describe("AssignDialog", () => {
   const engineer = {
     jobId: 3,
     title: "Engineer",
+    kind: "employment",
     applications: [
       {
         applicationId: 52,
@@ -111,6 +112,7 @@ describe("AssignDialog", () => {
   const designer = {
     jobId: 8,
     title: "Designer",
+    kind: "employment",
     applications: [
       {
         applicationId: 77,
@@ -125,6 +127,32 @@ describe("AssignDialog", () => {
     ],
   };
 
+  it("lists activity jobs and names their hired stage Admitted", async () => {
+    const mentee = {
+      jobId: 12,
+      title: "Mentee 2026",
+      kind: "activity",
+      applications: [
+        {
+          applicationId: 90,
+          stage: "hired",
+          appliedAt: "2026-04-10T12:00:00Z",
+        },
+      ],
+    };
+    api.getInboxAssignOptions.mockResolvedValue(
+      recruitingOptions([mentee, engineer]),
+    );
+    const { onAssign } = setup(thread({ service: "recruiting" }));
+    const job = await screen.findByLabelText("Job");
+    fireEvent.change(job, { target: { value: "12" } });
+    const app = screen.getByLabelText("Application");
+    expect(app).toHaveValue("90");
+    expect(app.options[0].textContent).toMatch(/^#90 · Admitted · Applied /);
+    fireEvent.click(screen.getByRole("button", { name: "Assign" }));
+    expect(onAssign).toHaveBeenCalledWith({ userId: 7, applicationId: 90 });
+  });
+
   it("defaults to the live application and assigns it for Recruiting", async () => {
     api.getInboxAssignOptions.mockResolvedValue(
       recruitingOptions([engineer, designer]),
@@ -132,7 +160,7 @@ describe("AssignDialog", () => {
     const { onAssign } = setup(thread({ service: "recruiting" }));
     const job = await screen.findByLabelText("Job");
     expect(
-      screen.getByText("Only employment jobs this person applied to."),
+      screen.getByText("Only jobs this person applied to."),
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("Application")).toBeNull();
     expect(screen.getByRole("button", { name: "Assign" })).toBeDisabled();
