@@ -114,7 +114,7 @@ class _CountingHandler:
     def __init__(self):
         self.synced = []
 
-    async def sync_tracked_thread(self, session, thread):
+    async def sync_tracked_thread(self, session, thread, messages=None):
         self.synced.append(thread.gmail_thread_id)
         return 0
 
@@ -192,7 +192,7 @@ class TestInboxRoutingOnARealSession(BaseRepositoryTestLib):
 
     async def test_a_routed_thread_survives_its_first_sync_failing(self):
         class _FailingHandler:
-            async def sync_tracked_thread(self, session, thread):
+            async def sync_tracked_thread(self, session, thread, messages=None):
                 raise RateLimitedError("429")
 
         self.handler = _FailingHandler()

@@ -7,7 +7,9 @@ class EmailContextRegistry:
     and ``async resync_all(session) -> dict`` (the full resync run when the
     history cursor has expired; it may commit). The handler is where that
     domain's consequences of new mail are written, so no entry point can
-    persist messages while skipping them.
+    persist messages while skipping them. The Inbox contexts' handler also
+    takes ``messages=``, the messages the Inbox router read to create the
+    thread, so its first sync does not read them again.
     """
 
     def __init__(self):
