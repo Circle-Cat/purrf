@@ -182,6 +182,8 @@ from backend.common.gmail_client import GmailClient
 from backend.communication.email_conversation_service import EmailConversationService
 from backend.communication.email_context_registry import EmailContextRegistry
 from backend.communication.inbox_aliases import InboxAliases
+from backend.communication.inbox_controller import InboxController
+from backend.communication.inbox_service import InboxThreadService
 from backend.communication.inbox_router import InboxRouter
 from backend.communication.inbox_notifier import InboxNotifier
 from backend.communication.inbox_sync_handler import InboxSyncHandler
@@ -1072,6 +1074,25 @@ class AppDependencyBuilder:
             gmail_maintenance_service=self.gmail_maintenance_service,
             database=self.database,
         )
+        self.inbox_thread_service = InboxThreadService(
+            thread_repository=self.email_thread_repository,
+            message_repository=self.email_message_repository,
+            user_emails_repository=self.user_emails_repository,
+            users_repository=self.users_repository,
+            application_repository=self.application_repository,
+            round_repository=self.mentorship_round_repository,
+            event_repository=self.event_repository,
+            thread_service_resolver=self.thread_service_resolver,
+            conversation_service=self.email_conversation_service,
+            aliases=self.inbox_aliases,
+            gmail_client=self.gmail_client,
+            round_participants_repository=self.mentorship_round_participants_repo,
+            rounds_service=self.rounds_service,
+        )
+        self.inbox_controller = InboxController(
+            inbox_thread_service=self.inbox_thread_service,
+            database=self.database,
+        )
         self.recruiting_controller = RecruitingController(
             job_service=self.job_service,
             database=self.database,
@@ -1348,6 +1369,7 @@ class AppDependencyBuilder:
             notification_delivery_controller=self.notification_delivery_controller,
             gmail_push_controller=self.gmail_push_controller,
             gmail_sync_controller=self.gmail_sync_controller,
+            inbox_controller=self.inbox_controller,
             pubsub_push_controller=self.pubsub_push_controller,
             notification_publisher=self.notification_publisher_client,
             notification_topic_path=self.notification_topic_path,

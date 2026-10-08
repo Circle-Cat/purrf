@@ -238,7 +238,7 @@ def _email_received(dto, stage):
     subject_line = f"<p>Subject: {dto.email_subject}</p>" if dto.email_subject else ""
     return (
         f"New email reply: {dto.plain.applicant} ({dto.plain.job_title})",
-        f"<p>A reply arrived on an email you sent about {dto.applicant}'s "
+        f"<p>A candidate replied to an email about {dto.applicant}'s "
         f"application for {dto.job_title}.</p>"
         f"{_candidate_line(dto)}"
         f"{from_line}"

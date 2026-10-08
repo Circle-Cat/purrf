@@ -71,6 +71,28 @@ class JobRepository:
         )
         return result.scalars().one_or_none()
 
+    async def get_by_application_ids(
+        self, session: AsyncSession, application_ids: list[int]
+    ) -> dict[int, JobEntity]:
+        """The job each application was made to, in one read.
+
+        Args:
+            session (AsyncSession): The active async database session.
+            application_ids (list[int]): The applications whose jobs are wanted.
+
+        Returns:
+            dict[int, JobEntity]: Keyed by application id; applications that do
+                not exist are absent. Empty, without a query, for no ids.
+        """
+        if not application_ids:
+            return {}
+        result = await session.execute(
+            select(ApplicationEntity.application_id, JobEntity)
+            .join(JobEntity, ApplicationEntity.job_id == JobEntity.job_id)
+            .where(ApplicationEntity.application_id.in_(application_ids))
+        )
+        return {application_id: job for application_id, job in result.all()}
+
     async def list_published(self, session: AsyncSession) -> list[JobEntity]:
         """Return jobs whose status is exactly PUBLISHED.
 

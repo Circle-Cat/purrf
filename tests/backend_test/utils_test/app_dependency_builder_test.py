@@ -650,6 +650,7 @@ class TestAppDependencyBuilder(TestCase):
             notification_delivery_controller=ANY,
             gmail_push_controller=ANY,
             gmail_sync_controller=ANY,
+            inbox_controller=builder.inbox_controller,
             pubsub_push_controller=ANY,
             notification_publisher=mock_notification_publisher_client,
             notification_topic_path="projects/test-project/topics/notifications",
@@ -657,6 +658,14 @@ class TestAppDependencyBuilder(TestCase):
             database=mock_database_cls.return_value,
             logger=mock_logger,
         )
+
+        inbox = builder.inbox_thread_service
+        self.assertIs(builder.inbox_controller.inbox_thread_service, inbox)
+        self.assertIs(inbox._applications, builder.application_repository)
+        self.assertIs(inbox._gmail, builder.gmail_client)
+        self.assertIs(inbox._participants, builder.mentorship_round_participants_repo)
+        self.assertIs(inbox._rounds_service, builder.rounds_service)
+        self.assertIs(inbox._rounds, builder.mentorship_round_repository)
 
         # Assert that the builder's internal attributes are the created mock instances
         mock_google_client_instance.create_chat_client.assert_called_once()

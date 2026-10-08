@@ -104,6 +104,33 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.thread_repo.create.assert_not_awaited()
         self.message_repo.create.assert_not_awaited()
 
+    async def test_send_as_another_address_sends_and_stores_it(self):
+        self.gmail.send_message.return_value = {
+            "gmail_message_id": "g1",
+            "gmail_thread_id": "gt1",
+            "rfc822_message_id": "<r1@mail>",
+        }
+        self.thread_repo.create.return_value = SimpleNamespace(
+            thread_id=10, gmail_thread_id="gt1"
+        )
+
+        await self.service.send(
+            self.session,
+            user_id=None,
+            context_type=ContextType.MENTORSHIP_INBOX,
+            context_id=None,
+            to=["asker@example.com"],
+            subject="Hi",
+            body="<p>hello</p>",
+            sender_user_id=3,
+            sender_address="mentorship-test@circlecat.org",
+        )
+
+        _, kwargs = self.gmail.send_message.call_args
+        self.assertEqual(kwargs["sender"], "mentorship-test@circlecat.org")
+        _, mkw = self.message_repo.create.call_args
+        self.assertEqual(mkw["from_address"], "mentorship-test@circlecat.org")
+
     # ---- send: reply --------------------------------------------------
 
     async def test_send_reply_uses_existing_thread_and_headers(self):
@@ -178,6 +205,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
                 subject="Hi",
                 synced_at=None,
                 created_at="2026-07-23T00:00:00Z",
+                archived_at=None,
             ),
         ]
         self.message_repo.list_by_thread.return_value = [
@@ -193,6 +221,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
                 sent_by_user_id=3,
                 gmail_internal_date=None,
                 created_at="2026-07-23T00:00:00Z",
+                inbound_kind=None,
             ),
         ]
         threads = await self.service.list_conversation(
@@ -218,6 +247,8 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
             sent_by_user_id=None,
             gmail_internal_date=gmail_date,
             created_at=when,
+            inbound_kind=None,
+            failed_recipients=None,
         )
 
     def _thread_row(self, thread_id, created_at):
@@ -226,7 +257,102 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
             subject=f"t{thread_id}",
             synced_at=None,
             created_at=created_at,
+            archived_at=None,
         )
+
+    async def _list_one(self, messages, archived_at=None):
+        row = self._thread_row(10, "2026-07-01T00:00:00Z")
+        row.archived_at = archived_at
+        self.thread_repo.list_by_context.return_value = [row]
+        self.message_repo.list_by_thread.return_value = messages
+        threads = await self.service.list_conversation(
+            self.session, ContextType.APPLICATION, 7
+        )
+        return threads[0]
+
+    def _out(self, message_id, when):
+        m = self._msg(message_id, when)
+        m.direction = "outbound"
+        # An earlier sender alias: reply_alias must come from the service.
+        m.from_address = "careers-old@circlecat.org"
+        m.to_addresses = "cand@example.com"
+        return m
+
+    async def test_list_conversation_reports_needs_reply_and_reply_alias(self):
+        t0, t1, t2 = (f"2026-07-0{d}T00:00:00Z" for d in (1, 2, 3))
+        thread = await self._list_one([self._out(1, t0), self._msg(2, t1)])
+        self.assertTrue(thread.needs_reply)
+        self.assertEqual(thread.reply_alias, SENDER)
+        self.assertIsNone(thread.open_bounce)
+
+        thread = await self._list_one([
+            self._out(1, t0),
+            self._msg(2, t1),
+            self._out(3, t2),
+        ])
+        self.assertFalse(thread.needs_reply)
+
+    async def test_list_conversation_needs_reply_matches_inbox_state(self):
+        from backend.communication.inbox_state import needs_reply
+
+        msgs = [
+            self._out(1, "2026-07-01T00:00:00Z"),
+            self._msg(2, "2026-07-02T00:00:00Z"),
+        ]
+        thread = await self._list_one(msgs)
+        self.assertEqual(thread.needs_reply, needs_reply(msgs, None))
+
+    async def test_list_conversation_archived_thread_does_not_need_reply(self):
+        msgs = [
+            self._out(1, "2026-07-01T00:00:00Z"),
+            self._msg(2, "2026-07-02T00:00:00Z"),
+        ]
+        thread = await self._list_one(msgs, archived_at="2026-07-03T00:00:00Z")
+        self.assertFalse(thread.needs_reply)
+
+    async def test_list_conversation_mail_stored_after_our_reply_needs_reply(self):
+        late = self._msg(2, "2026-07-05T00:00:00Z", gmail_date="2026-07-01T00:00:00Z")
+        thread = await self._list_one([self._out(1, "2026-07-03T00:00:00Z"), late])
+        self.assertTrue(thread.needs_reply)
+
+    async def test_list_conversation_mail_stored_after_the_archive_needs_reply(self):
+        late = self._msg(2, "2026-07-05T00:00:00Z", gmail_date="2026-07-01T00:00:00Z")
+        thread = await self._list_one([late], archived_at="2026-07-03T00:00:00Z")
+        self.assertTrue(thread.needs_reply)
+
+    async def test_list_conversation_unclassified_bounce_is_open_not_needing_reply(
+        self,
+    ):
+        bounce = self._msg(2, "2026-07-02T00:00:00Z")
+        bounce.failed_recipients = "typo@example.com"
+        thread = await self._list_one([self._out(1, "2026-07-01T00:00:00Z"), bounce])
+        self.assertFalse(thread.needs_reply)
+        self.assertEqual(thread.open_bounce.bounced_to, "typo@example.com")
+
+    async def test_list_conversation_open_bounce_until_a_later_send(self):
+        bounce = self._msg(2, "2026-07-02T00:00:00Z")
+        bounce.inbound_kind = InboundKind.BOUNCE
+        bounce.failed_recipients = "typo@example.com"
+        first = self._out(1, "2026-07-01T00:00:00Z")
+        thread = await self._list_one([first, bounce])
+        self.assertEqual(thread.open_bounce.bounced_to, "typo@example.com")
+
+        thread = await self._list_one([
+            first,
+            bounce,
+            self._out(3, "2026-07-03T00:00:00Z"),
+        ])
+        self.assertIsNone(thread.open_bounce)
+
+    async def test_list_conversation_exposes_inbound_kind_and_to_addresses(self):
+        auto = self._msg(2, "2026-07-02T00:00:00Z")
+        auto.inbound_kind = InboundKind.AUTO_REPLY
+        thread = await self._list_one([self._out(1, "2026-07-01T00:00:00Z"), auto])
+        newest, oldest = thread.messages
+        self.assertEqual(newest.inbound_kind, InboundKind.AUTO_REPLY)
+        self.assertEqual(newest.to_addresses, SENDER)
+        self.assertIsNone(oldest.inbound_kind)
+        self.assertFalse(thread.needs_reply)
 
     async def test_list_conversation_orders_messages_newest_first(self):
         self.thread_repo.list_by_context.return_value = [

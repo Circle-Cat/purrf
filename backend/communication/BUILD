@@ -12,6 +12,7 @@ py_library(
         "//backend/common:exceptions",
         "//backend/common:fast_api_response_wrapper",
         "//backend/common:inbox_enums",
+        "//backend/common:name_utils",
         "//backend/common:permissions",
         "//backend/common:recruiting_enums",
         "//backend/dto",

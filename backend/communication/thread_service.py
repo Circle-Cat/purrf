@@ -11,6 +11,28 @@ _DIRECT = {
 }
 
 
+def service_from(context_type, job) -> InboxService | None:
+    """The service of a thread given its context and, for APPLICATION, its job.
+
+    Args:
+        context_type (str): The thread's ``ContextType``.
+        job (JobEntity | None): The application's job; ignored for any other
+            context.
+
+    Returns:
+        InboxService | None: None when the context belongs to no service or an
+            application has no job.
+    """
+    service = _DIRECT.get(context_type)
+    if service is not None:
+        return service
+    if context_type != ContextType.APPLICATION or job is None:
+        return None
+    if job.kind == JobKind.ACTIVITY:
+        return InboxService.MENTORSHIP
+    return InboxService.RECRUITING
+
+
 class ThreadServiceResolver:
     def __init__(self, job_repository):
         """
@@ -47,6 +69,4 @@ class ThreadServiceResolver:
         job = await self._jobs.get_by_application_id(session, thread.context_id)
         if job is None:
             raise ValueError(f"application {thread.context_id} has no job")
-        if job.kind == JobKind.ACTIVITY:
-            return InboxService.MENTORSHIP
-        return InboxService.RECRUITING
+        return service_from(thread.context_type, job)

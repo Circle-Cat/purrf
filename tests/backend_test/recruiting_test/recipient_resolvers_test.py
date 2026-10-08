@@ -574,10 +574,10 @@ class RecipientResolversTest(BaseRepositoryTestLib):
         )
 
     async def test_email_received_on_a_thread_nobody_sent_through_purrf(self):
-        """Every message sent from the Gmail web UI: nobody to tell, no error."""
-        owner, candidate = _make_user(), _make_user()
-        await self.insert_entities([owner, candidate])
-        job = await self._make_job([owner.user_id])
+        """Every message sent from the Gmail web UI: the job's owners are told."""
+        owner, other_owner, candidate = _make_user(), _make_user(), _make_user()
+        await self.insert_entities([owner, other_owner, candidate])
+        job = await self._make_job([owner.user_id, other_owner.user_id])
         application = await self._make_application(job.job_id, candidate)
         thread = await self._make_thread(application, [None])
         event = _event(
@@ -585,6 +585,82 @@ class RecipientResolversTest(BaseRepositoryTestLib):
             "application",
             application.application_id,
             details={"threadId": thread.thread_id},
+        )
+
+        self.assertEqual(
+            await resolve_recipients(self.session, event),
+            {owner.user_id, other_owner.user_id},
+        )
+
+    async def test_email_received_on_an_inbox_thread_nobody_replied_to(self):
+        """An inquiry assigned to an application before anyone wrote: the owners."""
+        owner, candidate = _make_user(), _make_user()
+        await self.insert_entities([owner, candidate])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(application, [])
+        await self.insert_entities([
+            EmailMessageEntity(
+                thread_id=thread.thread_id,
+                gmail_message_id=f"{thread.gmail_thread_id}-in",
+                direction=EmailDirection.INBOUND,
+                from_address="candidate@ext.com",
+            )
+        ])
+
+        _, notifications = await record_event(
+            self.session,
+            subject_type="application",
+            subject_id=application.application_id,
+            actor_id=candidate.user_id,
+            event_type=RecruitingEvent.EMAIL_RECEIVED,
+            details={"threadId": thread.thread_id},
+        )
+
+        self.assertEqual({n.user_id for n in notifications}, {owner.user_id})
+
+    async def test_email_received_with_no_sender_and_no_owner_reaches_nobody(self):
+        candidate = _make_user()
+        await self.insert_entities([candidate])
+        job = await self._make_job([])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(application, [None])
+        event = _event(
+            RecruitingEvent.EMAIL_RECEIVED,
+            "application",
+            application.application_id,
+            details={"threadId": thread.thread_id},
+        )
+
+        self.assertEqual(await resolve_recipients(self.session, event), set())
+
+    async def test_email_received_with_no_sender_on_an_unknown_application(self):
+        candidate = _make_user()
+        await self.insert_entities([candidate])
+        job = await self._make_job([])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(application, [None])
+        event = _event(
+            RecruitingEvent.EMAIL_RECEIVED,
+            "application",
+            987654321,
+            details={"threadId": thread.thread_id},
+        )
+
+        self.assertEqual(await resolve_recipients(self.session, event), set())
+
+    async def test_email_bounced_with_no_sender_still_reaches_nobody(self):
+        """Only a received reply falls back to the owners; a bounce does not."""
+        owner, candidate = _make_user(), _make_user()
+        await self.insert_entities([owner, candidate])
+        job = await self._make_job([owner.user_id])
+        application = await self._make_application(job.job_id, candidate)
+        thread = await self._make_thread(application, [None])
+        event = _event(
+            RecruitingEvent.EMAIL_BOUNCED,
+            "application",
+            application.application_id,
+            details={"threadId": thread.thread_id, "failedRecipients": ["bad@x"]},
         )
 
         self.assertEqual(await resolve_recipients(self.session, event), set())

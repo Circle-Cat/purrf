@@ -80,3 +80,41 @@ class EventRepository:
             .order_by(EventEntity.created_at.desc(), EventEntity.event_id.desc())
         )
         return list(result.scalars().all())
+
+    async def latest_by_subjects(
+        self,
+        session: AsyncSession,
+        subject_type: str,
+        event_type: str,
+        subject_ids: list[int],
+    ) -> dict[int, EventEntity]:
+        """The newest event of one type for each of several subjects.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            subject_type (str): What the events are about.
+            event_type (str): The event type wanted.
+            subject_ids (list[int]): The subjects.
+
+        Returns:
+            dict[int, EventEntity]: Keyed by subject id; subjects with no such
+                event are absent. Ties on ``created_at`` go to the larger
+                ``event_id``. Empty, without a query, for no ids.
+        """
+        if not subject_ids:
+            return {}
+        result = await session.execute(
+            select(EventEntity)
+            .where(
+                EventEntity.subject_type == subject_type,
+                EventEntity.event_type == event_type,
+                EventEntity.subject_id.in_(subject_ids),
+            )
+            .order_by(
+                EventEntity.subject_id,
+                EventEntity.created_at.desc(),
+                EventEntity.event_id.desc(),
+            )
+            .distinct(EventEntity.subject_id)
+        )
+        return {event.subject_id: event for event in result.scalars().all()}

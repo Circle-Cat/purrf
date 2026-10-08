@@ -1,6 +1,8 @@
 import unittest
 from datetime import datetime, timezone
 
+from sqlalchemy import inspect
+
 from backend.common.communication_enums import (
     ContextType,
     EmailDirection,
@@ -153,6 +155,37 @@ class TestEmailMessageRepository(BaseRepositoryTestLib):
         )
 
         self.assertEqual(result, {first.user_id, second.user_id})
+
+    async def test_list_by_threads_leaves_bodies_unloaded(self):
+        await self.insert_entities([
+            EmailMessageEntity(
+                thread_id=self.thread.thread_id,
+                gmail_message_id="with-body",
+                direction=EmailDirection.INBOUND,
+                from_address="a@x.com",
+                body_html="<p>big</p>",
+                body_text="big",
+                snippet="big",
+                inbound_kind=InboundKind.HUMAN,
+            )
+        ])
+        self.session.expunge_all()
+
+        result = await self.repo.list_by_threads(
+            self.session, [self.thread.thread_id, self.other_thread.thread_id]
+        )
+
+        (message,) = result[self.thread.thread_id]
+        self.assertEqual(result[self.other_thread.thread_id], [])
+        unloaded = inspect(message).unloaded
+        self.assertIn("body_html", unloaded)
+        self.assertIn("body_text", unloaded)
+        self.assertEqual(
+            (message.direction, message.from_address, message.snippet),
+            (EmailDirection.INBOUND, "a@x.com", "big"),
+        )
+        self.assertEqual(message.inbound_kind, InboundKind.HUMAN)
+        self.assertIsNotNone(message.created_at)
 
 
 if __name__ == "__main__":

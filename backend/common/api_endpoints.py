@@ -239,3 +239,17 @@ TRAINING_SESSION_ENDPOINT = "/training/{training_id}/session"
 TRAINING_TRIAL_SESSION_ENDPOINT = "/training/{training_id}/trial-session"
 TRAINING_PROGRESS_ENDPOINT = "/training/{training_id}/progress"
 TRAINING_CONTENT_ENDPOINT = "/p/{token}/{asset_path:path}"
+
+INBOX_THREADS_ENDPOINT = "/inbox/threads"
+INBOX_COUNT_ENDPOINT = "/inbox/count"
+INBOX_THREAD_ENDPOINT = "/inbox/threads/{thread_id}"
+INBOX_THREAD_REPLY_ENDPOINT = "/inbox/threads/{thread_id}/reply"
+INBOX_THREAD_ARCHIVE_ENDPOINT = "/inbox/threads/{thread_id}/archive"
+INBOX_THREAD_UNARCHIVE_ENDPOINT = "/inbox/threads/{thread_id}/unarchive"
+INBOX_THREAD_ASSIGNMENT_ENDPOINT = "/inbox/threads/{thread_id}/assignment"
+INBOX_THREAD_MOVE_ENDPOINT = "/inbox/threads/{thread_id}/move"
+INBOX_THREAD_ASSIGN_OPTIONS_ENDPOINT = "/inbox/threads/{thread_id}/assign-options"
+INBOX_PEOPLE_ENDPOINT = "/inbox/people"
+INBOX_ATTACHMENT_ENDPOINT = (
+    "/inbox/threads/{thread_id}/messages/{message_id}/attachments/{attachment_id}"
+)

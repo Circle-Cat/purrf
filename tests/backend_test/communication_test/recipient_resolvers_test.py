@@ -64,7 +64,6 @@ class SilentEventsTest(unittest.IsolatedAsyncioTestCase):
     async def test_the_trail_only_events_reach_nobody(self):
         for event_type in (
             InboxEvent.ASSIGNED,
-            InboxEvent.UNASSIGNED,
             InboxEvent.ARCHIVED,
             InboxEvent.UNARCHIVED,
             InboxEvent.MOVED,

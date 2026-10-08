@@ -465,10 +465,12 @@ class NotificationRenderersTest(BaseRepositoryTestLib):
 
         self.assertEqual(subject, "New email reply: Ada Lovelace (Backend Engineer)")
         self.assertIn(
-            "A reply arrived on an email you sent about Ada Lovelace's "
+            "A candidate replied to an email about Ada Lovelace's "
             "application for Backend Engineer.",
             body,
         )
+        # Job owners who sent nothing get this too, so it must not say "you sent".
+        self.assertNotIn("you sent", body)
         self.assertIn("<p>From: Ada &lt;ada@example.com&gt;</p>", body)
         self.assertIn("<p>Subject: Re: &lt;b&gt;Interview&lt;/b&gt;</p>", body)
         self.assertIn("Emails tab", body)

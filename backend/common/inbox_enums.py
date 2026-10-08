@@ -10,7 +10,6 @@ class InboxEvent(StrEnum):
     NEEDS_REPLY = "inbox.needs_reply"
     BOUNCED = "inbox.bounced"
     ASSIGNED = "inbox.assigned"
-    UNASSIGNED = "inbox.unassigned"
     ARCHIVED = "inbox.archived"
     UNARCHIVED = "inbox.unarchived"
     MOVED = "inbox.moved"
