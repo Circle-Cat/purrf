@@ -362,12 +362,18 @@ class SearchTest(_Fixture):
         ]
         self.users = [_user(1555, "Ann", "Lee"), _user(155, "Rina", "Ota")]
 
-    async def test_digits_match_only_the_exact_user_id(self):
-        self.assertEqual(self._ids(await self._list(q="155")), [2])
-        self.assertEqual(self._ids(await self._list(q="#1555")), [1])
+    async def test_user_id_matches_only_that_exact_person(self):
+        self.assertEqual(self._ids(await self._list(user_id=155)), [2])
+        self.assertEqual(self._ids(await self._list(user_id=1555)), [1])
+        self.assertEqual(self._ids(await self._list(user_id=15)), [])
 
-    async def test_digits_never_match_the_subject(self):
-        self.assertEqual(self._ids(await self._list(q="2026")), [])
+    async def test_digits_in_the_search_box_match_text(self):
+        self.assertEqual(self._ids(await self._list(q="2026")), [1])
+        self.assertEqual(self._ids(await self._list(q="155")), [])
+
+    async def test_user_id_and_text_combine(self):
+        self.assertEqual(self._ids(await self._list(user_id=1555, q="summer")), [1])
+        self.assertEqual(self._ids(await self._list(user_id=155, q="summer")), [])
 
     async def test_text_matches_name_address_and_subject_ignoring_case(self):
         self.assertEqual(self._ids(await self._list(q="SUMMER")), [1])

@@ -142,9 +142,12 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
             for item, row in scoped
             if (query.archived or not row.archived)
             and (not query.needs_reply or row.needs_reply)
+            and (
+                query.user_id is None
+                or (row.person is not None and row.person.user_id == query.user_id)
+            )
             and matches_search(
                 query.q,
-                row.person.user_id if row.person else None,
                 row.person.name if row.person else None,
                 row.sender,
                 row.subject,

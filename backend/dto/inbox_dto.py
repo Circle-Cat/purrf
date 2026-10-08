@@ -11,12 +11,16 @@ from backend.dto.base_dto import BaseDto
 
 
 class InboxQueryDto(BaseDto):
-    """List filters. ``archived`` adds archived threads; it does not select them."""
+    """List filters. ``archived`` adds archived threads; it does not select them.
+
+    ``user_id`` matches the thread's person exactly; ``q`` searches text.
+    """
 
     service: InboxService | None = None
     needs_reply: bool = False
     archived: bool = False
     q: str | None = None
+    user_id: int | None = None
 
 
 class InboxPersonDto(BaseDto):

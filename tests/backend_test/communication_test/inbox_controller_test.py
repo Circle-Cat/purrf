@@ -157,6 +157,7 @@ class InboxControllerTest(unittest.TestCase):
                 "needsReply": "true",
                 "archived": "true",
                 "q": "ann",
+                "userId": "42",
             },
         )
 
@@ -179,6 +180,7 @@ class InboxControllerTest(unittest.TestCase):
                 needs_reply=True,
                 archived=True,
                 q="ann",
+                user_id=42,
             ),
         )
 

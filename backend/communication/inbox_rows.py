@@ -4,7 +4,6 @@ Needs reply and archived come from ``inbox_state``; everything here only reads
 a thread and its messages, so the service can batch the queries around it.
 """
 
-import re
 from dataclasses import dataclass
 from datetime import datetime
 from email.utils import getaddresses, parseaddr
@@ -21,8 +20,6 @@ from backend.communication.inbox_state import (
     message_time,
     needs_reply,
 )
-
-_USER_ID_QUERY = re.compile(r"^#?(\d+)$")
 
 
 def address_of(raw: str | None) -> str | None:
@@ -156,23 +153,15 @@ def can_assign(service: InboxService, facts: ThreadFacts) -> bool:
 
 def matches_search(
     q: str | None,
-    person_id: int | None,
     person_name: str | None,
     sender: str | None,
     subject: str | None,
 ) -> bool:
-    """Whether a thread matches the search box.
-
-    Digits, optionally after one ``#``, are a user ID and match only a thread
-    whose person has exactly that ID. Anything else is a case-insensitive
-    substring of the person's name, the sender address or the subject.
-    """
+    """Whether a thread matches the search box: a case-insensitive substring
+    of the person's name, the sender address or the subject."""
     needle = (q or "").strip().lower()
     if not needle:
         return True
-    by_id = _USER_ID_QUERY.match(needle)
-    if by_id:
-        return person_id is not None and str(person_id) == by_id.group(1)
     return any(
         needle in (value or "").lower() for value in (person_name, sender, subject)
     )
