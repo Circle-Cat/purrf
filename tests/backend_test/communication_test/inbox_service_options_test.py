@@ -8,6 +8,7 @@ from backend.common.recruiting_enums import ApplicationStage, JobKind
 from tests.backend_test.communication_test.inbox_service_read_test import (
     _ALL,
     _Fixture,
+    _at,
     _in,
     _out,
     _thread,
@@ -22,7 +23,11 @@ _MENTEE = SimpleNamespace(job_id=6, kind=JobKind.ACTIVITY, title="Mentee 2026")
 
 def _application(application_id, job, stage, user_id):
     return SimpleNamespace(
-        application_id=application_id, job_id=job.job_id, user_id=user_id, stage=stage
+        application_id=application_id,
+        job_id=job.job_id,
+        user_id=user_id,
+        stage=stage,
+        created_datetime=_at(application_id),
     )
 
 
@@ -216,48 +221,42 @@ class JobOptionsTest(_OptionsFixture):
         self.assertIsNone(result.rounds)
         self.assertEqual(result.jobs, [])
 
-    async def test_all_rejected_falls_back_to_the_newest(self):
+    async def test_every_application_to_a_job_is_listed_newest_first(self):
         self.applications = [
             _application(10, _ANALYST, ApplicationStage.REJECTED, 40),
+            _application(14, _ANALYST, ApplicationStage.TECH, 40),
             _application(12, _ANALYST, ApplicationStage.REJECTED, 40),
-            _application(11, _ANALYST, ApplicationStage.REJECTED, 40),
         ]
 
         (job,) = (await self._options(40)).jobs
 
+        self.assertEqual((job.job_id, job.title), (5, "Data Analyst"))
         self.assertEqual(
-            (
-                job.job_id,
-                job.title,
-                job.application_id,
-                job.application_status,
-                job.fallback,
-            ),
-            (5, "Data Analyst", 12, "rejected", True),
+            [(a.application_id, a.stage, a.applied_at) for a in job.applications],
+            [
+                (14, "tech", _at(14)),
+                (12, "rejected", _at(12)),
+                (10, "rejected", _at(10)),
+            ],
         )
 
-    async def test_live_application_beats_a_newer_rejected_one(self):
+    async def test_jobs_come_newest_application_first_without_activity_jobs(self):
         self.applications = [
-            _application(10, _ANALYST, ApplicationStage.TECH, 40),
-            _application(12, _ANALYST, ApplicationStage.REJECTED, 40),
-        ]
-
-        (job,) = (await self._options(40)).jobs
-
-        self.assertEqual((job.application_id, job.fallback), (10, False))
-
-    async def test_every_employment_job_is_listed_newest_pick_first(self):
-        self.applications = [
-            _application(10, _ANALYST, ApplicationStage.APPLIED, 40),
+            _application(10, _ANALYST, ApplicationStage.REJECTED, 40),
             _application(11, _DESIGNER, ApplicationStage.APPLIED, 40),
             _application(12, _MENTEE, ApplicationStage.APPLIED, 40),
-            _application(13, _ANALYST, ApplicationStage.APPLIED, 99),
+            _application(13, _ANALYST, ApplicationStage.APPLIED, 40),
+            _application(15, _DESIGNER, ApplicationStage.APPLIED, 99),
         ]
 
         result = await self._options(40)
 
         self.assertEqual(
-            [(j.job_id, j.application_id) for j in result.jobs], [(9, 11), (5, 10)]
+            [
+                (j.job_id, [a.application_id for a in j.applications])
+                for j in result.jobs
+            ],
+            [(5, [13, 10]), (9, [11])],
         )
 
 

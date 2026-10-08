@@ -69,7 +69,6 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
         message_repository,
         user_emails_repository,
         users_repository,
-        job_repository,
         application_repository,
         round_repository,
         event_repository,
@@ -86,7 +85,6 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
             message_repository (EmailMessageRepository): Loads messages.
             user_emails_repository (UserEmailsRepository): Matches senders to users.
             users_repository (UsersRepository): Names people.
-            job_repository (JobRepository): Finds the job an Assign targets.
             application_repository (ApplicationRepository): A person's
                 applications, for Assign.
             round_repository (MentorshipRoundRepository): Names and finds rounds.
@@ -103,7 +101,6 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
         self._messages = message_repository
         self._user_emails = user_emails_repository
         self._users = users_repository
-        self._jobs = job_repository
         self._applications = application_repository
         self._rounds = round_repository
         self._events = event_repository

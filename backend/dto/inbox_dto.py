@@ -102,12 +102,16 @@ class InboxRoundOptionDto(BaseDto):
     registered: bool
 
 
+class InboxApplicationOptionDto(BaseDto):
+    application_id: int
+    stage: str
+    applied_at: datetime
+
+
 class InboxJobOptionDto(BaseDto):
     job_id: int
     title: str | None = None
-    application_id: int
-    application_status: str
-    fallback: bool
+    applications: list[InboxApplicationOptionDto]
 
 
 class AssignOptionsDto(BaseDto):
@@ -131,11 +135,11 @@ class InboxReplyRequestDto(BaseDto):
 
 
 class InboxAssignRequestDto(BaseDto):
-    """A Mentorship thread takes ``round_id``; a Recruiting thread takes ``job_id``."""
+    """Mentorship takes ``round_id``; Recruiting takes ``application_id``."""
 
     user_id: int
     round_id: int | None = None
-    job_id: int | None = None
+    application_id: int | None = None
 
 
 class InboxMoveRequestDto(BaseDto):

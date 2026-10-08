@@ -80,18 +80,20 @@ class _WriteFixture(_Fixture):
         self.jobs_by_application = {61: _ANALYST, 57: _ANALYST, 41: _ANALYST}
         self.applications = []
 
-        self.job_repo.get_by_job_id = AsyncMock(
-            side_effect=lambda s, job_id: self.jobs.get(job_id)
-        )
         self.round_repo.get_by_round_id = AsyncMock(
             side_effect=lambda s, rid: next(
                 (r for r in self.rounds if r.round_id == rid), None
             )
         )
-        self.application_repo.list_by_user = AsyncMock(
-            side_effect=lambda s, uid: [
-                (a, self.jobs[a.job_id]) for a in self.applications if a.user_id == uid
-            ]
+        self.application_repo.get_with_job = AsyncMock(
+            side_effect=lambda s, aid: next(
+                (
+                    (a, self.jobs[a.job_id])
+                    for a in self.applications
+                    if a.application_id == aid
+                ),
+                None,
+            )
         )
         self.conversation = Mock()
         self.conversation.send = AsyncMock(side_effect=self._send)
@@ -312,10 +314,15 @@ class AssignTest(_WriteFixture):
 
         self._assert_nothing_written()
 
-    async def test_mentorship_thread_cannot_take_a_job(self):
-        with self.assertRaises(ValueError):
+    async def test_mentorship_thread_cannot_take_an_application(self):
+        with self.assertRaisesRegex(ValueError, "assigned to a round"):
             await self.service.assign(
-                self.session, _viewer(*_ALL), 1, person_id=40, job_id=5
+                self.session,
+                _viewer(*_ALL),
+                1,
+                person_id=40,
+                round_id=8,
+                application_id=57,
             )
 
         self._assert_nothing_written()
@@ -336,67 +343,76 @@ class AssignTest(_WriteFixture):
 
         self._assert_nothing_written()
 
-    async def test_recruiting_assign_falls_back_to_the_latest_rejected_application(
-        self,
-    ):
+    async def test_recruiting_assign_attaches_the_chosen_rejected_application(self):
         self.applications = [
             _application(41, _ANALYST, ApplicationStage.REJECTED),
-            _application(57, _ANALYST, ApplicationStage.REJECTED),
+            _application(57, _ANALYST, ApplicationStage.TECH),
             _application(60, _DESIGNER, ApplicationStage.APPLIED),
         ]
         viewer = _viewer(Permission.RECRUITING_APPLICATION_ADVANCE)
 
         result = await self.service.assign(
-            self.session, viewer, 4, person_id=40, job_id=5
+            self.session, viewer, 4, person_id=40, application_id=41
         )
 
         thread = self._thread_of(4)
         self.assertEqual(
             (thread.user_id, thread.context_type, thread.context_id),
-            (40, ContextType.APPLICATION, 57),
+            (40, ContextType.APPLICATION, 41),
         )
         self._assert_event_then_commit(
-            InboxEvent.ASSIGNED, 4, {"userId": 40, "applicationId": 57}
+            InboxEvent.ASSIGNED, 4, {"userId": 40, "applicationId": 41}
         )
         self.assertIsNone(result)
         self.assertNotIn(4, self._ids(await self._list(viewer)))
 
-    async def test_recruiting_assign_prefers_the_live_application(self):
+    async def test_recruiting_assign_needs_an_application(self):
+        with self.assertRaisesRegex(ValueError, "assigned to an application"):
+            await self.service.assign(self.session, _viewer(*_ALL), 4, person_id=40)
+
+        self._assert_nothing_written()
+
+    async def test_recruiting_thread_cannot_take_a_round(self):
+        self.applications = [_application(57, _ANALYST, ApplicationStage.APPLIED)]
+
+        with self.assertRaisesRegex(ValueError, "assigned to an application"):
+            await self.service.assign(
+                self.session,
+                _viewer(*_ALL),
+                4,
+                person_id=40,
+                round_id=8,
+                application_id=57,
+            )
+
+        self._assert_nothing_written()
+
+    async def test_recruiting_assign_to_someone_elses_application_is_rejected(self):
         self.applications = [
-            _application(41, _ANALYST, ApplicationStage.TECH),
-            _application(57, _ANALYST, ApplicationStage.REJECTED),
+            _application(57, _ANALYST, ApplicationStage.APPLIED, user_id=32)
         ]
 
-        await self.service.assign(
-            self.session, _viewer(*_ALL), 4, person_id=40, job_id=5
-        )
-
-        self.assertEqual(self._thread_of(4).context_id, 41)
-
-    async def test_recruiting_assign_without_an_application_is_rejected(self):
-        self.applications = [_application(60, _DESIGNER, ApplicationStage.APPLIED)]
-
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "does not belong to user 40"):
             await self.service.assign(
-                self.session, _viewer(*_ALL), 4, person_id=40, job_id=5
+                self.session, _viewer(*_ALL), 4, person_id=40, application_id=57
             )
 
         self._assert_nothing_written()
 
-    async def test_recruiting_assign_to_an_activity_job_is_rejected(self):
+    async def test_recruiting_assign_to_an_activity_application_is_rejected(self):
         self.applications = [_application(62, _MENTEE, ApplicationStage.APPLIED)]
 
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "Only an employment job"):
             await self.service.assign(
-                self.session, _viewer(*_ALL), 4, person_id=40, job_id=6
+                self.session, _viewer(*_ALL), 4, person_id=40, application_id=62
             )
 
         self._assert_nothing_written()
 
-    async def test_recruiting_assign_to_a_missing_job_is_rejected(self):
-        with self.assertRaises(ValueError):
+    async def test_recruiting_assign_to_a_missing_application_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "application 404 not found"):
             await self.service.assign(
-                self.session, _viewer(*_ALL), 4, person_id=40, job_id=404
+                self.session, _viewer(*_ALL), 4, person_id=40, application_id=404
             )
 
         self._assert_nothing_written()

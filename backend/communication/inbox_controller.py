@@ -176,7 +176,7 @@ class InboxController:
         thread_id: int,
         payload: InboxAssignRequestDto,
     ):
-        """Attach a thread to a person and a round or job; it leaves the Inbox."""
+        """Attach a thread to a person and a round or application; it leaves the Inbox."""
         async with self.database.session() as session:
             result = await self.inbox_thread_service.assign(
                 session,
@@ -184,7 +184,7 @@ class InboxController:
                 thread_id,
                 payload.user_id,
                 round_id=payload.round_id,
-                job_id=payload.job_id,
+                application_id=payload.application_id,
             )
         return api_response(message="Thread assigned.", data=result)
 

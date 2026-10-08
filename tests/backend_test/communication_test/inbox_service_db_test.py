@@ -57,7 +57,6 @@ class InboxListOnARealSessionTest(BaseRepositoryTestLib):
             message_repository=EmailMessageRepository(),
             user_emails_repository=UserEmailsRepository(),
             users_repository=UsersRepository(),
-            job_repository=JobRepository(),
             application_repository=ApplicationRepository(),
             round_repository=MentorshipRoundRepository(),
             event_repository=EventRepository(),

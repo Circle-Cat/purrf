@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from backend.common.communication_enums import INBOX_CONTEXT, ContextType, InboxService
 from backend.common.exceptions import ConflictError
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE, InboxEvent
-from backend.common.recruiting_enums import ApplicationStage, JobKind
+from backend.common.recruiting_enums import JobKind
 from backend.communication.inbox_access import visible_services
 from backend.communication.inbox_rows import can_assign, facts_of, reply_contact
 from backend.notification_management.event_recorder import record_event
@@ -23,24 +23,6 @@ def reply_subject(subject: str | None) -> str:
     if subject.lower().startswith("re:"):
         return subject
     return f"Re: {subject}".strip()
-
-
-def pick_application(applications):
-    """The application an Assign attaches to among one person's for one job.
-
-    The live one when there is one, else the newest (all were rejected).
-
-    Args:
-        applications (list[ApplicationEntity]): One person's, one job's.
-
-    Returns:
-        ApplicationEntity | None: The pick, or None for an empty list.
-    """
-    newest_first = sorted(applications, key=lambda a: a.application_id, reverse=True)
-    for application in newest_first:
-        if application.stage != ApplicationStage.REJECTED:
-            return application
-    return newest_first[0] if newest_first else None
 
 
 class InboxThreadWrites:
@@ -121,13 +103,13 @@ class InboxThreadWrites:
         return await self._finish(session, user, thread, InboxEvent.UNARCHIVED)
 
     async def assign(
-        self, session, user, thread_id, person_id, round_id=None, job_id=None
+        self, session, user, thread_id, person_id, round_id=None, application_id=None
     ):
-        """Attach a thread to a person and a Mentorship round or Recruiting job. Commits.
+        """Attach a thread to a person and a round or an application. Commits.
 
         A Mentorship thread takes ``round_id`` (any existing round, registered
-        or not). A Recruiting thread takes ``job_id`` of an EMPLOYMENT job and
-        is attached to the person's live application there, else their newest.
+        or not). A Recruiting thread takes ``application_id`` of one of the
+        person's applications to an EMPLOYMENT job, rejected ones included.
         The thread then leaves the Inbox and is read where it was attached.
 
         Args:
@@ -136,21 +118,22 @@ class InboxThreadWrites:
             thread_id (int): The thread.
             person_id (int): Who the thread is with.
             round_id (int | None): The round, for Mentorship.
-            job_id (int | None): The job, for Recruiting.
+            application_id (int | None): The application, for Recruiting.
 
         Returns:
             None: The thread is no longer in the Inbox.
 
         Raises:
             ValueError: Thread not found or not visible; the thread cannot be
-                assigned; the wrong kind of target; the round, person, job or
-                application does not exist; the job is not EMPLOYMENT.
+                assigned; the wrong kind of target; the round, person or
+                application does not exist; the application is someone
+                else's or not to an EMPLOYMENT job.
         """
         thread, service, facts = await self._load_for_write(session, user, thread_id)
         if not can_assign(service, facts):
             raise ValueError("This thread cannot be assigned")
         if service == InboxService.MENTORSHIP:
-            if round_id is None or job_id is not None:
+            if round_id is None or application_id is not None:
                 raise ValueError("A Mentorship thread is assigned to a round")
             context_type, context_id = ContextType.ACTIVITY, round_id
             details = {"userId": person_id, "roundId": round_id}
@@ -159,12 +142,11 @@ class InboxThreadWrites:
             if not await self._users.get_all_by_ids(session, [person_id]):
                 raise ValueError(f"user {person_id} not found")
         else:
-            if job_id is None or round_id is not None:
-                raise ValueError("A Recruiting thread is assigned to a job")
-            application = await self._application_for(session, person_id, job_id)
-            context_type = ContextType.APPLICATION
-            context_id = application.application_id
-            details = {"userId": person_id, "applicationId": context_id}
+            if application_id is None or round_id is not None:
+                raise ValueError("A Recruiting thread is assigned to an application")
+            await self._check_application(session, person_id, application_id)
+            context_type, context_id = ContextType.APPLICATION, application_id
+            details = {"userId": person_id, "applicationId": application_id}
 
         thread.user_id = person_id
         thread.context_type = context_type
@@ -217,23 +199,17 @@ class InboxThreadWrites:
         messages = await self._messages.list_by_thread(session, thread_id)
         return thread, service, facts_of(thread, messages)
 
-    async def _application_for(self, session, person_id, job_id):
-        job = await self._jobs.get_by_job_id(session, job_id)
-        if job is None:
-            raise ValueError(f"job {job_id} not found")
+    async def _check_application(self, session, person_id, application_id):
+        pair = await self._applications.get_with_job(session, application_id)
+        if pair is None:
+            raise ValueError(f"application {application_id} not found")
+        application, job = pair
+        if application.user_id != person_id:
+            raise ValueError(
+                f"application {application_id} does not belong to user {person_id}"
+            )
         if job.kind != JobKind.EMPLOYMENT:
             raise ValueError("Only an employment job can be assigned from the Inbox")
-        applications = [
-            application
-            for application, _ in await self._applications.list_by_user(
-                session, person_id
-            )
-            if application.job_id == job_id
-        ]
-        application = pick_application(applications)
-        if application is None:
-            raise ValueError(f"user {person_id} has not applied to job {job_id}")
-        return application
 
     async def _finish(self, session, user, thread, event_type, details=None):
         await self._record(session, user, thread, event_type, details)

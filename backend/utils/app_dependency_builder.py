@@ -1079,7 +1079,6 @@ class AppDependencyBuilder:
             message_repository=self.email_message_repository,
             user_emails_repository=self.user_emails_repository,
             users_repository=self.users_repository,
-            job_repository=self.job_repository,
             application_repository=self.application_repository,
             round_repository=self.mentorship_round_repository,
             event_repository=self.event_repository,

@@ -172,7 +172,6 @@ class _Fixture(unittest.IsolatedAsyncioTestCase):
             message_repository=self.message_repo,
             user_emails_repository=self.email_repo,
             users_repository=self.user_repo,
-            job_repository=self.job_repo,
             application_repository=self.application_repo,
             round_repository=self.round_repo,
             event_repository=self.event_repo,

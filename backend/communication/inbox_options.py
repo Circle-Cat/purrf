@@ -5,11 +5,11 @@ import re
 
 from backend.common.communication_enums import InboxService
 from backend.common.name_utils import display_name_of
-from backend.common.recruiting_enums import ApplicationStage, JobKind
+from backend.common.recruiting_enums import JobKind
 from backend.communication.inbox_rows import can_assign, facts_of
-from backend.communication.inbox_writes import pick_application
 from backend.dto.inbox_dto import (
     AssignOptionsDto,
+    InboxApplicationOptionDto,
     InboxJobOptionDto,
     InboxRoundOptionDto,
     PersonDto,
@@ -60,8 +60,8 @@ class InboxThreadOptions:
 
         Mentorship lists every round, marking the current one and the rounds
         the person registered for. Recruiting lists every employment job the
-        person applied to with the application an Assign would attach to;
-        ``fallback`` is true when all of their applications there were rejected.
+        person applied to with all of their applications there, rejected ones
+        included, newest first; jobs come in order of their newest application.
 
         Args:
             session (AsyncSession): The active DB session.
@@ -110,21 +110,25 @@ class InboxThreadOptions:
         ):
             if job.kind == JobKind.EMPLOYMENT:
                 by_job.setdefault(job.job_id, (job, []))[1].append(application)
-        picks = [
-            (job, pick_application(applications))
-            for job, applications in by_job.values()
-        ]
-        picks.sort(key=lambda pair: pair[1].application_id, reverse=True)
-        return [
-            InboxJobOptionDto(
-                job_id=job.job_id,
-                title=job.title,
-                application_id=application.application_id,
-                application_status=application.stage.value,
-                fallback=application.stage == ApplicationStage.REJECTED,
+        options = []
+        for job, applications in by_job.values():
+            applications.sort(key=lambda a: a.application_id, reverse=True)
+            options.append(
+                InboxJobOptionDto(
+                    job_id=job.job_id,
+                    title=job.title,
+                    applications=[
+                        InboxApplicationOptionDto(
+                            application_id=a.application_id,
+                            stage=a.stage.value,
+                            applied_at=a.created_datetime,
+                        )
+                        for a in applications
+                    ],
+                )
             )
-            for job, application in picks
-        ]
+        options.sort(key=lambda o: o.applications[0].application_id, reverse=True)
+        return options
 
     async def search_people(self, session, q):
         """Find users by name or address for the Assign dialog, at most 20.

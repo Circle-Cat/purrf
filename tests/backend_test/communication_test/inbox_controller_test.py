@@ -18,6 +18,7 @@ from backend.communication.inbox_controller import (
 from backend.communication.inbox_service import InboxThreadService
 from backend.dto.inbox_dto import (
     AssignOptionsDto,
+    InboxApplicationOptionDto,
     InboxCountsDto,
     InboxJobOptionDto,
     InboxListDto,
@@ -272,15 +273,18 @@ class InboxControllerTest(unittest.TestCase):
         self.assertIsNone(response.json()["data"])
         call = self.service.assign.await_args
         self.assertEqual(call.args[2:], (31, 40))
-        self.assertEqual(call.kwargs, {"round_id": 3, "job_id": None})
+        self.assertEqual(call.kwargs, {"round_id": 3, "application_id": None})
 
-    def test_assign_to_a_job(self):
+    def test_assign_to_an_application(self):
         self.service.assign.return_value = None
 
-        self.client.put("/inbox/threads/31/assignment", json={"userId": 40, "jobId": 9})
+        self.client.put(
+            "/inbox/threads/31/assignment", json={"userId": 40, "applicationId": 57}
+        )
 
         self.assertEqual(
-            self.service.assign.await_args.kwargs, {"round_id": None, "job_id": 9}
+            self.service.assign.await_args.kwargs,
+            {"round_id": None, "application_id": 57},
         )
 
     def test_move(self):
@@ -344,9 +348,14 @@ class InboxControllerTest(unittest.TestCase):
                 InboxJobOptionDto(
                     job_id=9,
                     title="Analyst",
-                    application_id=11,
-                    application_status="rejected",
-                    fallback=True,
+                    applications=[
+                        InboxApplicationOptionDto(
+                            application_id=12, stage="tech", applied_at=_T0
+                        ),
+                        InboxApplicationOptionDto(
+                            application_id=11, stage="rejected", applied_at=_T0
+                        ),
+                    ],
                 )
             ]
         )
@@ -354,6 +363,7 @@ class InboxControllerTest(unittest.TestCase):
         response = self.client.get(
             "/inbox/threads/31/assign-options", params={"userId": 40}
         )
+        applied_at = "2026-10-07T09:00:00Z"
 
         self.assertEqual(
             response.json()["data"],
@@ -362,9 +372,18 @@ class InboxControllerTest(unittest.TestCase):
                     {
                         "jobId": 9,
                         "title": "Analyst",
-                        "applicationId": 11,
-                        "applicationStatus": "rejected",
-                        "fallback": True,
+                        "applications": [
+                            {
+                                "applicationId": 12,
+                                "stage": "tech",
+                                "appliedAt": applied_at,
+                            },
+                            {
+                                "applicationId": 11,
+                                "stage": "rejected",
+                                "appliedAt": applied_at,
+                            },
+                        ],
                     }
                 ]
             },
