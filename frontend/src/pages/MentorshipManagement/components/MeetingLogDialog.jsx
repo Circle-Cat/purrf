@@ -19,7 +19,7 @@ const ROLE_LABELS = { mentor: "Mentor", mentee: "Mentee" };
 
 /**
  * Dialog showing a pair's full meeting log for a round. Read-only by default;
- * a non-empty v2 pair gets an Edit mode for Complete Status/Note and batch
+ * a non-empty v2 pair in a round still in progress gets an Edit mode for Complete Status/Note and batch
  * deletion. Update and delete are independent actions, each sent as its own
  * request and each gated behind its own confirmation, which takes the
  * dialog's place until it is confirmed or cancelled. On success, the dialog
@@ -36,6 +36,7 @@ const ROLE_LABELS = { mentor: "Mentor", mentee: "Mentee" };
  *   onOpenChange: (open: boolean) => void,
  *   roundName: string,
  *   roundVersion: "v1" | "v2" | null,
+ *   roundInProgress: boolean,
  *   subjectName: string,
  *   subjectRole: "mentor" | "mentee",
  *   partnerName: string,
@@ -51,6 +52,7 @@ const MeetingLogDialog = ({
   onOpenChange,
   roundName,
   roundVersion,
+  roundInProgress,
   subjectName,
   subjectRole,
   partnerName,
@@ -63,7 +65,8 @@ const MeetingLogDialog = ({
   const mentorName = subjectRole === "mentor" ? subjectName : partnerName;
   const menteeName = subjectRole === "mentee" ? subjectName : partnerName;
   const editor = useMeetingLogEditor({ meetings, onSave });
-  const canEdit = roundVersion === "v2" && meetings.length > 0;
+  const canEdit =
+    roundVersion === "v2" && roundInProgress && meetings.length > 0;
   const { confirmAction, setConfirmAction, resetEditState } = editor;
 
   useEffect(() => {

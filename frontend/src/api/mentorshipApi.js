@@ -377,3 +377,30 @@ export const requestMatchingExemption = (
     API_ENDPOINTS.MENTORSHIP_ADMIN_EXEMPTION_REQUEST(roundId, userId),
     { reviewerId, reason },
   );
+
+/**
+ * One person in one round, as the admin detail page shows it: who they are,
+ * their registration and pairs, notes, this round's feedback, a pending
+ * block request, and the rounds they took part in before this one.
+ * @param {number|string} roundId
+ * @param {number|string} userId
+ */
+export const getParticipantDetail = (roundId, userId) =>
+  request.get(
+    API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANT_DETAIL(roundId, userId),
+  );
+
+/**
+ * Add a plain-text note on a person in a round in progress. Refused with 409
+ * once the round has ended.
+ * @param {number|string} roundId
+ * @param {number|string} userId
+ * @param {string} body
+ */
+export const addParticipantNote = (roundId, userId, body) =>
+  request.post(
+    API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANT_NOTES(roundId, userId),
+    {
+      body,
+    },
+  );

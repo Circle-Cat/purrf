@@ -31,6 +31,24 @@ describe("useMeetingLog", () => {
     expect(api.getMeetingLog).toHaveBeenCalledTimes(1);
   });
 
+  it("returns whether the pair's round is in progress", async () => {
+    api.getMeetingLog.mockResolvedValue({
+      data: { roundVersion: "v2", roundInProgress: true, meetings: [] },
+    });
+    const { result } = renderHook(() => useMeetingLog(80, true));
+    await waitFor(() => expect(result.current.roundInProgress).toBe(true));
+  });
+
+  it("treats a response without roundInProgress as not in progress", async () => {
+    const meetings = [{ meetingId: "gm-80-1", note: [] }];
+    api.getMeetingLog.mockResolvedValue(log(meetings, "v2"));
+    const { result } = renderHook(() => useMeetingLog(80, true));
+    // Wait for the response to land, so the assertion reads what it set.
+    await waitFor(() => expect(result.current.meetings).toEqual(meetings));
+    expect(result.current.loading).toBe(false);
+    expect(result.current.roundInProgress).toBe(false);
+  });
+
   it("returns meetings and roundVersion on success", async () => {
     const meetings = [
       {
