@@ -158,6 +158,7 @@ const resultsOf = (rows) => ({
 const meetingLogResponse = (roundVersion, meetingId) => ({
   data: {
     roundVersion,
+    roundInProgress: true,
     meetings: [
       {
         meetingId,
@@ -1426,6 +1427,26 @@ describe("ParticipantSearchCard", () => {
   });
 
   describe("meetings", () => {
+    it("opens a past round's meeting log read-only", async () => {
+      searchParticipants.mockResolvedValue(resultsOf([participantRow()]));
+      getMeetingLog.mockResolvedValue({
+        data: {
+          ...meetingLogResponse("v2", "gm-80-1").data,
+          roundInProgress: false,
+        },
+      });
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Meetings 2/5" }),
+      );
+
+      await screen.findByText("2024-03-01 · 15:30 - 16:30");
+      expect(
+        screen.queryByRole("button", { name: "Edit" }),
+      ).not.toBeInTheDocument();
+    });
+
     it("opens the meeting log from the button in the Pair cell", async () => {
       searchParticipants.mockResolvedValue(resultsOf([participantRow()]));
       await renderCard({ url: SEARCHED_PARTICIPANTS });

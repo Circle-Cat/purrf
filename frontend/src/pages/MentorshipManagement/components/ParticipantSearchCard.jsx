@@ -391,6 +391,7 @@ const ParticipantSearchCard = () => {
   const {
     meetings: activeMeetings,
     roundVersion: activeRoundVersion,
+    roundInProgress: activeRoundInProgress,
     loading: meetingLoading,
     error: meetingError,
     saveMeetingBatch,
@@ -816,6 +817,7 @@ const ParticipantSearchCard = () => {
           loading={meetingLoading}
           error={meetingError}
           roundVersion={activeRoundVersion}
+          roundInProgress={activeRoundInProgress}
           onSave={handleMeetingSave}
         />
       </CardContent>
