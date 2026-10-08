@@ -13,7 +13,7 @@ from backend.admin.block_service import BLOCK_TARGET, BLOCK_USER
 from backend.admin.block_user_handler import BlockUserHandler
 from backend.approval.approval_service import ApprovalService
 from backend.common.approval_enums import ApprovalRequestStatus
-from backend.common.exceptions import NotFoundError
+from backend.common.exceptions import ConflictError, NotFoundError
 from backend.common.mentorship_enums import (
     ApprovalStatus,
     CommunicationMethod,
@@ -392,6 +392,44 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
                 self.session, self.round.round_id, 999999
             )
 
+    async def test_a_note_written_is_committed_and_read_back(self):
+        note = await self.service.add_participant_note(
+            self.session,
+            round_id=self.round.round_id,
+            user_id=self.stranger.user_id,
+            author_id=self.writer.user_id,
+            body="Not registered yet; emailed her",
+        )
+
+        self.assertIsNone(note.tag)
+        self.assertIsNone(note.pair_id)
+        self.assertEqual(note.author.user_id, self.writer.user_id)
+        self.assertIsNotNone(note.created_at)
+        detail = await self._detail(user=self.stranger)
+        self.assertEqual([n.note_id for n in detail.notes], [note.note_id])
+
+    async def test_a_round_not_in_progress_takes_no_notes(self):
+        with self.assertRaises(ConflictError) as caught:
+            await self.service.add_participant_note(
+                self.session,
+                round_id=self.fall.round_id,
+                user_id=self.mentee.user_id,
+                author_id=self.writer.user_id,
+                body="Too late",
+            )
+
+        self.assertEqual(caught.exception.code, "round_not_in_progress")
+        self.assertEqual((await self._detail(round_=self.fall)).notes, [])
+
+    async def test_a_note_on_nobody_is_not_found(self):
+        with self.assertRaises(NotFoundError):
+            await self.service.add_participant_note(
+                self.session,
+                round_id=self.round.round_id,
+                user_id=999999,
+                author_id=self.writer.user_id,
+                body="Who?",
+            )
 
 if __name__ == "__main__":
     unittest.main()

@@ -639,6 +639,59 @@ class MentorshipAdminService:
             history=await self._history(session, round_entity, rows, exempted_rounds),
         )
 
+    async def add_participant_note(
+        self,
+        session: AsyncSession,
+        *,
+        round_id: int,
+        user_id: int,
+        author_id: int,
+        body: str,
+    ) -> ParticipantNoteDto:
+        """Write a plain note on a person in a round. Commits.
+
+        The person need not have registered: a note hangs on the person and
+        the round, not on a registration.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round, which must be in progress.
+            user_id (int): Who the note is about.
+            author_id (int): Who is writing it.
+            body (str): What it says, already validated by the request DTO.
+
+        Returns:
+            ParticipantNoteDto: The new note.
+
+        Raises:
+            NotFoundError: The round or the user does not exist.
+            ConflictError: The round is not in progress (code
+                ``round_not_in_progress``).
+        """
+        round_entity = await self.rounds_repository.get_by_round_id(session, round_id)
+        if round_entity is None:
+            raise NotFoundError(f"Mentorship round {round_id} does not exist.")
+        if not is_in_progress(round_entity, datetime.now(timezone.utc)):
+            raise ConflictError(
+                "Notes can only be added while the round is in progress.",
+                code="round_not_in_progress",
+            )
+        if await self.users_repository.get_user_by_user_id(session, user_id) is None:
+            raise NotFoundError(f"User {user_id} does not exist.")
+
+        note = await self.note_repository.create(
+            session,
+            user_id=user_id,
+            round_id=round_id,
+            author_user_id=author_id,
+            body=body,
+        )
+        await session.commit()
+        # created_at is filled in by the database; read it back before the
+        # attribute is touched, or the async session cannot load it.
+        await session.refresh(note)
+        return self._note_dto(note, await self._names(session, {author_id}))
+
     async def _names(self, session: AsyncSession, user_ids) -> dict[int, str]:
         """Display names of these people, keyed by user_id."""
         users = await self.users_repository.get_all_by_ids(session, list(user_ids))
