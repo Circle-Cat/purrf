@@ -97,6 +97,13 @@ describe("BlockFromPurrf", () => {
     );
     await waitFor(() => expect(getBlockPreflight).toHaveBeenCalledWith(3104));
     expect(getUserAdmins).toHaveBeenCalled();
+    // Nothing on this page reassigns or withdraws, so the copy promises neither.
+    expect(
+      screen.getByText(
+        "This does not block anyone yet. It goes to the reviewer you name below, and nothing changes for this person until they approve it.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/withdraw/i)).not.toBeInTheDocument();
 
     // ApprovalRequestDialog renders reviewers in a native <select>.
     await userEvent.selectOptions(

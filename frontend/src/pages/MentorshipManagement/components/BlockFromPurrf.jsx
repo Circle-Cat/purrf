@@ -14,6 +14,10 @@ import { approvalPersonLabel } from "@/pages/MentorshipManagement/utils/approval
 // it only from holders of mentorship write access.
 const RAISED_FROM = "mentorship_participant";
 
+// This page offers no reassign or withdraw, so the dialog does not promise it.
+const REQUEST_DESCRIPTION =
+  "This does not block anyone yet. It goes to the reviewer you name below, and nothing changes for this person until they approve it.";
+
 /**
  * Ask a user admin to block this person from Purrf, from their mentorship
  * page. While a request waits, says who it waits on instead. Blocking is
@@ -93,6 +97,7 @@ const BlockFromPurrf = ({
         currentUserId={user?.userId}
         onConfirm={confirm}
         submitting={submitting}
+        requestDescription={REQUEST_DESCRIPTION}
       />
     </>
   );
