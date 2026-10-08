@@ -76,6 +76,9 @@ resource "kubernetes_secret" "purrf_app" {
     GMAIL_REFRESH_TOKEN       = var.gmail_refresh_token
     GMAIL_SENDER_RECRUITING   = var.gmail_sender_recruiting
     GMAIL_SENDER_NOTIFICATION = var.gmail_sender_notification
+    GMAIL_SENDER_MENTORSHIP   = var.gmail_sender_mentorship
+    GMAIL_SENDER_INQUIRIES    = var.gmail_sender_inquiries
+    GMAIL_INBOX_ENABLED       = var.gmail_inbox_enabled ? "true" : "false"
 
     # Where notification messages are published. The full
     # projects/<project>/topics/<topic> path, not the bare name, because that
