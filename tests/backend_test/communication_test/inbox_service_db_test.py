@@ -64,7 +64,7 @@ class InboxListOnARealSessionTest(BaseRepositoryTestLib):
             thread_service_resolver=ThreadServiceResolver(
                 job_repository=JobRepository()
             ),
-            conversation_service=SimpleNamespace(sender_address="careers@example.com"),
+            conversation_service=SimpleNamespace(),
             aliases=InboxAliases(mentorship="mentorship-db@example.com"),
             gmail_client=Mock(),
             round_participants_repository=MentorshipRoundParticipantsRepository(),
@@ -77,11 +77,12 @@ class InboxListOnARealSessionTest(BaseRepositoryTestLib):
             self.session, _VIEWER, InboxQueryDto(**query)
         )
 
-    async def _thread(self, key, context_type, archived_at=None):
+    async def _thread(self, key, context_type, archived_at=None, context_id=None):
         thread = EmailThreadEntity(
             gmail_thread_id=f"g-inbox-list-db-{key}",
             subject=f"Question {key}",
             context_type=context_type,
+            context_id=context_id,
             archived_at=archived_at,
         )
         await self.insert_entities([thread])
@@ -155,11 +156,18 @@ class InboxListOnARealSessionTest(BaseRepositoryTestLib):
             "archived", ContextType.MENTORSHIP_INBOX, archived_at=_at(25)
         )
         await self._message(archived, "archived-1", "inbound", 20, "b@ext.com", "human")
+        assigned = await self._thread("assigned", ContextType.ACTIVITY, context_id=8)
+        await self._message(assigned, "assigned-1", "inbound", 40, "c@ext.com", "human")
+        started = await self._thread("started", ContextType.APPLICATION, context_id=57)
+        await self._message(started, "started-1", "outbound", 0, "careers@example.com")
+        await self._message(started, "started-2", "inbound", 45, "d@ext.com", "human")
         mine = {
             asked.thread_id,
             moved.thread_id,
             answered.thread_id,
             archived.thread_id,
+            assigned.thread_id,
+            started.thread_id,
         }
 
         result = await self._list()
@@ -176,7 +184,6 @@ class InboxListOnARealSessionTest(BaseRepositoryTestLib):
         self.assertEqual(
             result.counts.needs_reply, self.baseline.counts.needs_reply + 2
         )
-        self.assertEqual(result.counts.unassigned, self.baseline.counts.unassigned + 1)
         before = {s.key: s.needs_reply for s in self.baseline.services}
         after = {s.key: s.needs_reply for s in result.services}
         self.assertEqual(
@@ -190,7 +197,6 @@ class InboxListOnARealSessionTest(BaseRepositoryTestLib):
         self.assertEqual(rows[asked.thread_id].sender, "w.xiao.inbox-db@example.com")
         self.assertEqual(rows[asked.thread_id].person.name, "Sofia")
         self.assertEqual(rows[asked.thread_id].matched_by, "alternative")
-        self.assertTrue(rows[asked.thread_id].unassigned)
         self.assertTrue(rows[moved.thread_id].no_matching_user)
         self.assertEqual(rows[moved.thread_id].moved_from, InboxService.MENTORSHIP)
 

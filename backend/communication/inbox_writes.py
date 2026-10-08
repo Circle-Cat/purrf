@@ -1,8 +1,9 @@
 """Inbox thread actions: reply, archive, assign and move.
 
 Every public method is an entry point: it checks, writes, records an event,
-then commits, and answers with the thread as the viewer now sees it. A
-rejected action raises before anything is written.
+then commits, and answers with the thread as the viewer now sees it (None
+once it has left the Inbox or the viewer's services). A rejected action raises
+before anything is written.
 """
 
 from datetime import datetime, timezone
@@ -10,12 +11,10 @@ from datetime import datetime, timezone
 from backend.common.communication_enums import INBOX_CONTEXT, ContextType, InboxService
 from backend.common.exceptions import ConflictError
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE, InboxEvent
-from backend.common.recruiting_enums import ApplicationStage, JobKind, RecruitingEvent
+from backend.common.recruiting_enums import ApplicationStage, JobKind
 from backend.communication.inbox_access import visible_services
 from backend.communication.inbox_rows import can_assign, facts_of, reply_contact
 from backend.notification_management.event_recorder import record_event
-
-_ASSIGNED_CONTEXTS = frozenset({ContextType.ACTIVITY, ContextType.APPLICATION})
 
 
 def reply_subject(subject: str | None) -> str:
@@ -48,11 +47,7 @@ class InboxThreadWrites:
     """The write half of ``InboxThreadService``; relies on its repositories."""
 
     async def reply(self, session, user, thread_id, body, last_seen_message_id):
-        """Send a reply from the thread's reply address. Commits.
-
-        Application threads reply from the recruiting sender and add an
-        ``EMAIL_SENT`` entry to the application's timeline; every other
-        thread replies from its service's alias.
+        """Send a reply from the thread's service alias. Commits.
 
         Args:
             session (AsyncSession): The active DB session.
@@ -76,11 +71,7 @@ class InboxThreadWrites:
                 "This thread has new messages. Read them before sending.",
                 code="THREAD_CHANGED",
             )
-        is_application = thread.context_type == ContextType.APPLICATION
-        if is_application:
-            alias = self._conversation.sender_address
-        else:
-            alias = self._aliases.alias_of(service)
+        alias = self._aliases.alias_of(service)
         if alias is None:
             raise ValueError("This environment has no alias for this inbox")
         contact = reply_contact(messages)
@@ -100,20 +91,6 @@ class InboxThreadWrites:
             thread_id=thread_id,
             sender_address=alias,
         )
-        if is_application:
-            await record_event(
-                session,
-                subject_type="application",
-                subject_id=thread.context_id,
-                actor_id=user.user_id,
-                event_type=RecruitingEvent.EMAIL_SENT,
-                details={
-                    "subject": subject,
-                    "to": [contact],
-                    "threadId": thread_id,
-                    "direction": "outbound",
-                },
-            )
         await session.commit()
         return await self.get_thread(session, user, thread_id)
 
@@ -151,6 +128,7 @@ class InboxThreadWrites:
         A Mentorship thread takes ``round_id`` (any existing round, registered
         or not). A Recruiting thread takes ``job_id`` of an EMPLOYMENT job and
         is attached to the person's live application there, else their newest.
+        The thread then leaves the Inbox and is read where it was attached.
 
         Args:
             session (AsyncSession): The active DB session.
@@ -161,7 +139,7 @@ class InboxThreadWrites:
             job_id (int | None): The job, for Recruiting.
 
         Returns:
-            InboxThreadDetailDto: The assigned thread.
+            None: The thread is no longer in the Inbox.
 
         Raises:
             ValueError: Thread not found or not visible; the thread cannot be
@@ -191,30 +169,8 @@ class InboxThreadWrites:
         thread.user_id = person_id
         thread.context_type = context_type
         thread.context_id = context_id
-        return await self._finish(session, user, thread, InboxEvent.ASSIGNED, details)
-
-    async def unassign(self, session, user, thread_id):
-        """Detach a thread from its person and round or application. Commits.
-
-        Raises:
-            ValueError: Thread not found or not visible, cannot be assigned,
-                or is not assigned.
-        """
-        thread, service, facts = await self._load_for_write(session, user, thread_id)
-        if not can_assign(service, facts):
-            raise ValueError("This thread cannot be assigned")
-        if thread.context_type not in _ASSIGNED_CONTEXTS or thread.context_id is None:
-            raise ValueError("This thread is not assigned")
-        key = (
-            "roundId"
-            if thread.context_type == ContextType.ACTIVITY
-            else "applicationId"
-        )
-        details = {"userId": thread.user_id, key: thread.context_id}
-        thread.user_id = None
-        thread.context_type = INBOX_CONTEXT[service]
-        thread.context_id = None
-        return await self._finish(session, user, thread, InboxEvent.UNASSIGNED, details)
+        await self._record(session, user, thread, InboxEvent.ASSIGNED, details)
+        return None
 
     async def move(self, session, user, thread_id, target: InboxService):
         """Move a thread to another service's inbox, unassigned and unarchived. Commits.
@@ -280,6 +236,11 @@ class InboxThreadWrites:
         return application
 
     async def _finish(self, session, user, thread, event_type, details=None):
+        await self._record(session, user, thread, event_type, details)
+        return await self.get_thread(session, user, thread.thread_id)
+
+    @staticmethod
+    async def _record(session, user, thread, event_type, details=None):
         await record_event(
             session,
             subject_type=INBOX_SUBJECT_TYPE,
@@ -289,4 +250,3 @@ class InboxThreadWrites:
             details=details,
         )
         await session.commit()
-        return await self.get_thread(session, user, thread.thread_id)

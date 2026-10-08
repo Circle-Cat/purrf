@@ -88,7 +88,6 @@ class InboxController:
             (INBOX_THREAD_ARCHIVE_ENDPOINT, "POST", self.archive, INBOX_GATE),
             (INBOX_THREAD_UNARCHIVE_ENDPOINT, "POST", self.unarchive, INBOX_GATE),
             (INBOX_THREAD_ASSIGNMENT_ENDPOINT, "PUT", self.assign, INBOX_GATE),
-            (INBOX_THREAD_ASSIGNMENT_ENDPOINT, "DELETE", self.unassign, INBOX_GATE),
             (INBOX_THREAD_MOVE_ENDPOINT, "POST", self.move, INBOX_GATE),
             (
                 INBOX_THREAD_ASSIGN_OPTIONS_ENDPOINT,
@@ -177,7 +176,7 @@ class InboxController:
         thread_id: int,
         payload: InboxAssignRequestDto,
     ):
-        """Attach a thread to a person and a round or job."""
+        """Attach a thread to a person and a round or job; it leaves the Inbox."""
         async with self.database.session() as session:
             result = await self.inbox_thread_service.assign(
                 session,
@@ -188,14 +187,6 @@ class InboxController:
                 job_id=payload.job_id,
             )
         return api_response(message="Thread assigned.", data=result)
-
-    async def unassign(self, current_user: UserContextDto, thread_id: int):
-        """Remove a thread's assignment."""
-        async with self.database.session() as session:
-            result = await self.inbox_thread_service.unassign(
-                session, current_user, thread_id
-            )
-        return api_response(message="Assignment removed.", data=result)
 
     async def move(
         self,

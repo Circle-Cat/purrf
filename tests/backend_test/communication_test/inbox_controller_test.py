@@ -40,13 +40,10 @@ def _detail(thread_id=31):
         last_activity_at=_T0,
         needs_reply=True,
         archived=False,
-        unassigned=False,
         no_matching_user=True,
         messages=[],
         latest_message_id=77,
         can_assign=True,
-        can_move=True,
-        tracked=False,
     )
 
 
@@ -110,7 +107,6 @@ class InboxControllerTest(unittest.TestCase):
             ("POST", "/inbox/threads/{thread_id}/archive"): INBOX_GATE,
             ("POST", "/inbox/threads/{thread_id}/unarchive"): INBOX_GATE,
             ("PUT", "/inbox/threads/{thread_id}/assignment"): INBOX_GATE,
-            ("DELETE", "/inbox/threads/{thread_id}/assignment"): INBOX_GATE,
             ("POST", "/inbox/threads/{thread_id}/move"): INBOX_GATE,
             ("GET", "/inbox/threads/{thread_id}/assign-options"): INBOX_GATE,
             ("GET", "/inbox/people"): people_gate,
@@ -148,7 +144,7 @@ class InboxControllerTest(unittest.TestCase):
     def test_list_reads_camel_case_filters(self):
         self.service.list_threads.return_value = InboxListDto(
             threads=[],
-            counts=InboxCountsDto(needs_reply=2, unassigned=1),
+            counts=InboxCountsDto(needs_reply=2),
             services=[InboxServiceCountDto(key=InboxService.MENTORSHIP, needs_reply=2)],
         )
 
@@ -157,7 +153,6 @@ class InboxControllerTest(unittest.TestCase):
             params={
                 "service": "recruiting",
                 "needsReply": "true",
-                "unassigned": "false",
                 "archived": "true",
                 "q": "ann",
             },
@@ -168,7 +163,7 @@ class InboxControllerTest(unittest.TestCase):
             response.json()["data"],
             {
                 "threads": [],
-                "counts": {"needsReply": 2, "unassigned": 1},
+                "counts": {"needsReply": 2},
                 "services": [{"key": "mentorship", "needsReply": 2}],
             },
         )
@@ -180,7 +175,6 @@ class InboxControllerTest(unittest.TestCase):
             InboxQueryDto(
                 service=InboxService.RECRUITING,
                 needs_reply=True,
-                unassigned=False,
                 archived=True,
                 q="ann",
             ),
@@ -188,7 +182,7 @@ class InboxControllerTest(unittest.TestCase):
 
     def test_list_without_filters(self):
         self.service.list_threads.return_value = InboxListDto(
-            threads=[], counts=InboxCountsDto(needs_reply=0, unassigned=0), services=[]
+            threads=[], counts=InboxCountsDto(needs_reply=0), services=[]
         )
 
         self.client.get("/inbox/threads")
@@ -266,34 +260,28 @@ class InboxControllerTest(unittest.TestCase):
         self.assertEqual(self.service.archive.await_args.args[2], 31)
         self.assertEqual(self.service.unarchive.await_args.args[2], 32)
 
-    def test_assign_to_a_round(self):
-        self.service.assign.return_value = _detail()
+    def test_assign_to_a_round_answers_without_a_thread(self):
+        self.service.assign.return_value = None
 
         response = self.client.put(
             "/inbox/threads/31/assignment", json={"userId": 40, "roundId": 3}
         )
 
         self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["success"])
+        self.assertIsNone(response.json()["data"])
         call = self.service.assign.await_args
         self.assertEqual(call.args[2:], (31, 40))
         self.assertEqual(call.kwargs, {"round_id": 3, "job_id": None})
 
     def test_assign_to_a_job(self):
-        self.service.assign.return_value = _detail()
+        self.service.assign.return_value = None
 
         self.client.put("/inbox/threads/31/assignment", json={"userId": 40, "jobId": 9})
 
         self.assertEqual(
             self.service.assign.await_args.kwargs, {"round_id": None, "job_id": 9}
         )
-
-    def test_unassign(self):
-        self.service.unassign.return_value = _detail()
-
-        response = self.client.delete("/inbox/threads/31/assignment")
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(self.service.unassign.await_args.args[2], 31)
 
     def test_move(self):
         self.service.move.return_value = _detail()

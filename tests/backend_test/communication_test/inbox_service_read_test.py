@@ -16,7 +16,6 @@ from backend.dto.user_context_dto import UserContextDto
 _T0 = datetime(2026, 9, 29, 9, 0, tzinfo=timezone.utc)
 _MENTORSHIP_ALIAS = "mentorship-test@circlecat.org"
 _RECRUITING_ALIAS = "recruiting-test@circlecat.org"
-_CAREERS = "careers@circlecat.org"
 
 
 def _at(minutes):
@@ -161,7 +160,7 @@ class _Fixture(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.application_repo = Mock()
-        self.conversation = SimpleNamespace(sender_address=_CAREERS)
+        self.conversation = SimpleNamespace()
         self.gmail = Mock()
         self.participant_repo = Mock()
         self.rounds_service = Mock()
@@ -223,21 +222,33 @@ class VisibilityTest(_Fixture):
         self.assertEqual(self._ids(result), [3])
         self.assertEqual([s.key for s in result.services], [InboxService.INQUIRIES])
 
-    async def test_advance_only_non_owner_sees_employment_applications_and_recruiting_inbox(
-        self,
-    ):
-        viewer = _viewer(Permission.RECRUITING_APPLICATION_ADVANCE)
+    async def test_advance_only_sees_only_the_recruiting_inbox(self):
+        result = await self._list(_viewer(Permission.RECRUITING_APPLICATION_ADVANCE))
+
+        self.assertEqual(self._ids(result), [2])
+
+    async def test_mentorship_sees_only_the_mentorship_inbox(self):
+        result = await self._list(_viewer(Permission.MENTORSHIP_ADMIN_WRITE))
+
+        self.assertEqual(self._ids(result), [1])
+
+    async def test_threads_we_started_or_assigned_are_not_listed_or_counted(self):
+        viewer = _viewer(*_ALL)
 
         result = await self._list(viewer)
 
-        self.assertEqual(sorted(self._ids(result)), [2, 4])
-        detail = await self.service.get_thread(self.session, viewer, 4)
-        self.assertEqual(detail.service, InboxService.RECRUITING)
+        self.assertEqual(sorted(self._ids(result)), [1, 2, 3])
+        self.assertEqual(result.counts.needs_reply, 3)
+        self.assertEqual([s.needs_reply for s in result.services], [1, 1, 1])
+        self.assertEqual(await self.service.count_needs_reply(self.session, viewer), 3)
 
-    async def test_mentorship_sees_inbox_activity_and_activity_job_applications(self):
-        result = await self._list(_viewer(Permission.MENTORSHIP_ADMIN_WRITE))
+    async def test_threads_we_started_or_assigned_are_not_found(self):
+        for thread_id in (4, 5, 6):
+            with self.assertRaises(ValueError) as caught:
+                await self.service.get_thread(self.session, _viewer(*_ALL), thread_id)
+            self.assertEqual(str(caught.exception), f"thread {thread_id} not found")
 
-        self.assertEqual(sorted(self._ids(result)), [1, 5, 6])
+        self.message_repo.list_by_thread.assert_not_awaited()
 
     async def test_invisible_and_missing_raise_the_same_error(self):
         viewer = _viewer(Permission.MENTORSHIP_ADMIN_WRITE)
@@ -251,15 +262,6 @@ class VisibilityTest(_Fixture):
         self.assertEqual(str(missing.exception), "thread 999 not found")
         self.message_repo.list_by_thread.assert_not_awaited()
 
-    async def test_application_of_a_deleted_job_is_not_found(self):
-        self.threads.append(_thread(7, ContextType.APPLICATION, 404, user_id=33))
-
-        with self.assertRaises(ValueError) as caught:
-            await self.service.get_thread(self.session, _viewer(*_ALL), 7)
-
-        self.assertEqual(str(caught.exception), "thread 7 not found")
-        self.assertNotIn(7, self._ids(await self._list()))
-
     async def test_no_permission_lists_nothing_without_reading(self):
         result = await self._list(_viewer(Permission.MENTORSHIP_ADMIN_READ))
 
@@ -267,12 +269,13 @@ class VisibilityTest(_Fixture):
         self.assertEqual(result.services, [])
         self.thread_repo.list_by_context_types.assert_not_awaited()
 
-    async def test_one_query_each_for_messages_jobs_and_emails(self):
+    async def test_one_query_each_for_messages_and_emails_and_none_for_jobs(self):
         await self._list()
 
         self.message_repo.list_by_threads.assert_awaited_once()
-        self.job_repo.get_by_application_ids.assert_awaited_once()
+        self.job_repo.get_by_application_ids.assert_not_awaited()
         self.job_repo.get_by_application_id.assert_not_awaited()
+        self.round_repo.get_all_rounds.assert_not_awaited()
         self.email_repo.list_by_emails.assert_awaited_once()
         self.user_repo.get_all_by_ids.assert_awaited_once()
 
@@ -330,39 +333,15 @@ class PersonMatchingTest(_Fixture):
 
         self.assertEqual(row.sender, "pat@ext.com")
 
-    async def test_assigned_person_wins_over_sender_match(self):
-        self.threads = [_thread(1, ContextType.ACTIVITY, 8, user_id=50)]
-        self.messages = {1: [_in(10, 0, sender="someone@ext.com")]}
-        self.emails = [_email(41, "someone@ext.com", is_primary=True)]
-        self.users = [_user(41, "Ann", "Lee"), _user(50, "Bo", "Chen", "Bobby")]
-        self.rounds = [SimpleNamespace(round_id=8, name="Fall 2026")]
-
-        row = (await self._list()).threads[0]
-
-        self.assertEqual((row.person.user_id, row.person.name), (50, "Bobby"))
-        self.assertIsNone(row.matched_by)
-        self.assertEqual(row.assignment.kind, "round")
-        self.assertEqual(
-            (row.assignment.round_id, row.assignment.round_name), (8, "Fall 2026")
-        )
-        self.assertFalse(row.unassigned)
-
     async def test_recruiting_person_is_named_by_legal_name(self):
-        self.jobs_by_application = {
-            57: SimpleNamespace(kind=JobKind.EMPLOYMENT, title="Data Analyst")
-        }
-        self.threads = [_thread(1, ContextType.APPLICATION, 57, user_id=50)]
-        self.messages = {1: [_out(10, 0)]}
+        self.threads = [_thread(1, ContextType.RECRUITING_INBOX)]
+        self.messages = {1: [_in(10, 0, sender="bo@ext.com")]}
+        self.emails = [_email(50, "bo@ext.com", is_primary=True)]
         self.users = [_user(50, "Bo", "Chen", "Bobby")]
 
         row = (await self._list()).threads[0]
 
         self.assertEqual(row.person.name, "Bo Chen")
-        self.assertEqual(row.assignment.kind, "application")
-        self.assertEqual(
-            (row.assignment.application_id, row.assignment.job_title),
-            (57, "Data Analyst"),
-        )
 
 
 class SearchTest(_Fixture):
@@ -402,45 +381,10 @@ class SearchTest(_Fixture):
 
         self.assertEqual(searched.counts, full.counts)
         self.assertEqual(searched.counts.needs_reply, 3)
-        self.assertEqual(searched.counts.unassigned, 2)
         self.assertEqual(searched.services, full.services)
 
 
 class FlagsAndOrderTest(_Fixture):
-    async def test_inquiries_thread_is_never_unassigned(self):
-        self.threads = [
-            _thread(1, ContextType.INQUIRIES_INBOX),
-            _thread(2, ContextType.MENTORSHIP_INBOX),
-            _thread(3, ContextType.MENTORSHIP_INBOX),
-        ]
-        self.messages = {
-            1: [_in(10, 0, sender="known@ext.com")],
-            2: [_in(20, 1, sender="known@ext.com")],
-            3: [_in(30, 2, sender="stranger@ext.com")],
-        }
-        self.emails = [_email(41, "known@ext.com", True)]
-        self.users = [_user(41, "Ann", "Lee")]
-
-        rows = {r.thread_id: r for r in (await self._list()).threads}
-
-        self.assertIsNotNone(rows[1].person)
-        self.assertFalse(rows[1].unassigned)
-        self.assertTrue(rows[2].unassigned)
-        self.assertFalse(rows[3].unassigned)
-        self.assertTrue(rows[3].no_matching_user)
-
-    async def test_tracked_thread_is_never_unassigned(self):
-        self.threads = [_thread(1, ContextType.MENTORSHIP_INBOX)]
-        self.messages = {
-            1: [_out(10, 0, to="known@ext.com"), _in(11, 1, sender="known@ext.com")]
-        }
-        self.emails = [_email(41, "known@ext.com", True)]
-        self.users = [_user(41, "Ann", "Lee")]
-
-        row = (await self._list()).threads[0]
-
-        self.assertFalse(row.unassigned)
-
     async def test_needs_reply_first_by_latest_human_inbound_then_activity(self):
         self.threads = [
             _thread(1, ContextType.MENTORSHIP_INBOX),
@@ -486,7 +430,6 @@ class FlagsAndOrderTest(_Fixture):
         default = await self._list(service=InboxService.MENTORSHIP)
         with_archived = await self._list(service=InboxService.MENTORSHIP, archived=True)
         needs = await self._list(needs_reply=True)
-        unassigned = await self._list(unassigned=True)
 
         self.assertEqual(sorted(self._ids(default)), [1, 4])
         self.assertEqual(sorted(self._ids(with_archived)), [1, 2, 4])
@@ -495,9 +438,7 @@ class FlagsAndOrderTest(_Fixture):
             {1: False, 2: True, 4: False},
         )
         self.assertEqual(sorted(self._ids(needs)), [1, 3])
-        self.assertEqual(self._ids(unassigned), [1])
         self.assertEqual(default.counts.needs_reply, 1)
-        self.assertEqual(default.counts.unassigned, 1)
         self.assertEqual(with_archived.counts, default.counts)
         self.assertEqual(
             [(s.key, s.needs_reply) for s in default.services],
@@ -603,9 +544,7 @@ class DetailTest(_Fixture):
 
         self.assertEqual(detail.reply_alias, _MENTORSHIP_ALIAS)
         self.assertEqual(detail.latest_message_id, 12)
-        self.assertFalse(detail.tracked)
         self.assertTrue(detail.can_assign)
-        self.assertTrue(detail.can_move)
         self.assertEqual(detail.open_bounce.bounced_to, "asker@ext.com")
         self.assertEqual(detail.machine_tag, "bounce")
         first, sent, _ = detail.messages
@@ -688,22 +627,14 @@ class DetailTest(_Fixture):
 
         self.assertEqual(detail.open_bounce.bounced_to, "pat@ext.com")
 
-    async def test_application_thread_replies_from_the_recruiting_sender(self):
-        self.jobs_by_application = {
-            57: SimpleNamespace(kind=JobKind.EMPLOYMENT, title="Data Analyst")
-        }
-        self.threads = [_thread(1, ContextType.APPLICATION, 57, user_id=50)]
-        self.messages = {1: [_out(10, 0), _in(11, 5)]}
-        self.users = [_user(50, "Bo", "Chen")]
+    async def test_recruiting_thread_replies_from_the_recruiting_alias(self):
+        self.threads = [_thread(1, ContextType.RECRUITING_INBOX)]
+        self.messages = {1: [_in(10, 0)]}
 
         detail = await self.service.get_thread(self.session, _viewer(*_ALL), 1)
 
-        self.assertEqual(detail.reply_alias, _CAREERS)
-        self.assertTrue(detail.tracked)
-        self.assertFalse(detail.can_assign)
-        self.assertFalse(detail.can_move)
-        self.assertFalse(detail.unassigned)
-        self.assertTrue(detail.needs_reply)
+        self.assertEqual(detail.reply_alias, _RECRUITING_ALIAS)
+        self.assertTrue(detail.can_assign)
 
     async def test_inquiries_without_alias_has_no_reply_alias_and_cannot_assign(self):
         self.threads = [_thread(1, ContextType.INQUIRIES_INBOX)]
@@ -713,7 +644,6 @@ class DetailTest(_Fixture):
 
         self.assertIsNone(detail.reply_alias)
         self.assertFalse(detail.can_assign)
-        self.assertTrue(detail.can_move)
         self.assertIsNone(detail.moved_from)
         self.assertIsNone(detail.moved_at)
 

@@ -41,7 +41,7 @@ class InboxThreadOptions:
             ValueError: Thread not found or not visible; or the message is not
                 in the thread or has no attachment at that index.
         """
-        await self._load_visible(session, user, thread_id)
+        await self._load_visible(session, user, thread_id, inbox_only=False)
         messages = await self._messages.list_by_thread(session, thread_id)
         message = next((m for m in messages if m.message_id == message_id), None)
         attachments = (message.attachments or []) if message else []

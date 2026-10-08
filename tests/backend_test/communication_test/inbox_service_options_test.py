@@ -40,6 +40,7 @@ class _OptionsFixture(_Fixture):
             _thread(2, ContextType.RECRUITING_INBOX),
             _thread(3, ContextType.INQUIRIES_INBOX),
             _thread(4, ContextType.MENTORSHIP_INBOX),
+            _thread(5, ContextType.ACTIVITY, 8, user_id=32),
         ]
         self.messages = {
             1: [
@@ -59,6 +60,11 @@ class _OptionsFixture(_Fixture):
                 )
             ],
             4: [_out(40, 0)],
+            5: [
+                _attached(
+                    50, 0, [{"name": "id.pdf", "size": 2, "gmailAttachmentId": "att-i"}]
+                )
+            ],
         }
         self.gmail.get_attachment = Mock(return_value=b"BYTES")
 
@@ -71,6 +77,24 @@ class DownloadTest(_OptionsFixture):
 
         self.assertEqual((content, name), (b"BYTES", "b.png"))
         self.gmail.get_attachment.assert_called_once_with("gm-10", "att-b")
+
+    async def test_an_assigned_thread_still_serves_its_attachments(self):
+        viewer = _viewer(Permission.MENTORSHIP_ADMIN_WRITE)
+
+        content, name = await self.service.download_attachment(
+            self.session, viewer, 5, 50, 0
+        )
+
+        self.assertEqual((content, name), (b"BYTES", "id.pdf"))
+        self.gmail.get_attachment.assert_called_once_with("gm-50", "att-i")
+
+    async def test_an_assigned_thread_of_a_hidden_service_is_not_found(self):
+        viewer = _viewer(Permission.INQUIRIES_MANAGE)
+
+        with self.assertRaisesRegex(ValueError, "thread 5 not found"):
+            await self.service.download_attachment(self.session, viewer, 5, 50, 0)
+
+        self.gmail.get_attachment.assert_not_called()
 
     async def test_message_of_another_thread_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "attachment not found"):
@@ -154,6 +178,10 @@ class RoundOptionsTest(_OptionsFixture):
 
         with self.assertRaisesRegex(ValueError, "thread 1 not found"):
             await self.service.assign_options(self.session, viewer, 1, 32)
+
+    async def test_assigned_thread_is_not_found(self):
+        with self.assertRaisesRegex(ValueError, "thread 5 not found"):
+            await self.service.assign_options(self.session, _viewer(*_ALL), 5, 32)
 
 
 class JobOptionsTest(_OptionsFixture):

@@ -1,12 +1,12 @@
-"""The Inbox: every service's mail threads in one list, filtered by permission."""
+"""The Inbox: mail threads others started that are not assigned yet, filtered by permission.
+
+A thread we started never shows here, and an assigned one leaves: both are
+read where they belong (an application, a round).
+"""
 
 from dataclasses import dataclass, field
 
-from backend.common.communication_enums import (
-    INBOX_CONTEXT,
-    ContextType,
-    InboxService,
-)
+from backend.common.communication_enums import INBOX_CONTEXT, InboxService
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE, InboxEvent
 from backend.common.name_utils import display_name_of
 from backend.communication.inbox_access import visible_services
@@ -20,9 +20,7 @@ from backend.communication.inbox_rows import (
 from backend.communication.inbox_options import InboxThreadOptions
 from backend.communication.inbox_writes import InboxThreadWrites
 from backend.communication.inbox_state import message_time
-from backend.communication.thread_service import service_from
 from backend.dto.inbox_dto import (
-    InboxApplicationAssignmentDto,
     InboxAttachmentDto,
     InboxCountsDto,
     InboxListDto,
@@ -30,7 +28,6 @@ from backend.dto.inbox_dto import (
     InboxOpenBounceDto,
     InboxPersonDto,
     InboxQueryDto,
-    InboxRoundAssignmentDto,
     InboxServiceCountDto,
     InboxThreadDetailDto,
     InboxThreadRowDto,
@@ -43,7 +40,6 @@ _INBOX_CONTEXTS = frozenset(INBOX_CONTEXT.values())
 class _Item:
     thread: object
     service: InboxService
-    job: object | None
     facts: ThreadFacts
 
 
@@ -51,17 +47,7 @@ class _Item:
 class _Lookups:
     users: dict = field(default_factory=dict)
     matched: dict = field(default_factory=dict)
-    round_names: dict = field(default_factory=dict)
     moves: dict = field(default_factory=dict)
-
-
-def _contexts_for(services: list[InboxService]) -> list[str]:
-    contexts = [INBOX_CONTEXT[s] for s in services]
-    if InboxService.MENTORSHIP in services:
-        contexts.append(ContextType.ACTIVITY)
-    if InboxService.MENTORSHIP in services or InboxService.RECRUITING in services:
-        contexts.append(ContextType.APPLICATION)
-    return contexts
 
 
 def _person_name(user, service: InboxService) -> str:
@@ -100,15 +86,14 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
             message_repository (EmailMessageRepository): Loads messages.
             user_emails_repository (UserEmailsRepository): Matches senders to users.
             users_repository (UsersRepository): Names people.
-            job_repository (JobRepository): Finds an application's job.
+            job_repository (JobRepository): Finds the job an Assign targets.
             application_repository (ApplicationRepository): A person's
                 applications, for Assign.
             round_repository (MentorshipRoundRepository): Names and finds rounds.
             event_repository (EventRepository): Finds the last move.
             thread_service_resolver (ThreadServiceResolver): A thread's service.
-            conversation_service (EmailConversationService): Its
-                ``sender_address`` is the reply address of application threads.
-            aliases (InboxAliases): The reply address of every other thread.
+            conversation_service (EmailConversationService): Sends replies.
+            aliases (InboxAliases): The reply address of each service.
             gmail_client (GmailClient): Downloads attachments.
             round_participants_repository (MentorshipRoundParticipantsRepository):
                 Tells whether a person registered for a round.
@@ -160,7 +145,6 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
             for item, row in scoped
             if (query.archived or not row.archived)
             and (not query.needs_reply or row.needs_reply)
-            and (not query.unassigned or row.unassigned)
             and matches_search(
                 query.q,
                 row.person.user_id if row.person else None,
@@ -181,7 +165,6 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
             threads=[row for _, row in shown],
             counts=InboxCountsDto(
                 needs_reply=sum(row.needs_reply for row in live),
-                unassigned=sum(row.unassigned for row in live),
             ),
             services=[
                 InboxServiceCountDto(
@@ -223,27 +206,18 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
         """
         thread, service = await self._load_visible(session, user, thread_id)
         messages = await self._messages.list_by_thread(session, thread_id)
-        job = None
-        if thread.context_type == ContextType.APPLICATION:
-            job = await self._jobs.get_by_application_id(session, thread.context_id)
-        item = _Item(thread, service, job, facts_of(thread, messages))
+        item = _Item(thread, service, facts_of(thread, messages))
         senders = {m.sent_by_user_id for m in messages if m.sent_by_user_id}
         lookups = await self._lookups(session, [item], extra_user_ids=senders)
         row = self._row(item, lookups)
         facts = item.facts
         move = lookups.moves.get(thread_id)
-        if thread.context_type == ContextType.APPLICATION:
-            reply_alias = self._conversation.sender_address
-        else:
-            reply_alias = self._aliases.alias_of(service)
         return InboxThreadDetailDto(
             **dict(row),
             messages=[self._message(m, lookups.users) for m in facts.ordered],
             latest_message_id=facts.ordered[-1].message_id if facts.ordered else None,
-            reply_alias=reply_alias,
+            reply_alias=self._aliases.alias_of(service),
             can_assign=self._can_assign(item),
-            can_move=not facts.tracked,
-            tracked=facts.tracked,
             open_bounce=(
                 InboxOpenBounceDto(bounced_to=facts.open_bounce_to)
                 if facts.open_bounce_to is not None
@@ -252,11 +226,17 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
             moved_at=move.created_at if move else None,
         )
 
-    async def _load_visible(self, session, user, thread_id):
-        """Raises ValueError(f"thread {thread_id} not found") when missing or not visible."""
+    async def _load_visible(self, session, user, thread_id, inbox_only=True):
+        """Raises ValueError(f"thread {thread_id} not found") when missing or not visible.
+
+        With ``inbox_only`` a thread that is not (or no longer) in the Inbox
+        counts as missing.
+        """
         not_found = ValueError(f"thread {thread_id} not found")
         thread = await self._threads.get(session, thread_id)
         if thread is None:
+            raise not_found
+        if inbox_only and thread.context_type not in _INBOX_CONTEXTS:
             raise not_found
         try:
             service = await self._resolver.service_of(session, thread)
@@ -270,33 +250,19 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
         if not services:
             return []
         threads = await self._threads.list_by_context_types(
-            session, _contexts_for(services)
+            session, [INBOX_CONTEXT[s] for s in services]
         )
-        jobs = await self._jobs.get_by_application_ids(
-            session,
-            [
-                t.context_id
-                for t in threads
-                if t.context_type == ContextType.APPLICATION
-                and t.context_id is not None
-            ],
-        )
-        visible = []
-        for thread in threads:
-            job = (
-                jobs.get(thread.context_id)
-                if thread.context_type == ContextType.APPLICATION
-                else None
-            )
-            service = service_from(thread.context_type, job)
-            if service in services:
-                visible.append((thread, service, job))
+        service_of = {context: service for service, context in INBOX_CONTEXT.items()}
         messages = await self._messages.list_by_threads(
-            session, [t.thread_id for t, _, _ in visible]
+            session, [t.thread_id for t in threads]
         )
         return [
-            _Item(t, service, job, facts_of(t, messages.get(t.thread_id, [])))
-            for t, service, job in visible
+            _Item(
+                t,
+                service_of[t.context_type],
+                facts_of(t, messages.get(t.thread_id, [])),
+            )
+            for t in threads
         ]
 
     async def _lookups(self, session, items, extra_user_ids=()) -> _Lookups:
@@ -316,11 +282,6 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
         user_ids |= {row.user_id for row in matched.values()}
         user_ids |= set(extra_user_ids)
         users = await self._users.get_all_by_ids(session, sorted(user_ids))
-        round_names = {}
-        if any(item.thread.context_type == ContextType.ACTIVITY for item in items):
-            round_names = {
-                r.round_id: r.name for r in await self._rounds.get_all_rounds(session)
-            }
         moves = await self._events.latest_by_subjects(
             session,
             INBOX_SUBJECT_TYPE,
@@ -330,7 +291,6 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
         return _Lookups(
             users={u.user_id: u for u in users},
             matched=matched,
-            round_names=round_names,
             moves=moves,
         )
 
@@ -364,33 +324,10 @@ class InboxThreadService(InboxThreadWrites, InboxThreadOptions):
             matched_by=matched_by if person else None,
             needs_reply=facts.needs_reply,
             archived=facts.archived,
-            unassigned=(
-                self._can_assign(item)
-                and thread.context_type in _INBOX_CONTEXTS
-                and person is not None
-            ),
             no_matching_user=person is None,
             machine_tag=facts.machine_tag,
-            assignment=self._assignment(item, lookups),
             moved_from=moved_from if moved_from in set(InboxService) else None,
         )
-
-    @staticmethod
-    def _assignment(item: _Item, lookups: _Lookups):
-        thread = item.thread
-        if thread.context_id is None:
-            return None
-        if thread.context_type == ContextType.ACTIVITY:
-            return InboxRoundAssignmentDto(
-                round_id=thread.context_id,
-                round_name=lookups.round_names.get(thread.context_id),
-            )
-        if thread.context_type == ContextType.APPLICATION:
-            return InboxApplicationAssignmentDto(
-                application_id=thread.context_id,
-                job_title=item.job.title if item.job else None,
-            )
-        return None
 
     @staticmethod
     def _message(m, users) -> InboxMessageDto:

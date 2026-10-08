@@ -14,7 +14,6 @@ class InboxQueryDto(BaseDto):
 
     service: InboxService | None = None
     needs_reply: bool = False
-    unassigned: bool = False
     archived: bool = False
     q: str | None = None
 
@@ -22,18 +21,6 @@ class InboxQueryDto(BaseDto):
 class InboxPersonDto(BaseDto):
     user_id: int
     name: str
-
-
-class InboxRoundAssignmentDto(BaseDto):
-    kind: Literal["round"] = "round"
-    round_id: int
-    round_name: str | None = None
-
-
-class InboxApplicationAssignmentDto(BaseDto):
-    kind: Literal["application"] = "application"
-    application_id: int
-    job_title: str | None = None
 
 
 class InboxThreadRowDto(BaseDto):
@@ -49,16 +36,13 @@ class InboxThreadRowDto(BaseDto):
     matched_by: Literal["primary", "alternative"] | None = None
     needs_reply: bool
     archived: bool
-    unassigned: bool
     no_matching_user: bool
     machine_tag: Literal["auto_reply", "bounce"] | None = None
-    assignment: InboxRoundAssignmentDto | InboxApplicationAssignmentDto | None = None
     moved_from: InboxService | None = None
 
 
 class InboxCountsDto(BaseDto):
     needs_reply: int
-    unassigned: int
 
 
 class InboxServiceCountDto(BaseDto):
@@ -107,8 +91,6 @@ class InboxThreadDetailDto(InboxThreadRowDto):
     latest_message_id: int | None = None
     reply_alias: str | None = None
     can_assign: bool
-    can_move: bool
-    tracked: bool
     open_bounce: InboxOpenBounceDto | None = None
     moved_at: datetime | None = None
 

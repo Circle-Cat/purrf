@@ -1,8 +1,8 @@
 """Who hears about Inbox events.
 
 Importing this module registers the resolvers. ``fast_app_factory`` imports it
-once at startup for that side effect. ASSIGNED, UNASSIGNED, ARCHIVED,
-UNARCHIVED and MOVED have no resolver: they stay on the trail and notify nobody.
+once at startup for that side effect. ASSIGNED, ARCHIVED, UNARCHIVED
+and MOVED have no resolver: they stay on the trail and notify nobody.
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession

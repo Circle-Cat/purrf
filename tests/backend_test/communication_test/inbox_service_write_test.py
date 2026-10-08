@@ -6,11 +6,11 @@ from backend.common.communication_enums import ContextType, InboxService
 from backend.common.exceptions import ConflictError
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE, InboxEvent
 from backend.common.permissions import Permission
-from backend.common.recruiting_enums import ApplicationStage, JobKind, RecruitingEvent
+from backend.common.recruiting_enums import ApplicationStage, JobKind
 from tests.backend_test.communication_test.inbox_service_read_test import (
     _ALL,
-    _CAREERS,
     _MENTORSHIP_ALIAS,
+    _RECRUITING_ALIAS,
     _Fixture,
     _at,
     _email,
@@ -93,7 +93,7 @@ class _WriteFixture(_Fixture):
                 (a, self.jobs[a.job_id]) for a in self.applications if a.user_id == uid
             ]
         )
-        self.conversation = Mock(sender_address=_CAREERS)
+        self.conversation = Mock()
         self.conversation.send = AsyncMock(side_effect=self._send)
         self.service = self._build_service()
 
@@ -182,38 +182,27 @@ class ReplyTest(_WriteFixture):
 
         self.assertEqual(self.conversation.send.call_args.kwargs["to"], ["pat@ext.com"])
 
-    async def test_application_reply_uses_recruiting_sender_and_logs_email_sent(self):
-        await self.service.reply(self.session, _viewer(*_ALL), 5, "<p>hi</p>", 51)
-
-        kwargs = self.conversation.send.call_args.kwargs
-        self.assertEqual(kwargs["sender_address"], _CAREERS)
-        self.assertEqual(kwargs["context_type"], ContextType.APPLICATION)
-        self.assertEqual(kwargs["context_id"], 61)
-        self.assertEqual(kwargs["to"], ["bo@ext.com"])
-        self.assertEqual(
-            self.calls,
-            [("send",), ("event", RecruitingEvent.EMAIL_SENT), ("commit",)],
-        )
-        event = self._event_kwargs()
-        self.assertEqual(event["subject_type"], "application")
-        self.assertEqual(event["subject_id"], 61)
-        self.assertEqual(event["actor_id"], 900)
-        self.assertEqual(
-            event["details"],
-            {
-                "subject": "Re: Subject 5",
-                "to": ["bo@ext.com"],
-                "threadId": 5,
-                "direction": "outbound",
-            },
-        )
-
-    async def test_advance_holder_who_owns_no_job_may_reply_to_an_applicant(self):
+    async def test_recruiting_reply_sends_from_the_recruiting_alias_only(self):
         viewer = _viewer(Permission.RECRUITING_APPLICATION_ADVANCE)
 
-        await self.service.reply(self.session, viewer, 5, "b", 51)
+        await self.service.reply(self.session, viewer, 4, "b", 40)
 
-        self.conversation.send.assert_awaited_once()
+        kwargs = self.conversation.send.call_args.kwargs
+        self.assertEqual(kwargs["sender_address"], _RECRUITING_ALIAS)
+        self.assertEqual(kwargs["context_type"], ContextType.RECRUITING_INBOX)
+        self.assertEqual(kwargs["to"], ["sofia@ext.com"])
+        self.assertEqual(self.calls, [("send",), ("commit",)])
+        self.record_event.assert_not_awaited()
+
+    async def test_threads_we_started_or_assigned_are_not_found(self):
+        for thread_id, last_seen in ((5, 51), (7, 70), (9, 90)):
+            with self.assertRaises(ValueError) as caught:
+                await self.service.reply(
+                    self.session, _viewer(*_ALL), thread_id, "b", last_seen
+                )
+            self.assertEqual(str(caught.exception), f"thread {thread_id} not found")
+
+        self._assert_nothing_written()
 
     async def test_no_alias_for_the_service_is_rejected(self):
         with self.assertRaises(ValueError) as caught:
@@ -277,8 +266,10 @@ class ArchiveTest(_WriteFixture):
 
 
 class AssignTest(_WriteFixture):
-    async def test_mentorship_thread_is_assigned_to_a_round(self):
-        detail = await self.service.assign(
+    async def test_mentorship_thread_is_assigned_to_a_round_and_leaves_the_inbox(
+        self,
+    ):
+        result = await self.service.assign(
             self.session, _viewer(*_ALL), 1, person_id=32, round_id=8
         )
 
@@ -290,9 +281,20 @@ class AssignTest(_WriteFixture):
         self._assert_event_then_commit(
             InboxEvent.ASSIGNED, 1, {"userId": 32, "roundId": 8}
         )
-        self.assertEqual(detail.assignment.round_name, "2026 Summer")
-        self.assertEqual(detail.person.user_id, 32)
-        self.assertFalse(detail.unassigned)
+        self.assertIsNone(result)
+        self.assertNotIn(1, self._ids(await self._list()))
+        with self.assertRaises(ValueError) as caught:
+            await self.service.get_thread(self.session, _viewer(*_ALL), 1)
+        self.assertEqual(str(caught.exception), "thread 1 not found")
+
+    async def test_an_assigned_thread_cannot_be_assigned_again(self):
+        with self.assertRaises(ValueError) as caught:
+            await self.service.assign(
+                self.session, _viewer(*_ALL), 7, person_id=32, round_id=8
+            )
+
+        self.assertEqual(str(caught.exception), "thread 7 not found")
+        self._assert_nothing_written()
 
     async def test_missing_round_is_rejected(self):
         with self.assertRaises(ValueError):
@@ -344,7 +346,7 @@ class AssignTest(_WriteFixture):
         ]
         viewer = _viewer(Permission.RECRUITING_APPLICATION_ADVANCE)
 
-        detail = await self.service.assign(
+        result = await self.service.assign(
             self.session, viewer, 4, person_id=40, job_id=5
         )
 
@@ -356,9 +358,8 @@ class AssignTest(_WriteFixture):
         self._assert_event_then_commit(
             InboxEvent.ASSIGNED, 4, {"userId": 40, "applicationId": 57}
         )
-        self.assertEqual(detail.service, InboxService.RECRUITING)
-        self.assertEqual(detail.assignment.application_id, 57)
-        self.assertEqual(detail.assignment.job_title, "Data Analyst")
+        self.assertIsNone(result)
+        self.assertNotIn(4, self._ids(await self._list(viewer)))
 
     async def test_recruiting_assign_prefers_the_live_application(self):
         self.applications = [
@@ -401,39 +402,6 @@ class AssignTest(_WriteFixture):
         self._assert_nothing_written()
 
 
-class UnassignTest(_WriteFixture):
-    async def test_unassign_returns_the_thread_to_its_service_inbox(self):
-        detail = await self.service.unassign(self.session, _viewer(*_ALL), 7)
-
-        thread = self._thread_of(7)
-        self.assertEqual(
-            (thread.user_id, thread.context_type, thread.context_id),
-            (None, ContextType.MENTORSHIP_INBOX, None),
-        )
-        self._assert_event_then_commit(InboxEvent.UNASSIGNED, 7)
-        self.assertIsNone(detail.assignment)
-        self.assertTrue(detail.unassigned)
-
-    async def test_unassign_of_an_application_returns_it_to_recruiting(self):
-        detail = await self.service.unassign(self.session, _viewer(*_ALL), 9)
-
-        self.assertEqual(self._thread_of(9).context_type, ContextType.RECRUITING_INBOX)
-        self.assertEqual(detail.service, InboxService.RECRUITING)
-        self.assertTrue(detail.unassigned)
-
-    async def test_unassigning_an_unassigned_thread_is_rejected(self):
-        with self.assertRaises(ValueError):
-            await self.service.unassign(self.session, _viewer(*_ALL), 1)
-
-        self._assert_nothing_written()
-
-    async def test_tracked_application_thread_cannot_be_unassigned(self):
-        with self.assertRaises(ValueError):
-            await self.service.unassign(self.session, _viewer(*_ALL), 5)
-
-        self._assert_nothing_written()
-
-
 class MoveTest(_WriteFixture):
     async def test_move_out_of_sight_returns_none_and_hides_the_thread(self):
         viewer = _viewer(Permission.MENTORSHIP_ADMIN_WRITE)
@@ -454,18 +422,22 @@ class MoveTest(_WriteFixture):
             await self.service.get_thread(self.session, viewer, 6)
         self.assertEqual(str(caught.exception), "thread 6 not found")
 
-    async def test_move_drops_the_assignment(self):
+    async def test_move_into_a_visible_service_returns_the_thread_there(self):
         detail = await self.service.move(
-            self.session, _viewer(*_ALL), 7, InboxService.RECRUITING
+            self.session, _viewer(*_ALL), 1, InboxService.RECRUITING
         )
 
-        thread = self._thread_of(7)
-        self.assertEqual(
-            (thread.user_id, thread.context_type, thread.context_id),
-            (None, ContextType.RECRUITING_INBOX, None),
-        )
+        self.assertEqual(self._thread_of(1).context_type, ContextType.RECRUITING_INBOX)
         self.assertEqual(detail.service, InboxService.RECRUITING)
-        self.assertIsNone(detail.assignment)
+
+    async def test_an_assigned_thread_cannot_move(self):
+        with self.assertRaises(ValueError) as caught:
+            await self.service.move(
+                self.session, _viewer(*_ALL), 7, InboxService.RECRUITING
+            )
+
+        self.assertEqual(str(caught.exception), "thread 7 not found")
+        self._assert_nothing_written()
 
     async def test_tracked_thread_cannot_move(self):
         with self.assertRaises(ValueError):
