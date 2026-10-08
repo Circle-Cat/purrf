@@ -2,9 +2,10 @@
 
 Not mounted under /admin, unlike the account console. The person raising a
 request is standing on the domain page that holds the evidence and holds no
-console permission at all -- the gates here say so: raising is bound to the
-recruiting advance permission, deciding to ``USER_ADMIN``, and the two do not
-overlap.
+console permission at all -- the gates here say so: raising needs the
+permission of the page it came from (``RAISE_PERMISSION_BY_SOURCE``: recruiting
+advance for an application, mentorship admin write for a participant),
+deciding needs ``USER_ADMIN``, and the two do not overlap.
 
 Three of these routes carry a second condition that is **identity, not
 permission**: only the raiser may reassign or withdraw, and only the named
