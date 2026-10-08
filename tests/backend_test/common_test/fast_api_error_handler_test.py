@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
-from backend.common.exceptions import ConflictError, RateLimitedError
+from backend.common.exceptions import ConflictError, NotFoundError, RateLimitedError
 from backend.common.fast_api_error_handler import register_exception_handlers
 
 # Constant definitions
@@ -115,6 +115,21 @@ class TestFastAPIExceptionHandler(TestCase):
 
         self.assertEqual(response.status_code, HTTPStatus.CONFLICT)
         self.assertEqual(response.json().get(ERROR_KEY), CONFLICT_ERROR_MSG)
+        self.mock_logger.warning.assert_called_once()
+        self.mock_logger.error.assert_not_called()
+
+    def test_handle_not_found_error(self):
+        """404 Not Found: the raw error message should be shown and logged as warning."""
+        route = "/api/mentorship/not_found"
+
+        @self.app.get(route)
+        def trigger_error():
+            raise NotFoundError("User 42 does not exist.")
+
+        response = self.client.get(route)
+
+        self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
+        self.assertEqual(response.json().get(ERROR_KEY), "User 42 does not exist.")
         self.mock_logger.warning.assert_called_once()
         self.mock_logger.error.assert_not_called()
 
