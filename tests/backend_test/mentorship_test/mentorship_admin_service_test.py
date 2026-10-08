@@ -726,6 +726,55 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             {"startDatetime": "2026-08-30T17:00:00Z", "note": ["mentee_absent"]},
         )
 
+    async def test_each_pair_carries_its_earliest_meeting(self):
+        """First contact is derived: the earliest meeting the pair has booked
+        or held. A pair with no meetings has none."""
+        self.mock_participants_repo.search_participants_for_admin.return_value = (
+            [
+                _make_row(
+                    user_id=1,
+                    participant_role=ParticipantRole.MENTEE,
+                    pairs=[
+                        _search_pair(100, mentor_id=3, mentee_id=1),
+                        _search_pair(101, mentor_id=4, mentee_id=1),
+                    ],
+                ),
+            ],
+            1,
+        )
+        self.mock_users_repo.get_users_and_emails_by_ids.return_value = (
+            {
+                uid: MagicMock(
+                    user_id=uid, first_name="U", last_name="X", preferred_name=None
+                )
+                for uid in (1, 3, 4)
+            },
+            {},
+        )
+        self.mock_meeting_repo.get_meetings_by_pairs.return_value = {
+            100: [
+                _make_meeting(
+                    meeting_id="later",
+                    pair_id=100,
+                    start_datetime="2026-09-20T17:00:00+00:00",
+                ),
+                _make_meeting(
+                    meeting_id="first",
+                    pair_id=100,
+                    start_datetime="2026-09-06T17:00:00+00:00",
+                ),
+            ],
+        }
+
+        result = await self.service.search_participants(
+            self.mock_session, ParticipantSearchFilterDto()
+        )
+
+        (row,) = result.participant_rows
+        first = {p.pair_id: p.first_meeting_at for p in row.pairs}
+        self.assertEqual(first[100], isoparse("2026-09-06T17:00:00+00:00"))
+        self.assertIsNone(first[101])
+
     async def test_a_pair_on_two_rows_is_fetched_once_for_the_page(self):
         """Mentor and mentee rows share the pair; the page's meetings come
         from one call with each pair_id once, and both rows show the issue."""

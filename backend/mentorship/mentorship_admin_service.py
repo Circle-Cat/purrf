@@ -229,6 +229,7 @@ class MentorshipAdminService:
             users_map (dict[int, UsersEntity]): User records keyed by user_id.
             meetings_by_pair (dict[int, list[MentorshipMeetingEntity]]): The
                 page's meetings keyed by pair_id; a pair with none is absent.
+                Also gives each pair its earliest meeting.
 
         Returns:
             list[ParticipantPairDto]: One entry per resolvable pair.
@@ -238,6 +239,7 @@ class MentorshipAdminService:
             partner = self._get_partner_user(row.user_id, pair, users_map)
             if partner is None:
                 continue
+            meetings = meetings_by_pair.get(pair.pair_id, [])
             pair_dtos.append(
                 ParticipantPairDto(
                     pair_id=pair.pair_id,
@@ -252,8 +254,10 @@ class MentorshipAdminService:
                         is_active=pair.pair_status == PairStatus.ACTIVE,
                     ),
                     completed_meeting_count=pair.completed_count,
-                    attendance_issues=self._attendance_issues(
-                        pair, meetings_by_pair.get(pair.pair_id, [])
+                    attendance_issues=self._attendance_issues(pair, meetings),
+                    first_meeting_at=min(
+                        (m.start_datetime for m in meetings if m.start_datetime),
+                        default=None,
                     ),
                 )
             )
