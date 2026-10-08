@@ -1,6 +1,8 @@
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.common.communication_enums import EmailDirection, InboundKind
+from backend.entity.email_message_entity import EmailMessageEntity
 from backend.entity.email_thread_entity import EmailThreadEntity
 
 
@@ -124,6 +126,53 @@ class EmailThreadRepository:
         result = await session.execute(
             select(EmailThreadEntity)
             .where(EmailThreadEntity.context_type.in_(context_types))
+            .order_by(EmailThreadEntity.thread_id.asc())
+        )
+        return list(result.scalars().all())
+
+    async def list_open_by_context_types(
+        self, session: AsyncSession, context_types: list[str]
+    ) -> list[EmailThreadEntity]:
+        """Like ``list_by_context_types``, without archived threads.
+
+        A thread stays archived until a human message is stored after its
+        ``archived_at``; this is the SQL form of ``inbox_state.is_archived``,
+        including its rule for messages stored before inbound mail was
+        classified.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            context_types (list[str]): ``ContextType`` values.
+
+        Returns:
+            list[EmailThreadEntity]: Ordered by ``thread_id``; empty, without
+                a query, for no types.
+        """
+        if not context_types:
+            return []
+        message = EmailMessageEntity
+        human_after_archive = (
+            select(message.message_id)
+            .where(
+                message.thread_id == EmailThreadEntity.thread_id,
+                message.direction == EmailDirection.INBOUND,
+                or_(
+                    message.inbound_kind == InboundKind.HUMAN,
+                    and_(
+                        message.inbound_kind.is_(None),
+                        message.failed_recipients.is_(None),
+                    ),
+                ),
+                message.created_at > EmailThreadEntity.archived_at,
+            )
+            .exists()
+        )
+        result = await session.execute(
+            select(EmailThreadEntity)
+            .where(
+                EmailThreadEntity.context_type.in_(context_types),
+                or_(EmailThreadEntity.archived_at.is_(None), human_after_archive),
+            )
             .order_by(EmailThreadEntity.thread_id.asc())
         )
         return list(result.scalars().all())

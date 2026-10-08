@@ -254,7 +254,6 @@ async def _mentioned(session: AsyncSession, event: EventEntity) -> set[int]:
     return mentioned
 
 
-@register_recipients(RecruitingEvent.EMAIL_RECEIVED, subject_type="application")
 @register_recipients(RecruitingEvent.EMAIL_BOUNCED, subject_type="application")
 async def _email_senders(session: AsyncSession, event: EventEntity) -> set[int]:
     """Whoever sent a message in the thread the reply arrived on, through Purrf.
@@ -278,6 +277,33 @@ async def _email_senders(session: AsyncSession, event: EventEntity) -> set[int]:
     """
     thread_id = _required_id(event, "threadId")
     return await _email_message_repository.list_sender_ids_by_thread(session, thread_id)
+
+
+@register_recipients(RecruitingEvent.EMAIL_RECEIVED, subject_type="application")
+async def _email_senders_else_owners(
+    session: AsyncSession, event: EventEntity
+) -> set[int]:
+    """Whoever sent into the thread through Purrf, else the job's owners.
+
+    A thread nobody has written into through Purrf -- an Inbox inquiry
+    assigned to the application before anyone replied, or one answered only
+    from the Gmail web UI -- has no one waiting on the reply, so the owners
+    are told instead of nobody.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        event (EventEntity): The event being recorded; ``subject_id`` is an
+            application id and ``details["threadId"]`` names the thread.
+
+    Returns:
+        set[int]: The senders' user ids, or the job's owner user ids (empty
+            when the application has no job or the job no owners).
+
+    Raises:
+        ValueError: If the event carries no thread id.
+    """
+    senders = await _email_senders(session, event)
+    return senders or await _owners_only(session, event)
 
 
 _APPLICATION_RESOLVERS: dict[str, Resolver] = {

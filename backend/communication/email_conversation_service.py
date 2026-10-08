@@ -25,7 +25,8 @@ from datetime import datetime, timezone
 
 from backend.common.communication_enums import EmailDirection
 from backend.communication.inbound_kind import classify_inbound
-from backend.dto.email_dto import EmailMessageDto, EmailThreadDto
+from backend.communication.inbox_rows import facts_of
+from backend.dto.email_dto import EmailMessageDto, EmailThreadDto, OpenBounceDto
 
 
 def _as_utc(moment: datetime) -> datetime:
@@ -87,6 +88,7 @@ class EmailConversationService:
         body,
         sender_user_id,
         thread_id=None,
+        sender_address=None,
     ):
         """Send a message (new thread or reply) and persist it on Gmail success.
 
@@ -101,6 +103,8 @@ class EmailConversationService:
             sender_user_id (int): The advancer sending this message.
             thread_id (int | None): An existing thread to reply into; ``None``
                 starts a new thread.
+            sender_address (str | None): Send as this address instead of the
+                service's own; it is also stored as the message's From.
 
         Returns:
             EmailMessageEntity: The persisted outbound message.
@@ -132,12 +136,13 @@ class EmailConversationService:
                 in_reply_to = rfc_ids[-1]
                 references = " ".join(rfc_ids)
 
+        sender = sender_address or self._sender_address
         sent = await asyncio.to_thread(
             self._gmail.send_message,
             to,
             subject,
             body,
-            sender=self._sender_address,
+            sender=sender,
             thread_id=gmail_thread_id,
             in_reply_to=in_reply_to,
             references=references,
@@ -158,7 +163,7 @@ class EmailConversationService:
             thread_id=thread.thread_id,
             gmail_message_id=sent["gmail_message_id"],
             direction=EmailDirection.OUTBOUND,
-            from_address=self._sender_address,
+            from_address=sender,
             to_addresses=", ".join(to),
             subject=subject,
             body_html=body,
@@ -195,6 +200,7 @@ class EmailConversationService:
             # References header in the chronological order RFC 5322 requires.
             # Reading is a different job, so the reversal for display lives
             # here rather than in the repository.
+            facts = facts_of(thread, messages)
             conversation.append(
                 EmailThreadDto(
                     thread_id=thread.thread_id,
@@ -204,6 +210,13 @@ class EmailConversationService:
                     messages=[
                         EmailMessageDto.model_validate(m) for m in reversed(messages)
                     ],
+                    needs_reply=facts.needs_reply,
+                    open_bounce=(
+                        OpenBounceDto(bounced_to=facts.open_bounce_to)
+                        if facts.open_bounce_to
+                        else None
+                    ),
+                    reply_alias=self._sender_address,
                 )
             )
         conversation.sort(key=_latest_activity, reverse=True)

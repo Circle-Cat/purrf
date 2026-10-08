@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 
 from sqlalchemy import select
@@ -6,6 +7,13 @@ from sqlalchemy import select
 from backend.common.communication_enums import ContextType, EmailDirection
 from backend.common.exceptions import RateLimitedError
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE, InboxEvent
+from backend.common.mentorship_enums import CommunicationMethod
+from backend.common.recruiting_enums import (
+    ApplicationStage,
+    JobKind,
+    JobStatus,
+    RecruitingEvent,
+)
 from backend.communication import recipient_resolvers  # noqa: F401 (registers)
 from backend.communication.email_context_registry import EmailContextRegistry
 from backend.communication.email_conversation_service import EmailConversationService
@@ -15,10 +23,16 @@ from backend.communication.inbox_notifier import InboxNotifier
 from backend.communication.inbox_router import InboxRouter
 from backend.communication.inbox_sync_handler import InboxSyncHandler
 from backend.communication.thread_service import ThreadServiceResolver
+from backend.entity.application_entity import ApplicationEntity
 from backend.entity.email_message_entity import EmailMessageEntity
 from backend.entity.email_thread_entity import EmailThreadEntity
 from backend.entity.event_entity import EventEntity
+from backend.entity.job_entity import JobEntity
+from backend.entity.notification_entity import NotificationEntity
+from backend.entity.users_entity import UsersEntity
 from backend.ops.ops_alert_service import OpsAlertService
+from backend.recruiting import recipient_resolvers as _recruiting  # noqa: F401
+from backend.recruiting.email_sync_service import EmailSyncService
 from backend.repository.email_message_repository import EmailMessageRepository
 from backend.repository.email_thread_repository import EmailThreadRepository
 from backend.repository.gmail_sync_state_repository import GmailSyncStateRepository
@@ -67,13 +81,14 @@ class TestInboxSyncOnARealSession(BaseRepositoryTestLib):
 
         self.threads = EmailThreadRepository()
         messages = EmailMessageRepository()
+        conversation = EmailConversationService(
+            gmail_client=self.gmail,
+            thread_repository=self.threads,
+            message_repository=messages,
+            sender_address=_ALIAS,
+        )
         handler = InboxSyncHandler(
-            conversation_service=EmailConversationService(
-                gmail_client=self.gmail,
-                thread_repository=self.threads,
-                message_repository=messages,
-                sender_address=_ALIAS,
-            ),
+            conversation_service=conversation,
             thread_repository=self.threads,
             notifier=InboxNotifier(
                 message_repository=messages,
@@ -85,6 +100,16 @@ class TestInboxSyncOnARealSession(BaseRepositoryTestLib):
         )
         registry = EmailContextRegistry()
         registry.register(ContextType.MENTORSHIP_INBOX, handler)
+        # As the app builder wires them: what an assigned thread is synced by.
+        registry.register(ContextType.ACTIVITY, handler.alias_without_resync())
+        registry.register(
+            ContextType.APPLICATION,
+            EmailSyncService(
+                email_conversation_service=conversation,
+                application_repository=Mock(),
+                logger=Mock(),
+            ),
+        )
         self.service = GmailSyncService(
             gmail_client=self.gmail,
             state_repository=GmailSyncStateRepository(),
@@ -179,6 +204,110 @@ class TestInboxSyncOnARealSession(BaseRepositoryTestLib):
         self.assertEqual(len(await self._needs_reply_events(thread.thread_id)), 1)
         state = await GmailSyncStateRepository().get(self.session, _MAILBOX)
         self.assertEqual(state.last_history_id, 150)
+
+    async def _person(self):
+        user = UsersEntity(
+            first_name="Bo",
+            last_name="Chen",
+            timezone="UTC",
+            timezone_updated_at=datetime.now(timezone.utc),
+            communication_channel=CommunicationMethod.EMAIL,
+            is_active=True,
+        )
+        await self.insert_entities([user])
+        return user
+
+    async def _assign(self, user_id, context_type, context_id):
+        # The columns InboxThreadWrites.assign moves.
+        thread = await self._thread()
+        thread.user_id = user_id
+        thread.context_type = context_type
+        thread.context_id = context_id
+        await self.session.commit()
+        return thread
+
+    async def _stored_ids(self, thread_id):
+        result = await self.session.execute(
+            select(EmailMessageEntity.gmail_message_id).where(
+                EmailMessageEntity.thread_id == thread_id
+            )
+        )
+        return sorted(result.scalars().all())
+
+    async def test_an_inbox_thread_assigned_to_an_application_syncs_as_one(self):
+        self.assertEqual(await self._push(120, 150), PushOutcome.ACK)
+        owner, candidate = await self._person(), await self._person()
+        job = JobEntity(
+            kind=JobKind.EMPLOYMENT,
+            title="Data Analyst",
+            status=JobStatus.PUBLISHED,
+            pipeline_config={"ownerIds": [owner.user_id]},
+        )
+        await self.insert_entities([job])
+        application = ApplicationEntity(
+            job_id=job.job_id,
+            user_id=candidate.user_id,
+            stage=ApplicationStage.APPLIED,
+        )
+        await self.insert_entities([application])
+        thread = await self._assign(
+            candidate.user_id, ContextType.APPLICATION, application.application_id
+        )
+        thread_id = thread.thread_id
+
+        self.listed = ["m1", "m2"]
+        self.assertEqual(await self._push(200, 250), PushOutcome.ACK)
+
+        self.assertEqual(await self._stored_ids(thread_id), ["m1", "m2"])
+        received = (
+            (
+                await self.session.execute(
+                    select(EventEntity).where(
+                        EventEntity.subject_type == "application",
+                        EventEntity.subject_id == application.application_id,
+                        EventEntity.event_type == RecruitingEvent.EMAIL_RECEIVED,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        self.assertEqual(len(received), 1)
+        self.assertEqual(received[0].details["threadId"], thread_id)
+        notified = await self.session.scalars(
+            select(NotificationEntity.user_id).where(
+                NotificationEntity.event_id == received[0].event_id
+            )
+        )
+        self.assertEqual(list(notified), [owner.user_id])
+        self.assertEqual(len(await self._needs_reply_events(thread_id)), 1)
+
+    async def test_an_inbox_thread_assigned_to_a_round_syncs_through_the_alias(self):
+        self.assertEqual(await self._push(120, 150), PushOutcome.ACK)
+        person = await self._person()
+        thread = await self._assign(person.user_id, ContextType.ACTIVITY, 8)
+        # Archived after m1 was stored. The test runs in one transaction, so
+        # now() is fixed and m1 is moved back to make room.
+        now = datetime.now(timezone.utc)
+        (m1,) = (
+            await self.session.scalars(
+                select(EmailMessageEntity).where(
+                    EmailMessageEntity.thread_id == thread.thread_id
+                )
+            )
+        ).all()
+        m1.created_at = now - timedelta(hours=2)
+        thread.archived_at = now - timedelta(hours=1)
+        await self.session.commit()
+        thread_id = thread.thread_id
+
+        self.listed = ["m1", "m2"]
+        self.assertEqual(await self._push(200, 250), PushOutcome.ACK)
+
+        self.assertEqual(await self._stored_ids(thread_id), ["m1", "m2"])
+        events = await self._needs_reply_events(thread_id)
+        self.assertEqual(len(events), 2)
+        self.assertEqual({e.details["service"] for e in events}, {"mentorship"})
 
     async def test_resync_sweeps_inbox_threads_and_skips_application_ones(self):
         inbox = await self.threads.create(

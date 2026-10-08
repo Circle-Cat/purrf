@@ -262,6 +262,7 @@ py_test(
         "//backend/common:mentorship_enums",
         "//backend/entity:entities",
         "//backend/repository:repositories",
+        "@pypi//sqlalchemy",
     ],
 )
 
