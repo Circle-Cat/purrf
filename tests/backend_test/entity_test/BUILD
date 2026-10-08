@@ -67,15 +67,6 @@ py_test(
 )
 
 py_test(
-    name = "block_request_entity_test",
-    srcs = ["block_request_entity_test.py"],
-    deps = [
-        "//backend/common:user_enums",
-        "//backend/entity:entities",
-    ],
-)
-
-py_test(
     name = "approval_request_entity_test",
     srcs = ["approval_request_entity_test.py"],
     deps = [
