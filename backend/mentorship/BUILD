@@ -6,6 +6,7 @@ py_library(
     name = "mentorship",
     srcs = glob(["*.py"]),
     deps = [
+        "//backend/admin:block_service",
         "//backend/approval:approval_handler",
         "//backend/common:api_endpoints",
         "//backend/common:approval_enums",

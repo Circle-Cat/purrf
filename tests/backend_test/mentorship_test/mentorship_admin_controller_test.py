@@ -2,7 +2,7 @@ import unittest
 from datetime import date
 from unittest.mock import MagicMock, AsyncMock, patch
 from http import HTTPStatus
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from backend.mentorship.mentorship_admin_controller import MentorshipAdminController
@@ -18,7 +18,11 @@ from backend.dto.mentorship_approval_dto import (
     ApprovalReassignDto,
     ApprovalRequestCreateDto,
 )
+from backend.dto.participant_detail_dto import ParticipantNoteCreateDto
 from backend.dto.user_context_dto import UserContextDto
+from backend.common.exceptions import NotFoundError
+from backend.common.fast_api_error_handler import register_exception_handlers
+from backend.common.permissions import Permission
 from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
 
 
@@ -30,6 +34,8 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         self.mock_admin_service.get_round_feedback = AsyncMock()
         self.mock_admin_service.search_unregistered = AsyncMock()
         self.mock_admin_service.apply_v2_meeting_batch = AsyncMock()
+        self.mock_admin_service.get_participant_detail = AsyncMock()
+        self.mock_admin_service.add_participant_note = AsyncMock()
 
         self.mock_matching_run_service = MagicMock()
         self.mock_matching_run_service.start_run = AsyncMock()
@@ -642,6 +648,131 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
             await self.controller.get_matching_run_results(7, caller)
 
         self.mock_matching_run_read_service.read_results.assert_not_awaited()
+
+    async def test_get_participant_detail_delegates_to_service(self):
+        mock_result = MagicMock()
+        self.mock_admin_service.get_participant_detail.return_value = mock_result
+
+        await self.controller.get_participant_detail(round_id=7, user_id=3104)
+
+        self.mock_admin_service.get_participant_detail.assert_awaited_once_with(
+            self.mock_session, 7, 3104
+        )
+        self.mock_api_response.assert_called_once_with(
+            message="Successfully retrieved the participant.",
+            data=mock_result,
+        )
+
+    async def test_add_participant_note_writes_as_the_caller(self):
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+        mock_note = MagicMock()
+        self.mock_admin_service.add_participant_note.return_value = mock_note
+
+        await self.controller.add_participant_note(
+            7, 3104, ParticipantNoteCreateDto(body="  Called her  "), caller
+        )
+
+        self.mock_admin_service.add_participant_note.assert_awaited_once_with(
+            self.mock_session,
+            round_id=7,
+            user_id=3104,
+            author_id=9,
+            body="Called her",
+        )
+        self.mock_api_response.assert_called_once_with(
+            message="Note added.", data=mock_note
+        )
+
+    def test_a_note_must_say_something_and_not_too_much(self):
+        for body in ("", "   ", "x" * 5001):
+            with self.subTest(length=len(body)):
+                with self.assertRaises(ValidationError):
+                    ParticipantNoteCreateDto(body=body)
+        self.assertEqual(len(ParticipantNoteCreateDto(body="x" * 5000).body), 5000)
+
+
+class TestParticipantDetailGates(unittest.TestCase):
+    """The page's routes, through the real permission decorator."""
+
+    def setUp(self):
+        self.service = MagicMock()
+        self.service.get_participant_detail = AsyncMock(return_value=None)
+        self.service.add_participant_note = AsyncMock(return_value=None)
+
+    def _client(self, permissions):
+        database = MagicMock()
+        database.session.return_value.__aenter__.return_value = AsyncMock()
+        database.session.return_value.__aexit__.return_value = None
+        controller = MentorshipAdminController(
+            mentorship_admin_service=self.service,
+            matching_run_service=MagicMock(),
+            matching_run_read_service=MagicMock(),
+            matching_draft_service=MagicMock(),
+            mentorship_approval_service=MagicMock(),
+            launchdarkly_service=MagicMock(),
+            database=database,
+        )
+        app = FastAPI()
+
+        @app.middleware("http")
+        async def _inject(request: Request, call_next):
+            # Explicit values, never a bare MagicMock: every attribute of one
+            # is truthy.
+            request.state.user = MagicMock(
+                permissions={str(p) for p in permissions},
+                user_id=9,
+                is_super_admin=False,
+                is_active=True,
+                is_blocked=False,
+                sub="auth0|9",
+            )
+            return await call_next(request)
+
+        app.include_router(controller.router)
+        register_exception_handlers(app)
+        return TestClient(app, raise_server_exceptions=False)
+
+    def test_reading_needs_read(self):
+        detail = "/mentorship/admin/rounds/7/participants/3104"
+
+        ok = self._client([Permission.MENTORSHIP_ADMIN_READ]).get(detail)
+        write_only = self._client([Permission.MENTORSHIP_ADMIN_WRITE]).get(detail)
+
+        self.assertEqual(ok.status_code, HTTPStatus.OK)
+        self.assertEqual(write_only.status_code, HTTPStatus.FORBIDDEN)
+
+    def test_writing_a_note_needs_write(self):
+        notes = "/mentorship/admin/rounds/7/participants/3104/notes"
+
+        ok = self._client([Permission.MENTORSHIP_ADMIN_WRITE]).post(
+            notes, json={"body": "Called her"}
+        )
+        read_only = self._client([Permission.MENTORSHIP_ADMIN_READ]).post(
+            notes, json={"body": "Called her"}
+        )
+
+        self.assertEqual(ok.status_code, HTTPStatus.OK)
+        self.assertEqual(read_only.status_code, HTTPStatus.FORBIDDEN)
+        self.service.add_participant_note.assert_awaited_once()
+
+    def test_an_unknown_person_is_not_found(self):
+        self.service.get_participant_detail.side_effect = NotFoundError(
+            "User 3104 does not exist."
+        )
+
+        resp = self._client([Permission.MENTORSHIP_ADMIN_READ]).get(
+            "/mentorship/admin/rounds/7/participants/3104"
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.NOT_FOUND)
+
+    def test_an_empty_note_is_a_bad_request(self):
+        resp = self._client([Permission.MENTORSHIP_ADMIN_WRITE]).post(
+            "/mentorship/admin/rounds/7/participants/3104/notes", json={"body": "  "}
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.BAD_REQUEST)
+        self.service.add_participant_note.assert_not_awaited()
 
 
 if __name__ == "__main__":

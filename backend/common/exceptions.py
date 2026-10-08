@@ -12,6 +12,10 @@ class ConflictError(Exception):
         self.code = code
 
 
+class NotFoundError(Exception):
+    """What was asked about does not exist — mapped to HTTP 404 Not Found."""
+
+
 class RateLimitedError(Exception):
     """Rate limit exceeded — mapped to HTTP 429 Too Many Requests."""
 
