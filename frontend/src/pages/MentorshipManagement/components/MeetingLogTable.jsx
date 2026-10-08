@@ -1,4 +1,3 @@
-// frontend/src/pages/MentorshipManagement/components/MeetingLogTable.jsx
 import { ChevronDown, Pencil, Trash2 } from "lucide-react";
 import {
   DialogDescription,

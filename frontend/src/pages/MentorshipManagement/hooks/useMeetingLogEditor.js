@@ -1,4 +1,3 @@
-// frontend/src/pages/MentorshipManagement/hooks/useMeetingLogEditor.js
 import { useState } from "react";
 import { toast } from "sonner";
 

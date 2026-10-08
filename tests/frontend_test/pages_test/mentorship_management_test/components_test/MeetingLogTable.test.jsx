@@ -1,4 +1,3 @@
-// tests/frontend_test/pages_test/mentorship_management_test/components_test/MeetingLogTable.test.jsx
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderHook, act } from "@testing-library/react";

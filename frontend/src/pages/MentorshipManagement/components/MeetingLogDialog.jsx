@@ -1,4 +1,3 @@
-// frontend/src/pages/MentorshipManagement/components/MeetingLogDialog.jsx
 import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import {
