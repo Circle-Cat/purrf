@@ -1,7 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import {
   MACHINE_TAG_LABELS,
-  assignmentLabel,
   formatTime,
   serviceOf,
 } from "@/pages/Inbox/inboxDisplay";
@@ -11,7 +10,6 @@ const TAG_STYLES = {
   "Delivery failed": "border-red-200 bg-red-50 text-red-700",
   Archived: "border-slate-300 bg-white text-slate-500",
   "Needs reply": "border-orange-200 bg-orange-50 text-orange-700",
-  Unassigned: "border-sky-200 bg-sky-50 text-sky-700",
   Moved: "border-violet-200 bg-violet-50 text-violet-700",
 };
 
@@ -74,14 +72,12 @@ const ThreadList = ({ threads, selectedId, onOpen, emptyText }) => {
         const service = serviceOf(thread.service);
         const tags = [
           thread.needsReply ? "Needs reply" : null,
-          thread.unassigned ? "Unassigned" : null,
           MACHINE_TAG_LABELS[thread.machineTag] ?? null,
           thread.archived ? "Archived" : null,
           thread.movedFrom
             ? `Moved from ${serviceOf(thread.movedFrom).label}`
             : null,
         ].filter(Boolean);
-        const chip = assignmentLabel(thread.assignment);
         return (
           <li key={thread.threadId}>
             <button
@@ -109,7 +105,7 @@ const ThreadList = ({ threads, selectedId, onOpen, emptyText }) => {
                 </span>
               </div>
               <div className="truncate text-slate-500">{thread.snippet}</div>
-              {(tags.length > 0 || chip) && (
+              {tags.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {tags.map((tag) => (
                     <Badge
@@ -122,14 +118,6 @@ const ThreadList = ({ threads, selectedId, onOpen, emptyText }) => {
                       {tag}
                     </Badge>
                   ))}
-                  {chip && (
-                    <Badge
-                      variant="outline"
-                      className="border-emerald-200 bg-emerald-50 text-emerald-800"
-                    >
-                      {chip}
-                    </Badge>
-                  )}
                 </div>
               )}
             </button>

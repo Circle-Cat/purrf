@@ -5,7 +5,7 @@ import { useRequestGuard } from "@/hooks/useRequestGuard";
 
 const EMPTY = {
   threads: [],
-  counts: { needsReply: 0, unassigned: 0 },
+  counts: { needsReply: 0 },
   services: [],
 };
 
@@ -13,17 +13,11 @@ const EMPTY = {
  * Loads the Inbox thread list for the given filters; unset filters are not
  * sent. Responses from superseded requests are dropped.
  *
- * @param {{service?: string, needsReply?: boolean, unassigned?: boolean,
- *   archived?: boolean, q?: string}} filters
+ * @param {{service?: string, needsReply?: boolean, archived?: boolean,
+ *   q?: string}} filters
  * @returns {{data: object, loading: boolean, refresh: () => Promise<void>}}
  */
-export const useInboxThreads = ({
-  service,
-  needsReply,
-  unassigned,
-  archived,
-  q,
-}) => {
+export const useInboxThreads = ({ service, needsReply, archived, q }) => {
   const { begin, isCurrent } = useRequestGuard();
   const [data, setData] = useState(EMPTY);
   const [loading, setLoading] = useState(true);
@@ -32,7 +26,6 @@ export const useInboxThreads = ({
     const params = {};
     if (service) params.service = service;
     if (needsReply) params.needsReply = true;
-    if (unassigned) params.unassigned = true;
     if (archived) params.archived = true;
     if (q) params.q = q;
     const seq = begin();
@@ -44,7 +37,7 @@ export const useInboxThreads = ({
     } finally {
       if (isCurrent(seq)) setLoading(false);
     }
-  }, [service, needsReply, unassigned, archived, q, begin, isCurrent]);
+  }, [service, needsReply, archived, q, begin, isCurrent]);
 
   useEffect(() => {
     refresh();

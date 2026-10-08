@@ -19,7 +19,6 @@ vi.mock("@/api/inboxApi", () => ({
   archiveInboxThread: vi.fn(),
   unarchiveInboxThread: vi.fn(),
   assignInboxThread: vi.fn(),
-  unassignInboxThread: vi.fn(),
   moveInboxThread: vi.fn(),
   getInboxAssignOptions: vi.fn(),
   searchInboxPeople: vi.fn(),
@@ -38,10 +37,8 @@ const row = (over = {}) => ({
   matchedBy: "primary",
   needsReply: true,
   archived: false,
-  unassigned: true,
   noMatchingUser: false,
   machineTag: null,
-  assignment: null,
   movedFrom: null,
   ...over,
 });
@@ -66,17 +63,17 @@ const detail = (over = {}) => ({
   latestMessageId: 11,
   replyAlias: "mentorship@circlecat.org",
   canAssign: true,
-  canMove: true,
-  tracked: false,
   openBounce: null,
   movedAt: null,
   ...over,
 });
 
 const listData = (threads, over = {}) => ({
+  success: true,
+  message: "",
   data: {
     threads,
-    counts: { needsReply: 2, unassigned: 1 },
+    counts: { needsReply: 2 },
     services: [
       { key: "mentorship", needsReply: 1 },
       { key: "recruiting", needsReply: 1 },
@@ -160,12 +157,9 @@ describe("InboxPage list", () => {
       within(filters).getByRole("button", { name: /^Needs reply/ }),
     );
     await waitFor(() => expect(lastListParams()).toEqual({ needsReply: true }));
-    fireEvent.click(
-      within(filters).getByRole("button", { name: /^Unassigned/ }),
-    );
-    await waitFor(() =>
-      expect(lastListParams()).toEqual({ needsReply: true, unassigned: true }),
-    );
+    expect(
+      within(filters).queryByRole("button", { name: /Unassigned/ }),
+    ).toBeNull();
     fireEvent.click(screen.getByLabelText("Show archived"));
     await waitFor(() => expect(lastListParams().archived).toBe(true));
     fireEvent.change(screen.getByLabelText("Search threads"), {
@@ -174,16 +168,14 @@ describe("InboxPage list", () => {
     await waitFor(() => expect(lastListParams().q).toBe("wang"));
   });
 
-  it("shows machine, archived, moved and assignment tags from row fields", async () => {
+  it("shows machine, archived and moved tags from row fields", async () => {
     api.listInboxThreads.mockResolvedValue(
       listData([
         row({
           machineTag: "bounce",
           archived: true,
           needsReply: false,
-          unassigned: false,
           movedFrom: "inquiries",
-          assignment: { kind: "round", roundId: 3, roundName: "Fall 2026" },
         }),
         row({
           threadId: 2,
@@ -191,11 +183,6 @@ describe("InboxPage list", () => {
           person: null,
           noMatchingUser: true,
           sender: "who@example.com",
-          assignment: {
-            kind: "application",
-            applicationId: 9,
-            jobTitle: "Engineer",
-          },
         }),
       ]),
     );
@@ -208,7 +195,6 @@ describe("InboxPage list", () => {
       "Delivery failed",
       "Archived",
       "Moved from Inquiries",
-      "Fall 2026 round",
     ]) {
       expect(first).toHaveTextContent(text);
     }
@@ -216,7 +202,7 @@ describe("InboxPage list", () => {
       .getByRole("button", { name: /Open thread Interview/ })
       .closest("li");
     expect(second).toHaveTextContent("No matching user");
-    expect(second).toHaveTextContent("Engineer");
+    expect(second).not.toHaveTextContent("Unassigned");
   });
 });
 
@@ -257,9 +243,9 @@ describe("InboxPage thread detail", () => {
     );
   });
 
-  it("hides Assign when canAssign is false and Move when canMove is false", async () => {
+  it("hides Assign when canAssign is false but always offers Move", async () => {
     api.getInboxThread.mockResolvedValue({
-      data: detail({ canAssign: false, canMove: false }),
+      data: detail({ service: "inquiries", canAssign: false }),
     });
     renderAt();
     await screen.findByRole("button", { name: /Open thread Question/ });
@@ -267,7 +253,7 @@ describe("InboxPage thread detail", () => {
     const pane = await thread();
     await within(pane).findByRole("button", { name: "Archive" });
     expect(within(pane).queryByRole("button", { name: "Assign" })).toBeNull();
-    expect(within(pane).queryByLabelText("Move to")).toBeNull();
+    expect(within(pane).getByLabelText("Move to")).toBeInTheDocument();
   });
 
   it("lists only the other two services in Move and moves the thread", async () => {
@@ -350,32 +336,67 @@ describe("InboxPage thread detail", () => {
     window.removeEventListener("inbox:changed", listener);
   });
 
-  it("removes an assignment through the dialog", async () => {
-    const assigned = detail({
-      unassigned: false,
-      assignment: { kind: "round", roundId: 4, roundName: "Spring 2026" },
+  it("closes the thread, drops the row and toasts after Assign", async () => {
+    const listener = vi.fn();
+    window.addEventListener("inbox:changed", listener);
+    const successSpy = vi.spyOn(toast, "success").mockImplementation(() => {});
+    api.listInboxThreads
+      .mockResolvedValueOnce(
+        listData([row(), row({ threadId: 2, subject: "Other thread" })]),
+      )
+      .mockResolvedValue(
+        listData([row({ threadId: 2, subject: "Other thread" })]),
+      );
+    api.getInboxAssignOptions.mockResolvedValue({
+      success: true,
+      message: "",
+      data: {
+        rounds: [
+          { roundId: 5, name: "Fall 2026", current: true, registered: true },
+        ],
+      },
     });
-    api.getInboxThread.mockResolvedValue({ data: assigned });
-    api.getInboxAssignOptions.mockResolvedValue({ data: { rounds: [] } });
-    api.unassignInboxThread.mockResolvedValue({
-      data: detail({ unassigned: true }),
+    api.assignInboxThread.mockResolvedValue({
+      success: true,
+      message: "Thread assigned",
+      data: null,
     });
     renderAt();
     await screen.findByRole("button", { name: /Open thread Question/ });
     open("Question about meeting cadence");
     const pane = await thread();
     fireEvent.click(
-      await within(pane).findByRole("button", { name: "Reassign" }),
+      await within(pane).findByRole("button", { name: "Assign" }),
     );
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Remove assignment" }),
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByLabelText("Round");
+    const loads = api.getInboxThread.mock.calls.length;
+    fireEvent.click(within(dialog).getByRole("button", { name: "Assign" }));
+    await waitFor(() =>
+      expect(api.assignInboxThread).toHaveBeenCalledWith(1, {
+        userId: 7,
+        roundId: 5,
+      }),
     );
     await waitFor(() =>
-      expect(api.unassignInboxThread).toHaveBeenCalledWith(1),
+      expect(screen.queryByRole("region", { name: "Thread" })).toBeNull(),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: /Open thread Question/ }),
+      ).toBeNull(),
     );
     expect(
-      await within(pane).findByRole("button", { name: "Assign" }),
+      screen.getByRole("button", { name: "Open thread Other thread" }),
     ).toBeInTheDocument();
+    expect(successSpy).toHaveBeenCalledWith(
+      "Assigned. This thread is no longer in the Inbox.",
+    );
+    expect(listener).toHaveBeenCalled();
+    expect(api.getInboxThread.mock.calls.length).toBe(loads);
+    expect(errorSpy).not.toHaveBeenCalled();
+    window.removeEventListener("inbox:changed", listener);
   });
 
   it("ignores a write response for a thread that is no longer open", async () => {

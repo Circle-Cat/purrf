@@ -144,15 +144,15 @@ const JobPicker = ({ name, jobs, value, onChange }) => {
  * Assign a thread to a person, then to the context its service needs: a round
  * for Mentorship, a job (and so an application) for Recruiting. The person is
  * prefilled when the sender matches a user; otherwise staff search for one.
- * An assigned thread can also drop its assignment.
+ * Once assigned, the thread leaves the Inbox.
  *
  * Mounted fresh for each opening so its state never leaks between threads.
  *
  * @param {{thread: object, onAssign: (body: object) => Promise<boolean>,
- *   onUnassign: () => Promise<boolean>, onCancel: () => void}} props
+ *   onCancel: () => void}} props
  * @returns {JSX.Element}
  */
-const AssignDialog = ({ thread, onAssign, onUnassign, onCancel }) => {
+const AssignDialog = ({ thread, onAssign, onCancel }) => {
   const { begin, isCurrent } = useRequestGuard();
   const [person, setPerson] = useState(thread.person);
   const [searching, setSearching] = useState(false);
@@ -171,15 +171,8 @@ const AssignDialog = ({ thread, onAssign, onUnassign, onCancel }) => {
         if (!isCurrent(seq)) return;
         setOptions(data);
         const rounds = data.rounds ?? [];
-        const keep = rounds.find(
-          (r) => r.roundId === thread.assignment?.roundId,
-        );
-        const initial = keep ?? rounds.find((r) => r.current) ?? rounds[0];
+        const initial = rounds.find((r) => r.current) ?? rounds[0];
         setRoundId(initial ? String(initial.roundId) : "");
-        const job = (data.jobs ?? []).find(
-          (j) => j.applicationId === thread.assignment?.applicationId,
-        );
-        if (job) setJobId(String(job.jobId));
       })
       .catch((e) => isCurrent(seq) && toast.error(e.message));
   }, [userId, thread.threadId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -198,17 +191,11 @@ const AssignDialog = ({ thread, onAssign, onUnassign, onCancel }) => {
     if (await onAssign(body)) onCancel();
   };
 
-  const remove = async () => {
-    if (await onUnassign()) onCancel();
-  };
-
   return (
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            {thread.assignment ? "Reassign thread" : "Assign thread"}
-          </DialogTitle>
+          <DialogTitle>Assign thread</DialogTitle>
           <DialogDescription>{thread.subject}</DialogDescription>
         </DialogHeader>
 
@@ -271,15 +258,6 @@ const AssignDialog = ({ thread, onAssign, onUnassign, onCancel }) => {
         )}
 
         <DialogFooter>
-          {thread.assignment && (
-            <Button
-              variant="ghost"
-              className="mr-auto text-red-700 hover:bg-red-50 hover:text-red-800"
-              onClick={remove}
-            >
-              Remove assignment
-            </Button>
-          )}
           <Button variant="outline" onClick={onCancel}>
             Cancel
           </Button>

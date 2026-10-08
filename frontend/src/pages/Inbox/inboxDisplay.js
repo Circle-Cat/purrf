@@ -37,18 +37,6 @@ export const MACHINE_TAG_LABELS = {
 };
 
 /**
- * Chip text for where an assigned thread sits.
- *
- * @param {object|null} assignment - Assignment DTO from the API.
- * @returns {string|null}
- */
-export const assignmentLabel = (assignment) => {
-  if (!assignment) return null;
-  if (assignment.kind === "round") return `${assignment.roundName} round`;
-  return `${assignment.jobTitle} · application #${assignment.applicationId}`;
-};
-
-/**
  * Format an ISO timestamp as `Sep 29, 21:14` in the viewer's time zone.
  *
  * @param {string} iso - ISO timestamp.

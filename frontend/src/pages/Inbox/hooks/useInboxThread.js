@@ -7,7 +7,6 @@ import {
   moveInboxThread,
   replyToInboxThread,
   unarchiveInboxThread,
-  unassignInboxThread,
 } from "@/api/inboxApi";
 import { useRequestGuard } from "@/hooks/useRequestGuard";
 
@@ -17,8 +16,9 @@ const statusOf = (e) => e?.response?.status;
  * Loads one Inbox thread and exposes its write actions.
  *
  * Every successful write replaces the thread with the returned detail and
- * calls `onChanged`. A 400 while loading means the thread is gone or no
- * longer visible, which calls `onGone`. A 409 on reply sets `stale` and
+ * calls `onChanged`. A successful assign takes the thread out of the Inbox,
+ * so it toasts and calls `onGone` instead. A 400 while loading means the
+ * thread is gone or no longer visible, which also calls `onGone`. A 409 on reply sets `stale` and
  * reloads, keeping the caller's draft untouched.
  *
  * @param {number|null} threadId - Selected thread, or null.
@@ -26,7 +26,7 @@ const statusOf = (e) => e?.response?.status;
  * @returns {{thread: object|null, loading: boolean, stale: boolean,
  *   reply: (html: string) => Promise<boolean>, archive: Function,
  *   unarchive: Function, assign: (body: object) => Promise<boolean>,
- *   unassign: () => Promise<boolean>, move: (service: string) => Promise<void>,
+ *   move: (service: string) => Promise<void>,
  *   pending: boolean}}
  */
 export const useInboxThread = (threadId, { onChanged, onGone }) => {
@@ -121,6 +121,20 @@ export const useInboxThread = (threadId, { onChanged, onGone }) => {
       }
     });
 
+  const assign = (body) =>
+    guarded(async (id, stillOpen) => {
+      try {
+        await assignInboxThread(id, body);
+      } catch (e) {
+        if (stillOpen()) toast.error(e.message);
+        return false;
+      }
+      toast.success("Assigned. This thread is no longer in the Inbox.");
+      if (stillOpen()) onGone();
+      else onChanged();
+      return true;
+    });
+
   const move = async (service) => {
     if (await write((id) => moveInboxThread(id, service))) {
       if (selectedRef.current === threadId) await load();
@@ -135,8 +149,7 @@ export const useInboxThread = (threadId, { onChanged, onGone }) => {
     reply,
     archive: () => write((id) => archiveInboxThread(id)),
     unarchive: () => write((id) => unarchiveInboxThread(id)),
-    assign: (body) => write((id) => assignInboxThread(id, body)),
-    unassign: () => write((id) => unassignInboxThread(id)),
+    assign,
     move,
   };
 };

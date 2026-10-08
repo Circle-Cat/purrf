@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import AssignDialog from "@/pages/Inbox/AssignDialog";
 import * as api from "@/api/inboxApi";
 
@@ -15,24 +15,21 @@ const thread = (over = {}) => ({
   sender: "wang@example.com",
   person: { userId: 7, name: "Wang Xiao" },
   matchedBy: "alternative",
-  assignment: null,
   ...over,
 });
 
 const setup = (t, props = {}) => {
   const onAssign = vi.fn();
-  const onUnassign = vi.fn();
   const onCancel = vi.fn();
   render(
     <AssignDialog
       thread={t}
       onAssign={onAssign}
-      onUnassign={onUnassign}
       onCancel={onCancel}
       {...props}
     />,
   );
-  return { onAssign, onUnassign, onCancel };
+  return { onAssign, onCancel };
 };
 
 beforeEach(() => vi.resetAllMocks());
@@ -120,16 +117,12 @@ describe("AssignDialog", () => {
     expect(screen.getByRole("button", { name: "Assign" })).toBeDisabled();
   });
 
-  it("offers Remove assignment for an assigned thread", async () => {
+  it("has no Remove assignment action", async () => {
     api.getInboxAssignOptions.mockResolvedValue({ data: { rounds: [] } });
-    const { onUnassign } = setup(
-      thread({
-        assignment: { kind: "round", roundId: 4, roundName: "Spring 2026" },
-      }),
-    );
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Remove assignment" }),
-    );
-    await waitFor(() => expect(onUnassign).toHaveBeenCalled());
+    setup(thread());
+    expect(screen.getByRole("heading", { name: "Assign thread" })).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Remove assignment" }),
+    ).toBeNull();
   });
 });

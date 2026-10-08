@@ -14,7 +14,6 @@ import { SenderName } from "@/pages/Inbox/ThreadList";
 import {
   MACHINE_TAG_LABELS,
   SERVICES,
-  assignmentLabel,
   formatSize,
   formatTime,
   serviceOf,
@@ -133,7 +132,6 @@ const ThreadDetail = ({
   const [draft, setDraft] = useState("");
   const [moveTarget, setMoveTarget] = useState("");
   const service = serviceOf(thread.service);
-  const chip = assignmentLabel(thread.assignment);
   const noAlias = !thread.replyAlias;
   const timeline = [
     ...thread.messages.map((m) => ({ ...m, key: m.messageId })),
@@ -198,31 +196,13 @@ const ThreadDetail = ({
               Archived
             </Badge>
           )}
-          {chip ? (
-            <Badge
-              variant="outline"
-              className="border-emerald-200 bg-emerald-50 text-emerald-800"
-            >
-              {chip}
-            </Badge>
-          ) : (
-            thread.unassigned && (
-              <span className="text-slate-500">Unassigned</span>
-            )
-          )}
         </div>
       </header>
 
       <div className="flex flex-wrap items-center gap-2 border-y border-slate-200 py-3">
-        {thread.tracked && (
-          <span className="text-xs text-slate-500">
-            Tracked with its application: assignment and service come from
-            there.
-          </span>
-        )}
         {thread.canAssign && (
           <Button size="sm" disabled={pending} onClick={onAssign}>
-            {thread.assignment ? "Reassign" : "Assign"}
+            Assign
           </Button>
         )}
         {thread.archived ? (
@@ -244,46 +224,42 @@ const ThreadDetail = ({
             Archive
           </Button>
         )}
-        {thread.canMove && (
-          <span className="flex items-center gap-1.5">
-            <label htmlFor="move-target" className="sr-only">
-              Move to
-            </label>
-            <select
-              id="move-target"
-              value={moveTarget}
-              onChange={(e) => setMoveTarget(e.target.value)}
-              className="h-8 rounded-md border border-slate-300 bg-white px-2 text-sm"
-            >
-              <option value="">Move to…</option>
-              {SERVICES.filter((s) => s.key !== thread.service).map((s) => (
-                <option key={s.key} value={s.key}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={pending || !moveTarget}
-              onClick={() => {
-                onMove(moveTarget);
-                setMoveTarget("");
-              }}
-            >
-              Move
-            </Button>
-          </span>
-        )}
+        <span className="flex items-center gap-1.5">
+          <label htmlFor="move-target" className="sr-only">
+            Move to
+          </label>
+          <select
+            id="move-target"
+            value={moveTarget}
+            onChange={(e) => setMoveTarget(e.target.value)}
+            className="h-8 rounded-md border border-slate-300 bg-white px-2 text-sm"
+          >
+            <option value="">Move to…</option>
+            {SERVICES.filter((s) => s.key !== thread.service).map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pending || !moveTarget}
+            onClick={() => {
+              onMove(moveTarget);
+              setMoveTarget("");
+            }}
+          >
+            Move
+          </Button>
+        </span>
       </div>
 
-      {thread.canMove && (
-        <p className="text-xs text-slate-500">
-          Moving hands the thread to that service as Unassigned. Replies then go
-          out from that service&apos;s alias, and you may no longer see it if
-          you lack that service&apos;s permission.
-        </p>
-      )}
+      <p className="text-xs text-slate-500">
+        Moving hands the thread to that service. Replies then go out from that
+        service&apos;s alias, and you may no longer see it if you lack that
+        service&apos;s permission.
+      </p>
 
       {thread.openBounce && (
         <div

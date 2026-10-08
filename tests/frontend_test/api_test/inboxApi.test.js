@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "@/utils/request";
+import * as inboxApi from "@/api/inboxApi";
 import {
   listInboxThreads,
   getInboxCount,
@@ -8,7 +9,6 @@ import {
   archiveInboxThread,
   unarchiveInboxThread,
   assignInboxThread,
-  unassignInboxThread,
   moveInboxThread,
   getInboxAssignOptions,
   searchInboxPeople,
@@ -73,9 +73,8 @@ describe("inboxApi", () => {
     });
   });
 
-  it("unassignInboxThread DELETEs /assignment", async () => {
-    await unassignInboxThread(5);
-    expect(request.delete).toHaveBeenCalledWith("/inbox/threads/5/assignment");
+  it("has no unassign call", () => {
+    expect(inboxApi.unassignInboxThread).toBeUndefined();
   });
 
   it("moveInboxThread POSTs {service} to /move", async () => {

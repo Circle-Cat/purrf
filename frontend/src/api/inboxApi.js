@@ -24,13 +24,9 @@ export const archiveInboxThread = (id) =>
 export const unarchiveInboxThread = (id) =>
   request.post(API_ENDPOINTS.INBOX_THREAD_UNARCHIVE(id));
 
-/** Assign a thread to a person. */
+/** Assign a thread; on success it leaves the Inbox and `data` is null. */
 export const assignInboxThread = (id, body) =>
   request.put(API_ENDPOINTS.INBOX_THREAD_ASSIGNMENT(id), body);
-
-/** Clear a thread's assignee. */
-export const unassignInboxThread = (id) =>
-  request.delete(API_ENDPOINTS.INBOX_THREAD_ASSIGNMENT(id));
 
 /** Move a thread to another service. */
 export const moveInboxThread = (id, service) =>

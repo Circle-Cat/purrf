@@ -24,17 +24,17 @@ const notifySidebar = () => window.dispatchEvent(new Event("inbox:changed"));
 /**
  * Inbox
  *
- * Inbound mail for every service the viewer may see, in one list. Staff
- * filter, search, open a thread, reply, archive, move it to another service
- * and assign Mentorship and Recruiting threads. Which threads, counts and
- * actions are available all come from the API.
+ * Threads that someone else started and that are not assigned yet, for every
+ * service the viewer may see, in one list. Staff filter, search, open a
+ * thread, reply, archive, move it to another service and assign Mentorship
+ * and Recruiting threads; an assigned thread leaves the Inbox. Which threads,
+ * counts and actions are available all come from the API.
  *
  * @returns {JSX.Element}
  */
 const InboxPage = () => {
   const [params, setParams] = useSearchParams();
   const [needsReply, setNeedsReply] = useState(false);
-  const [unassigned, setUnassigned] = useState(false);
   const [archived, setArchived] = useState(false);
   const [term, setTerm] = useState("");
   const [q, setQ] = useState("");
@@ -57,7 +57,6 @@ const InboxPage = () => {
   } = useInboxThreads({
     service: service === ALL ? undefined : service,
     needsReply,
-    unassigned,
     archived,
     q,
   });
@@ -88,13 +87,6 @@ const InboxPage = () => {
       count: counts.needsReply,
       on: needsReply,
       set: setNeedsReply,
-    },
-    {
-      key: "unassigned",
-      label: "Unassigned",
-      count: counts.unassigned,
-      on: unassigned,
-      set: setUnassigned,
     },
   ];
 
@@ -211,7 +203,6 @@ const InboxPage = () => {
           key={thread.threadId}
           thread={thread}
           onAssign={detail.assign}
-          onUnassign={detail.unassign}
           onCancel={() => setAssigning(false)}
         />
       )}
