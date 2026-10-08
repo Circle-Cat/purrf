@@ -105,21 +105,7 @@ const appLabel = (a, kind) =>
     .filter(Boolean)
     .join(" · ");
 
-// The live application if there is one, else the newest (the list is newest first).
-const defaultApplicationId = (job) => {
-  const apps = job?.applications ?? [];
-  const pick = apps.find((a) => a.stage !== "rejected") ?? apps[0];
-  return pick ? String(pick.applicationId) : "";
-};
-
-const JobPicker = ({
-  name,
-  jobs,
-  jobId,
-  applicationId,
-  onJobChange,
-  onApplicationChange,
-}) => {
+const ApplicationPicker = ({ name, jobs, value, onChange }) => {
   if (!jobs.length) {
     return (
       <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -128,55 +114,34 @@ const JobPicker = ({
       </p>
     );
   }
-  const job = jobs.find((j) => String(j.jobId) === jobId);
   return (
-    <div className="space-y-3">
-      <div className="space-y-1.5">
-        <label
-          htmlFor="assign-job"
-          className="text-sm font-medium text-slate-900"
-        >
-          Job
-        </label>
-        <select
-          id="assign-job"
-          value={jobId}
-          onChange={(e) => onJobChange(e.target.value)}
-          className={selectClass}
-        >
-          <option value="">Select a job…</option>
-          {jobs.map((j) => (
-            <option key={j.jobId} value={j.jobId}>
-              {j.title}
-            </option>
-          ))}
-        </select>
-        <p className="text-xs text-slate-500">
-          Only jobs this person applied to.
-        </p>
-      </div>
-      {job && (
-        <div className="space-y-1.5">
-          <label
-            htmlFor="assign-application"
-            className="text-sm font-medium text-slate-900"
-          >
-            Application
-          </label>
-          <select
-            id="assign-application"
-            value={applicationId}
-            onChange={(e) => onApplicationChange(e.target.value)}
-            className={selectClass}
-          >
-            {(job.applications ?? []).map((a) => (
+    <div className="space-y-1.5">
+      <label
+        htmlFor="assign-application"
+        className="text-sm font-medium text-slate-900"
+      >
+        Application
+      </label>
+      <select
+        id="assign-application"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={selectClass}
+      >
+        <option value="">Select an application…</option>
+        {jobs.map((j) => (
+          <optgroup key={j.jobId} label={j.title}>
+            {(j.applications ?? []).map((a) => (
               <option key={a.applicationId} value={a.applicationId}>
-                {appLabel(a, job.kind)}
+                {appLabel(a, j.kind)}
               </option>
             ))}
-          </select>
-        </div>
-      )}
+          </optgroup>
+        ))}
+      </select>
+      <p className="text-xs text-slate-500">
+        Every application this person made, grouped by job.
+      </p>
     </div>
   );
 };
@@ -185,7 +150,7 @@ const JobPicker = ({
  * AssignDialog
  *
  * Assign a thread to a person, then to the context its service needs: a round
- * for Mentorship, a job and then one of its applications for Recruiting. The
+ * for Mentorship, one of the person's applications for Recruiting. The
  * person is prefilled when the sender matches a user; otherwise staff search
  * for one. Once assigned, the thread leaves the Inbox.
  *
@@ -201,13 +166,11 @@ const AssignDialog = ({ thread, onAssign, onCancel }) => {
   const [searching, setSearching] = useState(false);
   const [options, setOptions] = useState(null);
   const [roundId, setRoundId] = useState("");
-  const [jobId, setJobId] = useState("");
   const [applicationId, setApplicationId] = useState("");
   const userId = person?.userId;
 
   useEffect(() => {
     setOptions(null);
-    setJobId("");
     setApplicationId("");
     if (userId == null) return;
     const seq = begin();
@@ -294,20 +257,11 @@ const AssignDialog = ({ thread, onAssign, onCancel }) => {
           />
         )}
         {person && !searching && options && !mentorship && (
-          <JobPicker
+          <ApplicationPicker
             name={person.name}
             jobs={options.jobs ?? []}
-            jobId={jobId}
-            applicationId={applicationId}
-            onJobChange={(value) => {
-              setJobId(value);
-              setApplicationId(
-                defaultApplicationId(
-                  options.jobs.find((j) => String(j.jobId) === value),
-                ),
-              );
-            }}
-            onApplicationChange={setApplicationId}
+            value={applicationId}
+            onChange={setApplicationId}
           />
         )}
 
