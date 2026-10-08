@@ -174,6 +174,18 @@ export const API_ENDPOINTS = {
   TRAINING_ASSIGNMENTS_AUDIENCE_IDS: "/training/assignments/audience/ids",
   TRAINING_USER_ASSIGNMENTS: (userId) =>
     `/training/users/${userId}/assignments`,
+  INBOX_THREADS: "/inbox/threads",
+  INBOX_COUNT: "/inbox/count",
+  INBOX_THREAD: (id) => `/inbox/threads/${id}`,
+  INBOX_THREAD_REPLY: (id) => `/inbox/threads/${id}/reply`,
+  INBOX_THREAD_ARCHIVE: (id) => `/inbox/threads/${id}/archive`,
+  INBOX_THREAD_UNARCHIVE: (id) => `/inbox/threads/${id}/unarchive`,
+  INBOX_THREAD_ASSIGNMENT: (id) => `/inbox/threads/${id}/assignment`,
+  INBOX_THREAD_MOVE: (id) => `/inbox/threads/${id}/move`,
+  INBOX_THREAD_ASSIGN_OPTIONS: (id) => `/inbox/threads/${id}/assign-options`,
+  INBOX_PEOPLE: "/inbox/people",
+  INBOX_ATTACHMENT: (id, messageId, index) =>
+    `/inbox/threads/${id}/messages/${messageId}/attachments/${index}`,
 };
 
 /**

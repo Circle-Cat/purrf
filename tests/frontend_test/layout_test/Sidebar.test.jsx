@@ -9,6 +9,9 @@ import { ROUTE_PATHS } from "@/constants/RoutePaths";
 vi.mock("@/context/auth", () => ({
   useAuth: vi.fn(),
 }));
+vi.mock("@/api/inboxApi", () => ({
+  getInboxCount: vi.fn(() => Promise.resolve({ data: { needsReply: 0 } })),
+}));
 
 describe("Sidebar Component", () => {
   beforeEach(() => {

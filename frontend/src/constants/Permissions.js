@@ -22,4 +22,12 @@ export const PERMISSIONS = {
   LEAVE_ADMIN: "leave.admin",
   TRAINING_ADMIN_READ: "training.admin.read",
   TRAINING_ADMIN_WRITE: "training.admin.write",
+  INQUIRIES_MANAGE: "inquiries.manage",
 };
+
+/** Any of these grants access to the Inbox page. */
+export const INBOX_PERMISSIONS = [
+  PERMISSIONS.MENTORSHIP_ADMIN_WRITE,
+  PERMISSIONS.RECRUITING_APPLICATION_ADVANCE,
+  PERMISSIONS.INQUIRIES_MANAGE,
+];

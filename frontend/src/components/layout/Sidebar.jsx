@@ -1,13 +1,18 @@
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/context/auth";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
-import { PERMISSIONS } from "@/constants/Permissions";
+import { INBOX_PERMISSIONS, PERMISSIONS } from "@/constants/Permissions";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import { Badge } from "@/components/ui/badge";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { useInboxCount } from "@/hooks/useInboxCount";
 
 const Sidebar = () => {
   const { permissions } = useAuth();
   const flags = useFeatureFlags();
+  const { count: inboxCount } = useInboxCount(
+    permissions.some((p) => INBOX_PERMISSIONS.includes(p)),
+  );
 
   /**
    * Checks if the user may access a page. An empty list means the item is open
@@ -77,6 +82,12 @@ const Sidebar = () => {
       permissions: [],
     },
     {
+      label: "Inbox",
+      to: ROUTE_PATHS.INBOX,
+      permissions: INBOX_PERMISSIONS,
+      badgeKey: "inbox",
+    },
+    {
       label: "Applications Board",
       to: ROUTE_PATHS.RECRUITING_BOARD,
       permissions: [
@@ -142,6 +153,11 @@ const Sidebar = () => {
                     }
                   >
                     {item.label}
+                    {item.badgeKey === "inbox" && inboxCount > 0 && (
+                      <Badge className="ml-auto rounded-full px-2 py-0 text-xs">
+                        {inboxCount}
+                      </Badge>
+                    )}
                   </NavLink>
                 </li>
               ),

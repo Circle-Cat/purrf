@@ -6,6 +6,9 @@ let mockPermissions = ["recruiting.job.write"];
 vi.mock("@/context/auth", () => ({
   useAuth: () => ({ permissions: mockPermissions }),
 }));
+vi.mock("@/api/inboxApi", () => ({
+  getInboxCount: vi.fn(() => Promise.resolve({ data: { needsReply: 0 } })),
+}));
 
 import Sidebar from "@/components/layout/Sidebar";
 
