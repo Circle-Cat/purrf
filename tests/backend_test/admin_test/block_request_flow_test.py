@@ -100,7 +100,7 @@ class BlockRequestFlowTest(BaseRepositoryTestLib):
             user_id=self.target.user_id,
             reason=reason,
             reviewer_id=self.reviewer.user_id,
-            raised_from="recruiting_board",
+            raised_from="recruiting_application",
         )
 
     async def _request(self) -> ApprovalRequestEntity:
@@ -139,7 +139,7 @@ class BlockRequestFlowTest(BaseRepositoryTestLib):
         raised = await self._raise()
         self.assertIsNone(raised.reason)
         self.assertEqual(raised.status, "pending")
-        self.assertEqual(raised.raised_from, "recruiting_board")
+        self.assertEqual(raised.raised_from, "recruiting_application")
         self.assertEqual(raised.target_user_id, self.target.user_id)
 
         decided = await self.service.decide(

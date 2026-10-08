@@ -208,7 +208,7 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         user_id=TARGET,
         reason="second no-show",
         reviewer_id=REVIEWER,
-        raised_from="recruiting_board",
+        raised_from="recruiting_application",
     ):
         return await self.service.raise_request(
             self.session,
@@ -235,7 +235,7 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
             "action": BLOCK_USER,
             "target_type": BLOCK_TARGET,
             "target_id": str(TARGET),
-            "payload": {"raised_from": "recruiting_board"},
+            "payload": {"raised_from": "recruiting_application"},
             "reason": "second no-show",
             "raised_by": RAISER,
             "reviewer_id": REVIEWER,
@@ -259,7 +259,7 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out.target_user_id, TARGET)
         self.assertEqual(out.raised_by, RAISER)
         self.assertEqual(out.reviewer_id, REVIEWER)
-        self.assertEqual(out.raised_from, "recruiting_board")
+        self.assertEqual(out.raised_from, "recruiting_application")
         self.assertEqual(out.reason, "second no-show")
         self.assertEqual(out.target_name, "Firstname5 Lastname5")
         self.assertEqual(out.raised_by_name, "Firstname2 Lastname2")
@@ -275,7 +275,7 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row.action, BLOCK_USER)
         self.assertEqual(row.target_type, "user")
         self.assertEqual(row.target_id, str(TARGET))
-        self.assertEqual(row.payload, {"raised_from": "recruiting_board"})
+        self.assertEqual(row.payload, {"raised_from": "recruiting_application"})
 
     async def test_names_are_resolved_in_one_lookup(self):
         await self._raise()
@@ -363,18 +363,22 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.requests.rows, [])
         self.session.commit.assert_not_awaited()
 
-    async def test_raised_from_must_be_a_short_label(self):
-        for raised_from in ("", "x" * 65):
-            with self.subTest(length=len(raised_from)):
+    async def test_raised_from_must_be_a_known_source(self):
+        for raised_from in ("", "recruiting_board", "x" * 65):
+            with self.subTest(raised_from=raised_from):
                 with self.assertRaises(ValueError):
                     await self._raise(raised_from=raised_from)
 
         self.assertEqual(self.requests.rows, [])
 
-    async def test_raised_from_at_the_limit_is_accepted(self):
-        out = await self._raise(raised_from="x" * 64)
+    async def test_both_sources_are_accepted(self):
+        for raised_from in ("recruiting_application", "mentorship_participant"):
+            with self.subTest(raised_from=raised_from):
+                self.requests.rows.clear()
 
-        self.assertEqual(out.raised_from, "x" * 64)
+                out = await self._raise(raised_from=raised_from)
+
+                self.assertEqual(out.raised_from, raised_from)
 
     async def test_raise_records_the_event_the_reviewer_is_notified_from(self):
         """``user_recipient_resolvers._request_of`` finds the row through
@@ -402,7 +406,7 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
             await self._raise(
                 actor_id=OTHER_RAISER,
                 reason="r2",
-                raised_from="recruiting_interviews",
+                raised_from="recruiting_application",
             )
 
         message = str(err.exception)
@@ -959,7 +963,7 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0].target_user_id, TARGET)
         self.assertEqual(out[0].reviewer_id, REVIEWER)
-        self.assertEqual(out[0].raised_from, "recruiting_board")
+        self.assertEqual(out[0].raised_from, "recruiting_application")
 
     async def test_raiser_does_not_read_back_someone_elses_request(self):
         await self._raise()

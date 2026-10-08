@@ -46,7 +46,7 @@ def _request_dto(reviewer_id=REVIEWER):
         target_name="T Arget",
         raised_by=CALLER,
         raised_by_name="C Aller",
-        raised_from="recruiting_board",
+        raised_from="recruiting_application",
         raised_at=datetime.now(timezone.utc),
         reason="second no-show",
         reviewer_id=reviewer_id,
@@ -95,10 +95,11 @@ class TestBlockController(unittest.TestCase):
 
     # -- the gates ----------------------------------------------------------
 
-    def test_preflight_open_to_both_roles(self):
+    def test_preflight_open_to_every_raiser_and_the_reviewer(self):
         for permission in (
             Permission.USER_ADMIN,
             Permission.RECRUITING_APPLICATION_ADVANCE,
+            Permission.MENTORSHIP_ADMIN_WRITE,
         ):
             with self.subTest(permission=permission):
                 client = self._client(permissions=[permission])
@@ -120,7 +121,7 @@ class TestBlockController(unittest.TestCase):
         client = self._client(permissions=[Permission.USER_ADMIN])
 
         resp = client.post(
-            f"{BLOCK_REQUESTS_ENDPOINT}?raised_from=recruiting_board",
+            f"{BLOCK_REQUESTS_ENDPOINT}?raised_from=recruiting_application",
             json={"userId": TARGET, "reason": "r", "reviewerId": REVIEWER},
         )
 
@@ -147,7 +148,7 @@ class TestBlockController(unittest.TestCase):
         client = self._client(permissions=[Permission.RECRUITING_INTERVIEW_EVALUATE])
 
         resp = client.post(
-            f"{BLOCK_REQUESTS_ENDPOINT}?raised_from=recruiting_board",
+            f"{BLOCK_REQUESTS_ENDPOINT}?raised_from=recruiting_application",
             json={"userId": TARGET, "reason": "second no-show", "reviewerId": REVIEWER},
         )
 
@@ -216,7 +217,7 @@ class TestBlockController(unittest.TestCase):
         client = self._client(permissions=[Permission.RECRUITING_APPLICATION_ADVANCE])
 
         resp = client.post(
-            f"{BLOCK_REQUESTS_ENDPOINT}?raised_from=recruiting_interviews",
+            f"{BLOCK_REQUESTS_ENDPOINT}?raised_from=recruiting_application",
             json={"userId": TARGET, "reason": "second no-show", "reviewerId": REVIEWER},
         )
 
@@ -225,14 +226,14 @@ class TestBlockController(unittest.TestCase):
         self.assertEqual(kwargs["actor_id"], CALLER)
         self.assertEqual(kwargs["user_id"], TARGET)
         self.assertEqual(kwargs["reviewer_id"], REVIEWER)
-        self.assertEqual(kwargs["raised_from"], "recruiting_interviews")
+        self.assertEqual(kwargs["raised_from"], "recruiting_application")
 
     def test_raise_accepts_a_request_without_a_reason(self):
         """The reason is optional, as on every approval request."""
         client = self._client(permissions=[Permission.RECRUITING_APPLICATION_ADVANCE])
 
         resp = client.post(
-            f"{BLOCK_REQUESTS_ENDPOINT}?raised_from=recruiting_board",
+            f"{BLOCK_REQUESTS_ENDPOINT}?raised_from=recruiting_application",
             json={"userId": TARGET, "reviewerId": REVIEWER},
         )
 
@@ -351,7 +352,7 @@ class TestBlockController(unittest.TestCase):
         client = self._client(permissions=[Permission.RECRUITING_APPLICATION_ADVANCE])
 
         resp = client.post(
-            f"{BLOCK_REQUESTS_ENDPOINT}?raised_from=recruiting_board",
+            f"{BLOCK_REQUESTS_ENDPOINT}?raised_from=recruiting_application",
             json={"userId": TARGET, "reason": "r", "reviewerId": REVIEWER},
         )
 
@@ -364,7 +365,7 @@ class TestBlockController(unittest.TestCase):
         client = self._client(permissions=[Permission.RECRUITING_APPLICATION_ADVANCE])
 
         resp = client.post(
-            f"{BLOCK_REQUESTS_ENDPOINT}?raised_from=recruiting_board",
+            f"{BLOCK_REQUESTS_ENDPOINT}?raised_from=recruiting_application",
             json={"userId": TARGET, "reason": "r", "reviewerId": REVIEWER},
         )
 
@@ -415,3 +416,63 @@ class TestBlockController(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    # -- raising by source ------------------------------------------------
+
+    def _raise_from(self, raised_from, permissions):
+        client = self._client(permissions=permissions)
+        return client.post(
+            f"{BLOCK_REQUESTS_ENDPOINT}?raised_from={raised_from}",
+            json={"userId": TARGET, "reason": "r", "reviewerId": REVIEWER},
+        )
+
+    def test_mentorship_admin_raises_from_a_participant_page(self):
+        resp = self._raise_from(
+            "mentorship_participant", [Permission.MENTORSHIP_ADMIN_WRITE]
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.OK)
+        self.service.raise_request.assert_awaited_once()
+
+    def test_mentorship_admin_cannot_raise_from_recruiting(self):
+        resp = self._raise_from(
+            "recruiting_application", [Permission.MENTORSHIP_ADMIN_WRITE]
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
+        self.service.raise_request.assert_not_awaited()
+
+    def test_recruiter_cannot_raise_from_mentorship(self):
+        resp = self._raise_from(
+            "mentorship_participant", [Permission.RECRUITING_APPLICATION_ADVANCE]
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
+        self.service.raise_request.assert_not_awaited()
+
+    def test_mentorship_admin_reaches_the_rest_of_the_raise_flow(self):
+        client = self._client(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])
+
+        for resp in (
+            client.get(BLOCK_PREFLIGHT_ENDPOINT.format(user_id=TARGET)),
+            client.get(BLOCK_REQUEST_REVIEWERS_ENDPOINT),
+            client.get(BLOCK_REQUESTS_RAISED_ENDPOINT),
+            client.post(
+                BLOCK_REQUEST_REASSIGN_ENDPOINT.format(request_id=REQUEST_ID),
+                json={"reviewerId": REVIEWER},
+            ),
+            client.post(BLOCK_REQUEST_WITHDRAW_ENDPOINT.format(request_id=REQUEST_ID)),
+        ):
+            with self.subTest(path=resp.request.url.path):
+                self.assertEqual(resp.status_code, HTTPStatus.OK)
+
+    def test_mentorship_admin_still_cannot_decide(self):
+        client = self._client(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])
+
+        resp = client.post(
+            BLOCK_REQUEST_DECIDE_ENDPOINT.format(request_id=REQUEST_ID),
+            json={"approved": True},
+        )
+
+        self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
+        self.service.decide.assert_not_awaited()
