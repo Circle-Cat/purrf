@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import ParticipantDetailPage from "@/pages/MentorshipManagement/ParticipantDetailPage";
 import {
+  addParticipantNote,
   getAllMentorshipRounds,
   getMeetingLog,
   getParticipantDetail,
@@ -133,6 +134,39 @@ describe("ParticipantDetailPage", () => {
     renderPage("/mentorship-management/participants/3104?round=7&pair=81");
     await waitFor(() => expect(getMeetingLog).toHaveBeenCalledWith(81));
     expect(getMeetingLog).not.toHaveBeenCalledWith(80);
+  });
+
+  it("keeps a closed pair closed and does not scroll again after a refetch", async () => {
+    const scroll = vi
+      .spyOn(Element.prototype, "scrollIntoView")
+      .mockImplementation(() => {});
+    try {
+      renderPage("/mentorship-management/participants/3104?round=7&pair=80");
+      await waitFor(() => expect(getMeetingLog).toHaveBeenCalledWith(80));
+      expect(scroll).toHaveBeenCalledTimes(1);
+
+      await userEvent.click(
+        screen.getByRole("button", { name: /Hide meetings with Bob Smith/ }),
+      );
+      addParticipantNote.mockResolvedValue({ data: noteOf() });
+      getParticipantDetail.mockResolvedValue({
+        data: detailOf({ notes: [noteOf()] }),
+      });
+      await userEvent.click(screen.getByRole("button", { name: "Add a note" }));
+      await userEvent.type(screen.getByLabelText("Note"), "Called her");
+      await userEvent.click(screen.getByRole("button", { name: "Save note" }));
+      expect(
+        await screen.findByText("Asked to move the first meeting."),
+      ).toBeInTheDocument();
+
+      expect(
+        screen.getByRole("button", { name: /Show meetings with Bob Smith/ }),
+      ).toHaveAttribute("aria-expanded", "false");
+      expect(getMeetingLog).toHaveBeenCalledTimes(1);
+      expect(scroll).toHaveBeenCalledTimes(1);
+    } finally {
+      scroll.mockRestore();
+    }
   });
 
   it("says when the person did not register for the round", async () => {

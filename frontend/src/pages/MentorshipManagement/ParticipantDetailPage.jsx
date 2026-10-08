@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Link,
   useLocation,
@@ -161,21 +161,33 @@ const ParticipantDetailPage = () => {
   const matchingOn = Boolean(useFeatureFlags()[FEATURE_FLAGS.MATCHING_RUN]);
 
   // Which pair's meeting log is open. The URL's pair wins; with no pair in
-  // the URL, a single pair opens by itself.
+  // the URL, a single pair opens by itself. Applied once per person, round
+  // and URL pair, when that detail first arrives, so a quiet refetch after a
+  // note or a save leaves the open pair and the scroll position alone.
   const [openPairId, setOpenPairId] = useState(null);
+  const appliedFor = useRef(null);
   const pairs = detail?.registration?.pairs ?? [];
   useEffect(() => {
-    if (pairParam != null) setOpenPairId(Number(pairParam));
-    else if (pairs.length === 1) setOpenPairId(pairs[0].pairId);
-    // Only when the page's data or the URL's pair changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pairParam, detail]);
-  useEffect(() => {
-    if (pairParam == null || !detail) return;
-    document
-      .getElementById(`pair-${pairParam}`)
-      ?.scrollIntoView?.({ block: "start" });
-  }, [pairParam, detail]);
+    if (
+      !detail ||
+      String(detail.round?.roundId) !== String(roundId) ||
+      String(detail.person?.userId) !== String(userId)
+    ) {
+      return;
+    }
+    const key = `${userId}|${roundId}|${pairParam ?? ""}`;
+    if (appliedFor.current === key) return;
+    appliedFor.current = key;
+    const loaded = detail.registration?.pairs ?? [];
+    if (pairParam != null) {
+      setOpenPairId(Number(pairParam));
+      document
+        .getElementById(`pair-${pairParam}`)
+        ?.scrollIntoView?.({ block: "start" });
+    } else {
+      setOpenPairId(loaded.length === 1 ? loaded[0].pairId : null);
+    }
+  }, [userId, roundId, pairParam, detail]);
 
   const back = (
     <Link
