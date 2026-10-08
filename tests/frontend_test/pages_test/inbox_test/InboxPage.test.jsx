@@ -140,6 +140,23 @@ describe("InboxPage list", () => {
     expect(router.state.location.search).toBe("?service=recruiting");
   });
 
+  it("closes the open thread when the service tab changes", async () => {
+    renderAt();
+    await screen.findByRole("button", { name: /Open thread Question/ });
+    open("Question about meeting cadence");
+    await thread();
+    fireEvent.click(
+      within(screen.getByRole("group", { name: "Services" })).getByRole(
+        "button",
+        { name: /^Recruiting/ },
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Thread" })).toBeNull(),
+    );
+    expect(screen.getByText("Select a thread to read it.")).toBeInTheDocument();
+  });
+
   it("reads the service filter from the URL", async () => {
     renderAt("/inbox?service=inquiries");
     await waitFor(() =>

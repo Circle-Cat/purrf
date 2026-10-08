@@ -46,6 +46,12 @@ const InboxPage = () => {
     ? serviceParam
     : ALL;
 
+  // An open thread from another tab would sit beside a list that lacks it.
+  useEffect(() => {
+    setSelectedId(null);
+    setAssigning(false);
+  }, [service]);
+
   useEffect(() => {
     const id = setTimeout(() => setQ(term.trim()), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(id);
