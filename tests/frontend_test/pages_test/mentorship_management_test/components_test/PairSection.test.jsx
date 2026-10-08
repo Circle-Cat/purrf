@@ -66,8 +66,12 @@ describe("PairSection", () => {
   });
 
   it("shows the first meeting in Pacific time while the round is in progress", () => {
-    renderSection();
+    // 03:00 UTC on Sep 3 is still Sep 2 in Los Angeles.
+    renderSection({ pair: pairOf({ firstMeetingAt: "2026-09-03T03:00:00Z" }) });
     expect(screen.getByText("First meeting 2026-09-02")).toBeInTheDocument();
+    expect(
+      screen.queryByText("First meeting 2026-09-03"),
+    ).not.toBeInTheDocument();
   });
 
   it("says No meeting yet when none has been booked", () => {
