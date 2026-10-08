@@ -29,9 +29,14 @@ from backend.notification_management.event_recorder import record_event
 BLOCK_USER = "block_user"
 BLOCK_TARGET = "user"
 
-# Which domain page a request came from is shown to its reviewer; a short
-# label, not free text.
-_RAISED_FROM_MAX_LENGTH = 64
+# Where a block request can be raised from, and what the raiser must hold
+# there. Standing on one domain's page is no standing on another's: a
+# mentorship admin can ask for a block from a participant's page but not from
+# a recruiting application, and a recruiter not the other way round.
+RAISE_PERMISSION_BY_SOURCE: dict[str, Permission] = {
+    "recruiting_application": Permission.RECRUITING_APPLICATION_ADVANCE,
+    "mentorship_participant": Permission.MENTORSHIP_ADMIN_WRITE,
+}
 
 
 async def apply_block_kernel(
@@ -310,15 +315,17 @@ class BlockService:
             user_id (int): The person they want blocked.
             reason (str | None): Why, if they say.
             reviewer_id (int): The USER_ADMIN holder asked to decide.
-            raised_from (str): The domain page it came from, for display.
+            raised_from (str): One of ``RAISE_PERMISSION_BY_SOURCE``: the
+                domain page it came from, shown to the reviewer.
 
         Returns:
             BlockRequestDto: The new pending request.
 
         Raises:
             PermissionError: If the raiser names themselves as the target.
-            ValueError: If the target is unknown or already blocked, or the
-                reviewer is not an eligible USER_ADMIN holder.
+            ValueError: If the target is unknown or already blocked, the
+                reviewer is not an eligible USER_ADMIN holder, or
+                ``raised_from`` is not a known source.
             ConflictError: If a request against this person is already
                 awaiting a decision.
         """
@@ -327,10 +334,8 @@ class BlockService:
             # refusals below from being a probe. Someone who suspects a request
             # names them could otherwise learn it exists by raising one.
             raise PermissionError("You cannot raise a block request about yourself")
-        if not raised_from or len(raised_from) > _RAISED_FROM_MAX_LENGTH:
-            raise ValueError(
-                f"raised_from must be 1-{_RAISED_FROM_MAX_LENGTH} characters"
-            )
+        if raised_from not in RAISE_PERMISSION_BY_SOURCE:
+            raise ValueError(f"Unknown raised_from: {raised_from!r}")
         self._refuse_target_as_reviewer(reviewer_id, user_id)
         # The approval service checks the reviewer before the target on
         # purpose: answered first, "already blocked" would report any user's

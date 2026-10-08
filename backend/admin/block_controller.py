@@ -2,9 +2,10 @@
 
 Not mounted under /admin, unlike the account console. The person raising a
 request is standing on the domain page that holds the evidence and holds no
-console permission at all -- the gates here say so: raising is bound to the
-recruiting advance permission, deciding to ``USER_ADMIN``, and the two do not
-overlap.
+console permission at all -- the gates here say so: raising needs the
+permission of the page it came from (``RAISE_PERMISSION_BY_SOURCE``: recruiting
+advance for an application, mentorship admin write for a participant),
+deciding needs ``USER_ADMIN``, and the two do not overlap.
 
 Three of these routes carry a second condition that is **identity, not
 permission**: only the raiser may reassign or withdraw, and only the named
@@ -14,6 +15,7 @@ surface here as ``PermissionError`` -> 403.
 
 from fastapi import APIRouter
 
+from backend.admin.block_service import RAISE_PERMISSION_BY_SOURCE
 from backend.common.api_endpoints import (
     BLOCK_REQUEST_REVIEWERS_ENDPOINT,
     BLOCK_PREFLIGHT_ENDPOINT,
@@ -35,17 +37,22 @@ from backend.utils.permission_decorators import authenticate
 
 # Raising is bound to standing on a domain page, never to the console
 # permission: the evidence lives there, and someone who can already block
-# directly has no use for a request.
+# directly has no use for a request. Each page's permission opens the routes;
+# which page a request may come from is then checked against the caller in
+# raise_request.
 #
 # Deliberately NOT RECRUITING_INTERVIEW_EVALUATE. That permission only marks
 # someone eligible to be assigned as an evaluator -- the row-level assignee
 # check is what says they are actually on a given application -- so gating on
 # it would let anyone in the interviewer pool raise a request about anyone.
-_RAISE_GATE = [Permission.RECRUITING_APPLICATION_ADVANCE]
+_RAISE_GATE = [
+    Permission.RECRUITING_APPLICATION_ADVANCE,
+    Permission.MENTORSHIP_ADMIN_WRITE,
+]
 _DECIDE_GATE = [Permission.USER_ADMIN]
-# The one OR gate in this design, and it earns it: both roles genuinely need
-# the pre-flight before acting, and it is read-only and answers in counts and
-# dates -- never in which job anyone applied to.
+# Every raiser and the reviewer genuinely need the pre-flight before acting,
+# and it is read-only and answers in counts and dates -- never in which job
+# anyone applied to.
 _PREFLIGHT_GATE = _DECIDE_GATE + _RAISE_GATE
 
 
@@ -137,15 +144,22 @@ class BlockController:
             request_data (BlockRequestCreateDto): Target, optional reason,
                 reviewer.
             raised_from (str): Which domain page this came from, e.g.
-                ``"recruiting_board"``. A query parameter rather than a body
+                ``"recruiting_application"``. A query parameter rather than a body
                 field because it describes where the caller is standing, not
                 what they are asking for -- and BaseRequestDto forbids extras.
 
         Returns:
             A standardized API response wrapping the new ``BlockRequestDto``.
             An ineligible reviewer or an unknown or already-blocked target
-            surface as 400; a request already pending on the person as 409.
+            surface as 400; a request already pending on the person as 409; a
+            source the caller has no standing on as 403.
         """
+        required = RAISE_PERMISSION_BY_SOURCE.get(raised_from)
+        # An unknown source is left to the service, which refuses it as 400.
+        if required is not None and required not in current_user.permissions:
+            raise PermissionError(
+                f"Raising a block request from {raised_from} needs {required}."
+            )
         async with self._database.session() as session:
             view = await self._service.raise_request(
                 session,
