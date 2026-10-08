@@ -855,7 +855,8 @@ class TestGmailClient(TestCase):
             },
         ]
         result = self.client.list_history(50)
-        self.assertEqual(result, {"history_id": 95, "thread_ids": {"t1", "t2"}})
+        self.assertEqual(result["history_id"], 95)
+        self.assertEqual(result["thread_ids"], {"t1", "t2"})
         first_call = hist.call_args_list[0].kwargs
         self.assertEqual(first_call["startHistoryId"], "50")
         self.assertEqual(first_call["historyTypes"], ["messageAdded"])
@@ -868,8 +869,38 @@ class TestGmailClient(TestCase):
             "historyId": "60"
         }
         self.assertEqual(
-            self.client.list_history(60), {"history_id": 60, "thread_ids": set()}
+            self.client.list_history(60),
+            {"history_id": 60, "thread_ids": set(), "sent_only_thread_ids": set()},
         )
+
+    def test_list_history_names_threads_whose_new_messages_are_all_sent(self):
+        def added(message_id, thread_id, labels):
+            message = {"id": message_id, "threadId": thread_id}
+            if labels is not None:
+                message["labelIds"] = labels
+            return {"message": message}
+
+        self.mock_service.users.return_value.history.return_value.list.return_value.execute.return_value = {
+            "history": [
+                {
+                    "messagesAdded": [
+                        added("m1", "t-sent", ["SENT"]),
+                        added("m2", "t-mixed", ["SENT"]),
+                        added("m3", "t-inbox", ["INBOX", "UNREAD"]),
+                        added("m4", "t-unlabelled", None),
+                        added("m5", "t-self", ["SENT", "INBOX"]),
+                    ]
+                },
+                {"messagesAdded": [added("m6", "t-mixed", ["INBOX"])]},
+            ],
+            "historyId": "70",
+        }
+        result = self.client.list_history(60)
+        self.assertEqual(
+            result["thread_ids"],
+            {"t-sent", "t-mixed", "t-inbox", "t-unlabelled", "t-self"},
+        )
+        self.assertEqual(result["sent_only_thread_ids"], {"t-sent", "t-self"})
 
     def test_list_history_404_means_the_cursor_expired(self):
         self.mock_service.users.return_value.history.return_value.list.return_value.execute.side_effect = _http_error(

@@ -2,7 +2,11 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-from backend.common.communication_enums import ContextType, EmailDirection
+from backend.common.communication_enums import (
+    ContextType,
+    EmailDirection,
+    InboundKind,
+)
 from backend.communication.email_conversation_service import EmailConversationService
 
 SENDER = "recruiting@circlecat.org"
@@ -377,6 +381,31 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(bounce_kw["failed_recipients"], "a@x.com")
         self.assertEqual(bounce_kw["direction"], EmailDirection.INBOUND)
         self.assertIsNone(reply_kw["failed_recipients"])
+
+    async def test_sync_thread_records_kind_and_attachments_for_inbound_only(self):
+        self.gmail.list_thread_message_ids.return_value = ["g1", "g2"]
+        auto = self._fetched("g1", "cand@example.com")
+        auto["auto_submitted"] = "auto-replied"
+        files = [
+            {
+                "attachment_id": "a1",
+                "filename": "cv.pdf",
+                "mime_type": "application/pdf",
+                "size": 10,
+            }
+        ]
+        auto["attachments"] = files
+        ours = self._fetched("g2", SENDER)
+        self.gmail.get_messages.return_value = [auto, ours]
+        self.message_repo.create.return_value = SimpleNamespace(message_id=1)
+
+        await self.service.sync_thread(self.session, self._thread())
+
+        (_, in_kw), (_, out_kw) = self.message_repo.create.call_args_list
+        self.assertEqual(in_kw["inbound_kind"], InboundKind.AUTO_REPLY)
+        self.assertEqual(in_kw["attachments"], files)
+        self.assertIsNone(out_kw.get("inbound_kind"))
+        self.assertIsNone(out_kw.get("attachments"))
 
     async def test_sync_thread_steady_state_costs_one_call_each_side(self):
         # The common case: nothing new. This is the whole point of the change —

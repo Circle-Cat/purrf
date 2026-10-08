@@ -219,6 +219,11 @@ py_library(
 )
 
 py_library(
+    name = "inbox_enums",
+    srcs = ["inbox_enums.py"],
+)
+
+py_library(
     name = "leave_enums",
     srcs = ["leave_enums.py"],
 )

@@ -24,6 +24,7 @@ import asyncio
 from datetime import datetime, timezone
 
 from backend.common.communication_enums import EmailDirection
+from backend.communication.inbound_kind import classify_inbound
 from backend.dto.email_dto import EmailMessageDto, EmailThreadDto
 
 
@@ -276,11 +277,20 @@ class EmailConversationService:
 
         created = []
         for message in messages:
+            direction = self._direction_of(message.get("from_address"))
+            inbound_extras = (
+                {
+                    "inbound_kind": classify_inbound(message),
+                    "attachments": message.get("attachments") or None,
+                }
+                if direction == EmailDirection.INBOUND
+                else {}
+            )
             entity = await self._message_repo.create(
                 session,
                 thread_id=thread.thread_id,
                 gmail_message_id=message["gmail_message_id"],
-                direction=self._direction_of(message.get("from_address")),
+                direction=direction,
                 from_address=message.get("from_address"),
                 to_addresses=message.get("to_addresses"),
                 subject=message.get("subject"),
@@ -292,6 +302,7 @@ class EmailConversationService:
                     message.get("gmail_internal_date")
                 ),
                 failed_recipients=message.get("failed_recipients"),
+                **inbound_extras,
             )
             created.append(entity)
         await self._thread_repo.mark_synced(session, thread.thread_id)
