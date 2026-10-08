@@ -413,10 +413,6 @@ class TestBlockController(unittest.TestCase):
 
         self.assertEqual(resp.status_code, HTTPStatus.CONFLICT)
 
-
-if __name__ == "__main__":
-    unittest.main()
-
     # -- raising by source ------------------------------------------------
 
     def _raise_from(self, raised_from, permissions):
@@ -476,3 +472,7 @@ if __name__ == "__main__":
 
         self.assertEqual(resp.status_code, HTTPStatus.FORBIDDEN)
         self.service.decide.assert_not_awaited()
+
+
+if __name__ == "__main__":
+    unittest.main()
