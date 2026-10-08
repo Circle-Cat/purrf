@@ -19,6 +19,7 @@ import PersonalDashboard from "@/pages/PersonalDashboard";
 import MentorshipManagement from "@/pages/MentorshipManagement";
 import RoundFeedbackPage from "@/pages/MentorshipManagement/RoundFeedbackPage";
 import MatchingResultsPage from "@/pages/MentorshipManagement/MatchingResultsPage";
+import ParticipantDetailPage from "@/pages/MentorshipManagement/ParticipantDetailPage";
 import VerifyRequired from "@/pages/VerifyRequired";
 import SignInSecurity from "@/pages/SignInSecurity";
 import AdminPermissions from "@/pages/AdminPermissions";
@@ -175,6 +176,18 @@ function App() {
                           ]}
                         >
                           <MatchingResultsPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path={ROUTE_PATHS.MENTORSHIP_PARTICIPANT(":userId")}
+                      element={
+                        <ProtectedRoute
+                          requiredPermissions={[
+                            PERMISSIONS.MENTORSHIP_ADMIN_READ,
+                          ]}
+                        >
+                          <ParticipantDetailPage />
                         </ProtectedRoute>
                       }
                     />

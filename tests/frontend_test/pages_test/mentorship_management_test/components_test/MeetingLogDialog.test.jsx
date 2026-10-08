@@ -11,6 +11,7 @@ const baseProps = {
   onOpenChange: vi.fn(),
   roundName: "Fall 2024",
   roundVersion: "v2",
+  roundInProgress: true,
   subjectName: "Henry Zhang",
   subjectRole: "mentee",
   partnerName: "Sarah Lee",
@@ -42,6 +43,19 @@ describe("MeetingLogDialog", () => {
         "Meeting Log — Henry Zhang (Mentee) with Sarah Lee (Mentor) · Fall 2024",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("offers no Edit for a v2 round that has ended", () => {
+    render(
+      <MeetingLogDialog
+        {...baseProps}
+        roundInProgress={false}
+        meetings={[makeMeeting()]}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the loading indicator and no table while loading", () => {

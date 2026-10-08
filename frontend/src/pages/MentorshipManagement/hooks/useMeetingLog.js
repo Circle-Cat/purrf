@@ -14,6 +14,7 @@ import { useRequestGuard } from "@/hooks/useRequestGuard";
 export const useMeetingLog = (pairId, open) => {
   const [meetings, setMeetings] = useState([]);
   const [roundVersion, setRoundVersion] = useState(null);
+  const [roundInProgress, setRoundInProgress] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const { begin, isCurrent } = useRequestGuard();
@@ -21,6 +22,7 @@ export const useMeetingLog = (pairId, open) => {
   const applyLogResponse = (data) => {
     setMeetings(data.meetings ?? []);
     setRoundVersion(data.roundVersion ?? null);
+    setRoundInProgress(data.roundInProgress === true);
   };
 
   const fetchLog = useCallback(async () => {
@@ -61,5 +63,12 @@ export const useMeetingLog = (pairId, open) => {
     [pairId, begin, isCurrent],
   );
 
-  return { meetings, roundVersion, loading, error, saveMeetingBatch };
+  return {
+    meetings,
+    roundVersion,
+    roundInProgress,
+    loading,
+    error,
+    saveMeetingBatch,
+  };
 };

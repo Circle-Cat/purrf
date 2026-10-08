@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   Card,
@@ -43,6 +43,7 @@ import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
 import ExemptionCell from "@/pages/MentorshipManagement/components/ExemptionCell";
 import AttendanceMark from "@/pages/MentorshipManagement/components/AttendanceMark";
+import { participantLink } from "@/pages/MentorshipManagement/utils/participantLink";
 import { exemptionWhyLines } from "@/pages/MentorshipManagement/utils/approvalLabels";
 import MeetingLogDialog from "@/pages/MentorshipManagement/components/MeetingLogDialog";
 import StateChips from "@/pages/AdminAccounts/components/StateChips";
@@ -134,9 +135,21 @@ const trainingLabel = (status) => {
   return status === "done" ? "Done" : "Not done";
 };
 
-const NameCell = ({ row }) => (
+/**
+ * The person's display name, linked to their detail page in the round, over
+ * their user ID and primary email.
+ *
+ * @param {{ row: Object, roundId: string|number|null, returnSearch: string }} props
+ */
+const NameCell = ({ row, roundId, returnSearch }) => (
   <>
-    <div className="font-medium">{userDisplayName(row)}</div>
+    <Link
+      to={participantLink(row.userId, roundId)}
+      state={{ returnSearch }}
+      className="block w-fit font-medium hover:underline"
+    >
+      {userDisplayName(row)}
+    </Link>
     <div className="text-xs text-muted-foreground">
       ID {row.userId}
       {row.primaryEmail ? ` · ${row.primaryEmail}` : ""}
@@ -162,9 +175,9 @@ const orderPairs = (pairs) =>
  * the meeting progress that opens that pair's log. A live pair with flagged
  * meetings turns red and carries an attendance mark.
  *
- * @param {{ row: Object, onOpenMeetings: (pair: Object) => void }} props
+ * @param {{ row: Object, roundId: string|number|null, returnSearch: string, onOpenMeetings: (pair: Object) => void }} props
  */
-const PairCell = ({ row, onOpenMeetings }) => {
+const PairCell = ({ row, roundId, returnSearch, onOpenMeetings }) => {
   if (!row.pairs?.length) return "—";
 
   const isMentee = row.participantRole === MentorshipParticipantRoles.MENTEE;
@@ -193,9 +206,13 @@ const PairCell = ({ row, onOpenMeetings }) => {
             }`}
           >
             <span className="inline-flex flex-wrap items-center gap-x-2">
-              <span className="font-medium">
+              <Link
+                to={participantLink(pair.partner.id, roundId, pair.pairId)}
+                state={{ returnSearch }}
+                className="font-medium hover:underline"
+              >
                 {`with ${partnerName} (${pair.partner.id})`}
-              </span>
+              </Link>
               {ended && (
                 <span className="rounded border border-slate-200 px-1 text-[10px]">
                   Ended
@@ -391,6 +408,7 @@ const ParticipantSearchCard = () => {
   const {
     meetings: activeMeetings,
     roundVersion: activeRoundVersion,
+    roundInProgress: activeRoundInProgress,
     loading: meetingLoading,
     error: meetingError,
     saveMeetingBatch,
@@ -423,7 +441,13 @@ const ParticipantSearchCard = () => {
 
   const notRegisteredData = () =>
     rows.map((row) => ({
-      name: <NameCell row={row} />,
+      name: (
+        <NameCell
+          row={row}
+          roundId={row.roundId ?? committedRoundId}
+          returnSearch={location.search}
+        />
+      ),
       admittedAs: row.admittedRoles.join(", "),
       internal: row.isInternal ? "Internal" : "External",
       account: accountCell(row),
@@ -461,7 +485,13 @@ const ParticipantSearchCard = () => {
               onCheckedChange={(checked) => setPicked([row], checked === true)}
             />
           ),
-          name: <NameCell row={row} />,
+          name: (
+            <NameCell
+              row={row}
+              roundId={row.roundId ?? committedRoundId}
+              returnSearch={location.search}
+            />
+          ),
           role: row.participantRole ?? "—",
           training: trainingLabel(
             row.participantRole === MentorshipParticipantRoles.MENTEE
@@ -478,6 +508,8 @@ const ParticipantSearchCard = () => {
           pair: (
             <PairCell
               row={row}
+              roundId={row.roundId ?? committedRoundId}
+              returnSearch={location.search}
               onOpenMeetings={(pair) => openMeetingsDialog(row, pair)}
             />
           ),
@@ -816,6 +848,7 @@ const ParticipantSearchCard = () => {
           loading={meetingLoading}
           error={meetingError}
           roundVersion={activeRoundVersion}
+          roundInProgress={activeRoundInProgress}
           onSave={handleMeetingSave}
         />
       </CardContent>

@@ -14,6 +14,9 @@ import ApprovalRequestDialog from "@/components/approval/ApprovalRequestDialog";
 import { accountLabel } from "@/utils/userName";
 import BlockPreflight from "@/pages/AdminAccounts/components/BlockPreflight";
 
+const DEFAULT_REQUEST_DESCRIPTION =
+  "This does not block anyone yet. It goes to the reviewer you name below, and nothing changes for this person until they approve it. You can change the reviewer or withdraw while it waits.";
+
 /**
  * Block someone, or ask a named reviewer to.
  *
@@ -32,7 +35,7 @@ import BlockPreflight from "@/pages/AdminAccounts/components/BlockPreflight";
  *          preflight?: {applicationCount: number, interviewTimes: string[]}|null,
  *          preflightError?: boolean, holders?: {userId: number, name: string}[],
  *          holdersError?: boolean, currentUserId?: number, onConfirm: Function,
- *          submitting?: boolean}} props
+ *          submitting?: boolean, requestDescription?: string}} props
  * @param {boolean} props.open Whether the dialog is showing.
  * @param {Function} props.onOpenChange Called with the next open state.
  * @param {"direct"|"request"} props.mode `direct` blocks immediately; `request`
@@ -59,6 +62,8 @@ import BlockPreflight from "@/pages/AdminAccounts/components/BlockPreflight";
  *   `reviewerId` is a number in request mode and null in direct mode, and
  *   `reason` is "" when a request gives none.
  * @param {boolean} [props.submitting] Disables both buttons while in flight.
+ * @param {string} [props.requestDescription] Request-mode description, for a
+ *   page that offers no way to change the reviewer or withdraw.
  * @returns {JSX.Element}
  */
 const BlockDialog = ({
@@ -74,6 +79,7 @@ const BlockDialog = ({
   currentUserId,
   onConfirm,
   submitting = false,
+  requestDescription = DEFAULT_REQUEST_DESCRIPTION,
 }) => {
   const isRequest = mode === "request";
   const [reason, setReason] = useState("");
@@ -102,7 +108,7 @@ const BlockDialog = ({
         open={open}
         onOpenChange={onOpenChange}
         title={name ? `${title} — ${name}` : title}
-        description="This does not block anyone yet. It goes to the reviewer you name below, and nothing changes for this person until they approve it. You can change the reviewer or withdraw while it waits."
+        description={requestDescription}
         reviewers={holders}
         reviewersError={holdersError}
         excludeUserIds={[currentUserId, account?.userId]}

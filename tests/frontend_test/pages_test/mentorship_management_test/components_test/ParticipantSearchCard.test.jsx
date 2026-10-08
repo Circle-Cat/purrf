@@ -69,6 +69,11 @@ const LocationProbe = () => {
   );
 };
 
+const StateProbe = () => {
+  const location = useLocation();
+  return <div data-testid="return-search">{location.state?.returnSearch}</div>;
+};
+
 const roundsLoaded = () =>
   waitFor(() => expect(screen.getByLabelText("Round")).toBeEnabled());
 
@@ -158,6 +163,7 @@ const resultsOf = (rows) => ({
 const meetingLogResponse = (roundVersion, meetingId) => ({
   data: {
     roundVersion,
+    roundInProgress: true,
     meetings: [
       {
         meetingId,
@@ -797,7 +803,33 @@ describe("ParticipantSearchCard", () => {
       const name = await screen.findByText("Alice Doe");
       const cell = cellOf(name, "Name");
       expect(within(cell).getByText("ID 11 · alice@x.com")).toBeInTheDocument();
-      expect(within(cell).queryByRole("link")).not.toBeInTheDocument();
+      const link = within(cell).getByRole("link", { name: "Alice Doe" });
+      expect(link).toHaveAttribute(
+        "href",
+        "/mentorship-management/participants/11?round=7",
+      );
+    });
+
+    it("carries the list's search to the detail page for Back", async () => {
+      searchParticipants.mockResolvedValue(resultsOf([participantRow()]));
+      getAllMentorshipRounds.mockResolvedValue({ data: TEST_ROUNDS });
+      const view = render(
+        <MemoryRouter initialEntries={["/?round=7&q=alice"]}>
+          <Routes>
+            <Route path="/" element={<ParticipantSearchCard />} />
+            <Route
+              path="/mentorship-management/participants/:userId"
+              element={<StateProbe />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+      await userEvent.click(
+        await view.findByRole("link", { name: "Alice Doe" }),
+      );
+      expect(screen.getByTestId("return-search")).toHaveTextContent(
+        "?round=7&q=alice",
+      );
     });
 
     it("leaves the email off the ID line when there is none", async () => {
@@ -837,7 +869,12 @@ describe("ParticipantSearchCard", () => {
       await renderCard({ url: SEARCHED_PARTICIPANTS });
 
       const pair = cellOf(await screen.findByText("Alice Doe"), "Pair");
-      expect(within(pair).getByText("with Bob Smith (22)")).toBeInTheDocument();
+      expect(
+        within(pair).getByRole("link", { name: "with Bob Smith (22)" }),
+      ).toHaveAttribute(
+        "href",
+        "/mentorship-management/participants/22?round=7&pair=80",
+      );
       expect(
         within(pair).getByRole("button", { name: "Meetings 2/5" }),
       ).toBeInTheDocument();
@@ -1146,6 +1183,18 @@ describe("ParticipantSearchCard", () => {
       ).toBeGreaterThan(0);
     });
 
+    it("links each name to the person's page in the selected round", async () => {
+      searchUnregistered.mockResolvedValue({
+        data: { rows: [unregisteredRow()], total: 1 },
+      });
+      await renderCard({ url: "/?round=7&notRegistered=1" });
+
+      const link = await screen.findByRole("link", { name: "Dana Wu" });
+      expect(link.getAttribute("href")).toBe(
+        "/mentorship-management/participants/31?round=7",
+      );
+    });
+
     it("swaps the table for the not registered people of the round", async () => {
       searchParticipants.mockResolvedValue(resultsOf([participantRow()]));
       searchUnregistered.mockResolvedValue({
@@ -1426,6 +1475,26 @@ describe("ParticipantSearchCard", () => {
   });
 
   describe("meetings", () => {
+    it("opens a past round's meeting log read-only", async () => {
+      searchParticipants.mockResolvedValue(resultsOf([participantRow()]));
+      getMeetingLog.mockResolvedValue({
+        data: {
+          ...meetingLogResponse("v2", "gm-80-1").data,
+          roundInProgress: false,
+        },
+      });
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Meetings 2/5" }),
+      );
+
+      await screen.findByText("2024-03-01 · 15:30 - 16:30");
+      expect(
+        screen.queryByRole("button", { name: "Edit" }),
+      ).not.toBeInTheDocument();
+    });
+
     it("opens the meeting log from the button in the Pair cell", async () => {
       searchParticipants.mockResolvedValue(resultsOf([participantRow()]));
       await renderCard({ url: SEARCHED_PARTICIPANTS });
