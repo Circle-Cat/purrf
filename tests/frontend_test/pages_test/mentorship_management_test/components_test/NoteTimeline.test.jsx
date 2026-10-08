@@ -49,6 +49,19 @@ describe("NoteTimeline", () => {
     expect(items[1]).toHaveTextContent("Dana Wu");
   });
 
+  it("names the author without an ID, and falls back to the ID alone", () => {
+    renderTimeline({
+      notes: [
+        noteOf({ noteId: 2, author: { userId: 12, name: "Eve Ko" } }),
+        noteOf({ noteId: 1, author: { userId: 31, name: null } }),
+      ],
+    });
+    const items = screen.getAllByRole("listitem");
+    expect(items[0]).toHaveTextContent("Eve Ko ·");
+    expect(items[0]).not.toHaveTextContent("ID 12");
+    expect(items[1]).toHaveTextContent("User 31 ·");
+  });
+
   it("labels tagged notes and marks the ones an approval wrote", () => {
     renderTimeline({
       notes: [

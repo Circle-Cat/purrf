@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { addParticipantNote } from "@/api/mentorshipApi";
 import { formatInTz } from "@/utils/dateTime";
+import { unresolvedPersonLabel } from "@/pages/Recruiting/components/personLabel";
 import { MEETING_TIMEZONE } from "@/pages/MentorshipManagement/utils/attendanceIssues";
 
 // The backend refuses anything longer.
@@ -132,9 +133,8 @@ const NoteTimeline = ({ notes, roundId, userId, canAdd, onAdded }) => {
                   <Badge variant="secondary">{TAG_LABELS[note.tag]}</Badge>
                 )}
                 <span>
-                  {note.author?.name
-                    ? `${note.author.name} (ID ${note.author.userId})`
-                    : `ID ${note.author?.userId}`}{" "}
+                  {note.author?.name ??
+                    unresolvedPersonLabel(note.author?.userId)}{" "}
                   ·{" "}
                   {formatInTz(
                     note.createdAt,
