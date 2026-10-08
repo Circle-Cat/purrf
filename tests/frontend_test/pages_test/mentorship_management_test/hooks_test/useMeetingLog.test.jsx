@@ -40,8 +40,12 @@ describe("useMeetingLog", () => {
   });
 
   it("treats a response without roundInProgress as not in progress", async () => {
+    const meetings = [{ meetingId: "gm-80-1", note: [] }];
+    api.getMeetingLog.mockResolvedValue(log(meetings, "v2"));
     const { result } = renderHook(() => useMeetingLog(80, true));
-    await waitFor(() => expect(api.getMeetingLog).toHaveBeenCalled());
+    // Wait for the response to land, so the assertion reads what it set.
+    await waitFor(() => expect(result.current.meetings).toEqual(meetings));
+    expect(result.current.loading).toBe(false);
     expect(result.current.roundInProgress).toBe(false);
   });
 
