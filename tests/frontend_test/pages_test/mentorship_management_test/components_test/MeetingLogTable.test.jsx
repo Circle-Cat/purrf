@@ -108,11 +108,9 @@ describe("useMeetingLogEditor", () => {
   });
 
   it("on failure, toasts the server message and keeps the pending edits", async () => {
-    const onSave = vi
-      .fn()
-      .mockRejectedValue({
-        response: { data: { message: "Round has ended" } },
-      });
+    const onSave = vi.fn().mockRejectedValue({
+      response: { data: { message: "Round has ended" } },
+    });
     const { result } = renderHook(() =>
       useMeetingLogEditor({ meetings: [meeting()], onSave }),
     );
