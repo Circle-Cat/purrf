@@ -225,3 +225,9 @@ variable "gmail_watch_topic_owner" {
   type        = bool
   default     = false
 }
+
+variable "pubsub_event_push_enabled" {
+  description = "Deliver Google Chat, Microsoft Teams and Gerrit events by Pub/Sub push through the gateway Worker instead of leaving them for the hourly sync pull. The Worker route, the Access application destination and the backend endpoint must all be live in this environment before it is turned on."
+  type        = bool
+  default     = false
+}
