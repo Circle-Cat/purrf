@@ -1,5 +1,4 @@
 import { useState } from "react";
-import DOMPurify from "dompurify";
 import {
   AlertTriangle,
   ArrowDownLeft,
@@ -11,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { inboxAttachmentUrl } from "@/api/inboxApi";
 import { SenderName } from "@/pages/Inbox/ThreadList";
+import { EMAIL_BODY_BOX_CLASS, sanitizeEmailBody } from "@/utils/emailHtml";
 import {
   MACHINE_TAG_LABELS,
   SERVICES,
@@ -33,7 +33,7 @@ const toHtml = (text) =>
 const Message = ({ threadId, message }) => {
   const machine = message.inboundKind in MACHINE_TAG_LABELS;
   const inbound = message.direction === "inbound";
-  const html = message.bodyHtml ? DOMPurify.sanitize(message.bodyHtml) : null;
+  const html = message.bodyHtml ? sanitizeEmailBody(message.bodyHtml) : null;
   return (
     <li
       aria-label={`Message ${message.messageId}`}
@@ -77,7 +77,7 @@ const Message = ({ threadId, message }) => {
       </dl>
       {html != null ? (
         <div
-          className="mt-2 max-w-none [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_ul]:list-disc [&_ul]:pl-5"
+          className={`mt-2 max-w-none ${EMAIL_BODY_BOX_CLASS} [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_ul]:list-disc [&_ul]:pl-5`}
           dangerouslySetInnerHTML={{ __html: html }}
         />
       ) : (
