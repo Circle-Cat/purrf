@@ -85,33 +85,169 @@ describe("AssignDialog", () => {
     expect(onAssign).toHaveBeenCalledWith({ userId: 9, roundId: 1 });
   });
 
-  it("assigns a job for Recruiting and shows the fallback note", async () => {
-    api.getInboxAssignOptions.mockResolvedValue({
-      data: {
-        jobs: [
-          {
-            jobId: 3,
-            title: "Engineer",
-            applicationId: 40,
-            applicationStatus: "Interview",
-            fallback: true,
-          },
-        ],
+  const recruitingOptions = (jobs) => ({
+    success: true,
+    message: "",
+    data: { jobs },
+  });
+
+  const engineer = {
+    jobId: 3,
+    title: "Engineer",
+    applications: [
+      {
+        applicationId: 52,
+        stage: "rejected",
+        appliedAt: "2026-09-20T12:00:00Z",
       },
-    });
+      { applicationId: 41, stage: "tech", appliedAt: "2026-09-03T12:00:00Z" },
+      {
+        applicationId: 30,
+        stage: "rejected",
+        appliedAt: "2026-06-01T12:00:00Z",
+      },
+    ],
+  };
+  const designer = {
+    jobId: 8,
+    title: "Designer",
+    applications: [
+      {
+        applicationId: 77,
+        stage: "rejected",
+        appliedAt: "2026-08-15T12:00:00Z",
+      },
+      {
+        applicationId: 61,
+        stage: "rejected",
+        appliedAt: "2026-05-02T12:00:00Z",
+      },
+    ],
+  };
+
+  it("defaults to the live application and assigns it for Recruiting", async () => {
+    api.getInboxAssignOptions.mockResolvedValue(
+      recruitingOptions([engineer, designer]),
+    );
     const { onAssign } = setup(thread({ service: "recruiting" }));
-    const select = await screen.findByLabelText("Job");
-    expect(screen.getByRole("button", { name: "Assign" })).toBeDisabled();
-    fireEvent.change(select, { target: { value: "3" } });
+    const job = await screen.findByLabelText("Job");
     expect(
-      screen.getByText(/most recent application #40 \(Interview\)/),
+      screen.getByText("Only employment jobs this person applied to."),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Application")).toBeNull();
+    expect(screen.getByRole("button", { name: "Assign" })).toBeDisabled();
+    fireEvent.change(job, { target: { value: "3" } });
+    const app = screen.getByLabelText("Application");
+    expect(app).toHaveValue("41");
+    expect(
+      screen.getByRole("option", { name: "#41 · Tech · Applied Sep 3, 2026" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", {
+        name: "#52 · Rejected · Applied Sep 20, 2026",
+      }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Assign" }));
-    expect(onAssign).toHaveBeenCalledWith({ userId: 7, jobId: 3 });
+    expect(onAssign).toHaveBeenCalledWith({ userId: 7, applicationId: 41 });
+  });
+
+  it("defaults to the newest application when all are rejected", async () => {
+    api.getInboxAssignOptions.mockResolvedValue(recruitingOptions([designer]));
+    setup(thread({ service: "recruiting" }));
+    fireEvent.change(await screen.findByLabelText("Job"), {
+      target: { value: "8" },
+    });
+    expect(screen.getByLabelText("Application")).toHaveValue("77");
+  });
+
+  it("resets the application when the job changes", async () => {
+    api.getInboxAssignOptions.mockResolvedValue(
+      recruitingOptions([engineer, designer]),
+    );
+    const { onAssign } = setup(thread({ service: "recruiting" }));
+    const job = await screen.findByLabelText("Job");
+    fireEvent.change(job, { target: { value: "3" } });
+    fireEvent.change(screen.getByLabelText("Application"), {
+      target: { value: "30" },
+    });
+    expect(screen.getByLabelText("Application")).toHaveValue("30");
+    fireEvent.change(job, { target: { value: "8" } });
+    expect(screen.getByLabelText("Application")).toHaveValue("77");
+    fireEvent.change(job, { target: { value: "" } });
+    expect(screen.queryByLabelText("Application")).toBeNull();
+    expect(screen.getByRole("button", { name: "Assign" })).toBeDisabled();
+    fireEvent.change(job, { target: { value: "3" } });
+    expect(screen.getByLabelText("Application")).toHaveValue("41");
+    fireEvent.click(screen.getByRole("button", { name: "Assign" }));
+    expect(onAssign).toHaveBeenCalledWith({ userId: 7, applicationId: 41 });
+  });
+
+  it("shows the select even for a single application", async () => {
+    api.getInboxAssignOptions.mockResolvedValue(
+      recruitingOptions([
+        {
+          jobId: 5,
+          title: "Analyst",
+          applications: [
+            {
+              applicationId: 90,
+              stage: "recruiter_screening",
+              appliedAt: "2026-10-01T12:00:00Z",
+            },
+          ],
+        },
+      ]),
+    );
+    const { onAssign } = setup(thread({ service: "recruiting" }));
+    fireEvent.change(await screen.findByLabelText("Job"), {
+      target: { value: "5" },
+    });
+    expect(screen.getByLabelText("Application")).toHaveValue("90");
+    expect(
+      screen.getByRole("option", {
+        name: "#90 · Recruiter screening · Applied Oct 1, 2026",
+      }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Assign" }));
+    expect(onAssign).toHaveBeenCalledWith({ userId: 7, applicationId: 90 });
+  });
+
+  it("resets job and application when the person changes", async () => {
+    api.searchInboxPeople.mockResolvedValue({
+      success: true,
+      message: "",
+      data: [{ userId: 9, name: "Lee Ann", email: "lee@example.com" }],
+    });
+    api.getInboxAssignOptions.mockImplementation((_id, userId) =>
+      Promise.resolve(
+        recruitingOptions(userId === 7 ? [engineer] : [designer]),
+      ),
+    );
+    const { onAssign } = setup(thread({ service: "recruiting" }));
+    fireEvent.change(await screen.findByLabelText("Job"), {
+      target: { value: "3" },
+    });
+    expect(screen.getByLabelText("Application")).toHaveValue("41");
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    fireEvent.change(screen.getByLabelText("Search people"), {
+      target: { value: "lee" },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: /Lee Ann/ }));
+    expect(await screen.findByLabelText("Job")).toHaveValue("");
+    expect(api.getInboxAssignOptions).toHaveBeenLastCalledWith(1, 9);
+    expect(screen.queryByLabelText("Application")).toBeNull();
+    expect(screen.getByRole("button", { name: "Assign" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Job"), { target: { value: "8" } });
+    fireEvent.click(screen.getByRole("button", { name: "Assign" }));
+    expect(onAssign).toHaveBeenCalledWith({ userId: 9, applicationId: 77 });
   });
 
   it("explains when a Recruiting person has no jobs", async () => {
-    api.getInboxAssignOptions.mockResolvedValue({ data: { jobs: [] } });
+    api.getInboxAssignOptions.mockResolvedValue({
+      success: true,
+      message: "",
+      data: { jobs: [] },
+    });
     setup(thread({ service: "recruiting" }));
     expect(await screen.findByText(/can't be assigned/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Assign" })).toBeDisabled();
