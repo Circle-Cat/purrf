@@ -33,6 +33,28 @@ resource "google_pubsub_subscription" "subscriptions" {
     dead_letter_topic     = google_pubsub_topic.dlq[each.key].id
     max_delivery_attempts = each.value.max_delivery_attempts
   }
+
+  # Signs as the notification pusher, like the Gmail push subscription, so the
+  # gateway Worker's ALLOWED_SUBS and the backend's NOTIFICATION_PUSHER_SUBS
+  # already admit it.
+  dynamic "push_config" {
+    for_each = each.value.push_path == null ? [] : [each.value.push_path]
+    content {
+      push_endpoint = "https://${local.domains.hook}${push_config.value}"
+      oidc_token {
+        service_account_email = google_service_account.notification_pusher.email
+        audience              = "purrf"
+      }
+    }
+  }
+
+  dynamic "retry_policy" {
+    for_each = each.value.push_path == null ? [] : [each.value.push_path]
+    content {
+      minimum_backoff = "10s"
+      maximum_backoff = "600s"
+    }
+  }
 }
 
 # Subscribe to all DLQ topics for easier failure message inspection
