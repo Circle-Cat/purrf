@@ -1,7 +1,11 @@
 import unittest
 from datetime import datetime, timezone
 
-from backend.common.communication_enums import ContextType, EmailDirection
+from backend.common.communication_enums import (
+    ContextType,
+    EmailDirection,
+    InboundKind,
+)
 from backend.common.mentorship_enums import CommunicationMethod
 from backend.entity.email_message_entity import EmailMessageEntity
 from backend.entity.email_thread_entity import EmailThreadEntity
@@ -56,6 +60,30 @@ class TestEmailMessageRepository(BaseRepositoryTestLib):
                 direction=EmailDirection.OUTBOUND,
             )
         ])
+
+    async def test_create_keeps_kind_and_attachments(self):
+        msg = await self.repo.create(
+            self.session,
+            thread_id=self.thread.thread_id,
+            gmail_message_id="m-kind",
+            direction=EmailDirection.INBOUND,
+            inbound_kind=InboundKind.AUTO_REPLY,
+            attachments=[
+                {"name": "cv.pdf", "size": 1024, "gmailAttachmentId": "att-1"}
+            ],
+        )
+        self.assertEqual(msg.inbound_kind, "auto_reply")
+        self.assertEqual(msg.attachments[0]["name"], "cv.pdf")
+
+    async def test_create_defaults_kind_and_attachments_to_none(self):
+        msg = await self.repo.create(
+            self.session,
+            thread_id=self.thread.thread_id,
+            gmail_message_id="m-plain",
+            direction=EmailDirection.OUTBOUND,
+        )
+        self.assertIsNone(msg.inbound_kind)
+        self.assertIsNone(msg.attachments)
 
     async def test_create_keeps_a_bounce_failed_recipients(self):
         bounce = await self.repo.create(

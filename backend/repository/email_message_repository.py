@@ -25,6 +25,8 @@ class EmailMessageRepository:
         sent_by_user_id: int | None = None,
         gmail_internal_date: datetime | None = None,
         failed_recipients: str | None = None,
+        inbound_kind: str | None = None,
+        attachments: list[dict] | None = None,
     ) -> EmailMessageEntity:
         """Insert one message row.
 
@@ -33,7 +35,7 @@ class EmailMessageRepository:
             thread_id (int): The owning thread.
             gmail_message_id (str): Gmail's message id (unique; upsert key).
             direction (str): An ``EmailDirection`` value.
-            from_address..failed_recipients: Message fields (see entity).
+            from_address..attachments: Message fields (see entity).
 
         Returns:
             EmailMessageEntity: The created row (with ``message_id`` populated).
@@ -52,6 +54,8 @@ class EmailMessageRepository:
             sent_by_user_id=sent_by_user_id,
             gmail_internal_date=gmail_internal_date,
             failed_recipients=failed_recipients,
+            inbound_kind=inbound_kind,
+            attachments=attachments,
         )
         session.add(entity)
         await session.flush()

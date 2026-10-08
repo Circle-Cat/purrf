@@ -25,6 +25,14 @@ py_test(
 )
 
 py_test(
+    name = "communication_enums_test",
+    srcs = ["communication_enums_test.py"],
+    deps = [
+        "//backend/common:communication_enums",
+    ],
+)
+
+py_test(
     name = "permission_descriptions_test",
     srcs = ["permission_descriptions_test.py"],
     deps = [

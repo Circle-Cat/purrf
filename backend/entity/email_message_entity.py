@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.common.base import Base
@@ -53,6 +54,9 @@ class EmailMessageEntity(Base):
     gmail_internal_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), index=True
     )
+    inbound_kind: Mapped[str | None] = mapped_column(String)
+    # Metadata only: [{"name", "size", "gmailAttachmentId"}].
+    attachments: Mapped[list | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

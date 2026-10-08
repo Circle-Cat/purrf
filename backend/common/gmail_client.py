@@ -44,7 +44,7 @@ from datetime import datetime, timezone
 from email.message import Message
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.utils import make_msgid, parseaddr
+from email.utils import getaddresses, make_msgid, parseaddr
 from html import unescape
 from http import HTTPStatus
 
@@ -300,7 +300,10 @@ class GmailClient:
             dict: Keys ``gmail_message_id``, ``gmail_thread_id``,
             ``rfc822_message_id``, ``from_address``, ``to_addresses``,
             ``subject``, ``html``, ``plain``, ``snippet``,
-            ``gmail_internal_date``.
+            ``gmail_internal_date``, ``failed_recipients``, ``recipients``
+            (To, Cc and every Delivered-To, lower-cased, de-duplicated),
+            ``auto_submitted``, ``precedence`` and ``attachments`` (a list of
+            ``{"name", "size", "gmailAttachmentId"}``).
 
         Raises:
             RateLimitedError: If Gmail throttles the request (HTTP 429).
@@ -314,6 +317,50 @@ class GmailClient:
             .get(userId=_GMAIL_USER, id=message_id, format="full")
         )
         return self._parse_message(self._execute(request, "get_message"))
+
+    def get_attachment(self, message_id, attachment_id):
+        """Download one attachment of a message.
+
+        Args:
+            message_id (str): Gmail message id.
+            attachment_id (str): ``gmailAttachmentId`` from ``get_message``.
+
+        Returns:
+            bytes: The decoded attachment content.
+
+        Raises:
+            RateLimitedError: If Gmail throttles the request (HTTP 429).
+            RuntimeError: For any other Gmail API failure.
+        """
+        request = (
+            self._get_service()
+            .users()
+            .messages()
+            .attachments()
+            .get(userId=_GMAIL_USER, messageId=message_id, id=attachment_id)
+        )
+        response = self._execute(request, "get_attachment")
+        return base64.urlsafe_b64decode(response["data"].encode("ascii"))
+
+    def list_send_as_addresses(self):
+        """Return the mailbox's Send-As addresses, lower-cased.
+
+        Returns:
+            set[str]: Every ``sendAsEmail`` configured on the mailbox.
+
+        Raises:
+            RateLimitedError: If Gmail throttles the request (HTTP 429).
+            RuntimeError: For any other Gmail API failure.
+        """
+        request = (
+            self._get_service().users().settings().sendAs().list(userId=_GMAIL_USER)
+        )
+        response = self._execute(request, "list_send_as_addresses")
+        return {
+            entry["sendAsEmail"].strip().lower()
+            for entry in response.get("sendAs", [])
+            if entry.get("sendAsEmail")
+        }
 
     def get_messages(self, message_ids):
         """
@@ -693,6 +740,16 @@ class GmailClient:
             for header in payload.get("headers", [])
         }
         html_body, plain_body = self._extract_bodies(payload)
+        raw_headers = payload.get("headers", [])
+
+        def _all(name):
+            return [h["value"] for h in raw_headers if h["name"].lower() == name]
+
+        recipients = []
+        for _, addr in getaddresses(_all("to") + _all("cc") + _all("delivered-to")):
+            addr = addr.strip().lower()
+            if addr and addr not in recipients:
+                recipients.append(addr)
         return {
             "gmail_message_id": message.get("id"),
             "gmail_thread_id": message.get("threadId"),
@@ -705,7 +762,28 @@ class GmailClient:
             "snippet": message.get("snippet"),
             "gmail_internal_date": message.get("internalDate"),
             "failed_recipients": self._failed_recipients(headers),
+            "recipients": recipients,
+            "auto_submitted": headers.get("auto-submitted"),
+            "precedence": headers.get("precedence"),
+            "attachments": self._extract_attachments(payload),
         }
+
+    @staticmethod
+    def _extract_attachments(payload):
+        """List the named attachment parts of a payload, without their bytes."""
+        attachments = []
+        stack = [payload]
+        while stack:
+            part = stack.pop()
+            body = part.get("body", {})
+            if part.get("filename") and body.get("attachmentId"):
+                attachments.append({
+                    "name": part["filename"],
+                    "size": body.get("size", 0),
+                    "gmailAttachmentId": body["attachmentId"],
+                })
+            stack.extend(reversed(part.get("parts", []) or []))
+        return attachments
 
     @staticmethod
     def _failed_recipients(headers):
