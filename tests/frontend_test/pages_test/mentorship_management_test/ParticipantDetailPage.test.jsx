@@ -116,6 +116,17 @@ describe("ParticipantDetailPage", () => {
     await waitFor(() => expect(getMeetingLog).toHaveBeenCalledWith(80));
   });
 
+  it("says once, for the whole page, that times are Pacific", async () => {
+    renderPage();
+    await waitFor(() => expect(getMeetingLog).toHaveBeenCalledWith(80));
+    expect(
+      screen.getAllByText(/^All times .* America\/Los_Angeles\.$/),
+    ).toHaveLength(1);
+    expect(
+      screen.getByText("All times on this page are in America/Los_Angeles."),
+    ).toBeInTheDocument();
+  });
+
   it("opens the pair named in the URL, not the others", async () => {
     getParticipantDetail.mockResolvedValue({
       data: detailOf({

@@ -123,9 +123,6 @@ const PairSection = ({
 
       {open && (
         <div className="border-t border-slate-100 px-4 py-3">
-          <p className="mb-2 text-xs text-slate-500">
-            All times are in {MEETING_TIMEZONE}.
-          </p>
           {loading ? (
             <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />

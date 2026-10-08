@@ -32,6 +32,7 @@ import NoteTimeline from "@/pages/MentorshipManagement/components/NoteTimeline";
 import ParticipantFeedback from "@/pages/MentorshipManagement/components/ParticipantFeedback";
 import ParticipationHistory from "@/pages/MentorshipManagement/components/ParticipationHistory";
 import BlockFromPurrf from "@/pages/MentorshipManagement/components/BlockFromPurrf";
+import { MEETING_TIMEZONE } from "@/pages/MentorshipManagement/utils/attendanceIssues";
 
 /**
  * The round to open when the URL names none: the latest round this person
@@ -247,6 +248,9 @@ const ParticipantDetailPage = () => {
           <div>
             <h2 className="text-lg font-semibold">{name}</h2>
             <p className="text-sm text-muted-foreground">{idLine}</p>
+            <p className="text-xs text-muted-foreground">
+              All times on this page are in {MEETING_TIMEZONE}.
+            </p>
             <div className="mt-1">
               <StateChips
                 isActive={!person.isDeactivated}
