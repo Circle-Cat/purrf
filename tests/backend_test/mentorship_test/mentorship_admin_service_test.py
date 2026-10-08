@@ -112,6 +112,14 @@ def _round_in_progress():
     )
 
 
+def _round_ended():
+    now = datetime.now(timezone.utc)
+    return MagicMock(
+        promotion_start_at=now - timedelta(days=200),
+        feedback_deadline_at=now - timedelta(days=1),
+    )
+
+
 class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.mock_users_repo = MagicMock()
@@ -183,6 +191,48 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             matching_eligibility_service=self.mock_eligibility,
             mentorship_approval_service=self.mock_approvals,
         )
+
+    async def test_meeting_log_says_whether_its_round_is_in_progress(self):
+        pair = _make_pair()
+        pair.round_id = 7
+        self.mock_pairs_repo.get_pair_by_id.return_value = pair
+
+        self.mock_rounds_repo.get_by_round_id.return_value = _round_in_progress()
+        live = await self.service.get_meeting_log(self.mock_session, pair_id=1)
+        self.mock_rounds_repo.get_by_round_id.return_value = _round_ended()
+        ended = await self.service.get_meeting_log(self.mock_session, pair_id=1)
+
+        self.assertTrue(live.round_in_progress)
+        self.assertFalse(ended.round_in_progress)
+        self.mock_rounds_repo.get_by_round_id.assert_awaited_with(
+            self.mock_session, 7
+        )
+
+    async def test_apply_batch_refuses_a_round_that_has_ended(self):
+        """A past round's meeting log is history: nothing is deleted or
+        changed, and the refusal names its code for the page."""
+        pair = _make_pair()
+        google = _make_meeting(meeting_id="google-1", is_completed=False)
+        self.mock_pairs_repo.get_pair_by_id.return_value = pair
+        self.mock_meeting_repo.get_meetings_by_pair.return_value = [google]
+        self.mock_rounds_repo.get_by_round_id.return_value = _round_ended()
+
+        with self.assertRaises(ConflictError) as caught:
+            await self.service.apply_v2_meeting_batch(
+                self.mock_session,
+                1,
+                V2MeetingBatchUpdateDto(
+                    updates=[
+                        V2MeetingUpdateItemDto(meeting_id="google-1", is_completed=True)
+                    ],
+                    deletes=[],
+                ),
+            )
+
+        self.assertEqual(caught.exception.code, "round_not_in_progress")
+        self.assertFalse(google.is_completed)
+        self.mock_meeting_repo.delete_meetings.assert_not_awaited()
+        self.mock_session.commit.assert_not_awaited()
 
     async def test_unregistered_unknown_round_raises(self):
         self.mock_rounds_repo.get_by_round_id.return_value = None

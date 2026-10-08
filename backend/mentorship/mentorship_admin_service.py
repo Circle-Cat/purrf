@@ -452,6 +452,21 @@ class MentorshipAdminService:
             raise ValueError(f"Mentorship round {round_id} is not in progress.")
         return round_entity
 
+    async def _round_in_progress(self, session: AsyncSession, round_id: int) -> bool:
+        """Whether a round exists and is in progress now.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round.
+
+        Returns:
+            bool: False for an unknown round too.
+        """
+        round_entity = await self.rounds_repository.get_by_round_id(session, round_id)
+        return round_entity is not None and is_in_progress(
+            round_entity, datetime.now(timezone.utc)
+        )
+
     async def search_unregistered(
         self,
         session: AsyncSession,
@@ -777,7 +792,7 @@ class MentorshipAdminService:
         Args:
             session (AsyncSession): Active database async session.
             pair: The pair to build a meeting log for. Must have `pair_id`,
-                `mentor_id`, and `mentee_id` populated.
+                `round_id`, `mentor_id`, and `mentee_id` populated.
 
         Returns:
             AdminMeetingLogDto: The pair's meeting log built from rows.
@@ -803,7 +818,11 @@ class MentorshipAdminService:
             for m in meetings
         ]
 
-        return AdminMeetingLogDto(round_version=round_version, meetings=meeting_dtos)
+        return AdminMeetingLogDto(
+            round_version=round_version,
+            meetings=meeting_dtos,
+            round_in_progress=await self._round_in_progress(session, pair.round_id),
+        )
 
     def _validate_note_tags(self, note: list[MeetingNoteTag] | None) -> None:
         """
@@ -919,7 +938,9 @@ class MentorshipAdminService:
                 to a MANUAL row (v1, read-only history). The check is
                 per-row, not per-pair -- a pair holding both MANUAL and
                 GOOGLE rows may still have its GOOGLE rows edited freely;
-                only a targeted row that is itself MANUAL is rejected.
+                only a targeted row that is itself MANUAL is rejected. Also
+                raised, with code ``round_not_in_progress``, when the pair's
+                round is not in progress: a past round's log is read-only.
         """
         if not batch.updates and not batch.deletes:
             raise ValueError("updates and deletes must not both be empty.")
@@ -939,6 +960,11 @@ class MentorshipAdminService:
         )
         if pair is None:
             raise ValueError(f"Mentorship pair {pair_id} not found.")
+        if not await self._round_in_progress(session, pair.round_id):
+            raise ConflictError(
+                "Meetings of a round that is not in progress cannot be edited.",
+                code="round_not_in_progress",
+            )
 
         meetings = await self.mentorship_meeting_repository.get_meetings_by_pair(
             session, pair_id
