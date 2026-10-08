@@ -6,12 +6,16 @@ tracked thread is handed to whichever domain registered its ``context_type``.
 Because the cursor is shared, one domain's failure must not hold back the
 others, so a thread that fails to sync is rolled back, logged and skipped
 while the cursor still moves forward; unless Gmail says the thread is gone,
-ops.maintain holders are told to run a full resync for it. The state row is locked with
+ops.maintain holders are told to run a full resync for it. The exception is
+an untracked thread the Inbox router could not read because Gmail was busy:
+a full resync never sees an untracked thread, so the cursor stays put and the
+push is retried. The state row is locked with
 ``SELECT ... FOR UPDATE`` for the whole run, which makes concurrent pushes for
 the same mailbox run one at a time.
 """
 
 import asyncio
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import StrEnum
 
@@ -24,6 +28,7 @@ from backend.common.exceptions import (
 
 _NO_TOPIC = "GMAIL_WATCH_TOPIC is not set"
 _LISTED_THREADS = 10
+_RETRYABLE = (GmailUnavailableError, RateLimitedError)
 
 
 class PushOutcome(StrEnum):
@@ -46,13 +51,37 @@ def _now():
 
 
 def _empty_summary():
-    return {"threads": 0, "newMessages": 0, "failed": 0}
+    return {"threads": 0, "newMessages": 0, "failed": 0, "unrouted": []}
 
 
 def _list_threads(gmail_thread_ids):
     listed = ", ".join(gmail_thread_ids[:_LISTED_THREADS])
     more = len(gmail_thread_ids) - _LISTED_THREADS
     return f"{listed} and {more} more" if more > 0 else listed
+
+
+@dataclass
+class _Failures:
+    tracked: list = field(default_factory=list)  # a full resync repairs these
+    unclaimed: list = field(default_factory=list)  # untracked, not retried
+    retry_thread: str | None = None  # untracked, Gmail busy: keep the cursor
+    retry_error: Exception | None = None
+
+
+def _failure_detail(failures):
+    parts = []
+    if failures.tracked:
+        parts.append(
+            f"Syncing Gmail threads {_list_threads(failures.tracked)} failed; "
+            "a manual full resync repairs them."
+        )
+    if failures.unclaimed:
+        parts.append(
+            f"New Gmail threads {_list_threads(failures.unclaimed)} could not be "
+            "checked for Inbox mail and will not be retried; a full resync does "
+            "not cover them, so look at them in Gmail."
+        )
+    return " ".join(parts)
 
 
 def _record_error(state, exc):
@@ -71,6 +100,7 @@ class GmailSyncService:
         watch_topic,
         database,
         logger,
+        inbox_router,
     ):
         """
         Args:
@@ -84,6 +114,7 @@ class GmailSyncService:
             database (Database): Opens a fresh session to record a failure
                 when the caller's session is no longer usable.
             logger: Application logger.
+            inbox_router (InboxRouter): Claims untracked threads for the Inbox.
         """
         self._gmail = gmail_client
         self._states = state_repository
@@ -93,6 +124,7 @@ class GmailSyncService:
         self._watch_topic = watch_topic
         self._database = database
         self._logger = logger
+        self._inbox_router = inbox_router
         self._mailbox = None
 
     async def mailbox_address(self):
@@ -252,47 +284,80 @@ class GmailSyncService:
         except Exception as exc:
             return await self._on_gmail_error(session, state, exc, is_push)
 
-        summary, transient = await self._sync_threads(session, history["thread_ids"])
+        summary, failures = await self._sync_threads(
+            session,
+            history["thread_ids"],
+            history["sent_only_thread_ids"],
+            mailbox,
+        )
 
         # A rolled-back savepoint may have expired the state row; re-read it.
         state = await self._states.get_for_update(session, mailbox)
+        if failures.retry_error is not None:
+            return await self._keep_cursor_for_retry(
+                session, state, failures, is_push, summary
+            )
         state.last_history_id = max(state.last_history_id, history["history_id"])
         if is_push:
             state.last_push_at = _now()
         if summary["failed"] == 0:
             state.last_error = None
-        if transient:
-            # The cursor has moved past these threads, so only a full resync
-            # picks their messages up again.
-            listed = _list_threads(transient)
+        if failures.tracked or failures.unclaimed:
+            # The cursor has moved past these threads.
+            listed = _list_threads(failures.tracked + failures.unclaimed)
             state.last_error = f"Syncing Gmail threads failed: {listed}"
             state.last_error_at = _now()
             await self._alerts.raise_alert(
                 session,
                 state=state,
                 kind="sync_failed",
+                detail=_failure_detail(failures),
+            )
+        if summary["unrouted"]:
+            await self._alerts.raise_alert(
+                session,
+                state=state,
+                kind="unrouted_mail",
                 detail=(
-                    f"Syncing Gmail threads {listed} failed; a manual full "
-                    "resync repairs them."
+                    f"New mail in Gmail threads {_list_threads(summary['unrouted'])} "
+                    "was addressed to no Inbox alias and stays in Gmail only."
                 ),
             )
         await session.commit()
         return PushOutcome.ACK, summary
 
-    async def _sync_threads(self, session, thread_ids):
-        """Returns (summary, ids of threads that failed for a reason other than 404)."""
+    async def _sync_threads(self, session, thread_ids, sent_only, mailbox_address):
+        """Returns (summary, _Failures). 404s are counted but not listed.
+
+        An untracked thread is offered to the Inbox router first, unless its
+        new messages are all our own sent mail. A created thread is kept even
+        when its handler then fails, so a full resync can still pick it up.
+        The loop stops at the first untracked thread Gmail was too busy to
+        read, since only a retry from the same cursor reaches it again.
+        """
         summary = _empty_summary()
-        transient = []
+        failures = _Failures()
         for gmail_thread_id in sorted(thread_ids):
             thread = await self._threads.get_by_gmail_thread_id(
                 session, gmail_thread_id
             )
-            if thread is None:
+            if thread is None and gmail_thread_id in sent_only:
                 continue
-            handler = self._registry.get(thread.context_type)
-            if handler is None:
-                continue
+            claiming = thread is None
             try:
+                if claiming:
+                    routed = await self._inbox_router.route(
+                        session, gmail_thread_id, mailbox_address
+                    )
+                    claiming = False
+                    if routed.unrouted:
+                        summary["unrouted"].append(gmail_thread_id)
+                    thread = routed.thread
+                    if thread is None:
+                        continue
+                handler = self._registry.get(thread.context_type)
+                if handler is None:
+                    continue
                 async with session.begin_nested():
                     new_messages = await handler.sync_tracked_thread(session, thread)
             except Exception as exc:
@@ -300,12 +365,48 @@ class GmailSyncService:
                     "Gmail sync failed for thread %s", gmail_thread_id
                 )
                 summary["failed"] += 1
-                if not isinstance(exc, GmailNotFoundError):
-                    transient.append(gmail_thread_id)
+                if isinstance(exc, GmailNotFoundError):
+                    continue
+                if claiming and isinstance(exc, _RETRYABLE):
+                    failures.retry_thread = gmail_thread_id
+                    failures.retry_error = exc
+                    break
+                (failures.unclaimed if claiming else failures.tracked).append(
+                    gmail_thread_id
+                )
                 continue
             summary["threads"] += 1
             summary["newMessages"] += new_messages
-        return summary, transient
+        return summary, failures
+
+    async def _keep_cursor_for_retry(self, session, state, failures, is_push, summary):
+        """Leave the cursor where it was so the unread new thread is seen again.
+
+        What already synced is committed; a retry skips it as already stored.
+        A push asks Pub/Sub to redeliver, as for a busy ``list_history``;
+        the catch-up alerts and raises so the job fails.
+        """
+        exc = failures.retry_error
+        state.last_error = (
+            f"Checking new Gmail thread {failures.retry_thread} for Inbox mail "
+            f"failed: {type(exc).__name__}: {exc}"
+        )
+        state.last_error_at = _now()
+        if is_push:
+            await session.commit()
+            return PushOutcome.RETRY, summary
+        await self._alerts.raise_alert(
+            session,
+            state=state,
+            kind="sync_failed",
+            detail=(
+                f"Checking new Gmail thread {failures.retry_thread} for Inbox "
+                f"mail failed ({exc}); the cursor stays, so the next sync "
+                "retries it."
+            ),
+        )
+        await session.commit()
+        raise exc
 
     async def _on_gmail_error(self, session, state, exc, is_push):
         retryable = isinstance(exc, (GmailUnavailableError, RateLimitedError))

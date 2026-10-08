@@ -518,15 +518,17 @@ class GmailClient:
         """Thread ids that gained a message since a history cursor.
 
         No ``labelId`` is passed, so a message sent by hand from the Gmail web
-        UI is reported as well, not just INBOX arrivals.
+        UI is reported as well, not just INBOX arrivals. A thread whose added
+        messages all carry ``SENT`` holds only our own new mail.
 
         Args:
             start_history_id (int): Cursor to read changes after.
 
         Returns:
             dict: ``history_id`` (int), the mailbox cursor from the response
-                (present even when nothing changed), and ``thread_ids``
-                (set[str]).
+                (present even when nothing changed), ``thread_ids``
+                (set[str]), and ``sent_only_thread_ids`` (set[str]), the
+                threads among them whose added messages are all ``SENT``.
 
         Raises:
             HistoryExpiredError: The cursor is too old (HTTP 404); only a full
@@ -536,6 +538,7 @@ class GmailClient:
             RuntimeError: For any other Gmail API failure.
         """
         thread_ids = set()
+        not_sent = set()
         page_token = None
         while True:
             request = (
@@ -557,12 +560,16 @@ class GmailClient:
                 ) from error
             for record in response.get("history", []):
                 for added in record.get("messagesAdded", []):
-                    thread_ids.add(added["message"]["threadId"])
+                    message = added["message"]
+                    thread_ids.add(message["threadId"])
+                    if "SENT" not in (message.get("labelIds") or []):
+                        not_sent.add(message["threadId"])
             page_token = response.get("nextPageToken")
             if not page_token:
                 return {
                     "history_id": int(response["historyId"]),
                     "thread_ids": thread_ids,
+                    "sent_only_thread_ids": thread_ids - not_sent,
                 }
 
     def _get_service(self):

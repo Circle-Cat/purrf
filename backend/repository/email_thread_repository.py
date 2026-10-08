@@ -106,6 +106,28 @@ class EmailThreadRepository:
         )
         return list(result.scalars().all())
 
+    async def list_by_context_types(
+        self, session: AsyncSession, context_types: list[str]
+    ) -> list[EmailThreadEntity]:
+        """Every thread whose ``context_type`` is one of ``context_types``.
+
+        Args:
+            session (AsyncSession): The active DB session.
+            context_types (list[str]): ``ContextType`` values.
+
+        Returns:
+            list[EmailThreadEntity]: Ordered by ``thread_id``; empty, without
+                a query, for no types.
+        """
+        if not context_types:
+            return []
+        result = await session.execute(
+            select(EmailThreadEntity)
+            .where(EmailThreadEntity.context_type.in_(context_types))
+            .order_by(EmailThreadEntity.thread_id.asc())
+        )
+        return list(result.scalars().all())
+
     async def mark_synced(self, session: AsyncSession, thread_id: int) -> None:
         """Stamp ``synced_at`` to the DB clock after a successful sync.
 

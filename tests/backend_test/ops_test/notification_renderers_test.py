@@ -27,6 +27,7 @@ class GmailSyncAlertRenderTest(unittest.IsolatedAsyncioTestCase):
             "watch_renewal_failed": "Gmail sync: watch renewal failed",
             "history_expired": "Gmail sync: history expired, full resync started",
             "sync_failed": "Gmail sync: sync failed",
+            "unrouted_mail": "Gmail sync: new mail matched no Inbox alias",
         }
         for kind, title in expected.items():
             with self.subTest(kind=kind):
