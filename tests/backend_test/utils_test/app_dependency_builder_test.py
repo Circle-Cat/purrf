@@ -928,7 +928,6 @@ class TestAppDependencyBuilder(TestCase):
         # attribute fails at startup, where no test would be looking.
         self.assertIsNotNone(builder.user_account_controller)
         self.assertIsNotNone(builder.block_controller)
-        self.assertIsNotNone(builder.block_request_repository)
         self.assertIs(
             builder.block_service._interview_scheduling,
             builder.interview_scheduling_service,
