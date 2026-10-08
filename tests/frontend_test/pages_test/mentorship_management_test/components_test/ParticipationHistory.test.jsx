@@ -67,7 +67,7 @@ describe("ParticipationHistory", () => {
   it("summarises each round on one row", () => {
     renderHistory();
     const row = screen.getByRole("button", { name: /Spring 2026/ });
-    expect(row).toHaveTextContent("mentee");
+    expect(within(row).getByText("Mentee")).toBeInTheDocument();
     expect(row).toHaveTextContent("matched");
     expect(row).toHaveTextContent("Bob Smith · 4/5");
     expect(within(row).getByText("Exempted")).toBeInTheDocument();

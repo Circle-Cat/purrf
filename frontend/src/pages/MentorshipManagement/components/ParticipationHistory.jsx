@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { MentorshipParticipantRoleLabels } from "@/constants/MentorshipParticipantRoles";
 import { userDisplayName } from "@/utils/userName";
 import { useParticipantDetail } from "@/pages/MentorshipManagement/hooks/useParticipantDetail";
 import PairSection from "@/pages/MentorshipManagement/components/PairSection";
@@ -88,7 +89,10 @@ const ParticipationHistory = ({ userId, subjectName, history }) => {
                 >
                   <span className="text-slate-500">{open ? "▾" : "▸"}</span>
                   <span className="font-medium">{row.roundName}</span>
-                  <span className="text-slate-500">{row.participantRole}</span>
+                  <span className="text-slate-500">
+                    {MentorshipParticipantRoleLabels[row.participantRole] ??
+                      row.participantRole}
+                  </span>
                   {row.approvalStatus && (
                     <Badge variant="secondary">{row.approvalStatus}</Badge>
                   )}

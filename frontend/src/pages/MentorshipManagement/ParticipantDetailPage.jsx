@@ -12,7 +12,10 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { PERMISSIONS } from "@/constants/Permissions";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
-import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRoles";
+import {
+  MentorshipParticipantRoleLabels,
+  MentorshipParticipantRoles,
+} from "@/constants/MentorshipParticipantRoles";
 import { useAuth } from "@/context/auth";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { userDisplayName } from "@/utils/userName";
@@ -29,11 +32,6 @@ import NoteTimeline from "@/pages/MentorshipManagement/components/NoteTimeline";
 import ParticipantFeedback from "@/pages/MentorshipManagement/components/ParticipantFeedback";
 import ParticipationHistory from "@/pages/MentorshipManagement/components/ParticipationHistory";
 import BlockFromPurrf from "@/pages/MentorshipManagement/components/BlockFromPurrf";
-
-const ROLE_LABELS = {
-  [MentorshipParticipantRoles.MENTOR]: "Mentor",
-  [MentorshipParticipantRoles.MENTEE]: "Mentee",
-};
 
 /**
  * The round to open when the URL names none: the latest round this person
@@ -231,7 +229,7 @@ const ParticipantDetailPage = () => {
     const subject = { userId: person.userId, name, role };
     const idLine = [
       `ID ${person.userId}`,
-      ROLE_LABELS[role] ?? "Not registered",
+      MentorshipParticipantRoleLabels[role] ?? "Not registered",
       person.isInternal ? "Internal" : "External",
       person.primaryEmail,
     ]
