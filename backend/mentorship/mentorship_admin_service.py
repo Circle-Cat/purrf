@@ -792,9 +792,10 @@ class MentorshipAdminService:
         earlier = [r for r in rows if deadline(r) is not None and deadline(r) < cutoff]
         earlier.sort(key=deadline, reverse=True)
         return [
-            ParticipationHistoryRowDto.model_validate(
-                {**r.model_dump(), "exempted": r.round_id in exempted_rounds}
-            )
+            ParticipationHistoryRowDto.model_validate({
+                **r.model_dump(),
+                "exempted": r.round_id in exempted_rounds,
+            })
             for r in earlier
         ]
 

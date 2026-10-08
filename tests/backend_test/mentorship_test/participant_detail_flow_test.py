@@ -212,9 +212,7 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
             handlers=[],
         )
         self.approvals.register(
-            BlockUserHandler(
-                users, MagicMock(), MagicMock(), MagicMock(), MagicMock()
-            )
+            BlockUserHandler(users, MagicMock(), MagicMock(), MagicMock(), MagicMock())
         )
         self.service = MentorshipAdminService(
             users_repository=users,
@@ -280,9 +278,7 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
             [(h.round_name, h.exempted) for h in detail.history],
             [("Fall 2025", True), ("Spring 2025", False)],
         )
-        self.assertEqual(
-            detail.history[0].pairs[0].partner.id, self.old_mentor.user_id
-        )
+        self.assertEqual(detail.history[0].pairs[0].partner.id, self.old_mentor.user_id)
         self.assertFalse(detail.exempted)
 
     async def test_an_earlier_round_has_no_later_round_in_its_history(self):
@@ -337,7 +333,11 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
         self.assertEqual(
             [(n.body, n.tag, n.author.user_id) for n in detail.notes],
             [
-                ("Status changed", ParticipantNoteTag.STATUS_CHANGE, self.approver.user_id),
+                (
+                    "Status changed",
+                    ParticipantNoteTag.STATUS_CHANGE,
+                    self.approver.user_id,
+                ),
                 ("Called her", None, self.writer.user_id),
             ],
         )
@@ -378,9 +378,7 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
         self.assertEqual(
             detail.pending_block_request.reviewer.user_id, self.approver.user_id
         )
-        self.assertIsNone(
-            (await self._detail(user=self.mentor)).pending_block_request
-        )
+        self.assertIsNone((await self._detail(user=self.mentor)).pending_block_request)
 
     async def test_unknown_round_or_user_is_not_found(self):
         with self.assertRaises(NotFoundError):
@@ -430,6 +428,7 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
                 author_id=self.writer.user_id,
                 body="Who?",
             )
+
 
 if __name__ == "__main__":
     unittest.main()

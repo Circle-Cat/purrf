@@ -206,9 +206,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(live.round_in_progress)
         self.assertFalse(ended.round_in_progress)
-        self.mock_rounds_repo.get_by_round_id.assert_awaited_with(
-            self.mock_session, 7
-        )
+        self.mock_rounds_repo.get_by_round_id.assert_awaited_with(self.mock_session, 7)
 
     async def test_apply_batch_refuses_a_round_that_has_ended(self):
         """A past round's meeting log is history: nothing is deleted or
