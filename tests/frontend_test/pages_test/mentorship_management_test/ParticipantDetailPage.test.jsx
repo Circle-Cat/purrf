@@ -195,7 +195,7 @@ describe("ParticipantDetailPage", () => {
     expect(await screen.findByText("No pair this round")).toBeInTheDocument();
   });
 
-  it("makes an ended round read-only", async () => {
+  it("makes a round not in progress read-only", async () => {
     getParticipantDetail.mockResolvedValue({
       data: detailOf({
         round: {
@@ -208,7 +208,9 @@ describe("ParticipantDetailPage", () => {
     });
     renderPage();
     expect(
-      await screen.findByText("This round has ended. The page is read-only."),
+      await screen.findByText(
+        "This round is not in progress. The page is read-only.",
+      ),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Add a note" }),
