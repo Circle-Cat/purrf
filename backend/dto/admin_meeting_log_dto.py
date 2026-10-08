@@ -15,3 +15,5 @@ class AdminMeetingDto(BaseDto):
 class AdminMeetingLogDto(BaseDto):
     round_version: Literal["v1", "v2"]
     meetings: list[AdminMeetingDto]
+    # Only a round in progress can have its meetings edited.
+    round_in_progress: bool

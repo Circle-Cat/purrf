@@ -87,6 +87,12 @@ MENTORSHIP_ADMIN_MATCH_RUN_PUBLISH_REQUEST = (
 MENTORSHIP_ADMIN_EXEMPTION_REQUEST = (
     "/mentorship/admin/rounds/{round_id}/participants/{user_id}/exemption-request"
 )
+MENTORSHIP_ADMIN_PARTICIPANT_DETAIL = (
+    "/mentorship/admin/rounds/{round_id}/participants/{user_id}"
+)
+MENTORSHIP_ADMIN_PARTICIPANT_NOTES = (
+    "/mentorship/admin/rounds/{round_id}/participants/{user_id}/notes"
+)
 MENTORSHIP_ADMIN_APPROVERS = "/mentorship/admin/approvals/approvers"
 MENTORSHIP_ADMIN_APPROVALS_MINE = "/mentorship/admin/approvals/mine"
 MENTORSHIP_ADMIN_APPROVAL_REASSIGN = "/mentorship/admin/approvals/{request_id}/reassign"

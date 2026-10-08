@@ -20,6 +20,9 @@ class ParticipantPairDto(BaseDto):
     partner: PartnerDto
     completed_meeting_count: int
     attendance_issues: list[AttendanceIssueDto]
+    # The earliest meeting the pair has booked or held: first contact is
+    # derived from it. None while they have none.
+    first_meeting_at: datetime | None = None
 
 
 class PersonRowDto(BaseDto):

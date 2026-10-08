@@ -64,6 +64,10 @@ py_test(
     name = "mentorship_admin_controller_test",
     srcs = ["mentorship_admin_controller_test.py"],
     deps = [
+        "//backend/common:exceptions",
+        "//backend/common:fast_api_error_handler",
+        "//backend/common:permissions",
+        "//backend/dto",
         "//backend/mentorship",
         "@pypi//fastapi",
         "@pypi//httpx",
@@ -264,6 +268,24 @@ py_test(
     srcs = ["exempt_matching_flow_test.py"],
     env_inherit = ["DATABASE_URL"],
     deps = [
+        "//backend/approval:approval_service",
+        "//backend/common:approval_enums",
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+        "//backend/repository:repositories",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "participant_detail_flow_test",
+    srcs = ["participant_detail_flow_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/admin:block_service",
+        "//backend/admin:block_user_handler",
         "//backend/approval:approval_service",
         "//backend/common:approval_enums",
         "//backend/common:exceptions",
