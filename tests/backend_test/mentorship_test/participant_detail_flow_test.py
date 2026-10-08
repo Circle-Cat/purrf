@@ -403,7 +403,13 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
         self.assertIsNone(note.pair_id)
         self.assertEqual(note.author.user_id, self.writer.user_id)
         self.assertIsNotNone(note.created_at)
-        detail = await self._detail(user=self.stranger)
+        round_id, user_id = self.round.round_id, self.stranger.user_id
+        # The session runs inside a savepoint: a rollback here throws away
+        # anything only flushed, and keeps what the service committed.
+        await self.session.rollback()
+        detail = await self.service.get_participant_detail(
+            self.session, round_id, user_id
+        )
         self.assertEqual([n.note_id for n in detail.notes], [note.note_id])
 
     async def test_a_round_not_in_progress_takes_no_notes(self):
