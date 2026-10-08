@@ -91,7 +91,7 @@ const InboxPage = () => {
   ];
 
   return (
-    <main className="mx-auto max-w-6xl space-y-4 p-4 sm:p-6">
+    <div className="flex flex-col gap-4 p-6">
       <header className="flex flex-wrap items-center gap-2">
         <h1 className="text-xl font-semibold text-slate-900">Inbox</h1>
         <Badge
@@ -206,7 +206,7 @@ const InboxPage = () => {
           onCancel={() => setAssigning(false)}
         />
       )}
-    </main>
+    </div>
   );
 };
 
