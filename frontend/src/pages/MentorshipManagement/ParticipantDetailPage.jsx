@@ -16,7 +16,10 @@ import { MentorshipParticipantRoles } from "@/constants/MentorshipParticipantRol
 import { useAuth } from "@/context/auth";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { userDisplayName } from "@/utils/userName";
-import { getAllMentorshipRounds, searchParticipants } from "@/api/mentorshipApi";
+import {
+  getAllMentorshipRounds,
+  searchParticipants,
+} from "@/api/mentorshipApi";
 import StateChips from "@/pages/AdminAccounts/components/StateChips";
 import ExemptionCell from "@/pages/MentorshipManagement/components/ExemptionCell";
 import { exemptionWhyLines } from "@/pages/MentorshipManagement/utils/approvalLabels";
@@ -77,7 +80,16 @@ const useFallbackRoundId = (userId, needed) => {
  * exemption control (behind the matching-run flag, like the list's). Once
  * exempted, says so instead.
  */
-const ExemptionBox = ({ registration, exempted, roundId, matchingOn, canWrite, canApprove, userId, onChanged }) => {
+const ExemptionBox = ({
+  registration,
+  exempted,
+  roundId,
+  matchingOn,
+  canWrite,
+  canApprove,
+  userId,
+  onChanged,
+}) => {
   if (exempted) {
     return (
       <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
@@ -139,7 +151,10 @@ const ParticipantDetailPage = () => {
     );
   }, [roundId, fallback.roundId, navigate, location.state]);
 
-  const { detail, loading, error, refetch } = useParticipantDetail(roundId, userId);
+  const { detail, loading, error, refetch } = useParticipantDetail(
+    roundId,
+    userId,
+  );
   const { permissions, user } = useAuth();
   const canWrite = permissions.includes(PERMISSIONS.MENTORSHIP_ADMIN_WRITE);
   const canApprove = permissions.includes(PERMISSIONS.MENTORSHIP_APPROVE);
@@ -177,9 +192,15 @@ const ParticipantDetailPage = () => {
 
   let body;
   if (fallback.failed) {
-    body = <p className="py-10 text-center text-gray-500">No mentorship rounds yet.</p>;
+    body = (
+      <p className="py-10 text-center text-gray-500">
+        No mentorship rounds yet.
+      </p>
+    );
   } else if (!roundId || loading) {
-    body = <p className="py-10 text-center text-gray-500">Loading participant...</p>;
+    body = (
+      <p className="py-10 text-center text-gray-500">Loading participant...</p>
+    );
   } else if (error || !detail) {
     body = (
       <p className="py-10 text-center text-gray-500">
@@ -206,8 +227,8 @@ const ParticipantDetailPage = () => {
       .join(" · ");
     const orderedPairs = [...pairs].sort(
       (a, b) =>
-        Number(a.partner.isActive === false) - Number(b.partner.isActive === false) ||
-        a.pairId - b.pairId,
+        Number(a.partner.isActive === false) -
+          Number(b.partner.isActive === false) || a.pairId - b.pairId,
     );
 
     body = (
@@ -250,7 +271,9 @@ const ParticipantDetailPage = () => {
             <>
               <div className="flex flex-wrap items-center gap-3 text-sm">
                 {registration.approvalStatus && (
-                  <Badge variant="secondary">{registration.approvalStatus}</Badge>
+                  <Badge variant="secondary">
+                    {registration.approvalStatus}
+                  </Badge>
                 )}
                 <span className="text-slate-600">
                   {trainingStatus == null
@@ -284,7 +307,9 @@ const ParticipantDetailPage = () => {
                   canWrite={writable}
                   open={openPairId === pair.pairId}
                   onToggle={() =>
-                    setOpenPairId((id) => (id === pair.pairId ? null : pair.pairId))
+                    setOpenPairId((id) =>
+                      id === pair.pairId ? null : pair.pairId,
+                    )
                   }
                   onMeetingsSaved={refetch}
                 />

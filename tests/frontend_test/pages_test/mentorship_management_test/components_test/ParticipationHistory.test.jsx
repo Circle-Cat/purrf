@@ -31,7 +31,11 @@ const SPRING = {
 const renderHistory = (history = [SPRING]) =>
   render(
     <MemoryRouter>
-      <ParticipationHistory userId={3104} subjectName="Alice Chen" history={history} />
+      <ParticipationHistory
+        userId={3104}
+        subjectName="Alice Chen"
+        history={history}
+      />
     </MemoryRouter>,
   );
 
@@ -43,7 +47,12 @@ describe("ParticipationHistory", () => {
     });
     getParticipantDetail.mockResolvedValue({
       data: detailOf({
-        round: { roundId: 3, name: "Spring 2026", requiredMeetings: 5, inProgress: false },
+        round: {
+          roundId: 3,
+          name: "Spring 2026",
+          requiredMeetings: 5,
+          inProgress: false,
+        },
         registration: SPRING,
         notes: [noteOf({ body: "Spring note" })],
       }),
@@ -72,6 +81,8 @@ describe("ParticipationHistory", () => {
 
     expect(await screen.findByText("Spring note")).toBeInTheDocument();
     expect(getParticipantDetail).toHaveBeenCalledWith(3, 3104);
-    expect(screen.queryByRole("button", { name: "Add a note" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Add a note" }),
+    ).not.toBeInTheDocument();
   });
 });

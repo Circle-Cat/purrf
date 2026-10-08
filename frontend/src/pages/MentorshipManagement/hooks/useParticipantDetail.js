@@ -42,7 +42,10 @@ export const useParticipantDetail = (roundId, userId) => {
     fetchDetail();
   }, [fetchDetail]);
 
-  const refetch = useCallback(() => fetchDetail({ quiet: true }), [fetchDetail]);
+  const refetch = useCallback(
+    () => fetchDetail({ quiet: true }),
+    [fetchDetail],
+  );
 
   return { detail, loading, error, refetch };
 };

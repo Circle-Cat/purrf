@@ -39,7 +39,9 @@ const ParticipantFeedback = ({ feedback }) => {
           </dd>
           <dt className="text-slate-500">Program Rating</dt>
           <dd>
-            {feedback.programRating != null ? `${feedback.programRating}/5` : "—"}
+            {feedback.programRating != null
+              ? `${feedback.programRating}/5`
+              : "—"}
           </dd>
           <dt className="text-slate-500">About Partners</dt>
           <dd>

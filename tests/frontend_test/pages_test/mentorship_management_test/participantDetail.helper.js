@@ -62,7 +62,12 @@ export const detailOf = (overrides = {}) => ({
     isDeactivated: false,
     isInternal: true,
   },
-  round: { roundId: 7, name: "Fall 2026", requiredMeetings: 5, inProgress: true },
+  round: {
+    roundId: 7,
+    name: "Fall 2026",
+    requiredMeetings: 5,
+    inProgress: true,
+  },
   registration: registrationOf(),
   exempted: false,
   feedback: null,

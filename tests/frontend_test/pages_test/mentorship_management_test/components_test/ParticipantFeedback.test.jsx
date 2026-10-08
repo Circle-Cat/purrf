@@ -11,7 +11,12 @@ const sent = {
   challenges: "Scheduling",
   programRating: 4,
   partnerFeedback: [
-    { partnerId: 22, partnerName: "Bob Smith", rating: 2, feedback: "Often late" },
+    {
+      partnerId: 22,
+      partnerName: "Bob Smith",
+      rating: 2,
+      feedback: "Often late",
+    },
     { partnerId: 3999, partnerName: null, rating: 5, feedback: null },
   ],
 };

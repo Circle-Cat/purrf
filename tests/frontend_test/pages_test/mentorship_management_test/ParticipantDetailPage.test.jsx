@@ -48,9 +48,20 @@ const Probe = () => {
   return <div data-testid="where">{location.pathname + location.search}</div>;
 };
 
-const renderPage = (entry = "/mentorship-management/participants/3104?round=7", state) =>
+const renderPage = (
+  entry = "/mentorship-management/participants/3104?round=7",
+  state,
+) =>
   render(
-    <MemoryRouter initialEntries={[{ pathname: entry.split("?")[0], search: entry.includes("?") ? `?${entry.split("?")[1]}` : "", state }]}>
+    <MemoryRouter
+      initialEntries={[
+        {
+          pathname: entry.split("?")[0],
+          search: entry.includes("?") ? `?${entry.split("?")[1]}` : "",
+          state,
+        },
+      ]}
+    >
       <Routes>
         <Route
           path="/mentorship-management/participants/:userId"
@@ -65,7 +76,10 @@ const renderPage = (entry = "/mentorship-management/participants/3104?round=7", 
 describe("ParticipantDetailPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useAuth.mockReturnValue({ permissions: [READ, WRITE], user: { userId: 9 } });
+    useAuth.mockReturnValue({
+      permissions: [READ, WRITE],
+      user: { userId: 9 },
+    });
     useFeatureFlags.mockReturnValue({});
     getParticipantDetail.mockResolvedValue({ data: detailOf() });
     getMeetingLog.mockResolvedValue({
@@ -80,7 +94,9 @@ describe("ParticipantDetailPage", () => {
       screen.getByText("ID 3104 · Mentee · Internal · alice@x.com"),
     ).toBeInTheDocument();
     // The pair's own badge also says Active, so look inside the header.
-    expect(within(heading.parentElement).getByText("Active")).toBeInTheDocument();
+    expect(
+      within(heading.parentElement).getByText("Active"),
+    ).toBeInTheDocument();
     expect(getParticipantDetail).toHaveBeenCalledWith("7", "3104");
   });
 
@@ -104,7 +120,13 @@ describe("ParticipantDetailPage", () => {
       data: detailOf({
         registration: registrationOf({
           participantRole: "mentor",
-          pairs: [pairOf({ pairId: 80 }), pairOf({ pairId: 81, partner: { ...pairOf().partner, id: 23, firstName: "Cy" } })],
+          pairs: [
+            pairOf({ pairId: 80 }),
+            pairOf({
+              pairId: 81,
+              partner: { ...pairOf().partner, id: 23, firstName: "Cy" },
+            }),
+          ],
         }),
       }),
     });
@@ -121,12 +143,19 @@ describe("ParticipantDetailPage", () => {
     expect(
       await screen.findByText("Not registered for this round."),
     ).toBeInTheDocument();
-    expect(screen.getByText("ID 3104 · Not registered · Internal · alice@x.com")).toBeInTheDocument();
+    expect(
+      screen.getByText("ID 3104 · Not registered · Internal · alice@x.com"),
+    ).toBeInTheDocument();
   });
 
   it("says No pair this round for someone registered without a pair", async () => {
     getParticipantDetail.mockResolvedValue({
-      data: detailOf({ registration: registrationOf({ pairs: [], approvalStatus: "signed_up" }) }),
+      data: detailOf({
+        registration: registrationOf({
+          pairs: [],
+          approvalStatus: "signed_up",
+        }),
+      }),
     });
     renderPage();
     expect(await screen.findByText("No pair this round")).toBeInTheDocument();
@@ -135,22 +164,33 @@ describe("ParticipantDetailPage", () => {
   it("makes an ended round read-only", async () => {
     getParticipantDetail.mockResolvedValue({
       data: detailOf({
-        round: { roundId: 7, name: "Fall 2026", requiredMeetings: 5, inProgress: false },
+        round: {
+          roundId: 7,
+          name: "Fall 2026",
+          requiredMeetings: 5,
+          inProgress: false,
+        },
       }),
     });
     renderPage();
     expect(
       await screen.findByText("This round has ended. The page is read-only."),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Add a note" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Add a note" }),
+    ).not.toBeInTheDocument();
   });
 
   it("gives a reader no way to write", async () => {
     useAuth.mockReturnValue({ permissions: [READ], user: { userId: 9 } });
     renderPage();
     await screen.findByRole("heading", { name: "Alice Chen" });
-    expect(screen.queryByRole("button", { name: "Add a note" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Block from Purrf" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Add a note" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Block from Purrf" }),
+    ).not.toBeInTheDocument();
   });
 
   it("lists the history problems and, with matching on, the exemption control", async () => {
@@ -161,7 +201,13 @@ describe("ParticipantDetailPage", () => {
           approvalStatus: "signed_up",
           pairs: [],
           exemptionFindings: [
-            { reason: "meetings_short", roundId: 3, roundName: "Spring 2026", completed: 1, required: 5 },
+            {
+              reason: "meetings_short",
+              roundId: 3,
+              roundName: "Spring 2026",
+              completed: 1,
+              required: 5,
+            },
           ],
         }),
       }),
@@ -170,11 +216,15 @@ describe("ParticipantDetailPage", () => {
     expect(
       await screen.findByText("Meetings short in Spring 2026: 1 of 5"),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Request exemption" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Request exemption" }),
+    ).toBeInTheDocument();
   });
 
   it("shows Exempted once the exemption is granted", async () => {
-    getParticipantDetail.mockResolvedValue({ data: detailOf({ exempted: true }) });
+    getParticipantDetail.mockResolvedValue({
+      data: detailOf({ exempted: true }),
+    });
     renderPage();
     expect(await screen.findByText("Exempted")).toBeInTheDocument();
   });
@@ -183,19 +233,30 @@ describe("ParticipantDetailPage", () => {
     getParticipantDetail.mockResolvedValue({
       data: detailOf({
         notes: [noteOf()],
-        history: [{ ...registrationOf({ roundId: 3, roundName: "Spring 2026" }), exempted: false }],
+        history: [
+          {
+            ...registrationOf({ roundId: 3, roundName: "Spring 2026" }),
+            exempted: false,
+          },
+        ],
       }),
     });
     renderPage();
-    expect(await screen.findByText("Asked to move the first meeting.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Spring 2026/ })).toBeInTheDocument();
+    expect(
+      await screen.findByText("Asked to move the first meeting."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Spring 2026/ }),
+    ).toBeInTheDocument();
   });
 
   it("goes back to the list with the filters it came from", async () => {
     renderPage("/mentorship-management/participants/3104?round=7", {
       returnSearch: "?round=7&q=alice",
     });
-    await userEvent.click(await screen.findByRole("link", { name: "Participants" }));
+    await userEvent.click(
+      await screen.findByRole("link", { name: "Participants" }),
+    );
     expect(screen.getByTestId("where")).toHaveTextContent(
       "/mentorship-management?round=7&q=alice",
     );
@@ -211,7 +272,10 @@ describe("ParticipantDetailPage", () => {
     });
     searchParticipants.mockResolvedValue({
       data: {
-        participantRows: [registrationOf({ roundId: 3 }), registrationOf({ roundId: 7 })],
+        participantRows: [
+          registrationOf({ roundId: 3 }),
+          registrationOf({ roundId: 7 }),
+        ],
         total: 2,
       },
     });
@@ -227,9 +291,14 @@ describe("ParticipantDetailPage", () => {
 
   it("without a round and no registration, picks the latest round", async () => {
     getAllMentorshipRounds.mockResolvedValue({
-      data: [{ id: 9, name: "Spring 2027" }, { id: 7, name: "Fall 2026" }],
+      data: [
+        { id: 9, name: "Spring 2027" },
+        { id: 7, name: "Fall 2026" },
+      ],
     });
-    searchParticipants.mockResolvedValue({ data: { participantRows: [], total: 0 } });
+    searchParticipants.mockResolvedValue({
+      data: { participantRows: [], total: 0 },
+    });
     renderPage("/mentorship-management/participants/3104");
 
     await waitFor(() =>

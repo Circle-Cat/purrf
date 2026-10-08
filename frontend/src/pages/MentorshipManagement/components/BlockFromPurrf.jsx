@@ -22,7 +22,12 @@ const RAISED_FROM = "mentorship_participant";
  * @param {{person: Object, pendingBlockRequest: Object|null,
  *          canWrite: boolean, onRequested: () => void}} props
  */
-const BlockFromPurrf = ({ person, pendingBlockRequest, canWrite, onRequested }) => {
+const BlockFromPurrf = ({
+  person,
+  pendingBlockRequest,
+  canWrite,
+  onRequested,
+}) => {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [preflight, setPreflight] = useState(null);
@@ -58,7 +63,10 @@ const BlockFromPurrf = ({ person, pendingBlockRequest, canWrite, onRequested }) 
   const confirm = ({ reason, reviewerId }) => {
     if (submitting) return;
     setSubmitting(true);
-    createBlockRequest({ userId: person.userId, reason, reviewerId }, RAISED_FROM)
+    createBlockRequest(
+      { userId: person.userId, reason, reviewerId },
+      RAISED_FROM,
+    )
       .then(({ data }) => {
         setOpen(false);
         toast.success(`Block requested — sent to ${data.reviewerName}.`);

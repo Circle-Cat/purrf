@@ -77,7 +77,9 @@ describe("PairSection", () => {
 
   it("leaves first contact off a round that has ended", () => {
     renderSection({ round: { ...ROUND, inProgress: false } });
-    expect(screen.queryByText(/First meeting|No meeting yet/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/First meeting|No meeting yet/),
+    ).not.toBeInTheDocument();
   });
 
   it("marks an active pair's attendance issues", () => {
@@ -123,14 +125,18 @@ describe("PairSection", () => {
   it("offers no Edit without write access", async () => {
     renderSection({ open: true, canWrite: false });
     await screen.findByText("2026-09-02 · 10:00 - 11:00");
-    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
   });
 
   it("offers no Edit when the meeting log says the round has ended", async () => {
     getMeetingLog.mockResolvedValue(log({ roundInProgress: false }));
     renderSection({ open: true });
     await screen.findByText("2026-09-02 · 10:00 - 11:00");
-    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
   });
 
   it("saves a deletion after confirming and tells the page", async () => {

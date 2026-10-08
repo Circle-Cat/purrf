@@ -29,7 +29,9 @@ describe("BlockFromPurrf", () => {
     getBlockPreflight.mockResolvedValue({
       data: { applicationCount: 0, interviewTimes: [] },
     });
-    getUserAdmins.mockResolvedValue({ data: [{ userId: 77, name: "Uma Admin" }] });
+    getUserAdmins.mockResolvedValue({
+      data: [{ userId: 77, name: "Uma Admin" }],
+    });
   });
 
   it("says who a pending request waits on instead of offering another", () => {
@@ -47,7 +49,9 @@ describe("BlockFromPurrf", () => {
     expect(
       screen.getByText("Block requested — waiting on Uma Admin"),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Block from Purrf" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Block from Purrf" }),
+    ).not.toBeInTheDocument();
   });
 
   it("offers nothing to someone already blocked", () => {
@@ -88,12 +92,17 @@ describe("BlockFromPurrf", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Block from Purrf" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Block from Purrf" }),
+    );
     await waitFor(() => expect(getBlockPreflight).toHaveBeenCalledWith(3104));
     expect(getUserAdmins).toHaveBeenCalled();
 
     // ApprovalRequestDialog renders reviewers in a native <select>.
-    await userEvent.selectOptions(await screen.findByLabelText("Reviewer"), "77");
+    await userEvent.selectOptions(
+      await screen.findByLabelText("Reviewer"),
+      "77",
+    );
     await userEvent.click(screen.getByRole("button", { name: "Send request" }));
 
     await waitFor(() =>

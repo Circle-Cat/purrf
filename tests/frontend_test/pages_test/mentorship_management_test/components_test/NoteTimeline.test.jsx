@@ -34,7 +34,11 @@ describe("NoteTimeline", () => {
   it("lists notes in the order given, with author, time and body", () => {
     renderTimeline({
       notes: [
-        noteOf({ noteId: 2, body: "Second", author: { userId: 12, name: "Eve Ko" } }),
+        noteOf({
+          noteId: 2,
+          body: "Second",
+          author: { userId: 12, name: "Eve Ko" },
+        }),
         noteOf({ noteId: 1, body: "First" }),
       ],
     });
@@ -60,7 +64,9 @@ describe("NoteTimeline", () => {
 
   it("offers no Add a note when it cannot add", () => {
     renderTimeline({ canAdd: false });
-    expect(screen.queryByRole("button", { name: "Add a note" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Add a note" }),
+    ).not.toBeInTheDocument();
   });
 
   it("will not send a blank note", async () => {
@@ -80,7 +86,11 @@ describe("NoteTimeline", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save note" }));
 
     await waitFor(() =>
-      expect(addParticipantNote).toHaveBeenCalledWith(7, 3104, "Called her today"),
+      expect(addParticipantNote).toHaveBeenCalledWith(
+        7,
+        3104,
+        "Called her today",
+      ),
     );
     expect(onAdded).toHaveBeenCalled();
     await waitFor(() =>

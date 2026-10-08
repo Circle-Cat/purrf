@@ -386,7 +386,9 @@ export const requestMatchingExemption = (
  * @param {number|string} userId
  */
 export const getParticipantDetail = (roundId, userId) =>
-  request.get(API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANT_DETAIL(roundId, userId));
+  request.get(
+    API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANT_DETAIL(roundId, userId),
+  );
 
 /**
  * Add a plain-text note on a person in a round in progress. Refused with 409
@@ -396,6 +398,9 @@ export const getParticipantDetail = (roundId, userId) =>
  * @param {string} body
  */
 export const addParticipantNote = (roundId, userId, body) =>
-  request.post(API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANT_NOTES(roundId, userId), {
-    body,
-  });
+  request.post(
+    API_ENDPOINTS.MENTORSHIP_ADMIN_PARTICIPANT_NOTES(roundId, userId),
+    {
+      body,
+    },
+  );
