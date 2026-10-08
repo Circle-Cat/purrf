@@ -107,7 +107,8 @@ class EmailConversationService:
                 service's own; it is also stored as the message's From.
 
         Returns:
-            EmailMessageEntity: The persisted outbound message.
+            EmailMessageEntity: The persisted outbound message; the row a
+                concurrent sync already stored, if it got there first.
 
         Raises:
             ValueError: If ``thread_id`` is given but no such thread exists.
@@ -158,7 +159,7 @@ class EmailConversationService:
                 context_id=context_id,
             )
 
-        return await self._message_repo.create(
+        message, inserted = await self._message_repo.insert_or_get(
             session,
             thread_id=thread.thread_id,
             gmail_message_id=sent["gmail_message_id"],
@@ -170,6 +171,11 @@ class EmailConversationService:
             rfc822_message_id=sent["rfc822_message_id"],
             sent_by_user_id=sender_user_id,
         )
+        # A sync that stored it first cannot know who pressed send; replies
+        # and bounces are routed to that person.
+        if not inserted and message.sent_by_user_id is None:
+            message.sent_by_user_id = sender_user_id
+        return message
 
     async def list_conversation(self, session, context_type, context_id):
         """Read the stored conversation for one (context_type, context_id).
@@ -266,9 +272,9 @@ class EmailConversationService:
             thread (EmailThreadEntity): The thread to sync.
 
         Returns:
-            list[EmailMessageEntity]: The messages newly persisted this call,
-                in Gmail's order (idempotent on ``gmail_message_id``, so
-                re-syncing an unchanged thread returns []).
+            list[EmailMessageEntity]: The messages this call inserted, in
+                Gmail's order. One stored by someone else since the listing
+                is left out, and re-syncing an unchanged thread returns [].
 
         Raises:
             RateLimitedError / RuntimeError: Propagated from Gmail.
@@ -299,7 +305,7 @@ class EmailConversationService:
                 if direction == EmailDirection.INBOUND
                 else {}
             )
-            entity = await self._message_repo.create(
+            entity, inserted = await self._message_repo.insert_or_get(
                 session,
                 thread_id=thread.thread_id,
                 gmail_message_id=message["gmail_message_id"],
@@ -317,7 +323,10 @@ class EmailConversationService:
                 failed_recipients=message.get("failed_recipients"),
                 **inbound_extras,
             )
-            created.append(entity)
+            # Stored meanwhile by our own send or by another sync: whoever
+            # inserted it already acted on it.
+            if inserted:
+                created.append(entity)
         await self._thread_repo.mark_synced(session, thread.thread_id)
         return created
 
