@@ -309,7 +309,9 @@ const MeetingLogTable = ({ meetings, mentorName, menteeName, editor }) => {
             const isChecked =
               isEditing && editor.pendingDeleteIds.has(meeting.meetingId);
             const effectiveFields =
-              isEditing && !isChecked ? editor.getEffectiveFields(meeting) : null;
+              isEditing && !isChecked
+                ? editor.getEffectiveFields(meeting)
+                : null;
             return (
               <tr
                 key={meeting.meetingId}

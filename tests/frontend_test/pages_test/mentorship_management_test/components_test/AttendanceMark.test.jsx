@@ -5,7 +5,10 @@ import AttendanceMark from "@/pages/MentorshipManagement/components/AttendanceMa
 
 describe("AttendanceMark", () => {
   it("is a red ! that names every flagged meeting and lists them on focus", async () => {
-    const lines = ["2026-08-30: Erin Ma absent", "2026-09-06: Erin Ma late arrival"];
+    const lines = [
+      "2026-08-30: Erin Ma absent",
+      "2026-09-06: Erin Ma late arrival",
+    ];
     render(<AttendanceMark lines={lines} />);
 
     const mark = screen.getByRole("button", {
