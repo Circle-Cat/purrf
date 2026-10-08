@@ -15,7 +15,7 @@ class EmailThreadRepository:
     async def create(
         self,
         session: AsyncSession,
-        user_id: int,
+        user_id: int | None,
         gmail_thread_id: str,
         subject: str | None,
         context_type: str,
@@ -25,7 +25,8 @@ class EmailThreadRepository:
 
         Args:
             session (AsyncSession): The active DB session.
-            user_id (int): The person this conversation is with.
+            user_id (int | None): The person this conversation is with, or
+                ``None`` for an unassigned inbox thread.
             gmail_thread_id (str): Gmail's thread id (unique).
             subject (str | None): The originating subject.
             context_type (str): A ``ContextType`` value (e.g. ``application``).

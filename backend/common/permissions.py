@@ -51,6 +51,7 @@ class Permission(StrEnum):
     PERMISSION_MANAGE = "permission.manage"
     SUPER_ADMIN_REVOKE = "super_admin.revoke"
     OPS_MAINTAIN = "ops.maintain"
+    INQUIRIES_MANAGE = "inquiries.manage"
 
 
 # Auto-injected for internal employees by the lifecycle hook on first internal

@@ -266,6 +266,18 @@ py_test(
 )
 
 py_test(
+    name = "email_thread_repository_test",
+    srcs = ["email_thread_repository_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        ":base_repository_test_lib",
+        "//backend/common:communication_enums",
+        "//backend/entity:entities",
+        "//backend/repository:repositories",
+    ],
+)
+
+py_test(
     name = "gmail_sync_state_repository_test",
     srcs = ["gmail_sync_state_repository_test.py"],
     env_inherit = ["DATABASE_URL"],
