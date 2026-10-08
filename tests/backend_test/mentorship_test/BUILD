@@ -64,6 +64,10 @@ py_test(
     name = "mentorship_admin_controller_test",
     srcs = ["mentorship_admin_controller_test.py"],
     deps = [
+        "//backend/common:exceptions",
+        "//backend/common:fast_api_error_handler",
+        "//backend/common:permissions",
+        "//backend/dto",
         "//backend/mentorship",
         "@pypi//fastapi",
         "@pypi//httpx",

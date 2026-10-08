@@ -20,6 +20,7 @@ from backend.dto.mentorship_approval_dto import (
     ApprovalRequestCreateDto,
     MentorshipApprovalDto,
 )
+from backend.dto.participant_detail_dto import ParticipantNoteCreateDto
 from backend.dto.user_context_dto import UserContextDto
 from backend.dto.v2_meeting_batch_update_dto import V2MeetingBatchUpdateDto
 from backend.common.fast_api_response_wrapper import api_response
@@ -41,6 +42,8 @@ from backend.common.api_endpoints import (
     MENTORSHIP_ADMIN_APPROVAL_WITHDRAW,
     MENTORSHIP_ADMIN_ROUND_FEEDBACK,
     MENTORSHIP_ADMIN_ROUND_UNREGISTERED,
+    MENTORSHIP_ADMIN_PARTICIPANT_DETAIL,
+    MENTORSHIP_ADMIN_PARTICIPANT_NOTES,
 )
 from backend.common.permissions import Permission
 from backend.utils.permission_decorators import authenticate
@@ -237,6 +240,24 @@ class MentorshipAdminController:
             response_model=None,
         )
 
+        self.router.add_api_route(
+            MENTORSHIP_ADMIN_PARTICIPANT_DETAIL,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_READ])(
+                self.get_participant_detail
+            ),
+            methods=["GET"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ADMIN_PARTICIPANT_NOTES,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])(
+                self.add_participant_note
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+
     async def search_participants(
         self,
         filters: ParticipantSearchFilterDto = Depends(),
@@ -316,6 +337,58 @@ class MentorshipAdminController:
             message="Successfully retrieved round feedback.",
             data=result,
         )
+
+    async def get_participant_detail(self, round_id: int, user_id: int):
+        """
+        Retrieve the admin console's page for one person in one round.
+
+        Args:
+            round_id (int): The round.
+            user_id (int): The person.
+
+        Returns:
+            API response containing the page's data. An unknown round or
+            person surfaces as 404.
+        """
+        async with self.database.session() as session:
+            result = await self.mentorship_admin_service.get_participant_detail(
+                session, round_id, user_id
+            )
+        return api_response(
+            message="Successfully retrieved the participant.",
+            data=result,
+        )
+
+    async def add_participant_note(
+        self,
+        round_id: int,
+        user_id: int,
+        body: ParticipantNoteCreateDto,
+        current_user: UserContextDto,
+    ):
+        """
+        Write a plain note on a person in a round.
+
+        Args:
+            round_id (int): The round, which must be in progress.
+            user_id (int): Who the note is about.
+            body (ParticipantNoteCreateDto): The note's text.
+            current_user (UserContextDto): Who is writing it.
+
+        Returns:
+            API response carrying the new note. A round not in progress
+            surfaces as 409; an empty or overlong note as 400; an unknown
+            round or person as 404.
+        """
+        async with self.database.session() as session:
+            result = await self.mentorship_admin_service.add_participant_note(
+                session,
+                round_id=round_id,
+                user_id=user_id,
+                author_id=current_user.user_id,
+                body=body.body,
+            )
+        return api_response(message="Note added.", data=result)
 
     async def get_meeting_log(self, pair_id: int):
         """
