@@ -5,7 +5,6 @@ import re
 
 from backend.common.communication_enums import InboxService
 from backend.common.name_utils import display_name_of
-from backend.common.recruiting_enums import JobKind
 from backend.communication.inbox_rows import can_assign, facts_of
 from backend.dto.inbox_dto import (
     AssignOptionsDto,
@@ -59,8 +58,8 @@ class InboxThreadOptions:
         """What a thread could be assigned to for one person.
 
         Mentorship lists every round, marking the current one and the rounds
-        the person registered for. Recruiting lists every employment job the
-        person applied to with all of their applications there, rejected ones
+        the person registered for. Recruiting lists every job the person
+        applied to, activity jobs included, with all of their applications there, rejected ones
         included, newest first; jobs come in order of their newest application.
 
         Args:
@@ -108,8 +107,7 @@ class InboxThreadOptions:
         for application, job in await self._applications.list_by_user(
             session, person_id
         ):
-            if job.kind == JobKind.EMPLOYMENT:
-                by_job.setdefault(job.job_id, (job, []))[1].append(application)
+            by_job.setdefault(job.job_id, (job, []))[1].append(application)
         options = []
         for job, applications in by_job.values():
             applications.sort(key=lambda a: a.application_id, reverse=True)
@@ -117,6 +115,7 @@ class InboxThreadOptions:
                 InboxJobOptionDto(
                     job_id=job.job_id,
                     title=job.title,
+                    kind=job.kind,
                     applications=[
                         InboxApplicationOptionDto(
                             application_id=a.application_id,

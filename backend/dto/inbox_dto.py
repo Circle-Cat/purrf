@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import Field
 
 from backend.common.communication_enums import InboxService
+from backend.common.recruiting_enums import JobKind
 from backend.dto.base_dto import BaseDto
 
 
@@ -111,6 +112,7 @@ class InboxApplicationOptionDto(BaseDto):
 class InboxJobOptionDto(BaseDto):
     job_id: int
     title: str | None = None
+    kind: JobKind
     applications: list[InboxApplicationOptionDto]
 
 

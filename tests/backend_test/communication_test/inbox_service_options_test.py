@@ -213,8 +213,8 @@ class JobOptionsTest(_OptionsFixture):
             self.session, _viewer(*_ALL), 2, person_id
         )
 
-    async def test_person_without_employment_applications_gets_an_empty_list(self):
-        self.applications = [_application(1, _MENTEE, ApplicationStage.APPLIED, 41)]
+    async def test_person_without_applications_gets_an_empty_list(self):
+        self.applications = [_application(1, _MENTEE, ApplicationStage.APPLIED, 99)]
 
         result = await self._options(41)
 
@@ -230,7 +230,10 @@ class JobOptionsTest(_OptionsFixture):
 
         (job,) = (await self._options(40)).jobs
 
-        self.assertEqual((job.job_id, job.title), (5, "Data Analyst"))
+        self.assertEqual(
+            (job.job_id, job.title, job.kind),
+            (5, "Data Analyst", JobKind.EMPLOYMENT),
+        )
         self.assertEqual(
             [(a.application_id, a.stage, a.applied_at) for a in job.applications],
             [
@@ -240,7 +243,7 @@ class JobOptionsTest(_OptionsFixture):
             ],
         )
 
-    async def test_jobs_come_newest_application_first_without_activity_jobs(self):
+    async def test_jobs_come_newest_application_first_activity_jobs_included(self):
         self.applications = [
             _application(10, _ANALYST, ApplicationStage.REJECTED, 40),
             _application(11, _DESIGNER, ApplicationStage.APPLIED, 40),
@@ -256,7 +259,7 @@ class JobOptionsTest(_OptionsFixture):
                 (j.job_id, [a.application_id for a in j.applications])
                 for j in result.jobs
             ],
-            [(5, [13, 10]), (9, [11])],
+            [(5, [13, 10]), (6, [12]), (9, [11])],
         )
 
 

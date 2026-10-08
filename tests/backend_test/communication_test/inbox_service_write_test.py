@@ -399,15 +399,19 @@ class AssignTest(_WriteFixture):
 
         self._assert_nothing_written()
 
-    async def test_recruiting_assign_to_an_activity_application_is_rejected(self):
+    async def test_recruiting_assign_takes_an_activity_application(self):
         self.applications = [_application(62, _MENTEE, ApplicationStage.APPLIED)]
 
-        with self.assertRaisesRegex(ValueError, "Only an employment job"):
-            await self.service.assign(
-                self.session, _viewer(*_ALL), 4, person_id=40, application_id=62
-            )
+        result = await self.service.assign(
+            self.session, _viewer(*_ALL), 4, person_id=40, application_id=62
+        )
 
-        self._assert_nothing_written()
+        thread = self._thread_of(4)
+        self.assertEqual(
+            (thread.user_id, thread.context_type, thread.context_id),
+            (40, ContextType.APPLICATION, 62),
+        )
+        self.assertIsNone(result)
 
     async def test_recruiting_assign_to_a_missing_application_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "application 404 not found"):

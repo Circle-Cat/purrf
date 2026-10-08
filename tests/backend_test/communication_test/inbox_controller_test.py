@@ -10,6 +10,7 @@ from backend.common.communication_enums import InboxService
 from backend.common.exceptions import ConflictError
 from backend.common.fast_api_error_handler import register_exception_handlers
 from backend.common.permissions import Permission
+from backend.common.recruiting_enums import JobKind
 from backend.communication.inbox_access import INBOX_GATE
 from backend.communication.inbox_controller import (
     InboxController,
@@ -348,6 +349,7 @@ class InboxControllerTest(unittest.TestCase):
                 InboxJobOptionDto(
                     job_id=9,
                     title="Analyst",
+                    kind=JobKind.ACTIVITY,
                     applications=[
                         InboxApplicationOptionDto(
                             application_id=12, stage="tech", applied_at=_T0
@@ -372,6 +374,7 @@ class InboxControllerTest(unittest.TestCase):
                     {
                         "jobId": 9,
                         "title": "Analyst",
+                        "kind": "activity",
                         "applications": [
                             {
                                 "applicationId": 12,

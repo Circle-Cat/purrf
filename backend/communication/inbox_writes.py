@@ -11,7 +11,6 @@ from datetime import datetime, timezone
 from backend.common.communication_enums import INBOX_CONTEXT, ContextType, InboxService
 from backend.common.exceptions import ConflictError
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE, InboxEvent
-from backend.common.recruiting_enums import JobKind
 from backend.communication.inbox_access import visible_services
 from backend.communication.inbox_rows import can_assign, facts_of, reply_contact
 from backend.notification_management.event_recorder import record_event
@@ -109,7 +108,8 @@ class InboxThreadWrites:
 
         A Mentorship thread takes ``round_id`` (any existing round, registered
         or not). A Recruiting thread takes ``application_id`` of one of the
-        person's applications to an EMPLOYMENT job, rejected ones included.
+        person's applications to any job, activity jobs and rejected ones
+        included.
         The thread then leaves the Inbox and is read where it was attached.
 
         Args:
@@ -127,7 +127,7 @@ class InboxThreadWrites:
             ValueError: Thread not found or not visible; the thread cannot be
                 assigned; the wrong kind of target; the round, person or
                 application does not exist; the application is someone
-                else's or not to an EMPLOYMENT job.
+                else's.
         """
         thread, service, facts = await self._load_for_write(session, user, thread_id)
         if not can_assign(service, facts):
@@ -203,13 +203,11 @@ class InboxThreadWrites:
         pair = await self._applications.get_with_job(session, application_id)
         if pair is None:
             raise ValueError(f"application {application_id} not found")
-        application, job = pair
+        application, _ = pair
         if application.user_id != person_id:
             raise ValueError(
                 f"application {application_id} does not belong to user {person_id}"
             )
-        if job.kind != JobKind.EMPLOYMENT:
-            raise ValueError("Only an employment job can be assigned from the Inbox")
 
     async def _finish(self, session, user, thread, event_type, details=None):
         await self._record(session, user, thread, event_type, details)
