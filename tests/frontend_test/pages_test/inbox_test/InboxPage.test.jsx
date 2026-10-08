@@ -185,6 +185,22 @@ describe("InboxPage list", () => {
     await waitFor(() => expect(lastListParams().q).toBe("wang"));
   });
 
+  it("sends the User ID box as an exact userId, separate from the search", async () => {
+    renderAt();
+    const box = await screen.findByLabelText("User ID");
+    fireEvent.change(box, { target: { value: "#58a92" } });
+    expect(box).toHaveValue("5892");
+    await waitFor(() => expect(lastListParams()).toEqual({ userId: 5892 }));
+    fireEvent.change(screen.getByLabelText("Search threads"), {
+      target: { value: "2026" },
+    });
+    await waitFor(() =>
+      expect(lastListParams()).toEqual({ userId: 5892, q: "2026" }),
+    );
+    fireEvent.change(box, { target: { value: "" } });
+    await waitFor(() => expect(lastListParams()).toEqual({ q: "2026" }));
+  });
+
   it("shows machine, archived and moved tags from row fields", async () => {
     api.listInboxThreads.mockResolvedValue(
       listData([

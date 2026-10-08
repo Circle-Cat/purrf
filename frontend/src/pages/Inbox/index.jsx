@@ -38,6 +38,8 @@ const InboxPage = () => {
   const [archived, setArchived] = useState(false);
   const [term, setTerm] = useState("");
   const [q, setQ] = useState("");
+  const [userIdTerm, setUserIdTerm] = useState("");
+  const [userId, setUserId] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [assigning, setAssigning] = useState(false);
 
@@ -57,6 +59,11 @@ const InboxPage = () => {
     return () => clearTimeout(id);
   }, [term]);
 
+  useEffect(() => {
+    const id = setTimeout(() => setUserId(userIdTerm), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(id);
+  }, [userIdTerm]);
+
   const {
     data: { threads, counts, services },
     refresh,
@@ -65,6 +72,7 @@ const InboxPage = () => {
     needsReply,
     archived,
     q,
+    userId,
   });
 
   const onChanged = useCallback(() => {
@@ -142,10 +150,18 @@ const InboxPage = () => {
         <Input
           type="search"
           aria-label="Search threads"
-          placeholder="Search name, #user ID, email or subject"
+          placeholder="Search name, email or subject"
           value={term}
           onChange={(e) => setTerm(e.target.value)}
           className="w-full border-slate-300 bg-white sm:w-72"
+        />
+        <Input
+          inputMode="numeric"
+          aria-label="User ID"
+          placeholder="User ID"
+          value={userIdTerm}
+          onChange={(e) => setUserIdTerm(e.target.value.replace(/\D/g, ""))}
+          className="w-full border-slate-300 bg-white sm:w-32"
         />
         <div
           role="group"

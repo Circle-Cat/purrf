@@ -14,10 +14,16 @@ const EMPTY = {
  * sent. Responses from superseded requests are dropped.
  *
  * @param {{service?: string, needsReply?: boolean, archived?: boolean,
- *   q?: string}} filters
+ *   q?: string, userId?: string}} filters
  * @returns {{data: object, loading: boolean, refresh: () => Promise<void>}}
  */
-export const useInboxThreads = ({ service, needsReply, archived, q }) => {
+export const useInboxThreads = ({
+  service,
+  needsReply,
+  archived,
+  q,
+  userId,
+}) => {
   const { begin, isCurrent } = useRequestGuard();
   const [data, setData] = useState(EMPTY);
   const [loading, setLoading] = useState(true);
@@ -28,6 +34,7 @@ export const useInboxThreads = ({ service, needsReply, archived, q }) => {
     if (needsReply) params.needsReply = true;
     if (archived) params.archived = true;
     if (q) params.q = q;
+    if (userId) params.userId = Number(userId);
     const seq = begin();
     try {
       const res = await listInboxThreads(params);
@@ -37,7 +44,7 @@ export const useInboxThreads = ({ service, needsReply, archived, q }) => {
     } finally {
       if (isCurrent(seq)) setLoading(false);
     }
-  }, [service, needsReply, archived, q, begin, isCurrent]);
+  }, [service, needsReply, archived, q, userId, begin, isCurrent]);
 
   useEffect(() => {
     refresh();
