@@ -42,6 +42,7 @@ import { userDisplayName } from "@/utils/userName";
 import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
 import ExemptionCell from "@/pages/MentorshipManagement/components/ExemptionCell";
+import AttendanceMark from "@/pages/MentorshipManagement/components/AttendanceMark";
 import { exemptionWhyLines } from "@/pages/MentorshipManagement/utils/approvalLabels";
 import MeetingLogDialog from "@/pages/MentorshipManagement/components/MeetingLogDialog";
 import StateChips from "@/pages/AdminAccounts/components/StateChips";
@@ -154,30 +155,6 @@ const orderPairs = (pairs) =>
       Number(a.partner.isActive === false) -
         Number(b.partner.isActive === false) || a.pairId - b.pairId,
   );
-
-/**
- * A red "!" whose tooltip lists a live pair's flagged meetings, one per line.
- *
- * @param {{ lines: string[] }} props
- */
-const AttendanceMark = ({ lines }) => (
-  <TooltipProvider>
-    <Tooltip>
-      <TooltipTrigger
-        type="button"
-        aria-label={`Attendance issues: ${lines.join(", ")}`}
-        className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white"
-      >
-        !
-      </TooltipTrigger>
-      <TooltipContent className="max-w-xs">
-        {lines.map((line) => (
-          <div key={line}>{line}</div>
-        ))}
-      </TooltipContent>
-    </Tooltip>
-  </TooltipProvider>
-);
 
 /**
  * Every pair the person is in this round, one item each: the partner with
