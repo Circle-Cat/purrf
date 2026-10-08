@@ -598,7 +598,7 @@ describe("NotificationBell", () => {
     ).toBeInTheDocument();
   });
 
-  it("tells the sender a reply arrived, naming the application", async () => {
+  it("tells the recipients a reply arrived, naming the application", async () => {
     // The actor is the candidate under their preferred name; the line reads
     // the application's applicant name, so the two differ here.
     await openWith({
@@ -614,7 +614,7 @@ describe("NotificationBell", () => {
 
     expect(
       screen.getByText(
-        "New reply to your email about Ada Lovelace — Backend Engineer",
+        "New reply on the email thread about Ada Lovelace — Backend Engineer",
       ),
     ).toBeInTheDocument();
   });
