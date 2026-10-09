@@ -16,6 +16,7 @@ import {
 } from "@/api/recruitingApi";
 import { LEAVE_TYPE_LABELS } from "@/constants/LeaveRequest";
 import { formatBusinessRange } from "@/pages/Leave/utils/leaveDates";
+import { stageLabel } from "@/pages/MentorshipManagement/components/email/emailLabels";
 
 /**
  * What a mentorship approval asks for, from its event's details.
@@ -71,6 +72,24 @@ const describe = (n) => {
       return n.details?.status === "failed"
         ? `${started} did not finish`
         : `${started} has finished`;
+    }
+    // Told to the admin who created a Kit send, once Kit has it scheduled or
+    // preparing gave up. Subject type is the send, so everything is in details.
+    case "mentorship.email_send_prepared": {
+      const what = [
+        n.details?.stage ? stageLabel(n.details.stage) : "",
+        n.details?.roundName?.trim() ?? "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      if (n.details?.status === "scheduled") {
+        return `Kit email scheduled${what ? `: ${what}` : ""}`;
+      }
+      return `Kit email not scheduled${what ? `: ${what}` : ""} — ${
+        n.details?.mayStillBeScheduled
+          ? "check Kit, it may still be sent"
+          : "no email was sent"
+      }`;
     }
     // Mentorship approval requests: told to the reviewer named, the new one
     // on a handover, the raiser when it is decided and the reviewer when it is

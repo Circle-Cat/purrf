@@ -27,6 +27,14 @@ import {
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { useAuth } from "@/context/auth";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
+import {
+  listNotifiedStages,
+  listKitDrafts,
+  createEmailSend,
+  refreshEmailPreview,
+  confirmEmailSend,
+  cancelEmailSend,
+} from "@/api/mentorshipEmailApi";
 import { toast } from "sonner";
 
 vi.mock("@/api/mentorshipApi", () => ({
@@ -43,6 +51,15 @@ vi.mock("@/api/mentorshipApi", () => ({
   decideMentorshipApproval: vi.fn(),
   reassignMentorshipApproval: vi.fn(),
   withdrawMentorshipApproval: vi.fn(),
+}));
+
+vi.mock("@/api/mentorshipEmailApi", () => ({
+  listNotifiedStages: vi.fn(),
+  listKitDrafts: vi.fn(),
+  createEmailSend: vi.fn(),
+  refreshEmailPreview: vi.fn(),
+  confirmEmailSend: vi.fn(),
+  cancelEmailSend: vi.fn(),
 }));
 
 vi.mock("@/hooks/useFeatureFlags", () => ({ useFeatureFlags: vi.fn() }));
@@ -2208,6 +2225,243 @@ describe("ParticipantSearchCard", () => {
           comment: undefined,
         }),
       );
+    });
+  });
+
+  describe("Kit notifications", () => {
+    const KIT_FLAG = { [FEATURE_FLAGS.MENTORSHIP_KIT_EMAIL]: true };
+
+    const alice = participantRow({ userId: 11, pairs: [] });
+    const cara = participantRow({
+      userId: 12,
+      firstName: "Cara",
+      lastName: "Wang",
+      preferredName: "Cara Wang",
+      primaryEmail: "cara@x.com",
+      participantRole: "mentee",
+      pairs: [],
+    });
+
+    const pick = (name) =>
+      userEvent.click(screen.getByRole("checkbox", { name: `Select ${name}` }));
+
+    const sendButton = () =>
+      screen.queryByRole("button", { name: /^Send notification · \d+$/ });
+
+    beforeEach(() => {
+      useFeatureFlags.mockReturnValue(KIT_FLAG);
+      searchParticipants.mockResolvedValue(resultsOf([alice, cara]));
+      listNotifiedStages.mockResolvedValue([
+        { userId: 11, stages: ["round_recruitment", "admission"] },
+      ]);
+      listKitDrafts.mockResolvedValue([
+        { id: 901, subject: "Your match", createdAt: "2026-10-02T00:00:00Z" },
+      ]);
+      createEmailSend.mockResolvedValue({
+        sendId: 5,
+        roundId: 7,
+        stage: "admission",
+        kitDraftId: 901,
+        kitDraftSubject: "Your match",
+        status: "draft",
+      });
+      refreshEmailPreview.mockResolvedValue({
+        subject: "Your match",
+        html: "<p>Hi</p>",
+        senderAddress: "notification-test@circlecat.org",
+        filterOk: true,
+        recipientCount: 2,
+        invalidHrefs: [],
+        noEmail: [],
+        recentlySentUserIds: [],
+        previewToken: "tok",
+      });
+      confirmEmailSend.mockResolvedValue({ sendId: 5, status: "preparing" });
+      cancelEmailSend.mockResolvedValue({ sendId: 5, status: "cancelled" });
+      // vi.mock("sonner") does not reach the component's copy under Bazel.
+      vi.spyOn(toast, "success").mockImplementation(() => {});
+    });
+
+    it("shows the stages each person was notified of this round", async () => {
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      const cara = await screen.findByText("Cara Wang");
+
+      expect(listNotifiedStages).toHaveBeenCalledWith("7");
+      const aliceCell = cellOf(screen.getByText("Alice Doe"), "Notifications");
+      await waitFor(() =>
+        expect(aliceCell).toHaveTextContent(
+          "New round invitationAdmission & onboarding",
+        ),
+      );
+      expect(cellOf(cara, "Notifications")).toHaveTextContent(/^—$/);
+    });
+
+    it("shows no Notifications column and asks nothing with the flag off", async () => {
+      useFeatureFlags.mockReturnValue({});
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await screen.findByText("Cara Wang");
+
+      expect(
+        screen.queryByRole("columnheader", { name: "Notifications" }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+      expect(listNotifiedStages).not.toHaveBeenCalled();
+    });
+
+    it("lets only mentorship admin writers pick people", async () => {
+      useAuth.mockReturnValue({
+        permissions: ["mentorship.admin.read"],
+        user: { userId: 9 },
+      });
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await screen.findByText("Cara Wang");
+
+      expect(
+        screen.getByRole("columnheader", { name: "Notifications" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    });
+
+    it("offers Send notification for the people picked", async () => {
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await screen.findByText("Cara Wang");
+      expect(sendButton()).not.toBeInTheDocument();
+
+      await pick("Alice Doe");
+      await pick("Cara Wang");
+
+      expect(screen.getByText("2 people")).toBeInTheDocument();
+      expect(sendButton()).toHaveTextContent("Send notification · 2");
+      expect(
+        screen.queryByRole("button", { name: /Send email/ }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("drops the picks when the list changes", async () => {
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await screen.findByText("Cara Wang");
+      await pick("Alice Doe");
+      expect(sendButton()).toBeInTheDocument();
+
+      await userEvent.type(screen.getByLabelText("Name / email"), "a");
+      await search();
+      await waitFor(() => expect(sendButton()).not.toBeInTheDocument());
+    });
+
+    it("keeps the Eligible for matching list to matching runs", async () => {
+      useFeatureFlags.mockReturnValue({
+        ...KIT_FLAG,
+        [FEATURE_FLAGS.MATCHING_RUN]: true,
+      });
+      await renderCard({ url: "/?round=7&eligible=1" });
+      await screen.findByText("Cara Wang");
+
+      await pick("Alice Doe");
+
+      expect(
+        screen.getByRole("button", { name: "Run matching · 1" }),
+      ).toBeInTheDocument();
+      expect(sendButton()).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("columnheader", { name: "Notifications" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("lets not registered people be picked, starting on New round invitation", async () => {
+      searchUnregistered.mockResolvedValue({
+        data: {
+          rows: [
+            {
+              userId: 31,
+              firstName: "Dana",
+              lastName: "Wu",
+              preferredName: "Dana Wu",
+              primaryEmail: "dana@x.com",
+              alternativeEmails: [],
+              isBlocked: false,
+              isDeactivated: false,
+              isInternal: true,
+              admittedRoles: ["mentee"],
+              roundsTakenPart: 1,
+              lastRoundName: "Spring 2026",
+            },
+          ],
+          total: 1,
+        },
+      });
+      listNotifiedStages.mockResolvedValue([
+        { userId: 31, stages: ["round_recruitment"] },
+      ]);
+      await renderCard({ url: "/?round=7&notRegistered=1" });
+      const dana = await screen.findByText("Dana Wu");
+      await waitFor(() =>
+        expect(cellOf(dana, "Notifications")).toHaveTextContent(
+          "New round invitation",
+        ),
+      );
+
+      await pick("Dana Wu");
+      await userEvent.click(sendButton());
+
+      const dialog = await screen.findByRole("dialog");
+      expect(within(dialog).getByText("To 1 person")).toBeInTheDocument();
+      expect(within(dialog).getByLabelText("Stage")).toHaveValue(
+        "round_recruitment",
+      );
+    });
+
+    it("schedules for the picked people, then clears the picks and reloads", async () => {
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await screen.findByText("Cara Wang");
+      await pick("Alice Doe");
+      await pick("Cara Wang");
+      await userEvent.click(sendButton());
+
+      const dialog = await screen.findByRole("dialog");
+      expect(
+        within(dialog).getByText("Alice Doe, Cara Wang"),
+      ).toBeInTheDocument();
+      await within(dialog).findByRole("option", { name: "Your match" });
+      await userEvent.selectOptions(
+        within(dialog).getByLabelText("Stage"),
+        "admission",
+      );
+      await userEvent.selectOptions(
+        within(dialog).getByLabelText("Kit draft"),
+        "901",
+      );
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Create" }),
+      );
+      await within(dialog).findByTitle("Email preview");
+      expect(createEmailSend).toHaveBeenCalledWith({
+        roundId: 7,
+        stage: "admission",
+        kitDraftId: 901,
+        userIds: [11, 12],
+      });
+
+      const date = within(dialog).getByLabelText("Send date");
+      const time = within(dialog).getByLabelText("Send time");
+      await userEvent.clear(date);
+      await userEvent.type(date, "2030-10-20");
+      await userEvent.clear(time);
+      await userEvent.type(time, "09:00");
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Confirm" }),
+      );
+
+      await waitFor(() =>
+        expect(toast.success).toHaveBeenCalledWith(
+          "Scheduled for 2030-10-20 09:00 Pacific",
+        ),
+      );
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
+      expect(sendButton()).not.toBeInTheDocument();
+      expect(listNotifiedStages).toHaveBeenCalledTimes(2);
+      expect(cancelEmailSend).not.toHaveBeenCalled();
     });
   });
 });
