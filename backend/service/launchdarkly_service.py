@@ -17,6 +17,7 @@ class LaunchDarklyService:
     FLAG_CREATE_GOOGLE_MEETING = "create-google-meeting"
     FLAG_VIEW_PERSONAL_SUMMARY = "view-personal-summary"
     FLAG_MATCHING_RUN = "matching-run"
+    FLAG_KIT_EMAIL = "mentorship-kit-email"
 
     def __init__(self, logger: Logger, launchdarkly_client: LaunchDarklyClient) -> None:
         self.logger = logger
@@ -48,6 +49,10 @@ class LaunchDarklyService:
         LaunchDarkly should leave the button shut rather than open.
         """
         return self._is_enabled(self.FLAG_MATCHING_RUN, user_context_dto)
+
+    def is_kit_email_enabled(self, user_context_dto: UserContextDto) -> bool:
+        """Check whether this admin may use mentorship sends through Kit."""
+        return self._is_enabled(self.FLAG_KIT_EMAIL, user_context_dto)
 
     def is_view_personal_summary_enabled(
         self, user_context_dto: UserContextDto

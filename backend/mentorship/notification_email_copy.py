@@ -29,6 +29,12 @@ copy and ``user_identity/notification_renderers`` follow.
 
 import html
 
+from backend.common.mentorship_email_enums import (
+    MentorshipEmailFailure,
+    MentorshipEmailRecipientResult,
+    MentorshipEmailStage,
+)
+
 _FOOTER = (
     "<p>This is an automated message from Purrf. Please do not reply "
     "directly to this email as this inbox is not monitored.</p>"
@@ -364,4 +370,178 @@ def approval_decided(
         f"Mentorship approval approved{subject_round}",
         "<p>Hello,</p>"
         f"<p>{actor} approved your request to {ask}. It has been done.</p>" + _FOOTER,
+    )
+
+
+_SEND_STAGE_LABELS = {
+    MentorshipEmailStage.ROUND_RECRUITMENT: "New round invitation",
+    MentorshipEmailStage.ADMISSION: "Admission & onboarding",
+    MentorshipEmailStage.ONBOARDING_REMINDER: "Onboarding reminder",
+    MentorshipEmailStage.MATCH_RESULT: "Match result",
+    MentorshipEmailStage.FIRST_CONTACT_REMINDER: "First contact reminder",
+    MentorshipEmailStage.MENTOR_CHECK_IN: "Mentor check-in",
+    MentorshipEmailStage.MIDTERM_REMINDER: "Mid-term reminder",
+    MentorshipEmailStage.FINAL_FOLLOWUP: "Final follow-up",
+    MentorshipEmailStage.FEEDBACK_INVITE: "Feedback invitation",
+}
+
+_SEND_FAILURES = {
+    MentorshipEmailFailure.DRAFT_CHANGED: "Purrf's copy of the draft was changed in Kit after you confirmed it.",
+    MentorshipEmailFailure.DRAFT_TAMPERED: (
+        "The recipients or sender of Purrf's copy were changed in Kit."
+    ),
+    MentorshipEmailFailure.DRAFT_GONE: "Purrf's copy of the draft was deleted in Kit.",
+    MentorshipEmailFailure.COUNT_MISMATCH: (
+        "Kit counted a different number of recipients than Purrf handed to it."
+    ),
+    MentorshipEmailFailure.TIME_PASSED: (
+        "The send time passed while people were being added to Kit."
+    ),
+    MentorshipEmailFailure.NO_RECIPIENTS: (
+        "Nobody could receive it: everyone selected was unsubscribed, bounced, "
+        "had no email address or could not be added to Kit."
+    ),
+    MentorshipEmailFailure.KIT_ERROR: "Something went wrong talking to Kit.",
+}
+
+_SEND_WHERE = "<p>Open Mentorship Management in Purrf to see the Participants card.</p>"
+
+
+def send_stage_label(stage: str | None) -> str:
+    """The stage as the send dialog names it, or the raw value if unknown."""
+    return _SEND_STAGE_LABELS.get(stage, stage or "")
+
+
+def unreached_reason(result: str | None, failure_reason: str | None) -> str:
+    """Why one person was not handed to Kit, in a few plain words."""
+    if result == MentorshipEmailRecipientResult.UNSUBSCRIBED:
+        if failure_reason == "complained":
+            return "marked an earlier email as spam"
+        if failure_reason == "inactive":
+            return "inactive in Kit"
+        return "unsubscribed"
+    if result == MentorshipEmailRecipientResult.BOUNCED:
+        return "email bounced"
+    reason = failure_reason or ""
+    if reason == "no_email":
+        return "no email address"
+    if reason == "kit_not_found":
+        return "could not be added to Kit (Kit could not find them)"
+    if reason.startswith("kit_state_"):
+        return f"could not be added to Kit (Kit status: {reason[10:]})"
+    if reason.startswith("kit_") and reason[4:].isdigit():
+        return f"could not be added to Kit (Kit error {reason[4:]})"
+    return "could not be added to Kit" + (f" ({reason})" if reason else "")
+
+
+def _send_subject(prefix: str, round_name: str | None, stage: str | None) -> str:
+    parts = [p for p in (send_stage_label(stage), (round_name or "").strip()) if p]
+    return f"{prefix}: {' · '.join(parts)}" if parts else prefix
+
+
+def _send_facts(round_name: str | None, stage: str | None, subject: str | None):
+    rows = [
+        ("Round", (round_name or "").strip()),
+        ("Stage", send_stage_label(stage)),
+        ("Kit draft", (subject or "").strip()),
+    ]
+    return [f"<li>{label}: {html.escape(value)}</li>" for label, value in rows if value]
+
+
+def email_send_scheduled(
+    round_name: str | None,
+    stage: str | None,
+    subject: str | None,
+    send_at: str | None,
+    handed: int,
+    not_handed: list[tuple[str, str]],
+) -> tuple[str, str]:
+    """The email the admin who created a Kit send gets once Kit has it scheduled.
+
+    Args:
+        round_name (str | None): The round's name, possibly blank.
+        stage (str | None): The send's stage value.
+        subject (str | None): The Kit draft's subject.
+        send_at (str | None): When Kit sends it, already written in Pacific time.
+        handed (int): People handed to Kit.
+        not_handed (list[tuple[str, str]]): (name, reason) for everyone else.
+
+    Returns:
+        tuple[str, str]: Subject and HTML body.
+    """
+    facts = _send_facts(round_name, stage, subject)
+    if send_at:
+        facts.append(f"<li>Sends at: {html.escape(send_at)}</li>")
+    facts.append(
+        f"<li>Handed to Kit: {handed} {'person' if handed == 1 else 'people'}</li>"
+    )
+    if not_handed:
+        left_out = (
+            f"<p>Not handed to Kit ({len(not_handed)}), so Kit will not email "
+            "them:</p><ul>"
+            + "".join(
+                f"<li>{html.escape(name or 'Unnamed person')}: {html.escape(reason)}</li>"
+                for name, reason in not_handed
+            )
+            + "</ul>"
+        )
+    else:
+        left_out = "<p>Everyone you selected was handed to Kit.</p>"
+    return (
+        _send_subject("Kit email scheduled", round_name, stage),
+        "<p>Hello,</p>"
+        "<p>The email you confirmed is scheduled in Kit.</p>"
+        f"<ul>{''.join(facts)}</ul>" + left_out + _SEND_WHERE + _FOOTER,
+    )
+
+
+def email_send_failed(
+    round_name: str | None,
+    stage: str | None,
+    subject: str | None,
+    failure_code: str | None,
+    error_message: str | None,
+    may_still_be_scheduled: bool = False,
+) -> tuple[str, str]:
+    """The email the admin who created a Kit send gets when it could not be
+    scheduled.
+
+    Args:
+        round_name (str | None): The round's name, possibly blank.
+        stage (str | None): The send's stage value.
+        subject (str | None): The Kit draft's subject.
+        failure_code (str | None): A ``MentorshipEmailFailure`` value.
+        error_message (str | None): What the prepare step recorded; shown only
+            for a Kit error, where it is the only explanation there is.
+        may_still_be_scheduled (bool): Purrf could not confirm the Kit draft is
+            unscheduled, so Kit may still send it.
+
+    Returns:
+        tuple[str, str]: Subject and HTML body.
+    """
+    reason = _SEND_FAILURES.get(failure_code, "Preparing it stopped unexpectedly.")
+    details = ""
+    if (
+        failure_code == MentorshipEmailFailure.KIT_ERROR
+        and (error_message or "").strip()
+    ):
+        details = f"<p>Details: {html.escape(error_message.strip())}</p>"
+    if may_still_be_scheduled:
+        outcome = (
+            "<p>Kit may still send this email: Purrf could not confirm that the "
+            "draft in Kit is unscheduled. Check it in Kit and unschedule it there "
+            "if needed before sending a new notification.</p>"
+        )
+    else:
+        outcome = (
+            "<p>No email was sent. To try again, select the people on the "
+            "Participants card in Mentorship Management and send a new "
+            "notification.</p>"
+        )
+    return (
+        _send_subject("Kit email not scheduled", round_name, stage),
+        "<p>Hello,</p>"
+        "<p>The email you confirmed could not be scheduled in Kit.</p>"
+        f"<ul>{''.join(_send_facts(round_name, stage, subject))}</ul>"
+        f"<p>Why: {html.escape(reason)}</p>" + details + outcome + _FOOTER,
     )

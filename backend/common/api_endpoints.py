@@ -259,3 +259,9 @@ INBOX_PEOPLE_ENDPOINT = "/inbox/people"
 INBOX_ATTACHMENT_ENDPOINT = (
     "/inbox/threads/{thread_id}/messages/{message_id}/attachments/{attachment_id}"
 )
+MENTORSHIP_ADMIN_KIT_DRAFTS = "/mentorship/admin/kit-drafts"
+MENTORSHIP_ADMIN_EMAIL_SENDS = "/mentorship/admin/email-sends"
+MENTORSHIP_ADMIN_EMAIL_SENDS_NOTIFIED = "/mentorship/admin/email-sends/notified"
+MENTORSHIP_ADMIN_EMAIL_SEND_PREVIEW = "/mentorship/admin/email-sends/{send_id}/preview"
+MENTORSHIP_ADMIN_EMAIL_SEND_CONFIRM = "/mentorship/admin/email-sends/{send_id}/confirm"
+MENTORSHIP_ADMIN_EMAIL_SEND_CANCEL = "/mentorship/admin/email-sends/{send_id}/cancel"

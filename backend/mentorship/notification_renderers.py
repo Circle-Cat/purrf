@@ -20,9 +20,11 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.common.mentorship_email_enums import MentorshipEmailSendStatus
 from backend.common.mentorship_enums import MentorshipEvent
 from backend.entity.event_entity import EventEntity
 from backend.mentorship import notification_email_copy as copy
+from backend.mentorship.mentorship_email_service import PACIFIC
 from backend.notification_management.render_registry import register_render
 from backend.common.name_utils import user_display_name
 from backend.repository.approval_request_repository import (
@@ -266,4 +268,48 @@ async def _render_approval_decided(session: AsyncSession, event: EventEntity):
         event.details.get("decision", ""),
         row.decision_comment if row else None,
         event.details.get("personName"),
+    )
+
+
+@register_render(MentorshipEvent.EMAIL_SEND_PREPARED)
+async def _render_email_send_prepared(session: AsyncSession, event: EventEntity):
+    """What the admin who created a Kit send is told once preparing ends.
+
+    Everything comes from ``event.details``, snapshotted when the outcome was
+    recorded. Times are in Pacific, as the send dialog states them.
+    """
+    del session
+    details = event.details
+    round_name, stage, subject = (
+        details.get("roundName"),
+        details.get("stage"),
+        details.get("subject"),
+    )
+    if details.get("status") != MentorshipEmailSendStatus.SCHEDULED:
+        return copy.email_send_failed(
+            round_name,
+            stage,
+            subject,
+            details.get("failureCode"),
+            details.get("errorMessage"),
+            bool(details.get("mayStillBeScheduled")),
+        )
+    send_at = _instant(details.get("sendAt"))
+    return copy.email_send_scheduled(
+        round_name,
+        stage,
+        subject,
+        send_at.astimezone(PACIFIC).strftime("%Y-%m-%d %H:%M Pacific")
+        if send_at
+        else None,
+        int(details.get("handedCount") or 0),
+        [
+            (
+                person.get("name") or "",
+                copy.unreached_reason(
+                    person.get("result"), person.get("failureReason")
+                ),
+            )
+            for person in details.get("notHanded") or []
+        ],
     )

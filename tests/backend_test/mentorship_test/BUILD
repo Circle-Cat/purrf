@@ -104,10 +104,12 @@ py_test(
     srcs = ["recipient_resolvers_test.py"],
     env_inherit = ["DATABASE_URL"],
     deps = [
+        "//backend/common:mentorship_email_enums",
         "//backend/common:mentorship_enums",
         "//backend/common:recruiting_enums",
         "//backend/entity:entities",
         "//backend/mentorship",
+        "//backend/notification_management:event_recorder",
         "//backend/notification_management:recipient_registry",
         "//backend/notification_management:render_registry",
         "//tests/backend_test/repository_test:base_repository_test_lib",
@@ -294,5 +296,39 @@ py_test(
         "//backend/mentorship",
         "//backend/repository:repositories",
         "//tests/backend_test/repository_test:base_repository_test_lib",
+    ],
+)
+
+py_test(
+    name = "mentorship_email_service_test",
+    srcs = ["mentorship_email_service_test.py"],
+    deps = [
+        "//backend/mentorship",
+        "@pypi//requests",
+    ],
+)
+
+py_test(
+    name = "mentorship_email_prepare_service_test",
+    srcs = ["mentorship_email_prepare_service_test.py"],
+    deps = [
+        "//backend/common:kit_client",
+        "//backend/common:kit_html_checks",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
+    name = "mentorship_email_controller_test",
+    srcs = ["mentorship_email_controller_test.py"],
+    deps = [
+        "//backend/common:exceptions",
+        "//backend/common:fast_api_error_handler",
+        "//backend/common:mentorship_email_enums",
+        "//backend/common:permissions",
+        "//backend/dto",
+        "//backend/mentorship",
+        "@pypi//fastapi",
+        "@pypi//httpx",
     ],
 )

@@ -49,6 +49,7 @@ class FastAppFactory:
         profile_controller,
         mentorship_controller,
         mentorship_admin_controller,
+        mentorship_email_controller,
         matching_run_complete_controller,
         email_management_controller,
         permission_admin_controller,
@@ -92,6 +93,7 @@ class FastAppFactory:
             profile_controller: Optional ProfileController instance to register profile routes.
             mentorship_controller: An instance of MentorshipController that manages API routes for mentorship services.
             mentorship_admin_controller: An instance of MentorshipAdminController that manages API routes for admin participant search.
+            mentorship_email_controller: An instance of MentorshipEmailController that manages API routes for mentorship sends through Kit.
             matching_run_complete_controller: An instance of MatchingRunCompleteController, the route the matcher job calls when a run finishes.
             email_management_controller: An instance of EmailManagementController that manages API routes for email OTP verify/link.
             recruiting_controller: An instance of RecruitingController that manages API routes for job posting lifecycle.
@@ -130,6 +132,7 @@ class FastAppFactory:
         self.profile_controller = profile_controller
         self.mentorship_controller = mentorship_controller
         self.mentorship_admin_controller = mentorship_admin_controller
+        self.mentorship_email_controller = mentorship_email_controller
         self.matching_run_complete_controller = matching_run_complete_controller
         self.email_management_controller = email_management_controller
         self.permission_admin_controller = permission_admin_controller
@@ -238,6 +241,7 @@ class FastAppFactory:
         app.include_router(self.profile_controller.router, prefix="/api")
         app.include_router(self.mentorship_controller.router, prefix="/api")
         app.include_router(self.mentorship_admin_controller.router, prefix="/api")
+        app.include_router(self.mentorship_email_controller.router, prefix="/api")
         app.include_router(self.matching_run_complete_controller.router, prefix="/api")
         app.include_router(self.email_management_controller.router, prefix="/api")
         app.include_router(self.permission_admin_controller.router, prefix="/api")

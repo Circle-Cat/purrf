@@ -63,6 +63,8 @@ class MentorshipEvent(StrEnum):
     APPROVAL_REQUESTED = "mentorship.approval_requested"
     APPROVAL_REASSIGNED = "mentorship.approval_reassigned"
     APPROVAL_DECIDED = "mentorship.approval_decided"
+    # A Kit notification send finished preparing: scheduled in Kit, or failed.
+    EMAIL_SEND_PREPARED = "mentorship.email_send_prepared"
 
 
 class RoundStatus(str, Enum):
