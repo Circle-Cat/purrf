@@ -305,6 +305,57 @@ describe("ParticipantDetailPage", () => {
     expect(screen.queryByText(/^Exempted$/)).not.toBeInTheDocument();
   });
 
+  it("does not call a person cleared when a mark came after their exemption", async () => {
+    getParticipantDetail.mockResolvedValue({
+      data: detailOf({
+        exempted: true,
+        notes: [
+          noteOf({
+            noteId: 2,
+            tag: "no_show",
+            pairId: 80,
+            createdAt: "2026-09-05T18:00:00Z",
+          }),
+          noteOf({
+            noteId: 1,
+            tag: "matching_exemption",
+            createdAt: "2026-09-03T18:00:00Z",
+          }),
+        ],
+      }),
+    });
+    renderPage();
+
+    expect(
+      await screen.findByText("Exempted earlier this round"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/^Exempted$/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the plain Exempted when the only mark came before the exemption", async () => {
+    getParticipantDetail.mockResolvedValue({
+      data: detailOf({
+        exempted: true,
+        notes: [
+          noteOf({
+            noteId: 2,
+            tag: "matching_exemption",
+            createdAt: "2026-09-05T18:00:00Z",
+          }),
+          noteOf({
+            noteId: 1,
+            tag: "no_show",
+            pairId: 80,
+            createdAt: "2026-09-03T18:00:00Z",
+          }),
+        ],
+      }),
+    });
+    renderPage();
+
+    expect(await screen.findByText("Exempted")).toBeInTheDocument();
+  });
+
   it("counts this round's marks in the header from the notes", async () => {
     getParticipantDetail.mockResolvedValue({
       data: detailOf({
@@ -577,6 +628,26 @@ describe("ParticipantDetailPage", () => {
           .getAllByRole("option")
           .map((o) => o.textContent),
       ).toEqual(["Mark as no show", "Raise a red flag"]);
+    });
+
+    it("names the pair a waiting mark is about", async () => {
+      getParticipantDetail.mockResolvedValue({
+        data: detailOf({
+          pendingRequests: [
+            { ...pendingWithdrawal, action: "mark_no_show", pairId: 80 },
+          ],
+        }),
+      });
+      renderPage();
+
+      const block = await screen.findByRole("region", {
+        name: "Waiting on a decision",
+      });
+      expect(
+        within(block).getByText(
+          "No show mark \u2014 raised by Dana Wu \u00b7 sent to Rae Kim \u2014 about the pair with Bob Smith",
+        ),
+      ).toBeInTheDocument();
     });
 
     it("has no Waiting on a decision block when nothing waits", async () => {

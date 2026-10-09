@@ -85,6 +85,36 @@ describe("WaitingOnDecision", () => {
     expect(within(block).queryAllByRole("button")).toHaveLength(0);
   });
 
+  it("names the pair a mark is about, when it is one of the person's pairs", () => {
+    const mark = { ...waiting, action: "mark_no_show", pairId: 80 };
+    const pairs = [
+      { pairId: 80, partner: { firstName: "Bob", lastName: "Smith" } },
+    ];
+    renderBlock({ viewerId: 77, requests: [mark], pairs });
+
+    expect(
+      screen.getByText(
+        "No show mark \u2014 raised by Dana Wu \u00b7 sent to Rae Kim \u2014 about the pair with Bob Smith",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing of a pair when the request names none or one not listed", () => {
+    const pairs = [
+      { pairId: 80, partner: { firstName: "Bob", lastName: "Smith" } },
+    ];
+    renderBlock({
+      viewerId: 77,
+      requests: [
+        { ...waiting, requestId: 1, pairId: null },
+        { ...waiting, requestId: 2, pairId: 999 },
+      ],
+      pairs,
+    });
+
+    expect(screen.queryByText(/about the pair/)).not.toBeInTheDocument();
+  });
+
   it("lets the raiser withdraw the request or hand it to another reviewer", async () => {
     const user = userEvent.setup();
     const { onChanged } = renderBlock();

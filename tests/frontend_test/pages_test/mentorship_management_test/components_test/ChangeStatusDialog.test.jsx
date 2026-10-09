@@ -238,6 +238,26 @@ describe("ChangeStatusDialog", () => {
     );
   });
 
+  it("hides the pair choice for a red flag on someone with no pairs", async () => {
+    const user = userEvent.setup();
+    renderDialog({
+      types: [statusRequestType("mark_red_flag")],
+      pairs: [],
+    });
+
+    expect(screen.queryByLabelText("Which pair")).not.toBeInTheDocument();
+    await pickReviewerAndSend(user);
+
+    await waitFor(() =>
+      expect(requestParticipantMark).toHaveBeenCalledWith(7, 3104, {
+        tag: "red_flag",
+        pairId: null,
+        reviewerId: 8,
+        reason: "",
+      }),
+    );
+  });
+
   it("asks no pair for a withdrawal", () => {
     renderDialog({ pairs: [pairWith(80, "Ann")] });
     expect(screen.queryByLabelText("Which pair")).not.toBeInTheDocument();

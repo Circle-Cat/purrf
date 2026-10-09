@@ -55,7 +55,10 @@ const ChangeStatusDialog = ({
   const type = types.find((t) => t.key === typeKey) ?? types[0];
   if (!type) return null;
   const pairRule = type.pair ?? PAIR_RULE.NONE;
-  const asksPair = pairRule !== PAIR_RULE.NONE;
+  // With no pair to pick and none required, the request is about no pair.
+  const hasPairField = pairRule !== PAIR_RULE.NONE;
+  const asksPair =
+    hasPairField && !(pairRule === PAIR_RULE.OPTIONAL && pairs.length === 0);
 
   const chooseType = (key) => {
     setTypeKey(key);
@@ -83,7 +86,7 @@ const ChangeStatusDialog = ({
       submitting={busy}
       canConfirm={!(pairRule === PAIR_RULE.REQUIRED && pairId === "")}
       onConfirm={async ({ reviewerId, reason }) => {
-        const body = asksPair
+        const body = hasPairField
           ? {
               reviewerId,
               reason,

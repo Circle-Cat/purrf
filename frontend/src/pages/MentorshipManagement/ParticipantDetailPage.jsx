@@ -83,11 +83,13 @@ const useFallbackRoundId = (userId, needed) => {
  * Why this person is kept out of matching by their history or marks, and
  * the exemption control (behind the matching-run flag, like the list's).
  * Exempted earlier this round and marked since: the new problem shows, with
- * a note of the earlier exemption. Exempted with nothing since: says so.
+ * a note of the earlier exemption, even when no finding lists it. Exempted
+ * with no mark since: says so.
  */
 const ExemptionBox = ({
   registration,
   exempted,
+  markedSince,
   roundId,
   matchingOn,
   canWrite,
@@ -97,11 +99,16 @@ const ExemptionBox = ({
 }) => {
   const lines = exemptionWhyLines(registration.exemptionFindings, roundId);
   if (lines.length === 0) {
-    return exempted ? (
+    if (!exempted) return null;
+    return markedSince ? (
+      <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+        Exempted earlier this round
+      </div>
+    ) : (
       <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
         Exempted
       </div>
-    ) : null;
+    );
   }
   return (
     <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -272,6 +279,18 @@ const ParticipantDetailPage = () => {
       redFlag: detail.notes.filter((n) => n.tag === "red_flag").length,
     };
 
+    const exemptedAt = detail.notes
+      .filter((n) => n.tag === "matching_exemption")
+      .reduce(
+        (latest, n) => Math.max(latest, Date.parse(n.createdAt)),
+        -Infinity,
+      );
+    const markedSinceExemption = detail.notes.some(
+      (n) =>
+        (n.tag === "no_show" || n.tag === "red_flag") &&
+        Date.parse(n.createdAt) > exemptedAt,
+    );
+
     body = (
       <div className="space-y-6">
         <div className="flex flex-wrap items-start gap-4">
@@ -352,6 +371,7 @@ const ParticipantDetailPage = () => {
                 <ExemptionBox
                   registration={registration}
                   exempted={detail.exempted}
+                  markedSince={markedSinceExemption}
                   roundId={round.roundId}
                   matchingOn={matchingOn}
                   canWrite={canWrite}
@@ -382,6 +402,7 @@ const ParticipantDetailPage = () => {
 
         <WaitingOnDecision
           requests={pendingRequests}
+          pairs={pairs}
           personId={person.userId}
           personName={name}
           viewerId={user?.userId}
