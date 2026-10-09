@@ -25,7 +25,7 @@ from backend.common.permissions import Permission
 from backend.dto.google_meeting_delete_response_dto import (
     GoogleMeetingDeleteResponseDto,
 )
-from backend.common.exceptions import MeetingGoneError
+from backend.common.exceptions import ConflictError, MeetingGoneError
 from backend.mentorship.round_windows import (
     is_meeting_log_open,
     meeting_log_closes_at,
@@ -838,6 +838,79 @@ class MeetingService:
             succeeded_meeting_ids=succeeded_event_ids,
             failed_meeting_ids=failed_event_ids,
         )
+
+    async def cancel_upcoming_for_pairs(
+        self, session: AsyncSession, pair_ids: list[int]
+    ) -> int:
+        """Cancel the pairs' Google meetings that have not started yet, inside
+        the caller's transaction. Does NOT commit.
+
+        A meeting that has started or been held stays: it is history, and a
+        Calendar delete would mail everyone a cancellation for it. Manual and
+        legacy rows have no Calendar event and are records, so they stay too.
+        Calendar is asked first and rows are deleted only if every event is
+        gone (an event already missing counts as gone); otherwise nothing is
+        deleted and the caller's transaction is expected to roll back.
+
+        Args:
+            session (AsyncSession): The caller's open session.
+            pair_ids (list[int]): The pairs whose meetings to cancel.
+
+        Returns:
+            int: How many meetings were cancelled.
+
+        Raises:
+            ConflictError: Calendar refused to delete some events (code
+                ``calendar_cancel_failed``).
+        """
+        if not pair_ids:
+            return 0
+        by_pair = await self.mentorship_meeting_repository.get_meetings_by_pairs(
+            session=session, pair_ids=list(pair_ids)
+        )
+        now = datetime.now(dt_timezone.utc)
+        upcoming = sorted(
+            (
+                m
+                for meetings in by_pair.values()
+                for m in meetings
+                if m.source == MeetingSource.GOOGLE
+                and not m.is_completed
+                and m.start_datetime is not None
+                and m.start_datetime > now
+            ),
+            key=lambda m: (m.pair_id, m.start_datetime),
+        )
+        if not upcoming:
+            return 0
+
+        _succeeded, failed = await self.meeting_scheduling_service.cancel(
+            [m.meeting_id for m in upcoming], calendar_id=self.mentorship_calendar_id
+        )
+        if failed:
+            self.logger.error(
+                "[MeetingService] Calendar refused to cancel %s for pairs %s",
+                failed,
+                pair_ids,
+            )
+            raise ConflictError(
+                f"{len(failed)} upcoming meeting(s) could not be cancelled on the "
+                "calendar, so nothing was changed. Try again.",
+                code="calendar_cancel_failed",
+            )
+
+        for pair_id in sorted({m.pair_id for m in upcoming}):
+            await self.mentorship_meeting_repository.delete_meetings(
+                session=session,
+                pair_id=pair_id,
+                meeting_ids=[m.meeting_id for m in upcoming if m.pair_id == pair_id],
+            )
+        self.logger.info(
+            "[MeetingService] Cancelled %d upcoming meeting(s) for pairs %s",
+            len(upcoming),
+            pair_ids,
+        )
+        return len(upcoming)
 
     def _has_time_conflict(
         self,
