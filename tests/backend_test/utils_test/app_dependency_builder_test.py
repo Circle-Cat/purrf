@@ -544,6 +544,10 @@ class TestAppDependencyBuilder(TestCase):
             builder.matching_eligibility_service,
         )
         self.assertIs(
+            builder.exempt_matching_handler.participants_repository,
+            mock_mentorship_round_participants_repo_cls.return_value,
+        )
+        self.assertIs(
             builder.matching_run_service.matching_eligibility_service,
             builder.matching_eligibility_service,
         )

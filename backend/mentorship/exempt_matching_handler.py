@@ -11,7 +11,11 @@ from datetime import datetime, timezone
 
 from backend.approval.approval_handler import ApprovalHandler
 from backend.common.exceptions import ConflictError
-from backend.common.mentorship_enums import MentorshipEvent, ParticipantNoteTag
+from backend.common.mentorship_enums import (
+    ApprovalStatus,
+    MentorshipEvent,
+    ParticipantNoteTag,
+)
 from backend.common.name_utils import user_display_name
 from backend.common.permissions import Permission
 from backend.mentorship.publish_matching_handler import MENTORSHIP_ROUND_SUBJECT
@@ -44,6 +48,7 @@ class ExemptMatchingHandler(ApprovalHandler):
         note_repository,
         users_repository,
         logger,
+        participants_repository,
     ):
         """
         Args:
@@ -52,12 +57,15 @@ class ExemptMatchingHandler(ApprovalHandler):
             note_repository: Writes the exemption.
             users_repository: Names people in notes, refusals and emails.
             logger: Injected logger.
+            participants_repository: Reads the person's registration, to refuse
+                someone who has left.
         """
         self.matching_eligibility_service = matching_eligibility_service
         self.rounds_repository = rounds_repository
         self.note_repository = note_repository
         self.users_repository = users_repository
         self.logger = logger
+        self.participants_repository = participants_repository
 
     def subject_id(self, request) -> int:
         return int(request.payload["round_id"])
@@ -81,8 +89,8 @@ class ExemptMatchingHandler(ApprovalHandler):
 
         Raises:
             ValueError: The payload or target id is malformed.
-            ConflictError: The round is not in progress, or the person does
-                not need an exemption in it.
+            ConflictError: The round is not in progress, the person has left
+                it, or does not need an exemption in it.
         """
         round_id, user_id = payload.get("round_id"), payload.get("user_id")
         if not isinstance(round_id, int) or not isinstance(user_id, int):
@@ -95,7 +103,7 @@ class ExemptMatchingHandler(ApprovalHandler):
 
     async def problems_at_approval(self, session, request) -> list[str]:
         """The round still has to be in progress and the person still has to
-        need the exemption.
+        be in it and need the exemption.
 
         Returns:
             list[str]: One sentence per problem, empty when it may go ahead.
@@ -136,6 +144,15 @@ class ExemptMatchingHandler(ApprovalHandler):
             return [f"Mentorship round {round_id} does not exist."]
         if not is_in_progress(round_, datetime.now(timezone.utc)):
             return ["The round is not in progress."]
+        participant = await self.participants_repository.get_by_user_id_and_round_id(
+            session, user_id, round_id
+        )
+        if (
+            participant is not None
+            and participant.approval_status == ApprovalStatus.WITHDRAWN
+        ):
+            name = (await self._names(session, [user_id])).get(user_id)
+            return [f"{name or f'User {user_id}'} has left this round."]
         needing = await self.matching_eligibility_service.needs_exemption(
             session, round_id
         )

@@ -753,6 +753,7 @@ class AppDependencyBuilder:
             note_repository=self.mentorship_participant_note_repository,
             users_repository=self.users_repository,
             logger=self.logger,
+            participants_repository=self.mentorship_round_participants_repo,
         )
         self.approval_service = ApprovalService(
             approval_request_repository=self.approval_request_repository,
