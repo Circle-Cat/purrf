@@ -210,3 +210,21 @@ py_test(
         "//backend/common:matching_job_client",
     ],
 )
+
+py_test(
+    name = "mentorship_email_enums_test",
+    srcs = ["mentorship_email_enums_test.py"],
+    deps = ["//backend/common:mentorship_email_enums"],
+)
+
+py_test(
+    name = "kit_html_checks_test",
+    srcs = ["kit_html_checks_test.py"],
+    deps = ["//backend/common:kit_html_checks"],
+)
+
+py_test(
+    name = "kit_client_test",
+    srcs = ["kit_client_test.py"],
+    deps = ["//backend/common:kit_client"],
+)

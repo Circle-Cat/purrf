@@ -189,6 +189,16 @@ py_library(
 )
 
 py_library(
+    name = "kit_html_checks",
+    srcs = ["kit_html_checks.py"],
+)
+
+py_library(
+    name = "mentorship_email_enums",
+    srcs = ["mentorship_email_enums.py"],
+)
+
+py_library(
     name = "mentorship_enums",
     srcs = ["mentorship_enums.py"],
 )
@@ -285,6 +295,16 @@ py_library(
     srcs = ["matching_job_client.py"],
     deps = [
         "@pypi//google_auth",
+        "@pypi//requests",
+    ],
+)
+
+py_library(
+    name = "kit_client",
+    srcs = ["kit_client.py"],
+    deps = [
+        ":environment_constants",
+        ":exceptions",
         "@pypi//requests",
     ],
 )
