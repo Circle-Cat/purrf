@@ -27,6 +27,7 @@ import {
   decideMentorshipApproval,
   withdrawMentorshipApproval,
   requestMatchingExemption,
+  requestParticipantMark,
   requestParticipantWithdrawal,
 } from "@/api/mentorshipApi";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
@@ -534,6 +535,33 @@ describe("Mentorship Service API", () => {
     expect(request.post).toHaveBeenCalledWith(
       "/mentorship/admin/rounds/7/participants/3104/withdraw-request",
       { reviewerId: 8, reason: "" },
+    );
+  });
+
+  it("requestParticipantMark posts the mark and its pair for the person in the round", async () => {
+    request.post.mockResolvedValue({ data: {} });
+
+    await requestParticipantMark(7, 3104, {
+      tag: "no_show",
+      pairId: 80,
+      reviewerId: 8,
+      reason: "",
+    });
+    await requestParticipantMark(7, 3104, {
+      tag: "red_flag",
+      reviewerId: 8,
+      reason: "Rude",
+    });
+
+    expect(request.post).toHaveBeenNthCalledWith(
+      1,
+      "/mentorship/admin/rounds/7/participants/3104/mark-request",
+      { tag: "no_show", pairId: 80, reviewerId: 8, reason: "" },
+    );
+    expect(request.post).toHaveBeenNthCalledWith(
+      2,
+      "/mentorship/admin/rounds/7/participants/3104/mark-request",
+      { tag: "red_flag", pairId: null, reviewerId: 8, reason: "Rude" },
     );
   });
 

@@ -576,9 +576,11 @@ const ParticipantSearchCard = () => {
           ),
           why: (
             <ul className="space-y-0.5 text-xs">
-              {exemptionWhyLines(row.exemptionFindings).map((line) => (
-                <li key={line}>{line}</li>
-              ))}
+              {exemptionWhyLines(row.exemptionFindings, committedRoundId).map(
+                (line) => (
+                  <li key={line}>{line}</li>
+                ),
+              )}
             </ul>
           ),
           exemption: (

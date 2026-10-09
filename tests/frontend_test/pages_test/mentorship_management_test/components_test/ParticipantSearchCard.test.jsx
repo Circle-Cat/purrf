@@ -2138,6 +2138,23 @@ describe("ParticipantSearchCard", () => {
       ).toBeInTheDocument();
     });
 
+    it("says a mark in the searched round is in this round", async () => {
+      searchParticipants.mockResolvedValue(
+        resultsOf([
+          shortOfMeetings({
+            exemptionFindings: [
+              { reason: "red_flag", roundId: 7, roundName: "Fall 2026" },
+            ],
+          }),
+        ]),
+      );
+      await renderCard({ url: NEEDS_URL });
+
+      expect(
+        await screen.findByText("Red flag in this round"),
+      ).toBeInTheDocument();
+    });
+
     it("offers the Exemption column only with the matching-run flag on", async () => {
       searchParticipants.mockResolvedValue(resultsOf([shortOfMeetings()]));
       await renderCard({ url: NEEDS_URL });

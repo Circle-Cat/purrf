@@ -100,7 +100,7 @@ const ExemptionBox = ({
       </div>
     );
   }
-  const lines = exemptionWhyLines(registration.exemptionFindings);
+  const lines = exemptionWhyLines(registration.exemptionFindings, roundId);
   if (lines.length === 0) return null;
   return (
     <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
