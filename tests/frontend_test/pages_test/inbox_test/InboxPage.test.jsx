@@ -245,7 +245,8 @@ describe("InboxPage thread detail", () => {
       data: detail({
         messages: [
           message({
-            bodyHtml: '<p>Hello</p><img src=x onerror="alert(1)">',
+            bodyHtml:
+              '<style>body{display:none}</style><p>Hello</p><img src=x onerror="alert(1)">',
             attachments: [
               { name: "cv.pdf", size: 2048, attachmentId: "a1" },
               { name: "b.png", size: 10, attachmentId: "a2" },
@@ -262,6 +263,10 @@ describe("InboxPage thread detail", () => {
     const pane = await thread();
     await within(pane).findByText("Hello");
     expect(pane.innerHTML).not.toContain("onerror");
+    expect(pane.innerHTML).not.toContain("display:none");
+    expect(within(pane).getByText("Hello").parentElement.className).toContain(
+      "[contain:paint]",
+    );
     const cv = within(pane).getByRole("link", { name: /cv\.pdf/ });
     expect(cv).toHaveAttribute(
       "href",

@@ -3919,6 +3919,7 @@ describe("ApplicationDetailPage — Emails tab", () => {
                 direction: "inbound",
                 fromAddress: "cand@x.com",
                 bodyHtml:
+                  "<style>body{display:none}</style>" +
                   "<p>first para</p><p>second para</p><ul><li>bullet</li></ul>" +
                   '<p><a href="https://x.test">a link</a></p>',
                 bodyText: "first para",
@@ -3938,6 +3939,8 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(body.className).toContain("[&_ul]:list-disc");
     expect(body.className).toContain("[&_ol]:list-decimal");
     expect(body.className).toContain("[&_a]:underline");
+    expect(body.className).toContain("[contain:paint]");
+    expect(body.querySelector("style")).toBeNull();
   });
 
   it("spaces the paragraphs of a template applied into the compose body", async () => {
