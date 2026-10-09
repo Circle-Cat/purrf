@@ -24,3 +24,10 @@ variable "gmail_refresh_token" {
   type        = string
   sensitive   = true
 }
+
+variable "kit_api_key" {
+  description = "Kit v4 API key for mentorship notifications; supply via TF_VAR. Empty leaves sending unavailable."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
