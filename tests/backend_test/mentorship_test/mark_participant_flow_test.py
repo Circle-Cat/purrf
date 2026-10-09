@@ -257,16 +257,19 @@ class MarkParticipantFlowTest(BaseRepositoryTestLib):
         self.assertIs(self.active_pair.status, PairStatus.ACTIVE)
 
     async def test_a_no_show_about_someone_else_s_pair_is_refused(self):
-        with self.assertRaises(ConflictError):
+        with self.assertRaises(ConflictError) as caught:
             await self._raise("mark_no_show", self.mentor, self.other_pair.pair_id)
+        self.assertIn("is not one of Mia", str(caught.exception))
 
     async def test_a_no_show_on_someone_never_paired_is_refused(self):
-        with self.assertRaises(ConflictError):
+        with self.assertRaises(ConflictError) as caught:
             await self._raise("mark_no_show", self.uma, self.active_pair.pair_id)
+        self.assertIn("had no pair in this round", str(caught.exception))
 
     async def test_a_red_flag_on_someone_not_registered_is_refused(self):
-        with self.assertRaises(ConflictError):
+        with self.assertRaises(ConflictError) as caught:
             await self._raise("mark_red_flag", self.stranger)
+        self.assertIn("is not registered for this round", str(caught.exception))
 
     async def test_a_red_flag_may_go_on_someone_who_has_left(self):
         self.uma_reg.approval_status = ApprovalStatus.WITHDRAWN
@@ -295,6 +298,60 @@ class MarkParticipantFlowTest(BaseRepositoryTestLib):
         with self.assertRaises(ConflictError) as caught:
             await self._approve(request_id)
         self.assertEqual(caught.exception.code, APPROVAL_CHECKS_FAILED)
+
+    async def test_a_no_show_counts_only_in_the_latest_earlier_round_she_was_paired(
+        self,
+    ):
+        async def earlier_round(name, days_ago):
+            round_ = MentorshipRoundEntity(
+                name=name,
+                required_meetings=0,
+                promotion_start_at=self.now - timedelta(days=days_ago + 90),
+                onboarding_deadline_at=self.now - timedelta(days=days_ago + 70),
+                meetings_completion_deadline_at=self.now - timedelta(days=days_ago),
+                feedback_deadline_at=self.now - timedelta(days=days_ago - 10),
+            )
+            await self.insert_entities([round_])
+            await self.insert_entities([_pair(round_.round_id, self.mentor, self.mentee_a)])
+            return round_.round_id
+
+        # Her onboarding is done, so only her history can keep her out.
+        await self.insert_entities([
+            TrainingEntity(
+                user_id=self.mentor.user_id,
+                category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+                status=TrainingStatus.DONE,
+                deadline=self.now,
+            )
+        ])
+        older_id = await earlier_round("Autumn 2025", 200)
+        newer_id = await earlier_round("Winter 2026", 100)
+        mia_id = self.mentor.user_id
+
+        async def no_show_in(round_id, hours_ago):
+            await self.insert_entities([
+                MentorshipParticipantNoteEntity(
+                    user_id=mia_id,
+                    round_id=round_id,
+                    author_user_id=self.reviewer_id,
+                    body="No show",
+                    tag=ParticipantNoteTag.NO_SHOW,
+                    created_at=self.now - timedelta(hours=hours_ago),
+                )
+            ])
+
+        await no_show_in(older_id, 5)
+        self.assertNotIn(
+            mia_id, await self.eligibility.needs_exemption(self.session, self.round_id)
+        )
+
+        await no_show_in(newer_id, 3)
+        self.assertEqual(
+            (await self.eligibility.needs_exemption(self.session, self.round_id)).get(
+                mia_id
+            ),
+            [HistoryFinding(IneligibleReason.NO_SHOW, newer_id)],
+        )
 
     async def test_a_red_flag_after_an_exemption_needs_a_second_one(self):
         # Exempted earlier this round, two hours ago.
