@@ -581,6 +581,56 @@ describe("NotificationBell", () => {
     ).toBeInTheDocument();
   });
 
+  const sendRow = (details) => ({
+    id: 7,
+    eventType: "mentorship.email_send_prepared",
+    jobTitle: "",
+    applicantName: "",
+    subjectName: "",
+    actorName: null,
+    createdAt: "2026-10-09T00:00:00Z",
+    details: {
+      roundName: "Fall 2026",
+      stage: "match_result",
+      status: "scheduled",
+      ...details,
+    },
+  });
+
+  it("tells the send's creator their Kit email is scheduled", async () => {
+    await openWith(sendRow({}));
+
+    expect(
+      screen.getByText("Kit email scheduled: Match result · Fall 2026"),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the send's creator their Kit email was not scheduled", async () => {
+    await openWith(sendRow({ status: "failed", failureCode: "draft_gone" }));
+
+    expect(
+      screen.getByText(
+        "Kit email not scheduled: Match result · Fall 2026 — no email was sent",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells the send's creator to check Kit when it may still send", async () => {
+    await openWith(
+      sendRow({
+        status: "failed",
+        failureCode: "kit_error",
+        mayStillBeScheduled: true,
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Kit email not scheduled: Match result · Fall 2026 — check Kit, it may still be sent",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("tells an ops.maintain holder the Gmail sync needs attention", async () => {
     await openWith({
       id: 6,
