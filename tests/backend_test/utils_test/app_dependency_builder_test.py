@@ -548,6 +548,14 @@ class TestAppDependencyBuilder(TestCase):
             mock_mentorship_round_participants_repo_cls.return_value,
         )
         self.assertIs(
+            builder.approval_service.handler_for("withdraw_participant"),
+            builder.withdraw_participant_handler,
+        )
+        self.assertIs(
+            builder.withdraw_participant_handler.meeting_service,
+            mock_meeting_service_cls.return_value,
+        )
+        self.assertIs(
             builder.matching_run_service.matching_eligibility_service,
             builder.matching_eligibility_service,
         )

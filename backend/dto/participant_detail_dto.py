@@ -42,6 +42,18 @@ class PendingBlockRequestDto(BaseDto):
     reviewer: ApprovalPersonDto
 
 
+class PendingRequestDto(BaseDto):
+    """A request about this person in this round waiting on a reviewer. Who
+    raised it is included: only they may withdraw or reassign it."""
+
+    request_id: int
+    action: str
+    raised_by: ApprovalPersonDto
+    reviewer: ApprovalPersonDto
+    reason: str | None = None
+    created_at: datetime | None = None
+
+
 class ParticipationHistoryRowDto(ParticipantRowDto):
     exempted: bool
 
@@ -56,6 +68,7 @@ class ParticipantDetailDto(BaseDto):
     feedback: ParticipantFeedbackDto | None = None
     notes: list[ParticipantNoteDto]
     pending_block_request: PendingBlockRequestDto | None = None
+    pending_requests: list[PendingRequestDto]
     # Rounds they registered for that ended before this one, newest first.
     history: list[ParticipationHistoryRowDto]
 
