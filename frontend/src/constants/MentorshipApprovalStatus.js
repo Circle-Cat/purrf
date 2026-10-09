@@ -3,4 +3,5 @@ export const MentorshipApprovalStatus = Object.freeze({
   MATCHED: "matched",
   UN_MATCHED: "un_matched",
   REJECTED: "rejected",
+  WITHDRAWN: "withdrawn",
 });

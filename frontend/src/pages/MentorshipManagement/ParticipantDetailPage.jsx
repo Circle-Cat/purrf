@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import { PERMISSIONS } from "@/constants/Permissions";
@@ -32,6 +33,9 @@ import NoteTimeline from "@/pages/MentorshipManagement/components/NoteTimeline";
 import ParticipantFeedback from "@/pages/MentorshipManagement/components/ParticipantFeedback";
 import ParticipationHistory from "@/pages/MentorshipManagement/components/ParticipationHistory";
 import BlockFromPurrf from "@/pages/MentorshipManagement/components/BlockFromPurrf";
+import ChangeStatusDialog from "@/pages/MentorshipManagement/components/ChangeStatusDialog";
+import WaitingOnDecision from "@/pages/MentorshipManagement/components/WaitingOnDecision";
+import { availableStatusRequestTypes } from "@/pages/MentorshipManagement/utils/statusRequestTypes";
 import { MEETING_TIMEZONE } from "@/pages/MentorshipManagement/utils/attendanceIssues";
 
 /**
@@ -127,8 +131,10 @@ const ExemptionBox = ({
  * One person in one round: who they are, their status and pairs with each
  * pair's meeting log, the round's notes, their feedback, and the rounds they
  * took part in before. Registered or not, the same page. Writing (notes,
- * meeting edits, exemptions) needs mentorship write access and a round in
- * progress; asking for a block needs write access only.
+ * meeting edits, exemptions, status requests) needs mentorship write access
+ * and a round in progress; asking for a block needs write access only.
+ * Requests about the person wait in Waiting on a decision until their
+ * reviewer decides.
  *
  * Route: /mentorship-management/participants/:userId?round=&pair=
  */
@@ -164,6 +170,7 @@ const ParticipantDetailPage = () => {
   // and URL pair, when that detail first arrives, so a quiet refetch after a
   // note or a save leaves the open pair and the scroll position alone.
   const [openPairId, setOpenPairId] = useState(null);
+  const [changingStatus, setChangingStatus] = useState(false);
   const appliedFor = useRef(null);
   const pairs = detail?.registration?.pairs ?? [];
   useEffect(() => {
@@ -228,6 +235,17 @@ const ParticipantDetailPage = () => {
         ? registration?.menteeOnboardingStatus
         : registration?.mentorOnboardingStatus;
     const subject = { userId: person.userId, name, role };
+    // Requests go through the mentorship approvals, which sit behind the
+    // matching-run flag.
+    const pendingRequests = detail.pendingRequests ?? [];
+    const statusTypes = matchingOn
+      ? availableStatusRequestTypes({
+          canWrite,
+          round,
+          registration,
+          pendingRequests,
+        })
+      : [];
     const idLine = [
       `ID ${person.userId}`,
       MentorshipParticipantRoleLabels[role] ?? "Not registered",
@@ -259,7 +277,12 @@ const ParticipantDetailPage = () => {
               />
             </div>
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto flex flex-wrap items-start gap-2">
+            {statusTypes.length > 0 && (
+              <Button size="sm" onClick={() => setChangingStatus(true)}>
+                Change status / flag
+              </Button>
+            )}
             <BlockFromPurrf
               person={person}
               pendingBlockRequest={detail.pendingBlockRequest}
@@ -267,6 +290,17 @@ const ParticipantDetailPage = () => {
               onRequested={refetch}
             />
           </div>
+          {statusTypes.length > 0 && (
+            <ChangeStatusDialog
+              open={changingStatus}
+              onOpenChange={setChangingStatus}
+              person={{ userId: person.userId, name }}
+              roundId={round.roundId}
+              types={statusTypes}
+              pendingRequests={pendingRequests}
+              onSent={refetch}
+            />
+          )}
         </div>
 
         {!round.inProgress && (
@@ -331,6 +365,16 @@ const ParticipantDetailPage = () => {
             </>
           )}
         </section>
+
+        <WaitingOnDecision
+          requests={pendingRequests}
+          personId={person.userId}
+          personName={name}
+          viewerId={user?.userId}
+          canApprove={canApprove}
+          actionsOn={matchingOn}
+          onChanged={refetch}
+        />
 
         <NoteTimeline
           notes={detail.notes}

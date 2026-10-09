@@ -1,14 +1,17 @@
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import { participantLink } from "@/pages/MentorshipManagement/utils/participantLink";
 
 /** The mentorship approval actions, as the API names them. */
 export const APPROVAL_ACTION = Object.freeze({
   PUBLISH_MATCHING: "publish_matching",
   EXEMPT_MATCHING: "exempt_matching",
+  WITHDRAW_PARTICIPANT: "withdraw_participant",
 });
 
 const ACTION_LABELS = {
   [APPROVAL_ACTION.PUBLISH_MATCHING]: "Publish matching result",
   [APPROVAL_ACTION.EXEMPT_MATCHING]: "Matching exemption",
+  [APPROVAL_ACTION.WITHDRAW_PARTICIPANT]: "Withdrawal from round",
 };
 
 /**
@@ -23,7 +26,7 @@ export const approvalActionLabel = (action) =>
  * Where a reviewer decides a request: decisions are taken on the page of the
  * thing they are about. A publish request opens that round's matching
  * results; an exemption opens the round's Needs exemption list narrowed to
- * the person.
+ * the person; a withdrawal opens the person's page for the round.
  *
  * @param {{action: string, round: {roundId: number},
  *          person?: {userId: number}|null}} request
@@ -31,6 +34,9 @@ export const approvalActionLabel = (action) =>
  */
 export const approvalReviewLink = (request) => {
   const roundId = request.round?.roundId;
+  if (request.action === APPROVAL_ACTION.WITHDRAW_PARTICIPANT) {
+    return participantLink(request.person?.userId, roundId);
+  }
   if (request.action === APPROVAL_ACTION.EXEMPT_MATCHING) {
     const search = new URLSearchParams({
       round: String(roundId),

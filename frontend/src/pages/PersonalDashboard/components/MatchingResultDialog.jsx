@@ -50,6 +50,13 @@ export default function MatchingResultDialog({
   const isMatched = currentStatus === MatchStatus.MATCHED;
   const isDisabled = !canViewMatch && !isMatched;
 
+  const participationEnded = {
+    title: "Participation Ended",
+    description:
+      "You took part in this round, and your participation has since ended.",
+    color: "text-amber-600",
+  };
+
   /**
    * Status message configuration
    */
@@ -71,6 +78,7 @@ export default function MatchingResultDialog({
         "Thank you for applying. Unfortunately, you are not eligible for this round.",
       color: "text-destructive",
     },
+    [MatchStatus.WITHDRAWN]: participationEnded,
     [MatchStatus.PENDING]: {
       title: "Matching Has Not Started",
       description: "The matching process for this round hasn't started yet.",
@@ -106,12 +114,7 @@ export default function MatchingResultDialog({
         color: "text-amber-600",
       }
     : hasLeftTheRound
-      ? {
-          title: "Participation Ended",
-          description:
-            "You took part in this round, and your participation has since ended.",
-          color: "text-amber-600",
-        }
+      ? participationEnded
       : statusConfig[currentStatus] || statusConfig[MatchStatus.UNKNOWN];
 
   return (

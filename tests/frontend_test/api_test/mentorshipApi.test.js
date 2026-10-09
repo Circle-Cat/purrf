@@ -27,6 +27,7 @@ import {
   decideMentorshipApproval,
   withdrawMentorshipApproval,
   requestMatchingExemption,
+  requestParticipantWithdrawal,
 } from "@/api/mentorshipApi";
 import { API_ENDPOINTS } from "@/constants/ApiEndpoints";
 
@@ -522,6 +523,17 @@ describe("Mentorship Service API", () => {
     expect(request.post).toHaveBeenCalledWith(
       "/mentorship/admin/rounds/7/participants/21/exemption-request",
       { reviewerId: 8, reason: "Left" },
+    );
+  });
+
+  it("requestParticipantWithdrawal posts to the person in the round", async () => {
+    request.post.mockResolvedValue({ data: {} });
+
+    await requestParticipantWithdrawal(7, 3104, { reviewerId: 8, reason: "" });
+
+    expect(request.post).toHaveBeenCalledWith(
+      "/mentorship/admin/rounds/7/participants/3104/withdraw-request",
+      { reviewerId: 8, reason: "" },
     );
   });
 

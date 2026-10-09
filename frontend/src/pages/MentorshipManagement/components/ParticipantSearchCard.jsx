@@ -773,6 +773,9 @@ const ParticipantSearchCard = () => {
               <SelectItem value={MentorshipApprovalStatus.REJECTED}>
                 Rejected
               </SelectItem>
+              <SelectItem value={MentorshipApprovalStatus.WITHDRAWN}>
+                Withdrawn
+              </SelectItem>
             </SelectContent>
           </Select>
           <Select
