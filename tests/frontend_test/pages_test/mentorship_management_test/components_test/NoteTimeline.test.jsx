@@ -75,6 +75,48 @@ describe("NoteTimeline", () => {
     expect(screen.getAllByText("(via approval)")).toHaveLength(1);
   });
 
+  it("puts notifications among the notes by time, saying how each went", () => {
+    renderTimeline({
+      notes: [
+        noteOf({
+          noteId: 2,
+          body: "Newer note",
+          createdAt: "2026-10-05T18:00:00Z",
+        }),
+        noteOf({
+          noteId: 1,
+          body: "Older note",
+          createdAt: "2026-09-01T18:00:00Z",
+        }),
+      ],
+      sends: [
+        {
+          sendId: 14,
+          stage: "match_result",
+          subject: "Your match",
+          delivered: true,
+          reason: null,
+          at: "2026-10-12T16:00:00Z",
+        },
+        {
+          sendId: 11,
+          stage: "admission",
+          subject: "Welcome aboard",
+          delivered: false,
+          reason: "Not handed to Kit: unsubscribed",
+          at: "2026-09-20T17:00:00Z",
+        },
+      ],
+    });
+    const items = screen.getAllByRole("listitem");
+    expect(items.map((li) => li.textContent)).toEqual([
+      "NotificationKit · 2026-10-12 09:00Match result · Your matchSent",
+      expect.stringContaining("Newer note"),
+      "NotificationKit · 2026-09-20 10:00Admission & onboarding · Welcome aboardNot sent. Not handed to Kit: unsubscribed",
+      expect.stringContaining("Older note"),
+    ]);
+  });
+
   it("offers no Add a note when it cannot add", () => {
     renderTimeline({ canAdd: false });
     expect(
