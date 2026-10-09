@@ -7,6 +7,7 @@ import {
   addParticipantNote,
   getAllMentorshipRounds,
   getMeetingLog,
+  getMentorshipApprovers,
   getParticipantDetail,
   searchParticipants,
 } from "@/api/mentorshipApi";
@@ -32,6 +33,7 @@ vi.mock("@/api/mentorshipApi", () => ({
   decideMentorshipApproval: vi.fn(),
   reassignMentorshipApproval: vi.fn(),
   withdrawMentorshipApproval: vi.fn(),
+  requestParticipantWithdrawal: vi.fn(),
 }));
 vi.mock("@/api/adminAccountsApi", () => ({
   createBlockRequest: vi.fn(),
@@ -359,5 +361,137 @@ describe("ParticipantDetailPage", () => {
     expect(
       await screen.findByText("Could not load this participant."),
     ).toBeInTheDocument();
+  });
+
+  describe("change status / flag", () => {
+    const pendingWithdrawal = {
+      requestId: 41,
+      action: "withdraw_participant",
+      raisedBy: { userId: 9, name: "Dana Wu" },
+      reviewer: { userId: 8, name: "Rae Kim" },
+      reason: null,
+      createdAt: "2026-10-09T08:00:00Z",
+    };
+
+    beforeEach(() => {
+      useFeatureFlags.mockReturnValue({ [FEATURE_FLAGS.MATCHING_RUN]: true });
+      getMentorshipApprovers.mockResolvedValue({
+        data: [{ userId: 8, name: "Rae Kim" }],
+      });
+    });
+
+    it("sits beside Block from Purrf and opens on Withdraw from round", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      const button = await screen.findByRole("button", {
+        name: "Change status / flag",
+      });
+      expect(
+        screen.getByRole("button", { name: "Block from Purrf" }),
+      ).toBeInTheDocument();
+      await user.click(button);
+
+      expect(await screen.findByRole("dialog")).toHaveTextContent(
+        "Withdraw from round",
+      );
+    });
+
+    it.each([
+      ["once they are withdrawn", { approvalStatus: "withdrawn" }],
+      ["for a rejected registration", { approvalStatus: "rejected" }],
+    ])("is not offered %s", async (_label, overrides) => {
+      getParticipantDetail.mockResolvedValue({
+        data: detailOf({ registration: registrationOf(overrides) }),
+      });
+      renderPage();
+      await screen.findByRole("heading", { name: "Alice Chen" });
+      expect(
+        screen.queryByRole("button", { name: "Change status / flag" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("is not offered with matching off, to a reader, or after the round", async () => {
+      for (const setup of [
+        () => useFeatureFlags.mockReturnValue({}),
+        () =>
+          useAuth.mockReturnValue({
+            permissions: [READ],
+            user: { userId: 9 },
+          }),
+        () =>
+          getParticipantDetail.mockResolvedValue({
+            data: detailOf({
+              round: {
+                roundId: 7,
+                name: "Fall 2026",
+                requiredMeetings: 5,
+                inProgress: false,
+              },
+            }),
+          }),
+      ]) {
+        setup();
+        const { unmount } = renderPage();
+        await screen.findByRole("heading", { name: "Alice Chen" });
+        expect(
+          screen.queryByRole("button", { name: "Change status / flag" }),
+        ).not.toBeInTheDocument();
+        unmount();
+        useFeatureFlags.mockReturnValue({ [FEATURE_FLAGS.MATCHING_RUN]: true });
+        useAuth.mockReturnValue({
+          permissions: [READ, WRITE],
+          user: { userId: 9 },
+        });
+        getParticipantDetail.mockResolvedValue({ data: detailOf() });
+      }
+    });
+
+    it("lists what waits on a decision below the round, and says so in the dialog", async () => {
+      const user = userEvent.setup();
+      getParticipantDetail.mockResolvedValue({
+        data: detailOf({ pendingRequests: [pendingWithdrawal] }),
+      });
+      renderPage();
+
+      const block = await screen.findByRole("region", {
+        name: "Waiting on a decision",
+      });
+      expect(
+        within(block).getByText(
+          "Withdrawal from round \u2014 raised by Dana Wu \u00b7 sent to Rae Kim",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(block).getByRole("button", { name: "Withdraw" }),
+      ).toBeInTheDocument();
+
+      await user.click(
+        screen.getByRole("button", { name: "Change status / flag" }),
+      );
+      expect(
+        await screen.findByText(/Already waiting on a decision/),
+      ).toBeInTheDocument();
+    });
+
+    it("has no Waiting on a decision block when nothing waits", async () => {
+      renderPage();
+      await screen.findByRole("heading", { name: "Alice Chen" });
+      expect(
+        screen.queryByRole("region", { name: "Waiting on a decision" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("keeps notes writable after a withdrawal", async () => {
+      getParticipantDetail.mockResolvedValue({
+        data: detailOf({
+          registration: registrationOf({ approvalStatus: "withdrawn" }),
+        }),
+      });
+      renderPage();
+      expect(
+        await screen.findByRole("button", { name: "Add a note" }),
+      ).toBeInTheDocument();
+    });
   });
 });

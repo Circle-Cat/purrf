@@ -73,6 +73,7 @@ export const detailOf = (overrides = {}) => ({
   feedback: null,
   notes: [],
   pendingBlockRequest: null,
+  pendingRequests: [],
   history: [],
   ...overrides,
 });
