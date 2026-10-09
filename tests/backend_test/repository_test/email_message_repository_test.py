@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 
-from sqlalchemy import inspect
+from sqlalchemy import func, inspect, select
 
 from backend.common.communication_enums import (
     ContextType,
@@ -63,8 +63,8 @@ class TestEmailMessageRepository(BaseRepositoryTestLib):
             )
         ])
 
-    async def test_create_keeps_kind_and_attachments(self):
-        msg = await self.repo.create(
+    async def test_insert_keeps_kind_and_attachments(self):
+        msg, _ = await self.repo.insert_or_get(
             self.session,
             thread_id=self.thread.thread_id,
             gmail_message_id="m-kind",
@@ -77,8 +77,8 @@ class TestEmailMessageRepository(BaseRepositoryTestLib):
         self.assertEqual(msg.inbound_kind, "auto_reply")
         self.assertEqual(msg.attachments[0]["name"], "cv.pdf")
 
-    async def test_create_defaults_kind_and_attachments_to_none(self):
-        msg = await self.repo.create(
+    async def test_insert_defaults_kind_and_attachments_to_none(self):
+        msg, _ = await self.repo.insert_or_get(
             self.session,
             thread_id=self.thread.thread_id,
             gmail_message_id="m-plain",
@@ -87,15 +87,15 @@ class TestEmailMessageRepository(BaseRepositoryTestLib):
         self.assertIsNone(msg.inbound_kind)
         self.assertIsNone(msg.attachments)
 
-    async def test_create_keeps_a_bounce_failed_recipients(self):
-        bounce = await self.repo.create(
+    async def test_insert_keeps_a_bounce_failed_recipients(self):
+        bounce, _ = await self.repo.insert_or_get(
             self.session,
             thread_id=self.thread.thread_id,
             gmail_message_id="g-bounce",
             direction=EmailDirection.INBOUND,
             failed_recipients="a@x.com",
         )
-        reply = await self.repo.create(
+        reply, _ = await self.repo.insert_or_get(
             self.session,
             thread_id=self.thread.thread_id,
             gmail_message_id="g-reply",
@@ -106,6 +106,46 @@ class TestEmailMessageRepository(BaseRepositoryTestLib):
 
         self.assertEqual(bounce.failed_recipients, "a@x.com")
         self.assertIsNone(reply.failed_recipients)
+
+    async def test_insert_reports_a_new_row_as_inserted(self):
+        msg, inserted = await self.repo.insert_or_get(
+            self.session,
+            thread_id=self.thread.thread_id,
+            gmail_message_id="m-new",
+            direction=EmailDirection.OUTBOUND,
+        )
+        self.assertTrue(inserted)
+        self.assertIsNotNone(msg.message_id)
+        self.assertIsNotNone(msg.created_at)
+
+    async def test_insert_of_a_stored_id_returns_the_stored_row_unchanged(self):
+        first, _ = await self.repo.insert_or_get(
+            self.session,
+            thread_id=self.thread.thread_id,
+            gmail_message_id="m-dup",
+            direction=EmailDirection.OUTBOUND,
+            subject="Sent by Purrf",
+            sent_by_user_id=self.user.user_id,
+        )
+
+        second, inserted = await self.repo.insert_or_get(
+            self.session,
+            thread_id=self.thread.thread_id,
+            gmail_message_id="m-dup",
+            direction=EmailDirection.INBOUND,
+            subject="Read back by a sync",
+        )
+
+        self.assertFalse(inserted)
+        self.assertEqual(second.message_id, first.message_id)
+        self.assertEqual(second.subject, "Sent by Purrf")
+        self.assertEqual(second.direction, EmailDirection.OUTBOUND)
+        count = await self.session.scalar(
+            select(func.count())
+            .select_from(EmailMessageEntity)
+            .where(EmailMessageEntity.gmail_message_id == "m-dup")
+        )
+        self.assertEqual(count, 1)
 
     async def test_returns_empty_set_when_thread_has_no_messages(self):
         result = await self.repo.list_gmail_message_ids_by_thread(

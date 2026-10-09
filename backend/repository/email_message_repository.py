@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
@@ -10,7 +11,7 @@ from backend.entity.email_message_entity import EmailMessageEntity
 class EmailMessageRepository:
     """Database operations for EmailMessageEntity (one message per row)."""
 
-    async def create(
+    async def insert_or_get(
         self,
         session: AsyncSession,
         thread_id: int,
@@ -28,39 +29,61 @@ class EmailMessageRepository:
         failed_recipients: str | None = None,
         inbound_kind: str | None = None,
         attachments: list[dict] | None = None,
-    ) -> EmailMessageEntity:
-        """Insert one message row.
+    ) -> tuple[EmailMessageEntity, bool]:
+        """Insert one message row, or read the one already stored under its id.
+
+        A message we send can be stored twice at once: by the send that wrote
+        it and by a Gmail sync that read it back. ``ON CONFLICT DO NOTHING``
+        waits for the other writer and then skips instead of raising, so
+        neither transaction fails; the select afterwards sees the other row
+        once it has committed.
 
         Args:
             session (AsyncSession): The active DB session.
             thread_id (int): The owning thread.
-            gmail_message_id (str): Gmail's message id (unique; upsert key).
+            gmail_message_id (str): Gmail's message id (unique).
             direction (str): An ``EmailDirection`` value.
             from_address..attachments: Message fields (see entity).
 
         Returns:
-            EmailMessageEntity: The created row (with ``message_id`` populated).
+            tuple[EmailMessageEntity, bool]: The row, and True when this call
+                inserted it; False means it was already stored and the fields
+                passed here were not applied.
         """
-        entity = EmailMessageEntity(
-            thread_id=thread_id,
-            gmail_message_id=gmail_message_id,
-            direction=direction,
-            from_address=from_address,
-            to_addresses=to_addresses,
-            subject=subject,
-            body_html=body_html,
-            body_text=body_text,
-            snippet=snippet,
-            rfc822_message_id=rfc822_message_id,
-            sent_by_user_id=sent_by_user_id,
-            gmail_internal_date=gmail_internal_date,
-            failed_recipients=failed_recipients,
-            inbound_kind=inbound_kind,
-            attachments=attachments,
+        fields = {
+            "thread_id": thread_id,
+            "gmail_message_id": gmail_message_id,
+            "direction": direction,
+            "from_address": from_address,
+            "to_addresses": to_addresses,
+            "subject": subject,
+            "body_html": body_html,
+            "body_text": body_text,
+            "snippet": snippet,
+            "rfc822_message_id": rfc822_message_id,
+            "sent_by_user_id": sent_by_user_id,
+            "gmail_internal_date": gmail_internal_date,
+            "failed_recipients": failed_recipients,
+            "inbound_kind": inbound_kind,
+            "attachments": attachments,
+        }
+        # Omitted rather than bound as None: a None bound to the JSONB column
+        # would store JSON null instead of SQL NULL.
+        values = {key: value for key, value in fields.items() if value is not None}
+        inserted = await session.scalar(
+            insert(EmailMessageEntity)
+            .values(**values)
+            .on_conflict_do_nothing(index_elements=["gmail_message_id"])
+            .returning(EmailMessageEntity)
         )
-        session.add(entity)
-        await session.flush()
-        return entity
+        if inserted is not None:
+            return inserted, True
+        existing = await session.scalar(
+            select(EmailMessageEntity).where(
+                EmailMessageEntity.gmail_message_id == gmail_message_id
+            )
+        )
+        return existing, False
 
     async def list_gmail_message_ids_by_thread(
         self, session: AsyncSession, thread_id: int
