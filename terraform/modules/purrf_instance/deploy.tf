@@ -80,6 +80,12 @@ resource "kubernetes_secret" "purrf_app" {
     GMAIL_SENDER_INQUIRIES    = var.gmail_sender_inquiries
     GMAIL_INBOX_ENABLED       = var.gmail_inbox_enabled ? "true" : "false"
 
+    # Kit v4 API key for mentorship notifications. Read only when a send is
+    # made, so an empty value boots fine with the mentorship-kit-email flag off.
+    # Kit sends from GMAIL_SENDER_NOTIFICATION, which must be a verified sender
+    # in that Kit account.
+    KIT_API_KEY = var.kit_api_key
+
     # Where notification messages are published. The full
     # projects/<project>/topics/<topic> path, not the bare name, because that
     # is what the publisher takes. The backend refuses to start without it, so

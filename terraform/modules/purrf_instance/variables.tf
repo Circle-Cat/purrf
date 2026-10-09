@@ -249,3 +249,10 @@ variable "pubsub_event_push_enabled" {
   type        = bool
   default     = false
 }
+
+variable "kit_api_key" {
+  description = "Kit v4 API key for mentorship notifications. Empty leaves sending unavailable."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
