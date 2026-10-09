@@ -143,12 +143,6 @@ resource "launchdarkly_segment" "beta_users" {
   }
 }
 
-# The flag was first made by hand in LaunchDarkly for local testing.
-import {
-  to = launchdarkly_feature_flag.this["mentorship_kit_email"]
-  id = "purrf/mentorship-kit-email"
-}
-
 resource "launchdarkly_feature_flag" "this" {
   for_each = local.flags
 
