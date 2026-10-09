@@ -379,6 +379,25 @@ export const requestMatchingExemption = (
   );
 
 /**
+ * Ask a named reviewer to approve withdrawing a person from a round in
+ * progress. Resolves to `data` = the new approval request; refused with 409
+ * when the person is not still in the round or a withdrawal already waits,
+ * and with 400 when the reviewer is the person themselves.
+ * @param {number|string} roundId
+ * @param {number|string} userId
+ * @param {{reviewerId: number, reason: string}} body
+ */
+export const requestParticipantWithdrawal = (
+  roundId,
+  userId,
+  { reviewerId, reason },
+) =>
+  request.post(
+    API_ENDPOINTS.MENTORSHIP_ADMIN_WITHDRAW_REQUEST(roundId, userId),
+    { reviewerId, reason },
+  );
+
+/**
  * One person in one round, as the admin detail page shows it: who they are,
  * their registration and pairs, notes, this round's feedback, a pending
  * block request, and the rounds they took part in before this one.

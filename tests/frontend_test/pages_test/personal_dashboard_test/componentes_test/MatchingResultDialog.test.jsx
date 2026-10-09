@@ -168,6 +168,38 @@ describe("MatchingResultDialog", () => {
     expect(screen.getByText("This pairing has ended.")).toBeInTheDocument();
   });
 
+  it("should say the participation ended for someone withdrawn, paired or not", async () => {
+    const { unmount } = render(
+      <MatchingResultDialog
+        {...defaultProps}
+        matchData={{
+          currentStatus: MatchStatus.WITHDRAWN,
+          partners: [endedPartner],
+        }}
+        canViewMatch
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /view matching result/i }),
+    );
+    expect(screen.getByText("Participation Ended")).toBeInTheDocument();
+    expect(screen.getByText("This pairing has ended.")).toBeInTheDocument();
+    unmount();
+
+    render(
+      <MatchingResultDialog
+        {...defaultProps}
+        matchData={{ currentStatus: MatchStatus.WITHDRAWN, partners: [] }}
+        canViewMatch
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /view matching result/i }),
+    );
+    expect(screen.getByText("Participation Ended")).toBeInTheDocument();
+    expect(screen.queryByText("Status Unknown")).not.toBeInTheDocument();
+  });
+
   it("should keep the not-eligible copy for an application that was turned down", async () => {
     // No pairing behind the same status means the application was refused.
     // This copy is correct there and must not move.

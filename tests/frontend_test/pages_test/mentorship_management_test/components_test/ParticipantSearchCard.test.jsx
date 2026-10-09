@@ -739,6 +739,21 @@ describe("ParticipantSearchCard", () => {
       expect(urlParams().get("approval")).toBe("matched");
     });
 
+    it("can filter on people withdrawn from the round", async () => {
+      await renderCard();
+
+      await userEvent.click(screen.getByLabelText("Approval status"));
+      await userEvent.click(screen.getByRole("option", { name: "Withdrawn" }));
+      await search();
+
+      await waitFor(() =>
+        expect(searchParticipants).toHaveBeenLastCalledWith(
+          expect.objectContaining({ approvalStatus: "withdrawn" }),
+        ),
+      );
+      expect(urlParams().get("approval")).toBe("withdrawn");
+    });
+
     it("has no export control", async () => {
       await renderCard();
       expect(

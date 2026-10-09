@@ -12,6 +12,9 @@ describe("approvalLabels", () => {
       "Publish matching result",
     );
     expect(approvalActionLabel("exempt_matching")).toBe("Matching exemption");
+    expect(approvalActionLabel("withdraw_participant")).toBe(
+      "Withdrawal from round",
+    );
     expect(approvalActionLabel("job_review")).toBe("Approval");
   });
 
@@ -25,6 +28,19 @@ describe("approvalLabels", () => {
     expect(
       approvalReviewLink({ action: "publish_matching", round: { roundId: 7 } }),
     ).toEqual({ pathname: "/mentorship-management/matching/7", search: "" });
+  });
+
+  it("reviews a withdrawal on the person's page for the round", () => {
+    const link = approvalReviewLink({
+      action: "withdraw_participant",
+      round: { roundId: 7 },
+      person: { userId: 3104 },
+    });
+
+    expect(link).toEqual({
+      pathname: "/mentorship-management/participants/3104",
+      search: "?round=7",
+    });
   });
 
   it("reviews an exemption on the Needs exemption list, narrowed to the person", () => {
