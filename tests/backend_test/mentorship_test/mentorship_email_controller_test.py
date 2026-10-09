@@ -10,6 +10,7 @@ from backend.common.fast_api_error_handler import register_exception_handlers
 from backend.common.permissions import Permission
 from backend.dto.mentorship_email_dto import (
     EmailNotifiedDto,
+    EmailPersonSendDto,
     EmailScheduledStageDto,
     EmailSendDto,
     KitDraftDto,
@@ -159,6 +160,43 @@ class TestMentorshipEmailController(unittest.TestCase):
             [c.args for c in self.prepare_service.run.await_args_list], [(1,), (3,)]
         )
 
+    def test_person_sends_are_listed_for_the_round_and_person(self):
+        self.service.list_person_sends = AsyncMock(
+            return_value=[
+                EmailPersonSendDto(
+                    send_id=14,
+                    stage="match_result",
+                    subject="Your match",
+                    delivered=False,
+                    reason="Not handed to Kit: unsubscribed",
+                    at=datetime(2026, 10, 12, 16, 0, tzinfo=timezone.utc),
+                )
+            ]
+        )
+        resp = self.client.get(f"/api{BASE}/person?roundId=7&userId=42")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            resp.json()["data"],
+            [
+                {
+                    "sendId": 14,
+                    "stage": "match_result",
+                    "subject": "Your match",
+                    "delivered": False,
+                    "reason": "Not handed to Kit: unsubscribed",
+                    "at": "2026-10-12T16:00:00Z",
+                }
+            ],
+        )
+        self.assertEqual(self.service.list_person_sends.await_args.args[1:], (7, 42))
+
+    def test_person_sends_need_a_round_and_a_person(self):
+        self.service.list_person_sends = AsyncMock()
+        for query in ("roundId=7", "userId=42"):
+            resp = self.client.get(f"/api{BASE}/person?{query}")
+            self.assertEqual(resp.status_code, 400, query)
+        self.service.list_person_sends.assert_not_awaited()
+
     def test_notified_needs_a_round(self):
         self.service.list_notified = AsyncMock()
         resp = self.client.get(f"/api{BASE}/notified")
@@ -183,6 +221,9 @@ class TestMentorshipEmailController(unittest.TestCase):
         resp = self.client.get(f"/api{BASE}/notified?roundId=7")
         self.assertEqual(resp.status_code, 404)
         self.service.list_notified.assert_not_called()
+        resp = self.client.get(f"/api{BASE}/person?roundId=7&userId=42")
+        self.assertEqual(resp.status_code, 404)
+        self.service.list_person_sends.assert_not_called()
 
     def test_conflict_maps_to_409(self):
         self.service.confirm = AsyncMock(

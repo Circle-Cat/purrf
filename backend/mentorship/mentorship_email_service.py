@@ -17,6 +17,7 @@ from backend.common.mentorship_email_enums import (
 from backend.dto.mentorship_email_dto import (
     EmailConfirmDto,
     EmailNotifiedDto,
+    EmailPersonSendDto,
     EmailPreviewDto,
     EmailRecipientDto,
     EmailScheduledStageDto,
@@ -25,6 +26,10 @@ from backend.dto.mentorship_email_dto import (
     KitDraftDto,
 )
 from backend.mentorship.mentorship_email_prepare_service import PREPARE_LEASE
+from backend.mentorship.notification_email_copy import (
+    send_failure_reason,
+    unreached_reason,
+)
 
 # Marks the broadcasts Purrf creates, so they never show up as drafts to copy.
 PURRF_DESCRIPTION_PREFIX = "Purrf · "
@@ -438,6 +443,58 @@ class MentorshipEmailService:
             for user_id in sorted(stages.keys() | scheduled.keys())
         ]
         return notified, [s.send_id for s in sends if self._resume_needed(s)]
+
+    async def list_person_sends(
+        self, session, round_id: int, user_id: int
+    ) -> list[EmailPersonSendDto]:
+        """This person's sends in the round that have played out, newest first:
+        sent to them, or not, with why. Ones still to go out are left out; a
+        scheduled one whose time has come is first caught up with Kit, the
+        same way the notified list does it."""
+        S = MentorshipEmailSendStatus
+        rows = await self.repo.list_person_sends(
+            session, round_id, user_id, [S.SCHEDULED, S.SENT, S.ABORTED, S.FAILED]
+        )
+        now = self.clock()
+        changed = False
+        for send, _ in rows:
+            if send.status == S.SCHEDULED and send.send_at and send.send_at <= now:
+                changed = await self._sync_one(send) or changed
+        if changed:
+            await session.commit()
+        sends = [
+            self._person_send_dto(send, recipient)
+            for send, recipient in rows
+            if send.status != S.SCHEDULED
+        ]
+        return sorted(sends, key=lambda s: s.at, reverse=True)
+
+    def _person_send_dto(self, send, recipient) -> EmailPersonSendDto:
+        S = MentorshipEmailSendStatus
+        reached = recipient.result in (
+            MentorshipEmailRecipientResult.PENDING,
+            MentorshipEmailRecipientResult.HANDED_TO_KIT,
+        )
+        if not reached:
+            # Their own reason is the more useful one, whatever became of the send.
+            reason = "Not handed to Kit: " + unreached_reason(
+                recipient.result, recipient.failure_reason
+            )
+        elif send.status == S.ABORTED:
+            reason = "Kit refused to send it. The reason is shown only in Kit."
+        elif send.status == S.FAILED:
+            reason = send_failure_reason(send.failure_code)
+        else:
+            reason = None
+        return EmailPersonSendDto(
+            send_id=send.send_id,
+            stage=send.stage,
+            subject=send.kit_draft_subject,
+            delivered=send.status == S.SENT and reached,
+            reason=reason,
+            # A failed send never got a time from Kit; it failed when last updated.
+            at=send.updated_at if send.status == S.FAILED else send.send_at,
+        )
 
     async def _sync_one(self, send) -> bool:
         """Catch a scheduled send up with Kit. The per-send tag is kept on
