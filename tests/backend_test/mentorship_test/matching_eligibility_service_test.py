@@ -244,9 +244,7 @@ class MatchingEligibilityServiceTest(unittest.IsolatedAsyncioTestCase):
 
         result = await self.service.needs_exemption(self.session, 30)
 
-        self.assertEqual(
-            result, {1: [HistoryFinding(IneligibleReason.RED_FLAG, 30)]}
-        )
+        self.assertEqual(result, {1: [HistoryFinding(IneligibleReason.RED_FLAG, 30)]})
 
     async def test_a_mark_after_this_round_s_exemption_needs_another(self):
         # Exempted this round at hour 0 for last round's shortfall, then
@@ -260,9 +258,7 @@ class MatchingEligibilityServiceTest(unittest.IsolatedAsyncioTestCase):
 
         result = await self.service.needs_exemption(self.session, 30)
 
-        self.assertEqual(
-            result, {1: [HistoryFinding(IneligibleReason.RED_FLAG, 30)]}
-        )
+        self.assertEqual(result, {1: [HistoryFinding(IneligibleReason.RED_FLAG, 30)]})
 
     async def test_a_mark_before_this_round_s_exemption_is_lifted(self):
         self._registered_and_trained(1)

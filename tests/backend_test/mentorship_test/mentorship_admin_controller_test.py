@@ -535,9 +535,12 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
 
     async def test_requesting_a_mark_names_the_person_tag_and_pair(self):
         caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
-        body = ParticipantMarkRequestDto.model_validate(
-            {"tag": "no_show", "pairId": 501, "reviewerId": 8, "reason": ""}
-        )
+        body = ParticipantMarkRequestDto.model_validate({
+            "tag": "no_show",
+            "pairId": 501,
+            "reviewerId": 8,
+            "reason": "",
+        })
 
         response = await self.controller.request_mark(7, 21, body, caller)
 
@@ -555,21 +558,27 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
 
     def test_a_mark_body_takes_only_the_two_tags(self):
         self.assertIsNone(
-            ParticipantMarkRequestDto.model_validate(
-                {"tag": "red_flag", "reviewerId": 8, "reason": ""}
-            ).pair_id
+            ParticipantMarkRequestDto.model_validate({
+                "tag": "red_flag",
+                "reviewerId": 8,
+                "reason": "",
+            }).pair_id
         )
         with self.assertRaises(ValidationError):
-            ParticipantMarkRequestDto.model_validate(
-                {"tag": "matching_exemption", "reviewerId": 8, "reason": ""}
-            )
+            ParticipantMarkRequestDto.model_validate({
+                "tag": "matching_exemption",
+                "reviewerId": 8,
+                "reason": "",
+            })
 
     async def test_requesting_a_mark_is_refused_while_the_flag_is_off(self):
         self.mock_launchdarkly_service.is_matching_run_enabled.return_value = False
         caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
-        body = ParticipantMarkRequestDto.model_validate(
-            {"tag": "red_flag", "reviewerId": 8, "reason": ""}
-        )
+        body = ParticipantMarkRequestDto.model_validate({
+            "tag": "red_flag",
+            "reviewerId": 8,
+            "reason": "",
+        })
 
         with self.assertRaises(PermissionError):
             await self.controller.request_mark(7, 21, body, caller)

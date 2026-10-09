@@ -312,7 +312,9 @@ class MarkParticipantFlowTest(BaseRepositoryTestLib):
                 feedback_deadline_at=self.now - timedelta(days=days_ago - 10),
             )
             await self.insert_entities([round_])
-            await self.insert_entities([_pair(round_.round_id, self.mentor, self.mentee_a)])
+            await self.insert_entities([
+                _pair(round_.round_id, self.mentor, self.mentee_a)
+            ])
             return round_.round_id
 
         # Her onboarding is done, so only her history can keep her out.
@@ -367,7 +369,8 @@ class MarkParticipantFlowTest(BaseRepositoryTestLib):
         ])
         uma_id = self.uma.user_id
         self.assertIn(
-            uma_id, await self.eligibility.eligible_user_ids(self.session, self.round_id)
+            uma_id,
+            await self.eligibility.eligible_user_ids(self.session, self.round_id),
         )
 
         await self._approve(await self._raise("mark_red_flag", self.uma))
@@ -388,7 +391,8 @@ class MarkParticipantFlowTest(BaseRepositoryTestLib):
         # A second exemption in the same round may be asked for, and clears it.
         await self._approve(await self._raise("exempt_matching", self.uma))
         self.assertIn(
-            uma_id, await self.eligibility.eligible_user_ids(self.session, self.round_id)
+            uma_id,
+            await self.eligibility.eligible_user_ids(self.session, self.round_id),
         )
 
 
