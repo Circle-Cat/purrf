@@ -215,5 +215,106 @@ class MentorAdmittedRendererTest(BaseRepositoryTestLib):
         self.assertEqual(body.count("<li>"), 2)
 
 
+def _prepared(details):
+    return EventEntity(
+        subject_type="mentorship_email_send",
+        subject_id=5,
+        actor_id=None,
+        event_type="mentorship.email_send_prepared",
+        details={
+            "roundName": "Fall 2026",
+            "stage": "match_result",
+            "subject": "Your <match>",
+            **details,
+        },
+    )
+
+
+class EmailSendPreparedRendererTest(unittest.IsolatedAsyncioTestCase):
+    """What the admin who created a Kit send is told; rendered from details only."""
+
+    async def _render(self, details):
+        return await render_registry.render(None, _prepared(details))
+
+    async def test_scheduled_names_the_send_the_time_and_everyone_left_out(self):
+        subject, body = await self._render({
+            "status": "scheduled",
+            "sendAt": "2026-10-20T16:00:00+00:00",
+            "handedCount": 12,
+            "notHanded": [
+                {"name": "Cee", "result": "import_failed", "failureReason": "kit_422"},
+                {"name": "Dee", "result": "unsubscribed", "failureReason": None},
+                {
+                    "name": "Eve",
+                    "result": "unsubscribed",
+                    "failureReason": "complained",
+                },
+                {"name": "Fay", "result": "bounced", "failureReason": None},
+                {"name": "Gus", "result": "import_failed", "failureReason": "no_email"},
+            ],
+        })
+        self.assertEqual(subject, "Kit email scheduled: Match result · Fall 2026")
+        for text in (
+            "<li>Round: Fall 2026</li>",
+            "<li>Stage: Match result</li>",
+            "<li>Kit draft: Your &lt;match&gt;</li>",
+            "<li>Sends at: 2026-10-20 09:00 Pacific</li>",
+            "<li>Handed to Kit: 12 people</li>",
+            "Not handed to Kit (5)",
+            "<li>Cee: could not be added to Kit (Kit error 422)</li>",
+            "<li>Dee: unsubscribed</li>",
+            "<li>Eve: marked an earlier email as spam</li>",
+            "<li>Fay: email bounced</li>",
+            "<li>Gus: no email address</li>",
+            "Mentorship Management",
+        ):
+            self.assertIn(text, body)
+
+    async def test_scheduled_with_everyone_handed_says_so(self):
+        _, body = await self._render({
+            "status": "scheduled",
+            "sendAt": "2026-10-20T16:00:00+00:00",
+            "handedCount": 1,
+            "notHanded": [],
+        })
+        self.assertIn("<li>Handed to Kit: 1 person</li>", body)
+        self.assertIn("Everyone you selected was handed to Kit.", body)
+        self.assertNotIn("Not handed", body)
+
+    async def test_failed_gives_the_reason_and_says_nothing_was_sent(self):
+        subject, body = await self._render({
+            "status": "failed",
+            "failureCode": "time_passed",
+            "errorMessage": "internal wording",
+        })
+        self.assertEqual(subject, "Kit email not scheduled: Match result · Fall 2026")
+        self.assertIn(
+            "Why: The send time passed while people were being added to Kit.", body
+        )
+        self.assertIn("No email was sent.", body)
+        self.assertIn("<li>Kit draft: Your &lt;match&gt;</li>", body)
+        self.assertNotIn("internal wording", body)
+
+    async def test_kit_error_shows_the_recorded_details(self):
+        _, body = await self._render({
+            "status": "failed",
+            "failureCode": "kit_error",
+            "errorMessage": "Undoing the schedule failed: check <Kit>",
+        })
+        self.assertIn("Why: Something went wrong talking to Kit.", body)
+        self.assertIn("Details: Undoing the schedule failed: check &lt;Kit&gt;", body)
+        self.assertIn("No email was sent.", body)
+
+    async def test_possibly_scheduled_failure_does_not_claim_nothing_was_sent(self):
+        _, body = await self._render({
+            "status": "failed",
+            "failureCode": "kit_error",
+            "errorMessage": "Undoing the schedule failed",
+            "mayStillBeScheduled": True,
+        })
+        self.assertIn("Kit may still send this email", body)
+        self.assertNotIn("No email was sent.", body)
+
+
 if __name__ == "__main__":
     unittest.main()

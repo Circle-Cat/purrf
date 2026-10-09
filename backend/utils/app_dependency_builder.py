@@ -9,6 +9,7 @@ from backend.common.microsoft_graph_service_client import MicrosoftGraphServiceC
 from backend.common.json_schema_validator import JsonSchemaValidator
 from backend.common.gerrit_client import GerritClient
 from backend.common.matching_job_client import MatchingJobClient
+from backend.common.kit_client import KitClient
 from backend.service.microsoft_service import MicrosoftService
 from backend.notification_management.microsoft_chat_subscription_service import (
     MicrosoftChatSubscriptionService,
@@ -248,6 +249,12 @@ from backend.mentorship.matching_run_complete_service import (
 )
 from backend.mentorship.matching_storage import MatchingStorage
 from backend.mentorship.mentorship_admin_controller import MentorshipAdminController
+from backend.mentorship.mentorship_email_controller import MentorshipEmailController
+from backend.mentorship.mentorship_email_service import MentorshipEmailService
+from backend.mentorship.mentorship_email_prepare_service import (
+    MentorshipEmailPrepareService,
+)
+from backend.repository.mentorship_email_repository import MentorshipEmailRepository
 from backend.mentorship.rounds_service import RoundsService
 from backend.mentorship.participation_service import ParticipationService
 from backend.mentorship.registration_service import RegistrationService
@@ -820,6 +827,29 @@ class AppDependencyBuilder:
             launchdarkly_service=self.launchdarkly_service,
             database=self.database,
         )
+        self.kit_client = KitClient(logger=self.logger)
+        self.mentorship_email_repository = MentorshipEmailRepository()
+        self.mentorship_email_service = MentorshipEmailService(
+            mentorship_email_repository=self.mentorship_email_repository,
+            user_emails_repository=self.user_emails_repository,
+            mentorship_round_repository=self.mentorship_round_repository,
+            kit_client=self.kit_client,
+            sender_address=os.getenv(GMAIL_SENDER_NOTIFICATION),
+            logger=self.logger,
+        )
+        self.mentorship_email_prepare_service = MentorshipEmailPrepareService(
+            database=self.database,
+            mentorship_email_repository=self.mentorship_email_repository,
+            mentorship_round_repository=self.mentorship_round_repository,
+            kit_client=self.kit_client,
+            logger=self.logger,
+        )
+        self.mentorship_email_controller = MentorshipEmailController(
+            mentorship_email_service=self.mentorship_email_service,
+            mentorship_email_prepare_service=self.mentorship_email_prepare_service,
+            launchdarkly_service=self.launchdarkly_service,
+            database=self.database,
+        )
         self.experience_repository = ExperienceRepository()
         self.profile_mapper = ProfileMapper()
         self.profile_query_service = ProfileQueryService(
@@ -1349,6 +1379,7 @@ class AppDependencyBuilder:
             profile_controller=self.profile_controller,
             mentorship_controller=self.mentorship_controller,
             mentorship_admin_controller=self.mentorship_admin_controller,
+            mentorship_email_controller=self.mentorship_email_controller,
             matching_run_complete_controller=self.matching_run_complete_controller,
             email_management_controller=self.email_management_controller,
             permission_admin_controller=self.permission_admin_controller,

@@ -10,6 +10,7 @@ it once at startup for that side effect.
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.common.mentorship_email_enums import MENTORSHIP_EMAIL_SEND_SUBJECT_TYPE
 from backend.common.mentorship_enums import MentorshipEvent
 from backend.entity.event_entity import EventEntity
 from backend.notification_management.recipient_registry import register_recipients
@@ -17,10 +18,12 @@ from backend.repository.application_repository import ApplicationRepository
 from backend.repository.approval_request_repository import (
     ApprovalRequestRepository,
 )
+from backend.repository.mentorship_email_repository import MentorshipEmailRepository
 
 # Stateless, so these module-level instances serve every resolver.
 _application_repository = ApplicationRepository()
 _approval_request_repository = ApprovalRequestRepository()
+_mentorship_email_repository = MentorshipEmailRepository()
 
 
 @register_recipients(MentorshipEvent.MENTOR_ADMITTED, subject_type="application")
@@ -149,3 +152,24 @@ async def _approval_other_side(session: AsyncSession, event: EventEntity) -> set
     if event.details.get("decision") == "withdrawn":
         return {row.reviewer_id}
     return {row.raised_by}
+
+
+@register_recipients(
+    MentorshipEvent.EMAIL_SEND_PREPARED,
+    subject_type=MENTORSHIP_EMAIL_SEND_SUBJECT_TYPE,
+)
+async def _send_creator(session: AsyncSession, event: EventEntity) -> set[int]:
+    """Whoever created the Kit send, and nobody else.
+
+    Safe only because the event is recorded with ``actor_id=None``; the
+    creator is the person being told.
+
+    Args:
+        session (AsyncSession): Session inside the caller's open transaction.
+        event (EventEntity): The event; its subject is the send.
+
+    Returns:
+        set[int]: The creator's user id, or empty if the send is gone.
+    """
+    send = await _mentorship_email_repository.get_send(session, event.subject_id)
+    return set() if send is None else {send.created_by}
