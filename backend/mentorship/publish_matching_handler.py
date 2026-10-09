@@ -3,7 +3,7 @@
 A request names the round's current run. Raising it needs a finished,
 successful run that nobody is editing and whose result has no problems.
 Approving re-checks that, checks every person being paired against the
-database as it stands now, then writes the pairs and the new statuses in the
+database as it stands now, eligibility included, then writes the pairs and the new statuses in the
 approval's transaction. Once that is committed, the round's pointer to the run
 is cleared, so the results page goes back to "no run".
 """
@@ -22,6 +22,7 @@ from backend.common.name_utils import user_display_name
 from backend.common.permissions import Permission
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.mentorship.matching_draft import apply_draft, problems
+from backend.mentorship.matching_eligibility import IneligibleReason
 
 PUBLISH_MATCHING = "publish_matching"
 MENTORSHIP_ROUND_SUBJECT = "mentorship_round"
@@ -32,6 +33,16 @@ _PAIRABLE = {
     ApprovalStatus.SIGNED_UP,
     ApprovalStatus.MATCHED,
     ApprovalStatus.UN_MATCHED,
+}
+
+# What the eligibility check holds against someone, as the end of a sentence
+# about them. Blocked, deactivated, gone and over capacity are said above in
+# words of their own.
+_FINDING_WORDING = {
+    IneligibleReason.QUIT_AFTER_MATCH: "quit after being matched in {where}",
+    IneligibleReason.MEETINGS_SHORT: "was short of meetings in {where}",
+    IneligibleReason.NO_SHOW: "was marked a no show in {where}",
+    IneligibleReason.RED_FLAG: "has a red flag in {where}",
 }
 
 
@@ -56,6 +67,7 @@ class PublishMatchingHandler(ApprovalHandler):
         users_repository,
         rounds_repository,
         logger,
+        matching_eligibility_service,
     ):
         """
         Args:
@@ -66,6 +78,7 @@ class PublishMatchingHandler(ApprovalHandler):
             users_repository: Names people in notes and refusals.
             rounds_repository: Names the round in notifications.
             logger: Injected logger.
+            matching_eligibility_service: Says what keeps each person out of matching now.
         """
         self.matching_storage = matching_storage
         self.pairs_repository = pairs_repository
@@ -74,6 +87,7 @@ class PublishMatchingHandler(ApprovalHandler):
         self.users_repository = users_repository
         self.rounds_repository = rounds_repository
         self.logger = logger
+        self.matching_eligibility_service = matching_eligibility_service
 
     def subject_id(self, request) -> int:
         return int(request.payload["round_id"])
@@ -169,6 +183,9 @@ class PublishMatchingHandler(ApprovalHandler):
                     f"{names.get(mentor_id, f'User {mentor_id}')} would have "
                     f"{held.get(mentor_id, 0) + count} mentees but takes {cap}."
                 )
+        found.extend(
+            await self._eligibility_problems(session, round_id, paired_ids, names)
+        )
         return found
 
     async def execute(self, session, request, *, actor_id: int) -> None:
@@ -304,6 +321,33 @@ class PublishMatchingHandler(ApprovalHandler):
                 session, round_id
             )
         }
+
+    async def _eligibility_problems(
+        self, session, round_id: int, paired_ids: set[int], names: dict[int, str]
+    ) -> list[str]:
+        """What the matching eligibility check holds now against the people
+        this result pairs, such as a mark given since the run. Only the new
+        pairs' people are checked: existing pairs are not this publish's."""
+        assessed = await self.matching_eligibility_service.assess(session, round_id)
+        round_names = {
+            r.round_id: r.name
+            for r in await self.rounds_repository.get_all_rounds(session)
+        }
+        found: list[str] = []
+        for user_id in sorted(paired_ids):
+            standing = assessed.get(user_id)
+            if standing is None:
+                continue
+            name = names.get(user_id, f"User {user_id}")
+            for finding in standing.findings:
+                where = (
+                    "this round"
+                    if finding.round_id == round_id
+                    else round_names.get(finding.round_id) or "an earlier round"
+                )
+                wording = _FINDING_WORDING[finding.reason].format(where=where)
+                found.append(f"{name} {wording}.")
+        return found
 
     async def _names(self, session, user_ids) -> dict[int, str]:
         people = await self.users_repository.get_all_by_ids(session, list(user_ids))

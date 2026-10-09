@@ -753,6 +753,7 @@ class AppDependencyBuilder:
             users_repository=self.users_repository,
             rounds_repository=self.mentorship_round_repository,
             logger=self.logger,
+            matching_eligibility_service=self.matching_eligibility_service,
         )
         self.exempt_matching_handler = ExemptMatchingHandler(
             matching_eligibility_service=self.matching_eligibility_service,

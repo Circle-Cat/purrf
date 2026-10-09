@@ -597,6 +597,10 @@ class TestAppDependencyBuilder(TestCase):
             builder.approval_service.handler_for("publish_matching"),
             builder.publish_matching_handler,
         )
+        self.assertIs(
+            builder.publish_matching_handler.matching_eligibility_service,
+            builder.matching_eligibility_service,
+        )
         # One approval service serves recruiting too.
         self.assertIs(
             builder.approval_service.handler_for("job_review"),
