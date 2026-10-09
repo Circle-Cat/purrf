@@ -2341,6 +2341,37 @@ describe("ParticipantSearchCard", () => {
       expect(cellOf(cara, "Notifications")).toHaveTextContent(/^—$/);
     });
 
+    it("shows a stage still to go out with its Pacific send time", async () => {
+      listNotifiedStages.mockResolvedValue([
+        {
+          userId: 11,
+          stages: ["admission"],
+          scheduled: [
+            { stage: "match_result", sendAt: "2026-10-12T16:00:00Z" },
+          ],
+        },
+        {
+          userId: 12,
+          stages: ["match_result"],
+          scheduled: [
+            { stage: "match_result", sendAt: "2026-12-01T18:30:00Z" },
+          ],
+        },
+      ]);
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      const cara = await screen.findByText("Cara Wang");
+
+      const aliceCell = cellOf(screen.getByText("Alice Doe"), "Notifications");
+      await waitFor(() =>
+        expect(aliceCell).toHaveTextContent(
+          "Admission & onboardingMatch result · Scheduled 10-12 09:00 PT",
+        ),
+      );
+      expect(cellOf(cara, "Notifications")).toHaveTextContent(
+        /^Match result · Scheduled 12-01 10:30 PT$/,
+      );
+    });
+
     it("shows no Notifications column and asks nothing with the flag off", async () => {
       useFeatureFlags.mockReturnValue({});
       await renderCard({ url: SEARCHED_PARTICIPANTS });

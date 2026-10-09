@@ -23,10 +23,15 @@ export const createEmailSend = async (body) =>
     .data;
 
 /**
- * Lists, per person, the stages they were actually notified of in a round.
+ * Lists, per person, the stages they were actually notified of in a round,
+ * and per stage the latest send confirmed for them and still to go out.
  *
  * @param {number|string} roundId - The mentorship round's id.
- * @returns {Promise<Array<{userId: number, stages: string[]}>>}
+ * @returns {Promise<Array<{
+ *   userId: number,
+ *   stages: string[],
+ *   scheduled: Array<{stage: string, sendAt: string}>,
+ * }>>}
  */
 export const listNotifiedStages = async (roundId) =>
   (
