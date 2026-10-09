@@ -57,6 +57,7 @@ const HistoryRoundBody = ({ userId, subjectName, roundId }) => {
         userId={userId}
         canAdd={false}
         onAdded={NOOP}
+        pairs={registration?.pairs ?? []}
       />
       <ParticipantFeedback feedback={detail.feedback} />
     </div>

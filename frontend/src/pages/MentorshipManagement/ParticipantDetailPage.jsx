@@ -25,6 +25,7 @@ import {
   searchParticipants,
 } from "@/api/mentorshipApi";
 import StateChips from "@/pages/AdminAccounts/components/StateChips";
+import MarkBadges from "@/pages/MentorshipManagement/components/MarkBadges";
 import ExemptionCell from "@/pages/MentorshipManagement/components/ExemptionCell";
 import { exemptionWhyLines } from "@/pages/MentorshipManagement/utils/approvalLabels";
 import { useParticipantDetail } from "@/pages/MentorshipManagement/hooks/useParticipantDetail";
@@ -79,9 +80,10 @@ const useFallbackRoundId = (userId, needed) => {
 };
 
 /**
- * Why this person is kept out of matching by their history, and the
- * exemption control (behind the matching-run flag, like the list's). Once
- * exempted, says so instead.
+ * Why this person is kept out of matching by their history or marks, and
+ * the exemption control (behind the matching-run flag, like the list's).
+ * Exempted earlier this round and marked since: the new problem shows, with
+ * a note of the earlier exemption. Exempted with nothing since: says so.
  */
 const ExemptionBox = ({
   registration,
@@ -93,17 +95,21 @@ const ExemptionBox = ({
   userId,
   onChanged,
 }) => {
-  if (exempted) {
-    return (
+  const lines = exemptionWhyLines(registration.exemptionFindings, roundId);
+  if (lines.length === 0) {
+    return exempted ? (
       <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
         Exempted
       </div>
-    );
+    ) : null;
   }
-  const lines = exemptionWhyLines(registration.exemptionFindings, roundId);
-  if (lines.length === 0) return null;
   return (
     <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+      {exempted && (
+        <p className="mb-1 text-xs text-amber-800">
+          Exempted earlier this round
+        </p>
+      )}
       <ul className="space-y-0.5">
         {lines.map((line) => (
           <li key={line}>{line}</li>
@@ -260,6 +266,12 @@ const ParticipantDetailPage = () => {
           Number(b.partner.isActive === false) || a.pairId - b.pairId,
     );
 
+    // This round's marks, counted from the round's notes.
+    const marks = {
+      noShow: detail.notes.filter((n) => n.tag === "no_show").length,
+      redFlag: detail.notes.filter((n) => n.tag === "red_flag").length,
+    };
+
     body = (
       <div className="space-y-6">
         <div className="flex flex-wrap items-start gap-4">
@@ -269,12 +281,13 @@ const ParticipantDetailPage = () => {
             <p className="text-xs text-muted-foreground">
               All times on this page are in {MEETING_TIMEZONE}.
             </p>
-            <div className="mt-1">
+            <div className="mt-1 flex flex-wrap items-center gap-2">
               <StateChips
                 isActive={!person.isDeactivated}
                 isBlocked={person.isBlocked}
                 hasPendingBlockRequest={false}
               />
+              <MarkBadges noShow={marks.noShow} redFlag={marks.redFlag} />
             </div>
           </div>
           <div className="ml-auto flex flex-wrap items-start gap-2">
@@ -290,9 +303,9 @@ const ParticipantDetailPage = () => {
               onRequested={refetch}
             />
           </div>
-          {statusTypes.length > 0 && (
+          {statusTypes.length > 0 && changingStatus && (
             <ChangeStatusDialog
-              open={changingStatus}
+              open
               onOpenChange={setChangingStatus}
               person={{ userId: person.userId, name }}
               roundId={round.roundId}
@@ -381,6 +394,7 @@ const ParticipantDetailPage = () => {
           notes={detail.notes}
           roundId={round.roundId}
           userId={person.userId}
+          pairs={pairs}
           canAdd={writable}
           onAdded={refetch}
         />

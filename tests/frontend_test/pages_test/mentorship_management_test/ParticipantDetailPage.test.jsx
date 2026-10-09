@@ -279,6 +279,54 @@ describe("ParticipantDetailPage", () => {
     expect(await screen.findByText("Exempted")).toBeInTheDocument();
   });
 
+  it("shows the new problem and the exemption control after an earlier exemption", async () => {
+    useFeatureFlags.mockReturnValue({ [FEATURE_FLAGS.MATCHING_RUN]: true });
+    getParticipantDetail.mockResolvedValue({
+      data: detailOf({
+        exempted: true,
+        registration: registrationOf({
+          approvalStatus: "signed_up",
+          pairs: [],
+          exemptionFindings: [
+            { reason: "red_flag", roundId: 7, roundName: "Fall 2026" },
+          ],
+        }),
+      }),
+    });
+    renderPage();
+
+    expect(
+      await screen.findByText("Exempted earlier this round"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Red flag in this round")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Request exemption" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/^Exempted$/)).not.toBeInTheDocument();
+  });
+
+  it("counts this round's marks in the header from the notes", async () => {
+    getParticipantDetail.mockResolvedValue({
+      data: detailOf({
+        notes: [
+          noteOf({ noteId: 3, tag: "no_show", pairId: 80 }),
+          noteOf({ noteId: 2, tag: "no_show", pairId: 80 }),
+          noteOf({ noteId: 1, tag: "red_flag" }),
+        ],
+      }),
+    });
+    renderPage();
+
+    const heading = await screen.findByRole("heading", { name: "Alice Chen" });
+    expect(
+      within(heading.parentElement).getByText("No show \u00d72"),
+    ).toBeInTheDocument();
+    expect(
+      within(heading.parentElement).getByText("Red flag"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("with Bob Smith")).toHaveLength(2);
+  });
+
   it("shows notes and the earlier rounds", async () => {
     getParticipantDetail.mockResolvedValue({
       data: detailOf({
@@ -444,6 +492,27 @@ describe("ParticipantDetailPage", () => {
       ).toBeInTheDocument();
     });
 
+    it("starts over on the first type each time it opens", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.click(
+        await screen.findByRole("button", { name: "Change status / flag" }),
+      );
+      await user.selectOptions(
+        screen.getByLabelText("What are you asking for"),
+        "mark_red_flag",
+      );
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      await user.click(
+        screen.getByRole("button", { name: "Change status / flag" }),
+      );
+
+      expect(screen.getByLabelText("What are you asking for")).toHaveValue(
+        "withdraw_participant",
+      );
+    });
+
     it("is not offered with matching off, to a reader, or after the round", async () => {
       for (const setup of [
         () => useFeatureFlags.mockReturnValue({}),
@@ -502,13 +571,12 @@ describe("ParticipantDetailPage", () => {
       await user.click(
         screen.getByRole("button", { name: "Change status / flag" }),
       );
-      const dialog = await screen.findByRole("dialog");
+      const kinds = screen.getByLabelText("What are you asking for");
       expect(
-        within(dialog).queryByRole("option", { name: "Withdraw from round" }),
-      ).not.toBeInTheDocument();
-      expect(
-        within(dialog).getByRole("option", { name: "Raise a red flag" }),
-      ).toBeInTheDocument();
+        within(kinds)
+          .getAllByRole("option")
+          .map((o) => o.textContent),
+      ).toEqual(["Mark as no show", "Raise a red flag"]);
     });
 
     it("has no Waiting on a decision block when nothing waits", async () => {
