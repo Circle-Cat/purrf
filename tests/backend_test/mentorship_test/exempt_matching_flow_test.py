@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
-from backend.approval.approval_service import ApprovalService
+from backend.approval.approval_service import APPROVAL_CHECKS_FAILED, ApprovalService
 from backend.common.approval_enums import ApprovalRequestStatus
 from backend.common.exceptions import ConflictError
 from backend.common.mentorship_enums import (
@@ -148,6 +148,7 @@ class ExemptMatchingFlowTest(BaseRepositoryTestLib):
             note_repository=notes,
             users_repository=UsersRepository(),
             logger=logger,
+            participants_repository=MentorshipRoundParticipantsRepository(),
         )
         self.service = ApprovalService(
             approval_request_repository=ApprovalRequestRepository(),
@@ -226,6 +227,29 @@ class ExemptMatchingFlowTest(BaseRepositoryTestLib):
             self.mentee.user_id,
             await self.eligibility.eligible_user_ids(self.session, self.round.round_id),
         )
+
+    async def test_an_exemption_for_someone_withdrawn_since_is_refused(self):
+        request = await self._raise()
+        request_id = request.request_id
+        registration = (
+            await MentorshipRoundParticipantsRepository().get_by_user_id_and_round_id(
+                self.session, self.mentee.user_id, self.round.round_id
+            )
+        )
+        registration.approval_status = ApprovalStatus.WITHDRAWN
+        await self.session.flush()
+
+        with self.assertRaises(ConflictError) as caught:
+            await self.service.decide(
+                self.session,
+                request_id=request_id,
+                actor_id=self.reviewer.user_id,
+                approve=True,
+                comment=None,
+            )
+
+        self.assertEqual(caught.exception.code, APPROVAL_CHECKS_FAILED)
+        self.assertIn("has left this round", str(caught.exception))
 
 
 if __name__ == "__main__":

@@ -248,7 +248,7 @@ class MatchingEligibilityService:
         )
         pairs = {pair.pair_id: (pair, count) for pair, count in [*own, *of_mentees]}
 
-        quitters = await self.participants_repository.list_rejected_by_round(
+        quitters = await self.participants_repository.list_quitters_by_round(
             session, round_ids, user_ids
         )
 

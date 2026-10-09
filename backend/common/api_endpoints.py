@@ -87,6 +87,9 @@ MENTORSHIP_ADMIN_MATCH_RUN_PUBLISH_REQUEST = (
 MENTORSHIP_ADMIN_EXEMPTION_REQUEST = (
     "/mentorship/admin/rounds/{round_id}/participants/{user_id}/exemption-request"
 )
+MENTORSHIP_ADMIN_WITHDRAW_REQUEST = (
+    "/mentorship/admin/rounds/{round_id}/participants/{user_id}/withdraw-request"
+)
 MENTORSHIP_ADMIN_PARTICIPANT_DETAIL = (
     "/mentorship/admin/rounds/{round_id}/participants/{user_id}"
 )

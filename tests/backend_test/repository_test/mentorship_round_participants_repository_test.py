@@ -1011,10 +1011,11 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
             ],
         )
 
-    async def test_list_rejected_by_round_groups_rejected_people_by_round(self):
+    async def test_list_quitters_by_round_groups_rejected_and_withdrawn_people(self):
         bob = self._make_user(first_name="Bob", email="bob@example.com")
         cid = self._make_user(first_name="Cid", email="cid@example.com")
-        await self.insert_entities([bob, cid])
+        dan = self._make_user(first_name="Dan", email="dan@example.com")
+        await self.insert_entities([bob, cid, dan])
         first, second = (r.round_id for r in self.rounds)
         await self.insert_entities([
             MentorshipRoundParticipantsEntity(
@@ -1037,14 +1038,24 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
                 round_id=second,
                 approval_status=ApprovalStatus.REJECTED,
             ),
+            MentorshipRoundParticipantsEntity(
+                user_id=dan.user_id,
+                round_id=first,
+                approval_status=ApprovalStatus.WITHDRAWN,
+            ),
         ])
 
-        result = await self.repo.list_rejected_by_round(
-            self.session, [first, second], [self.user.user_id, bob.user_id]
+        result = await self.repo.list_quitters_by_round(
+            self.session,
+            [first, second],
+            [self.user.user_id, bob.user_id, dan.user_id],
         )
-        empty = await self.repo.list_rejected_by_round(self.session, [first], [])
+        empty = await self.repo.list_quitters_by_round(self.session, [first], [])
 
-        self.assertEqual(result, {first: {self.user.user_id}, second: {bob.user_id}})
+        self.assertEqual(
+            result,
+            {first: {self.user.user_id, dan.user_id}, second: {bob.user_id}},
+        )
         self.assertEqual(empty, {})
 
     async def test_search_filter_by_participant_role(self):

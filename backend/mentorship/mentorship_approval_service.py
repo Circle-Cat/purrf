@@ -12,10 +12,17 @@ from backend.mentorship.exempt_matching_handler import (
     exemption_target,
 )
 from backend.mentorship.publish_matching_handler import PUBLISH_MATCHING
+from backend.mentorship.withdraw_participant_handler import WITHDRAW_PARTICIPANT
 
 # Every action whose requests the mentorship console raises and decides. All
 # of them are reviewed by holders of mentorship.approve.
-MENTORSHIP_ACTIONS = (PUBLISH_MATCHING, EXEMPT_MATCHING)
+MENTORSHIP_ACTIONS = (PUBLISH_MATCHING, EXEMPT_MATCHING, WITHDRAW_PARTICIPANT)
+
+# The actions raised about one person in one round from their detail page,
+# listed there while they wait.
+PARTICIPANT_ACTIONS = (WITHDRAW_PARTICIPANT,)
+
+_OWN_WITHDRAWAL = "The person being withdrawn cannot review their own withdrawal."
 
 
 class MentorshipApprovalService:
@@ -153,6 +160,71 @@ class MentorshipApprovalService:
         )
         return (await self._describe(session, [row]))[0]
 
+    async def request_withdrawal(
+        self,
+        session,
+        *,
+        round_id: int,
+        user_id: int,
+        actor_id: int,
+        reviewer_id: int,
+        reason: str,
+    ) -> dict:
+        """Ask a reviewer to approve withdrawing a person from a round.
+        Commits.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round.
+            user_id (int): The person.
+            actor_id (int): Who is asking.
+            reviewer_id (int): Who should decide; not the person.
+            reason (str): Why, possibly empty.
+
+        Returns:
+            dict: The new request.
+
+        Raises:
+            ValueError: The reviewer is the person, or is refused.
+            ConflictError: The round is not in progress, the person is not
+                still in it, or a withdrawal is already waiting.
+        """
+        if reviewer_id == user_id:
+            raise ValueError(_OWN_WITHDRAWAL)
+        row = await self.approval_service.raise_request(
+            session,
+            action=WITHDRAW_PARTICIPANT,
+            raised_by=actor_id,
+            target_id=exemption_target(round_id, user_id),
+            payload={"round_id": round_id, "user_id": user_id},
+            reason=reason,
+            reviewer_id=reviewer_id,
+        )
+        return (await self._describe(session, [row]))[0]
+
+    async def pending_for_participant(
+        self, session, round_id: int, user_id: int
+    ) -> list[dict]:
+        """The requests about this person in this round waiting on a
+        reviewer, for their detail page.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round.
+            user_id (int): The person.
+
+        Returns:
+            list[dict]: One per pending request, described like list_mine.
+        """
+        rows = []
+        for action in PARTICIPANT_ACTIONS:
+            row = await self.approval_service.get_pending_for_target(
+                session, action, exemption_target(round_id, user_id)
+            )
+            if row is not None:
+                rows.append(row)
+        return await self._describe(session, rows)
+
     async def pending_exemptions(
         self, session, round_id: int, user_ids
     ) -> dict[int, dict]:
@@ -181,11 +253,16 @@ class MentorshipApprovalService:
         """Hand a mentorship request to another reviewer. Commits.
 
         Raises:
-            ValueError: Not a mentorship request, or a refused reviewer.
+            ValueError: Not a mentorship request, a refused reviewer, or the
+                person a withdrawal is about.
             PermissionError: The caller did not raise it.
             ConflictError: It is no longer pending.
         """
-        await self._mentorship_request(session, request_id)
+        row = await self._mentorship_request(session, request_id)
+        if row.action == WITHDRAW_PARTICIPANT and reviewer_id == int(
+            row.payload["user_id"]
+        ):
+            raise ValueError(_OWN_WITHDRAWAL)
         row = await self.approval_service.reassign(
             session, request_id=request_id, actor_id=actor_id, reviewer_id=reviewer_id
         )

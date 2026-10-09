@@ -933,11 +933,11 @@ class MentorshipRoundParticipantsRepository:
         )
         return [(user, participant) for user, participant in result.all()]
 
-    async def list_rejected_by_round(
+    async def list_quitters_by_round(
         self, session: AsyncSession, round_ids: list[int], user_ids: list[int]
     ) -> dict[int, set[int]]:
-        """Which of the given people have a rejected registration in each of
-        the given rounds.
+        """Which of the given people left each of the given rounds: their
+        registration there is rejected or withdrawn.
 
         Args:
             session (AsyncSession): The active async database session.
@@ -957,8 +957,10 @@ class MentorshipRoundParticipantsRepository:
             ).where(
                 MentorshipRoundParticipantsEntity.round_id.in_(round_ids),
                 MentorshipRoundParticipantsEntity.user_id.in_(user_ids),
-                MentorshipRoundParticipantsEntity.approval_status
-                == ApprovalStatus.REJECTED,
+                MentorshipRoundParticipantsEntity.approval_status.in_([
+                    ApprovalStatus.REJECTED,
+                    ApprovalStatus.WITHDRAWN,
+                ]),
             )
         )
         grouped: dict[int, set[int]] = {}

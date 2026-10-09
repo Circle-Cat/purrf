@@ -1,8 +1,15 @@
 import unittest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock
+import asyncio
+from unittest.mock import AsyncMock, MagicMock
 
-from backend.backfill.export_mentorship_records import completed_on_time
+from sqlalchemy.dialects import postgresql
+
+from backend.backfill.export_mentorship_records import (
+    completed_on_time,
+    compute_ineligible_mentee_ids,
+    fetch_participants_data,
+)
 from backend.common.mentorship_enums import TrainingStatus
 
 
@@ -50,6 +57,42 @@ class TestCompletedOnTime(unittest.TestCase):
         deadline = datetime(2026, 7, 1, tzinfo=timezone.utc)
         training = _training(TrainingStatus.DONE, None, deadline)
         self.assertFalse(completed_on_time(training))
+
+
+def _sql_of(statement) -> str:
+    return str(
+        statement.compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+
+
+def _session_returning_nothing():
+    result = MagicMock()
+    result.all.return_value = []
+    session = MagicMock()
+    session.execute = AsyncMock(return_value=result)
+    return session
+
+
+class TestLeaversAreLeftOut(unittest.TestCase):
+    """Rejected and withdrawn registrations are both people who left."""
+
+    def test_the_eligibility_query_skips_both(self):
+        session = _session_returning_nothing()
+
+        asyncio.run(compute_ineligible_mentee_ids(session, 5, None, set()))
+
+        sql = _sql_of(session.execute.await_args_list[0].args[0])
+        self.assertIn("NOT IN ('rejected', 'withdrawn')", sql)
+
+    def test_the_export_query_skips_both(self):
+        session = _session_returning_nothing()
+
+        asyncio.run(fetch_participants_data(session, 5))
+
+        sql = _sql_of(session.execute.await_args_list[0].args[0])
+        self.assertIn("NOT IN ('rejected', 'withdrawn')", sql)
 
 
 if __name__ == "__main__":

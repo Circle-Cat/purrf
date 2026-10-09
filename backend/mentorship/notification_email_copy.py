@@ -242,6 +242,9 @@ def _approval_ask(
     if action == "exempt_matching":
         person = html.escape((person_name or "").strip() or "someone")
         return f"exempt {person} from the matching history check{in_round}"
+    if action == "withdraw_participant":
+        person = html.escape((person_name or "").strip() or "someone")
+        return f"withdraw {person} from {html.escape(name) if name else 'their round'}"
     if action == "publish_matching":
         return (
             f"publish the matching result for {html.escape(name)}"
@@ -278,7 +281,7 @@ def approval_requested(
         round_name (str | None): The round's name, possibly blank.
         actor (str): Who asked, already HTML-escaped.
         reason (str | None): Their reason.
-        person_name (str | None): Who the request is about, for an exemption.
+        person_name (str | None): Who the request is about, for an exemption or a withdrawal.
 
     Returns:
         tuple[str, str]: Subject and HTML body.
@@ -309,7 +312,7 @@ def approval_reassigned(
         round_name (str | None): The round's name, possibly blank.
         actor (str): Who handed it over, already HTML-escaped.
         reason (str | None): The raiser's reason.
-        person_name (str | None): Who the request is about, for an exemption.
+        person_name (str | None): Who the request is about, for an exemption or a withdrawal.
 
     Returns:
         tuple[str, str]: Subject and HTML body.
@@ -343,7 +346,7 @@ def approval_decided(
         actor (str): Who closed it, already HTML-escaped.
         decision (str): approved, rejected or withdrawn.
         comment (str | None): The reviewer's reason, for a rejection.
-        person_name (str | None): Who the request is about, for an exemption.
+        person_name (str | None): Who the request is about, for an exemption or a withdrawal.
 
     Returns:
         tuple[str, str]: Subject and HTML body.

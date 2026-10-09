@@ -35,6 +35,7 @@ from backend.common.api_endpoints import (
     MENTORSHIP_ADMIN_MATCH_RUN_DRAFT,
     MENTORSHIP_ADMIN_MATCH_RUN_PUBLISH_REQUEST,
     MENTORSHIP_ADMIN_EXEMPTION_REQUEST,
+    MENTORSHIP_ADMIN_WITHDRAW_REQUEST,
     MENTORSHIP_ADMIN_APPROVERS,
     MENTORSHIP_ADMIN_APPROVALS_MINE,
     MENTORSHIP_ADMIN_APPROVAL_REASSIGN,
@@ -172,6 +173,15 @@ class MentorshipAdminController:
             MENTORSHIP_ADMIN_EXEMPTION_REQUEST,
             endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])(
                 self.request_exemption
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ADMIN_WITHDRAW_REQUEST,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])(
+                self.request_withdrawal
             ),
             methods=["POST"],
             response_model=None,
@@ -654,7 +664,7 @@ class MentorshipAdminController:
 
     def _require_matching(self, current_user: UserContextDto) -> None:
         """Approvals in the mentorship console sit behind the same flag as
-        matching: publishing and exemptions are both part of it."""
+        matching: publishing, exemptions and withdrawals are all part of it."""
         if not self.launchdarkly_service.is_matching_run_enabled(current_user):
             raise PermissionError("Matching runs are not yet available.")
 
@@ -731,6 +741,47 @@ class MentorshipAdminController:
             )
         return api_response(
             message="Successfully asked for approval to exempt.",
+            data=MentorshipApprovalDto.model_validate(result),
+        )
+
+    async def request_withdrawal(
+        self,
+        round_id: int,
+        user_id: int,
+        body: ApprovalRequestCreateDto,
+        current_user: UserContextDto,
+    ):
+        """
+        Ask a reviewer to approve withdrawing a person from a round.
+
+        Args:
+            round_id (int): The round, which must be in progress.
+            user_id (int): The person.
+            body (ApprovalRequestCreateDto): The reviewer named and the reason.
+            current_user (UserContextDto): Who is asking.
+
+        Returns:
+            API response carrying the new request.
+
+        Raises:
+            PermissionError: The flag is off for this admin. Surfaces as 403.
+            ValueError: The reviewer is the person, or cannot review it.
+                Surfaces as 400.
+            ConflictError: The person is not still in the round, or a
+                withdrawal is already waiting. Surfaces as 409.
+        """
+        self._require_matching(current_user)
+        async with self.database.session() as session:
+            result = await self.mentorship_approval_service.request_withdrawal(
+                session,
+                round_id=round_id,
+                user_id=user_id,
+                actor_id=current_user.user_id,
+                reviewer_id=body.reviewer_id,
+                reason=body.reason,
+            )
+        return api_response(
+            message="Successfully asked for approval to withdraw.",
             data=MentorshipApprovalDto.model_validate(result),
         )
 

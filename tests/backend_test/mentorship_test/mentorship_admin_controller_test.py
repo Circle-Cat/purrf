@@ -85,6 +85,7 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
         for name in (
             "request_publish",
             "request_exemption",
+            "request_withdrawal",
             "reassign",
             "decide",
             "withdraw",
@@ -504,6 +505,32 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
             )
         self.mock_approval_service.request_exemption.assert_not_awaited()
 
+    async def test_requesting_a_withdrawal_names_the_person_in_the_round(self):
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+        body = ApprovalRequestCreateDto(reviewer_id=8, reason="")
+
+        response = await self.controller.request_withdrawal(7, 21, body, caller)
+
+        self.mock_approval_service.request_withdrawal.assert_awaited_once_with(
+            self.mock_session,
+            round_id=7,
+            user_id=21,
+            actor_id=9,
+            reviewer_id=8,
+            reason="",
+        )
+        self.assertEqual(response["data"].request_id, 31)
+
+    async def test_requesting_a_withdrawal_is_refused_while_the_flag_is_off(self):
+        self.mock_launchdarkly_service.is_matching_run_enabled.return_value = False
+        caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
+
+        with self.assertRaises(PermissionError):
+            await self.controller.request_withdrawal(
+                7, 21, ApprovalRequestCreateDto(reviewer_id=8, reason=""), caller
+            )
+        self.mock_approval_service.request_withdrawal.assert_not_awaited()
+
     async def test_the_approvers_leave_out_the_caller(self):
         caller = UserContextDto(sub="auth0|1", primary_email="ada@x.org", user_id=9)
 
@@ -603,6 +630,11 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
             (
                 "/mentorship/admin/rounds/{round_id}/participants/{user_id}"
                 "/exemption-request",
+                "POST",
+            ),
+            (
+                "/mentorship/admin/rounds/{round_id}/participants/{user_id}"
+                "/withdraw-request",
                 "POST",
             ),
             ("/mentorship/admin/approvals/approvers", "GET"),
