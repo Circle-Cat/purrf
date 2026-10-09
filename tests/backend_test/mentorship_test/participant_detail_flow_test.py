@@ -27,6 +27,9 @@ from backend.common.mentorship_enums import (
     TrainingStatus,
 )
 from backend.entity.approval_request_entity import ApprovalRequestEntity
+from backend.entity.mentorship_participant_note_entity import (
+    MentorshipParticipantNoteEntity,
+)
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
@@ -36,7 +39,14 @@ from backend.entity.mentorship_round_participants_entity import (
 from backend.entity.training_course_entity import TrainingCourseEntity  # noqa: F401
 from backend.entity.training_entity import TrainingEntity
 from backend.entity.users_entity import UsersEntity
-from backend.mentorship.exempt_matching_handler import exemption_target
+from backend.mentorship.exempt_matching_handler import (
+    ExemptMatchingHandler,
+    exemption_target,
+)
+from backend.mentorship.mark_participant_handler import (
+    MarkNoShowHandler,
+    MarkRedFlagHandler,
+)
 from backend.mentorship.withdraw_participant_handler import WithdrawParticipantHandler
 from backend.mentorship.matching_eligibility_service import MatchingEligibilityService
 from backend.mentorship.mentorship_admin_service import MentorshipAdminService
@@ -227,6 +237,35 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
                 logger=logger,
             )
         )
+        eligibility = MatchingEligibilityService(
+            participants_repository=participants,
+            pairs_repository=MentorshipPairsRepository(),
+            rounds_repository=rounds,
+            training_repository=TrainingRepository(),
+            note_repository=self.notes,
+            logger=logger,
+        )
+        self.approvals.register(
+            ExemptMatchingHandler(
+                matching_eligibility_service=eligibility,
+                rounds_repository=rounds,
+                note_repository=self.notes,
+                users_repository=users,
+                logger=logger,
+                participants_repository=participants,
+            )
+        )
+        for handler in (MarkNoShowHandler, MarkRedFlagHandler):
+            self.approvals.register(
+                handler(
+                    participants_repository=participants,
+                    pairs_repository=MentorshipPairsRepository(),
+                    rounds_repository=rounds,
+                    note_repository=self.notes,
+                    users_repository=users,
+                    logger=logger,
+                )
+            )
         self.service = MentorshipAdminService(
             users_repository=users,
             participants_repository=participants,
@@ -237,14 +276,7 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
             logger=logger,
             mentorship_meeting_repository=MentorshipMeetingRepository(),
             application_repository=ApplicationRepository(),
-            matching_eligibility_service=MatchingEligibilityService(
-                participants_repository=participants,
-                pairs_repository=MentorshipPairsRepository(),
-                rounds_repository=rounds,
-                training_repository=TrainingRepository(),
-                note_repository=self.notes,
-                logger=logger,
-            ),
+            matching_eligibility_service=eligibility,
             mentorship_approval_service=MentorshipApprovalService(
                 approval_service=self.approvals,
                 matching_storage=MagicMock(),
@@ -262,6 +294,72 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
             (round_ or self.round).round_id,
             (user or self.mentee).user_id,
         )
+
+    async def _note(self, user, round_, tag, hours_ago, pair_id=None):
+        await self.insert_entities([
+            MentorshipParticipantNoteEntity(
+                user_id=user.user_id,
+                round_id=round_.round_id,
+                author_user_id=self.approver.user_id,
+                body=tag.value,
+                tag=tag,
+                pair_id=pair_id,
+                created_at=self.now - timedelta(hours=hours_ago),
+            )
+        ])
+
+    async def test_rows_count_marks_in_their_own_round(self):
+        await self._note(
+            self.mentee,
+            self.fall,
+            ParticipantNoteTag.NO_SHOW,
+            5,
+            pair_id=self.fall_pair.pair_id,
+        )
+        await self._note(self.mentee, self.round, ParticipantNoteTag.RED_FLAG, 4)
+
+        detail = await self._detail()
+
+        self.assertEqual(
+            (detail.registration.marks.no_show, detail.registration.marks.red_flag),
+            (0, 1),
+        )
+        self.assertEqual(
+            [(h.round_name, h.marks.no_show, h.marks.red_flag) for h in detail.history],
+            [("Fall 2025", 1, 0), ("Spring 2025", 0, 0)],
+        )
+
+    async def test_a_mark_after_this_round_s_exemption_shows_again(self):
+        uma = _user("Uma")
+        await self.insert_entities([uma])
+        await self.insert_entities([
+            MentorshipRoundParticipantsEntity(
+                user_id=uma.user_id,
+                round_id=self.round.round_id,
+                participant_role=ParticipantRole.MENTEE,
+                approval_status=ApprovalStatus.SIGNED_UP,
+            ),
+            TrainingEntity(
+                user_id=uma.user_id,
+                category=TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+                status=TrainingStatus.DONE,
+                deadline=self.now,
+            ),
+        ])
+        await self._note(uma, self.round, ParticipantNoteTag.MATCHING_EXEMPTION, 2)
+        await self._note(uma, self.round, ParticipantNoteTag.RED_FLAG, 1)
+
+        detail = await self._detail(user=uma)
+
+        self.assertTrue(detail.exempted)
+        self.assertEqual(
+            [
+                (f.reason, f.round_id, f.round_name)
+                for f in detail.registration.exemption_findings
+            ],
+            [("red_flag", self.round.round_id, "Spring 2026")],
+        )
+        self.assertEqual(detail.registration.marks.red_flag, 1)
 
     async def test_the_round_registration_and_pair(self):
         detail = await self._detail()
