@@ -297,6 +297,7 @@ const ParticipantDetailPage = () => {
               person={{ userId: person.userId, name }}
               roundId={round.roundId}
               types={statusTypes}
+              pairs={pairs}
               pendingRequests={pendingRequests}
               onSent={refetch}
             />

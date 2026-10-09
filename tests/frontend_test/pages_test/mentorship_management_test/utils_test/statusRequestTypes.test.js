@@ -1,36 +1,57 @@
 import { describe, it, expect, vi } from "vitest";
 import {
+  PAIR_RULE,
   availableStatusRequestTypes,
   statusRequestType,
 } from "@/pages/MentorshipManagement/utils/statusRequestTypes";
-import { requestParticipantWithdrawal } from "@/api/mentorshipApi";
+import {
+  requestParticipantMark,
+  requestParticipantWithdrawal,
+} from "@/api/mentorshipApi";
 
 vi.mock("@/api/mentorshipApi", () => ({
+  requestParticipantMark: vi.fn(),
   requestParticipantWithdrawal: vi.fn(),
 }));
+
+const PAIR = { pairId: 80 };
 
 const context = (overrides = {}) => ({
   canWrite: true,
   round: { roundId: 7, inProgress: true },
-  registration: { approvalStatus: "matched" },
+  registration: { approvalStatus: "matched", pairs: [PAIR] },
   ...overrides,
 });
 
+const labels = (ctx) => availableStatusRequestTypes(ctx).map((t) => t.label);
+
 describe("statusRequestTypes", () => {
-  it("offers Withdraw from round to a writer while the person is still in a round in progress", () => {
-    for (const approvalStatus of ["signed_up", "matched", "un_matched"]) {
+  it("offers all three to a writer while someone paired is still in a round in progress", () => {
+    expect(labels(context())).toEqual([
+      "Withdraw from round",
+      "Mark as no show",
+      "Raise a red flag",
+    ]);
+  });
+
+  it("offers no show only to someone who had a pair this round", () => {
+    expect(
+      labels(
+        context({ registration: { approvalStatus: "signed_up", pairs: [] } }),
+      ),
+    ).toEqual(["Withdraw from round", "Raise a red flag"]);
+  });
+
+  it("still offers the marks once they have left, whatever their status", () => {
+    for (const approvalStatus of ["withdrawn", "rejected"]) {
       expect(
-        availableStatusRequestTypes(
-          context({ registration: { approvalStatus } }),
-        ).map((t) => t.label),
-      ).toEqual(["Withdraw from round"]);
+        labels(context({ registration: { approvalStatus, pairs: [PAIR] } })),
+      ).toEqual(["Mark as no show", "Raise a red flag"]);
     }
   });
 
-  it("offers nothing once they have left, before they register, to a reader, or after the round", () => {
+  it("offers nothing before they register, to a reader, or after the round", () => {
     for (const ctx of [
-      context({ registration: { approvalStatus: "withdrawn" } }),
-      context({ registration: { approvalStatus: "rejected" } }),
       context({ registration: null }),
       context({ canWrite: false }),
       context({ round: { roundId: 7, inProgress: false } }),
@@ -39,33 +60,65 @@ describe("statusRequestTypes", () => {
     }
   });
 
-  it("does not offer a type that already waits on a decision, but still offers it beside a different one", () => {
+  it("does not offer a type already waiting, but offers the others beside it", () => {
     expect(
-      availableStatusRequestTypes(
+      labels(
         context({
-          pendingRequests: [{ requestId: 41, action: "withdraw_participant" }],
+          pendingRequests: [
+            { requestId: 41, action: "withdraw_participant" },
+            { requestId: 43, action: "mark_no_show" },
+          ],
         }),
       ),
-    ).toEqual([]);
-    expect(
-      availableStatusRequestTypes(
-        context({
-          pendingRequests: [{ requestId: 42, action: "exempt_matching" }],
-        }),
-      ).map((t) => t.label),
-    ).toEqual(["Withdraw from round"]);
+    ).toEqual(["Raise a red flag"]);
   });
 
-  it("finds a type by its action and sends it to the person in the round", () => {
-    const withdraw = statusRequestType("withdraw_participant");
+  it("says which types are about a pair", () => {
+    expect(statusRequestType("withdraw_participant").pair).toBe(PAIR_RULE.NONE);
+    expect(statusRequestType("mark_no_show").pair).toBe(PAIR_RULE.REQUIRED);
+    expect(statusRequestType("mark_red_flag").pair).toBe(PAIR_RULE.OPTIONAL);
+  });
 
-    withdraw.raise(7, 3104, { reviewerId: 8, reason: "" });
+  it("sends each type to the person in the round", () => {
+    statusRequestType("withdraw_participant").raise(7, 3104, {
+      reviewerId: 8,
+      reason: "",
+    });
+    statusRequestType("mark_no_show").raise(7, 3104, {
+      reviewerId: 8,
+      reason: "",
+      pairId: 80,
+    });
+    statusRequestType("mark_red_flag").raise(7, 3104, {
+      reviewerId: 8,
+      reason: "Rude",
+      pairId: null,
+    });
 
     expect(requestParticipantWithdrawal).toHaveBeenCalledWith(7, 3104, {
       reviewerId: 8,
       reason: "",
     });
-    expect(withdraw.consequences("Mia Ko")).toMatch(/cannot be undone/);
+    expect(requestParticipantMark).toHaveBeenCalledWith(7, 3104, {
+      tag: "no_show",
+      pairId: 80,
+      reviewerId: 8,
+      reason: "",
+    });
+    expect(requestParticipantMark).toHaveBeenCalledWith(7, 3104, {
+      tag: "red_flag",
+      pairId: null,
+      reviewerId: 8,
+      reason: "Rude",
+    });
     expect(statusRequestType("exempt_matching")).toBeNull();
+  });
+
+  it("tells the asker what a mark does", () => {
+    for (const action of ["mark_no_show", "mark_red_flag"]) {
+      expect(statusRequestType(action).consequences("Mia Ko")).toBe(
+        "Recorded on their history. It keeps them out of matching until an exemption, including later in this round. It cannot be undone. They are not told.",
+      );
+    }
   });
 });

@@ -33,6 +33,7 @@ vi.mock("@/api/mentorshipApi", () => ({
   decideMentorshipApproval: vi.fn(),
   reassignMentorshipApproval: vi.fn(),
   withdrawMentorshipApproval: vi.fn(),
+  requestParticipantMark: vi.fn(),
   requestParticipantWithdrawal: vi.fn(),
 }));
 vi.mock("@/api/adminAccountsApi", () => ({
@@ -400,15 +401,47 @@ describe("ParticipantDetailPage", () => {
     it.each([
       ["once they are withdrawn", { approvalStatus: "withdrawn" }],
       ["for a rejected registration", { approvalStatus: "rejected" }],
-    ])("is not offered %s", async (_label, overrides) => {
+    ])("offers only the marks %s", async (_label, overrides) => {
+      const user = userEvent.setup();
       getParticipantDetail.mockResolvedValue({
         data: detailOf({ registration: registrationOf(overrides) }),
       });
       renderPage();
-      await screen.findByRole("heading", { name: "Alice Chen" });
+
+      await user.click(
+        await screen.findByRole("button", { name: "Change status / flag" }),
+      );
+
+      const dialog = await screen.findByRole("dialog");
       expect(
-        screen.queryByRole("button", { name: "Change status / flag" }),
+        within(dialog).getByRole("option", { name: "Mark as no show" }),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).getByRole("option", { name: "Raise a red flag" }),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).queryByRole("option", { name: "Withdraw from round" }),
       ).not.toBeInTheDocument();
+    });
+
+    it("offers no no show to someone who had no pair", async () => {
+      const user = userEvent.setup();
+      getParticipantDetail.mockResolvedValue({
+        data: detailOf({ registration: registrationOf({ pairs: [] }) }),
+      });
+      renderPage();
+
+      await user.click(
+        await screen.findByRole("button", { name: "Change status / flag" }),
+      );
+
+      const dialog = await screen.findByRole("dialog");
+      expect(
+        within(dialog).queryByRole("option", { name: "Mark as no show" }),
+      ).not.toBeInTheDocument();
+      expect(
+        within(dialog).getByRole("option", { name: "Raise a red flag" }),
+      ).toBeInTheDocument();
     });
 
     it("is not offered with matching off, to a reader, or after the round", async () => {
@@ -448,6 +481,7 @@ describe("ParticipantDetailPage", () => {
     });
 
     it("lists what waits on a decision below the round and stops offering that request", async () => {
+      const user = userEvent.setup();
       getParticipantDetail.mockResolvedValue({
         data: detailOf({ pendingRequests: [pendingWithdrawal] }),
       });
@@ -464,9 +498,17 @@ describe("ParticipantDetailPage", () => {
       expect(
         within(block).getByRole("button", { name: "Withdraw" }),
       ).toBeInTheDocument();
+
+      await user.click(
+        screen.getByRole("button", { name: "Change status / flag" }),
+      );
+      const dialog = await screen.findByRole("dialog");
       expect(
-        screen.queryByRole("button", { name: "Change status / flag" }),
+        within(dialog).queryByRole("option", { name: "Withdraw from round" }),
       ).not.toBeInTheDocument();
+      expect(
+        within(dialog).getByRole("option", { name: "Raise a red flag" }),
+      ).toBeInTheDocument();
     });
 
     it("has no Waiting on a decision block when nothing waits", async () => {

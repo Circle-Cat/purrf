@@ -3,7 +3,18 @@ import { Label } from "@/components/ui/label";
 import ApprovalRequestDialog from "@/components/approval/ApprovalRequestDialog";
 import { useMentorshipApprovers } from "@/pages/MentorshipManagement/hooks/useMentorshipApprovers";
 import { useApprovalAction } from "@/pages/MentorshipManagement/hooks/useApprovalAction";
+import { userDisplayName } from "@/utils/userName";
 import { approvalActionLabel } from "@/pages/MentorshipManagement/utils/approvalLabels";
+import { PAIR_RULE } from "@/pages/MentorshipManagement/utils/statusRequestTypes";
+
+// A required pair is picked for the asker when there is only one to pick.
+const defaultPairId = (type, pairs) =>
+  type?.pair === PAIR_RULE.REQUIRED && pairs.length === 1
+    ? String(pairs[0].pairId)
+    : "";
+
+const pairLabel = (pair) =>
+  `${userDisplayName(pair.partner)}${pair.partner?.isActive === false ? " (ended)" : ""}`;
 
 /**
  * Ask a named reviewer to change a person's status in a round, or flag them.
@@ -11,7 +22,8 @@ import { approvalActionLabel } from "@/pages/MentorshipManagement/utils/approval
  * Nothing changes when it is sent: the reviewer decides. The kinds offered
  * come from the request types table; with only one, its name is shown
  * instead of a choice. Requests already waiting on this person are listed at
- * the top; another kind can still be asked for.
+ * the top; another kind can still be asked for. A type about a pair asks
+ * which one; a no show must name one.
  *
  * @param {object} props
  * @param {boolean} props.open Whether the dialog is showing.
@@ -19,6 +31,8 @@ import { approvalActionLabel } from "@/pages/MentorshipManagement/utils/approval
  * @param {{userId: number, name: string}} props.person Who it is about.
  * @param {number|string} props.roundId The round.
  * @param {Object[]} props.types The request types available now.
+ * @param {Object[]} [props.pairs] The person's pairs this round, ended ones
+ *   included.
  * @param {{requestId: number, action: string}[]} [props.pendingRequests]
  *   What already waits on a decision about them.
  * @param {() => Promise<void>|void} props.onSent Reload the page.
@@ -30,14 +44,28 @@ const ChangeStatusDialog = ({
   person,
   roundId,
   types,
+  pairs = [],
   pendingRequests = [],
   onSent,
 }) => {
   const [typeKey, setTypeKey] = useState(types[0]?.key ?? "");
+  const [pairId, setPairId] = useState(() => defaultPairId(types[0], pairs));
   const reviewers = useMentorshipApprovers(open);
   const { busy, act } = useApprovalAction(onSent);
   const type = types.find((t) => t.key === typeKey) ?? types[0];
   if (!type) return null;
+  const pairRule = type.pair ?? PAIR_RULE.NONE;
+  const asksPair = pairRule !== PAIR_RULE.NONE;
+
+  const chooseType = (key) => {
+    setTypeKey(key);
+    setPairId(
+      defaultPairId(
+        types.find((t) => t.key === key),
+        pairs,
+      ),
+    );
+  };
 
   return (
     <ApprovalRequestDialog
@@ -53,9 +81,17 @@ const ChangeStatusDialog = ({
       askReason
       confirmLabel="Send for approval"
       submitting={busy}
+      canConfirm={!(pairRule === PAIR_RULE.REQUIRED && pairId === "")}
       onConfirm={async ({ reviewerId, reason }) => {
+        const body = asksPair
+          ? {
+              reviewerId,
+              reason,
+              pairId: pairId === "" ? null : Number(pairId),
+            }
+          : { reviewerId, reason };
         const sent = await act(
-          () => type.raise(roundId, person.userId, { reviewerId, reason }),
+          () => type.raise(roundId, person.userId, body),
           "Sent for approval.",
           "Could not send the request.",
         );
@@ -78,7 +114,7 @@ const ChangeStatusDialog = ({
               id="status-request-type"
               className="w-full rounded-md border border-border p-2 text-sm"
               value={type.key}
-              onChange={(e) => setTypeKey(e.target.value)}
+              onChange={(e) => chooseType(e.target.value)}
               disabled={busy}
             >
               {types.map((t) => (
@@ -92,6 +128,29 @@ const ChangeStatusDialog = ({
           <p className="text-sm font-medium">{type.label}</p>
         )}
       </div>
+      {asksPair ? (
+        <div className="space-y-1">
+          <Label htmlFor="status-request-pair">Which pair</Label>
+          <select
+            id="status-request-pair"
+            className="w-full rounded-md border border-border p-2 text-sm"
+            value={pairId}
+            onChange={(e) => setPairId(e.target.value)}
+            disabled={busy}
+          >
+            <option value="">
+              {pairRule === PAIR_RULE.REQUIRED
+                ? "Select a pair…"
+                : "Not about one pair"}
+            </option>
+            {pairs.map((pair) => (
+              <option key={pair.pairId} value={String(pair.pairId)}>
+                {pairLabel(pair)}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
       <p className="text-sm text-muted-foreground">
         {type.consequences(person.name)}
       </p>

@@ -14,6 +14,7 @@ vi.mock("@/api/mentorshipApi", () => ({
   decideMentorshipApproval: vi.fn(),
   getMentorshipApprovers: vi.fn(),
   reassignMentorshipApproval: vi.fn(),
+  requestParticipantMark: vi.fn(),
   requestParticipantWithdrawal: vi.fn(),
   withdrawMentorshipApproval: vi.fn(),
 }));
