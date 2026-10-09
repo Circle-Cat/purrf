@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from sqlalchemy import select
 
@@ -81,6 +81,7 @@ class TestInboxSyncOnARealSession(BaseRepositoryTestLib):
 
         self.threads = EmailThreadRepository()
         messages = EmailMessageRepository()
+        self.messages = messages
         conversation = EmailConversationService(
             gmail_client=self.gmail,
             thread_repository=self.threads,
@@ -127,6 +128,7 @@ class TestInboxSyncOnARealSession(BaseRepositoryTestLib):
             ),
         )
         self.handler = handler
+        self.conversation = conversation
         await GmailSyncStateRepository().create(self.session, _MAILBOX, 100)
         await self.session.commit()
 
@@ -348,6 +350,173 @@ class TestInboxSyncOnARealSession(BaseRepositoryTestLib):
             )
         )
         self.assertIsNotNone(synced_at)
+
+    # ---- a message stored by someone else after this sync listed the thread
+
+    def _stale_snapshot(self):
+        # What a sync sees when another transaction stores a message after
+        # this one read the thread's stored ids.
+        return patch.object(
+            self.messages,
+            "list_gmail_message_ids_by_thread",
+            AsyncMock(return_value=set()),
+        )
+
+    def _our_reply(self, gmail_id, internal_date):
+        mail = _message(gmail_id, internal_date)
+        mail["from_address"] = _ALIAS
+        mail["to_addresses"] = "asker@ext.com"
+        mail["recipients"] = ["asker@ext.com"]
+        return mail
+
+    async def _reply(self, thread, sender, gmail_id):
+        self.gmail.send_message.return_value = {
+            "gmail_message_id": gmail_id,
+            "gmail_thread_id": _GMAIL_THREAD,
+            "rfc822_message_id": f"<{gmail_id}@mail>",
+        }
+        message = await self.conversation.send(
+            self.session,
+            user_id=None,
+            context_type=thread.context_type,
+            context_id=None,
+            to=["asker@ext.com"],
+            subject="Re: A question",
+            body="<p>Answer</p>",
+            sender_user_id=sender.user_id,
+            thread_id=thread.thread_id,
+            sender_address=_ALIAS,
+        )
+        await self.session.commit()
+        return message
+
+    async def _thread_messages(self, thread_id):
+        return (
+            await self.session.scalars(
+                select(EmailMessageEntity).where(
+                    EmailMessageEntity.thread_id == thread_id
+                )
+            )
+        ).all()
+
+    async def _thread_events(self, thread_id):
+        return (
+            await self.session.scalars(
+                select(EventEntity).where(
+                    EventEntity.subject_type == INBOX_SUBJECT_TYPE,
+                    EventEntity.subject_id == thread_id,
+                )
+            )
+        ).all()
+
+    async def _last_error(self):
+        state = await GmailSyncStateRepository().get(self.session, _MAILBOX)
+        return state.last_error
+
+    async def test_a_push_after_our_reply_was_stored_keeps_one_row_and_no_event(
+        self,
+    ):
+        self.assertEqual(await self._push(120, 150), PushOutcome.ACK)
+        thread = await self._thread()
+        thread_id = thread.thread_id
+        sender = await self._person()
+        await self._reply(thread, sender, "r1")
+        events_before = len(await self._thread_events(thread_id))
+
+        self.mail["r1"] = self._our_reply("r1", "1700000030000")
+        self.listed = ["m1", "r1"]
+        with self._stale_snapshot():
+            self.assertEqual(await self._push(200, 250), PushOutcome.ACK)
+
+        stored = await self._thread_messages(thread_id)
+        self.assertEqual(sorted(m.gmail_message_id for m in stored), ["m1", "r1"])
+        (reply,) = [m for m in stored if m.gmail_message_id == "r1"]
+        self.assertEqual(reply.sent_by_user_id, sender.user_id)
+        self.assertEqual(len(await self._thread_events(thread_id)), events_before)
+        self.assertIsNone(await self._last_error())
+
+    async def test_a_push_racing_another_push_records_needs_reply_once(self):
+        self.assertEqual(await self._push(120, 150), PushOutcome.ACK)
+        thread_id = (await self._thread()).thread_id
+        self.assertEqual(len(await self._needs_reply_events(thread_id)), 1)
+
+        # m1 reads as new again; m2 really is.
+        self.listed = ["m1", "m2"]
+        with self._stale_snapshot():
+            self.assertEqual(await self._push(200, 250), PushOutcome.ACK)
+
+        stored = await self._thread_messages(thread_id)
+        self.assertEqual(sorted(m.gmail_message_id for m in stored), ["m1", "m2"])
+        self.assertEqual(len(await self._needs_reply_events(thread_id)), 1)
+        self.assertIsNone(await self._last_error())
+
+    async def test_our_reply_already_stored_by_a_push_is_answered_with_that_row(
+        self,
+    ):
+        self.assertEqual(await self._push(120, 150), PushOutcome.ACK)
+        thread = await self._thread()
+        thread_id = thread.thread_id
+        self.mail["r1"] = self._our_reply("r1", "1700000030000")
+        self.listed = ["m1", "r1"]
+        self.assertEqual(await self._push(200, 250), PushOutcome.ACK)
+        synced = {m.gmail_message_id: m for m in await self._thread_messages(thread_id)}
+        self.assertIsNone(synced["r1"].sent_by_user_id)
+        events_before = len(await self._thread_events(thread_id))
+        sender = await self._person()
+
+        message = await self._reply(thread, sender, "r1")
+
+        self.assertEqual(message.message_id, synced["r1"].message_id)
+        stored = await self._thread_messages(thread_id)
+        self.assertEqual(sorted(m.gmail_message_id for m in stored), ["m1", "r1"])
+        (reply,) = [m for m in stored if m.gmail_message_id == "r1"]
+        self.assertEqual(reply.sent_by_user_id, sender.user_id)
+        self.assertEqual(len(await self._thread_events(thread_id)), events_before)
+
+    async def test_an_application_push_racing_another_records_one_email_received(
+        self,
+    ):
+        self.assertEqual(await self._push(120, 150), PushOutcome.ACK)
+        owner, candidate = await self._person(), await self._person()
+        job = JobEntity(
+            kind=JobKind.EMPLOYMENT,
+            title="Data Analyst",
+            status=JobStatus.PUBLISHED,
+            pipeline_config={"ownerIds": [owner.user_id]},
+        )
+        await self.insert_entities([job])
+        application = ApplicationEntity(
+            job_id=job.job_id,
+            user_id=candidate.user_id,
+            stage=ApplicationStage.APPLIED,
+        )
+        await self.insert_entities([application])
+        thread = await self._assign(
+            candidate.user_id, ContextType.APPLICATION, application.application_id
+        )
+        thread_id = thread.thread_id
+        application_id = application.application_id
+        self.listed = ["m1", "m2"]
+        self.assertEqual(await self._push(200, 250), PushOutcome.ACK)
+
+        self.mail["r1"] = self._our_reply("r1", "1700000090000")
+        self.listed = ["m1", "m2", "r1"]
+        with self._stale_snapshot():
+            self.assertEqual(await self._push(300, 350), PushOutcome.ACK)
+
+        stored = await self._thread_messages(thread_id)
+        self.assertEqual(sorted(m.gmail_message_id for m in stored), ["m1", "m2", "r1"])
+        received = (
+            await self.session.scalars(
+                select(EventEntity).where(
+                    EventEntity.subject_type == "application",
+                    EventEntity.subject_id == application_id,
+                    EventEntity.event_type == RecruitingEvent.EMAIL_RECEIVED,
+                )
+            )
+        ).all()
+        self.assertEqual(len(received), 1)
+        self.assertIsNone(await self._last_error())
 
 
 if __name__ == "__main__":

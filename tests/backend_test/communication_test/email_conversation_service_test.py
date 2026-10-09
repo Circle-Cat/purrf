@@ -35,6 +35,10 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         # override this. Without it the AsyncMock returns a Mock, and
         # `gmail_id in known` would blow up.
         self.message_repo.list_gmail_message_ids_by_thread.return_value = set()
+        self.message_repo.insert_or_get.return_value = (
+            SimpleNamespace(message_id=1, sent_by_user_id=3),
+            True,
+        )
 
     # ---- send: new thread ---------------------------------------------
 
@@ -47,7 +51,10 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.thread_repo.create.return_value = SimpleNamespace(
             thread_id=10, gmail_thread_id="gt1"
         )
-        self.message_repo.create.return_value = SimpleNamespace(message_id=99)
+        self.message_repo.insert_or_get.return_value = (
+            SimpleNamespace(message_id=99),
+            True,
+        )
 
         result = await self.service.send(
             self.session,
@@ -75,8 +82,8 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tkw["context_type"], ContextType.APPLICATION)
         self.assertEqual(tkw["context_id"], 7)
 
-        self.message_repo.create.assert_awaited_once()
-        _, mkw = self.message_repo.create.call_args
+        self.message_repo.insert_or_get.assert_awaited_once()
+        _, mkw = self.message_repo.insert_or_get.call_args
         self.assertEqual(mkw["thread_id"], 10)
         self.assertEqual(mkw["gmail_message_id"], "g1")
         self.assertEqual(mkw["direction"], EmailDirection.OUTBOUND)
@@ -86,7 +93,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mkw["rfc822_message_id"], "<r1@mail>")
         self.assertEqual(mkw["sent_by_user_id"], 3)
 
-        self.assertIs(result, self.message_repo.create.return_value)
+        self.assertIs(result, self.message_repo.insert_or_get.return_value[0])
 
     async def test_send_does_not_persist_when_gmail_fails(self):
         self.gmail.send_message.side_effect = RuntimeError("gmail down")
@@ -102,7 +109,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
                 sender_user_id=3,
             )
         self.thread_repo.create.assert_not_awaited()
-        self.message_repo.create.assert_not_awaited()
+        self.message_repo.insert_or_get.assert_not_awaited()
 
     async def test_send_as_another_address_sends_and_stores_it(self):
         self.gmail.send_message.return_value = {
@@ -128,7 +135,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
 
         _, kwargs = self.gmail.send_message.call_args
         self.assertEqual(kwargs["sender"], "mentorship-test@circlecat.org")
-        _, mkw = self.message_repo.create.call_args
+        _, mkw = self.message_repo.insert_or_get.call_args
         self.assertEqual(mkw["from_address"], "mentorship-test@circlecat.org")
 
     # ---- send: reply --------------------------------------------------
@@ -149,7 +156,10 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
             "gmail_thread_id": "gt1",
             "rfc822_message_id": "<r3@mail>",
         }
-        self.message_repo.create.return_value = SimpleNamespace(message_id=100)
+        self.message_repo.insert_or_get.return_value = (
+            SimpleNamespace(message_id=100),
+            True,
+        )
 
         await self.service.send(
             self.session,
@@ -169,7 +179,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["references"], "<r1@mail> <r2@mail>")
         # Existing thread: not re-created.
         self.thread_repo.create.assert_not_awaited()
-        _, mkw = self.message_repo.create.call_args
+        _, mkw = self.message_repo.insert_or_get.call_args
         self.assertEqual(mkw["thread_id"], 10)
 
     async def test_send_reply_rejects_thread_from_other_context(self):
@@ -194,7 +204,50 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
                 thread_id=10,
             )
         self.gmail.send_message.assert_not_called()
-        self.message_repo.create.assert_not_awaited()
+        self.message_repo.insert_or_get.assert_not_awaited()
+
+    async def _send_reply_already_stored(self, stored):
+        self.thread_repo.get.return_value = SimpleNamespace(
+            thread_id=10,
+            gmail_thread_id="gt1",
+            context_type=ContextType.APPLICATION,
+            context_id=7,
+        )
+        self.message_repo.list_by_thread.return_value = []
+        self.gmail.send_message.return_value = {
+            "gmail_message_id": "g3",
+            "gmail_thread_id": "gt1",
+            "rfc822_message_id": "<r3@mail>",
+        }
+        self.message_repo.insert_or_get.return_value = (stored, False)
+        return await self.service.send(
+            self.session,
+            user_id=5,
+            context_type=ContextType.APPLICATION,
+            context_id=7,
+            to=["cand@example.com"],
+            subject="Re: Hi",
+            body="<p>reply</p>",
+            sender_user_id=3,
+            thread_id=10,
+        )
+
+    async def test_send_already_stored_by_a_sync_returns_that_row_with_its_sender(
+        self,
+    ):
+        stored = SimpleNamespace(message_id=50, sent_by_user_id=None)
+
+        result = await self._send_reply_already_stored(stored)
+
+        self.assertIs(result, stored)
+        self.assertEqual(stored.sent_by_user_id, 3)
+
+    async def test_send_already_stored_keeps_the_sender_it_has(self):
+        stored = SimpleNamespace(message_id=50, sent_by_user_id=8)
+
+        await self._send_reply_already_stored(stored)
+
+        self.assertEqual(stored.sent_by_user_id, 8)
 
     # ---- list_conversation --------------------------------------------
 
@@ -464,7 +517,10 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.gmail.list_thread_message_ids.return_value = ["g1", "g2"]
         self.message_repo.list_gmail_message_ids_by_thread.return_value = {"g1"}
         self.gmail.get_messages.return_value = [self._fetched("g2", "cand@example.com")]
-        self.message_repo.create.return_value = SimpleNamespace(message_id=2)
+        self.message_repo.insert_or_get.return_value = (
+            SimpleNamespace(message_id=2),
+            True,
+        )
 
         created = await self.service.sync_thread(self.session, self._thread())
 
@@ -472,8 +528,8 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         # The already-stored g1 costs nothing: it is not in the batch, and no
         # insert follows.
         self.gmail.get_messages.assert_called_once_with(["g2"])
-        self.message_repo.create.assert_awaited_once()
-        _, mkw = self.message_repo.create.call_args
+        self.message_repo.insert_or_get.assert_awaited_once()
+        _, mkw = self.message_repo.insert_or_get.call_args
         self.assertEqual(mkw["thread_id"], 10)
         self.assertEqual(mkw["gmail_message_id"], "g2")
         self.assertEqual(mkw["direction"], EmailDirection.INBOUND)
@@ -486,7 +542,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mkw["rfc822_message_id"], "<g2@mail>")
         self.thread_repo.mark_synced.assert_awaited_once_with(self.session, 10)
         self.assertEqual(len(created), 1)
-        self.assertIs(created[0], self.message_repo.create.return_value)
+        self.assertIs(created[0], self.message_repo.insert_or_get.return_value[0])
 
     async def test_sync_thread_stores_a_bounce_as_inbound_with_its_failed_recipients(
         self,
@@ -499,11 +555,14 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
             bounce,
             self._fetched("g2", "cand@example.com"),
         ]
-        self.message_repo.create.return_value = SimpleNamespace(message_id=1)
+        self.message_repo.insert_or_get.return_value = (
+            SimpleNamespace(message_id=1),
+            True,
+        )
 
         await self.service.sync_thread(self.session, self._thread())
 
-        (_, bounce_kw), (_, reply_kw) = self.message_repo.create.call_args_list
+        (_, bounce_kw), (_, reply_kw) = self.message_repo.insert_or_get.call_args_list
         self.assertEqual(bounce_kw["failed_recipients"], "a@x.com")
         self.assertEqual(bounce_kw["direction"], EmailDirection.INBOUND)
         self.assertIsNone(reply_kw["failed_recipients"])
@@ -523,11 +582,14 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         auto["attachments"] = files
         ours = self._fetched("g2", SENDER)
         self.gmail.get_messages.return_value = [auto, ours]
-        self.message_repo.create.return_value = SimpleNamespace(message_id=1)
+        self.message_repo.insert_or_get.return_value = (
+            SimpleNamespace(message_id=1),
+            True,
+        )
 
         await self.service.sync_thread(self.session, self._thread())
 
-        (_, in_kw), (_, out_kw) = self.message_repo.create.call_args_list
+        (_, in_kw), (_, out_kw) = self.message_repo.insert_or_get.call_args_list
         self.assertEqual(in_kw["inbound_kind"], InboundKind.AUTO_REPLY)
         self.assertEqual(in_kw["attachments"], files)
         self.assertIsNone(out_kw.get("inbound_kind"))
@@ -547,7 +609,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.gmail.list_thread_message_ids.call_count, 1)
         self.gmail.get_messages.assert_not_called()
-        self.message_repo.create.assert_not_awaited()
+        self.message_repo.insert_or_get.assert_not_awaited()
         self.thread_repo.mark_synced.assert_awaited_once_with(self.session, 10)
         self.assertEqual(created, [])
 
@@ -561,10 +623,10 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
             self._fetched("g2", "cand@example.com"),
             self._fetched("g3", "cand@example.com"),
         ]
-        self.message_repo.create.side_effect = [
-            SimpleNamespace(message_id=1),
-            SimpleNamespace(message_id=2),
-            SimpleNamespace(message_id=3),
+        self.message_repo.insert_or_get.side_effect = [
+            (SimpleNamespace(message_id=1), True),
+            (SimpleNamespace(message_id=2), True),
+            (SimpleNamespace(message_id=3), True),
         ]
 
         await self.service.sync_thread(self.session, self._thread())
@@ -580,9 +642,9 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
             self._fetched("g1", "cand@example.com"),
             self._fetched("g3", "cand@example.com"),
         ]
-        self.message_repo.create.side_effect = [
-            SimpleNamespace(message_id=1),
-            SimpleNamespace(message_id=3),
+        self.message_repo.insert_or_get.side_effect = [
+            (SimpleNamespace(message_id=1), True),
+            (SimpleNamespace(message_id=3), True),
         ]
 
         created = await self.service.sync_thread(self.session, self._thread())
@@ -590,6 +652,22 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         # One batch, carrying exactly the missing ids in Gmail's order.
         self.gmail.get_messages.assert_called_once_with(["g1", "g3"])
         self.assertEqual([entity.message_id for entity in created], [1, 3])
+
+    async def test_sync_thread_leaves_out_a_message_stored_since_the_listing(self):
+        self.gmail.list_thread_message_ids.return_value = ["g1", "g2"]
+        self.gmail.get_messages.return_value = [
+            self._fetched("g1", SENDER),
+            self._fetched("g2", "cand@example.com"),
+        ]
+        self.message_repo.insert_or_get.side_effect = [
+            (SimpleNamespace(message_id=1), False),
+            (SimpleNamespace(message_id=2), True),
+        ]
+
+        created = await self.service.sync_thread(self.session, self._thread())
+
+        self.assertEqual([entity.message_id for entity in created], [2])
+        self.thread_repo.mark_synced.assert_awaited_once_with(self.session, 10)
 
     async def test_sync_thread_classifies_outbound_by_sender_even_with_display_name(
         self,
@@ -599,11 +677,14 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.gmail.get_messages.return_value = [
             self._fetched("g9", f"Circle Cat Recruiting <{SENDER}>")
         ]
-        self.message_repo.create.return_value = SimpleNamespace(message_id=3)
+        self.message_repo.insert_or_get.return_value = (
+            SimpleNamespace(message_id=3),
+            True,
+        )
 
         await self.service.sync_thread(self.session, self._thread())
 
-        _, mkw = self.message_repo.create.call_args
+        _, mkw = self.message_repo.insert_or_get.call_args
         self.assertEqual(mkw["direction"], EmailDirection.OUTBOUND)
         self.assertEqual(mkw["gmail_internal_date"].year, 2023)
 
@@ -618,12 +699,15 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         ]
         self.gmail.owns_address.side_effect = None
         self.gmail.owns_address.return_value = True
-        self.message_repo.create.return_value = SimpleNamespace(message_id=4)
+        self.message_repo.insert_or_get.return_value = (
+            SimpleNamespace(message_id=4),
+            True,
+        )
 
         await self.service.sync_thread(self.session, self._thread())
 
         self.gmail.owns_address.assert_called_with("notification@circlecat.org")
-        _, mkw = self.message_repo.create.call_args
+        _, mkw = self.message_repo.insert_or_get.call_args
         self.assertEqual(mkw["direction"], EmailDirection.OUTBOUND)
 
     async def test_sync_thread_propagates_a_failed_body_fetch(self):
@@ -639,7 +723,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(RuntimeError):
             await self.service.sync_thread(self.session, self._thread())
 
-        self.message_repo.create.assert_not_awaited()
+        self.message_repo.insert_or_get.assert_not_awaited()
         self.thread_repo.mark_synced.assert_not_awaited()
 
     async def test_sync_context_syncs_each_thread(self):
@@ -653,9 +737,9 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
             [self._fetched("gA1", "cand-a@example.com")],
             [self._fetched("gB1", "cand-b@example.com")],
         ]
-        self.message_repo.create.side_effect = [
-            SimpleNamespace(message_id=201),
-            SimpleNamespace(message_id=202),
+        self.message_repo.insert_or_get.side_effect = [
+            (SimpleNamespace(message_id=201), True),
+            (SimpleNamespace(message_id=202), True),
         ]
         result = await self.service.sync_context(
             self.session, ContextType.APPLICATION, 7
