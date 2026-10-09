@@ -6,23 +6,44 @@ decided through a mentorship endpoint, and turns requests into what the
 console shows: who raised it, who reviews it, which round it is about.
 """
 
+from backend.common.mentorship_enums import ParticipantNoteTag
 from backend.common.name_utils import user_display_name
 from backend.mentorship.exempt_matching_handler import (
     EXEMPT_MATCHING,
     exemption_target,
 )
+from backend.mentorship.mark_participant_handler import MARK_NO_SHOW, MARK_RED_FLAG
 from backend.mentorship.publish_matching_handler import PUBLISH_MATCHING
 from backend.mentorship.withdraw_participant_handler import WITHDRAW_PARTICIPANT
 
 # Every action whose requests the mentorship console raises and decides. All
 # of them are reviewed by holders of mentorship.approve.
-MENTORSHIP_ACTIONS = (PUBLISH_MATCHING, EXEMPT_MATCHING, WITHDRAW_PARTICIPANT)
+MENTORSHIP_ACTIONS = (
+    PUBLISH_MATCHING,
+    EXEMPT_MATCHING,
+    WITHDRAW_PARTICIPANT,
+    MARK_NO_SHOW,
+    MARK_RED_FLAG,
+)
 
 # The actions raised about one person in one round from their detail page,
 # listed there while they wait.
-PARTICIPANT_ACTIONS = (WITHDRAW_PARTICIPANT,)
+PARTICIPANT_ACTIONS = (WITHDRAW_PARTICIPANT, MARK_NO_SHOW, MARK_RED_FLAG)
+
+_MARK_ACTIONS = {
+    ParticipantNoteTag.NO_SHOW: MARK_NO_SHOW,
+    ParticipantNoteTag.RED_FLAG: MARK_RED_FLAG,
+}
 
 _OWN_WITHDRAWAL = "The person being withdrawn cannot review their own withdrawal."
+_OWN_MARK = "The person being marked cannot review a mark on themselves."
+
+# The requests whose subject may not be their reviewer, with the refusal.
+_SUBJECT_MAY_NOT_REVIEW = {
+    WITHDRAW_PARTICIPANT: _OWN_WITHDRAWAL,
+    MARK_NO_SHOW: _OWN_MARK,
+    MARK_RED_FLAG: _OWN_MARK,
+}
 
 
 class MentorshipApprovalService:
@@ -202,6 +223,59 @@ class MentorshipApprovalService:
         )
         return (await self._describe(session, [row]))[0]
 
+    async def request_mark(
+        self,
+        session,
+        *,
+        round_id: int,
+        user_id: int,
+        tag: str,
+        pair_id: int | None,
+        actor_id: int,
+        reviewer_id: int,
+        reason: str,
+    ) -> dict:
+        """Ask a reviewer to approve marking a person in a round as a no
+        show, or raising a red flag on them. Commits.
+
+        Args:
+            session (AsyncSession): Active database async session.
+            round_id (int): The round.
+            user_id (int): The person.
+            tag (str): ``no_show`` or ``red_flag``.
+            pair_id (int | None): The pair it is about, if any.
+            actor_id (int): Who is asking.
+            reviewer_id (int): Who should decide; not the person.
+            reason (str): Why, possibly empty.
+
+        Returns:
+            dict: The new request.
+
+        Raises:
+            ValueError: Not a mark, the reviewer is the person, or the
+                reviewer is refused.
+            ConflictError: The person may not carry the mark, the pair is
+                missing or not theirs, or the same mark already waits.
+        """
+        action = _MARK_ACTIONS.get(tag)
+        if action is None:
+            raise ValueError(f"{tag} is not a mark.")
+        if reviewer_id == user_id:
+            raise ValueError(_OWN_MARK)
+        payload = {"round_id": round_id, "user_id": user_id}
+        if pair_id is not None:
+            payload["pair_id"] = pair_id
+        row = await self.approval_service.raise_request(
+            session,
+            action=action,
+            raised_by=actor_id,
+            target_id=exemption_target(round_id, user_id),
+            payload=payload,
+            reason=reason,
+            reviewer_id=reviewer_id,
+        )
+        return (await self._describe(session, [row]))[0]
+
     async def pending_for_participant(
         self, session, round_id: int, user_id: int
     ) -> list[dict]:
@@ -254,15 +328,14 @@ class MentorshipApprovalService:
 
         Raises:
             ValueError: Not a mentorship request, a refused reviewer, or the
-                person a withdrawal is about.
+                person a withdrawal or mark is about.
             PermissionError: The caller did not raise it.
             ConflictError: It is no longer pending.
         """
         row = await self._mentorship_request(session, request_id)
-        if row.action == WITHDRAW_PARTICIPANT and reviewer_id == int(
-            row.payload["user_id"]
-        ):
-            raise ValueError(_OWN_WITHDRAWAL)
+        refusal = _SUBJECT_MAY_NOT_REVIEW.get(row.action)
+        if refusal and reviewer_id == int(row.payload["user_id"]):
+            raise ValueError(refusal)
         row = await self.approval_service.reassign(
             session, request_id=request_id, actor_id=actor_id, reviewer_id=reviewer_id
         )

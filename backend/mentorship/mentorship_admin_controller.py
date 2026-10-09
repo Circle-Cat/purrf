@@ -19,6 +19,7 @@ from backend.dto.mentorship_approval_dto import (
     ApprovalReassignDto,
     ApprovalRequestCreateDto,
     MentorshipApprovalDto,
+    ParticipantMarkRequestDto,
 )
 from backend.dto.participant_detail_dto import ParticipantNoteCreateDto
 from backend.dto.user_context_dto import UserContextDto
@@ -36,6 +37,7 @@ from backend.common.api_endpoints import (
     MENTORSHIP_ADMIN_MATCH_RUN_PUBLISH_REQUEST,
     MENTORSHIP_ADMIN_EXEMPTION_REQUEST,
     MENTORSHIP_ADMIN_WITHDRAW_REQUEST,
+    MENTORSHIP_ADMIN_MARK_REQUEST,
     MENTORSHIP_ADMIN_APPROVERS,
     MENTORSHIP_ADMIN_APPROVALS_MINE,
     MENTORSHIP_ADMIN_APPROVAL_REASSIGN,
@@ -182,6 +184,15 @@ class MentorshipAdminController:
             MENTORSHIP_ADMIN_WITHDRAW_REQUEST,
             endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])(
                 self.request_withdrawal
+            ),
+            methods=["POST"],
+            response_model=None,
+        )
+
+        self.router.add_api_route(
+            MENTORSHIP_ADMIN_MARK_REQUEST,
+            endpoint=authenticate(permissions=[Permission.MENTORSHIP_ADMIN_WRITE])(
+                self.request_mark
             ),
             methods=["POST"],
             response_model=None,
@@ -664,7 +675,7 @@ class MentorshipAdminController:
 
     def _require_matching(self, current_user: UserContextDto) -> None:
         """Approvals in the mentorship console sit behind the same flag as
-        matching: publishing, exemptions and withdrawals are all part of it."""
+        matching: publishing, exemptions, withdrawals and marks are all part of it."""
         if not self.launchdarkly_service.is_matching_run_enabled(current_user):
             raise PermissionError("Matching runs are not yet available.")
 
@@ -782,6 +793,51 @@ class MentorshipAdminController:
             )
         return api_response(
             message="Successfully asked for approval to withdraw.",
+            data=MentorshipApprovalDto.model_validate(result),
+        )
+
+    async def request_mark(
+        self,
+        round_id: int,
+        user_id: int,
+        body: ParticipantMarkRequestDto,
+        current_user: UserContextDto,
+    ):
+        """
+        Ask a reviewer to approve marking a person in a round as a no show,
+        or raising a red flag on them.
+
+        Args:
+            round_id (int): The round, which must be in progress.
+            user_id (int): The person.
+            body (ParticipantMarkRequestDto): The mark, its pair, the reviewer
+                named and the reason.
+            current_user (UserContextDto): Who is asking.
+
+        Returns:
+            API response carrying the new request.
+
+        Raises:
+            PermissionError: The flag is off for this admin. Surfaces as 403.
+            ValueError: The reviewer is the person, or cannot review it.
+                Surfaces as 400.
+            ConflictError: The person may not carry the mark, the pair is not
+                theirs, or the same mark already waits. Surfaces as 409.
+        """
+        self._require_matching(current_user)
+        async with self.database.session() as session:
+            result = await self.mentorship_approval_service.request_mark(
+                session,
+                round_id=round_id,
+                user_id=user_id,
+                tag=body.tag,
+                pair_id=body.pair_id,
+                actor_id=current_user.user_id,
+                reviewer_id=body.reviewer_id,
+                reason=body.reason,
+            )
+        return api_response(
+            message="Successfully asked for approval of the mark.",
             data=MentorshipApprovalDto.model_validate(result),
         )
 
