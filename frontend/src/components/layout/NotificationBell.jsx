@@ -15,6 +15,7 @@ import {
   listNotifications,
 } from "@/api/recruitingApi";
 import { LEAVE_TYPE_LABELS } from "@/constants/LeaveRequest";
+import { serviceOf } from "@/pages/Inbox/inboxDisplay";
 import { formatBusinessRange } from "@/pages/Leave/utils/leaveDates";
 import { stageLabel } from "@/pages/MentorshipManagement/components/email/emailLabels";
 
@@ -133,9 +134,14 @@ const describe = (n) => {
     // Told to ops.maintain holders; the kind comes from details.
     case "ops.gmail_sync_alert":
       return `Gmail sync needs attention: ${(n.details?.kind ?? "unknown").replaceAll("_", " ")}`;
-    // Told to whoever can handle that service's Inbox threads.
-    case "inbox.needs_reply":
-      return `New email needs a reply: ${n.details?.subject || "(no subject)"}`;
+    // Told to whoever can handle that service's Inbox threads, for new mail
+    // or for a thread moved in from another service.
+    case "inbox.needs_reply": {
+      const subject = n.details?.subject || "(no subject)";
+      return n.details?.movedFrom
+        ? `${actor} moved an email from ${serviceOf(n.details.movedFrom).label} that needs a reply: ${subject}`
+        : `New email needs a reply: ${subject}`;
+    }
     // Told to the person who sent the email that bounced.
     case "inbox.bounced":
       return n.details?.bouncedTo

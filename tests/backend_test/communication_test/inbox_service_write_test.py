@@ -434,9 +434,9 @@ class MoveTest(_WriteFixture):
         self.assertEqual(thread.context_type, ContextType.INQUIRIES_INBOX)
         self.assertIsNone(thread.archived_at)
         self.assertIsNone(thread.archived_by_user_id)
-        self._assert_event_then_commit(
-            InboxEvent.MOVED, 6, {"from": "mentorship", "to": "inquiries"}
-        )
+        moved = self.record_event.await_args_list[0].kwargs
+        self.assertEqual(moved["event_type"], InboxEvent.MOVED)
+        self.assertEqual(moved["details"], {"from": "mentorship", "to": "inquiries"})
         self.assertIsNone(result)
         with self.assertRaises(ValueError) as caught:
             await self.service.get_thread(self.session, viewer, 6)
@@ -449,6 +449,62 @@ class MoveTest(_WriteFixture):
 
         self.assertEqual(self._thread_of(1).context_type, ContextType.RECRUITING_INBOX)
         self.assertEqual(detail.service, InboxService.RECRUITING)
+
+    async def test_a_thread_that_needs_a_reply_tells_the_target_service(self):
+        await self.service.move(self.session, _viewer(*_ALL), 1, InboxService.INQUIRIES)
+
+        self.assertEqual(
+            self.calls,
+            [
+                ("event", InboxEvent.MOVED),
+                ("event", InboxEvent.NEEDS_REPLY),
+                ("commit",),
+            ],
+        )
+        told = self.record_event.await_args_list[1].kwargs
+        self.assertEqual(told["subject_type"], INBOX_SUBJECT_TYPE)
+        self.assertEqual(told["subject_id"], 1)
+        self.assertEqual(told["actor_id"], 900)
+        self.assertEqual(
+            told["details"],
+            {
+                "service": "inquiries",
+                "subject": "Subject 1",
+                "from": "Asker Two <Second@Ext.com>",
+                "movedFrom": "mentorship",
+            },
+        )
+
+    async def test_an_archived_thread_needs_a_reply_once_moved(self):
+        await self.service.move(
+            self.session,
+            _viewer(Permission.MENTORSHIP_ADMIN_WRITE),
+            6,
+            InboxService.RECRUITING,
+        )
+
+        self.assertEqual(
+            self.calls,
+            [
+                ("event", InboxEvent.MOVED),
+                ("event", InboxEvent.NEEDS_REPLY),
+                ("commit",),
+            ],
+        )
+        told = self.record_event.await_args_list[1].kwargs
+        self.assertEqual(told["details"]["service"], "recruiting")
+        self.assertEqual(told["details"]["movedFrom"], "mentorship")
+
+    async def test_a_replied_thread_moves_without_telling_anyone(self):
+        self.messages[3].append(_out(31, 5))
+
+        await self.service.move(
+            self.session, _viewer(*_ALL), 3, InboxService.MENTORSHIP
+        )
+
+        self._assert_event_then_commit(
+            InboxEvent.MOVED, 3, {"from": "inquiries", "to": "mentorship"}
+        )
 
     async def test_an_assigned_thread_cannot_move(self):
         with self.assertRaises(ValueError) as caught:

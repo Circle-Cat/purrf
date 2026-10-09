@@ -737,6 +737,29 @@ describe("NotificationBell", () => {
     ).toBeInTheDocument();
   });
 
+  it("says who moved a thread that needs a reply and from where", async () => {
+    await openWith({
+      id: 13,
+      eventType: "inbox.needs_reply",
+      jobTitle: "",
+      applicantName: "",
+      subjectName: "",
+      actorName: "Grace Hopper",
+      createdAt: "2026-10-07T00:00:00Z",
+      details: {
+        service: "inquiries",
+        subject: "Regarding Q4 plans",
+        movedFrom: "recruiting",
+      },
+    });
+
+    expect(
+      screen.getByText(
+        "Grace Hopper moved an email from Recruiting that needs a reply: Regarding Q4 plans",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("tells the sender their email to a recipient bounced", async () => {
     await openWith({
       id: 11,

@@ -52,6 +52,30 @@ class NeedsReplyRenderTest(unittest.IsolatedAsyncioTestCase):
                 _, body = await self._render(service=service)
                 self.assertIn(f"in the {name} inbox", body)
 
+    async def test_a_moved_thread_says_where_it_came_from(self):
+        subject, body = await self._render(
+            service=InboxService.INQUIRIES, movedFrom=InboxService.RECRUITING
+        )
+
+        self.assertEqual(subject, "An email moved to your inbox needs a reply")
+        self.assertTrue(
+            body.startswith(
+                "<p>An email was moved from the Recruiting inbox to the "
+                "Inquiries inbox and needs a reply: "
+                "“A question” from asker@ext.com.</p>"
+                "<p>Open Inbox in Purrf to read and reply.</p>"
+            )
+        )
+        self.assertNotIn("new email", body.lower())
+
+    async def test_moved_values_are_escaped(self):
+        _, body = await self._render(
+            movedFrom="<i>x</i>", subject="<script>alert(1)</script>"
+        )
+
+        self.assertIn("from the &lt;i&gt;x&lt;/i&gt; inbox", body)
+        self.assertNotIn("<script>", body)
+
     async def test_user_values_are_escaped(self):
         _, body = await self._render(
             subject="<script>alert(1)</script>", **{"from": '"Eve" <eve@x.com>'}
