@@ -470,6 +470,21 @@ describe("NotificationBell", () => {
     ).toBeInTheDocument();
   });
 
+  it("names the person and round a withdrawal is for", async () => {
+    await openWith(
+      approvalRow("mentorship.approval_requested", {
+        action: "withdraw_participant",
+        personName: "Mia Ko",
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "Ada Ng asked you to approve: withdraw Mia Ko from Spring 2026",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it.each([
     [
       "approved",

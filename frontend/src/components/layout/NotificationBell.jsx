@@ -29,6 +29,10 @@ const approvalAsk = (details) => {
     const person = details?.personName?.trim() || "someone";
     return `exempt ${person} from the matching history check${round ? ` in ${round}` : ""}`;
   }
+  if (details?.action === "withdraw_participant") {
+    const person = details?.personName?.trim() || "someone";
+    return `withdraw ${person} from ${round || "their round"}`;
+  }
   if (details?.action === "publish_matching") {
     return `publish the matching result${round ? ` for ${round}` : ""}`;
   }
