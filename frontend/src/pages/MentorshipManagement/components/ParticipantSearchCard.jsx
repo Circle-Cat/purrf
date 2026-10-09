@@ -42,6 +42,7 @@ import { userDisplayName } from "@/utils/userName";
 import { useAuth } from "@/context/auth";
 import { PERMISSIONS } from "@/constants/Permissions";
 import ExemptionCell from "@/pages/MentorshipManagement/components/ExemptionCell";
+import MarkBadges from "@/pages/MentorshipManagement/components/MarkBadges";
 import AttendanceMark from "@/pages/MentorshipManagement/components/AttendanceMark";
 import { participantLink } from "@/pages/MentorshipManagement/utils/participantLink";
 import { exemptionWhyLines } from "@/pages/MentorshipManagement/utils/approvalLabels";
@@ -560,10 +561,18 @@ const ParticipantSearchCard = () => {
               : row.mentorOnboardingStatus,
           ),
           internal: row.isInternal ? "Internal" : "External",
-          approval: row.approvalStatus ? (
-            <Badge variant="secondary">{row.approvalStatus}</Badge>
-          ) : (
-            "—"
+          approval: (
+            <span className="inline-flex flex-wrap items-center gap-1">
+              {row.approvalStatus ? (
+                <Badge variant="secondary">{row.approvalStatus}</Badge>
+              ) : (
+                "—"
+              )}
+              <MarkBadges
+                noShow={row.marks?.noShow}
+                redFlag={row.marks?.redFlag}
+              />
+            </span>
           ),
           account: accountCell(row),
           pair: (

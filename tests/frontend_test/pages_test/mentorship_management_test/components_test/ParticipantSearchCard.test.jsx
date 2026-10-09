@@ -982,6 +982,19 @@ describe("ParticipantSearchCard", () => {
   describe("status and pair", () => {
     const endedPair = pairOf({ isActive: false });
 
+    it("shows the round's marks beside the approval status", async () => {
+      searchParticipants.mockResolvedValue(
+        resultsOf([participantRow({ marks: { noShow: 2, redFlag: 1 } })]),
+      );
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+
+      const name = await screen.findByText("Alice Doe");
+      const cell = cellOf(name, "Approval");
+      expect(cell).toHaveTextContent("matched");
+      expect(cell).toHaveTextContent("No show ×2");
+      expect(cell).toHaveTextContent("Red flag");
+    });
+
     it("shows rejected as stored, even when the participant holds a pairing", async () => {
       searchParticipants.mockResolvedValue(
         resultsOf([
