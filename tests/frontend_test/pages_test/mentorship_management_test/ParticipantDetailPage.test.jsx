@@ -447,8 +447,7 @@ describe("ParticipantDetailPage", () => {
       }
     });
 
-    it("lists what waits on a decision below the round, and says so in the dialog", async () => {
-      const user = userEvent.setup();
+    it("lists what waits on a decision below the round and stops offering that request", async () => {
       getParticipantDetail.mockResolvedValue({
         data: detailOf({ pendingRequests: [pendingWithdrawal] }),
       });
@@ -465,13 +464,9 @@ describe("ParticipantDetailPage", () => {
       expect(
         within(block).getByRole("button", { name: "Withdraw" }),
       ).toBeInTheDocument();
-
-      await user.click(
-        screen.getByRole("button", { name: "Change status / flag" }),
-      );
       expect(
-        await screen.findByText(/Already waiting on a decision/),
-      ).toBeInTheDocument();
+        screen.queryByRole("button", { name: "Change status / flag" }),
+      ).not.toBeInTheDocument();
     });
 
     it("has no Waiting on a decision block when nothing waits", async () => {

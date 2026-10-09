@@ -39,6 +39,23 @@ describe("statusRequestTypes", () => {
     }
   });
 
+  it("does not offer a type that already waits on a decision, but still offers it beside a different one", () => {
+    expect(
+      availableStatusRequestTypes(
+        context({
+          pendingRequests: [{ requestId: 41, action: "withdraw_participant" }],
+        }),
+      ),
+    ).toEqual([]);
+    expect(
+      availableStatusRequestTypes(
+        context({
+          pendingRequests: [{ requestId: 42, action: "exempt_matching" }],
+        }),
+      ).map((t) => t.label),
+    ).toEqual(["Withdraw from round"]);
+  });
+
   it("finds a type by its action and sends it to the person in the round", () => {
     const withdraw = statusRequestType("withdraw_participant");
 

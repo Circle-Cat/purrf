@@ -237,10 +237,15 @@ const ParticipantDetailPage = () => {
     const subject = { userId: person.userId, name, role };
     // Requests go through the mentorship approvals, which sit behind the
     // matching-run flag.
-    const statusTypes = matchingOn
-      ? availableStatusRequestTypes({ canWrite, round, registration })
-      : [];
     const pendingRequests = detail.pendingRequests ?? [];
+    const statusTypes = matchingOn
+      ? availableStatusRequestTypes({
+          canWrite,
+          round,
+          registration,
+          pendingRequests,
+        })
+      : [];
     const idLine = [
       `ID ${person.userId}`,
       MentorshipParticipantRoleLabels[role] ?? "Not registered",

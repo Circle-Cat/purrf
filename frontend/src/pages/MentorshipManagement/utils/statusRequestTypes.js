@@ -32,12 +32,19 @@ export const STATUS_REQUEST_TYPES = Object.freeze([
 ]);
 
 /**
- * The request types that can be asked for right now.
- * @param {{canWrite: boolean, round: Object, registration: Object|null}} context
+ * The request types that can be asked for right now: those that apply and
+ * are not already waiting on a decision for this person.
+ * @param {{canWrite: boolean, round: Object, registration: Object|null, pendingRequests?: {action: string}[]}} context
  * @returns {Object[]}
  */
-export const availableStatusRequestTypes = (context) =>
-  STATUS_REQUEST_TYPES.filter((type) => type.isAvailable(context));
+export const availableStatusRequestTypes = (context) => {
+  const waiting = new Set(
+    (context.pendingRequests ?? []).map((request) => request.action),
+  );
+  return STATUS_REQUEST_TYPES.filter(
+    (type) => !waiting.has(type.key) && type.isAvailable(context),
+  );
+};
 
 /**
  * The request type for an approval action, or null for one not raised here.
