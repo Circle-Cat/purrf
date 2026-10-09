@@ -207,6 +207,9 @@ from backend.repository.mentorship_participant_note_repository import (
 from backend.approval.approval_service import ApprovalService
 from backend.mentorship.publish_matching_handler import PublishMatchingHandler
 from backend.mentorship.exempt_matching_handler import ExemptMatchingHandler
+from backend.mentorship.withdraw_participant_handler import (
+    WithdrawParticipantHandler,
+)
 from backend.mentorship.mentorship_approval_service import MentorshipApprovalService
 from backend.recruiting.job_review_handler import JobReviewHandler
 from backend.repository.user_permissions_repository import UserPermissionsRepository
@@ -753,6 +756,16 @@ class AppDependencyBuilder:
             note_repository=self.mentorship_participant_note_repository,
             users_repository=self.users_repository,
             logger=self.logger,
+            participants_repository=self.mentorship_round_participants_repo,
+        )
+        self.withdraw_participant_handler = WithdrawParticipantHandler(
+            participants_repository=self.mentorship_round_participants_repo,
+            pairs_repository=self.mentorship_pairs_repository,
+            meeting_service=self.meeting_service,
+            rounds_repository=self.mentorship_round_repository,
+            note_repository=self.mentorship_participant_note_repository,
+            users_repository=self.users_repository,
+            logger=self.logger,
         )
         self.approval_service = ApprovalService(
             approval_request_repository=self.approval_request_repository,
@@ -762,6 +775,7 @@ class AppDependencyBuilder:
             handlers=[
                 self.publish_matching_handler,
                 self.exempt_matching_handler,
+                self.withdraw_participant_handler,
                 self.job_review_handler,
             ],
         )

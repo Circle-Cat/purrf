@@ -12,6 +12,7 @@ from backend.dto.participant_detail_dto import (
     ParticipantNoteDto,
     ParticipationHistoryRowDto,
     PendingBlockRequestDto,
+    PendingRequestDto,
 )
 from backend.dto.participant_search_dto import (
     AttendanceIssueDto,
@@ -636,6 +637,12 @@ class MentorshipAdminService:
             feedback=await self._feedback_of(session, round_id, user_id),
             notes=await self._notes_of(session, round_id, user_id),
             pending_block_request=await self._pending_block_request(session, user_id),
+            pending_requests=[
+                PendingRequestDto.model_validate(r)
+                for r in await self.mentorship_approval_service.pending_for_participant(
+                    session, round_id, user_id
+                )
+            ],
             history=await self._history(session, round_entity, rows, exempted_rounds),
         )
 

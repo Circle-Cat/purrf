@@ -272,6 +272,13 @@ class TestProblemsAtApproval(PublishMatchingHandlerTestBase):
         self.assertIn("Bo Ng has left this round.", problems)
         self.assertIn("Mia Ortiz is not registered for this round.", problems)
 
+    async def test_someone_withdrawn_since_has_left_this_round(self):
+        self.people[22] = _person(22, "Bo", "Ng", status=ApprovalStatus.WITHDRAWN)
+
+        problems = await self._problems()
+
+        self.assertIn("Bo Ng has left this round.", problems)
+
     async def test_people_the_result_leaves_unpaired_are_not_checked(self):
         self.people[23][0].is_blocked = True
         self.people[13][0].is_active = False

@@ -192,6 +192,25 @@ class ApprovalNotificationsTest(BaseRepositoryTestLib):
             body,
         )
 
+    async def test_a_withdrawal_email_names_the_person_and_the_round(self):
+        self.request.action = "withdraw_participant"
+        await self.session.flush()
+        event = await self._event(
+            "mentorship.approval_requested",
+            self.raiser,
+            action="withdraw_participant",
+            personName="Mia <Ko>",
+        )
+
+        subject, body = await render_registry.render(self.session, event)
+
+        self.assertEqual(subject, "Mentorship approval requested: Spring 2026")
+        self.assertIn(
+            "asked you to approve a request to withdraw Mia &lt;Ko&gt; from "
+            "Spring 2026.",
+            body,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

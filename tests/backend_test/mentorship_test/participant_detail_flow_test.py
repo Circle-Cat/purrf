@@ -36,6 +36,8 @@ from backend.entity.mentorship_round_participants_entity import (
 from backend.entity.training_course_entity import TrainingCourseEntity  # noqa: F401
 from backend.entity.training_entity import TrainingEntity
 from backend.entity.users_entity import UsersEntity
+from backend.mentorship.exempt_matching_handler import exemption_target
+from backend.mentorship.withdraw_participant_handler import WithdrawParticipantHandler
 from backend.mentorship.matching_eligibility_service import MatchingEligibilityService
 from backend.mentorship.mentorship_admin_service import MentorshipAdminService
 from backend.mentorship.mentorship_approval_service import MentorshipApprovalService
@@ -214,6 +216,17 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
         self.approvals.register(
             BlockUserHandler(users, MagicMock(), MagicMock(), MagicMock(), MagicMock())
         )
+        self.approvals.register(
+            WithdrawParticipantHandler(
+                participants_repository=participants,
+                pairs_repository=MentorshipPairsRepository(),
+                meeting_service=MagicMock(),
+                rounds_repository=rounds,
+                note_repository=self.notes,
+                users_repository=users,
+                logger=logger,
+            )
+        )
         self.service = MentorshipAdminService(
             users_repository=users,
             participants_repository=participants,
@@ -379,6 +392,44 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
             detail.pending_block_request.reviewer.user_id, self.approver.user_id
         )
         self.assertIsNone((await self._detail(user=self.mentor)).pending_block_request)
+
+    async def test_pending_requests_name_who_raised_them_and_who_decides(self):
+        target = exemption_target(self.round.round_id, self.mentee.user_id)
+        pending = ApprovalRequestEntity(
+            action="withdraw_participant",
+            target_type="round_participant",
+            target_id=target,
+            payload={"round_id": self.round.round_id, "user_id": self.mentee.user_id},
+            reason="Stopped replying",
+            raised_by=self.writer.user_id,
+            reviewer_id=self.approver.user_id,
+            status=ApprovalRequestStatus.PENDING,
+        )
+        closed = ApprovalRequestEntity(
+            action="withdraw_participant",
+            target_type="round_participant",
+            target_id=target,
+            payload={"round_id": self.round.round_id, "user_id": self.mentee.user_id},
+            reason=None,
+            raised_by=self.approver.user_id,
+            reviewer_id=self.writer.user_id,
+            status=ApprovalRequestStatus.WITHDRAWN,
+        )
+        await self.insert_entities([pending, closed])
+
+        detail = await self._detail()
+
+        self.assertEqual(
+            [r.request_id for r in detail.pending_requests], [pending.request_id]
+        )
+        only = detail.pending_requests[0]
+        self.assertEqual(only.action, "withdraw_participant")
+        self.assertEqual(only.raised_by.user_id, self.writer.user_id)
+        self.assertEqual(only.raised_by.name.split()[0], "Wes")
+        self.assertEqual(only.reviewer.user_id, self.approver.user_id)
+        self.assertEqual(only.reason, "Stopped replying")
+        self.assertIsNotNone(only.created_at)
+        self.assertEqual((await self._detail(user=self.mentor)).pending_requests, [])
 
     async def test_unknown_round_or_user_is_not_found(self):
         with self.assertRaises(NotFoundError):

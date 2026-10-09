@@ -25,6 +25,9 @@ from backend.common.logger import get_logger
 
 logger = get_logger()
 
+# Registrations of people who left the round: turned down, quit, or withdrawn.
+_LEFT_ROUND = (ApprovalStatus.REJECTED, ApprovalStatus.WITHDRAWN)
+
 # Skill columns from PreferenceEntity. Order matches the export template.
 # Emitted as `t`/`f` per the matching-data spec.
 SKILLSET_COLUMNS = [
@@ -225,8 +228,7 @@ async def compute_ineligible_mentee_ids(
             MentorshipRoundParticipantsEntity.participant_role
             == ParticipantRole.MENTEE,
             or_(
-                MentorshipRoundParticipantsEntity.approval_status
-                != ApprovalStatus.REJECTED,
+                MentorshipRoundParticipantsEntity.approval_status.not_in(_LEFT_ROUND),
                 MentorshipRoundParticipantsEntity.approval_status.is_(None),
             ),
         )
@@ -382,8 +384,7 @@ async def fetch_participants_data(
             or_(
                 MentorshipRoundParticipantsEntity.participant_role
                 == ParticipantRole.MENTOR,
-                MentorshipRoundParticipantsEntity.approval_status
-                != ApprovalStatus.REJECTED,
+                MentorshipRoundParticipantsEntity.approval_status.not_in(_LEFT_ROUND),
                 MentorshipRoundParticipantsEntity.approval_status.is_(None),
             ),
         )

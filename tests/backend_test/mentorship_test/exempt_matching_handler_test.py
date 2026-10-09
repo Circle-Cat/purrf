@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from backend.common.exceptions import ConflictError
-from backend.common.mentorship_enums import ParticipantNoteTag
+from backend.common.mentorship_enums import ApprovalStatus, ParticipantNoteTag
 from backend.entity.approval_request_entity import ApprovalRequestEntity
 from backend.mentorship.exempt_matching_handler import (
     ExemptMatchingHandler,
@@ -77,12 +77,31 @@ class ExemptMatchingHandlerTest(unittest.IsolatedAsyncioTestCase):
             ]
         )
         self.session = AsyncMock()
+        self.participants = MagicMock()
+        self.participants.get_by_user_id_and_round_id = AsyncMock(
+            return_value=SimpleNamespace(approval_status=ApprovalStatus.SIGNED_UP)
+        )
         self.handler = ExemptMatchingHandler(
             matching_eligibility_service=self.eligibility,
             rounds_repository=self.rounds,
             note_repository=self.notes,
             users_repository=self.users,
             logger=MagicMock(),
+            participants_repository=self.participants,
+        )
+
+    async def test_someone_withdrawn_from_the_round_is_refused_by_name(self):
+        self.participants.get_by_user_id_and_round_id.return_value = SimpleNamespace(
+            approval_status=ApprovalStatus.WITHDRAWN
+        )
+
+        with self.assertRaises(ConflictError) as caught:
+            await self._check()
+        self.assertEqual(str(caught.exception), "Ann Lee has left this round.")
+        self.eligibility.needs_exemption.assert_not_awaited()
+        self.assertEqual(
+            await self.handler.problems_at_approval(self.session, _request()),
+            ["Ann Lee has left this round."],
         )
 
     async def _check(self, target=None, payload=None):

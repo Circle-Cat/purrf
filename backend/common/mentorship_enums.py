@@ -6,6 +6,7 @@ class ApprovalStatus(str, Enum):
     MATCHED = "matched"
     UN_MATCHED = "un_matched"
     REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
 
 
 class MatchStatus(str, Enum):
@@ -16,6 +17,7 @@ class MatchStatus(str, Enum):
     MATCHED = "matched"  # Successfully matched with partner(s)
     UNMATCHED = "unmatched"  # Matching process finished but no partner found
     REJECTED = "rejected"  # Application to participate was denied
+    WITHDRAWN = "withdrawn"  # Withdrawn from the round by an approved request
     UNKNOWN = "unknown"  # Fallback for undefined internal states
 
 

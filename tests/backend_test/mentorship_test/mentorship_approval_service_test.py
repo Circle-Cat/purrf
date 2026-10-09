@@ -12,6 +12,7 @@ from backend.mentorship.mentorship_approval_service import MentorshipApprovalSer
 
 RAISER = 9
 REVIEWER = 8
+PERSON = 21
 
 
 def _request(action="publish_matching", request_id=31):
@@ -30,6 +31,14 @@ def _request(action="publish_matching", request_id=31):
     return row
 
 
+def _withdrawal(request_id=41):
+    row = _request(action="withdraw_participant", request_id=request_id)
+    row.target_type = "round_participant"
+    row.target_id = "7:21"
+    row.payload = {"round_id": 7, "user_id": PERSON}
+    return row
+
+
 def _user(user_id, first, last):
     return SimpleNamespace(
         user_id=user_id, first_name=first, last_name=last, preferred_name=None
@@ -44,6 +53,7 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
         self.approvals.get_request = AsyncMock(return_value=_request())
         self.approvals.list_pending_for_reviewer = AsyncMock(return_value=[_request()])
         self.approvals.list_pending_for_targets = AsyncMock(return_value={})
+        self.approvals.get_pending_for_target = AsyncMock(return_value=None)
         self.approvals.list_reviewers = AsyncMock(
             return_value=[_user(12, "zoe", "Adams"), _user(8, "Rae", "Kim")]
         )
@@ -103,7 +113,9 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
         result = await self.service.list_mine(self.session, REVIEWER)
 
         self.approvals.list_pending_for_reviewer.assert_awaited_once_with(
-            self.session, REVIEWER, ("publish_matching", "exempt_matching")
+            self.session,
+            REVIEWER,
+            ("publish_matching", "exempt_matching", "withdraw_participant"),
         )
         self.assertEqual(
             result,
@@ -220,6 +232,94 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
         self.approvals.reassign.assert_not_awaited()
         self.approvals.decide.assert_not_awaited()
         self.approvals.withdraw.assert_not_awaited()
+
+    async def test_a_withdrawal_asks_about_the_person_in_the_round(self):
+        self.approvals.raise_request.return_value = _withdrawal()
+        self.users.get_all_by_ids.return_value = [
+            _user(RAISER, "Ada", "Ng"),
+            _user(REVIEWER, "Rae", "Kim"),
+            _user(PERSON, "Mia", "Ko"),
+        ]
+
+        result = await self.service.request_withdrawal(
+            self.session,
+            round_id=7,
+            user_id=PERSON,
+            actor_id=RAISER,
+            reviewer_id=REVIEWER,
+            reason="",
+        )
+
+        self.approvals.raise_request.assert_awaited_once_with(
+            self.session,
+            action="withdraw_participant",
+            raised_by=RAISER,
+            target_id="7:21",
+            payload={"round_id": 7, "user_id": PERSON},
+            reason="",
+            reviewer_id=REVIEWER,
+        )
+        self.assertEqual(result["person"], {"user_id": PERSON, "name": "Mia Ko"})
+
+    async def test_the_person_withdrawn_cannot_be_named_reviewer(self):
+        with self.assertRaises(ValueError) as caught:
+            await self.service.request_withdrawal(
+                self.session,
+                round_id=7,
+                user_id=PERSON,
+                actor_id=RAISER,
+                reviewer_id=PERSON,
+                reason="",
+            )
+        self.assertEqual(
+            str(caught.exception),
+            "The person being withdrawn cannot review their own withdrawal.",
+        )
+        self.approvals.raise_request.assert_not_awaited()
+
+    async def test_a_withdrawal_cannot_be_handed_to_the_person_withdrawn(self):
+        self.approvals.get_request.return_value = _withdrawal()
+
+        with self.assertRaises(ValueError):
+            await self.service.reassign(
+                self.session, request_id=41, actor_id=RAISER, reviewer_id=PERSON
+            )
+        self.approvals.reassign.assert_not_awaited()
+
+        await self.service.reassign(
+            self.session, request_id=41, actor_id=RAISER, reviewer_id=12
+        )
+        self.approvals.reassign.assert_awaited_once_with(
+            self.session, request_id=41, actor_id=RAISER, reviewer_id=12
+        )
+
+    async def test_an_exemption_may_still_be_handed_to_its_subject(self):
+        exemption = _request(action="exempt_matching")
+        exemption.payload = {"round_id": 7, "user_id": 12}
+        self.approvals.get_request.return_value = exemption
+
+        await self.service.reassign(
+            self.session, request_id=31, actor_id=RAISER, reviewer_id=12
+        )
+
+        self.approvals.reassign.assert_awaited_once()
+
+    async def test_pending_requests_on_a_participant_are_described(self):
+        self.approvals.get_pending_for_target.return_value = _withdrawal()
+
+        result = await self.service.pending_for_participant(self.session, 7, PERSON)
+
+        self.approvals.get_pending_for_target.assert_awaited_once_with(
+            self.session, "withdraw_participant", "7:21"
+        )
+        self.assertEqual([r["request_id"] for r in result], [41])
+        self.assertEqual(result[0]["raised_by"]["user_id"], RAISER)
+        self.assertEqual(result[0]["reviewer"]["user_id"], REVIEWER)
+
+    async def test_no_pending_request_on_a_participant_is_an_empty_list(self):
+        self.assertEqual(
+            await self.service.pending_for_participant(self.session, 7, PERSON), []
+        )
 
 
 if __name__ == "__main__":
