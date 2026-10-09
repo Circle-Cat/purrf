@@ -581,6 +581,57 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.current_status, MatchStatus.REJECTED)
         self.assertEqual(len(result.partners), 0)
 
+    async def test_get_my_match_result_reports_a_withdrawal_with_its_pairings(self):
+        """Someone withdrawn by an admin is told their participation ended,
+        and still sees who they were paired with, without contact details."""
+        mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
+        mock_participant.approval_status = ApprovalStatus.WITHDRAWN
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            mock_participant
+        )
+        ended_pair = MagicMock(
+            spec=MentorshipPairsEntity,
+            status=PairStatus.INACTIVE,
+            mentor_id=123,
+            mentee_id=789,
+            recommendation_reason="Guidance",
+        )
+        partner = MagicMock(
+            spec=UsersEntity,
+            user_id=789,
+            first_name="Alice",
+            last_name="W",
+            preferred_name=None,
+        )
+        self.mock_pairs_repo.get_pairs_with_partner_info.return_value = [
+            (ended_pair, partner)
+        ]
+
+        result = await self.participation_service.get_my_match_result_by_round_id(
+            session=self.mock_session, user_context=self.user_context, round_id=1
+        )
+
+        self.assertEqual(result.current_status, MatchStatus.WITHDRAWN)
+        self.assertEqual([p.id for p in result.partners], [789])
+        self.assertFalse(result.partners[0].is_active)
+        self.assertIsNone(result.partners[0].primary_email)
+        self.assertEqual(result.partners[0].participant_role, ParticipantRole.MENTEE)
+
+    async def test_get_my_match_result_for_a_withdrawal_before_any_pairing(self):
+        mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
+        mock_participant.approval_status = ApprovalStatus.WITHDRAWN
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            mock_participant
+        )
+        self.mock_pairs_repo.get_pairs_with_partner_info.return_value = []
+
+        result = await self.participation_service.get_my_match_result_by_round_id(
+            session=self.mock_session, user_context=self.user_context, round_id=1
+        )
+
+        self.assertEqual(result.current_status, MatchStatus.WITHDRAWN)
+        self.assertEqual(result.partners, [])
+
     async def test_get_my_match_result_success(self):
         """Test successful match result including partner DTO construction."""
         mock_round_id = 1
