@@ -73,7 +73,14 @@ class TestInboxRouter(unittest.IsolatedAsyncioTestCase):
             )
         )
         result = await self._route()
-        self.assertEqual(result, RouteResult(thread=self.created, unrouted=False))
+        self.assertEqual(
+            result,
+            RouteResult(
+                thread=self.created,
+                unrouted=False,
+                messages=self.gmail.get_messages.return_value,
+            ),
+        )
         self.threads.create.assert_awaited_once_with(
             self.session,
             user_id=None,
@@ -85,13 +92,14 @@ class TestInboxRouter(unittest.IsolatedAsyncioTestCase):
         self.gmail.get_messages.assert_called_once_with(["m1000"])
 
     async def test_routing_reads_the_earliest_inbound_message(self):
-        self._messages(
-            _message("x@ext.com", ["someone@example.com"], 3000),
-            _message("y@ext.com", ["mentorship-test@example.com"], 1000, "First"),
-        )
+        later = _message("x@ext.com", ["someone@example.com"], 3000)
+        first = _message("y@ext.com", ["mentorship-test@example.com"], 1000, "First")
+        self._messages(later, first)
         result = await self._route()
         self.assertIs(result.thread, self.created)
         self.assertEqual(self.threads.create.await_args.kwargs["subject"], "First")
+        # Every message in Gmail's order, handed on to the first sync.
+        self.assertEqual(result.messages, [later, first])
 
     async def test_our_own_messages_are_ignored_when_picking_the_first(self):
         self._messages(
@@ -151,7 +159,14 @@ class TestInboxRouter(unittest.IsolatedAsyncioTestCase):
         existing = Mock(thread_id=3)
         self.threads.get_by_gmail_thread_id.return_value = existing
         result = await self._route()
-        self.assertEqual(result, RouteResult(thread=existing, unrouted=False))
+        self.assertEqual(
+            result,
+            RouteResult(
+                thread=existing,
+                unrouted=False,
+                messages=self.gmail.get_messages.return_value,
+            ),
+        )
         self.threads.get_by_gmail_thread_id.assert_awaited_once_with(self.session, "g1")
         self.session.begin_nested.assert_called_once()
 

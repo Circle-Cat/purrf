@@ -1,7 +1,7 @@
 import asyncio
 import unittest
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, call
 
 from backend.common.exceptions import (
     GmailNotFoundError,
@@ -186,6 +186,23 @@ class TestGmailSyncService(unittest.IsolatedAsyncioTestCase):
         self.handler.sync_tracked_thread.assert_awaited_once_with(self.session, created)
         self.assertEqual(
             summary, {"threads": 1, "newMessages": 1, "failed": 0, "unrouted": []}
+        )
+
+    async def test_a_routed_thread_is_synced_from_the_messages_the_router_read(self):
+        created = self._tracked("t2")
+        tracked = self._tracked("t1")
+        self._history({"t1": tracked, "t2": None})
+        fetched = [{"gmail_message_id": "m1"}]
+        self.router.route.return_value = RouteResult(
+            thread=created, unrouted=False, messages=fetched
+        )
+        await self.service.catch_up(self.session)
+        self.assertEqual(
+            self.handler.sync_tracked_thread.await_args_list,
+            [
+                call(self.session, tracked),
+                call(self.session, created, messages=fetched),
+            ],
         )
 
     async def test_unrouted_mail_raises_one_alert_before_the_commit(self):

@@ -33,12 +33,14 @@ class InboxSyncHandler:
         self._notifier = notifier
         self._logger = logger
 
-    async def sync_tracked_thread(self, session, thread):
+    async def sync_tracked_thread(self, session, thread, messages=None):
         """Sync one changed Inbox thread and record its events. Does not commit.
 
         Args:
             session (AsyncSession): The active DB session.
             thread (EmailThreadEntity): The thread that changed.
+            messages (list[dict] | None): The thread's messages, already read
+                from Gmail when it was just routed; None reads them here.
 
         Returns:
             int: Messages newly persisted.
@@ -46,7 +48,9 @@ class InboxSyncHandler:
         Raises:
             RateLimitedError / RuntimeError: Propagated from Gmail.
         """
-        new_messages = await self._conversation.sync_thread(session, thread)
+        new_messages = await self._conversation.sync_thread(
+            session, thread, fetched=messages
+        )
         await self._notifier.after_sync(session, thread, new_messages)
         return len(new_messages)
 
@@ -99,8 +103,10 @@ class _ResyncFreeAlias:
     def __init__(self, handler):
         self._handler = handler
 
-    async def sync_tracked_thread(self, session, thread):
-        return await self._handler.sync_tracked_thread(session, thread)
+    async def sync_tracked_thread(self, session, thread, messages=None):
+        return await self._handler.sync_tracked_thread(
+            session, thread, messages=messages
+        )
 
     async def resync_all(self, session):
         del session

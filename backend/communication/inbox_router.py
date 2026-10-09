@@ -19,6 +19,9 @@ from backend.entity.email_thread_entity import EmailThreadEntity
 class RouteResult:
     thread: EmailThreadEntity | None
     unrouted: bool  # True only when the mail hit no Send-As alias at all
+    # Every message of a routed thread as read here, so its first sync need
+    # not read them again. None when no thread is returned.
+    messages: list[dict] | None = None
 
 
 def _sent_at(message):
@@ -52,8 +55,9 @@ class InboxRouter:
                 message's Delivered-To names it, so it never counts as an alias.
 
         Returns:
-            RouteResult: The thread (created or re-read), or None with
-            ``unrouted`` set when the mail matched no Send-As alias.
+            RouteResult: The thread (created or re-read) with the messages
+            read to route it, or None with ``unrouted`` set when the mail
+            matched no Send-As alias.
 
         Raises:
             GmailNotFoundError, RateLimitedError, RuntimeError: From Gmail.
@@ -111,4 +115,4 @@ class InboxRouter:
             )
             if thread is None:
                 raise
-        return RouteResult(thread=thread, unrouted=False)
+        return RouteResult(thread=thread, unrouted=False, messages=messages)

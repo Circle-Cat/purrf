@@ -4,7 +4,11 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from sqlalchemy import select
 
-from backend.common.communication_enums import ContextType, EmailDirection
+from backend.common.communication_enums import (
+    ContextType,
+    EmailDirection,
+    InboundKind,
+)
 from backend.common.exceptions import RateLimitedError
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE, InboxEvent
 from backend.common.mentorship_enums import CommunicationMethod
@@ -177,6 +181,48 @@ class TestInboxSyncOnARealSession(BaseRepositoryTestLib):
                 "from": "Asker <asker@ext.com>",
             },
         )
+
+    async def test_a_routed_thread_is_read_from_gmail_once_then_resynced_normally(
+        self,
+    ):
+        files = [{"attachment_id": "a1", "filename": "cv.pdf"}]
+        self.mail["m2"]["attachments"] = files
+        self.mail["m3"] = {
+            **_message("m3", "1699999940000"),
+            "from_address": _ALIAS,
+        }
+        self.listed = ["m3", "m1", "m2"]
+
+        self.assertEqual(await self._push(120, 150), PushOutcome.ACK)
+
+        self.gmail.list_thread_message_ids.assert_called_once_with(_GMAIL_THREAD)
+        self.gmail.get_messages.assert_called_once_with(["m3", "m1", "m2"])
+        thread = await self._thread()
+        stored = {
+            m.gmail_message_id: m
+            for m in (
+                await self.session.scalars(
+                    select(EmailMessageEntity).where(
+                        EmailMessageEntity.thread_id == thread.thread_id
+                    )
+                )
+            ).all()
+        }
+        self.assertEqual(sorted(stored), ["m1", "m2", "m3"])
+        self.assertEqual(stored["m1"].direction, EmailDirection.INBOUND)
+        self.assertEqual(stored["m1"].inbound_kind, InboundKind.HUMAN)
+        self.assertEqual(stored["m1"].body_text, "Hi")
+        self.assertEqual(stored["m1"].rfc822_message_id, "<m1@ext.com>")
+        self.assertEqual(stored["m2"].attachments, files)
+        self.assertEqual(stored["m3"].direction, EmailDirection.OUTBOUND)
+        self.assertIsNone(stored["m3"].inbound_kind)
+        self.assertIsNotNone(thread.synced_at)
+        self.assertEqual(len(await self._needs_reply_events(thread.thread_id)), 1)
+
+        self.assertEqual(await self._push(200, 250), PushOutcome.ACK)
+
+        self.assertEqual(self.gmail.list_thread_message_ids.call_count, 2)
+        self.gmail.get_messages.assert_called_once()
 
     async def test_an_untracked_thread_of_only_our_sent_mail_costs_no_gmail_reads(
         self,

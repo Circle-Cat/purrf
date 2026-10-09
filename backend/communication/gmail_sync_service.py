@@ -330,8 +330,10 @@ class GmailSyncService:
         """Returns (summary, _Failures). 404s are counted but not listed.
 
         An untracked thread is offered to the Inbox router first, unless its
-        new messages are all our own sent mail. A created thread is kept even
-        when its handler then fails, so a full resync can still pick it up.
+        new messages are all our own sent mail; a thread it routes is synced
+        from the messages it read, without reading Gmail again. A created
+        thread is kept even when its handler then fails, so a full resync can
+        still pick it up.
         The loop stops at the first untracked thread Gmail was too busy to
         read, since only a retry from the same cursor reaches it again.
         """
@@ -344,6 +346,7 @@ class GmailSyncService:
             if thread is None and gmail_thread_id in sent_only:
                 continue
             claiming = thread is None
+            fetched = None
             try:
                 if claiming:
                     routed = await self._inbox_router.route(
@@ -355,11 +358,19 @@ class GmailSyncService:
                     thread = routed.thread
                     if thread is None:
                         continue
+                    fetched = routed.messages
                 handler = self._registry.get(thread.context_type)
                 if handler is None:
                     continue
                 async with session.begin_nested():
-                    new_messages = await handler.sync_tracked_thread(session, thread)
+                    if fetched is None:
+                        new_messages = await handler.sync_tracked_thread(
+                            session, thread
+                        )
+                    else:
+                        new_messages = await handler.sync_tracked_thread(
+                            session, thread, messages=fetched
+                        )
             except Exception as exc:
                 self._logger.exception(
                     "Gmail sync failed for thread %s", gmail_thread_id

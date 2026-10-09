@@ -248,7 +248,7 @@ class EmailConversationService:
             created.extend(await self.sync_thread(session, thread))
         return created
 
-    async def sync_thread(self, session, thread):
+    async def sync_thread(self, session, thread, fetched=None):
         """Pull one thread from Gmail and persist any messages we lack.
 
         Incremental by construction: we list the thread's message ids (cheap,
@@ -270,6 +270,9 @@ class EmailConversationService:
         Args:
             session (AsyncSession): The active DB session.
             thread (EmailThreadEntity): The thread to sync.
+            fetched (list[dict] | None): Every message of the thread as just
+                read with ``get_messages``, in Gmail's order. When given,
+                Gmail is not called; the ones already stored are skipped.
 
         Returns:
             list[EmailMessageEntity]: The messages this call inserted, in
@@ -279,20 +282,24 @@ class EmailConversationService:
         Raises:
             RateLimitedError / RuntimeError: Propagated from Gmail.
         """
-        gmail_ids = await asyncio.to_thread(
-            self._gmail.list_thread_message_ids, thread.gmail_thread_id
-        )
+        if fetched is None:
+            gmail_ids = await asyncio.to_thread(
+                self._gmail.list_thread_message_ids, thread.gmail_thread_id
+            )
+        else:
+            gmail_ids = [message["gmail_message_id"] for message in fetched]
         known = await self._message_repo.list_gmail_message_ids_by_thread(
             session, thread.thread_id
         )
         missing = [gmail_id for gmail_id in gmail_ids if gmail_id not in known]
-        # Nothing new is the common case, and it must stay free: no batch, and
-        # no executor hop to discover there is nothing to fetch.
-        messages = (
-            await asyncio.to_thread(self._gmail.get_messages, missing)
-            if missing
-            else []
-        )
+        if fetched is not None:
+            messages = [m for m in fetched if m["gmail_message_id"] not in known]
+        elif missing:
+            messages = await asyncio.to_thread(self._gmail.get_messages, missing)
+        else:
+            # Nothing new is the common case, and it must stay free: no batch,
+            # and no executor hop to discover there is nothing to fetch.
+            messages = []
 
         created = []
         for message in messages:
