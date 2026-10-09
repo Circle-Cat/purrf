@@ -72,6 +72,14 @@ locals {
       off_in      = ["staging", "production"]
       public_in   = ["test"]
     }
+    # Gates sending mentorship notifications through Kit, backend and frontend.
+    mentorship_kit_email = {
+      key         = "mentorship-kit-email"
+      name        = "Mentorship Kit Email"
+      description = "Lets a mentorship admin send notifications to participants through Kit"
+      off_in      = ["staging", "production"]
+      public_in   = ["test"]
+    }
   }
 
   flag_env_matrix = {
@@ -133,6 +141,12 @@ resource "launchdarkly_segment" "beta_users" {
       values    = each.value.beta_user_rule.values
     }
   }
+}
+
+# The flag was first made by hand in LaunchDarkly for local testing.
+import {
+  to = launchdarkly_feature_flag.this["mentorship_kit_email"]
+  id = "purrf/mentorship-kit-email"
 }
 
 resource "launchdarkly_feature_flag" "this" {
