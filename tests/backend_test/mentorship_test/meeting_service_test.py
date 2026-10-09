@@ -1636,7 +1636,8 @@ class TestMeetingServiceCancelUpcomingForPairs(unittest.IsolatedAsyncioTestCase)
             await self.service.cancel_upcoming_for_pairs(self.session, [501, 502])
 
         self.assertEqual(caught.exception.code, "calendar_cancel_failed")
-        self.assertIn("nothing was changed", str(caught.exception))
+        self.assertIn("nothing in Purrf was changed", str(caught.exception))
+        self.assertIn("approve again to finish", str(caught.exception))
         self.mock_meeting_repo.delete_meetings.assert_not_awaited()
 
     async def test_no_pairs_touches_nothing(self):

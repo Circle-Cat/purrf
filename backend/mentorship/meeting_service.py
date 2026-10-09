@@ -895,7 +895,8 @@ class MeetingService:
             )
             raise ConflictError(
                 f"{len(failed)} upcoming meeting(s) could not be cancelled on the "
-                "calendar, so nothing was changed. Try again.",
+                "calendar, so nothing in Purrf was changed. Some invites may already be "
+                "cancelled; approve again to finish.",
                 code="calendar_cancel_failed",
             )
 
