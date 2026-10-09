@@ -310,6 +310,17 @@ py_test(
 )
 
 py_test(
+    name = "mark_participant_handler_test",
+    srcs = ["mark_participant_handler_test.py"],
+    deps = [
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
     name = "participant_detail_flow_test",
     srcs = ["participant_detail_flow_test.py"],
     env_inherit = ["DATABASE_URL"],
