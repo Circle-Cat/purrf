@@ -158,7 +158,10 @@ class WithdrawParticipantFlowTest(BaseRepositoryTestLib):
         # Left the old way: rejected with the pair still active, never
         # backfilled. Must not read as quitting after a match.
         self.old_reg = _registration(
-            self.other_mentee, self.round, ParticipantRole.MENTEE, ApprovalStatus.REJECTED
+            self.other_mentee,
+            self.round,
+            ParticipantRole.MENTEE,
+            ApprovalStatus.REJECTED,
         )
         await self.insert_entities([
             self.mentor_reg,
@@ -169,7 +172,9 @@ class WithdrawParticipantFlowTest(BaseRepositoryTestLib):
         ])
         self.pair_a = _pair(self.round.round_id, self.mentor, self.mentee_a)
         self.pair_b = _pair(self.round.round_id, self.mentor, self.mentee_b)
-        self.other_pair = _pair(self.round.round_id, self.other_mentor, self.other_mentee)
+        self.other_pair = _pair(
+            self.round.round_id, self.other_mentor, self.other_mentee
+        )
         await self.insert_entities([self.pair_a, self.pair_b, self.other_pair])
         # Plain ints: the rows expire when a test rolls back.
         self.reviewer_id = self.reviewer.user_id
@@ -268,7 +273,12 @@ class WithdrawParticipantFlowTest(BaseRepositoryTestLib):
 
         self.assertIs(closed.status, ApprovalRequestStatus.APPROVED)
         await self._refresh(
-            self.mentor_reg, self.a_reg, self.b_reg, self.pair_a, self.pair_b, self.other_pair
+            self.mentor_reg,
+            self.a_reg,
+            self.b_reg,
+            self.pair_a,
+            self.pair_b,
+            self.other_pair,
         )
         self.assertIs(self.mentor_reg.approval_status, ApprovalStatus.WITHDRAWN)
         self.assertIs(self.a_reg.approval_status, ApprovalStatus.MATCHED)
@@ -351,10 +361,26 @@ class WithdrawParticipantFlowTest(BaseRepositoryTestLib):
         )
         await self.insert_entities([later])
         people = [
-            (self.mentor, ParticipantRole.MENTOR, TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING),
-            (self.mentee_a, ParticipantRole.MENTEE, TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING),
-            (self.early, ParticipantRole.MENTEE, TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING),
-            (self.other_mentee, ParticipantRole.MENTEE, TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING),
+            (
+                self.mentor,
+                ParticipantRole.MENTOR,
+                TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+            ),
+            (
+                self.mentee_a,
+                ParticipantRole.MENTEE,
+                TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+            ),
+            (
+                self.early,
+                ParticipantRole.MENTEE,
+                TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+            ),
+            (
+                self.other_mentee,
+                ParticipantRole.MENTEE,
+                TrainingCategory.MENTORSHIP_MENTEE_ONBOARDING,
+            ),
         ]
         await self.insert_entities(
             [
@@ -401,9 +427,7 @@ class WithdrawParticipantFlowTest(BaseRepositoryTestLib):
         self.assertEqual(
             sorted(self.calendar.cancel.await_args.args[0]), ["g-a-up", "g-b-up"]
         )
-        self.assertIn(
-            "g-ended-up", await self._meeting_ids(ended_pair.pair_id)
-        )
+        self.assertIn("g-ended-up", await self._meeting_ids(ended_pair.pair_id))
         notes = await self.notes.list_for_user_round(
             self.session, self.mentor.user_id, self.round.round_id
         )

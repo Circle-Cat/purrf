@@ -144,7 +144,9 @@ class WithdrawParticipantHandler(ApprovalHandler):
         )
 
         partner_of = {
-            pair.pair_id: pair.mentee_id if pair.mentor_id == user_id else pair.mentor_id
+            pair.pair_id: pair.mentee_id
+            if pair.mentor_id == user_id
+            else pair.mentor_id
             for pair in pairs
         }
         names = await self._names(
@@ -198,7 +200,9 @@ class WithdrawParticipantHandler(ApprovalHandler):
             return [f"{name} is not registered for this round."]
         if participant.approval_status == ApprovalStatus.WITHDRAWN:
             return [f"{name} has already left this round."]
-        status = participant.approval_status.value if participant.approval_status else "none"
+        status = (
+            participant.approval_status.value if participant.approval_status else "none"
+        )
         return [
             f"{name} cannot be withdrawn from this round: their status is {status}."
         ]

@@ -1640,7 +1640,9 @@ class TestMeetingServiceCancelUpcomingForPairs(unittest.IsolatedAsyncioTestCase)
         self.mock_meeting_repo.delete_meetings.assert_not_awaited()
 
     async def test_no_pairs_touches_nothing(self):
-        self.assertEqual(await self.service.cancel_upcoming_for_pairs(self.session, []), 0)
+        self.assertEqual(
+            await self.service.cancel_upcoming_for_pairs(self.session, []), 0
+        )
         self.mock_meeting_repo.get_meetings_by_pairs.assert_not_awaited()
         self.scheduling.cancel.assert_not_awaited()
 

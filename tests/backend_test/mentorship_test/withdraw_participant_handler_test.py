@@ -246,7 +246,8 @@ class WithdrawParticipantHandlerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_calendar_refusal_stops_before_the_note(self):
         self.meetings.cancel_upcoming_for_pairs.side_effect = ConflictError(
-            "1 upcoming meeting(s) could not be cancelled", code="calendar_cancel_failed"
+            "1 upcoming meeting(s) could not be cancelled",
+            code="calendar_cancel_failed",
         )
 
         with self.assertRaises(ConflictError):
