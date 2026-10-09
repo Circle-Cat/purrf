@@ -55,9 +55,17 @@ class EmailSendDto(BaseDto):
     resume_needed: bool
 
 
+class EmailScheduledStageDto(BaseDto):
+    stage: str
+    send_at: datetime
+
+
 class EmailNotifiedDto(BaseDto):
     user_id: int
     stages: list[str]
+    # At most one per stage, the latest still to go out; a stage in both lists
+    # shows as scheduled.
+    scheduled: list[EmailScheduledStageDto]
 
 
 class EmailPreviewDto(BaseDto):

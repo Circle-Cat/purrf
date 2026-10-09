@@ -281,6 +281,71 @@ class MentorshipEmailRepositoryTest(BaseRepositoryTestLib):
             [(self.u1.user_id, "admission"), (self.u2.user_id, "match_result")],
         )
 
+    async def test_scheduled_stages_keep_confirmed_unsent_sends_and_reachable_rows(
+        self,
+    ):
+        both = [(self.u1.user_id, "ann@x.org"), (self.u2.user_id, "bob@x.org")]
+        later = NOW + timedelta(days=2)
+        sooner = NOW + timedelta(hours=3)
+        scheduled = await self._send(recipients=both, stage="midterm_reminder")
+        scheduled.status = S.SCHEDULED
+        scheduled.send_at = later
+        await self._handed(
+            scheduled,
+            {self.u1.user_id: R.HANDED_TO_KIT, self.u2.user_id: R.UNSUBSCRIBED},
+        )
+        preparing = await self._send(stage="match_result")
+        preparing.status = S.PREPARING
+        preparing.send_at = sooner
+        handed_while_importing = await self._send(
+            recipients=[(self.u2.user_id, "bob@x.org")], stage="final_followup"
+        )
+        handed_while_importing.status = S.PREPARING
+        handed_while_importing.send_at = NOW + timedelta(days=5)
+        await self._handed(handed_while_importing, {self.u2.user_id: R.HANDED_TO_KIT})
+        for status in (S.SENT, S.FAILED, S.ABORTED, S.CANCELLED):
+            gone = await self._send(recipients=both, stage="feedback_invite")
+            gone.status = status
+            gone.send_at = NOW + timedelta(days=1)
+        await self._send(recipients=both, stage="admission")
+        await self.session.flush()
+        got = await self.repo.list_scheduled_stages(self.session, self.round.round_id)
+        self.assertEqual(
+            got,
+            [
+                (self.u1.user_id, "match_result", sooner),
+                (self.u1.user_id, "midterm_reminder", later),
+                (self.u2.user_id, "final_followup", NOW + timedelta(days=5)),
+            ],
+        )
+
+    async def test_scheduled_stages_stay_in_their_round(self):
+        other_round = MentorshipRoundEntity(
+            name="Spring 2027",
+            onboarding_deadline_at=datetime(2027, 3, 15, tzinfo=timezone.utc),
+        )
+        await self.insert_entities([other_round])
+        elsewhere = await self.repo.create_send(
+            self.session,
+            round_id=other_round.round_id,
+            stage="midterm_reminder",
+            kit_draft_id=12,
+            kit_draft_subject="Sign up",
+            created_by=self.admin.user_id,
+            sender_address="notification-test@circlecat.org",
+            kit_tag_name="purrf · Spring 2027 · Mid-term reminder · 03-01",
+            kit_tag_id=8,
+            kit_broadcast_id=10,
+            recipients=[(self.u2.user_id, "bob@x.org")],
+        )
+        elsewhere.status = S.SCHEDULED
+        elsewhere.send_at = NOW + timedelta(days=1)
+        await self.session.flush()
+        self.assertEqual(
+            await self.repo.list_scheduled_stages(self.session, self.round.round_id),
+            [],
+        )
+
     async def test_list_sends_filters_by_round_and_status(self):
         draft = await self._send()
         scheduled = await self._send()

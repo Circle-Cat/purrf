@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 from fastapi import FastAPI, Request
@@ -9,6 +10,7 @@ from backend.common.fast_api_error_handler import register_exception_handlers
 from backend.common.permissions import Permission
 from backend.dto.mentorship_email_dto import (
     EmailNotifiedDto,
+    EmailScheduledStageDto,
     EmailSendDto,
     KitDraftDto,
 )
@@ -121,7 +123,20 @@ class TestMentorshipEmailController(unittest.TestCase):
     def test_notified_returns_stages_and_resumes_each_stuck_send(self):
         self.service.list_notified = AsyncMock(
             return_value=(
-                [EmailNotifiedDto(user_id=3, stages=["admission", "match_result"])],
+                [
+                    EmailNotifiedDto(
+                        user_id=3,
+                        stages=["admission", "match_result"],
+                        scheduled=[
+                            EmailScheduledStageDto(
+                                stage="midterm_reminder",
+                                send_at=datetime(
+                                    2026, 10, 12, 16, 0, tzinfo=timezone.utc
+                                ),
+                            )
+                        ],
+                    )
+                ],
                 [1, 3],
             )
         )
@@ -129,7 +144,15 @@ class TestMentorshipEmailController(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(
             resp.json()["data"],
-            [{"userId": 3, "stages": ["admission", "match_result"]}],
+            [
+                {
+                    "userId": 3,
+                    "stages": ["admission", "match_result"],
+                    "scheduled": [
+                        {"stage": "midterm_reminder", "sendAt": "2026-10-12T16:00:00Z"}
+                    ],
+                }
+            ],
         )
         self.assertEqual(self.service.list_notified.await_args.args[1], 7)
         self.assertEqual(
