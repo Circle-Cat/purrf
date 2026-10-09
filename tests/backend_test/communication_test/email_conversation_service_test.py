@@ -669,6 +669,37 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([entity.message_id for entity in created], [2])
         self.thread_repo.mark_synced.assert_awaited_once_with(self.session, 10)
 
+    async def test_sync_thread_stores_fetched_messages_without_reading_gmail(self):
+        self.message_repo.list_gmail_message_ids_by_thread.return_value = {"g2"}
+        auto = self._fetched("g1", "cand@example.com")
+        auto["auto_submitted"] = "auto-replied"
+        auto["attachments"] = [{"attachment_id": "a1", "filename": "cv.pdf"}]
+        fetched = [
+            auto,
+            self._fetched("g2", "cand@example.com"),
+            self._fetched("g3", SENDER),
+        ]
+        self.message_repo.insert_or_get.side_effect = [
+            (SimpleNamespace(message_id=1), True),
+            (SimpleNamespace(message_id=3), True),
+        ]
+
+        created = await self.service.sync_thread(
+            self.session, self._thread(), fetched=fetched
+        )
+
+        self.gmail.list_thread_message_ids.assert_not_called()
+        self.gmail.get_messages.assert_not_called()
+        (_, in_kw), (_, out_kw) = self.message_repo.insert_or_get.call_args_list
+        self.assertEqual(in_kw["gmail_message_id"], "g1")
+        self.assertEqual(in_kw["direction"], EmailDirection.INBOUND)
+        self.assertEqual(in_kw["inbound_kind"], InboundKind.AUTO_REPLY)
+        self.assertEqual(in_kw["attachments"], auto["attachments"])
+        self.assertEqual(out_kw["gmail_message_id"], "g3")
+        self.assertEqual(out_kw["direction"], EmailDirection.OUTBOUND)
+        self.thread_repo.mark_synced.assert_awaited_once_with(self.session, 10)
+        self.assertEqual([entity.message_id for entity in created], [1, 3])
+
     async def test_sync_thread_classifies_outbound_by_sender_even_with_display_name(
         self,
     ):

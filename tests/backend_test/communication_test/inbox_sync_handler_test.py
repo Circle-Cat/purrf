@@ -38,9 +38,27 @@ class InboxSyncHandlerTest(unittest.IsolatedAsyncioTestCase):
         count = await self.handler.sync_tracked_thread(self.session, thread)
 
         self.assertEqual(count, 2)
-        self.conversation.sync_thread.assert_awaited_once_with(self.session, thread)
+        self.conversation.sync_thread.assert_awaited_once_with(
+            self.session, thread, fetched=None
+        )
         self.notifier.after_sync.assert_awaited_once_with(self.session, thread, new)
         self.session.commit.assert_not_awaited()
+
+    async def test_messages_read_by_the_router_are_synced_without_a_reread(self):
+        thread = Mock(thread_id=5)
+        fetched = [{"gmail_message_id": "m1"}]
+        new = [Mock()]
+        self.conversation.sync_thread.return_value = new
+
+        for handler in (self.handler, self.handler.alias_without_resync()):
+            self.conversation.sync_thread.reset_mock()
+            count = await handler.sync_tracked_thread(
+                self.session, thread, messages=fetched
+            )
+            self.assertEqual(count, 1)
+            self.conversation.sync_thread.assert_awaited_once_with(
+                self.session, thread, fetched=fetched
+            )
 
     async def test_resync_syncs_every_inbox_thread_and_commits_each(self):
         a, b = Mock(thread_id=1), Mock(thread_id=2)
@@ -49,7 +67,7 @@ class InboxSyncHandlerTest(unittest.IsolatedAsyncioTestCase):
         self.conversation.sync_thread.return_value = []
         events = []
         self.conversation.sync_thread.side_effect = (
-            lambda s, t: events.append(("sync", t.thread_id)) or []
+            lambda s, t, fetched: events.append(("sync", t.thread_id)) or []
         )
         self.session.commit.side_effect = lambda: events.append(("commit",))
 
@@ -73,7 +91,7 @@ class InboxSyncHandlerTest(unittest.IsolatedAsyncioTestCase):
         self.threads.list_by_context_types.return_value = [a, b]
         self.threads.get.side_effect = lambda session, tid: {1: a, 2: b}[tid]
 
-        async def sync(session, thread):
+        async def sync(session, thread, fetched):
             if thread.thread_id == 1:
                 raise RuntimeError("429")
             return [Mock()]
