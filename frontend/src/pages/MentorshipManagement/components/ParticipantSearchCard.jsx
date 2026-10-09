@@ -48,13 +48,20 @@ import { exemptionWhyLines } from "@/pages/MentorshipManagement/utils/approvalLa
 import MeetingLogDialog from "@/pages/MentorshipManagement/components/MeetingLogDialog";
 import StateChips from "@/pages/AdminAccounts/components/StateChips";
 import { useMeetingLog } from "@/pages/MentorshipManagement/hooks/useMeetingLog";
-import { attendanceIssueLines } from "@/pages/MentorshipManagement/utils/attendanceIssues";
+import {
+  attendanceIssueLines,
+  MEETING_TIMEZONE,
+} from "@/pages/MentorshipManagement/utils/attendanceIssues";
 import { useMatchingRun } from "@/pages/MentorshipManagement/hooks/useMatchingRun";
 import { RUN_STATUS } from "@/pages/MentorshipManagement/utils/matchingLabels";
 import { startMatchingRun } from "@/api/mentorshipApi";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
+import SendNotificationDialog from "@/pages/MentorshipManagement/components/email/SendNotificationDialog";
+import { stageLabel } from "@/pages/MentorshipManagement/components/email/emailLabels";
+import { useNotifiedStages } from "@/pages/MentorshipManagement/hooks/useNotifiedStages";
+import { formatInTz } from "@/utils/dateTime";
 
 const ALL_ROLES = "__all__";
 const ALL_APPROVAL_STATUSES = "__all__";
@@ -90,6 +97,10 @@ const COLUMNS = [
 
 const WHY_COLUMN = { header: "Why", accessor: "why" };
 const EXEMPTION_COLUMN = { header: "Exemption", accessor: "exemption" };
+const NOTIFICATIONS_COLUMN = {
+  header: "Notifications",
+  accessor: "notifications",
+};
 
 /**
  * A column header that explains the column in a tooltip on hover or focus.
@@ -238,6 +249,24 @@ const PairCell = ({ row, roundId, returnSearch, onOpenMeetings }) => {
 };
 
 /**
+ * The stages a person was notified of this round, one badge each.
+ *
+ * @param {{ stages: string[]|undefined }} props
+ */
+const NotificationsCell = ({ stages }) =>
+  stages?.length ? (
+    <div className="flex flex-wrap gap-1">
+      {stages.map((stage) => (
+        <Badge key={stage} variant="outline">
+          {stageLabel(stage)}
+        </Badge>
+      ))}
+    </div>
+  ) : (
+    "—"
+  );
+
+/**
  * The Participants card: one round's participants, searched by user ID,
  * name/email, role, internal/external, account, training and approval status.
  * The List filter picks which people: everyone registered (the default), only
@@ -260,6 +289,11 @@ const PairCell = ({ row, roundId, returnSearch, onOpenMeetings }) => {
  * round. Picks are dropped whenever the list or its filters change. The
  * header's matching results button, also behind the flag, follows the round
  * in the Round select.
+ *
+ * While the Kit email flag is on, every other list shows the stages each
+ * person was notified of this round, and mentorship admin writers can pick
+ * people there (across pages, dropped the same way) and send them a
+ * notification from a Kit draft.
  */
 const ParticipantSearchCard = () => {
   const rounds = useParticipantSearchRounds();
@@ -320,6 +354,13 @@ const ParticipantSearchCard = () => {
   // The backend refuses every matching endpoint while the flag is off.
   const matchingOn = Boolean(flags[FEATURE_FLAGS.MATCHING_RUN]);
   const showRunUi = matchingOn && eligible && hasSearched && canSearch;
+  // The backend refuses every Kit email endpoint while the flag is off.
+  const kitEmailOn = Boolean(flags[FEATURE_FLAGS.MENTORSHIP_KIT_EMAIL]);
+  const showNotifications = kitEmailOn && !eligible && hasSearched && canSearch;
+  const canNotify = showNotifications && canWrite;
+  const { stagesByUser, reload: reloadNotified } = useNotifiedStages(
+    showNotifications ? committedRoundId || null : null,
+  );
 
   const { overview: shownRun } = useMatchingRun(
     matchingOn ? roundId || null : null,
@@ -336,17 +377,17 @@ const ParticipantSearchCard = () => {
       state: { returnSearch: location.search },
     });
 
-  // userId -> participantRole, tagged with the list it was picked in.
+  // userId -> row, tagged with the list it was picked in.
   const [selection, setSelection] = useState({ key: "", picked: NO_SELECTION });
   const picked = selection.key === listKey ? selection.picked : NO_SELECTION;
   const setPicked = (people, on) => {
     const next = new Map(picked);
     people.forEach((row) =>
-      on ? next.set(row.userId, row.participantRole) : next.delete(row.userId),
+      on ? next.set(row.userId, row) : next.delete(row.userId),
     );
     setSelection({ key: listKey, picked: next });
   };
-  const pickedRoles = [...picked.values()];
+  const pickedRoles = [...picked.values()].map((row) => row.participantRole);
   const mentorCount = pickedRoles.filter(
     (r) => r === MentorshipParticipantRoles.MENTOR,
   ).length;
@@ -383,6 +424,20 @@ const ParticipantSearchCard = () => {
     } finally {
       setStarting(false);
     }
+  };
+
+  const [notifyOpen, setNotifyOpen] = useState(false);
+  const recipients = [...picked.values()].map((row) => ({
+    userId: row.userId,
+    name: userDisplayName(row),
+  }));
+
+  const onNotificationScheduled = (sendAtIso) => {
+    setSelection({ key: "", picked: NO_SELECTION });
+    toast.success(
+      `Scheduled for ${formatInTz(sendAtIso, MEETING_TIMEZONE, "yyyy-MM-dd HH:mm")} Pacific`,
+    );
+    reloadNotified();
   };
 
   const hasPrev = offset > 0;
@@ -439,8 +494,17 @@ const ParticipantSearchCard = () => {
     />
   );
 
+  const selectCell = (row) => (
+    <Checkbox
+      aria-label={`Select ${userDisplayName(row)}`}
+      checked={picked.has(row.userId)}
+      onCheckedChange={(checked) => setPicked([row], checked === true)}
+    />
+  );
+
   const notRegisteredData = () =>
     rows.map((row) => ({
+      select: selectCell(row),
       name: (
         <NameCell
           row={row}
@@ -453,6 +517,9 @@ const ParticipantSearchCard = () => {
       account: accountCell(row),
       roundsTakenPart: row.roundsTakenPart,
       lastRound: row.lastRoundName ?? "Never",
+      notifications: (
+        <NotificationsCell stages={stagesByUser.get(row.userId)} />
+      ),
     }));
 
   const pageRows = loading ? [] : rows;
@@ -478,13 +545,7 @@ const ParticipantSearchCard = () => {
     : notRegistered
       ? notRegisteredData()
       : rows.map((row) => ({
-          select: (
-            <Checkbox
-              aria-label={`Select ${userDisplayName(row)}`}
-              checked={picked.has(row.userId)}
-              onCheckedChange={(checked) => setPicked([row], checked === true)}
-            />
-          ),
+          select: selectCell(row),
           name: (
             <NameCell
               row={row}
@@ -530,7 +591,26 @@ const ParticipantSearchCard = () => {
               onChanged={refetch}
             />
           ),
+          notifications: (
+            <NotificationsCell stages={stagesByUser.get(row.userId)} />
+          ),
         }));
+
+  const notifySelect = canNotify ? [selectColumn] : [];
+  const notificationsColumns = showNotifications ? [NOTIFICATIONS_COLUMN] : [];
+  const columns = notRegistered
+    ? [...notifySelect, ...NOT_REGISTERED_COLUMNS, ...notificationsColumns]
+    : showRunUi
+      ? [selectColumn, ...COLUMNS]
+      : needsExemption
+        ? [
+            ...notifySelect,
+            ...COLUMNS,
+            WHY_COLUMN,
+            ...(matchingOn ? [EXEMPTION_COLUMN] : []),
+            ...notificationsColumns,
+          ]
+        : [...notifySelect, ...COLUMNS, ...notificationsColumns];
 
   return (
     <Card className="mt-6 border-gray-200">
@@ -762,19 +842,7 @@ const ParticipantSearchCard = () => {
               </div>
             )}
             <Table
-              columns={
-                notRegistered
-                  ? NOT_REGISTERED_COLUMNS
-                  : showRunUi
-                    ? [selectColumn, ...COLUMNS]
-                    : needsExemption
-                      ? [
-                          ...COLUMNS,
-                          WHY_COLUMN,
-                          ...(matchingOn ? [EXEMPTION_COLUMN] : []),
-                        ]
-                      : COLUMNS
-              }
+              columns={columns}
               data={data}
               onSort={handleSort}
               sortColumn={activeSortAccessor}
@@ -802,8 +870,31 @@ const ParticipantSearchCard = () => {
                 Next
               </Button>
             </div>
+            {canNotify && picked.size > 0 && (
+              <div className="mt-4 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
+                <span className="text-sm">
+                  <strong>{picked.size} people</strong> selected
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setNotifyOpen(true)}
+                >
+                  Send notification · {picked.size}
+                </Button>
+              </div>
+            )}
           </>
         )}
+
+        <SendNotificationDialog
+          open={notifyOpen}
+          onOpenChange={setNotifyOpen}
+          roundId={committedRoundId}
+          recipients={recipients}
+          defaultStage={notRegistered ? "round_recruitment" : ""}
+          onScheduled={onNotificationScheduled}
+        />
 
         <Dialog
           open={confirmOpen}
