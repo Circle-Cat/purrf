@@ -529,6 +529,29 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
         self.assertIsNotNone(only.created_at)
         self.assertEqual((await self._detail(user=self.mentor)).pending_requests, [])
 
+    async def test_a_pending_mark_names_the_pair_it_is_about(self):
+        pending = ApprovalRequestEntity(
+            action="mark_no_show",
+            target_type="round_participant",
+            target_id=exemption_target(self.round.round_id, self.mentee.user_id),
+            payload={
+                "round_id": self.round.round_id,
+                "user_id": self.mentee.user_id,
+                "pair_id": self.current_pair.pair_id,
+            },
+            reason=None,
+            raised_by=self.writer.user_id,
+            reviewer_id=self.approver.user_id,
+            status=ApprovalRequestStatus.PENDING,
+        )
+        await self.insert_entities([pending])
+
+        detail = await self._detail()
+
+        (only,) = detail.pending_requests
+        self.assertEqual(only.action, "mark_no_show")
+        self.assertEqual(only.pair_id, self.current_pair.pair_id)
+
     async def test_unknown_round_or_user_is_not_found(self):
         with self.assertRaises(NotFoundError):
             await self.service.get_participant_detail(

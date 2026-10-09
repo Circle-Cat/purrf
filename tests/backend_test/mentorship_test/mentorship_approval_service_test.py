@@ -141,6 +141,7 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
                     "round": {"round_id": 7, "name": "Spring 2026"},
                     "target_id": "r7-x-y",
                     "person": None,
+                    "pair_id": None,
                     "raised_by": {"user_id": RAISER, "name": "Ada Ng"},
                     "reviewer": {"user_id": REVIEWER, "name": "Rae Kim"},
                     "reason": "Reviewed every pair",
@@ -321,6 +322,7 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_pending_requests_on_a_participant_are_described(self):
         waiting = {
             "withdraw_participant": _withdrawal(),
+            "mark_no_show": _mark("mark_no_show", request_id=51, pair_id=501),
             "mark_red_flag": _mark("mark_red_flag", request_id=52, pair_id=None),
         }
         self.approvals.get_pending_for_target.side_effect = (
@@ -337,7 +339,8 @@ class MentorshipApprovalServiceTest(unittest.IsolatedAsyncioTestCase):
                 ("mark_red_flag", "7:21"),
             ],
         )
-        self.assertEqual([r["request_id"] for r in result], [41, 52])
+        self.assertEqual([r["request_id"] for r in result], [41, 51, 52])
+        self.assertEqual([r["pair_id"] for r in result], [None, 501, None])
         self.assertEqual(result[0]["raised_by"]["user_id"], RAISER)
         self.assertEqual(result[0]["reviewer"]["user_id"], REVIEWER)
 

@@ -417,6 +417,7 @@ class MentorshipApprovalService:
                     "name": round_names[int(row.payload["round_id"])],
                 },
                 "target_id": row.target_id,
+                "pair_id": row.payload.get("pair_id"),
                 "person": person(int(row.payload["user_id"]))
                 if "user_id" in row.payload
                 else None,
