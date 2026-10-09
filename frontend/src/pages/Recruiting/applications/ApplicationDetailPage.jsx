@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import DOMPurify from "dompurify";
+import { EMAIL_BODY_BOX_CLASS, sanitizeEmailBody } from "@/utils/emailHtml";
 import {
   Select,
   SelectContent,
@@ -747,7 +747,7 @@ const EmailMessageBubble = ({ message, timezone }) => {
   const tag = EMAIL_KIND_TAGS[kind];
   const html =
     message.bodyHtml != null && message.bodyHtml !== ""
-      ? DOMPurify.sanitize(message.bodyHtml)
+      ? sanitizeEmailBody(message.bodyHtml)
       : null;
   const when = message.gmailInternalDate ?? message.createdAt;
   return (
@@ -779,7 +779,7 @@ const EmailMessageBubble = ({ message, timezone }) => {
         // these hooks a message reads as one dense block whose links are
         // indistinguishable from plain text.
         <div
-          className="max-w-none text-slate-700 [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_ul]:list-disc [&_ul]:pl-5"
+          className={`max-w-none text-slate-700 ${EMAIL_BODY_BOX_CLASS} [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-3 [&_ul]:list-disc [&_ul]:pl-5`}
           dangerouslySetInnerHTML={{ __html: html }}
         />
       ) : (
