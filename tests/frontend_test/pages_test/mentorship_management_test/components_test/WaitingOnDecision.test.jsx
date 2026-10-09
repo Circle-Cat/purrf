@@ -104,7 +104,9 @@ describe("WaitingOnDecision", () => {
       screen.queryByRole("option", { name: "Mia Ko" }),
     ).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Reviewer"), "12");
-    await user.click(screen.getAllByRole("button", { name: "Reassign" }).at(-1));
+    await user.click(
+      screen.getAllByRole("button", { name: "Reassign" }).at(-1),
+    );
     await waitFor(() =>
       expect(reassignMentorshipApproval).toHaveBeenCalledWith(41, 12),
     );

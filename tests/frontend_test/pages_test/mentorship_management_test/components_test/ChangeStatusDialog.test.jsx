@@ -66,7 +66,9 @@ describe("ChangeStatusDialog", () => {
     const { onOpenChange, onSent } = renderDialog();
 
     await waitFor(() =>
-      expect(screen.getByRole("option", { name: "Rae Kim" })).toBeInTheDocument(),
+      expect(
+        screen.getByRole("option", { name: "Rae Kim" }),
+      ).toBeInTheDocument(),
     );
     expect(
       screen.queryByRole("option", { name: "Mia Ko" }),
@@ -93,7 +95,9 @@ describe("ChangeStatusDialog", () => {
     const { onOpenChange, onSent } = renderDialog();
 
     await waitFor(() =>
-      expect(screen.getByRole("option", { name: "Rae Kim" })).toBeInTheDocument(),
+      expect(
+        screen.getByRole("option", { name: "Rae Kim" }),
+      ).toBeInTheDocument(),
     );
     await user.selectOptions(screen.getByLabelText("Reviewer"), "8");
     await user.click(screen.getByRole("button", { name: "Send for approval" }));

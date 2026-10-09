@@ -66,8 +66,8 @@ const ChangeStatusDialog = ({
         <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           Already waiting on a decision:{" "}
           {pendingRequests.map((r) => approvalActionLabel(r.action)).join(", ")}
-          . You can still ask for something else; each request is checked
-          again when it is decided.
+          . You can still ask for something else; each request is checked again
+          when it is decided.
         </p>
       ) : null}
       <div className="space-y-1">

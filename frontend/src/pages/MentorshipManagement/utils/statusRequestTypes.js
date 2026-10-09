@@ -23,8 +23,8 @@ export const STATUS_REQUEST_TYPES = Object.freeze([
     isAvailable: ({ canWrite, round, registration }) =>
       Boolean(
         canWrite &&
-          round?.inProgress &&
-          STILL_IN_ROUND.has(registration?.approvalStatus),
+        round?.inProgress &&
+        STILL_IN_ROUND.has(registration?.approvalStatus),
       ),
     raise: (roundId, userId, body) =>
       requestParticipantWithdrawal(roundId, userId, body),
