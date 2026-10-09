@@ -68,7 +68,7 @@ class MatchingEligibilityServiceTest(unittest.IsolatedAsyncioTestCase):
         self.rounds_repo.get_all_rounds = AsyncMock(return_value=self.rounds)
         self.participants_repo = MagicMock()
         self.participants_repo.list_round_registrations = AsyncMock(return_value=[])
-        self.participants_repo.list_rejected_by_round = AsyncMock(return_value={})
+        self.participants_repo.list_quitters_by_round = AsyncMock(return_value={})
         self.pairs_repo = MagicMock()
         self.pairs_repo.get_active_pairs_by_round = AsyncMock(return_value=[])
         self.pairs_repo.list_pairs_with_meeting_counts = AsyncMock(return_value=[])
@@ -192,7 +192,7 @@ class MatchingEligibilityServiceTest(unittest.IsolatedAsyncioTestCase):
             [(_pair(6, 20, 1, 21), 4)],
             [(_pair(5, 20, 9, 21, active=False), 1), (_pair(6, 20, 1, 21), 4)],
         ]
-        self.participants_repo.list_rejected_by_round.return_value = {20: set()}
+        self.participants_repo.list_quitters_by_round.return_value = {20: set()}
 
         result = await self.service.ineligible_by_user(self.session, 30)
 
@@ -200,7 +200,7 @@ class MatchingEligibilityServiceTest(unittest.IsolatedAsyncioTestCase):
         second_call = self.pairs_repo.list_pairs_with_meeting_counts.await_args_list[1]
         self.assertEqual(second_call.args[1:], ([20], [21]))
 
-    async def test_quitting_is_read_from_the_rejected_registrations(self):
+    async def test_quitting_is_read_from_the_quitters_registrations(self):
         self.participants_repo.list_round_registrations.return_value = [
             _registration(1, ParticipantRole.MENTEE),
         ]
@@ -211,7 +211,7 @@ class MatchingEligibilityServiceTest(unittest.IsolatedAsyncioTestCase):
             [(_pair(5, 20, 7, 1, active=False), 1)],
             [],
         ]
-        self.participants_repo.list_rejected_by_round.return_value = {20: {1}}
+        self.participants_repo.list_quitters_by_round.return_value = {20: {1}}
 
         result = await self.service.ineligible_by_user(self.session, 30)
 
