@@ -148,6 +148,52 @@ class TestMentorshipParticipantNoteRepository(BaseRepositoryTestLib):
             {},
         )
 
+    async def test_tagged_notes_carry_their_round_tag_and_time(self):
+        for user, round_, tag in (
+            (self.person, self.round, ParticipantNoteTag.NO_SHOW),
+            (self.person, self.other_round, ParticipantNoteTag.RED_FLAG),
+            (self.person, self.round, ParticipantNoteTag.MATCHING_EXEMPTION),
+            (self.person, self.round, ParticipantNoteTag.STATUS_CHANGE),
+            (self.person, self.round, None),
+            (self.other_person, self.round, ParticipantNoteTag.RED_FLAG),
+        ):
+            await self.repo.create(
+                self.session,
+                user_id=user.user_id,
+                round_id=round_.round_id,
+                author_user_id=self.author.user_id,
+                body="note",
+                tag=tag,
+            )
+
+        found = await self.repo.list_tagged(
+            self.session,
+            [self.person.user_id],
+            [ParticipantNoteTag.NO_SHOW, ParticipantNoteTag.RED_FLAG],
+        )
+
+        self.assertEqual(
+            [(n.user_id, n.round_id, n.tag) for n in found],
+            [
+                (self.person.user_id, self.round.round_id, ParticipantNoteTag.NO_SHOW),
+                (
+                    self.person.user_id,
+                    self.other_round.round_id,
+                    ParticipantNoteTag.RED_FLAG,
+                ),
+            ],
+        )
+        self.assertTrue(all(n.created_at is not None for n in found))
+        self.assertEqual(
+            await self.repo.list_tagged(
+                self.session, [], [ParticipantNoteTag.RED_FLAG]
+            ),
+            [],
+        )
+        self.assertEqual(
+            await self.repo.list_tagged(self.session, [self.person.user_id], []), []
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
