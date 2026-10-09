@@ -32,11 +32,25 @@ def _e(value):
 
 @register_render(InboxEvent.NEEDS_REPLY)
 async def _render_needs_reply(session: AsyncSession, event: EventEntity):
-    """Tell a service's people that a new email is waiting for a reply."""
+    """Tell a service's people that an email is waiting for a reply.
+
+    The email is new mail, or a thread moved in from another service when
+    ``details["movedFrom"]`` names that service.
+    """
     del session
     details = event.details
     service = details.get("service")
     name = _SERVICE_NAMES.get(service, service)
+    moved_from = details.get("movedFrom")
+    if moved_from:
+        old_name = _SERVICE_NAMES.get(moved_from, moved_from)
+        return (
+            "An email moved to your inbox needs a reply",
+            f"<p>An email was moved from the {_e(old_name)} inbox to the "
+            f"{_e(name)} inbox and needs a reply: "
+            f"“{_e(details.get('subject'))}” from {_e(details.get('from'))}.</p>"
+            "<p>Open Inbox in Purrf to read and reply.</p>" + _FOOTER,
+        )
     return (
         "New email needs a reply",
         f"<p>A new email in the {_e(name)} inbox needs a reply: "
