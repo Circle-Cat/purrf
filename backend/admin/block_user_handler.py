@@ -28,6 +28,7 @@ class BlockUserHandler(ApprovalHandler):
         application_submission_repository,
         application_interview_repository,
         interview_scheduling_service,
+        mentorship_block_service,
     ):
         """
         Args:
@@ -40,12 +41,15 @@ class BlockUserHandler(ApprovalHandler):
                 The interviews a block cancels.
             interview_scheduling_service (InterviewSchedulingService): Cancels
                 them.
+            mentorship_block_service (MentorshipBlockService): Ends the
+                person's mentorship pairs.
         """
         self._users = users_repository
         self._applications = application_repository
         self._submissions = application_submission_repository
         self._interviews = application_interview_repository
         self._interview_scheduling = interview_scheduling_service
+        self._mentorship = mentorship_block_service
 
     def subject_id(self, request) -> int:
         return int(request.target_id)
@@ -81,4 +85,6 @@ class BlockUserHandler(ApprovalHandler):
             application_submission_repository=self._submissions,
             application_interview_repository=self._interviews,
             interview_scheduling_service=self._interview_scheduling,
+            mentorship_block_service=self._mentorship,
+            request_id=request.request_id,
         )

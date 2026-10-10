@@ -313,6 +313,16 @@ py_test(
 )
 
 py_test(
+    name = "mentorship_block_service_test",
+    srcs = ["mentorship_block_service_test.py"],
+    deps = [
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/mentorship",
+    ],
+)
+
+py_test(
     name = "end_pair_flow_test",
     srcs = ["end_pair_flow_test.py"],
     env_inherit = ["DATABASE_URL"],

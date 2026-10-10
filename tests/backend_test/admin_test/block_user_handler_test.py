@@ -36,12 +36,14 @@ class BlockUserHandlerTest(unittest.IsolatedAsyncioTestCase):
         self.submissions = MagicMock()
         self.interviews = MagicMock()
         self.scheduling = MagicMock()
+        self.mentorship = MagicMock()
         self.handler = BlockUserHandler(
             self.users,
             self.applications,
             self.submissions,
             self.interviews,
             self.scheduling,
+            self.mentorship,
         )
 
     def test_declares_the_user_events_and_the_user_admin_reviewer(self):
@@ -118,6 +120,8 @@ class BlockUserHandlerTest(unittest.IsolatedAsyncioTestCase):
             application_submission_repository=self.submissions,
             application_interview_repository=self.interviews,
             interview_scheduling_service=self.scheduling,
+            mentorship_block_service=self.mentorship,
+            request_id=None,
         )
 
     async def test_a_request_with_no_reason_blocks_with_none(self):
@@ -129,6 +133,19 @@ class BlockUserHandlerTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertIsNone(kernel.await_args.kwargs["reason"])
+
+    async def test_approving_passes_the_request_on_to_the_mentorship_notes(self):
+        request = _request()
+        request.request_id = 701
+        with patch(
+            "backend.admin.block_user_handler.apply_block_kernel", new=AsyncMock()
+        ) as kernel:
+            await self.handler.execute(self.session, request, actor_id=REVIEWER)
+
+        self.assertEqual(kernel.await_args.kwargs["request_id"], 701)
+        self.assertIs(
+            kernel.await_args.kwargs["mentorship_block_service"], self.mentorship
+        )
 
 
 if __name__ == "__main__":

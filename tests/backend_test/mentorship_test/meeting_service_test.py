@@ -1611,6 +1611,19 @@ class TestMeetingServiceCancelUpcomingForPairs(unittest.IsolatedAsyncioTestCase)
             is_completed=False,
         )
 
+    async def test_counts_what_cancelling_would_cancel(self):
+        self.assertEqual(
+            await self.service.count_upcoming_for_pairs(self.session, [501, 502]), 2
+        )
+        self.scheduling.cancel.assert_not_awaited()
+        self.mock_meeting_repo.delete_meetings.assert_not_awaited()
+
+    async def test_counting_no_pairs_reads_nothing(self):
+        self.assertEqual(
+            await self.service.count_upcoming_for_pairs(self.session, []), 0
+        )
+        self.mock_meeting_repo.get_meetings_by_pairs.assert_not_awaited()
+
     async def test_only_google_meetings_not_yet_started_are_cancelled(self):
         cancelled = await self.service.cancel_upcoming_for_pairs(
             self.session, [501, 502]

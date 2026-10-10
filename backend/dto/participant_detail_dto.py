@@ -8,6 +8,7 @@ from pydantic import Field
 from backend.common.mentorship_enums import ParticipantNoteTag
 from backend.dto.base_dto import BaseDto
 from backend.dto.base_request_dto import BaseRequestDto
+from backend.dto.block_dto import PendingBlockRequestDto
 from backend.dto.mentorship_approval_dto import ApprovalPairDto, ApprovalPersonDto
 from backend.dto.participant_search_dto import ParticipantRowDto, PersonRowDto
 from backend.dto.round_feedback_dto import ParticipantFeedbackDto
@@ -32,14 +33,6 @@ class ParticipantNoteDto(BaseDto):
     request_id: int | None = None
     author: ApprovalPersonDto
     created_at: datetime
-
-
-class PendingBlockRequestDto(BaseDto):
-    """A block request on this person waiting on a reviewer. Who raised it is
-    left out: the page only needs to say it is waiting, and on whom."""
-
-    request_id: int
-    reviewer: ApprovalPersonDto
 
 
 class PendingRequestDto(BaseDto):

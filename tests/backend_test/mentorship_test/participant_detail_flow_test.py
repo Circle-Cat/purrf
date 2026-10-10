@@ -225,7 +225,14 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
             handlers=[],
         )
         self.approvals.register(
-            BlockUserHandler(users, MagicMock(), MagicMock(), MagicMock(), MagicMock())
+            BlockUserHandler(
+                users,
+                MagicMock(),
+                MagicMock(),
+                MagicMock(),
+                MagicMock(),
+                MagicMock(),
+            )
         )
         self.approvals.register(
             WithdrawParticipantHandler(

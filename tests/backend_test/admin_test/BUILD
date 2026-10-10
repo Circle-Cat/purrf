@@ -21,6 +21,7 @@ py_test(
     srcs = ["block_service_apply_test.py"],
     deps = [
         "//backend/admin:block_service",
+        "//backend/common:exceptions",
         "//backend/common:recruiting_enums",
         "//backend/common:user_enums",
         "//backend/entity:entities",
@@ -114,6 +115,27 @@ py_test(
         "//backend/common:exceptions",
         "//backend/common:mentorship_enums",
         "//backend/entity:entities",
+        "//backend/repository:repositories",
+        "//backend/user_identity:notification_renderers",
+        "//backend/user_identity:user_recipient_resolvers",
+        "//tests/backend_test/repository_test:base_repository_test_lib",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "block_ends_mentorship_flow_test",
+    srcs = ["block_ends_mentorship_flow_test.py"],
+    env_inherit = ["DATABASE_URL"],
+    deps = [
+        "//backend/admin:block_service",
+        "//backend/admin:block_user_handler",
+        "//backend/approval:approval_service",
+        "//backend/common:exceptions",
+        "//backend/common:mentorship_enums",
+        "//backend/common:recruiting_enums",
+        "//backend/entity:entities",
+        "//backend/mentorship",
         "//backend/repository:repositories",
         "//backend/user_identity:notification_renderers",
         "//backend/user_identity:user_recipient_resolvers",

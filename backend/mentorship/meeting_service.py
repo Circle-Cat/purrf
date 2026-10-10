@@ -839,6 +839,43 @@ class MeetingService:
             failed_meeting_ids=failed_event_ids,
         )
 
+    async def _upcoming_google_meetings(
+        self, session: AsyncSession, pair_ids: list[int]
+    ) -> list[MentorshipMeetingEntity]:
+        by_pair = await self.mentorship_meeting_repository.get_meetings_by_pairs(
+            session=session, pair_ids=list(pair_ids)
+        )
+        now = datetime.now(dt_timezone.utc)
+        return sorted(
+            (
+                m
+                for meetings in by_pair.values()
+                for m in meetings
+                if m.source == MeetingSource.GOOGLE
+                and not m.is_completed
+                and m.start_datetime is not None
+                and m.start_datetime > now
+            ),
+            key=lambda m: (m.pair_id, m.start_datetime),
+        )
+
+    async def count_upcoming_for_pairs(
+        self, session: AsyncSession, pair_ids: list[int]
+    ) -> int:
+        """How many meetings ``cancel_upcoming_for_pairs`` would cancel for
+        these pairs now. Reads only.
+
+        Args:
+            session (AsyncSession): The caller's open session.
+            pair_ids (list[int]): The pairs.
+
+        Returns:
+            int: The count.
+        """
+        if not pair_ids:
+            return 0
+        return len(await self._upcoming_google_meetings(session, pair_ids))
+
     async def cancel_upcoming_for_pairs(
         self, session: AsyncSession, pair_ids: list[int]
     ) -> int:
@@ -865,22 +902,7 @@ class MeetingService:
         """
         if not pair_ids:
             return 0
-        by_pair = await self.mentorship_meeting_repository.get_meetings_by_pairs(
-            session=session, pair_ids=list(pair_ids)
-        )
-        now = datetime.now(dt_timezone.utc)
-        upcoming = sorted(
-            (
-                m
-                for meetings in by_pair.values()
-                for m in meetings
-                if m.source == MeetingSource.GOOGLE
-                and not m.is_completed
-                and m.start_datetime is not None
-                and m.start_datetime > now
-            ),
-            key=lambda m: (m.pair_id, m.start_datetime),
-        )
+        upcoming = await self._upcoming_google_meetings(session, pair_ids)
         if not upcoming:
             return 0
 

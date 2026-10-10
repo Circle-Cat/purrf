@@ -5,7 +5,7 @@ person, the request, the events and who was told."""
 import unittest
 import uuid
 from datetime import datetime, timezone
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from sqlalchemy import select
 
@@ -79,8 +79,13 @@ class BlockRequestFlowTest(BaseRepositoryTestLib):
             users_repository=users,
             logger=MagicMock(),
         )
+        mentorship = MagicMock()
+        mentorship.end_for_blocked_user = AsyncMock()
+        mentorship.preflight_counts = AsyncMock(return_value=(0, 0))
         approvals.register(
-            BlockUserHandler(users, applications, submissions, interviews, scheduling)
+            BlockUserHandler(
+                users, applications, submissions, interviews, scheduling, mentorship
+            )
         )
         self.service = BlockService(
             users,
@@ -90,6 +95,7 @@ class BlockRequestFlowTest(BaseRepositoryTestLib):
             scheduling,
             approvals,
             perms,
+            mentorship_block_service=mentorship,
             logger=MagicMock(),
         )
 
