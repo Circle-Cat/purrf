@@ -416,6 +416,11 @@ _SEND_FAILURES = {
 _SEND_WHERE = "<p>Open Mentorship Management in Purrf to see the Participants card.</p>"
 
 
+def send_failure_reason(failure_code: str | None) -> str:
+    """Why a confirmed send never reached Kit's schedule, in one sentence."""
+    return _SEND_FAILURES.get(failure_code, "Preparing it stopped unexpectedly.")
+
+
 def send_stage_label(stage: str | None) -> str:
     """The stage as the send dialog names it, or the raw value if unknown."""
     return _SEND_STAGE_LABELS.get(stage, stage or "")
@@ -528,7 +533,7 @@ def email_send_failed(
     Returns:
         tuple[str, str]: Subject and HTML body.
     """
-    reason = _SEND_FAILURES.get(failure_code, "Preparing it stopped unexpectedly.")
+    reason = send_failure_reason(failure_code)
     details = ""
     if (
         failure_code == MentorshipEmailFailure.KIT_ERROR

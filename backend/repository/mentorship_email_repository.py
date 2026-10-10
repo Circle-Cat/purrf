@@ -161,6 +161,31 @@ class MentorshipEmailRepository:
         )
         return [tuple(row) for row in (await session.execute(stmt)).all()]
 
+    async def list_person_sends(
+        self,
+        session: AsyncSession,
+        round_id: int,
+        user_id: int,
+        statuses: Collection[MentorshipEmailSendStatus],
+    ) -> list[tuple[MentorshipEmailSendEntity, MentorshipEmailRecipientEntity]]:
+        """This person's sends in the round with the given statuses, each with
+        their own recipient row, oldest send first."""
+        stmt = (
+            select(MentorshipEmailSendEntity, MentorshipEmailRecipientEntity)
+            .join(
+                MentorshipEmailRecipientEntity,
+                MentorshipEmailRecipientEntity.send_id
+                == MentorshipEmailSendEntity.send_id,
+            )
+            .where(
+                MentorshipEmailSendEntity.round_id == round_id,
+                MentorshipEmailRecipientEntity.user_id == user_id,
+                MentorshipEmailSendEntity.status.in_(list(statuses)),
+            )
+            .order_by(MentorshipEmailSendEntity.send_id)
+        )
+        return [tuple(row) for row in (await session.execute(stmt)).all()]
+
     async def list_recipients(
         self, session: AsyncSession, send_id: int
     ) -> list[MentorshipEmailRecipientEntity]:
