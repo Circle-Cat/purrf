@@ -21,6 +21,7 @@ py_test(
     srcs = ["block_service_apply_test.py"],
     deps = [
         "//backend/admin:block_service",
+        "//backend/common:exceptions",
         "//backend/common:recruiting_enums",
         "//backend/common:user_enums",
         "//backend/entity:entities",

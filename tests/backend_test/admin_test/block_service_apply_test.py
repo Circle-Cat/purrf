@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.admin.block_service import BlockService
+from backend.common.exceptions import ConflictError
 from backend.common.recruiting_enums import ApplicationStage
 from backend.common.user_enums import USER_SUBJECT_TYPE, UserEvent
 from backend.entity.application_entity import ApplicationEntity
@@ -40,6 +41,9 @@ class _BlockServiceTestBase(unittest.IsolatedAsyncioTestCase):
         self.approvals = MagicMock()
         self.approvals.supersede_pending = AsyncMock(return_value=0)
         self.session = AsyncMock()
+        self.mentorship = MagicMock()
+        self.mentorship.end_for_blocked_user = AsyncMock()
+        self.mentorship.preflight_counts = AsyncMock(return_value=(0, 0))
 
         recorder = patch(
             "backend.admin.block_service.record_event", new_callable=AsyncMock
@@ -55,6 +59,7 @@ class _BlockServiceTestBase(unittest.IsolatedAsyncioTestCase):
             interview_scheduling_service=self.interview_svc,
             approval_service=self.approvals,
             user_permissions_repository=MagicMock(),
+            mentorship_block_service=self.mentorship,
             logger=MagicMock(),
         )
 
@@ -163,6 +168,40 @@ class _BlockServiceTestBase(unittest.IsolatedAsyncioTestCase):
 class TestBlockServiceApply(_BlockServiceTestBase):
     """The block kernel: the three consequences, with no triggering
     application to hang them on."""
+
+    async def test_ends_mentorship_after_the_flags_and_before_the_sweep(self):
+        user = self._user()
+        self._seed([self._application(10)], user=user)
+        order = []
+        self.mentorship.end_for_blocked_user = AsyncMock(
+            side_effect=lambda *a, **k: order.append(("mentorship", user.is_blocked))
+        )
+        rows = await self.app_repo.list_by_user(None, TARGET)
+        self.app_repo.list_by_user = AsyncMock(
+            side_effect=lambda *a: order.append(("applications",)) or rows
+        )
+
+        await self._apply()
+
+        self.assertEqual(order[:2], [("mentorship", True), ("applications",)])
+        self.mentorship.end_for_blocked_user.assert_awaited_once_with(
+            self.session, user_id=TARGET, actor_id=ACTOR, request_id=None
+        )
+
+    async def test_a_mentorship_refusal_cancels_no_interview(self):
+        self._seed([self._application(10)])
+        self.interview_repo.list_by_application_ids = AsyncMock(
+            return_value=[self._interview_row(application_id=10)]
+        )
+        self.mentorship.end_for_blocked_user = AsyncMock(
+            side_effect=ConflictError("refused", code="calendar_cancel_failed")
+        )
+
+        with self.assertRaises(ConflictError):
+            await self._apply()
+
+        self.interview_svc.cancel_for_round.assert_not_awaited()
+        self.app_repo.update.assert_not_awaited()
 
     async def test_writes_block_fields_on_the_user(self):
         user = self._user()
@@ -411,6 +450,16 @@ class TestBlockServiceApply(_BlockServiceTestBase):
 class TestBlockServicePreflight(_BlockServiceTestBase):
     """The pre-flight must mirror the sweep exactly, or the confirm dialog
     lies about what is going to happen."""
+
+    async def test_counts_the_mentorship_it_ends(self):
+        self._seed([self._application(10)])
+        self.mentorship.preflight_counts = AsyncMock(return_value=(2, 3))
+
+        view = await self.service.preflight(self.session, TARGET)
+
+        self.assertEqual(view.mentorship_pair_count, 2)
+        self.assertEqual(view.mentorship_meeting_count, 3)
+        self.mentorship.preflight_counts.assert_awaited_once_with(self.session, TARGET)
 
     async def test_counts_only_what_will_change(self):
         self._seed([

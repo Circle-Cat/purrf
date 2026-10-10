@@ -176,6 +176,9 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
             recorder.start()
             self.addCleanup(recorder.stop)
 
+        self.mentorship = MagicMock()
+        self.mentorship.end_for_blocked_user = AsyncMock()
+        self.mentorship.preflight_counts = AsyncMock(return_value=(0, 0))
         self.approvals = ApprovalService(
             approval_request_repository=self.requests,
             user_permissions_repository=self.perms_repo,
@@ -188,6 +191,7 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
                     self.sub_repo,
                     self.interview_repo,
                     self.interview_svc,
+                    self.mentorship,
                 )
             ],
         )
@@ -199,6 +203,7 @@ class TestBlockServiceRequests(unittest.IsolatedAsyncioTestCase):
             interview_scheduling_service=self.interview_svc,
             approval_service=self.approvals,
             user_permissions_repository=self.perms_repo,
+            mentorship_block_service=self.mentorship,
             logger=MagicMock(),
         )
 

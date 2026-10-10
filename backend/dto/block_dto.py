@@ -15,6 +15,10 @@ class BlockPreflightDto(BaseDto):
 
     application_count: int
     interview_times: list[datetime]
+    # The mentorship pairs in rounds under way the block ends, and their
+    # meetings that have not started.
+    mentorship_pair_count: int = 0
+    mentorship_meeting_count: int = 0
 
 
 class ReviewerOptionDto(BaseDto):

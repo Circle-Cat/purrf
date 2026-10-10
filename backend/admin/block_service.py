@@ -50,12 +50,15 @@ async def apply_block_kernel(
     application_submission_repository,
     application_interview_repository,
     interview_scheduling_service,
+    mentorship_block_service,
+    request_id: int | None = None,
 ) -> None:
     """Block a user org-wide and close out everything the block reaches.
 
-    Three consequences, in order: the block flags on the user, a sweep of every
-    application they have, and the cancellation of every interview still ahead
-    of them on the applications just swept. The block also locks them out of
+    Four consequences, in order: the block flags on the user, the end of their
+    mentorship pairs in rounds under way, a sweep of every application they
+    have, and the cancellation of every interview still ahead of them on the
+    applications just swept. The block also locks them out of
     every Purrf page, not just applications, until an admin unblocks them.
 
     Each application is re-fetched FOR UPDATE so a concurrent stage decision on
@@ -84,9 +87,15 @@ async def apply_block_kernel(
             interviews booked on the swept applications.
         interview_scheduling_service (InterviewSchedulingService): Cancels
             them.
+        mentorship_block_service (MentorshipBlockService): Ends the person's
+            pairs in rounds under way.
+        request_id (int | None): The approval request that applied it, for the
+            mentorship notes.
 
     Raises:
         ValueError: If no user exists with ``user_id``.
+        ConflictError: If a mentorship meeting could not be cancelled on the
+            calendar.
     """
     user = await users_repository.get_user_by_user_id(session, user_id)
     if user is None:
@@ -95,6 +104,12 @@ async def apply_block_kernel(
     user.blocked_by = actor_id
     user.blocked_at = datetime.now(timezone.utc)
     user.blocked_reason = reason
+
+    # Mentorship first: a calendar refusal there rolls the whole block back,
+    # and nothing has been cancelled on the interview calendars yet.
+    await mentorship_block_service.end_for_blocked_user(
+        session, user_id=user_id, actor_id=actor_id, request_id=request_id
+    )
 
     swept_application_ids = []
     rows = await application_repository.list_by_user(session, user_id)
@@ -197,6 +212,7 @@ class BlockService:
         interview_scheduling_service,
         approval_service,
         user_permissions_repository,
+        mentorship_block_service,
         logger,
     ):
         """
@@ -214,6 +230,8 @@ class BlockService:
                 the ``block_user`` handler.
             user_permissions_repository (UserPermissionsRepository): Lists the
                 USER_ADMIN holders a request can be sent to.
+            mentorship_block_service (MentorshipBlockService): Ends and counts
+                the mentorship pairs a block reaches.
             logger (Logger): Injected logger.
         """
         self._users = users_repository
@@ -223,6 +241,7 @@ class BlockService:
         self._interview_scheduling = interview_scheduling_service
         self._approvals = approval_service
         self._permissions = user_permissions_repository
+        self._mentorship = mentorship_block_service
         self._logger = logger
 
     async def preflight(self, session, user_id: int) -> BlockPreflightDto:
@@ -242,8 +261,9 @@ class BlockService:
             user_id (int): The user about to be blocked.
 
         Returns:
-            BlockPreflightDto: How many applications will close out, and when
-                the interviews that will be cancelled are, soonest first.
+            BlockPreflightDto: How many applications will close out, when the
+                interviews that will be cancelled are, soonest first, and how
+                many mentorship pairs and upcoming meetings the block ends.
         """
         rows = await self._applications.list_by_user(session, user_id)
         live = [
@@ -254,6 +274,9 @@ class BlockService:
         interviews = await self._interviews.list_by_application_ids(
             session, [application.application_id for application in live]
         )
+        pair_count, meeting_count = await self._mentorship.preflight_counts(
+            session, user_id
+        )
         now = datetime.now(timezone.utc)
         return BlockPreflightDto(
             application_count=len(live),
@@ -262,6 +285,8 @@ class BlockService:
                 for interview in interviews
                 if interview.start_at > now
             ),
+            mentorship_pair_count=pair_count,
+            mentorship_meeting_count=meeting_count,
         )
 
     async def apply_block(
@@ -288,6 +313,7 @@ class BlockService:
             application_submission_repository=self._submissions,
             application_interview_repository=self._interviews,
             interview_scheduling_service=self._interview_scheduling,
+            mentorship_block_service=self._mentorship,
         )
 
     # -- the request-and-approval flow --------------------------------------

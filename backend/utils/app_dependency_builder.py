@@ -215,6 +215,7 @@ from backend.mentorship.mark_participant_handler import (
     MarkNoShowHandler,
     MarkRedFlagHandler,
 )
+from backend.mentorship.mentorship_block_service import MentorshipBlockService
 from backend.mentorship.mentorship_approval_service import MentorshipApprovalService
 from backend.recruiting.job_review_handler import JobReviewHandler
 from backend.repository.user_permissions_repository import UserPermissionsRepository
@@ -1222,6 +1223,14 @@ class AppDependencyBuilder:
             self.approval_service,
             logger=self.logger,
         )
+        self.mentorship_block_service = MentorshipBlockService(
+            participants_repository=self.mentorship_round_participants_repo,
+            pairs_repository=self.mentorship_pairs_repository,
+            meeting_service=self.meeting_service,
+            note_repository=self.mentorship_participant_note_repository,
+            users_repository=self.users_repository,
+            logger=self.logger,
+        )
         # Registered here rather than with the other handlers: approving a
         # block cancels interviews, and the scheduling service is built late.
         self.block_user_handler = BlockUserHandler(
@@ -1230,6 +1239,7 @@ class AppDependencyBuilder:
             self.application_submission_repository,
             self.application_interview_repository,
             self.interview_scheduling_service,
+            self.mentorship_block_service,
         )
         self.approval_service.register(self.block_user_handler)
         self.block_service = BlockService(
@@ -1240,6 +1250,7 @@ class AppDependencyBuilder:
             self.interview_scheduling_service,
             self.approval_service,
             self.user_permissions_repository,
+            mentorship_block_service=self.mentorship_block_service,
             logger=self.logger,
         )
         self.user_account_controller = UserAccountController(
