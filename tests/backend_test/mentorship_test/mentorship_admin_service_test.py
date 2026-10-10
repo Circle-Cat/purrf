@@ -9,6 +9,7 @@ from backend.mentorship.matching_eligibility import (
     IneligibleReason,
 )
 from backend.mentorship.mentorship_admin_service import MentorshipAdminService
+from backend.repository.user_id_condition import UserIdCondition
 from backend.dto.participant_search_filter_dto import (
     ParticipantSearchFilterDto,
     UnregisteredFilterDto,
@@ -182,6 +183,12 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         self.mock_approvals = MagicMock()
         self.mock_approvals.pending_exemptions = AsyncMock(return_value={})
 
+        self.mock_email_service = MagicMock()
+        self.notified_query = object()
+        self.mock_email_service.notified_user_ids = AsyncMock(
+            return_value=self.notified_query
+        )
+
         self.service = MentorshipAdminService(
             users_repository=self.mock_users_repo,
             participants_repository=self.mock_participants_repo,
@@ -196,6 +203,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
             mentorship_approval_service=self.mock_approvals,
             note_repository=self.mock_notes,
             approval_service=MagicMock(),
+            mentorship_email_service=self.mock_email_service,
         )
 
     async def test_each_row_counts_the_marks_in_its_own_round(self):
@@ -373,7 +381,7 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.mock_participants_repo.search_unregistered_for_admin.assert_awaited_once_with(
-            self.mock_session, 9, filters, 10, 20, "desc"
+            self.mock_session, 9, filters, 10, 20, "desc", user_id_condition=None
         )
         self.mock_application_repo.list_hired_activity_roles_by_user_ids.assert_awaited_once_with(
             self.mock_session, [5, 6]
@@ -420,6 +428,81 @@ class TestMentorshipAdminService(unittest.IsolatedAsyncioTestCase):
                 "lastRoundName": "2025 Fall",
             },
         )
+
+    async def test_notification_state_picks_what_to_keep_or_leave_out(self):
+        self.mock_participants_repo.search_participants_for_admin.return_value = ([], 0)
+        cases = {
+            "notified": (dict(sent=True, scheduled=False), False),
+            "scheduled": (dict(sent=False, scheduled=True), False),
+            "not_notified": (dict(sent=True, scheduled=True), True),
+        }
+        for state, (flags, exclude) in cases.items():
+            with self.subTest(state=state):
+                self.mock_email_service.notified_user_ids.reset_mock()
+                await self.service.search_participants(
+                    self.mock_session,
+                    ParticipantSearchFilterDto(
+                        round_id=7,
+                        notification_stage="midterm_reminder",
+                        notification_state=state,
+                    ),
+                )
+                self.mock_email_service.notified_user_ids.assert_awaited_once_with(
+                    self.mock_session, 7, "midterm_reminder", **flags
+                )
+                call = self.mock_participants_repo.search_participants_for_admin.await_args
+                self.assertEqual(
+                    call.kwargs["user_id_condition"],
+                    UserIdCondition(self.notified_query, exclude=exclude),
+                )
+
+    async def test_unregistered_takes_the_notification_filter(self):
+        self.mock_participants_repo.search_unregistered_for_admin.return_value = ([], 0)
+        await self.service.search_unregistered(
+            self.mock_session,
+            9,
+            UnregisteredFilterDto(
+                notification_stage="round_recruitment",
+                notification_state="not_notified",
+            ),
+        )
+        self.mock_email_service.notified_user_ids.assert_awaited_once_with(
+            self.mock_session, 9, "round_recruitment", sent=True, scheduled=True
+        )
+        call = self.mock_participants_repo.search_unregistered_for_admin.await_args
+        self.assertEqual(
+            call.kwargs["user_id_condition"],
+            UserIdCondition(self.notified_query, exclude=True),
+        )
+
+    async def test_without_the_notification_filter_kit_is_not_involved(self):
+        self.mock_participants_repo.search_participants_for_admin.return_value = ([], 0)
+        await self.service.search_participants(
+            self.mock_session, ParticipantSearchFilterDto(round_id=7)
+        )
+        self.mock_email_service.notified_user_ids.assert_not_awaited()
+        call = self.mock_participants_repo.search_participants_for_admin.await_args
+        self.assertIsNone(call.kwargs["user_id_condition"])
+
+    async def test_notification_filter_needs_both_halves_and_a_round(self):
+        for filters in (
+            ParticipantSearchFilterDto(round_id=7, notification_stage="admission"),
+            ParticipantSearchFilterDto(round_id=7, notification_state="notified"),
+            ParticipantSearchFilterDto(
+                notification_stage="admission", notification_state="notified"
+            ),
+        ):
+            with self.subTest(filters=filters), self.assertRaises(ValueError):
+                await self.service.search_participants(self.mock_session, filters)
+        with self.assertRaises(ValueError):
+            await self.service.search_unregistered(
+                self.mock_session,
+                9,
+                UnregisteredFilterDto(notification_state="notified"),
+            )
+        self.mock_participants_repo.search_participants_for_admin.assert_not_awaited()
+        self.mock_participants_repo.search_unregistered_for_admin.assert_not_awaited()
+        self.mock_email_service.notified_user_ids.assert_not_awaited()
 
     async def test_eligible_lists_only_the_eligible_in_a_round_in_progress(self):
         self.mock_eligibility.eligible_user_ids.return_value = {4, 2}
@@ -1629,6 +1712,7 @@ class TestGetRoundFeedback(unittest.IsolatedAsyncioTestCase):
             mentorship_approval_service=MagicMock(),
             note_repository=MagicMock(),
             approval_service=MagicMock(),
+            mentorship_email_service=MagicMock(),
         )
 
     async def test_maps_sent_and_unsent_rows_and_names_partners(self):

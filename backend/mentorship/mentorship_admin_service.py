@@ -50,9 +50,11 @@ from backend.common.mentorship_enums import (
     ParticipantRole,
     TrainingCategory,
 )
+from backend.common.mentorship_email_enums import MentorshipEmailNotificationState
 from backend.common.name_utils import user_display_name
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.mentorship.round_windows import is_in_progress
+from backend.repository.user_id_condition import UserIdCondition
 
 
 class MentorshipAdminService:
@@ -80,6 +82,7 @@ class MentorshipAdminService:
         mentorship_approval_service,
         note_repository,
         approval_service,
+        mentorship_email_service,
     ) -> None:
         self.users_repository = users_repository
         self.participants_repository = participants_repository
@@ -94,6 +97,33 @@ class MentorshipAdminService:
         self.mentorship_approval_service = mentorship_approval_service
         self.note_repository = note_repository
         self.approval_service = approval_service
+        self.mentorship_email_service = mentorship_email_service
+
+    async def _notification_condition(
+        self, session: AsyncSession, round_id: int | None, filters
+    ) -> UserIdCondition | None:
+        """The people a notification filter keeps (Notified, Scheduled) or
+        leaves out (Not notified), or None without one.
+
+        Raises:
+            ValueError: Only one of stage and state was given, or no round.
+        """
+        stage, state = filters.notification_stage, filters.notification_state
+        if stage is None and state is None:
+            return None
+        if stage is None or state is None:
+            raise ValueError("Pick both a notification and its state.")
+        if round_id is None:
+            raise ValueError("The notification filter needs a round.")
+        S = MentorshipEmailNotificationState
+        query = await self.mentorship_email_service.notified_user_ids(
+            session,
+            round_id,
+            stage,
+            sent=state != S.SCHEDULED,
+            scheduled=state != S.NOTIFIED,
+        )
+        return UserIdCondition(query, exclude=state == S.NOT_NOTIFIED)
 
     def _extract_emails(self, emails: list) -> tuple[str | None, list[str]]:
         """
@@ -327,10 +357,14 @@ class MentorshipAdminService:
         Raises:
             ValueError: ``eligible`` or ``needs_exemption`` was asked for
                 without a round, for a round that does not exist, or for one
-                not in progress; or both were asked for at once.
+                not in progress; or both were asked for at once; or a
+                notification filter missing its stage, state or round.
         """
         if filters.eligible and filters.needs_exemption:
             raise ValueError("Ask for eligible or needs exemption, not both.")
+        condition = await self._notification_condition(
+            session, filters.round_id, filters
+        )
         findings: dict[int, list] = {}
         if filters.eligible:
             only_user_ids = await self._eligible_user_ids(session, filters.round_id)
@@ -340,7 +374,14 @@ class MentorshipAdminService:
         else:
             only_user_ids = None
         rows, total = await self.participants_repository.search_participants_for_admin(
-            session, filters, limit, offset, sort_by, order, only_user_ids=only_user_ids
+            session,
+            filters,
+            limit,
+            offset,
+            sort_by,
+            order,
+            only_user_ids=only_user_ids,
+            user_id_condition=condition,
         )
         if not rows:
             return ParticipantSearchDto(participant_rows=[], total=total)
@@ -528,12 +569,20 @@ class MentorshipAdminService:
             UnregisteredSearchDto: One row per person and the total count.
 
         Raises:
-            ValueError: If the round does not exist or is not in progress.
+            ValueError: If the round does not exist or is not in progress, or
+                a notification filter is missing its stage or state.
         """
         await self._get_round_in_progress(session, round_id)
+        condition = await self._notification_condition(session, round_id, filters)
 
         rows, total = await self.participants_repository.search_unregistered_for_admin(
-            session, round_id, filters, limit, offset, order
+            session,
+            round_id,
+            filters,
+            limit,
+            offset,
+            order,
+            user_id_condition=condition,
         )
         if not rows:
             return UnregisteredSearchDto(rows=[], total=total)
