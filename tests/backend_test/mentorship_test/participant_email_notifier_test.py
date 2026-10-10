@@ -151,6 +151,43 @@ class ParticipantEmailNotifierTest(unittest.IsolatedAsyncioTestCase):
         self.record.assert_not_awaited()
         self.users.get_user_by_user_id.assert_not_awaited()
 
+    async def test_threads_without_a_person_or_round_or_not_activity_record_nothing(
+        self,
+    ):
+        base = self.thread
+        for change in (
+            {"user_id": None},
+            {"context_id": None},
+            {"context_type": ContextType.APPLICATION},
+        ):
+            with self.subTest(change=change):
+                self.thread = SimpleNamespace(**{**vars(base), **change})
+                recorded = await self._after_sync([_out(0, sent_by=900)], [_in(5)])
+
+                self.assertFalse(recorded)
+                self.record.assert_not_awaited()
+                self.users.get_user_by_user_id.assert_not_called()
+
+    async def test_a_missing_user_row_gives_an_empty_person_name(self):
+        self.users.get_user_by_user_id = AsyncMock(return_value=None)
+
+        await self._after_sync([_out(0, sent_by=900)], [_in(5)])
+
+        self.assertEqual("", self.record.await_args.kwargs["details"]["personName"])
+
+    async def test_a_preferred_name_is_the_person_name(self):
+        self.users.get_user_by_user_id = AsyncMock(
+            return_value=SimpleNamespace(
+                first_name="Ann", last_name="Lee", preferred_name="Annie"
+            )
+        )
+
+        await self._after_sync([_out(0, sent_by=900)], [_in(5)])
+
+        self.assertEqual(
+            "Annie", self.record.await_args.kwargs["details"]["personName"]
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

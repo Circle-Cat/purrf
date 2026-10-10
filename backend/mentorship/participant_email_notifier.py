@@ -1,5 +1,6 @@
 """Turns new mail on a person's round thread (ACTIVITY) into mentorship events."""
 
+from backend.common.communication_enums import ContextType
 from backend.common.inbox_enums import INBOX_SUBJECT_TYPE
 from backend.common.mentorship_enums import MentorshipEvent
 from backend.common.name_utils import display_name_of
@@ -26,22 +27,24 @@ class ParticipantEmailNotifier:
         Args:
             session (AsyncSession): The active DB session.
             thread (EmailThreadEntity): An ACTIVITY thread; ``context_id`` is the round.
+                Threads of another context, or without a person or round, are ignored.
             new_messages (list[EmailMessageEntity]): Messages this sync stored.
 
         Returns:
             bool: True when EMAIL_RECEIVED was recorded.
         """
-        if not new_messages:
+        if (
+            not new_messages
+            or thread.context_type != ContextType.ACTIVITY
+            or thread.user_id is None
+            or thread.context_id is None
+        ):
             return False
         messages = await self._messages.list_by_thread(session, thread.thread_id)
         alerts = alerts_after_sync(thread, messages, new_messages)
         if not alerts.bounces and alerts.needs_reply_from is None:
             return False
-        person = (
-            await self._users.get_user_by_user_id(session, thread.user_id)
-            if thread.user_id is not None
-            else None
-        )
+        person = await self._users.get_user_by_user_id(session, thread.user_id)
         about = {
             "roundId": thread.context_id,
             "userId": thread.user_id,
