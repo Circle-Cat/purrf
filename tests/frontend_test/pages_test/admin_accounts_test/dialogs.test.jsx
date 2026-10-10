@@ -345,10 +345,14 @@ describe("BlockPreflight", () => {
     render(<BlockPreflight preflight={null} />);
 
     expect(
-      screen.getByText(/Still counting the applications, interviews and mentorship pairs/),
+      screen.getByText(
+        "· Still counting the applications, interviews and mentorship pairs this reaches",
+      ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Mentorship eligibility is gone for good/),
+      screen.getByText(
+        "⚠ Unblocking later restores access, but reinstates none of the above — not the applications, not the interviews, not the mentorship pairs. Mentorship eligibility is gone for good, because it is derived from an application that this action rejects.",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -387,7 +391,7 @@ describe("BlockPreflight", () => {
 
     expect(
       screen.getByText(
-        /not the applications, not the interviews, not the mentorship pairs\./,
+        "⚠ Unblocking later restores access, but reinstates none of the above — not the applications, not the interviews, not the mentorship pairs. Mentorship eligibility is gone for good, because it is derived from an application that this action rejects.",
       ),
     ).toBeInTheDocument();
   });
