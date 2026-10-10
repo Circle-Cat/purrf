@@ -827,9 +827,7 @@ class TestEmailConversationService(unittest.IsolatedAsyncioTestCase):
 
     async def test_list_conversation_requires_a_person(self):
         with self.assertRaises(TypeError):
-            await self.service.list_conversation(
-                self.session, ContextType.ACTIVITY, 8
-            )
+            await self.service.list_conversation(self.session, ContextType.ACTIVITY, 8)
 
         self.thread_repo.list_by_person_context.assert_not_awaited()
 
