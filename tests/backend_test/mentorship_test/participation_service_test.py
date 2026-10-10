@@ -495,13 +495,13 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.current_status, MatchStatus.UNREGISTERED)
         self.assertEqual(len(result.partners), 0)
 
-    async def test_get_my_match_result_not_matched_status(self):
+    async def test_get_my_match_result_before_matching(self):
         """A status that cannot have produced a pairing is answered without
         touching the pairs table."""
         mock_round_id = 1
 
         mock_participant = MagicMock(spec=MentorshipRoundParticipantsEntity)
-        mock_participant.approval_status = ApprovalStatus.UN_MATCHED
+        mock_participant.approval_status = ApprovalStatus.SIGNED_UP
         self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
             mock_participant
         )
@@ -512,9 +512,61 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
             round_id=mock_round_id,
         )
 
-        self.assertEqual(result.current_status, MatchStatus.UNMATCHED)
+        self.assertEqual(result.current_status, MatchStatus.PENDING)
         self.assertEqual(len(result.partners), 0)
         self.mock_pairs_repo.get_pairs_with_partner_info.assert_not_awaited()
+
+    async def test_get_my_match_result_un_matched_after_a_pairing_ended(self):
+        """Someone moved to un_matched when their pair ended was matched
+        first, and is told who with; the ended partner's email is withheld."""
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            MagicMock(
+                spec=MentorshipRoundParticipantsEntity,
+                approval_status=ApprovalStatus.UN_MATCHED,
+            )
+        )
+        ended_pair = MagicMock(
+            spec=MentorshipPairsEntity,
+            status=PairStatus.INACTIVE,
+            mentor_id=789,
+            mentee_id=123,
+            recommendation_reason="Guidance",
+        )
+        partner = MagicMock(
+            spec=UsersEntity,
+            user_id=789,
+            first_name="Alice",
+            last_name="W",
+            preferred_name="Alice",
+        )
+        self.mock_pairs_repo.get_pairs_with_partner_info.return_value = [
+            (ended_pair, partner)
+        ]
+
+        result = await self.participation_service.get_my_match_result_by_round_id(
+            session=self.mock_session, user_context=self.user_context, round_id=1
+        )
+
+        self.assertEqual(result.current_status, MatchStatus.UNMATCHED)
+        self.assertEqual([p.id for p in result.partners], [789])
+        self.assertFalse(result.partners[0].is_active)
+        self.assertIsNone(result.partners[0].primary_email)
+
+    async def test_get_my_match_result_un_matched_and_never_paired(self):
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            MagicMock(
+                spec=MentorshipRoundParticipantsEntity,
+                approval_status=ApprovalStatus.UN_MATCHED,
+            )
+        )
+        self.mock_pairs_repo.get_pairs_with_partner_info.return_value = []
+
+        result = await self.participation_service.get_my_match_result_by_round_id(
+            session=self.mock_session, user_context=self.user_context, round_id=1
+        )
+
+        self.assertEqual(result.current_status, MatchStatus.UNMATCHED)
+        self.assertEqual(result.partners, [])
 
     async def test_get_my_match_result_reports_a_pairing_the_user_left(self):
         """Someone who left the round was matched first, and is told so.
