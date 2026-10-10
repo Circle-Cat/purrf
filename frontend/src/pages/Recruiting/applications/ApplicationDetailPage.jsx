@@ -2018,8 +2018,13 @@ const ApplicationDetailPage = () => {
                         index,
                       )
                     }
-                    canSend={detail.isOwner && emails.canSend !== false}
-                    sendDisabledHint={operateHint}
+                    canSend={detail.isOwner}
+                    sendDisabledHint={
+                      operateHint ??
+                      (emails.canSend === false
+                        ? "Sending email is not set up here"
+                        : undefined)
+                    }
                     onCompose={emailCompose.openCompose}
                     onReply={emailCompose.openReply}
                   />

@@ -1242,6 +1242,22 @@ describe("ApplicationDetailPage — owner without the advance grant", () => {
     expect(api.getApplicationEmailTemplates).not.toHaveBeenCalled();
   });
 
+  it("keeps Send email and Reply disabled with the hint when the conversation cannot send", async () => {
+    const user = userEvent.setup();
+    api.getApplicationDetail.mockResolvedValue({
+      data: makeDetail({ isOwner: true }),
+    });
+    api.getApplicationEmails.mockResolvedValue({
+      data: { defaultTo: "cand@x.com", threads: [THREAD], canSend: false },
+    });
+    renderPage();
+    await waitLoaded();
+    await user.click(screen.getByRole("tab", { name: "Emails" }));
+
+    expectClosed(await screen.findByRole("button", { name: "Send email" }));
+    expectClosed(screen.getByRole("button", { name: /^Reply/ }));
+  });
+
   it("leaves every control live and untitled for an owner holding the grant", async () => {
     const user = userEvent.setup();
     authState.permissions = ["recruiting.application.advance"];
@@ -4879,7 +4895,7 @@ describe("ApplicationDetailPage — Emails tab", () => {
     expect(link).toHaveAttribute("download");
   });
 
-  it("hides Send email and Reply when the conversation says it cannot send", async () => {
+  it("disables Send email and Reply with a setup hint when the conversation cannot send", async () => {
     ownerViewing();
     api.getApplicationEmails.mockResolvedValue({
       data: {
@@ -4893,12 +4909,16 @@ describe("ApplicationDetailPage — Emails tab", () => {
     await waitLoaded();
     await user.click(screen.getByRole("tab", { name: "Emails" }));
     await screen.findByText("Interview Availability");
-    expect(
-      screen.queryByRole("button", { name: "Send email" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Reply" }),
-    ).not.toBeInTheDocument();
+    for (const button of [
+      screen.getByRole("button", { name: "Send email" }),
+      screen.getByRole("button", { name: /^Reply/ }),
+    ]) {
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute(
+        "title",
+        "Sending email is not set up here",
+      );
+    }
   });
 
   it("read.all viewer who is not an owner sees no compose control", async () => {
