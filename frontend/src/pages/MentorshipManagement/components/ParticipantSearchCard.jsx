@@ -60,7 +60,11 @@ import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { FEATURE_FLAGS } from "@/constants/FeatureFlags";
 import { ROUTE_PATHS } from "@/constants/RoutePaths";
 import SendNotificationDialog from "@/pages/MentorshipManagement/components/email/SendNotificationDialog";
-import { stageLabel } from "@/pages/MentorshipManagement/components/email/emailLabels";
+import {
+  stageLabel,
+  stagesForList,
+} from "@/pages/MentorshipManagement/components/email/emailLabels";
+import NotificationFilter from "@/pages/MentorshipManagement/components/email/NotificationFilter";
 import { useNotifiedStages } from "@/pages/MentorshipManagement/hooks/useNotifiedStages";
 import { formatInTz } from "@/utils/dateTime";
 
@@ -306,10 +310,15 @@ const NotificationsCell = ({ stages }) =>
  * While the Kit email flag is on, every other list shows the stages each
  * person was notified of this round, and mentorship admin writers can pick
  * people there (across pages, dropped the same way) and send them a
- * notification from a Kit draft.
+ * notification from a Kit draft. Those two lists can also be filtered by a
+ * notification stage and whether it is not notified, scheduled or notified;
+ * after scheduling, a list so filtered is searched again.
  */
 const ParticipantSearchCard = () => {
   const rounds = useParticipantSearchRounds();
+  const flags = useFeatureFlags();
+  // The backend refuses every Kit email endpoint while the flag is off.
+  const kitEmailOn = Boolean(flags[FEATURE_FLAGS.MENTORSHIP_KIT_EMAIL]);
 
   const {
     rows,
@@ -356,19 +365,19 @@ const ParticipantSearchCard = () => {
     sortBy,
     order,
     toggleSort,
-  } = useParticipantSearch(rounds);
+    notification,
+    setNotification,
+    notificationFiltered,
+  } = useParticipantSearch(rounds, { notificationsOn: kitEmailOn });
 
   const navigate = useNavigate();
   const location = useLocation();
   const { permissions, user } = useAuth();
   const canWrite = permissions.includes(PERMISSIONS.MENTORSHIP_ADMIN_WRITE);
   const canApprove = permissions.includes(PERMISSIONS.MENTORSHIP_APPROVE);
-  const flags = useFeatureFlags();
   // The backend refuses every matching endpoint while the flag is off.
   const matchingOn = Boolean(flags[FEATURE_FLAGS.MATCHING_RUN]);
   const showRunUi = matchingOn && eligible && hasSearched && canSearch;
-  // The backend refuses every Kit email endpoint while the flag is off.
-  const kitEmailOn = Boolean(flags[FEATURE_FLAGS.MENTORSHIP_KIT_EMAIL]);
   const showNotifications = kitEmailOn && !eligible && hasSearched && canSearch;
   const canNotify = showNotifications && canWrite;
   const { stagesByUser, reload: reloadNotified } = useNotifiedStages(
@@ -451,6 +460,8 @@ const ParticipantSearchCard = () => {
       `Scheduled for ${formatInTz(sendAtIso, MEETING_TIMEZONE, "yyyy-MM-dd HH:mm")} Pacific`,
     );
     reloadNotified();
+    // Those just scheduled no longer match a Not notified filter.
+    if (notificationFiltered) refetch();
   };
 
   const hasPrev = offset > 0;
@@ -801,6 +812,14 @@ const ParticipantSearchCard = () => {
               </SelectItem>
             </SelectContent>
           </Select>
+          {kitEmailOn && !listEligible && !listNeedsExemption && (
+            <NotificationFilter
+              stages={stagesForList(listNotRegistered)}
+              stage={notification.stage}
+              state={notification.state}
+              onChange={setNotification}
+            />
+          )}
           <Select
             value={
               listNotRegistered

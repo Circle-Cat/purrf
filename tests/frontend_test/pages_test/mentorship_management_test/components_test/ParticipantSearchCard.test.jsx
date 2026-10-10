@@ -1,4 +1,11 @@
-import { render, screen, waitFor, within, act } from "@testing-library/react";
+import {
+  render,
+  screen,
+  waitFor,
+  within,
+  act,
+  fireEvent,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
@@ -2538,6 +2545,117 @@ describe("ParticipantSearchCard", () => {
       expect(sendButton()).not.toBeInTheDocument();
       expect(listNotifiedStages).toHaveBeenCalledTimes(2);
       expect(cancelEmailSend).not.toHaveBeenCalled();
+    });
+
+    const notificationFilter = () =>
+      screen.queryByRole("button", { name: "Notification filter" });
+
+    const pickList = async (name) => {
+      await userEvent.click(screen.getByLabelText("List"));
+      await userEvent.click(screen.getByRole("option", { name }));
+    };
+
+    const pickNotification = async (stage, state) => {
+      fireEvent.keyDown(notificationFilter(), { key: "Enter" });
+      fireEvent.keyDown(await screen.findByRole("menuitem", { name: stage }), {
+        key: "ArrowRight",
+      });
+      fireEvent.click(await screen.findByRole("menuitem", { name: state }));
+    };
+
+    it("filters the Registered list by a notification on Search", async () => {
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await screen.findByText("Cara Wang");
+      await pickNotification("Mid-term reminder", "Not notified");
+      await search();
+      await waitFor(() =>
+        expect(searchParticipants).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            notificationStage: "midterm_reminder",
+            notificationState: "not_notified",
+          }),
+        ),
+      );
+      expect(urlParams().get("notifyStage")).toBe("midterm_reminder");
+    });
+
+    it("offers the Not registered list only its three stages", async () => {
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await screen.findByText("Cara Wang");
+      await pickList("Not registered");
+      fireEvent.keyDown(notificationFilter(), { key: "Enter" });
+      await screen.findByRole("menuitem", { name: "New round invitation" });
+      expect(
+        screen.queryByRole("menuitem", { name: "Match result" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("has no notification filter on Eligible for matching", async () => {
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await screen.findByText("Cara Wang");
+      await pickList("Eligible for matching");
+      expect(notificationFilter()).not.toBeInTheDocument();
+    });
+
+    it("hides the filter while the Kit flag is off", async () => {
+      useFeatureFlags.mockReturnValue({});
+      await renderCard({
+        url: "/?round=7&notifyStage=admission&notifyState=notified",
+      });
+      await mounted();
+      expect(notificationFilter()).not.toBeInTheDocument();
+      expect(searchParticipants.mock.calls[0][0].notificationStage).toBe(
+        undefined,
+      );
+    });
+
+    const scheduleForAlice = async () => {
+      await pick("Alice Doe");
+      await userEvent.click(sendButton());
+      const dialog = await screen.findByRole("dialog");
+      await within(dialog).findByRole("option", { name: "Your match" });
+      await userEvent.selectOptions(
+        within(dialog).getByLabelText("Stage"),
+        "admission",
+      );
+      await userEvent.selectOptions(
+        within(dialog).getByLabelText("Kit draft"),
+        "901",
+      );
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Create" }),
+      );
+      await within(dialog).findByTitle("Email preview");
+      const date = within(dialog).getByLabelText("Send date");
+      const time = within(dialog).getByLabelText("Send time");
+      await userEvent.clear(date);
+      await userEvent.type(date, "2030-10-20");
+      await userEvent.clear(time);
+      await userEvent.type(time, "09:00");
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Confirm" }),
+      );
+      await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    };
+
+    it("searches again after Confirm when a notification filter is on", async () => {
+      await renderCard({
+        url: "/?round=7&notifyStage=admission&notifyState=not_notified",
+      });
+      await screen.findByText("Cara Wang");
+      const before = searchParticipants.mock.calls.length;
+      await scheduleForAlice();
+      await waitFor(() =>
+        expect(searchParticipants.mock.calls.length).toBe(before + 1),
+      );
+    });
+
+    it("does not search again after Confirm without one", async () => {
+      await renderCard({ url: SEARCHED_PARTICIPANTS });
+      await screen.findByText("Cara Wang");
+      const before = searchParticipants.mock.calls.length;
+      await scheduleForAlice();
+      expect(searchParticipants.mock.calls.length).toBe(before);
     });
   });
 });
