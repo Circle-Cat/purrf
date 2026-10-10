@@ -565,6 +565,46 @@ class ParticipantDetailFlowTest(BaseRepositoryTestLib):
         self.assertEqual(only.action, "mark_no_show")
         self.assertEqual(only.pair_id, self.current_pair.pair_id)
 
+    async def test_a_pending_end_pair_shows_on_both_pages(self):
+        await self.insert_entities([
+            MentorshipRoundParticipantsEntity(
+                user_id=self.mentor.user_id,
+                round_id=self.round.round_id,
+                participant_role=ParticipantRole.MENTOR,
+                approval_status=ApprovalStatus.MATCHED,
+            ),
+            TrainingEntity(
+                user_id=self.mentor.user_id,
+                category=TrainingCategory.MENTORSHIP_MENTOR_ONBOARDING,
+                status=TrainingStatus.DONE,
+                deadline=self.now,
+            ),
+        ])
+        pending = ApprovalRequestEntity(
+            action="end_pair",
+            target_type="mentorship_pair",
+            target_id=str(self.current_pair.pair_id),
+            payload={
+                "round_id": self.round.round_id,
+                "pair_id": self.current_pair.pair_id,
+                "mentor_id": self.mentor.user_id,
+                "mentee_id": self.mentee.user_id,
+            },
+            reason=None,
+            raised_by=self.writer.user_id,
+            reviewer_id=self.approver.user_id,
+            status=ApprovalRequestStatus.PENDING,
+        )
+        await self.insert_entities([pending])
+
+        for user in (self.mentee, self.mentor):
+            with self.subTest(user=user.first_name):
+                (only,) = (await self._detail(user=user)).pending_requests
+                self.assertEqual(only.action, "end_pair")
+                self.assertEqual(only.pair_id, self.current_pair.pair_id)
+                self.assertEqual(only.pair.mentor.user_id, self.mentor.user_id)
+                self.assertEqual(only.pair.mentee.user_id, self.mentee.user_id)
+
     async def test_unknown_round_or_user_is_not_found(self):
         with self.assertRaises(NotFoundError):
             await self.service.get_participant_detail(
