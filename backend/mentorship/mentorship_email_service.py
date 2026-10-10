@@ -19,6 +19,7 @@ from backend.dto.mentorship_email_dto import (
     EmailNotifiedDto,
     EmailPreviewDto,
     EmailRecipientDto,
+    EmailScheduledStageDto,
     EmailSendCreateDto,
     EmailSendDto,
     KitDraftDto,
@@ -393,7 +394,8 @@ class MentorshipEmailService:
     async def list_notified(
         self, session, round_id: int
     ) -> tuple[list[EmailNotifiedDto], list[int]]:
-        """Who Kit actually emailed in this round, per stage, plus the ids of
+        """Who Kit actually emailed in this round, per stage, and per stage the
+        latest send confirmed for them and still to go out; plus the ids of
         preparing sends whose worker went quiet and needs starting again."""
         # No background job follows a scheduled send; this read is what moves
         # it to sent or aborted once its time has come.
@@ -412,13 +414,28 @@ class MentorshipEmailService:
             ):
                 changed = await self._sync_one(send) or changed
         stages: dict[int, list[str]] = {}
+        scheduled: dict[int, dict[str, EmailScheduledStageDto]] = {}
         for user_id, stage in await self.repo.list_sent_stages(session, round_id):
             stages.setdefault(user_id, []).append(stage)
+        # One per stage, the latest; the list shows only that, and a person's
+        # timeline has the rest.
+        for user_id, stage, send_at in await self.repo.list_scheduled_stages(
+            session, round_id
+        ):
+            latest = scheduled.setdefault(user_id, {}).get(stage)
+            if latest is None or send_at > latest.send_at:
+                scheduled[user_id][stage] = EmailScheduledStageDto(
+                    stage=stage, send_at=send_at
+                )
         if changed:
             await session.commit()
         notified = [
-            EmailNotifiedDto(user_id=user_id, stages=user_stages)
-            for user_id, user_stages in stages.items()
+            EmailNotifiedDto(
+                user_id=user_id,
+                stages=stages.get(user_id, []),
+                scheduled=list(scheduled.get(user_id, {}).values()),
+            )
+            for user_id in sorted(stages.keys() | scheduled.keys())
         ]
         return notified, [s.send_id for s in sends if self._resume_needed(s)]
 

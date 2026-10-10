@@ -433,6 +433,7 @@ class MentorshipEmailServiceNotifiedTest(unittest.IsolatedAsyncioTestCase):
         self.repo.list_sent_stages = AsyncMock(
             return_value=[(1, "admission"), (1, "match_result"), (2, "admission")]
         )
+        self.repo.list_scheduled_stages = AsyncMock(return_value=[])
         self.kit = MagicMock()
         self.kit.get_broadcast_stats.return_value = {
             "status": "scheduled",
@@ -455,6 +456,47 @@ class MentorshipEmailServiceNotifiedTest(unittest.IsolatedAsyncioTestCase):
             [(1, ["admission", "match_result"]), (2, ["admission"])],
         )
         self.repo.list_sent_stages.assert_awaited_once_with(self.session, 1)
+
+    async def test_scheduled_keeps_the_latest_send_of_each_stage(self):
+        soon = NOW + timedelta(hours=2)
+        later = NOW + timedelta(days=3)
+        self.repo.list_scheduled_stages = AsyncMock(
+            return_value=[
+                (2, "match_result", later),
+                (2, "match_result", soon),
+                (2, "final_followup", soon),
+                (3, "midterm_reminder", later),
+            ]
+        )
+        notified, _ = await self.service.list_notified(self.session, 1)
+        self.assertEqual(
+            [
+                (n.user_id, n.stages, [(s.stage, s.send_at) for s in n.scheduled])
+                for n in notified
+            ],
+            [
+                (1, ["admission", "match_result"], []),
+                (
+                    2,
+                    ["admission"],
+                    [("match_result", later), ("final_followup", soon)],
+                ),
+                (3, [], [("midterm_reminder", later)]),
+            ],
+        )
+        self.repo.list_scheduled_stages.assert_awaited_once_with(self.session, 1)
+
+    async def test_send_that_just_went_out_is_not_read_as_scheduled(self):
+        self.kit.get_broadcast_stats.return_value = {
+            "status": "completed",
+            "recipients": 2,
+        }
+        seen = []
+        self.repo.list_scheduled_stages = AsyncMock(
+            side_effect=lambda *_: seen.append(self.send.status) or []
+        )
+        await self.service.list_notified(self.session, 1)
+        self.assertEqual(seen, [MentorshipEmailSendStatus.SENT])
 
     async def test_completed_send_becomes_sent_before_reading_stages(self):
         self.kit.get_broadcast_stats.return_value = {
