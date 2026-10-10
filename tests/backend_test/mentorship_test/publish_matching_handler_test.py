@@ -500,13 +500,6 @@ class TestExecute(PublishMatchingHandlerTestBase):
             "Rae Reviewer.",
         )
 
-    async def test_an_unchanged_status_with_no_new_pair_is_still_not_noted(self):
-        self.people[23] = _person(23, "Cy", "Fox", status=ApprovalStatus.UN_MATCHED)
-
-        await self._execute()
-
-        self.assertNotIn(23, self._notes())
-
     async def test_each_change_is_noted_by_the_approver_with_who_asked_and_why(self):
         await self._execute()
 

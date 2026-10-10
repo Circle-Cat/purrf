@@ -324,7 +324,7 @@ class ParticipationService:
             await self.user_emails_repository.get_contact_emails_by_user_ids(
                 session, live_partner_ids
             )
-            if live_partner_ids
+            if live_partner_ids and current_status == MatchStatus.MATCHED
             else {}
         )
 

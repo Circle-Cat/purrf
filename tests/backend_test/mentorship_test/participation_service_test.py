@@ -551,6 +551,42 @@ class TestParticipationService(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([p.id for p in result.partners], [789])
         self.assertFalse(result.partners[0].is_active)
         self.assertIsNone(result.partners[0].primary_email)
+        self.mock_user_emails_repo.get_contact_emails_by_user_ids.assert_not_awaited()
+
+    async def test_get_my_match_result_un_matched_never_gets_an_email_even_with_an_active_pair(
+        self,
+    ):
+        self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
+            MagicMock(
+                spec=MentorshipRoundParticipantsEntity,
+                approval_status=ApprovalStatus.UN_MATCHED,
+            )
+        )
+        live_pair = MagicMock(
+            spec=MentorshipPairsEntity,
+            status=PairStatus.ACTIVE,
+            mentor_id=789,
+            mentee_id=123,
+            recommendation_reason="Guidance",
+        )
+        partner = MagicMock(
+            spec=UsersEntity,
+            user_id=789,
+            first_name="Alice",
+            last_name="W",
+            preferred_name="Alice",
+        )
+        self.mock_pairs_repo.get_pairs_with_partner_info.return_value = [
+            (live_pair, partner)
+        ]
+
+        result = await self.participation_service.get_my_match_result_by_round_id(
+            session=self.mock_session, user_context=self.user_context, round_id=1
+        )
+
+        self.assertEqual(result.current_status, MatchStatus.UNMATCHED)
+        self.assertIsNone(result.partners[0].primary_email)
+        self.mock_user_emails_repo.get_contact_emails_by_user_ids.assert_not_awaited()
 
     async def test_get_my_match_result_un_matched_and_never_paired(self):
         self.mock_round_participants_repo.get_by_user_id_and_round_id.return_value = (
