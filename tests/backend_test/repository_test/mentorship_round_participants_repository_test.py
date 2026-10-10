@@ -1,12 +1,15 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
+
 from backend.entity.mentorship_round_participants_entity import (
     MentorshipRoundParticipantsEntity,
 )
 from backend.entity.mentorship_meeting_entity import MentorshipMeetingEntity
 from backend.entity.mentorship_pairs_entity import MentorshipPairsEntity
 from backend.entity.users_entity import UsersEntity
+from backend.repository.user_id_condition import UserIdCondition
 from backend.entity.mentorship_round_entity import MentorshipRoundEntity
 from backend.entity.user_emails_entity import UserEmailsEntity
 from backend.entity.job_entity import JobEntity
@@ -993,6 +996,37 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
         )
         self.assertEqual((nobody, none_total), ([], 0))
 
+    async def test_search_user_id_condition_keeps_or_leaves_out_and_counts(self):
+        bob = self._make_user(first_name="Bob", email="bob@example.com")
+        cid = self._make_user(first_name="Cid", email="cid@example.com")
+        await self.insert_entities([bob, cid])
+        await self._hire_for_activity(bob)
+        await self._hire_for_activity(cid)
+        await self._register(self.user, bob, cid)
+        filters = ParticipantSearchFilterDto(round_id=self.rounds[0].round_id)
+        bob_only = select(UsersEntity.user_id).where(UsersEntity.user_id == bob.user_id)
+
+        kept, kept_total = await self.repo.search_participants_for_admin(
+            self.session,
+            filters,
+            limit=50,
+            offset=0,
+            user_id_condition=UserIdCondition(bob_only),
+        )
+        left, left_total = await self.repo.search_participants_for_admin(
+            self.session,
+            filters,
+            limit=50,
+            offset=0,
+            user_id_condition=UserIdCondition(bob_only, exclude=True),
+        )
+
+        self.assertEqual(([r.user_id for r in kept], kept_total), ([bob.user_id], 1))
+        self.assertEqual(
+            (sorted(r.user_id for r in left), left_total),
+            (sorted([self.user.user_id, cid.user_id]), 2),
+        )
+
     async def test_list_round_registrations_lists_the_round_only(self):
         bob = self._make_user(first_name="Bob", email="bob@example.com")
         await self.insert_entities([bob])
@@ -1722,6 +1756,26 @@ class TestMentorshipRoundParticipantsRepository(BaseRepositoryTestLib):
 
         self.assertEqual(ids, sorted([self.user.user_id, other_round.user_id]))
         self.assertEqual(total, 2)
+
+    async def test_unregistered_user_id_condition_keeps_or_leaves_out_and_counts(
+        self,
+    ):
+        ann = self._make_user(first_name="Ann", email="ann@example.com")
+        ben = self._make_user(first_name="Ben", email="ben@example.com")
+        await self.insert_entities([ann, ben])
+        await self._hire_for_activity(ann)
+        await self._hire_for_activity(ben, role=ParticipantRole.MENTOR)
+        ann_only = select(UsersEntity.user_id).where(UsersEntity.user_id == ann.user_id)
+
+        kept = await self._unregistered_ids(user_id_condition=UserIdCondition(ann_only))
+        left = await self._unregistered_ids(
+            user_id_condition=UserIdCondition(ann_only, exclude=True)
+        )
+
+        self.assertEqual(kept, ([ann.user_id], 1))
+        self.assertNotIn(ann.user_id, left[0])
+        self.assertIn(ben.user_id, left[0])
+        self.assertEqual(left[1], len(left[0]))
 
     async def test_unregistered_admitted_as_both_roles_is_one_row(self):
         both = self._make_user(first_name="Bo", email="bo@example.com")

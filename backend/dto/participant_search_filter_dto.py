@@ -1,5 +1,9 @@
 from typing import Literal
 from backend.dto.base_request_dto import BaseRequestDto
+from backend.common.mentorship_email_enums import (
+    MentorshipEmailNotificationState,
+    MentorshipEmailStage,
+)
 from backend.common.mentorship_enums import ApprovalStatus, ParticipantRole
 
 
@@ -18,6 +22,10 @@ class ParticipantSearchFilterDto(BaseRequestDto):
     # Only the people kept out of matching in round_id by their history
     # alone; needs the round to be in progress.
     needs_exemption: bool | None = None
+    # Who this round's notification of one stage has or has not reached;
+    # both or neither, and only within a round.
+    notification_stage: MentorshipEmailStage | None = None
+    notification_state: MentorshipEmailNotificationState | None = None
 
 
 class UnregisteredFilterDto(BaseRequestDto):
@@ -26,3 +34,7 @@ class UnregisteredFilterDto(BaseRequestDto):
     account_status: Literal["active", "blocked", "deactivated"] | None = None
     internal: Literal["internal", "external"] | None = None
     admitted_role: ParticipantRole | None = None
+    # Who this round's notification of one stage has or has not reached;
+    # both or neither, and only within a round.
+    notification_stage: MentorshipEmailStage | None = None
+    notification_state: MentorshipEmailNotificationState | None = None

@@ -730,5 +730,67 @@ class MentorshipEmailServicePersonSendsTest(unittest.IsolatedAsyncioTestCase):
         self.session.commit.assert_not_awaited()
 
 
+class MentorshipEmailServiceNotifiedUserIdsTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.session = AsyncMock()
+        self.due = _send_row(
+            send_id=6,
+            stage="midterm_reminder",
+            status=MentorshipEmailSendStatus.SCHEDULED,
+            kit_broadcast_id=901,
+            send_at=NOW - timedelta(minutes=5),
+        )
+        self.query = object()
+        self.repo = MagicMock()
+        self.repo.list_sends = AsyncMock(return_value=[self.due])
+        self.repo.notified_user_ids = MagicMock(return_value=self.query)
+        self.kit = MagicMock()
+        self.kit.get_broadcast_stats.return_value = {"status": "completed"}
+        self.service = MentorshipEmailService(
+            mentorship_email_repository=self.repo,
+            user_emails_repository=MagicMock(),
+            mentorship_round_repository=MagicMock(),
+            kit_client=self.kit,
+            sender_address="notification-test@circlecat.org",
+            logger=MagicMock(),
+            clock=lambda: NOW,
+        )
+
+    async def test_catches_up_only_this_stage_then_returns_the_query(self):
+        got = await self.service.notified_user_ids(
+            self.session, 1, "midterm_reminder", sent=True, scheduled=False
+        )
+
+        self.assertIs(got, self.query)
+        self.repo.list_sends.assert_awaited_once_with(
+            self.session,
+            1,
+            [MentorshipEmailSendStatus.SCHEDULED],
+            stage="midterm_reminder",
+        )
+        self.assertEqual(self.due.status, MentorshipEmailSendStatus.SENT)
+        self.session.commit.assert_awaited_once()
+        self.repo.notified_user_ids.assert_called_once_with(
+            1, "midterm_reminder", sent=True, scheduled=False
+        )
+
+    async def test_nothing_due_does_not_ask_kit(self):
+        self.due.send_at = NOW + timedelta(minutes=30)
+        await self.service.notified_user_ids(
+            self.session, 1, "midterm_reminder", sent=True, scheduled=True
+        )
+        self.kit.get_broadcast_stats.assert_not_called()
+        self.session.commit.assert_not_awaited()
+
+    async def test_kit_error_still_returns_the_query(self):
+        self.kit.get_broadcast_stats.side_effect = requests.ConnectionError("down")
+        got = await self.service.notified_user_ids(
+            self.session, 1, "midterm_reminder", sent=False, scheduled=True
+        )
+        self.assertIs(got, self.query)
+        self.assertEqual(self.due.status, MentorshipEmailSendStatus.SCHEDULED)
+        self.session.commit.assert_not_awaited()
+
+
 if __name__ == "__main__":
     unittest.main()

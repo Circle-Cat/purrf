@@ -10,6 +10,7 @@ from backend.dto.participant_search_filter_dto import (
     ParticipantSearchFilterDto,
     UnregisteredFilterDto,
 )
+from backend.common.mentorship_email_enums import MentorshipEmailStage
 from backend.common.mentorship_enums import ParticipantRole
 from backend.dto.matching_run_create_dto import MatchingRunCreateDto
 from backend.dto.matching_run_dto import MatchingDraftChangesDto
@@ -254,6 +255,52 @@ class TestMentorshipAdminController(unittest.IsolatedAsyncioTestCase):
     def test_filter_rejects_an_unknown_account_status(self):
         with self.assertRaises(ValidationError):
             ParticipantSearchFilterDto(account_status="suspended")
+
+    def test_notification_filter_is_read_from_camel_case_query_params(self):
+        for dto in (ParticipantSearchFilterDto, UnregisteredFilterDto):
+            with self.subTest(dto=dto.__name__):
+                app = FastAPI()
+
+                @app.get("/probe")
+                async def probe(filters: dto = Depends()):
+                    return filters.model_dump()
+
+                response = TestClient(app).get(
+                    "/probe",
+                    params={
+                        "notificationStage": "midterm_reminder",
+                        "notificationState": "not_notified",
+                    },
+                )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(
+                    (
+                        response.json()["notification_stage"],
+                        response.json()["notification_state"],
+                    ),
+                    ("midterm_reminder", "not_notified"),
+                )
+
+    def test_notification_filter_accepts_every_stage(self):
+        for stage in MentorshipEmailStage:
+            with self.subTest(stage=stage):
+                dto = ParticipantSearchFilterDto(notification_stage=stage.value)
+                self.assertEqual(dto.notification_stage, stage)
+        self.assertEqual(
+            ParticipantSearchFilterDto(
+                notification_stage="feedback_invite"
+            ).notification_stage,
+            MentorshipEmailStage.FEEDBACK_INVITE,
+        )
+
+    def test_notification_filter_rejects_unknown_values(self):
+        for field, value in (
+            ("notification_stage", "rejected"),
+            ("notification_state", "replied"),
+        ):
+            with self.subTest(field=field), self.assertRaises(ValidationError):
+                ParticipantSearchFilterDto(**{field: value})
 
     def test_filter_rejects_an_unknown_internal_value(self):
         with self.assertRaises(ValidationError):

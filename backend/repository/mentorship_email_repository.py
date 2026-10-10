@@ -1,7 +1,7 @@
 from collections.abc import Collection
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import Select, and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.mentorship_email_enums import (
@@ -81,16 +81,42 @@ class MentorshipEmailRepository:
         session: AsyncSession,
         round_id: int,
         statuses: Collection[MentorshipEmailSendStatus],
+        stage: str | None = None,
     ) -> list[MentorshipEmailSendEntity]:
-        stmt = (
-            select(MentorshipEmailSendEntity)
-            .where(
-                MentorshipEmailSendEntity.round_id == round_id,
-                MentorshipEmailSendEntity.status.in_(list(statuses)),
-            )
-            .order_by(MentorshipEmailSendEntity.send_id)
+        stmt = select(MentorshipEmailSendEntity).where(
+            MentorshipEmailSendEntity.round_id == round_id,
+            MentorshipEmailSendEntity.status.in_(list(statuses)),
         )
+        if stage is not None:
+            stmt = stmt.where(MentorshipEmailSendEntity.stage == stage)
+        stmt = stmt.order_by(MentorshipEmailSendEntity.send_id)
         return list((await session.execute(stmt)).scalars())
+
+    @staticmethod
+    def _sent_conditions():
+        """Kit sent the send and this person was handed to it."""
+        return [
+            MentorshipEmailSendEntity.status == MentorshipEmailSendStatus.SENT,
+            MentorshipEmailRecipientEntity.result
+            == MentorshipEmailRecipientResult.HANDED_TO_KIT,
+        ]
+
+    @staticmethod
+    def _scheduled_conditions():
+        """Confirmed and not yet sent, and Kit can still reach this person; a
+        send still importing counts, its recipients not yet handed are
+        pending."""
+        return [
+            MentorshipEmailSendEntity.status.in_([
+                MentorshipEmailSendStatus.PREPARING,
+                MentorshipEmailSendStatus.SCHEDULED,
+            ]),
+            MentorshipEmailSendEntity.send_at.is_not(None),
+            MentorshipEmailRecipientEntity.result.in_([
+                MentorshipEmailRecipientResult.PENDING,
+                MentorshipEmailRecipientResult.HANDED_TO_KIT,
+            ]),
+        ]
 
     async def list_sent_stages(
         self, session: AsyncSession, round_id: int
@@ -109,9 +135,7 @@ class MentorshipEmailRepository:
             )
             .where(
                 MentorshipEmailSendEntity.round_id == round_id,
-                MentorshipEmailSendEntity.status == MentorshipEmailSendStatus.SENT,
-                MentorshipEmailRecipientEntity.result
-                == MentorshipEmailRecipientResult.HANDED_TO_KIT,
+                *self._sent_conditions(),
             )
             .distinct()
             .order_by(
@@ -143,15 +167,7 @@ class MentorshipEmailRepository:
             )
             .where(
                 MentorshipEmailSendEntity.round_id == round_id,
-                MentorshipEmailSendEntity.status.in_([
-                    MentorshipEmailSendStatus.PREPARING,
-                    MentorshipEmailSendStatus.SCHEDULED,
-                ]),
-                MentorshipEmailSendEntity.send_at.is_not(None),
-                MentorshipEmailRecipientEntity.result.in_([
-                    MentorshipEmailRecipientResult.PENDING,
-                    MentorshipEmailRecipientResult.HANDED_TO_KIT,
-                ]),
+                *self._scheduled_conditions(),
             )
             .order_by(
                 MentorshipEmailRecipientEntity.user_id,
@@ -185,6 +201,33 @@ class MentorshipEmailRepository:
             .order_by(MentorshipEmailSendEntity.send_id)
         )
         return [tuple(row) for row in (await session.execute(stmt)).all()]
+
+    def notified_user_ids(
+        self, round_id: int, stage: str, *, sent: bool, scheduled: bool
+    ) -> Select:
+        """A user_id query for the people this round's sends of one stage have
+        reached (``sent``) or are about to reach (``scheduled``), by the same
+        rules as the notified list."""
+        states = []
+        if sent:
+            states.append(and_(*self._sent_conditions()))
+        if scheduled:
+            states.append(and_(*self._scheduled_conditions()))
+        if not states:
+            raise ValueError("Ask for sent, scheduled or both.")
+        return (
+            select(MentorshipEmailRecipientEntity.user_id)
+            .join(
+                MentorshipEmailSendEntity,
+                MentorshipEmailSendEntity.send_id
+                == MentorshipEmailRecipientEntity.send_id,
+            )
+            .where(
+                MentorshipEmailSendEntity.round_id == round_id,
+                MentorshipEmailSendEntity.stage == stage,
+                or_(*states),
+            )
+        )
 
     async def list_recipients(
         self, session: AsyncSession, send_id: int

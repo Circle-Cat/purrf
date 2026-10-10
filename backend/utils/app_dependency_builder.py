@@ -815,6 +815,16 @@ class AppDependencyBuilder:
             pairs_repository=self.mentorship_pairs_repository,
             logger=self.logger,
         )
+        self.kit_client = KitClient(logger=self.logger)
+        self.mentorship_email_repository = MentorshipEmailRepository()
+        self.mentorship_email_service = MentorshipEmailService(
+            mentorship_email_repository=self.mentorship_email_repository,
+            user_emails_repository=self.user_emails_repository,
+            mentorship_round_repository=self.mentorship_round_repository,
+            kit_client=self.kit_client,
+            sender_address=os.getenv(GMAIL_SENDER_NOTIFICATION),
+            logger=self.logger,
+        )
         self.mentorship_admin_service = MentorshipAdminService(
             users_repository=self.users_repository,
             participants_repository=self.mentorship_round_participants_repo,
@@ -829,6 +839,7 @@ class AppDependencyBuilder:
             mentorship_approval_service=self.mentorship_approval_service,
             note_repository=self.mentorship_participant_note_repository,
             approval_service=self.approval_service,
+            mentorship_email_service=self.mentorship_email_service,
         )
         self.matching_run_service = MatchingRunService(
             matching_payload_service=self.matching_payload_service,
@@ -869,16 +880,6 @@ class AppDependencyBuilder:
             mentorship_approval_service=self.mentorship_approval_service,
             launchdarkly_service=self.launchdarkly_service,
             database=self.database,
-        )
-        self.kit_client = KitClient(logger=self.logger)
-        self.mentorship_email_repository = MentorshipEmailRepository()
-        self.mentorship_email_service = MentorshipEmailService(
-            mentorship_email_repository=self.mentorship_email_repository,
-            user_emails_repository=self.user_emails_repository,
-            mentorship_round_repository=self.mentorship_round_repository,
-            kit_client=self.kit_client,
-            sender_address=os.getenv(GMAIL_SENDER_NOTIFICATION),
-            logger=self.logger,
         )
         self.mentorship_email_prepare_service = MentorshipEmailPrepareService(
             database=self.database,

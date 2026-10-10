@@ -528,6 +528,7 @@ class TestAppDependencyBuilder(TestCase):
             mentorship_approval_service=builder.mentorship_approval_service,
             note_repository=builder.mentorship_participant_note_repository,
             approval_service=builder.approval_service,
+            mentorship_email_service=builder.mentorship_email_service,
         )
         # Eligibility reads the exemptions the exemption handler writes, and
         # the handler asks the same service who needs one.
